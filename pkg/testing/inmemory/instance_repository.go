@@ -62,7 +62,6 @@ func (r *InstanceRepository) SetInstanceLocked(_ context.Context, locked bool) e
 	return nil
 }
 
-
 // SetBootstrapWalletAddress sets the bootstrap wallet address used for setup authentication
 func (r *InstanceRepository) SetBootstrapWalletAddress(_ context.Context, address string) error {
 	r.mu.Lock()
@@ -136,7 +135,6 @@ func (r *InstanceRepository) GetTotalStatusCount(_ context.Context) (int64, erro
 	return 0, nil
 }
 
-
 // GetTotalDomainCount returns the total number of known domains
 func (r *InstanceRepository) GetTotalDomainCount(_ context.Context) (int64, error) {
 	return 0, nil
@@ -203,7 +201,6 @@ func (r *InstanceRepository) GetUserGrowthHistory(_ context.Context, _ int) ([]a
 func (r *InstanceRepository) GetDomainStats(_ context.Context, _ string) (any, error) {
 	return map[string]any{}, nil
 }
-
 
 // RecordDailyMetrics records daily historical metrics for the instance
 func (r *InstanceRepository) RecordDailyMetrics(_ context.Context, date string, metrics map[string]interface{}) error {

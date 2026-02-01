@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
-	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 

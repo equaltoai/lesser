@@ -11,92 +11,92 @@ import (
 
 // Metrics represents system metrics data
 type Metrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using metric type as partition key with timestamp sort key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "metrics#{type}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "metrics#{type}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Service queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core metrics data
-	ID        string    `dynamorm:"attr:id" json:"id"`
-	Type      string    `dynamorm:"attr:type" json:"type"`       // request, error, latency, throughput, etc.
-	Service   string    `dynamorm:"attr:service" json:"service"` // api, auth, federation, etc.
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	Period    string    `dynamorm:"attr:period" json:"period"` // minute, hour, day
+	ID        string    `theorydb:"attr:id" json:"id"`
+	Type      string    `theorydb:"attr:type" json:"type"`       // request, error, latency, throughput, etc.
+	Service   string    `theorydb:"attr:service" json:"service"` // api, auth, federation, etc.
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	Period    string    `theorydb:"attr:period" json:"period"` // minute, hour, day
 
 	// Metric values
-	Value       float64            `dynamorm:"attr:value" json:"value"`
-	Count       int64              `dynamorm:"attr:count" json:"count"`
-	Sum         float64            `dynamorm:"attr:sum" json:"sum"`
-	Min         float64            `dynamorm:"attr:min" json:"min"`
-	Max         float64            `dynamorm:"attr:max" json:"max"`
-	Average     float64            `dynamorm:"attr:average" json:"average"`
-	Percentiles map[string]float64 `dynamorm:"attr:percentiles" json:"percentiles,omitempty"` // p50, p90, p95, p99
+	Value       float64            `theorydb:"attr:value" json:"value"`
+	Count       int64              `theorydb:"attr:count" json:"count"`
+	Sum         float64            `theorydb:"attr:sum" json:"sum"`
+	Min         float64            `theorydb:"attr:min" json:"min"`
+	Max         float64            `theorydb:"attr:max" json:"max"`
+	Average     float64            `theorydb:"attr:average" json:"average"`
+	Percentiles map[string]float64 `theorydb:"attr:percentiles" json:"percentiles,omitempty"` // p50, p90, p95, p99
 
 	// Dimensions for filtering
-	Dimensions map[string]string `dynamorm:"attr:dimensions" json:"dimensions,omitempty"`
+	Dimensions map[string]string `theorydb:"attr:dimensions" json:"dimensions,omitempty"`
 
 	// Resource information
-	ResourceID   string `dynamorm:"attr:resourceID" json:"resource_id,omitempty"`     // Lambda function name, etc.
-	ResourceType string `dynamorm:"attr:resourceType" json:"resource_type,omitempty"` // lambda, dynamodb, etc.
+	ResourceID   string `theorydb:"attr:resourceID" json:"resource_id,omitempty"`     // Lambda function name, etc.
+	ResourceType string `theorydb:"attr:resourceType" json:"resource_type,omitempty"` // lambda, dynamodb, etc.
 
 	// Additional metadata
-	Unit       string                 `dynamorm:"attr:unit" json:"unit,omitempty"` // ms, count, bytes, etc.
-	Tags       map[string]string      `dynamorm:"attr:tags" json:"tags,omitempty"`
-	Properties map[string]interface{} `dynamorm:"attr:properties" json:"properties,omitempty"`
+	Unit       string                 `theorydb:"attr:unit" json:"unit,omitempty"` // ms, count, bytes, etc.
+	Tags       map[string]string      `theorydb:"attr:tags" json:"tags,omitempty"`
+	Properties map[string]interface{} `theorydb:"attr:properties" json:"properties,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for raw, 90 days for aggregated)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // AggregatedMetrics represents pre-computed metrics aggregations
 type AggregatedMetrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "metrics_agg#{period}#{type}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "metrics_agg#{period}#{type}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// Aggregation details
-	Period      string    `dynamorm:"attr:period" json:"period"`            // minute, hour, day, week, month
-	Type        string    `dynamorm:"attr:type" json:"type"`                // Same as Metrics.Type
-	Service     string    `dynamorm:"attr:service" json:"service"`          // Service name
-	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"` // Start of aggregation window
-	WindowEnd   time.Time `dynamorm:"attr:windowEnd" json:"window_end"`     // End of aggregation window
+	Period      string    `theorydb:"attr:period" json:"period"`            // minute, hour, day, week, month
+	Type        string    `theorydb:"attr:type" json:"type"`                // Same as Metrics.Type
+	Service     string    `theorydb:"attr:service" json:"service"`          // Service name
+	WindowStart time.Time `theorydb:"attr:windowStart" json:"window_start"` // Start of aggregation window
+	WindowEnd   time.Time `theorydb:"attr:windowEnd" json:"window_end"`     // End of aggregation window
 
 	// Aggregated values
-	TotalCount  int64              `dynamorm:"attr:totalCount" json:"total_count"`
-	TotalSum    float64            `dynamorm:"attr:totalSum" json:"total_sum"`
-	Average     float64            `dynamorm:"attr:average" json:"average"`
-	Min         float64            `dynamorm:"attr:min" json:"min"`
-	Max         float64            `dynamorm:"attr:max" json:"max"`
-	StdDev      float64            `dynamorm:"attr:stdDev" json:"std_dev"`
-	Percentiles map[string]float64 `dynamorm:"attr:percentiles" json:"percentiles"`
+	TotalCount  int64              `theorydb:"attr:totalCount" json:"total_count"`
+	TotalSum    float64            `theorydb:"attr:totalSum" json:"total_sum"`
+	Average     float64            `theorydb:"attr:average" json:"average"`
+	Min         float64            `theorydb:"attr:min" json:"min"`
+	Max         float64            `theorydb:"attr:max" json:"max"`
+	StdDev      float64            `theorydb:"attr:stdDev" json:"std_dev"`
+	Percentiles map[string]float64 `theorydb:"attr:percentiles" json:"percentiles"`
 
 	// Breakdown by dimensions
-	DimensionBreakdown map[string]DimensionStats `dynamorm:"attr:dimensionBreakdown" json:"dimension_breakdown,omitempty"`
+	DimensionBreakdown map[string]DimensionStats `theorydb:"attr:dimensionBreakdown" json:"dimension_breakdown,omitempty"`
 
 	// Service-specific metrics
-	ServiceMetrics map[string]interface{} `dynamorm:"attr:serviceMetrics" json:"service_metrics,omitempty"`
+	ServiceMetrics map[string]interface{} `theorydb:"attr:serviceMetrics" json:"service_metrics,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"`
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"`
 }
 
 // DimensionStats represents statistics for a specific dimension value
@@ -374,11 +374,11 @@ func isValidMetricType(metricType string) bool {
 // isValidPeriod checks if the period is valid
 func isValidPeriod(period string) bool {
 	validPeriods := map[string]bool{
-		"minute": true,
-		"hour":   true,
-		"day":    true,
-		"week":   true,
-		PeriodMonth:  true,
+		"minute":    true,
+		"hour":      true,
+		"day":       true,
+		"week":      true,
+		PeriodMonth: true,
 	}
 	return validPeriods[strings.ToLower(period)]
 }
@@ -478,27 +478,27 @@ func (mb *MetricsBuilder) Build() *Metrics {
 // MetricRecord represents the new reporting table schema with extensive indexing
 // Following Architecture Decisions pattern: METRICS#<type>#<timestamp>
 type MetricRecord struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key pattern: METRICS#<type>#<bucket>
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"` // timestamp ISO format
+	PK string `theorydb:"pk" json:"pk"`
+	SK string `theorydb:"sk" json:"sk"` // timestamp ISO format
 
 	// GSI1: Service-based queries - SERVICE#<name> / TIMESTAMP#<iso>
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk" json:"gsi1_sk"`
 
 	// GSI2: Metric type queries - METRIC_TYPE#<type> / TIMESTAMP#<iso>
-	GSI2PK string `dynamorm:"index:gsi2,pk" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk" json:"gsi2_sk"`
 
 	// GSI3: Date-based queries - DATE#<yyyy-mm-dd> / SERVICE#<name>#<timestamp>
-	GSI3PK string `dynamorm:"index:gsi3,pk" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:gsi3,sk" json:"gsi3_sk"`
+	GSI3PK string `theorydb:"index:gsi3,pk" json:"gsi3_pk"`
+	GSI3SK string `theorydb:"index:gsi3,sk" json:"gsi3_sk"`
 
 	// GSI4: Aggregation queries - AGGREGATION#<level> / TIMESTAMP#<iso>
-	GSI4PK string `dynamorm:"index:gsi4,pk" json:"gsi4_pk"`
-	GSI4SK string `dynamorm:"index:gsi4,sk" json:"gsi4_sk"`
+	GSI4PK string `theorydb:"index:gsi4,pk" json:"gsi4_pk"`
+	GSI4SK string `theorydb:"index:gsi4,sk" json:"gsi4_sk"`
 
 	// Core fields
 	MetricType  string    `json:"metric_type"`
@@ -527,7 +527,7 @@ type MetricRecord struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// TTL for automatic cleanup (data retention per aggregation level)
-	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"` // Unix timestamp
+	TTL int64 `theorydb:"ttl" json:"ttl,omitempty"` // Unix timestamp
 }
 
 // TableName returns the DynamoDB table backing MetricRecord.

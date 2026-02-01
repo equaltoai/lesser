@@ -56,7 +56,6 @@ func (r *ScheduledStatusRepository) GetScheduledStatus(_ context.Context, id str
 	return status, nil
 }
 
-
 // GetScheduledStatuses retrieves scheduled statuses for a user
 func (r *ScheduledStatusRepository) GetScheduledStatuses(_ context.Context, username string, limit int, cursor string) ([]*storage.ScheduledStatus, string, error) {
 	r.mu.RLock()
@@ -125,7 +124,6 @@ func (r *ScheduledStatusRepository) GetDueScheduledStatuses(_ context.Context, b
 	}
 	return due, nil
 }
-
 
 // MarkScheduledStatusPublished marks a scheduled status as published
 func (r *ScheduledStatusRepository) MarkScheduledStatusPublished(_ context.Context, id string) error {

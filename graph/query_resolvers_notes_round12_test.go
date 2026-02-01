@@ -62,4 +62,3 @@ func TestRound12QueryResolvers_Notes_ThreadContext_StorageNil(t *testing.T) {
 	_, err := q.ThreadContext(context.Background(), "status-1")
 	require.Error(t, err)
 }
-

@@ -22,11 +22,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pay-theory/dynamorm"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -689,7 +689,7 @@ func TestInitializeStreaming_SuccessAndErrors(t *testing.T) {
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeLambda }
 	initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("defaults failed") }
 	ensureRepositoryFactoryFn = func() error { return nil }
-	resolveDynamoClientFn = func() dynamormCore.DB { return &dynamorm.LambdaDB{} }
+	resolveDynamoClientFn = func() dynamormCore.DB { return &tabletheory.LambdaDB{} }
 	newUserRepositoryFn = func(dynamormCore.DB, string, *zap.Logger) *repositories.UserRepository { return nil }
 	newStreamingConnectionRepoFn = func(dynamormCore.DB, string, dynamormCore.DB, string, *zap.Logger) streamingConnectionRepository {
 		return &fakeConnectionRepo{}
@@ -708,7 +708,7 @@ func TestInitializeStreaming_SuccessAndErrors(t *testing.T) {
 	resolveDynamoClientFn = func() dynamormCore.DB { return nil }
 	require.Error(t, initializeStreaming())
 
-	resolveDynamoClientFn = func() dynamormCore.DB { return &dynamorm.LambdaDB{} }
+	resolveDynamoClientFn = func() dynamormCore.DB { return &tabletheory.LambdaDB{} }
 	fakeLambda.Config.DynamoTableName = ""
 	require.Error(t, initializeStreaming())
 
@@ -771,7 +771,7 @@ func TestInitializeManualRepositories_SuccessAndErrors(t *testing.T) {
 	logger = nil
 	repos = nil
 
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return &factory.RepositoryFactory{}, nil
 	}
@@ -791,7 +791,7 @@ func TestInitializeManualRepositories_SuccessAndErrors(t *testing.T) {
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return nil, errors.New("client failed") }
 	require.Error(t, initializeManualRepositories())
 
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return nil, errors.New("factory failed")
 	}
@@ -814,7 +814,7 @@ func TestInitializeManualRepositories_RegionResolution(t *testing.T) {
 		newRepositoryFactoryFn = originalNewFactory
 	})
 
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return &factory.RepositoryFactory{}, nil
 	}
@@ -885,7 +885,7 @@ func TestEnsureRepositoryFactory_Branches(t *testing.T) {
 	repos = nil
 	logger = nil
 	cfg = &config.Config{Region: "us-east-2", DynamoTableName: "tbl"}
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return &factory.RepositoryFactory{}, nil
 	}
@@ -901,7 +901,7 @@ func TestResolveDynamoClient_UsesLambdaContextDynamo(t *testing.T) {
 		repos = originalRepos
 	})
 
-	lambdaCtx = &common.LambdaContext{DynamoDB: &dynamorm.LambdaDB{}}
+	lambdaCtx = &common.LambdaContext{DynamoDB: &tabletheory.LambdaDB{}}
 	repos = nil
 	require.NotNil(t, resolveDynamoClient())
 
@@ -918,7 +918,7 @@ func TestResolveDynamoClient_UsesReposDB(t *testing.T) {
 	})
 
 	mockStorage := &testingmocks.MockRepositoryStorage{}
-	db := dynamormCore.DB(&dynamorm.LambdaDB{})
+	db := dynamormCore.DB(&tabletheory.LambdaDB{})
 	mockStorage.On("GetDB").Return(db)
 
 	lambdaCtx = &common.LambdaContext{}
@@ -970,7 +970,7 @@ func TestInitializeStreamingOnStart_InitializesWhenNotUnitTests(t *testing.T) {
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeLambda }
 	initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
 	ensureRepositoryFactoryFn = func() error { return nil }
-	resolveDynamoClientFn = func() dynamormCore.DB { return &dynamorm.LambdaDB{} }
+	resolveDynamoClientFn = func() dynamormCore.DB { return &tabletheory.LambdaDB{} }
 	newUserRepositoryFn = func(dynamormCore.DB, string, *zap.Logger) *repositories.UserRepository { return nil }
 	newStreamingConnectionRepoFn = func(dynamormCore.DB, string, dynamormCore.DB, string, *zap.Logger) streamingConnectionRepository {
 		return &fakeConnectionRepo{}

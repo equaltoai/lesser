@@ -6,24 +6,24 @@ import (
 
 // WebAuthnChallenge represents a temporary challenge for WebAuthn registration/authentication
 type WebAuthnChallenge struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys - MUST match legacy exactly
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // CHALLENGE#challenge
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // WEBAUTHN
+	PK string `theorydb:"pk,attr:PK" json:"-"` // CHALLENGE#challenge
+	SK string `theorydb:"sk,attr:SK" json:"-"` // WEBAUTHN
 
 	// Core fields from legacy storage.WebAuthnChallenge
-	Challenge   string    `dynamorm:"attr:challenge" json:"challenge"`
-	UserID      string    `dynamorm:"attr:userID" json:"user_id"`
-	SessionData []byte    `dynamorm:"attr:sessionData" json:"session_data"` // Serialized session data
-	ExpiresAt   time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`
-	Type        string    `dynamorm:"attr:type" json:"type"` // "registration" or "authentication"
+	Challenge   string    `theorydb:"attr:challenge" json:"challenge"`
+	UserID      string    `theorydb:"attr:userID" json:"user_id"`
+	SessionData []byte    `theorydb:"attr:sessionData" json:"session_data"` // Serialized session data
+	ExpiresAt   time.Time `theorydb:"attr:expiresAt" json:"expires_at"`
+	Type        string    `theorydb:"attr:type" json:"type"` // "registration" or "authentication"
 
 	// Additional fields for DynamoDB
-	ItemType string `dynamorm:"attr:itemType" json:"ItemType"` // "WebAuthnChallenge"
+	ItemType string `theorydb:"attr:itemType" json:"ItemType"` // "WebAuthnChallenge"
 
 	// TTL field for automatic expiration
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
 }
 
 // TableName returns the DynamoDB table name

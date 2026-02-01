@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	invalidateFrontendFn       = invalidateFrontend
-	uploadClientPlaceholderFn  = uploadClientPlaceholder
+	invalidateFrontendFn      = invalidateFrontend
+	uploadClientPlaceholderFn = uploadClientPlaceholder
 )
 
 func (e *upEnv) deployUIAssets(ctx context.Context, receipt *upReceipt) error {

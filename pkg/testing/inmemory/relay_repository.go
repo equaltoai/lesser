@@ -64,7 +64,6 @@ func (r *RelayRepository) GetActiveRelays(_ context.Context) ([]*storage.RelayIn
 	return result, nil
 }
 
-
 // GetAllRelays retrieves all relays with pagination
 func (r *RelayRepository) GetAllRelays(_ context.Context, limit int, cursor string) ([]*storage.RelayInfo, string, error) {
 	r.mu.RLock()

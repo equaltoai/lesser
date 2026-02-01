@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -23,15 +23,15 @@ func TestNotificationCostRepository_CRUDAndQueries_Coverage(t *testing.T) {
 	repo := NewNotificationCostRepository(mockDB, "test-table", logger, nil)
 
 	tracking := &models.NotificationCostTracking{
-		ID:               "track-1",
-		NotificationID:   "notif-1",
-		Username:         "user-1",
-		UserID:           "uid-1",
-		DeliveryMethod:   "push",
-		NotificationType: "mention",
-		Channel:          "default",
-		Success:          true,
-		RetryCount:       1,
+		ID:                      "track-1",
+		NotificationID:          "notif-1",
+		Username:                "user-1",
+		UserID:                  "uid-1",
+		DeliveryMethod:          "push",
+		NotificationType:        "mention",
+		Channel:                 "default",
+		Success:                 true,
+		RetryCount:              1,
 		PushCostMicroCents:      100,
 		WebSocketCostMicroCents: 10,
 		LambdaCostMicroCents:    20,
@@ -40,7 +40,7 @@ func TestNotificationCostRepository_CRUDAndQueries_Coverage(t *testing.T) {
 		ProcessingTimeMs:        10,
 		DeliveryTimeMs:          20,
 		TotalTimeMs:             30,
-		Timestamp:              time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
+		Timestamp:               time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
 	}
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
@@ -102,10 +102,10 @@ func TestNotificationCostRepository_CRUDAndQueries_Coverage(t *testing.T) {
 	mockBudgetCreateQuery.On("Create").Return(nil).Once()
 
 	budget := &models.NotificationBudget{
-		Username:       "user-1",
-		Period:         "daily",
+		Username:        "user-1",
+		Period:          "daily",
 		LimitMicroCents: 10000,
-		Enabled:        true,
+		Enabled:         true,
 	}
 	require.NoError(t, repo.CreateBudget(ctx, budget))
 
@@ -166,38 +166,38 @@ func TestNotificationCostRepository_AggregationAndSummary_Coverage(t *testing.T)
 	windowEnd := windowStart.Add(3 * time.Hour)
 
 	c1 := &models.NotificationCostTracking{
-		ID:               "c1",
-		NotificationID:   "n1",
-		Username:         "user-1",
-		DeliveryMethod:   "push",
-		NotificationType: "mention",
-		Channel:          "default",
-		Success:          true,
-		RetryCount:       1,
-		ProcessingTimeMs: 10,
-		DeliveryTimeMs:   20,
-		TotalTimeMs:      30,
-		TotalCostMicroCents: 1000,
-		PushCostMicroCents:  500,
-		LambdaCostMicroCents: 300,
+		ID:                     "c1",
+		NotificationID:         "n1",
+		Username:               "user-1",
+		DeliveryMethod:         "push",
+		NotificationType:       "mention",
+		Channel:                "default",
+		Success:                true,
+		RetryCount:             1,
+		ProcessingTimeMs:       10,
+		DeliveryTimeMs:         20,
+		TotalTimeMs:            30,
+		TotalCostMicroCents:    1000,
+		PushCostMicroCents:     500,
+		LambdaCostMicroCents:   300,
 		DynamoDBCostMicroCents: 200,
-		Timestamp: windowStart.Add(1 * time.Hour),
+		Timestamp:              windowStart.Add(1 * time.Hour),
 	}
 	c2 := &models.NotificationCostTracking{
-		ID:               "c2",
-		NotificationID:   "n2",
-		Username:         "user-2",
-		DeliveryMethod:   "websocket",
-		NotificationType: "follow",
-		Channel:          "ws",
-		Success:          false,
-		RetryCount:       0,
-		ProcessingTimeMs: 5,
-		DeliveryTimeMs:   10,
-		TotalTimeMs:      15,
-		TotalCostMicroCents: 2000,
+		ID:                      "c2",
+		NotificationID:          "n2",
+		Username:                "user-2",
+		DeliveryMethod:          "websocket",
+		NotificationType:        "follow",
+		Channel:                 "ws",
+		Success:                 false,
+		RetryCount:              0,
+		ProcessingTimeMs:        5,
+		DeliveryTimeMs:          10,
+		TotalTimeMs:             15,
+		TotalCostMicroCents:     2000,
 		WebSocketCostMicroCents: 2000,
-		Timestamp: windowStart.Add(2 * time.Hour),
+		Timestamp:               windowStart.Add(2 * time.Hour),
 	}
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()

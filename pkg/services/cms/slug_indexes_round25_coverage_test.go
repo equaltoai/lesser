@@ -7,10 +7,10 @@ import (
 
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
 func TestCMS_Round25_cmsHostFromURL(t *testing.T) {
@@ -101,4 +101,3 @@ func TestCMS_Round25_cmsDeleteSlugIndex(t *testing.T) {
 		cmsDeleteSlugIndex(ctx, db, "PK#1")
 	})
 }
-

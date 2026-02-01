@@ -24,11 +24,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -122,7 +122,7 @@ func init() {
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
 	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newCostTrackingRepoFn      = func(db dynamormCore.DB, tableName string, logger *zap.Logger) costTrackingStore {
 		return repositories.NewTrackingRepository(db, tableName, logger, nil)
 	}

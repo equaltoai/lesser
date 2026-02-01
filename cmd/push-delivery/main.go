@@ -31,12 +31,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 // Push notification delivery status constants
@@ -85,7 +85,7 @@ func (a repositoryStorageAdapter) Activity() activityRepository {
 
 var (
 	mustInitializeLambdaFn = common.MustInitializeLambda
-	getDynamoClientFn      = dynamorm.GetClient
+	getDynamoClientFn      = theorydb.GetClient
 	newRepositoryFactoryFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (storagecore.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
 	}

@@ -7,21 +7,21 @@ import (
 
 // FeaturedTag represents a featured hashtag for a user
 type FeaturedTag struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key: USER#username
-	PK string `dynamorm:"pk,attr:PK"`
+	PK string `theorydb:"pk,attr:PK"`
 	// Sort key: FEATURED_TAG#id
-	SK string `dynamorm:"sk,attr:SK"`
+	SK string `theorydb:"sk,attr:SK"`
 
 	// Core fields (must match legacy exactly)
-	ID            string    `dynamorm:"attr:id" json:"id"`
-	Username      string    `dynamorm:"attr:username" json:"username"`            // Who featured the tag
-	Name          string    `dynamorm:"attr:name" json:"name"`                    // The tag name (without #)
-	URL           string    `dynamorm:"attr:url" json:"url"`                      // URL to the tag
-	StatusesCount int       `dynamorm:"attr:statusesCount" json:"statuses_count"` // Number of statuses with this tag
-	LastStatusAt  string    `dynamorm:"attr:lastStatusAt" json:"last_status_at"`  // Last time the user posted with this tag
-	CreatedAt     time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ID            string    `theorydb:"attr:id" json:"id"`
+	Username      string    `theorydb:"attr:username" json:"username"`            // Who featured the tag
+	Name          string    `theorydb:"attr:name" json:"name"`                    // The tag name (without #)
+	URL           string    `theorydb:"attr:url" json:"url"`                      // URL to the tag
+	StatusesCount int       `theorydb:"attr:statusesCount" json:"statuses_count"` // Number of statuses with this tag
+	LastStatusAt  string    `theorydb:"attr:lastStatusAt" json:"last_status_at"`  // Last time the user posted with this tag
+	CreatedAt     time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // UpdateKeys sets the PK and SK based on the username and ID

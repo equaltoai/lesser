@@ -75,4 +75,3 @@ func TestRound12QueryAccountsLists_CommunityNotesAndHelpers(t *testing.T) {
 	require.Equal(t, "789", extractStatusIDFromObject("789"))
 	require.Empty(t, extractStatusIDFromObject(""))
 }
-

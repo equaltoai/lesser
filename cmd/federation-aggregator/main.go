@@ -21,11 +21,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -64,8 +64,8 @@ type AggregationEvent struct {
 
 // FederationAggregation represents aggregated federation statistics
 type FederationAggregation struct {
-	PK string `dynamorm:"pk"`
-	SK string `dynamorm:"sk"`
+	PK string `theorydb:"pk"`
+	SK string `theorydb:"sk"`
 
 	Period    string    `json:"period"` // hourly, daily, weekly
 	StartTime time.Time `json:"startTime"`
@@ -203,7 +203,7 @@ func init() {
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
 	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newProcessorFn             = NewFederationAggregatorProcessor
 	lambdaStartFn              = lambda.Start
 )

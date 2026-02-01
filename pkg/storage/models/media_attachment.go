@@ -11,30 +11,30 @@ import (
 // MediaAttachment represents the association between media files and their parent entities (users, scheduled statuses, etc.)
 // This model handles the relationships where media is attached to different types of entities
 type MediaAttachment struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary composite key - flexible to support different entity types
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format varies by entity type
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "MEDIA#{mediaID}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format varies by entity type
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "MEDIA#{mediaID}"
 
 	// Entity identifiers
-	EntityType string `dynamorm:"attr:entityType" json:"entity_type"` // "user", "scheduled_status", etc.
-	EntityID   string `dynamorm:"attr:entityID" json:"entity_id"`     // Username, status ID, etc.
-	MediaID    string `dynamorm:"attr:mediaID" json:"media_id"`       // The attached media ID
+	EntityType string `theorydb:"attr:entityType" json:"entity_type"` // "user", "scheduled_status", etc.
+	EntityID   string `theorydb:"attr:entityID" json:"entity_id"`     // Username, status ID, etc.
+	MediaID    string `theorydb:"attr:mediaID" json:"media_id"`       // The attached media ID
 
 	// Media metadata (denormalized for quick access)
-	MediaType   string `dynamorm:"attr:mediaType" json:"media_type"`     // "image", "video", "audio"
-	ContentType string `dynamorm:"attr:contentType" json:"content_type"` // Full MIME type
-	FileSize    int64  `dynamorm:"attr:fileSize" json:"file_size"`       // Size in bytes
+	MediaType   string `theorydb:"attr:mediaType" json:"media_type"`     // "image", "video", "audio"
+	ContentType string `theorydb:"attr:contentType" json:"content_type"` // Full MIME type
+	FileSize    int64  `theorydb:"attr:fileSize" json:"file_size"`       // Size in bytes
 
 	// Display metadata
-	Description string `dynamorm:"attr:description" json:"description,omitempty"` // Alt text or description
-	FocalPoint  string `dynamorm:"attr:focalPoint" json:"focal_point,omitempty"`  // Focal point for cropping (x,y format)
-	Order       int    `dynamorm:"attr:order" json:"order"`                       // Display order when multiple attachments
+	Description string `theorydb:"attr:description" json:"description,omitempty"` // Alt text or description
+	FocalPoint  string `theorydb:"attr:focalPoint" json:"focal_point,omitempty"`  // Focal point for cropping (x,y format)
+	Order       int    `theorydb:"attr:order" json:"order"`                       // Display order when multiple attachments
 
 	// Timestamps
-	AttachedAt time.Time `dynamorm:"attr:attachedAt" json:"attached_at"`
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	AttachedAt time.Time `theorydb:"attr:attachedAt" json:"attached_at"`
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name

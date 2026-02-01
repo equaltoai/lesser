@@ -20,9 +20,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
-	"github.com/pay-theory/dynamorm"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -425,7 +425,7 @@ func TestNewPushDeliveryProcessor_MainAndRecover(t *testing.T) {
 		Logger: zap.NewNop(),
 	}
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return ctx }
-	getDynamoClientFn = func(context.Context) (dynamormCore.DB, error) { return &dynamorm.DB{}, nil }
+	getDynamoClientFn = func(context.Context) (dynamormCore.DB, error) { return &tabletheory.DB{}, nil }
 	newRepositoryFactoryFn = func(_ dynamormCore.DB, tableName string, _ *zap.Logger) (storagecore.RepositoryStorage, error) {
 		require.Equal(t, "lesser-main", tableName)
 		return mocks.NewMockRepositoryStorage(), nil
@@ -442,7 +442,7 @@ func TestNewPushDeliveryProcessor_MainAndRecover(t *testing.T) {
 	_, err = NewPushDeliveryProcessor()
 	require.Error(t, err)
 
-	getDynamoClientFn = func(context.Context) (dynamormCore.DB, error) { return &dynamorm.DB{}, nil }
+	getDynamoClientFn = func(context.Context) (dynamormCore.DB, error) { return &tabletheory.DB{}, nil }
 	newRepositoryFactoryFn = func(_ dynamormCore.DB, _ string, _ *zap.Logger) (storagecore.RepositoryStorage, error) {
 		return nil, errors.New("boom")
 	}

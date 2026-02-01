@@ -9,9 +9,9 @@ import (
 
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -56,4 +56,3 @@ func TestActorRepository_GetActorPrivateKey_decrypt_error_local_kms_endpoint(t *
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to decrypt private key")
 }
-

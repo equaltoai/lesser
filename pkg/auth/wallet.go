@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -230,7 +230,7 @@ func (s *WalletService) LinkWallet(ctx context.Context, username, address string
 
 	// Check if this wallet is already linked to THIS user (prevent duplicate entries)
 	existingWallets, err := s.repo.GetUserWalletCredentials(ctx, username)
-	if err != nil && !dynamorm.IsNotFound(err) {
+	if err != nil && !theorydb.IsNotFound(err) {
 		s.logger.Error("failed to check user's existing wallets", zap.Error(err), zap.String("username", username))
 		return errors.Join(ErrWalletCheck, err)
 	}

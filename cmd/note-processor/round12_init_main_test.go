@@ -13,10 +13,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 

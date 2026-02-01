@@ -12,8 +12,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -21,11 +21,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
 
 // Constants for common strings
@@ -81,7 +81,7 @@ func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
 	cfg := lambdaCtx.Config
 
 	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+	db, err := theorydb.GetClient(context.Background())
 	if err != nil {
 		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
@@ -162,8 +162,8 @@ func (ap *ActivityProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, r
 func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.DynamoDBEventRecord) error {
 	// Parse the stream record into activity data
 	var activity struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
 		Type      string `json:"type"`
 		Activity  string `json:"activity"`
 		Direction string `json:"direction"`
@@ -223,8 +223,8 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 }
 
 func (ap *ActivityProcessor) processActivityCreated(ctx context.Context, activity struct {
-	PK        string `dynamorm:"pk"`
-	SK        string `dynamorm:"sk"`
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
 	Type      string `json:"type"`
 	Activity  string `json:"activity"`
 	Direction string `json:"direction"`
@@ -251,8 +251,8 @@ func (ap *ActivityProcessor) processActivityCreated(ctx context.Context, activit
 }
 
 func (ap *ActivityProcessor) processActivityUpdated(ctx context.Context, activity struct {
-	PK        string `dynamorm:"pk"`
-	SK        string `dynamorm:"sk"`
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
 	Type      string `json:"type"`
 	Activity  string `json:"activity"`
 	Direction string `json:"direction"`
@@ -272,8 +272,8 @@ func (ap *ActivityProcessor) processActivityUpdated(ctx context.Context, activit
 }
 
 func (ap *ActivityProcessor) processActivityDeleted(ctx context.Context, activity struct {
-	PK        string `dynamorm:"pk"`
-	SK        string `dynamorm:"sk"`
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
 	Type      string `json:"type"`
 	Activity  string `json:"activity"`
 	Direction string `json:"direction"`
@@ -331,8 +331,8 @@ func (ap *ActivityProcessor) processActivityDeleted(ctx context.Context, activit
 }
 
 func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity struct {
-	PK        string `dynamorm:"pk"`
-	SK        string `dynamorm:"sk"`
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
 	Type      string `json:"type"`
 	Activity  string `json:"activity"`
 	Direction string `json:"direction"`
@@ -349,15 +349,15 @@ func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity 
 
 	// Create inbox processing record
 	inboxRecord := struct {
-		PK          string `dynamorm:"pk"`
-		SK          string `dynamorm:"sk"`
+		PK          string `theorydb:"pk"`
+		SK          string `theorydb:"sk"`
 		Type        string `json:"type"`
 		ActivityPK  string `json:"activity_pk"`
 		Username    string `json:"username"`
 		ActorID     string `json:"actor_id"`
 		ProcessedAt string `json:"processed_at"`
 		Status      string `json:"status"`
-		TTL         int64  `dynamorm:"ttl"`
+		TTL         int64  `theorydb:"ttl"`
 	}{
 		PK:          fmt.Sprintf("INBOX#%s", activity.Username),
 		SK:          fmt.Sprintf("PROCESSED#%s", activity.PK),
@@ -374,8 +374,8 @@ func (ap *ActivityProcessor) processInboxActivity(ctx context.Context, activity 
 }
 
 func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity struct {
-	PK        string `dynamorm:"pk"`
-	SK        string `dynamorm:"sk"`
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
 	Type      string `json:"type"`
 	Activity  string `json:"activity"`
 	Direction string `json:"direction"`
@@ -414,15 +414,15 @@ func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity
 
 	// Create outbox processing record
 	outboxRecord := struct {
-		PK          string `dynamorm:"pk"`
-		SK          string `dynamorm:"sk"`
+		PK          string `theorydb:"pk"`
+		SK          string `theorydb:"sk"`
 		Type        string `json:"type"`
 		ActivityPK  string `json:"activity_pk"`
 		Username    string `json:"username"`
 		ActorID     string `json:"actor_id"`
 		ProcessedAt string `json:"processed_at"`
 		Status      string `json:"status"`
-		TTL         int64  `dynamorm:"ttl"`
+		TTL         int64  `theorydb:"ttl"`
 	}{
 		PK:          fmt.Sprintf("OUTBOX#%s", activity.Username),
 		SK:          fmt.Sprintf("PROCESSED#%s", activity.PK),
@@ -439,8 +439,8 @@ func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity
 }
 
 func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity struct {
-	PK        string `dynamorm:"pk"`
-	SK        string `dynamorm:"sk"`
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
 	Type      string `json:"type"`
 	Activity  string `json:"activity"`
 	Direction string `json:"direction"`
@@ -451,14 +451,14 @@ func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity
 ) error {
 	// Update activity metrics for analytics
 	metricsRecord := struct {
-		PK         string `dynamorm:"pk"`
-		SK         string `dynamorm:"sk"`
+		PK         string `theorydb:"pk"`
+		SK         string `theorydb:"sk"`
 		Type       string `json:"type"`
 		ActivityPK string `json:"activity_pk"`
 		Direction  string `json:"direction"`
 		Username   string `json:"username"`
 		UpdatedAt  string `json:"updated_at"`
-		TTL        int64  `dynamorm:"ttl"`
+		TTL        int64  `theorydb:"ttl"`
 	}{
 		PK:         fmt.Sprintf("METRICS#ACTIVITY#%s", activity.Direction),
 		SK:         fmt.Sprintf("UPDATE#%s", activity.PK),
@@ -474,8 +474,8 @@ func (ap *ActivityProcessor) updateActivityMetrics(ctx context.Context, activity
 }
 
 func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, activity struct {
-	PK        string `dynamorm:"pk"`
-	SK        string `dynamorm:"sk"`
+	PK        string `theorydb:"pk"`
+	SK        string `theorydb:"sk"`
 	Type      string `json:"type"`
 	Activity  string `json:"activity"`
 	Direction string `json:"direction"`
@@ -486,14 +486,14 @@ func (ap *ActivityProcessor) cleanupActivityReferences(ctx context.Context, acti
 ) error {
 	// Create cleanup record for deleted activities
 	cleanupRecord := struct {
-		PK         string `dynamorm:"pk"`
-		SK         string `dynamorm:"sk"`
+		PK         string `theorydb:"pk"`
+		SK         string `theorydb:"sk"`
 		Type       string `json:"type"`
 		ActivityPK string `json:"activity_pk"`
 		Direction  string `json:"direction"`
 		Username   string `json:"username"`
 		DeletedAt  string `json:"deleted_at"`
-		TTL        int64  `dynamorm:"ttl"`
+		TTL        int64  `theorydb:"ttl"`
 	}{
 		PK:         "CLEANUP#ACTIVITY",
 		SK:         fmt.Sprintf("DELETED#%s", activity.PK),
@@ -1819,15 +1819,15 @@ func (ap *ActivityProcessor) sendToDeadLetterQueue(ctx context.Context, record e
 	now := time.Now()
 
 	dlqRecord := struct {
-		PK             string `dynamorm:"pk"`
-		SK             string `dynamorm:"sk"`
+		PK             string `theorydb:"pk"`
+		SK             string `theorydb:"sk"`
 		Type           string `json:"type"`
 		EventID        string `json:"event_id"`
 		EventName      string `json:"event_name"`
 		Reason         string `json:"reason"`
 		OriginalRecord string `json:"original_record"`
 		CreatedAt      string `json:"created_at"`
-		TTL            int64  `dynamorm:"ttl"`
+		TTL            int64  `theorydb:"ttl"`
 	}{
 		PK:        "DLQ#ACTIVITY_PROCESSOR",
 		SK:        fmt.Sprintf("RECORD#%s#%d", record.EventID, now.UnixNano()),
@@ -2164,14 +2164,14 @@ func (ap *ActivityProcessor) createTombstone(ctx context.Context, objectID, acto
 	now := time.Now()
 
 	tombstone := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
 		Type      string `json:"type"`
 		ObjectID  string `json:"object_id"`
 		ActorID   string `json:"actor_id"`
 		Reason    string `json:"reason"`
 		DeletedAt string `json:"deleted_at"`
-		TTL       int64  `dynamorm:"ttl"`
+		TTL       int64  `theorydb:"ttl"`
 	}{
 		PK:        fmt.Sprintf("TOMBSTONE#%s", objectID),
 		SK:        "METADATA",

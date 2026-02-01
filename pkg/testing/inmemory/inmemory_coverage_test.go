@@ -22,9 +22,9 @@ func TestInMemoryImplementationCoverage(t *testing.T) {
 	// 8.5 NotificationRepository, 8.6 RelationshipRepository, 8.7 ObjectRepository,
 	// 8.8 ActivityRepository, 8.9 TrustRepository, 8.10 ModerationRepository
 	phase2Repositories := []struct {
-		name           string
-		interfaceType  reflect.Type
-		inMemoryType   reflect.Type
+		name          string
+		interfaceType reflect.Type
+		inMemoryType  reflect.Type
 	}{
 		{
 			name:          "AccountRepository",

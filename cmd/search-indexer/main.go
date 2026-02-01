@@ -11,18 +11,18 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
 
 type searchCostRecorder interface {
@@ -77,7 +77,7 @@ func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bo
 
 	// Check if this is indexable content
 	var item struct {
-		PK      string `dynamorm:"pk"`
+		PK      string `theorydb:"pk"`
 		Type    string `json:"type"`
 		Content string `json:"content"`
 	}
@@ -169,8 +169,8 @@ type IndexableContent struct {
 
 func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventRecord) (*IndexableContent, error) {
 	var item struct {
-		PK          string   `dynamorm:"pk"`
-		SK          string   `dynamorm:"sk"`
+		PK          string   `theorydb:"pk"`
+		SK          string   `theorydb:"sk"`
 		Type        string   `json:"type"`
 		Content     string   `json:"content"`
 		Summary     string   `json:"summary"`
@@ -244,8 +244,8 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *IndexableContent) error {
 	// Create search index record with full-text search capabilities
 	searchRecord := struct {
-		PK          string   `dynamorm:"pk"`
-		SK          string   `dynamorm:"sk"`
+		PK          string   `theorydb:"pk"`
+		SK          string   `theorydb:"sk"`
 		Type        string   `json:"type"`
 		ContentID   string   `json:"content_id"`
 		ContentType string   `json:"content_type"`
@@ -257,7 +257,7 @@ func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *Indexab
 		WordCount   int      `json:"word_count"`
 		CreatedAt   string   `json:"created_at"`
 		IndexedAt   string   `json:"indexed_at"`
-		TTL         int64    `dynamorm:"ttl"`
+		TTL         int64    `theorydb:"ttl"`
 	}{
 		PK:          fmt.Sprintf("SEARCH#%s", content.Type),
 		SK:          fmt.Sprintf("CONTENT#%s#%s", content.CreatedAt.Format(common.DateFormat), content.ID),
@@ -295,13 +295,13 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 	// Create actor-specific index for searching user's content
 	if content.ActorID != "" {
 		actorIndex := struct {
-			PK        string `dynamorm:"pk"`
-			SK        string `dynamorm:"sk"`
+			PK        string `theorydb:"pk"`
+			SK        string `theorydb:"sk"`
 			Type      string `json:"type"`
 			ContentID string `json:"content_id"`
 			Text      string `json:"text"`
 			CreatedAt string `json:"created_at"`
-			TTL       int64  `dynamorm:"ttl"`
+			TTL       int64  `theorydb:"ttl"`
 		}{
 			PK:        fmt.Sprintf("SEARCH#ACTOR#%s", content.ActorID),
 			SK:        fmt.Sprintf("CONTENT#%s", content.ID),
@@ -321,14 +321,14 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *I
 	for _, tag := range content.Tags {
 		if tag != "" {
 			tagIndex := struct {
-				PK        string `dynamorm:"pk"`
-				SK        string `dynamorm:"sk"`
+				PK        string `theorydb:"pk"`
+				SK        string `theorydb:"sk"`
 				Type      string `json:"type"`
 				Tag       string `json:"tag"`
 				ContentID string `json:"content_id"`
 				ActorID   string `json:"actor_id"`
 				CreatedAt string `json:"created_at"`
-				TTL       int64  `dynamorm:"ttl"`
+				TTL       int64  `theorydb:"ttl"`
 			}{
 				PK:        fmt.Sprintf("SEARCH#TAG#%s", strings.ToLower(tag)),
 				SK:        fmt.Sprintf("CONTENT#%s", content.ID),
@@ -416,7 +416,7 @@ var (
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	lambdaStartFn              = lambda.Start
 	unmarshalItemFn            = stream.UnmarshalItem
 	runAsyncFn                 = func(fn func()) { go fn() }

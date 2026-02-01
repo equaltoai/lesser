@@ -132,4 +132,3 @@ func TestMediaAnalytics_GetCostEfficiencyMetrics(t *testing.T) {
 	assert.Contains(t, metrics, "720p_h264_1000")
 	assert.Contains(t, metrics, "overall")
 }
-

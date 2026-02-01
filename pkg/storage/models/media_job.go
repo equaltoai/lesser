@@ -13,63 +13,63 @@ import (
 
 // MediaJob represents a media processing job in the system
 type MediaJob struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using job ID
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "JOB#{jobID}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "JOB#{jobID}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "JOB#{jobID}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "JOB#{jobID}"
 
 	// GSI1 - User jobs lookup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_JOBS#{userID}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{jobID}"
 
 	// GSI2 - Status-based queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STATUS#{status}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STATUS#{status}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "UPDATED#{updated_at}"
 
 	// Core job data
-	JobID           string         `dynamorm:"attr:jobID" json:"job_id"`
-	MediaID         string         `dynamorm:"attr:mediaID" json:"media_id"`
-	Username        string         `dynamorm:"attr:username" json:"username"`
-	Status          string         `dynamorm:"attr:status" json:"status"` // pending, processing, completed, failed, cancelled
-	ProcessingTasks []string       `dynamorm:"attr:processingTasks" json:"processing_tasks"`
-	S3Key           string         `dynamorm:"attr:s3Key" json:"s3_key"`
-	MimeType        string         `dynamorm:"attr:mimeType" json:"mime_type"`
-	Results         map[string]any `dynamorm:"attr:results" json:"results,omitempty"`
-	Error           string         `dynamorm:"attr:error" json:"error,omitempty"`
+	JobID           string         `theorydb:"attr:jobID" json:"job_id"`
+	MediaID         string         `theorydb:"attr:mediaID" json:"media_id"`
+	Username        string         `theorydb:"attr:username" json:"username"`
+	Status          string         `theorydb:"attr:status" json:"status"` // pending, processing, completed, failed, cancelled
+	ProcessingTasks []string       `theorydb:"attr:processingTasks" json:"processing_tasks"`
+	S3Key           string         `theorydb:"attr:s3Key" json:"s3_key"`
+	MimeType        string         `theorydb:"attr:mimeType" json:"mime_type"`
+	Results         map[string]any `theorydb:"attr:results" json:"results,omitempty"`
+	Error           string         `theorydb:"attr:error" json:"error,omitempty"`
 
 	// Idempotency and duplicate prevention
-	IdempotencyKey string `dynamorm:"attr:idempotencyKey" json:"idempotency_key"` // Hash of user_id + file_hash + timestamp
-	FileHash       string `dynamorm:"attr:fileHash" json:"file_hash"`             // SHA256 hash of file contents
-	FileSize       int64  `dynamorm:"attr:fileSize" json:"file_size"`             // File size in bytes
+	IdempotencyKey string `theorydb:"attr:idempotencyKey" json:"idempotency_key"` // Hash of user_id + file_hash + timestamp
+	FileHash       string `theorydb:"attr:fileHash" json:"file_hash"`             // SHA256 hash of file contents
+	FileSize       int64  `theorydb:"attr:fileSize" json:"file_size"`             // File size in bytes
 
 	// Processing state tracking
-	StartedAt     *time.Time `dynamorm:"attr:startedAt" json:"started_at,omitempty"`          // When processing actually began
-	CompletedAt   *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"`      // When processing completed
-	LastAttemptAt *time.Time `dynamorm:"attr:lastAttemptAt" json:"last_attempt_at,omitempty"` // Last retry attempt
-	Progress      int        `dynamorm:"attr:progress" json:"progress"`                       // Progress percentage (0-100)
+	StartedAt     *time.Time `theorydb:"attr:startedAt" json:"started_at,omitempty"`          // When processing actually began
+	CompletedAt   *time.Time `theorydb:"attr:completedAt" json:"completed_at,omitempty"`      // When processing completed
+	LastAttemptAt *time.Time `theorydb:"attr:lastAttemptAt" json:"last_attempt_at,omitempty"` // Last retry attempt
+	Progress      int        `theorydb:"attr:progress" json:"progress"`                       // Progress percentage (0-100)
 
 	// Retry logic
-	RetryCount       int        `dynamorm:"attr:retryCount" json:"retry_count"`                        // Number of retries attempted
-	MaxRetries       int        `dynamorm:"attr:maxRetries" json:"max_retries"`                        // Maximum retries allowed
-	LastError        string     `dynamorm:"attr:lastError" json:"last_error,omitempty"`                // Last error encountered
-	RetryScheduledAt *time.Time `dynamorm:"attr:retryScheduledAt" json:"retry_scheduled_at,omitempty"` // When next retry is scheduled
+	RetryCount       int        `theorydb:"attr:retryCount" json:"retry_count"`                        // Number of retries attempted
+	MaxRetries       int        `theorydb:"attr:maxRetries" json:"max_retries"`                        // Maximum retries allowed
+	LastError        string     `theorydb:"attr:lastError" json:"last_error,omitempty"`                // Last error encountered
+	RetryScheduledAt *time.Time `theorydb:"attr:retryScheduledAt" json:"retry_scheduled_at,omitempty"` // When next retry is scheduled
 
 	// Budget and timeout enforcement
-	EstimatedCostMicros int64         `dynamorm:"attr:estimatedCostMicros" json:"estimated_cost_micros"`           // Estimated processing cost
-	ActualCostMicros    int64         `dynamorm:"attr:actualCostMicros" json:"actual_cost_micros"`                 // Actual cost incurred
-	MaxProcessingTime   time.Duration `dynamorm:"attr:maxProcessingTime" json:"max_processing_time"`               // Maximum allowed processing time
-	ProcessingStartedAt *time.Time    `dynamorm:"attr:processingStartedAt" json:"processing_started_at,omitempty"` // When current processing attempt started
+	EstimatedCostMicros int64         `theorydb:"attr:estimatedCostMicros" json:"estimated_cost_micros"`           // Estimated processing cost
+	ActualCostMicros    int64         `theorydb:"attr:actualCostMicros" json:"actual_cost_micros"`                 // Actual cost incurred
+	MaxProcessingTime   time.Duration `theorydb:"attr:maxProcessingTime" json:"max_processing_time"`               // Maximum allowed processing time
+	ProcessingStartedAt *time.Time    `theorydb:"attr:processingStartedAt" json:"processing_started_at,omitempty"` // When current processing attempt started
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for abandoned jobs (24 hours)
-	ExpiresAt *int64 `dynamorm:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt *int64 `theorydb:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
-	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
+	ModelVersion int `theorydb:"version,attr:modelVersion" json:"model_version"`
 }
 
 // TableName returns the DynamoDB table name for the MediaJob model

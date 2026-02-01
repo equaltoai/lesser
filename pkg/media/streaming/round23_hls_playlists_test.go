@@ -16,11 +16,11 @@ func TestHLSGenerator_PlaylistsAndValidation(t *testing.T) {
 	}
 
 	metadataFromStorage := &MediaMetadata{
-		MediaID:     "m1",
-		Status:      StatusComplete,
-		VideoCodec:  "avc1.640028",
-		AudioCodec:  "mp4a.40.2",
-		VideoProfile:"High",
+		MediaID:      "m1",
+		Status:       StatusComplete,
+		VideoCodec:   "avc1.640028",
+		AudioCodec:   "mp4a.40.2",
+		VideoProfile: "High",
 		QualitySettings: map[Quality]QualityCodecInfo{
 			Quality720p: {
 				VideoCodec: "avc1.64001f",
@@ -227,4 +227,3 @@ func TestHLSGenerator_ManifestCacheDurations(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, cfg.ManifestCacheTTL, manifest.CacheDuration)
 }
-

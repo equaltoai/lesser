@@ -30,4 +30,3 @@ func TestRound12QueryResolvers_InstanceParity_Basics(t *testing.T) {
 	_, err = q.TranslationLanguages(context.Background())
 	require.Error(t, err)
 }
-

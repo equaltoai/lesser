@@ -55,7 +55,6 @@ func (m *MockNotificationRepository) DeleteNotification(ctx context.Context, not
 	return args.Error(0)
 }
 
-
 // User notification queries
 
 // GetUserNotifications mocks the GetUserNotifications method
@@ -134,7 +133,6 @@ func (m *MockNotificationRepository) GetPendingPushNotifications(ctx context.Con
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Notification]), args.Error(1)
 }
 
-
 // Notification grouping and consolidation
 
 // GetNotificationGroups mocks the GetNotificationGroups method
@@ -194,7 +192,6 @@ func (m *MockNotificationRepository) DeleteExpiredNotifications(ctx context.Cont
 	args := m.Called(ctx, expiredBefore)
 	return args.Get(0).(int64), args.Error(1)
 }
-
 
 // Filtered and advanced queries
 

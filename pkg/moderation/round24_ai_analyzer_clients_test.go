@@ -199,10 +199,10 @@ func TestAIAnalyzer_AnalyzeText_Success(t *testing.T) {
 func TestAIAnalyzer_AnalyzeText_IgnoresServiceErrors(t *testing.T) {
 	ai := &AIAnalyzer{
 		comprehend: &fakeComprehendClient{
-			sentimentErr: errors.New("sentiment boom"),
-			entitiesErr:  errors.New("entities boom"),
+			sentimentErr:  errors.New("sentiment boom"),
+			entitiesErr:   errors.New("entities boom"),
 			keyPhrasesErr: errors.New("phrases boom"),
-			piiErr:       errors.New("pii boom"),
+			piiErr:        errors.New("pii boom"),
 		},
 	}
 
@@ -285,4 +285,3 @@ func TestAIAnalyzer_AnalyzeImage_TextDetectionErrorIsIgnored(t *testing.T) {
 	require.NotNil(t, analysis)
 	assert.Nil(t, analysis.TextAnalysis)
 }
-

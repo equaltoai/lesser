@@ -192,4 +192,3 @@ func TestAuthorizedFetchService_fetchActorWithoutAuth_ErrorBranches(t *testing.T
 		require.Error(t, err)
 	})
 }
-

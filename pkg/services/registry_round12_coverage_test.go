@@ -17,11 +17,11 @@ func TestRegistry_ConfigHelpersAndBuckets(t *testing.T) {
 		BaseURL:   "https://example.com",
 		JWTSecret: "test-secret",
 		Config: &pkgconfig.Config{
-			S3BucketName:           "main-bucket",
-			MediaSourceBucketName:  "source-bucket",
+			S3BucketName:             "main-bucket",
+			MediaSourceBucketName:    "source-bucket",
 			MediaStreamingBucketName: "streaming-bucket",
-			CloudFrontDomain:       "cdn.example.com",
-			ManifestTTLHours:       12,
+			CloudFrontDomain:         "cdn.example.com",
+			ManifestTTLHours:         12,
 		},
 	}
 
@@ -103,4 +103,3 @@ func TestRegistry_DomainServices_WithMissingRepos(t *testing.T) {
 	assert.NotContains(t, initialized, "StreamingAnalytics")
 	assert.NotContains(t, initialized, "ModerationML")
 }
-

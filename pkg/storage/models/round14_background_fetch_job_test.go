@@ -126,4 +126,3 @@ func TestBackgroundFetchJob_LifecycleAndRetryLogic(t *testing.T) {
 		assert.Equal(t, "v2", job.FetchMetadata["k2"])
 	})
 }
-

@@ -7,66 +7,66 @@ import (
 
 // AuthAuditLog represents an authentication audit log entry in DynamoDB
 type AuthAuditLog struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Core fields
-	ID        string    `dynamorm:"attr:id" json:"id"`
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	EventType string    `dynamorm:"attr:eventType" json:"event_type"`
-	Severity  string    `dynamorm:"attr:severity" json:"severity"`
+	ID        string    `theorydb:"attr:id" json:"id"`
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	EventType string    `theorydb:"attr:eventType" json:"event_type"`
+	Severity  string    `theorydb:"attr:severity" json:"severity"`
 
 	// User information
-	Username   string `dynamorm:"attr:username" json:"username,omitempty"`
-	UserID     string `dynamorm:"attr:userID" json:"user_id,omitempty"`
-	IPAddress  string `dynamorm:"attr:ipAddress" json:"ip_address"`
-	UserAgent  string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
-	DeviceName string `dynamorm:"attr:deviceName" json:"device_name,omitempty"`
+	Username   string `theorydb:"attr:username" json:"username,omitempty"`
+	UserID     string `theorydb:"attr:userID" json:"user_id,omitempty"`
+	IPAddress  string `theorydb:"attr:ipAddress" json:"ip_address"`
+	UserAgent  string `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
+	DeviceName string `theorydb:"attr:deviceName" json:"device_name,omitempty"`
 
 	// Session information
-	SessionID string `dynamorm:"attr:sessionID" json:"session_id,omitempty"`
-	RequestID string `dynamorm:"attr:requestID" json:"request_id,omitempty"`
+	SessionID string `theorydb:"attr:sessionID" json:"session_id,omitempty"`
+	RequestID string `theorydb:"attr:requestID" json:"request_id,omitempty"`
 
 	// Result information
-	Success       bool   `dynamorm:"attr:success" json:"success"`
-	FailureReason string `dynamorm:"attr:failureReason" json:"failure_reason,omitempty"`
+	Success       bool   `theorydb:"attr:success" json:"success"`
+	FailureReason string `theorydb:"attr:failureReason" json:"failure_reason,omitempty"`
 
 	// Geographic information
-	Country   string  `dynamorm:"attr:country" json:"country,omitempty"`
-	City      string  `dynamorm:"attr:city" json:"city,omitempty"`
-	Region    string  `dynamorm:"attr:region" json:"region,omitempty"`
-	Latitude  float64 `dynamorm:"attr:latitude" json:"latitude,omitempty"`
-	Longitude float64 `dynamorm:"attr:longitude" json:"longitude,omitempty"`
+	Country   string  `theorydb:"attr:country" json:"country,omitempty"`
+	City      string  `theorydb:"attr:city" json:"city,omitempty"`
+	Region    string  `theorydb:"attr:region" json:"region,omitempty"`
+	Latitude  float64 `theorydb:"attr:latitude" json:"latitude,omitempty"`
+	Longitude float64 `theorydb:"attr:longitude" json:"longitude,omitempty"`
 
 	// Risk assessment
-	RiskScore float64  `dynamorm:"attr:riskScore" json:"risk_score,omitempty"`
-	RiskFlags []string `dynamorm:"attr:riskFlags" json:"risk_flags,omitempty"`
+	RiskScore float64  `theorydb:"attr:riskScore" json:"risk_score,omitempty"`
+	RiskFlags []string `theorydb:"attr:riskFlags" json:"risk_flags,omitempty"`
 
 	// Additional metadata (stored as JSON string)
-	Metadata string `dynamorm:"attr:metadata" json:"metadata,omitempty"`
+	Metadata string `theorydb:"attr:metadata" json:"metadata,omitempty"`
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"attr:gsi1PK" json:"-"` // USER#username
-	GSI1SK string `dynamorm:"attr:gsi1SK" json:"-"` // AUDIT#timestamp
-	GSI2PK string `dynamorm:"attr:gsi2PK" json:"-"` // IP#address
-	GSI2SK string `dynamorm:"attr:gsi2SK" json:"-"` // AUDIT#timestamp
-	GSI3PK string `dynamorm:"attr:gsi3PK" json:"-"` // SESSION#id
-	GSI3SK string `dynamorm:"attr:gsi3SK" json:"-"` // AUDIT#timestamp
-	GSI4PK string `dynamorm:"attr:gsi4PK" json:"-"` // SEVERITY#level
-	GSI4SK string `dynamorm:"attr:gsi4SK" json:"-"` // AUDIT#timestamp
+	GSI1PK string `theorydb:"attr:gsi1PK" json:"-"` // USER#username
+	GSI1SK string `theorydb:"attr:gsi1SK" json:"-"` // AUDIT#timestamp
+	GSI2PK string `theorydb:"attr:gsi2PK" json:"-"` // IP#address
+	GSI2SK string `theorydb:"attr:gsi2SK" json:"-"` // AUDIT#timestamp
+	GSI3PK string `theorydb:"attr:gsi3PK" json:"-"` // SESSION#id
+	GSI3SK string `theorydb:"attr:gsi3SK" json:"-"` // AUDIT#timestamp
+	GSI4PK string `theorydb:"attr:gsi4PK" json:"-"` // SEVERITY#level
+	GSI4SK string `theorydb:"attr:gsi4SK" json:"-"` // AUDIT#timestamp
 
 	// TTL for automatic deletion
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
 
 	// Compliance fields
-	DataRetentionDays int      `dynamorm:"attr:dataRetentionDays" json:"data_retention_days,omitempty"`
-	ComplianceFlags   []string `dynamorm:"attr:complianceFlags" json:"compliance_flags,omitempty"`
+	DataRetentionDays int      `theorydb:"attr:dataRetentionDays" json:"data_retention_days,omitempty"`
+	ComplianceFlags   []string `theorydb:"attr:complianceFlags" json:"compliance_flags,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table backing AuthAuditLog.

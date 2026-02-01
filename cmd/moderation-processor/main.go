@@ -13,8 +13,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -26,9 +26,9 @@ import (
 	notifsvc "github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 // Severity string constants
@@ -48,7 +48,7 @@ var (
 	runningUnitTests         = common.RunningUnitTests
 	lambdaStart              = lambda.Start
 	mustInitializeLambda     = common.MustInitializeLambda
-	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClient = theorydb.NewLambdaOptimizedClient
 	initializeWithDefaults   = (*common.LambdaContext).InitializeWithDefaults
 	lambdaCtx                *common.LambdaContext
 	db                       core.DB

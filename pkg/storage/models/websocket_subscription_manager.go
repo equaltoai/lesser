@@ -7,24 +7,24 @@ import (
 
 // WebSocketEventConnection represents a WebSocket connection for event subscriptions
 type WebSocketEventConnection struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB Keys - preserving legacy patterns
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // CONNECTION#{connectionID}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // METADATA
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // CONNECTION#{connectionID}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // METADATA
 
 	// GSI keys for querying by user
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
 
 	// Business fields
-	ConnectionID string    `dynamorm:"attr:connectionID" json:"connection_id"`
-	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
-	ConnectedAt  time.Time `dynamorm:"attr:connectedAt" json:"connected_at"`
-	LastSeen     time.Time `dynamorm:"attr:lastSeen" json:"last_seen"`
+	ConnectionID string    `theorydb:"attr:connectionID" json:"connection_id"`
+	UserID       string    `theorydb:"attr:userID" json:"user_id"`
+	ConnectedAt  time.Time `theorydb:"attr:connectedAt" json:"connected_at"`
+	LastSeen     time.Time `theorydb:"attr:lastSeen" json:"last_seen"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing WebSocketEventConnection.
@@ -58,24 +58,24 @@ func (w *WebSocketEventConnection) GetSK() string {
 
 // WebSocketEventSubscription represents a subscription to events
 type WebSocketEventSubscription struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB Keys - preserving legacy patterns
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // CONNECTION#{connectionID}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // SUBSCRIPTION#{subscriptionType}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // CONNECTION#{connectionID}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // SUBSCRIPTION#{subscriptionType}
 
 	// GSI keys for querying by subscription type
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // SUBSCRIPTION#{subscriptionType}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // SUBSCRIPTION#{subscriptionType}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONNECTION#{connectionID}
 
 	// Business fields
-	ConnectionID     string         `dynamorm:"attr:connectionID" json:"connection_id"`
-	SubscriptionType string         `dynamorm:"attr:subscriptionType" json:"subscription_type"`
-	Filter           map[string]any `dynamorm:"attr:filter" json:"filter"`
-	CreatedAt        time.Time      `dynamorm:"attr:createdAt" json:"created_at"`
+	ConnectionID     string         `theorydb:"attr:connectionID" json:"connection_id"`
+	SubscriptionType string         `theorydb:"attr:subscriptionType" json:"subscription_type"`
+	Filter           map[string]any `theorydb:"attr:filter" json:"filter"`
+	CreatedAt        time.Time      `theorydb:"attr:createdAt" json:"created_at"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing WebSocketEventSubscription.

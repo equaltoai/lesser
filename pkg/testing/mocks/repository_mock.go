@@ -4,23 +4,23 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 // MockUserRepository mocks the UserRepository interface
 type MockUserRepository struct {
 	mock.Mock
-	*dynamorm.BaseRepository
+	*theorydb.BaseRepository
 }
 
 // NewMockUserRepository creates a new mock user repository
 func NewMockUserRepository() *MockUserRepository {
 	mockDB := new(mocks.MockDB)
 	return &MockUserRepository{
-		BaseRepository: dynamorm.NewBaseRepository(mockDB, "test-table"),
+		BaseRepository: theorydb.NewBaseRepository(mockDB, "test-table"),
 	}
 }
 
@@ -63,14 +63,14 @@ func (m *MockUserRepository) Delete(ctx context.Context, userID string) error {
 // MockStatusRepository mocks the StatusRepository interface
 type MockStatusRepository struct {
 	mock.Mock
-	*dynamorm.BaseRepository
+	*theorydb.BaseRepository
 }
 
 // NewMockStatusRepository creates a new mock status repository
 func NewMockStatusRepository() *MockStatusRepository {
 	mockDB := new(mocks.MockDB)
 	return &MockStatusRepository{
-		BaseRepository: dynamorm.NewBaseRepository(mockDB, "test-table"),
+		BaseRepository: theorydb.NewBaseRepository(mockDB, "test-table"),
 	}
 }
 
@@ -113,14 +113,14 @@ func (m *MockStatusRepository) Delete(ctx context.Context, statusID string) erro
 // MockTimelineRepository mocks the TimelineRepository interface
 type MockTimelineRepository struct {
 	mock.Mock
-	*dynamorm.BaseRepository
+	*theorydb.BaseRepository
 }
 
 // NewMockTimelineRepository creates a new mock timeline repository
 func NewMockTimelineRepository() *MockTimelineRepository {
 	mockDB := new(mocks.MockDB)
 	return &MockTimelineRepository{
-		BaseRepository: dynamorm.NewBaseRepository(mockDB, "test-table"),
+		BaseRepository: theorydb.NewBaseRepository(mockDB, "test-table"),
 	}
 }
 

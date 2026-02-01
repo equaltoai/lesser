@@ -6,8 +6,8 @@ import (
 
 	repoerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
 func TestErrorUtils_Coverage(t *testing.T) {

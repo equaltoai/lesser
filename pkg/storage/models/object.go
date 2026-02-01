@@ -8,53 +8,53 @@ import (
 // Object represents a generic ActivityPub object in DynamoDB
 // This is used for storing various object types (Note, Article, etc.)
 type Object struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - object by ID
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "object#{id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "object#{id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "object#{id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "object#{id}"
 
 	// GSI1 - by actor
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "actor#{actor_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "object#{published}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "actor#{actor_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "object#{published}#{id}"
 
 	// GSI2 - by type
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "object#type#{type}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{published}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "object#type#{type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{published}#{id}"
 
 	// GSI6 - for replies (used when InReplyTo is set)
-	GSI6PK string `dynamorm:"index:gsi6,pk,attr:gsi6PK" json:"gsi6_pk,omitempty"` // Format: "REPLIES#{parent_object_id}"
-	GSI6SK string `dynamorm:"index:gsi6,sk,attr:gsi6SK" json:"gsi6_sk,omitempty"` // Format: "{timestamp}#{id}"
+	GSI6PK string `theorydb:"index:gsi6,pk,attr:gsi6PK" json:"gsi6_pk,omitempty"` // Format: "REPLIES#{parent_object_id}"
+	GSI6SK string `theorydb:"index:gsi6,sk,attr:gsi6SK" json:"gsi6_sk,omitempty"` // Format: "{timestamp}#{id}"
 
 	// Object data - stored as JSON
-	ID           string    `dynamorm:"attr:id" json:"id"`
-	Type         string    `dynamorm:"attr:type" json:"type"`
-	AttributedTo string    `dynamorm:"attr:attributedTo" json:"attributed_to,omitempty"`
-	Content      string    `dynamorm:"attr:content" json:"content,omitempty"`
-	Name         string    `dynamorm:"attr:name" json:"name,omitempty"`
-	Summary      string    `dynamorm:"attr:summary" json:"summary,omitempty"`
-	URL          string    `dynamorm:"attr:url" json:"url,omitempty"`
-	Published    time.Time `dynamorm:"attr:published" json:"published"`
-	Updated      time.Time `dynamorm:"attr:updated" json:"updated"`
-	InReplyTo    *string   `dynamorm:"attr:inReplyTo" json:"in_reply_to,omitempty"`
-	Sensitive    bool      `dynamorm:"attr:sensitive" json:"sensitive,omitempty"`
+	ID           string    `theorydb:"attr:id" json:"id"`
+	Type         string    `theorydb:"attr:type" json:"type"`
+	AttributedTo string    `theorydb:"attr:attributedTo" json:"attributed_to,omitempty"`
+	Content      string    `theorydb:"attr:content" json:"content,omitempty"`
+	Name         string    `theorydb:"attr:name" json:"name,omitempty"`
+	Summary      string    `theorydb:"attr:summary" json:"summary,omitempty"`
+	URL          string    `theorydb:"attr:url" json:"url,omitempty"`
+	Published    time.Time `theorydb:"attr:published" json:"published"`
+	Updated      time.Time `theorydb:"attr:updated" json:"updated"`
+	InReplyTo    *string   `theorydb:"attr:inReplyTo" json:"in_reply_to,omitempty"`
+	Sensitive    bool      `theorydb:"attr:sensitive" json:"sensitive,omitempty"`
 
 	// Addressing
-	To  []string `dynamorm:"attr:to" json:"to,omitempty"`
-	CC  []string `dynamorm:"attr:cc" json:"cc,omitempty"`
-	BTo []string `dynamorm:"attr:bto" json:"bto,omitempty"`
-	BCC []string `dynamorm:"attr:bcc" json:"bcc,omitempty"`
+	To  []string `theorydb:"attr:to" json:"to,omitempty"`
+	CC  []string `theorydb:"attr:cc" json:"cc,omitempty"`
+	BTo []string `theorydb:"attr:bto" json:"bto,omitempty"`
+	BCC []string `theorydb:"attr:bcc" json:"bcc,omitempty"`
 
 	// Additional fields stored as JSON
-	AttachmentJSON string `dynamorm:"attr:attachmentJSON" json:"attachment_json,omitempty"` // JSON array of attachments
-	TagJSON        string `dynamorm:"attr:tagJSON" json:"tag_json,omitempty"`               // JSON array of tags
-	ContextJSON    string `dynamorm:"attr:contextJSON" json:"context_json,omitempty"`       // JSON for @context
+	AttachmentJSON string `theorydb:"attr:attachmentJSON" json:"attachment_json,omitempty"` // JSON array of attachments
+	TagJSON        string `theorydb:"attr:tagJSON" json:"tag_json,omitempty"`               // JSON array of tags
+	ContextJSON    string `theorydb:"attr:contextJSON" json:"context_json,omitempty"`       // JSON for @context
 
 	// Metadata
-	ConversationID string    `dynamorm:"attr:conversationID" json:"conversation_id,omitempty"`
-	Visibility     string    `dynamorm:"attr:visibility" json:"visibility,omitempty"`
-	IsRemote       bool      `dynamorm:"attr:isRemote" json:"is_remote"`
-	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ConversationID string    `theorydb:"attr:conversationID" json:"conversation_id,omitempty"`
+	Visibility     string    `theorydb:"attr:visibility" json:"visibility,omitempty"`
+	IsRemote       bool      `theorydb:"attr:isRemote" json:"is_remote"`
+	CreatedAt      time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table backing Object.

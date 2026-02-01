@@ -8,41 +8,41 @@ import (
 // AuthRefreshToken represents a refresh token with advanced security features
 // This implements the token family pattern with rotation and reuse detection
 type AuthRefreshToken struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys - using token as partition key
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // token (the actual token value)
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // TOKEN (constant sort key)
+	PK string `theorydb:"pk,attr:PK" json:"-"` // token (the actual token value)
+	SK string `theorydb:"sk,attr:SK" json:"-"` // TOKEN (constant sort key)
 
 	// GSI keys for querying by user, family, and user-family
-	UserID     string `dynamorm:"attr:userID" json:"user_id"`
-	Family     string `dynamorm:"attr:family" json:"family"`
-	UserFamily string `dynamorm:"attr:userFamily" json:"user_family"`
+	UserID     string `theorydb:"attr:userID" json:"user_id"`
+	Family     string `theorydb:"attr:family" json:"family"`
+	UserFamily string `theorydb:"attr:userFamily" json:"user_family"`
 
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#{userID}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {createdAt}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"-"` // FAMILY#{family}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"-"` // {createdAt}
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"-"` // USER_FAMILY#{userID}#{family}
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"-"` // {createdAt}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#{userID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {createdAt}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // FAMILY#{family}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // {createdAt}
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // USER_FAMILY#{userID}#{family}
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // {createdAt}
 
 	// Core token data
-	Token      string `dynamorm:"attr:token" json:"token"`             // The actual token value
-	Generation int    `dynamorm:"attr:generation" json:"generation"`   // Rotation generation number
-	CreatedAt  int64  `dynamorm:"attr:createdAt" json:"created_at"`    // Unix timestamp
-	ExpiresAt  int64  `dynamorm:"attr:expiresAt" json:"expires_at"`    // Unix timestamp
-	LastUsedAt int64  `dynamorm:"attr:lastUsedAt" json:"last_used_at"` // Unix timestamp for tracking
+	Token      string `theorydb:"attr:token" json:"token"`             // The actual token value
+	Generation int    `theorydb:"attr:generation" json:"generation"`   // Rotation generation number
+	CreatedAt  int64  `theorydb:"attr:createdAt" json:"created_at"`    // Unix timestamp
+	ExpiresAt  int64  `theorydb:"attr:expiresAt" json:"expires_at"`    // Unix timestamp
+	LastUsedAt int64  `theorydb:"attr:lastUsedAt" json:"last_used_at"` // Unix timestamp for tracking
 
 	// Security fields
-	Revoked       bool   `dynamorm:"attr:revoked" json:"revoked"`              // Whether token is revoked
-	RevokedReason string `dynamorm:"attr:revokedReason" json:"revoked_reason"` // Reason for revocation
+	Revoked       bool   `theorydb:"attr:revoked" json:"revoked"`              // Whether token is revoked
+	RevokedReason string `theorydb:"attr:revokedReason" json:"revoked_reason"` // Reason for revocation
 
 	// Tracking fields
-	DeviceName string `dynamorm:"attr:deviceName" json:"device_name"` // Optional device identifier
-	IPAddress  string `dynamorm:"attr:ipAddress" json:"ip_address"`   // IP address for security monitoring
+	DeviceName string `theorydb:"attr:deviceName" json:"device_name"` // Optional device identifier
+	IPAddress  string `theorydb:"attr:ipAddress" json:"ip_address"`   // IP address for security monitoring
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
 }
 
 // TableName returns the DynamoDB table name

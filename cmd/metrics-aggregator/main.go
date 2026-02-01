@@ -14,12 +14,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -120,7 +120,7 @@ func main() {
 
 var (
 	mustInitializeLambdaFn = common.MustInitializeLambda
-	dynamormGetClientFn    = dynamorm.GetClient
+	dynamormGetClientFn    = theorydb.GetClient
 	lambdaStartFn          = lambda.Start
 	unmarshalItemFn        = stream.UnmarshalItem
 )

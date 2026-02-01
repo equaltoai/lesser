@@ -9,29 +9,29 @@ import (
 
 // TrendingStatus represents a trending status/post
 type TrendingStatus struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // TRENDING#{date}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // STATUS#{score}#{statusID}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // TRENDING#{date}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // STATUS#{score}#{statusID}
 
 	// Attributes from interface
-	ID          string    `dynamorm:"attr:id" json:"id"`
-	URL         string    `dynamorm:"attr:url" json:"url"`
-	AuthorID    string    `dynamorm:"attr:authorID" json:"author_id"`
-	Content     string    `dynamorm:"attr:content" json:"content"`
-	Engagements int64     `dynamorm:"attr:engagements" json:"engagements"`
-	PublishedAt time.Time `dynamorm:"attr:publishedAt" json:"published_at"`
-	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"` // When this trend record was created
-	Likes       int       `dynamorm:"attr:likes" json:"likes"`          // Number of likes
-	Boosts      int       `dynamorm:"attr:boosts" json:"boosts"`        // Number of boosts
-	Replies     int       `dynamorm:"attr:replies" json:"replies"`      // Number of replies
+	ID          string    `theorydb:"attr:id" json:"id"`
+	URL         string    `theorydb:"attr:url" json:"url"`
+	AuthorID    string    `theorydb:"attr:authorID" json:"author_id"`
+	Content     string    `theorydb:"attr:content" json:"content"`
+	Engagements int64     `theorydb:"attr:engagements" json:"engagements"`
+	PublishedAt time.Time `theorydb:"attr:publishedAt" json:"published_at"`
+	CreatedAt   time.Time `theorydb:"attr:createdAt" json:"created_at"` // When this trend record was created
+	Likes       int       `theorydb:"attr:likes" json:"likes"`          // Number of likes
+	Boosts      int       `theorydb:"attr:boosts" json:"boosts"`        // Number of boosts
+	Replies     int       `theorydb:"attr:replies" json:"replies"`      // Number of replies
 
 	// Additional fields for trending
-	Date          string  `dynamorm:"attr:date" json:"date"`                    // Date for trending (YYYY-MM-DD)
-	TrendingScore float64 `dynamorm:"attr:trendingScore" json:"trending_score"` // Calculated trending score
-	Rank          int     `dynamorm:"attr:rank" json:"rank"`                    // Position in trending list
-	TTL           int64   `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`        // 7 days retention
+	Date          string  `theorydb:"attr:date" json:"date"`                    // Date for trending (YYYY-MM-DD)
+	TrendingScore float64 `theorydb:"attr:trendingScore" json:"trending_score"` // Calculated trending score
+	Rank          int     `theorydb:"attr:rank" json:"rank"`                    // Position in trending list
+	TTL           int64   `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`        // 7 days retention
 }
 
 // UpdateKeys updates the partition and sort keys based on date and score

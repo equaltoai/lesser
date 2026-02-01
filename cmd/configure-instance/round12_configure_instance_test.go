@@ -14,9 +14,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -173,7 +173,9 @@ func TestRunConfigureInstance_Branches_Round12(t *testing.T) {
 	require.Error(t, runConfigureInstance(context.Background(), []string{"-show"}))
 
 	getDynamormClientFn = func(context.Context) (dynamormCore.DB, error) { return nil, nil }
-	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (repositoriesProvider, error) { return nil, errors.New("no repos") }
+	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (repositoriesProvider, error) {
+		return nil, errors.New("no repos")
+	}
 	require.Error(t, runConfigureInstance(context.Background(), []string{"-show"}))
 }
 

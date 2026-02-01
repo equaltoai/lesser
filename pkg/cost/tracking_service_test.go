@@ -258,7 +258,6 @@ func TestTrackingService_CheckCostThresholds_ExceedsThreshold(t *testing.T) {
 	ts.checkCostThresholds("Lambda", 100.0)
 }
 
-
 func TestTrackingService_TrackDynamoOperation_WithError(t *testing.T) {
 	logger := zap.NewNop()
 	ts := NewCostTrackingService(nil, logger)

@@ -38,7 +38,7 @@ type mediaRepository interface {
 
 var (
 	_ scheduledStatusRepository = (*repositories.ScheduledStatusRepository)(nil)
-	_ mediaRepository          = (*repositories.MediaRepository)(nil)
+	_ mediaRepository           = (*repositories.MediaRepository)(nil)
 )
 
 // Service provides business logic for scheduled status operations

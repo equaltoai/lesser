@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -86,7 +86,7 @@ func TestActivityProcessor_StoreRemoteObject(t *testing.T) {
 	objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(nil)
 
 	ap := &ActivityProcessor{
-		logger:    zap.NewNop(),
+		logger:     zap.NewNop(),
 		objectRepo: objectRepo,
 	}
 
@@ -106,4 +106,3 @@ func TestActivityProcessor_StoreRemoteObject(t *testing.T) {
 
 	objectRepo.AssertExpectations(t)
 }
-

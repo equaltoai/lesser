@@ -237,4 +237,3 @@ func TestBedrockClient_fallbackAnalysis_ScoringHeuristics(t *testing.T) {
 	require.GreaterOrEqual(t, resp.ReputationScore, 0.0)
 	require.LessOrEqual(t, resp.ReputationScore, 1000.0)
 }
-

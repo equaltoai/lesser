@@ -7,29 +7,29 @@ import (
 
 // Category represents a content category (hierarchical)
 type Category struct {
-	PK string `dynamorm:"pk,attr:PK"` // INSTANCE#CATEGORY
-	SK string `dynamorm:"sk,attr:SK"` // ID#{category_id}
+	PK string `theorydb:"pk,attr:PK"` // INSTANCE#CATEGORY
+	SK string `theorydb:"sk,attr:SK"` // ID#{category_id}
 
 	// GSI: Parent lookup - CATEGORY#{parent_id} / ID#{category_id}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
-	ID          string  `dynamorm:"attr:id" json:"id"`
-	Name        string  `dynamorm:"attr:name" json:"name"`
-	Slug        string  `dynamorm:"attr:slug" json:"slug"`
-	Description string  `dynamorm:"attr:description" json:"description,omitempty"`
-	ParentID    *string `dynamorm:"attr:parentID" json:"parent_id,omitempty"`
+	ID          string  `theorydb:"attr:id" json:"id"`
+	Name        string  `theorydb:"attr:name" json:"name"`
+	Slug        string  `theorydb:"attr:slug" json:"slug"`
+	Description string  `theorydb:"attr:description" json:"description,omitempty"`
+	ParentID    *string `theorydb:"attr:parentID" json:"parent_id,omitempty"`
 
 	// Counts
-	ArticleCount int `dynamorm:"attr:articleCount" json:"article_count"`
+	ArticleCount int `theorydb:"attr:articleCount" json:"article_count"`
 
 	// Display
-	Order int    `dynamorm:"attr:order" json:"order"`
-	Color string `dynamorm:"attr:color" json:"color,omitempty"` // Hex color for UI
+	Order int    `theorydb:"attr:order" json:"order"`
+	Color string `theorydb:"attr:color" json:"color,omitempty"` // Hex color for UI
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing Category.

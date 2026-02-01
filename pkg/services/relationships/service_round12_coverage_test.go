@@ -234,8 +234,12 @@ func (r *statefulRelationshipRepo) GetMutedUsers(context.Context, string, interf
 	return &interfaces.PaginatedResult[*storage.Account]{Items: []*storage.Account{}}, nil
 }
 
-func (r *statefulRelationshipRepo) GetFollowerCount(context.Context, string) (int64, error)  { return 0, nil }
-func (r *statefulRelationshipRepo) GetFollowingCount(context.Context, string) (int64, error) { return 0, nil }
+func (r *statefulRelationshipRepo) GetFollowerCount(context.Context, string) (int64, error) {
+	return 0, nil
+}
+func (r *statefulRelationshipRepo) GetFollowingCount(context.Context, string) (int64, error) {
+	return 0, nil
+}
 func (r *statefulRelationshipRepo) GetMutualFollowCount(context.Context, string, string) (int64, error) {
 	return 0, nil
 }

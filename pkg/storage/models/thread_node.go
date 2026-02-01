@@ -8,39 +8,39 @@ import (
 // ThreadNode represents a single node in a conversation thread tree
 // Used for building and traversing thread hierarchies
 type ThreadNode struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // THREAD#{rootStatusID}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // NODE#{statusID}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // THREAD#{rootStatusID}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // NODE#{statusID}
 
 	// GSI for querying by status
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusID}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // THREAD_NODE
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // THREAD_NODE
 
 	// Node data
-	RootStatusID    string     `dynamorm:"attr:rootStatusID" json:"root_status_id"`         // The root of the thread
-	StatusID        string     `dynamorm:"attr:statusID" json:"status_id"`                  // This status ID
-	ParentID        string     `dynamorm:"attr:parentID" json:"parent_id,omitempty"`        // Direct parent (empty for root)
-	Depth           int        `dynamorm:"attr:depth" json:"depth"`                         // Depth in tree (0 for root)
-	Path            string     `dynamorm:"attr:path" json:"path"`                           // Path from root (e.g., "root.reply1.reply2")
-	ChildIDs        []string   `dynamorm:"attr:childIDs" json:"child_ids"`                  // Direct child status IDs
-	AuthorID        string     `dynamorm:"attr:authorID" json:"author_id"`                  // Author of this status
-	AuthorHandle    string     `dynamorm:"attr:authorHandle" json:"author_handle"`          // For quick display
-	Content         string     `dynamorm:"attr:content" json:"content"`                     // Preview of content
-	CreatedAt       time.Time  `dynamorm:"attr:createdAt" json:"created_at"`                // When status was created
-	Visibility      string     `dynamorm:"attr:visibility" json:"visibility"`               // public, unlisted, private, direct
-	Sensitive       bool       `dynamorm:"attr:sensitive" json:"sensitive"`                 // Has content warning
-	ReplyCount      int        `dynamorm:"attr:replyCount" json:"reply_count"`              // Number of direct replies
-	DescendantCount int        `dynamorm:"attr:descendantCount" json:"descendant_count"`    // Total descendants in subtree
-	LastReplyAt     *time.Time `dynamorm:"attr:lastReplyAt" json:"last_reply_at,omitempty"` // Most recent reply in subtree
-	UpdatedAt       time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`                // Last update
-	FetchedAt       time.Time  `dynamorm:"attr:fetchedAt" json:"fetched_at"`                // When we last fetched this node
-	IsLocal         bool       `dynamorm:"attr:isLocal" json:"is_local"`                    // Whether this is a local status
-	RemoteURL       string     `dynamorm:"attr:remoteURL" json:"remote_url,omitempty"`      // URL if remote
+	RootStatusID    string     `theorydb:"attr:rootStatusID" json:"root_status_id"`         // The root of the thread
+	StatusID        string     `theorydb:"attr:statusID" json:"status_id"`                  // This status ID
+	ParentID        string     `theorydb:"attr:parentID" json:"parent_id,omitempty"`        // Direct parent (empty for root)
+	Depth           int        `theorydb:"attr:depth" json:"depth"`                         // Depth in tree (0 for root)
+	Path            string     `theorydb:"attr:path" json:"path"`                           // Path from root (e.g., "root.reply1.reply2")
+	ChildIDs        []string   `theorydb:"attr:childIDs" json:"child_ids"`                  // Direct child status IDs
+	AuthorID        string     `theorydb:"attr:authorID" json:"author_id"`                  // Author of this status
+	AuthorHandle    string     `theorydb:"attr:authorHandle" json:"author_handle"`          // For quick display
+	Content         string     `theorydb:"attr:content" json:"content"`                     // Preview of content
+	CreatedAt       time.Time  `theorydb:"attr:createdAt" json:"created_at"`                // When status was created
+	Visibility      string     `theorydb:"attr:visibility" json:"visibility"`               // public, unlisted, private, direct
+	Sensitive       bool       `theorydb:"attr:sensitive" json:"sensitive"`                 // Has content warning
+	ReplyCount      int        `theorydb:"attr:replyCount" json:"reply_count"`              // Number of direct replies
+	DescendantCount int        `theorydb:"attr:descendantCount" json:"descendant_count"`    // Total descendants in subtree
+	LastReplyAt     *time.Time `theorydb:"attr:lastReplyAt" json:"last_reply_at,omitempty"` // Most recent reply in subtree
+	UpdatedAt       time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`                // Last update
+	FetchedAt       time.Time  `theorydb:"attr:fetchedAt" json:"fetched_at"`                // When we last fetched this node
+	IsLocal         bool       `theorydb:"attr:isLocal" json:"is_local"`                    // Whether this is a local status
+	RemoteURL       string     `theorydb:"attr:remoteURL" json:"remote_url,omitempty"`      // URL if remote
 
 	// TTL for auto-cleanup (30 days after last activity)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // NewThreadNode creates a new thread node

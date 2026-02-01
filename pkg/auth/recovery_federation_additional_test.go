@@ -140,4 +140,3 @@ func TestRecoveryActivity_MarshalJSON_AddsCustomFields(t *testing.T) {
 	_, err = bad.MarshalJSON()
 	require.Error(t, err)
 }
-

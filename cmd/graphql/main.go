@@ -45,11 +45,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
@@ -89,7 +89,7 @@ var (
 	initializeManualServicesFn          = initializeManualServices
 	initializeGraphQLSpecificServicesFn = initializeGraphQLSpecificServices
 	lambdaStartFn                       = lambda.Start
-	newLambdaOptimizedClientFn          = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn          = theorydb.NewLambdaOptimizedClient
 	newRepositoryFactoryFn              = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
 	}

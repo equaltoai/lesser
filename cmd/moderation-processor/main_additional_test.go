@@ -63,13 +63,13 @@ func TestModerationProcessor_ConversionsBetweenStorageAndDomainTypes(t *testing.
 
 	require.Nil(t, convertStorageToModerationEvent(nil))
 	storageEvent := &storage.ModerationEvent{
-		ID:         "evt-1",
-		EventType:  "flagged",
-		ObjectID:   "obj-1",
-		ObjectType: "status",
-		ActorID:    "actor-1",
-		Category:   "spam",
-		Severity:   "high",
+		ID:              "evt-1",
+		EventType:       "flagged",
+		ObjectID:        "obj-1",
+		ObjectType:      "status",
+		ActorID:         "actor-1",
+		Category:        "spam",
+		Severity:        "high",
 		ConfidenceScore: 0.9,
 		Evidence: []any{
 			map[string]any{

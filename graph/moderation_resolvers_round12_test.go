@@ -17,21 +17,21 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 
 	// Ensure a note exists so AddCommunityNote can validate it via notes service.
 	status := &storageModels.Status{
-		StatusID:        "status-1",
-		AuthorID:        "https://localhost/users/alice",
-		AuthorUsername:  "alice",
-		Content:         "hello world",
-		CreatedAt:       time.Now().Add(-time.Hour),
-		UpdatedAt:       time.Now().Add(-time.Minute),
-		Visibility:      storageModels.VisibilityPublic,
-		ReplyCount:      0,
-		ReblogCount:     0,
-		LikeCount:       0,
-		QuoteCount:      0,
-		Sensitive:       false,
-		Deleted:         false,
-		ConversationID:  "",
-		InReplyToID:     "",
+		StatusID:            "status-1",
+		AuthorID:            "https://localhost/users/alice",
+		AuthorUsername:      "alice",
+		Content:             "hello world",
+		CreatedAt:           time.Now().Add(-time.Hour),
+		UpdatedAt:           time.Now().Add(-time.Minute),
+		Visibility:          storageModels.VisibilityPublic,
+		ReplyCount:          0,
+		ReblogCount:         0,
+		LikeCount:           0,
+		QuoteCount:          0,
+		Sensitive:           false,
+		Deleted:             false,
+		ConversationID:      "",
+		InReplyToID:         "",
 		QuoteTargetStatusID: "",
 	}
 	require.NoError(t, storageRepo.Status().CreateStatus(context.Background(), status))
@@ -46,9 +46,9 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 
 	// Flag content (creates a flag + moderation event).
 	flagPayload, err := mut.FlagObject(ctx, model.FlagInput{
-		ObjectID:  "status-1",
-		Reason:    "spam",
-		Evidence:  []string{"e1"},
+		ObjectID: "status-1",
+		Reason:   "spam",
+		Evidence: []string{"e1"},
 	})
 	require.NoError(t, err)
 	require.NotNil(t, flagPayload)
@@ -57,28 +57,28 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	// Seed a decision so dashboard/analytics helpers have something to compute from.
 	modRepo := storageRepo.Moderation()
 	require.NoError(t, modRepo.CreateModerationDecision(context.Background(), &storage.ModerationDecision{
-		ID:      "dec-1",
-		EventID: flagPayload.ModerationID,
+		ID:       "dec-1",
+		EventID:  flagPayload.ModerationID,
 		ObjectID: "status-1",
-		Action:  "warn",
-		Reason:  "reviewed",
-		Appeal:  true,
-		Decided: time.Now().Add(10 * time.Second),
+		Action:   "warn",
+		Reason:   "reviewed",
+		Appeal:   true,
+		Decided:  time.Now().Add(10 * time.Second),
 	}))
 
 	// Add a second event for trend and moderator stats coverage.
 	require.NoError(t, modRepo.CreateModerationEvent(context.Background(), &storage.ModerationEvent{
 		ID:              "evt-2",
-		ObjectID:         "status-2",
-		ObjectType:       "status",
-		ActorID:          "mod1",
-		EventType:        "flagged",
-		Category:         "spam",
-		Severity:         "low",
-		ConfidenceScore:  0.4,
-		Reason:           "test",
-		CreatedAt:        time.Now(),
-		Data:             map[string]interface{}{"content": "spam content", "severity": "high"},
+		ObjectID:        "status-2",
+		ObjectType:      "status",
+		ActorID:         "mod1",
+		EventType:       "flagged",
+		Category:        "spam",
+		Severity:        "low",
+		ConfidenceScore: 0.4,
+		Reason:          "test",
+		CreatedAt:       time.Now(),
+		Data:            map[string]interface{}{"content": "spam content", "severity": "high"},
 	}))
 
 	// Create a pattern through the mutation resolver (stored in moderation repo).
@@ -167,4 +167,3 @@ func TestRound12ModerationResolvers_DashboardStorageNil(t *testing.T) {
 	_, err := q.ModerationDashboard(context.Background(), nil)
 	require.Error(t, err)
 }
-

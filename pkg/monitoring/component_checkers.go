@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 // DynamoDBChecker implements health checking for DynamoDB tables
@@ -37,8 +37,8 @@ func (d *DynamoDBChecker) Check(ctx context.Context, tableName string) (*Compone
 	// Perform a simple query to test table connectivity
 	// We'll query for a non-existent item to minimize impact
 	testModel := struct {
-		PK string `dynamorm:"pk"`
-		SK string `dynamorm:"sk"`
+		PK string `theorydb:"pk"`
+		SK string `theorydb:"sk"`
 	}{
 		PK: "HEALTH_CHECK_TEST",
 		SK: "HEALTH_CHECK_TEST",
@@ -46,8 +46,8 @@ func (d *DynamoDBChecker) Check(ctx context.Context, tableName string) (*Compone
 
 	// Use a simple query operation to test table connectivity
 	var testResults []struct {
-		PK string `dynamorm:"pk"`
-		SK string `dynamorm:"sk"`
+		PK string `theorydb:"pk"`
+		SK string `theorydb:"sk"`
 	}
 
 	query := d.db.WithContext(ctx).Model(&testModel).
@@ -116,11 +116,11 @@ func (l *LambdaChecker) Check(ctx context.Context, functionName string) (*Compon
 	// This ensures our database connection is working for Lambda-related operations
 
 	healthRecord := struct {
-		PK           string    `dynamorm:"pk"`
-		SK           string    `dynamorm:"sk"`
+		PK           string    `theorydb:"pk"`
+		SK           string    `theorydb:"sk"`
 		FunctionName string    `json:"function_name"`
 		CheckTime    time.Time `json:"check_time"`
-		TTL          int64     `dynamorm:"ttl"`
+		TTL          int64     `theorydb:"ttl"`
 	}{
 		PK:           fmt.Sprintf("LAMBDA_HEALTH#%s", functionName),
 		SK:           fmt.Sprintf("CHECK#%s", start.Format("2006-01-02T15:04:05Z")),
@@ -191,12 +191,12 @@ func (s *SQSChecker) Check(ctx context.Context, queueName string) (*ComponentHea
 	// This simulates checking queue attributes by storing queue status
 
 	queueHealthRecord := struct {
-		PK            string    `dynamorm:"pk"`
-		SK            string    `dynamorm:"sk"`
+		PK            string    `theorydb:"pk"`
+		SK            string    `theorydb:"sk"`
 		QueueName     string    `json:"queue_name"`
 		CheckTime     time.Time `json:"check_time"`
 		EstimatedSize int       `json:"estimated_size"` // Would be from SQS in real implementation
-		TTL           int64     `dynamorm:"ttl"`
+		TTL           int64     `theorydb:"ttl"`
 	}{
 		PK:            fmt.Sprintf("SQS_HEALTH#%s", queueName),
 		SK:            fmt.Sprintf("CHECK#%s", start.Format("2006-01-02T15:04:05Z")),

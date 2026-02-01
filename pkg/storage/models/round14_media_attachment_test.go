@@ -90,4 +90,3 @@ func TestMediaAttachment_KeysValidationAndFocalPoint(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
-

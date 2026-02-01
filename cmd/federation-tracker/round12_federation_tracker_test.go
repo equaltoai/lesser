@@ -11,9 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -147,8 +147,8 @@ func TestFederationTracker_ProcessRecord_ActivityAndActor_Round12(t *testing.T) 
 					"PK":    events.NewStringAttribute("ACTOR#1"),
 					"Actor": actorMap,
 				},
-		},
-	}
+			},
+		}
 
 		require.NoError(t, ft.processRecord(runCtx, requestID, record))
 		require.Equal(t, 1, repo.createCalls)

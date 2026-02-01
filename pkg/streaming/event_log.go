@@ -8,7 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/oklog/ulid/v2"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 const (
@@ -24,15 +24,15 @@ type StreamEventLogItem struct {
 }
 
 type streamEventLogRecord struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
-	Event     string `dynamorm:"attr:event"`
-	Data      string `dynamorm:"attr:data"`
-	CreatedAt int64  `dynamorm:"attr:createdAt"`
-	TTL       int64  `dynamorm:"ttl,attr:ttl"`
+	Event     string `theorydb:"attr:event"`
+	Data      string `theorydb:"attr:data"`
+	CreatedAt int64  `theorydb:"attr:createdAt"`
+	TTL       int64  `theorydb:"ttl,attr:ttl"`
 }
 
 func (streamEventLogRecord) TableName() string {

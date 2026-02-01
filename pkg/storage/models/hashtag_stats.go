@@ -12,20 +12,20 @@ import (
 // PK: HASHTAG#name
 // SK: STATS
 type HashtagStats struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
-	Name          string                `dynamorm:"attr:name" json:"name"`
-	UsageCount    int64                 `dynamorm:"attr:usageCount" json:"usage_count"`
-	UniqueUsers   int64                 `dynamorm:"attr:uniqueUsers" json:"unique_users"`
-	FirstSeen     time.Time             `dynamorm:"attr:firstSeen" json:"first_seen"`
-	LastUsed      time.Time             `dynamorm:"attr:lastUsed" json:"last_used"`
-	TrendingScore float64               `dynamorm:"attr:trendingScore" json:"trending_score"`
-	TotalUses     int64                 `dynamorm:"attr:totalUses" json:"total_uses"`         // Total usage count
-	TotalAccounts int64                 `dynamorm:"attr:totalAccounts" json:"total_accounts"` // Total unique accounts
-	History       []HashtagHistoryEntry `dynamorm:"attr:history" json:"history"`              // Historical data
+	Name          string                `theorydb:"attr:name" json:"name"`
+	UsageCount    int64                 `theorydb:"attr:usageCount" json:"usage_count"`
+	UniqueUsers   int64                 `theorydb:"attr:uniqueUsers" json:"unique_users"`
+	FirstSeen     time.Time             `theorydb:"attr:firstSeen" json:"first_seen"`
+	LastUsed      time.Time             `theorydb:"attr:lastUsed" json:"last_used"`
+	TrendingScore float64               `theorydb:"attr:trendingScore" json:"trending_score"`
+	TotalUses     int64                 `theorydb:"attr:totalUses" json:"total_uses"`         // Total usage count
+	TotalAccounts int64                 `theorydb:"attr:totalAccounts" json:"total_accounts"` // Total unique accounts
+	History       []HashtagHistoryEntry `theorydb:"attr:history" json:"history"`              // Historical data
 }
 
 // UpdateKeys updates the DynamoDB keys based on the hashtag name

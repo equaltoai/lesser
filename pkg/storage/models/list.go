@@ -9,24 +9,24 @@ import (
 
 // List represents a user-created list for organizing followed accounts
 type List struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk,attr:PK" json:"PK"` // LIST#listID
-	SK string `dynamorm:"sk,attr:SK" json:"SK"` // METADATA
+	PK string `theorydb:"pk,attr:PK" json:"PK"` // LIST#listID
+	SK string `theorydb:"sk,attr:SK" json:"SK"` // METADATA
 
 	// GSI1 for user's lists index
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // USER_LISTS#username
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // USER_LISTS#username
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID
 
 	// Core fields from legacy
-	ID            string    `dynamorm:"attr:id" json:"id"`
-	Username      string    `dynamorm:"attr:username" json:"username"` // Owner of the list
-	Title         string    `dynamorm:"attr:title" json:"title"`
-	RepliesPolicy string    `dynamorm:"attr:repliesPolicy" json:"replies_policy"` // list, followed, none
-	Exclusive     bool      `dynamorm:"attr:exclusive" json:"exclusive"`          // Whether list is exclusive
-	CreatedAt     time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	ID            string    `theorydb:"attr:id" json:"id"`
+	Username      string    `theorydb:"attr:username" json:"username"` // Owner of the list
+	Title         string    `theorydb:"attr:title" json:"title"`
+	RepliesPolicy string    `theorydb:"attr:repliesPolicy" json:"replies_policy"` // list, followed, none
+	Exclusive     bool      `theorydb:"attr:exclusive" json:"exclusive"`          // Whether list is exclusive
+	CreatedAt     time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt     time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name

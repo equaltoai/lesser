@@ -8,21 +8,21 @@ import (
 
 // FederationStats represents federation activity statistics
 type FederationStats struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // FEDERATION#STATS
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // {date} (e.g., 2024-01-30)
+	PK string `theorydb:"pk,attr:PK" json:"-"` // FEDERATION#STATS
+	SK string `theorydb:"sk,attr:SK" json:"-"` // {date} (e.g., 2024-01-30)
 
 	// Attributes from interface
-	ActiveInstances int   `dynamorm:"attr:activeInstances" json:"active_instances"`
-	TotalMessages   int64 `dynamorm:"attr:totalMessages" json:"total_messages"`
-	TotalUsers      int   `dynamorm:"attr:totalUsers" json:"total_users"`
+	ActiveInstances int   `theorydb:"attr:activeInstances" json:"active_instances"`
+	TotalMessages   int64 `theorydb:"attr:totalMessages" json:"total_messages"`
+	TotalUsers      int   `theorydb:"attr:totalUsers" json:"total_users"`
 
 	// Additional metadata
-	Date      string    `dynamorm:"attr:date" json:"date"`             // The date these stats are for
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`  // Last update time
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // 90 days retention
+	Date      string    `theorydb:"attr:date" json:"date"`             // The date these stats are for
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`  // Last update time
+	TTL       int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // 90 days retention
 }
 
 // TableName returns the DynamoDB table backing FederationStats.

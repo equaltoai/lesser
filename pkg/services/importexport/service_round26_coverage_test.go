@@ -31,10 +31,10 @@ type fakeExportRepo struct {
 }
 
 type fakeUpdateExportStatusCall struct {
-	exportID        string
-	status          string
-	completionData  map[string]any
-	errorMsg        string
+	exportID       string
+	status         string
+	completionData map[string]any
+	errorMsg       string
 }
 
 func (r *fakeExportRepo) CreateExport(_ context.Context, export *models.Export) error {
@@ -192,9 +192,13 @@ func (p *fakePublisher) PublishToUser(_ context.Context, userID string, event *s
 	return p.err
 }
 
-func (p *fakePublisher) PublishToStream(context.Context, string, *streaming.Event) error { return p.err }
+func (p *fakePublisher) PublishToStream(context.Context, string, *streaming.Event) error {
+	return p.err
+}
 
-func (p *fakePublisher) PublishToConversation(context.Context, string, *streaming.Event) error { return p.err }
+func (p *fakePublisher) PublishToConversation(context.Context, string, *streaming.Event) error {
+	return p.err
+}
 
 func (p *fakePublisher) Close() error { return nil }
 
@@ -609,8 +613,8 @@ func TestService_CancelExport_round26_coverage(t *testing.T) {
 
 	t.Run("update_status_error", func(t *testing.T) {
 		repo := &fakeExportRepo{
-			exports:          map[string]*models.Export{"e1": {ID: "e1", Username: "alice", Status: models.StatusPending}},
-			updateStatusErr:  stderrors.New("boom"),
+			exports:         map[string]*models.Export{"e1": {ID: "e1", Username: "alice", Status: models.StatusPending}},
+			updateStatusErr: stderrors.New("boom"),
 		}
 		svc := NewService(repo, &fakeImportRepo{}, nil, &fakeAccountRepo{}, nil, nil, nil, nil, nil, zap.NewNop(), "example.com")
 		_, err := svc.CancelExport(ctx, &CancelExportCommand{ExportID: "e1", Username: "alice"})
@@ -713,4 +717,3 @@ func TestService_ImportPaths_round26_coverage(t *testing.T) {
 		assert.True(t, result.HasMore)
 	})
 }
-

@@ -9,8 +9,8 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
 func TestAdminFederationLift_Round12(t *testing.T) {

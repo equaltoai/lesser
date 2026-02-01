@@ -53,4 +53,3 @@ func TestActivityHandler_DeliverActivity_RouteManagerBranches(t *testing.T) {
 	handler.RouteManager = stubRouteManager{result: &types.DeliveryResult{Success: true, Attempts: 1, Duration: time.Millisecond}}
 	require.NoError(t, handler.deliverActivity(ctx, activity, "alice"))
 }
-

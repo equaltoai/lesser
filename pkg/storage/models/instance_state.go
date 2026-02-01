@@ -13,26 +13,26 @@ const (
 // InstanceState represents instance activation/bootstrapping state stored in DynamoDB.
 // This record is stage-scoped because each stage has its own DynamoDB table.
 type InstanceState struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // INSTANCE#CONFIG
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // STATE
+	PK string `theorydb:"pk,attr:PK" json:"-"` // INSTANCE#CONFIG
+	SK string `theorydb:"sk,attr:SK" json:"-"` // STATE
 
 	// Activation state
-	Locked bool `dynamorm:"attr:locked" json:"locked"`
+	Locked bool `theorydb:"attr:locked" json:"locked"`
 
 	// Bootstrap identity (public-only)
-	BootstrapUsername      string `dynamorm:"attr:bootstrapUsername" json:"bootstrap_username"`
-	BootstrapWalletAddress string `dynamorm:"attr:bootstrapWalletAddress" json:"bootstrap_wallet_address,omitempty"`
+	BootstrapUsername      string `theorydb:"attr:bootstrapUsername" json:"bootstrap_username"`
+	BootstrapWalletAddress string `theorydb:"attr:bootstrapWalletAddress" json:"bootstrap_wallet_address,omitempty"`
 
 	// Setup progression
-	PrimaryAdminUsername string     `dynamorm:"attr:primaryAdminUsername" json:"primary_admin_username,omitempty"`
-	ActivatedAt          *time.Time `dynamorm:"attr:activatedAt" json:"activated_at,omitempty"`
+	PrimaryAdminUsername string     `theorydb:"attr:primaryAdminUsername" json:"primary_admin_username,omitempty"`
+	ActivatedAt          *time.Time `theorydb:"attr:activatedAt" json:"activated_at,omitempty"`
 
 	// Audit timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing InstanceState.

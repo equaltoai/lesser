@@ -13,31 +13,31 @@ import (
 
 // TrendingLink represents a trending link
 type TrendingLink struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // TRENDING#{date}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // LINK#{score}#{linkID}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // TRENDING#{date}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // LINK#{score}#{linkID}
 
 	// Attributes from interface
-	URL         string    `dynamorm:"attr:url" json:"url"`
-	Title       string    `dynamorm:"attr:title" json:"title"`
-	Description string    `dynamorm:"attr:description" json:"description"`
-	Type        string    `dynamorm:"attr:type" json:"type"` // link, photo, video
-	AuthorName  string    `dynamorm:"attr:authorName" json:"author_name"`
-	Image       string    `dynamorm:"attr:image" json:"image"`
-	ImageURL    string    `dynamorm:"attr:imageURL" json:"image_url"` // Additional field for image URL
-	ShareCount  int64     `dynamorm:"attr:shareCount" json:"share_count"`
-	UserID      string    `dynamorm:"attr:userID" json:"user_id"`       // User who shared the link
-	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"` // When this share was recorded
+	URL         string    `theorydb:"attr:url" json:"url"`
+	Title       string    `theorydb:"attr:title" json:"title"`
+	Description string    `theorydb:"attr:description" json:"description"`
+	Type        string    `theorydb:"attr:type" json:"type"` // link, photo, video
+	AuthorName  string    `theorydb:"attr:authorName" json:"author_name"`
+	Image       string    `theorydb:"attr:image" json:"image"`
+	ImageURL    string    `theorydb:"attr:imageURL" json:"image_url"` // Additional field for image URL
+	ShareCount  int64     `theorydb:"attr:shareCount" json:"share_count"`
+	UserID      string    `theorydb:"attr:userID" json:"user_id"`       // User who shared the link
+	CreatedAt   time.Time `theorydb:"attr:createdAt" json:"created_at"` // When this share was recorded
 
 	// Additional fields for trending
-	Date          string  `dynamorm:"attr:date" json:"date"`                    // Date for trending (YYYY-MM-DD)
-	LinkID        string  `dynamorm:"attr:linkID" json:"link_id"`               // Unique ID for this trending entry
-	TrendingScore float64 `dynamorm:"attr:trendingScore" json:"trending_score"` // Calculated trending score
-	Domain        string  `dynamorm:"attr:domain" json:"domain"`                // Extracted domain from URL
-	Rank          int     `dynamorm:"attr:rank" json:"rank"`                    // Position in trending list
-	TTL           int64   `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`        // 7 days retention
+	Date          string  `theorydb:"attr:date" json:"date"`                    // Date for trending (YYYY-MM-DD)
+	LinkID        string  `theorydb:"attr:linkID" json:"link_id"`               // Unique ID for this trending entry
+	TrendingScore float64 `theorydb:"attr:trendingScore" json:"trending_score"` // Calculated trending score
+	Domain        string  `theorydb:"attr:domain" json:"domain"`                // Extracted domain from URL
+	Rank          int     `theorydb:"attr:rank" json:"rank"`                    // Position in trending list
+	TTL           int64   `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`        // 7 days retention
 }
 
 // UpdateKeys updates the partition and sort keys based on date and score

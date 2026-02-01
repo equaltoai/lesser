@@ -86,7 +86,7 @@ func TestRound12QueryResolvers_StatusesParity_StatusActorListPage_CustomFetcher(
 				{
 					User: &storage.User{Username: "bob"},
 					Actor: &activitypub.Actor{
-						BaseObject: activitypub.BaseObject{ID: "https://localhost/users/bob", Type: activitypub.PersonType},
+						BaseObject:        activitypub.BaseObject{ID: "https://localhost/users/bob", Type: activitypub.PersonType},
 						PreferredUsername: "bob",
 					},
 				},
@@ -109,4 +109,3 @@ func TestRound12QueryResolvers_StatusesParity_StatusActorListPage_CustomFetcher(
 	_, err = q.StatusRebloggedBy(context.Background(), "", nil, nil)
 	require.Error(t, err)
 }
-

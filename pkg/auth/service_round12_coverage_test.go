@@ -10,9 +10,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -20,12 +20,12 @@ type fakeAuthRepos struct {
 	account *repositories.AccountRepository
 }
 
-func (f fakeAuthRepos) Account() *repositories.AccountRepository           { return f.account }
-func (f fakeAuthRepos) Actor() interfaces.ActorRepository                  { return nil }
-func (f fakeAuthRepos) Activity() interfaces.ActivityRepository            { return nil }
-func (f fakeAuthRepos) Notification() interfaces.NotificationRepository    { return nil }
-func (f fakeAuthRepos) Recovery() *repositories.RecoveryRepository         { return nil }
-func (f fakeAuthRepos) Audit() *repositories.AuditRepository               { return nil }
+func (f fakeAuthRepos) Account() *repositories.AccountRepository        { return f.account }
+func (f fakeAuthRepos) Actor() interfaces.ActorRepository               { return nil }
+func (f fakeAuthRepos) Activity() interfaces.ActivityRepository         { return nil }
+func (f fakeAuthRepos) Notification() interfaces.NotificationRepository { return nil }
+func (f fakeAuthRepos) Recovery() *repositories.RecoveryRepository      { return nil }
+func (f fakeAuthRepos) Audit() *repositories.AuditRepository            { return nil }
 
 func TestValidateJWTSecretStrength(t *testing.T) {
 	assert.Error(t, validateJWTSecretStrength("short"))

@@ -12,8 +12,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -21,8 +21,8 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/trust"
 )
 
@@ -391,7 +391,7 @@ func main() {
 
 var (
 	mustInitializeLambdaFn  = common.MustInitializeLambda
-	dynamormGetClientFn     = dynamorm.GetClient
+	dynamormGetClientFn     = theorydb.GetClient
 	lambdaStartFn           = lambda.Start
 	newReportTrustUpdaterFn = func(db core.DB, tableName string, logger *zap.Logger) *ReportTrustUpdater {
 		return NewReportTrustUpdater(db, tableName, logger)

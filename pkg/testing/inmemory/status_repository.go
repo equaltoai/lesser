@@ -796,7 +796,6 @@ func copyStatus(status *models.Status) *models.Status {
 	return &statusCopy
 }
 
-
 // Count operations
 
 // CountStatusesByAuthor counts the total number of statuses by an author

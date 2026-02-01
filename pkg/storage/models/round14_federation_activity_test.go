@@ -146,4 +146,3 @@ func TestFederationActivity_BeforeCreate_AndHelpers(t *testing.T) {
 		assert.Equal(t, MainTableName, (InstanceInfo{}).TableName())
 	})
 }
-

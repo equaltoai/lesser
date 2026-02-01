@@ -516,10 +516,10 @@ func TestService_prepareMediaAttachments(t *testing.T) {
 		service.mediaRepo = repo
 
 		repo.On("GetMedia", ctx, "m3").Return(&models.Media{
-			MediaID:    "m3",
-			UserID:     "alice",
-			Status:     "ready",
-			ExpiresAt:  time.Now().Add(-time.Minute).Unix(),
+			MediaID:     "m3",
+			UserID:      "alice",
+			Status:      "ready",
+			ExpiresAt:   time.Now().Add(-time.Minute).Unix(),
 			ContentType: "image/jpeg",
 		}, nil)
 
@@ -534,9 +534,9 @@ func TestService_validateCreateAndUpdateCommands(t *testing.T) {
 	mastodonConfig := common.DefaultMastodonConfig()
 	mastodonConfig.Domain = "example.com"
 	service := &Service{
-		logger:       logger,
+		logger:        logger,
 		mastodonLogic: common.NewMastodonBusinessLogic(mastodonConfig, logger),
-		domainName:   "example.com",
+		domainName:    "example.com",
 	}
 
 	t.Run("create command nil returns validation failed", func(t *testing.T) {
@@ -546,9 +546,9 @@ func TestService_validateCreateAndUpdateCommands(t *testing.T) {
 
 	t.Run("create command invalid visibility", func(t *testing.T) {
 		err := service.validateCreateCommand(context.Background(), &CreateNoteCommand{
-			AuthorID:    "alice",
-			Content:     "hi",
-			Visibility:  "nope",
+			AuthorID:     "alice",
+			Content:      "hi",
+			Visibility:   "nope",
 			ToRecipients: []string{},
 		})
 		assert.Error(t, err)

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
-	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"

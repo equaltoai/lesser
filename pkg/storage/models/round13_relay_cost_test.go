@@ -10,16 +10,16 @@ import (
 func TestRelayCost_BeforeCreate_ComputesTotals_TTL_AndKeys(t *testing.T) {
 	baseTime := time.Unix(1700000000, 0).UTC()
 	rc := &RelayCost{
-		RelayURL:      "https://relay.example/relay",
-		OperationType: "delivery",
-		Direction:     "outbound",
-		HTTPRequestCost:   10,
-		DataTransferCost:  20,
-		LambdaCost:        30,
-		DynamoDBCost:      40,
-		SQSCost:           50,
-		RequestID:         "",
-		Timestamp:         baseTime,
+		RelayURL:         "https://relay.example/relay",
+		OperationType:    "delivery",
+		Direction:        "outbound",
+		HTTPRequestCost:  10,
+		DataTransferCost: 20,
+		LambdaCost:       30,
+		DynamoDBCost:     40,
+		SQSCost:          50,
+		RequestID:        "",
+		Timestamp:        baseTime,
 	}
 	err := rc.BeforeCreate()
 	assert.NoError(t, err)
@@ -38,15 +38,15 @@ func TestRelayCost_BeforeCreate_ComputesTotals_TTL_AndKeys(t *testing.T) {
 func TestRelayMetrics_LifecycleAndBudgetCalculations(t *testing.T) {
 	window := time.Unix(1700000000, 0).UTC()
 	rm := &RelayMetrics{
-		RelayURL:             "https://relay.example/relay",
-		Period:               PeriodDaily,
-		WindowStart:           window,
-		TotalOperations:       10,
-		SuccessfulOperations:  8,
-		FailedOperations:      2,
+		RelayURL:               "https://relay.example/relay",
+		Period:                 PeriodDaily,
+		WindowStart:            window,
+		TotalOperations:        10,
+		SuccessfulOperations:   8,
+		FailedOperations:       2,
 		TotalDataTransferBytes: 2_000_000,
-		TotalCostMicroCents:   1_000_000,
-		BudgetLimitMicroCents: 900_000,
+		TotalCostMicroCents:    1_000_000,
+		BudgetLimitMicroCents:  900_000,
 	}
 
 	before := time.Now()
@@ -76,9 +76,9 @@ func TestRelayMetrics_LifecycleAndBudgetCalculations(t *testing.T) {
 func TestRelayBudget_Lifecycle_DefaultThresholds_AndKeys(t *testing.T) {
 	before := time.Now()
 	rb := &RelayBudget{
-		RelayURL:        "https://relay.example/relay",
-		Period:          PeriodMonthly,
-		LimitMicroCents: 100,
+		RelayURL:               "https://relay.example/relay",
+		Period:                 PeriodMonthly,
+		LimitMicroCents:        100,
 		CurrentUsageMicroCents: 50,
 	}
 	err := rb.BeforeCreate()

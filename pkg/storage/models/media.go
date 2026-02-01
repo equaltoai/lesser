@@ -33,78 +33,78 @@ var validMediaCategories = map[MediaCategory]struct{}{
 
 // Media represents a media file (image, video, audio) stored in the system
 type Media struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using media ID as partition key with version as sort key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "media#{mediaID}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "version#{version}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "media#{mediaID}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "version#{version}"
 
 	// GSI1 - User media lookup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_MEDIA#{userID}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_MEDIA#{userID}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// GSI2 - Status-based queries (pending, processing, ready, failed)
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_STATUS#{status}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_STATUS#{status}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// GSI3 - Content type queries
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "CONTENT_TYPE#{content_type}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "CONTENT_TYPE#{content_type}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// Core media data
-	MediaID     string `dynamorm:"attr:mediaID" json:"media_id"`
-	Version     string `dynamorm:"attr:version" json:"version"`          // "original", "v1", "v2", etc.
-	UserID      string `dynamorm:"attr:userID" json:"user_id"`           // Owner of the media
-	FileName    string `dynamorm:"attr:fileName" json:"file_name"`       // Original filename
-	ContentType string `dynamorm:"attr:contentType" json:"content_type"` // MIME type
-	FileSize    int64  `dynamorm:"attr:fileSize" json:"file_size"`       // Size in bytes
+	MediaID     string `theorydb:"attr:mediaID" json:"media_id"`
+	Version     string `theorydb:"attr:version" json:"version"`          // "original", "v1", "v2", etc.
+	UserID      string `theorydb:"attr:userID" json:"user_id"`           // Owner of the media
+	FileName    string `theorydb:"attr:fileName" json:"file_name"`       // Original filename
+	ContentType string `theorydb:"attr:contentType" json:"content_type"` // MIME type
+	FileSize    int64  `theorydb:"attr:fileSize" json:"file_size"`       // Size in bytes
 
 	// Storage details
-	S3Bucket string `dynamorm:"attr:s3Bucket" json:"s3_bucket"`
-	S3Key    string `dynamorm:"attr:s3Key" json:"s3_key"`
-	CDNUrl   string `dynamorm:"attr:cdnUrl" json:"cdn_url,omitempty"`
+	S3Bucket string `theorydb:"attr:s3Bucket" json:"s3_bucket"`
+	S3Key    string `theorydb:"attr:s3Key" json:"s3_key"`
+	CDNUrl   string `theorydb:"attr:cdnUrl" json:"cdn_url,omitempty"`
 
 	// Processing status
-	Status      string     `dynamorm:"attr:status" json:"status"` // "pending", "processing", "ready", "failed"
-	ProcessedAt *time.Time `dynamorm:"attr:processedAt" json:"processed_at,omitempty"`
-	Error       string     `dynamorm:"attr:error" json:"error,omitempty"`
+	Status      string     `theorydb:"attr:status" json:"status"` // "pending", "processing", "ready", "failed"
+	ProcessedAt *time.Time `theorydb:"attr:processedAt" json:"processed_at,omitempty"`
+	Error       string     `theorydb:"attr:error" json:"error,omitempty"`
 
 	// Media analysis results
-	Width    int    `dynamorm:"attr:width" json:"width,omitempty"`       // For images/videos
-	Height   int    `dynamorm:"attr:height" json:"height,omitempty"`     // For images/videos
-	Duration int    `dynamorm:"attr:duration" json:"duration,omitempty"` // For videos/audio in seconds
-	Blurhash string `dynamorm:"attr:blurhash" json:"blurhash,omitempty"` // For images
+	Width    int    `theorydb:"attr:width" json:"width,omitempty"`       // For images/videos
+	Height   int    `theorydb:"attr:height" json:"height,omitempty"`     // For images/videos
+	Duration int    `theorydb:"attr:duration" json:"duration,omitempty"` // For videos/audio in seconds
+	Blurhash string `theorydb:"attr:blurhash" json:"blurhash,omitempty"` // For images
 
 	// Media variants (thumbnails, different sizes, formats)
-	Variants map[string]MediaVariant `dynamorm:"attr:variants" json:"variants,omitempty"`
+	Variants map[string]MediaVariant `theorydb:"attr:variants" json:"variants,omitempty"`
 
 	// Media metadata for Mastodon API compatibility
-	Description string `dynamorm:"attr:description" json:"description,omitempty"` // Alt text description
-	Focus       string `dynamorm:"attr:focus" json:"focus,omitempty"`             // Focus point for cropping (x,y)
-	SpoilerText string `dynamorm:"attr:spoilerText" json:"spoiler_text,omitempty"`
+	Description string `theorydb:"attr:description" json:"description,omitempty"` // Alt text description
+	Focus       string `theorydb:"attr:focus" json:"focus,omitempty"`             // Focus point for cropping (x,y)
+	SpoilerText string `theorydb:"attr:spoilerText" json:"spoiler_text,omitempty"`
 
 	// Content moderation
-	IsNSFW          bool     `dynamorm:"attr:isNSFW" json:"is_nsfw"`
-	ModerationScore float64  `dynamorm:"attr:moderationScore" json:"moderation_score"` // 0.0 - 1.0
-	Labels          []string `dynamorm:"attr:labels" json:"labels,omitempty"`          // Content labels from moderation
+	IsNSFW          bool     `theorydb:"attr:isNSFW" json:"is_nsfw"`
+	ModerationScore float64  `theorydb:"attr:moderationScore" json:"moderation_score"` // 0.0 - 1.0
+	Labels          []string `theorydb:"attr:labels" json:"labels,omitempty"`          // Content labels from moderation
 
 	// Client-provided classification (image/video/gifv/etc.)
-	MediaCategory MediaCategory `dynamorm:"attr:mediaCategory" json:"media_category,omitempty"`
+	MediaCategory MediaCategory `theorydb:"attr:mediaCategory" json:"media_category,omitempty"`
 
 	// Usage tracking
-	UsageCount int        `dynamorm:"attr:usageCount" json:"usage_count"`
-	LastUsedAt *time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at,omitempty"`
+	UsageCount int        `theorydb:"attr:usageCount" json:"usage_count"`
+	LastUsedAt *time.Time `theorydb:"attr:lastUsedAt" json:"last_used_at,omitempty"`
 
 	// Timestamps
-	UploadedAt time.Time `dynamorm:"attr:uploadedAt" json:"uploaded_at"`
-	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	UploadedAt time.Time `theorydb:"attr:uploadedAt" json:"uploaded_at"`
+	CreatedAt  time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for unused media (30 days)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at,omitempty"` // Unix timestamp
 
 	// Version for optimistic locking
-	ModelVersion int `dynamorm:"version,attr:modelVersion" json:"model_version"`
+	ModelVersion int `theorydb:"version,attr:modelVersion" json:"model_version"`
 }
 
 // MediaVariant represents a processed variant of the original media

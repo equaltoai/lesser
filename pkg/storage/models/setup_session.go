@@ -9,19 +9,19 @@ import (
 // SetupSession represents a short-lived bearer token used during initial instance setup.
 // Tokens are stored with TTL for automatic cleanup.
 type SetupSession struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK  string `dynamorm:"pk,attr:PK" json:"-"`
-	SK  string `dynamorm:"sk,attr:SK" json:"-"`
-	TTL int64  `dynamorm:"ttl,attr:ttl" json:"-"`
+	PK  string `theorydb:"pk,attr:PK" json:"-"`
+	SK  string `theorydb:"sk,attr:SK" json:"-"`
+	TTL int64  `theorydb:"ttl,attr:ttl" json:"-"`
 
-	ID           string    `dynamorm:"attr:id" json:"id"`
-	Purpose      string    `dynamorm:"attr:purpose" json:"purpose"`
-	WalletType   string    `dynamorm:"attr:walletType" json:"wallet_type"`
-	WalletAddr   string    `dynamorm:"attr:walletAddress" json:"wallet_address"`
-	IssuedAt     time.Time `dynamorm:"attr:issuedAt" json:"issued_at"`
-	ExpiresAt    time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`
-	InstanceLock bool      `dynamorm:"attr:instanceLocked" json:"instance_locked"`
+	ID           string    `theorydb:"attr:id" json:"id"`
+	Purpose      string    `theorydb:"attr:purpose" json:"purpose"`
+	WalletType   string    `theorydb:"attr:walletType" json:"wallet_type"`
+	WalletAddr   string    `theorydb:"attr:walletAddress" json:"wallet_address"`
+	IssuedAt     time.Time `theorydb:"attr:issuedAt" json:"issued_at"`
+	ExpiresAt    time.Time `theorydb:"attr:expiresAt" json:"expires_at"`
+	InstanceLock bool      `theorydb:"attr:instanceLocked" json:"instance_locked"`
 }
 
 // TableName returns the DynamoDB table backing SetupSession.

@@ -71,7 +71,6 @@ func (r *RecoveryRepository) DeleteTrustee(_ context.Context, username, trusteeA
 	return nil
 }
 
-
 // UpdateTrusteeConfirmed updates the confirmed status of a trustee
 func (r *RecoveryRepository) UpdateTrusteeConfirmed(_ context.Context, username, trusteeActorID string, confirmed bool) error {
 	r.mu.Lock()
@@ -149,7 +148,6 @@ func (r *RecoveryRepository) StoreRecoveryCode(_ context.Context, username strin
 	r.codes[key] = code
 	return nil
 }
-
 
 // GetRecoveryCodes retrieves all recovery codes for a user
 func (r *RecoveryRepository) GetRecoveryCodes(_ context.Context, username string) ([]*storage.RecoveryCodeItem, error) {

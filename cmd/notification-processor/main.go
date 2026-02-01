@@ -18,9 +18,9 @@ import (
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
@@ -28,9 +28,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 type notificationRepository interface {
@@ -814,7 +814,7 @@ var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
 	initializeWithDefaultsFn   = (*common.LambdaContext).InitializeWithDefaults
 	newNotificationProcessorFn = NewNotificationProcessor
-	dynamormGetClientFn        = dynamorm.GetClient
+	dynamormGetClientFn        = theorydb.GetClient
 	streamerNewClientFn        = streamer.NewClient
 	randReadFn                 = rand.Read
 	lambdaStartFn              = lambda.Start

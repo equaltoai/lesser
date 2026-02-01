@@ -11,16 +11,16 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
 
 // TimeseriesProcessor handles time series data for federation metrics
@@ -110,7 +110,7 @@ func (tp *TimeseriesProcessor) isFederationRecord(record events.DynamoDBEventRec
 
 	// Check if this is a federation-related record
 	var item struct {
-		PK   string `dynamorm:"pk"`
+		PK   string `theorydb:"pk"`
 		Type string `json:"type"`
 	}
 
@@ -238,8 +238,8 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID strin
 
 	// Create timeseries record for federation metrics
 	timeseriesRecord := struct {
-		PK                  string `dynamorm:"pk"`
-		SK                  string `dynamorm:"sk"`
+		PK                  string `theorydb:"pk"`
+		SK                  string `theorydb:"sk"`
 		Type                string `json:"type"`
 		Window              string `json:"window"`
 		FollowCount         int    `json:"follow_count"`
@@ -249,7 +249,7 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID strin
 		UniqueActorCount    int    `json:"unique_actor_count"`
 		UniqueInstanceCount int    `json:"unique_instance_count"`
 		CreatedAt           string `json:"created_at"`
-		TTL                 int64  `dynamorm:"ttl"`
+		TTL                 int64  `theorydb:"ttl"`
 	}{
 		PK:                  "TIMESERIES#FEDERATION",
 		SK:                  fmt.Sprintf("WINDOW#%s", windowStr),
@@ -272,13 +272,13 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID strin
 	// Also store per-instance metrics for detailed analytics
 	for instance := range metrics.UniqueInstances {
 		instanceRecord := struct {
-			PK        string `dynamorm:"pk"`
-			SK        string `dynamorm:"sk"`
+			PK        string `theorydb:"pk"`
+			SK        string `theorydb:"sk"`
 			Type      string `json:"type"`
 			Instance  string `json:"instance"`
 			Window    string `json:"window"`
 			CreatedAt string `json:"created_at"`
-			TTL       int64  `dynamorm:"ttl"`
+			TTL       int64  `theorydb:"ttl"`
 		}{
 			PK:        fmt.Sprintf("TIMESERIES#INSTANCE#%s", instance),
 			SK:        fmt.Sprintf("WINDOW#%s", windowStr),
@@ -323,7 +323,7 @@ var (
 var (
 	mustInitializeLambdaFn   = common.MustInitializeLambda
 	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	dynamormGetClientFn      = dynamorm.GetClient
+	dynamormGetClientFn      = theorydb.GetClient
 	lambdaStartFn            = lambda.Start
 )
 

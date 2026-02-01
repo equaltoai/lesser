@@ -10,18 +10,18 @@ import (
 // NotificationLegacy represents a notification with legacy key patterns
 // Used for compatibility with existing notification data
 type NotificationLegacy struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK        string `dynamorm:"pk,attr:PK" json:"PK"` // NOTIFICATIONS#username
-	SK        string `dynamorm:"sk,attr:SK" json:"SK"` // timestamp#notificationID
-	ID        string `dynamorm:"attr:id" json:"ID"`
-	Type      string `dynamorm:"attr:type" json:"Type"`
-	Username  string `dynamorm:"attr:username" json:"Username"`
-	AccountID string `dynamorm:"attr:accountID" json:"AccountID"`
-	StatusID  string `dynamorm:"attr:statusID" json:"StatusID,omitempty"`
-	Read      bool   `dynamorm:"attr:read" json:"Read"`
-	CreatedAt int64  `dynamorm:"attr:createdAt" json:"CreatedAt"` // Unix timestamp for sorting
-	TTL       int64  `dynamorm:"ttl,attr:ttl" json:"TTL"`         // 30 days auto-deletion
+	PK        string `theorydb:"pk,attr:PK" json:"PK"` // NOTIFICATIONS#username
+	SK        string `theorydb:"sk,attr:SK" json:"SK"` // timestamp#notificationID
+	ID        string `theorydb:"attr:id" json:"ID"`
+	Type      string `theorydb:"attr:type" json:"Type"`
+	Username  string `theorydb:"attr:username" json:"Username"`
+	AccountID string `theorydb:"attr:accountID" json:"AccountID"`
+	StatusID  string `theorydb:"attr:statusID" json:"StatusID,omitempty"`
+	Read      bool   `theorydb:"attr:read" json:"Read"`
+	CreatedAt int64  `theorydb:"attr:createdAt" json:"CreatedAt"` // Unix timestamp for sorting
+	TTL       int64  `theorydb:"ttl,attr:ttl" json:"TTL"`         // 30 days auto-deletion
 }
 
 // TableName returns the DynamoDB table name

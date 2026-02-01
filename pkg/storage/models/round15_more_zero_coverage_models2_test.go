@@ -545,13 +545,13 @@ func TestImportExportCostTracking(t *testing.T) {
 
 	t.Run("ImportCostTracking keys and cost math", func(t *testing.T) {
 		i := &ImportCostTracking{
-			ImportID:   "imp1",
-			Username:   "alice",
-			Timestamp:  ts,
-			CreatedAt:  ts,
-			UpdatedAt:  ts,
-			Status:     StatusCompleted,
-			FileSize:   10,
+			ImportID:    "imp1",
+			Username:    "alice",
+			Timestamp:   ts,
+			CreatedAt:   ts,
+			UpdatedAt:   ts,
+			Status:      StatusCompleted,
+			FileSize:    10,
 			RecordCount: 5,
 		}
 		i.UpdateKeys()

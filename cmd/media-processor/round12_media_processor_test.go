@@ -365,15 +365,15 @@ func TestMediaProcessor_processMediaJob_BudgetSkipAndHappyPathImage(t *testing.T
 	fakeRepo := &fakeMediaRepo{
 		jobs: map[string]*models.MediaJob{
 			jobID: {
-				JobID:            jobID,
-				MediaID:          mediaID,
-				Username:         username,
-				Status:           models.StatusPending,
-				S3Key:            "uploads/original.jpg",
-				MimeType:         "image/jpeg",
-				FileSize:         int64(len(jpegData)),
+				JobID:             jobID,
+				MediaID:           mediaID,
+				Username:          username,
+				Status:            models.StatusPending,
+				S3Key:             "uploads/original.jpg",
+				MimeType:          "image/jpeg",
+				FileSize:          int64(len(jpegData)),
 				MaxProcessingTime: 2 * time.Second,
-				MaxRetries:       3,
+				MaxRetries:        3,
 			},
 			"job-2": {
 				JobID:             "job-2",
@@ -389,8 +389,8 @@ func TestMediaProcessor_processMediaJob_BudgetSkipAndHappyPathImage(t *testing.T
 		},
 		configs: map[string]*models.UserMediaConfig{
 			username: {
-				UserID:                username,
-				Username:              username,
+				UserID:                 username,
+				Username:               username,
 				MonthlyBudgetMicros:    50, // force budget skip (estimate is 100 for images)
 				VideoProcessingEnabled: true,
 				AudioProcessingEnabled: true,
@@ -402,7 +402,7 @@ func TestMediaProcessor_processMediaJob_BudgetSkipAndHappyPathImage(t *testing.T
 
 	fakeS3 := &fakeS3Client{
 		objects: map[string][]byte{
-			"uploads/original.jpg": jpegData,
+			"uploads/original.jpg":  jpegData,
 			"uploads/original2.jpg": jpegData,
 		},
 	}
@@ -464,26 +464,26 @@ func TestMediaProcessor_processMediaJob_IdempotencyAndLocking(t *testing.T) {
 				MimeType: "image/jpeg",
 			},
 			"processing": {
-				JobID:              "processing",
-				MediaID:            "m",
-				Username:           "u",
-				Status:             models.StatusProcessing,
-				S3Key:              "k",
-				MimeType:           "image/jpeg",
+				JobID:               "processing",
+				MediaID:             "m",
+				Username:            "u",
+				Status:              models.StatusProcessing,
+				S3Key:               "k",
+				MimeType:            "image/jpeg",
 				ProcessingStartedAt: &now,
-				LastAttemptAt:      &now,
+				LastAttemptAt:       &now,
 			},
 			"abandoned": {
-				JobID:              "abandoned",
-				MediaID:            "m",
-				Username:           "u",
-				Status:             models.StatusProcessing,
-				S3Key:              "k",
-				MimeType:           "image/jpeg",
+				JobID:               "abandoned",
+				MediaID:             "m",
+				Username:            "u",
+				Status:              models.StatusProcessing,
+				S3Key:               "k",
+				MimeType:            "image/jpeg",
 				ProcessingStartedAt: &old,
-				LastAttemptAt:      &old,
-				MaxProcessingTime:  2 * time.Second,
-				MaxRetries:         1,
+				LastAttemptAt:       &old,
+				MaxProcessingTime:   2 * time.Second,
+				MaxRetries:          1,
 			},
 		},
 		updateJobErr: stdErrors.New("optimistic lock failed"),
@@ -512,8 +512,8 @@ func TestMediaProcessor_processVideo_Audio_And_CostHelpers(t *testing.T) {
 	repo := &fakeMediaRepo{
 		configs: map[string]*models.UserMediaConfig{
 			"alice": {
-				UserID:                "alice",
-				Username:              "alice",
+				UserID:                 "alice",
+				Username:               "alice",
 				MonthlyBudgetMicros:    5_000_000,
 				VideoProcessingEnabled: true,
 				AudioProcessingEnabled: true,
@@ -527,19 +527,19 @@ func TestMediaProcessor_processVideo_Audio_And_CostHelpers(t *testing.T) {
 	fakeMC := &fakeMediaConvertClient{jobID: "mc-job"}
 
 	mp := &MediaProcessor{
-		mediaRepo:           repo,
-		mediaMetadataRepo:   &fakeMediaMetadataRepo{},
-		mediaAnalyticsRepo:  &fakeMediaAnalyticsRepo{},
-		s3Client:            fakeS3,
-		mediaConvertClient:  fakeMC,
-		unifiedTracker:      &fakeUnifiedTracker{},
-		bucketName:          "bucket",
-		cdnDomain:           "cdn.example.test",
-		mediaConvertRole:    "arn:aws:iam::123:role/test",
-		mediaConvertQueue:   "https://queue.example.test",
+		mediaRepo:            repo,
+		mediaMetadataRepo:    &fakeMediaMetadataRepo{},
+		mediaAnalyticsRepo:   &fakeMediaAnalyticsRepo{},
+		s3Client:             fakeS3,
+		mediaConvertClient:   fakeMC,
+		unifiedTracker:       &fakeUnifiedTracker{},
+		bucketName:           "bucket",
+		cdnDomain:            "cdn.example.test",
+		mediaConvertRole:     "arn:aws:iam::123:role/test",
+		mediaConvertQueue:    "https://queue.example.test",
 		mediaConvertEndpoint: "https://mediaconvert.example.test",
-		logger:              logger,
-		emfMetrics:          observability.NewEMFMetrics(logger, "test", "media-processor"),
+		logger:               logger,
+		emfMetrics:           observability.NewEMFMetrics(logger, "test", "media-processor"),
 	}
 
 	videoRes, err := mp.processVideo(context.Background(), testMP4Header(t), MediaProcessingEvent{
@@ -601,7 +601,7 @@ func TestTrackTranscodingCosts_VariantsAndNoVariants(t *testing.T) {
 		},
 		ProcessingTimeMs: 50,
 		TotalCostMicros:  1210,
-		Status:          "completed",
+		Status:           "completed",
 	}
 	mp.trackTranscodingCosts(context.Background(), withVariants)
 	require.NotEmpty(t, analyticsRepo.analytics)
@@ -622,8 +622,8 @@ func TestTrackTranscodingCosts_VariantsAndNoVariants(t *testing.T) {
 		},
 		ProcessingTimeMs: 10,
 		TotalCostMicros:  1250,
-		Status:          "failed",
-		ErrorMessage:    "oops",
+		Status:           "failed",
+		ErrorMessage:     "oops",
 	}
 	mp.trackTranscodingCosts(context.Background(), noVariants)
 	require.GreaterOrEqual(t, len(analyticsRepo.analytics), 2)
@@ -633,17 +633,17 @@ func TestCreateEnhancedMediaConvertJob_RoleMissingAndSuccess(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	mp := &MediaProcessor{
-		mediaRepo:           &fakeMediaRepo{},
-		mediaConvertClient:  &fakeMediaConvertClient{jobID: "mc-123"},
-		bucketName:          "bucket",
-		mediaConvertQueue:   "queue",
-		mediaConvertRole:    "",
-		logger:              logger,
-		emfMetrics:          observability.NewEMFMetrics(logger, "test", "media-processor"),
-		mediaAnalyticsRepo:  &fakeMediaAnalyticsRepo{},
-		mediaMetadataRepo:   &fakeMediaMetadataRepo{},
-		unifiedTracker:      &fakeUnifiedTracker{},
-		s3Client:            &fakeS3Client{},
+		mediaRepo:            &fakeMediaRepo{},
+		mediaConvertClient:   &fakeMediaConvertClient{jobID: "mc-123"},
+		bucketName:           "bucket",
+		mediaConvertQueue:    "queue",
+		mediaConvertRole:     "",
+		logger:               logger,
+		emfMetrics:           observability.NewEMFMetrics(logger, "test", "media-processor"),
+		mediaAnalyticsRepo:   &fakeMediaAnalyticsRepo{},
+		mediaMetadataRepo:    &fakeMediaMetadataRepo{},
+		unifiedTracker:       &fakeUnifiedTracker{},
+		s3Client:             &fakeS3Client{},
 		mediaConvertEndpoint: "endpoint",
 	}
 
@@ -655,10 +655,10 @@ func TestCreateEnhancedMediaConvertJob_RoleMissingAndSuccess(t *testing.T) {
 
 	mp.mediaConvertRole = "arn:aws:iam::123:role/test"
 	jobID, err := mp.createEnhancedMediaConvertJob(context.Background(), "in", MediaProcessingEvent{JobID: "j", MediaID: "m", Username: "u"}, &TranscodingPlan{
-		QualityLevels:   []string{"480p", "unknown"},
-		ExpectedOutputs: map[string]int64{"480p": 1},
-		ThumbnailCount:  int(^int32(0)) + 1,
-		AnalysisEnabled: true,
+		QualityLevels:    []string{"480p", "unknown"},
+		ExpectedOutputs:  map[string]int64{"480p": 1},
+		ThumbnailCount:   int(^int32(0)) + 1,
+		AnalysisEnabled:  true,
 		MediaConvertCost: 42,
 	})
 	require.NoError(t, err)
@@ -716,20 +716,22 @@ func TestMediaProcessor_HandleSQSMessage_ParsesMessagesAndRetriesOnFailure(t *te
 		newMediaConvertClientFromConfig = prevNewMC
 	})
 
-	loadAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) { return aws.Config{}, nil }
+	loadAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{}, nil
+	}
 	fakeS3 := &fakeS3Client{getErr: stdErrors.New("s3 down")}
 	newS3ClientFromConfig = func(_ aws.Config) s3Client { return fakeS3 }
 	newMediaConvertClientFromConfig = func(_ aws.Config) mediaConvertClient { return &fakeMediaConvertClient{jobID: "mc"} }
 
 	job := &models.MediaJob{
-		JobID:            "job",
-		MediaID:          "media",
-		Username:         "alice",
-		Status:           models.StatusPending,
-		S3Key:            "k",
-		MimeType:         "image/jpeg",
+		JobID:             "job",
+		MediaID:           "media",
+		Username:          "alice",
+		Status:            models.StatusPending,
+		S3Key:             "k",
+		MimeType:          "image/jpeg",
 		MaxProcessingTime: 2 * time.Second,
-		MaxRetries:       1,
+		MaxRetries:        1,
 	}
 
 	repo := &fakeMediaRepo{
@@ -835,15 +837,15 @@ func TestMediaProcessor_handleProcessingError_ClassifiesPermanence(t *testing.T)
 	}
 
 	repo := &fakeMediaRepo{
-		jobs: map[string]*models.MediaJob{"job": job},
+		jobs:         map[string]*models.MediaJob{"job": job},
 		updateJobErr: stdErrors.New("update failed"),
 	}
 
 	mp := &MediaProcessor{
-		mediaRepo:     repo,
-		logger:        logger,
-		emfMetrics:    observability.NewEMFMetrics(logger, "test", "media-processor"),
-		alertManager:  monitoring.NewAlertManager(logger),
+		mediaRepo:         repo,
+		logger:            logger,
+		emfMetrics:        observability.NewEMFMetrics(logger, "test", "media-processor"),
+		alertManager:      monitoring.NewAlertManager(logger),
 		mediaMetadataRepo: &fakeMediaMetadataRepo{},
 	}
 
@@ -1027,7 +1029,7 @@ func TestMediaProcessor_uploadOriginalOnly_UpdateStorageAndHelpers(t *testing.T)
 
 	// updateStorageUsageForUser: update error propagates.
 	repoUpdateErr := &fakeMediaRepo{
-		configs: map[string]*models.UserMediaConfig{"user": {UserID: "user", Username: "user"}},
+		configs:         map[string]*models.UserMediaConfig{"user": {UserID: "user", Username: "user"}},
 		updateConfigErr: stdErrors.New("update failed"),
 	}
 	mp3 := &MediaProcessor{mediaRepo: repoUpdateErr, logger: logger}
@@ -1155,14 +1157,14 @@ func TestMediaProcessor_estimateTranscodingCosts_QualityThumbnailsAndAnalysis(t 
 	mp := &MediaProcessor{logger: zaptest.NewLogger(t)}
 
 	metrics := &TranscodingJobMetrics{
-		JobID:         "job",
-		MediaID:       "media",
-		Username:      "user",
-		InputSize:     120 * 1024 * 1024,      // triggers 1080p plan
-		InputDuration: 20 * 60 * 1000,         // 20 minutes -> thumbnail cap at 10
-		CostBreakdown: map[string]int64{},     // populated by caller in real flows
-		OutputVariants: map[string]string{},   // unused here
-		OutputSizes:    map[string]int64{},    // unused here
+		JobID:          "job",
+		MediaID:        "media",
+		Username:       "user",
+		InputSize:      120 * 1024 * 1024,   // triggers 1080p plan
+		InputDuration:  20 * 60 * 1000,      // 20 minutes -> thumbnail cap at 10
+		CostBreakdown:  map[string]int64{},  // populated by caller in real flows
+		OutputVariants: map[string]string{}, // unused here
+		OutputSizes:    map[string]int64{},  // unused here
 	}
 
 	cfg := &MediaConfig{
@@ -1241,7 +1243,7 @@ func TestCreateEnhancedMediaConvertJob_ThumbnailWithinRangeAndClientError(t *tes
 	logger := zaptest.NewLogger(t)
 
 	mp := &MediaProcessor{
-		logger:            logger,
+		logger:             logger,
 		bucketName:         "bucket",
 		mediaConvertQueue:  "queue",
 		mediaConvertRole:   "arn:aws:iam::123:role/test",

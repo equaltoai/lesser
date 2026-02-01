@@ -8,11 +8,11 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -220,10 +220,10 @@ func TestRound08_AccountRepository_Social_Sweep(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, isMuted)
 
-			mutes, err := repo.GetMutes(ctx, "alice")
-			require.NoError(t, err)
-			require.NotEmpty(t, mutes)
-		})
+		mutes, err := repo.GetMutes(ctx, "alice")
+		require.NoError(t, err)
+		require.NotEmpty(t, mutes)
+	})
 
 	t.Run("bookmarks and bookmarked statuses", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)

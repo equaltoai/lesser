@@ -22,9 +22,9 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -48,7 +48,7 @@ type analysisSaver interface {
 }
 
 type analyzableStreamItem struct {
-	PK   string `dynamorm:"pk"`
+	PK   string `theorydb:"pk"`
 	Type string `json:"type"`
 }
 
@@ -59,10 +59,10 @@ type contentStreamAttachment struct {
 }
 
 type contentStreamItem struct {
-	PK         string                  `dynamorm:"pk"`
-	Type       string                  `json:"type"`
-	Content    string                  `json:"content"`
-	ActorID    string                  `json:"actor_id"`
+	PK         string                    `theorydb:"pk"`
+	Type       string                    `json:"type"`
+	Content    string                    `json:"content"`
+	ActorID    string                    `json:"actor_id"`
 	Attachment []contentStreamAttachment `json:"attachment"`
 }
 
@@ -228,8 +228,8 @@ func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 func (ap *AIProcessor) handleModerationAction(ctx context.Context, analysis *ai.AIAnalysis) error {
 	// Create moderation event model for DynamORM
 	moderationEvent := struct {
-		PK              string  `dynamorm:"pk"`
-		SK              string  `dynamorm:"sk"`
+		PK              string  `theorydb:"pk"`
+		SK              string  `theorydb:"sk"`
 		Type            string  `json:"type"`
 		EventID         string  `json:"event_id"`
 		EventType       string  `json:"event_type"`
@@ -240,7 +240,7 @@ func (ap *AIProcessor) handleModerationAction(ctx context.Context, analysis *ai.
 		Severity        string  `json:"severity"`
 		ConfidenceScore float64 `json:"confidence_score"`
 		CreatedAt       string  `json:"created_at"`
-		TTL             int64   `dynamorm:"ttl"`
+		TTL             int64   `theorydb:"ttl"`
 	}{
 		PK:              fmt.Sprintf("MODERATION#%s", analysis.ObjectID),
 		SK:              fmt.Sprintf("EVENT#%s", analysis.ID),
@@ -291,11 +291,11 @@ func (ap *AIProcessor) determineSeverity(analysis *ai.AIAnalysis) string {
 }
 
 var (
-	lambdaCtx *common.LambdaContext
-	cfg       *config.Config //nolint:unused // Reserved for dependency injection pattern
-	logger    *zap.Logger
-	repos     storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
-	processor *AIProcessor
+	lambdaCtx       *common.LambdaContext
+	cfg             *config.Config //nolint:unused // Reserved for dependency injection pattern
+	logger          *zap.Logger
+	repos           storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
+	processor       *AIProcessor
 	unmarshalItemFn = stream.UnmarshalItem
 	lambdaStartFn   = lambda.Start
 )

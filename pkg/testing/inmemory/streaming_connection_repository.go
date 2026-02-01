@@ -47,7 +47,6 @@ func NewStreamingConnectionRepository() *StreamingConnectionRepository {
 	}
 }
 
-
 // ===== Connection Lifecycle Operations =====
 
 // WriteConnection stores a WebSocket connection
@@ -166,7 +165,6 @@ func (r *StreamingConnectionRepository) UpdateConnectionActivity(_ context.Conte
 	return nil
 }
 
-
 // ===== Subscription Operations =====
 
 // WriteSubscription stores a stream subscription
@@ -254,7 +252,6 @@ func (r *StreamingConnectionRepository) GetSubscriptionsForStream(_ context.Cont
 	}
 	return result, nil
 }
-
 
 // ===== Connection Queries =====
 
@@ -346,7 +343,6 @@ func (r *StreamingConnectionRepository) GetUnhealthyConnections(_ context.Contex
 	}
 	return unhealthyConns, nil
 }
-
 
 // ===== Connection Counts =====
 
@@ -480,7 +476,6 @@ func (r *StreamingConnectionRepository) CleanupExpiredConnections(_ context.Cont
 	return 0, nil
 }
 
-
 // ===== Resource Limits =====
 
 // EnforceResourceLimits enforces resource limits on connections
@@ -601,7 +596,6 @@ func (r *StreamingConnectionRepository) RecordPong(_ context.Context, connection
 	conn.RecordPong()
 	return nil
 }
-
 
 // ===== Helper Methods =====
 

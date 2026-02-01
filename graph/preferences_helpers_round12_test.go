@@ -125,4 +125,3 @@ func TestRound12PreferencesHelpers_LoadAndConvert(t *testing.T) {
 	require.Len(t, modelPrefs.ReblogFilters, 2)
 	require.Equal(t, "ads", modelPrefs.ReblogFilters[0].Key)
 }
-

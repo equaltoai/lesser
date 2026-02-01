@@ -3,4 +3,3 @@
 
 // Historical stub: inbox tests moved to `cmd/inbox/internal/routing/like_announce_validation_round10_coverage_test.go`.
 package main
-

@@ -95,7 +95,7 @@ func TestHealthMonitorCheckDynamoDBHealth(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				hm := &HealthMonitor{
-					monitor:      pm,
+					monitor: pm,
 					dynamoClient: &stubDynamoDB{out: &dynamodb.DescribeTableOutput{Table: &ddbTypes.TableDescription{
 						TableStatus:    tc.tableState,
 						ItemCount:      aws.Int64(10),
@@ -200,7 +200,7 @@ func TestHealthMonitorCheckSQSHealth(t *testing.T) {
 				hm := &HealthMonitor{
 					monitor: pm,
 					sqsClient: &stubSQS{out: &sqs.GetQueueAttributesOutput{Attributes: map[string]string{
-						"ApproximateNumberOfMessages":          tc.visible,
+						"ApproximateNumberOfMessages":           tc.visible,
 						"ApproximateNumberOfMessagesNotVisible": tc.invisible,
 						"ApproximateNumberOfMessagesDelayed":    tc.delayed,
 					}}},
@@ -218,8 +218,8 @@ func TestHealthMonitorCheckSQSHealth(t *testing.T) {
 
 	t.Run("client_error_sets_critical", func(t *testing.T) {
 		hm := &HealthMonitor{
-			monitor:    pm,
-			sqsClient:  &stubSQS{err: errors.New("sqs failed")},
+			monitor:      pm,
+			sqsClient:    &stubSQS{err: errors.New("sqs failed")},
 			healthStatus: make(map[string]*ComponentHealth),
 		}
 
@@ -245,7 +245,7 @@ func TestHealthMonitorRunHealthChecksRecordsOverallMetric(t *testing.T) {
 			Timeout:    aws.Int32(10),
 		}},
 		sqsClient: &stubSQS{out: &sqs.GetQueueAttributesOutput{Attributes: map[string]string{
-			"ApproximateNumberOfMessages":          "10",
+			"ApproximateNumberOfMessages":           "10",
 			"ApproximateNumberOfMessagesNotVisible": "0",
 			"ApproximateNumberOfMessagesDelayed":    "0",
 		}}},
@@ -269,4 +269,3 @@ func TestHealthMonitorRunHealthChecksRecordsOverallMetric(t *testing.T) {
 	require.NotNil(t, last.MetricData[0].MetricName)
 	assert.Equal(t, "SystemHealth", *last.MetricData[0].MetricName)
 }
-

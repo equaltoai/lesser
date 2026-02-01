@@ -28,20 +28,20 @@ import (
 	notifsvc "github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
 var (
 	runAsync = func(fn func()) { go fn() }
 
-	getDynamormClient     = dynamorm.GetClient
+	getDynamormClient     = theorydb.GetClient
 	newRepositoryFactory  = factory.NewRepositoryFactory
 	getAuthMiddleware     = auth.GetMiddleware
 	startLambda           = lambda.Start

@@ -18,113 +18,113 @@ const (
 
 // FederationRouteMetrics represents detailed per-route federation metrics with GSI optimization
 type FederationRouteMetrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - route metrics use FED_ROUTE#{route_id}#{date} pattern
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based route queries - FED_ROUTES#{date}, ROUTE#{route_id}#{timestamp}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for domain-route queries - FED_DOMAIN_ROUTES#{domain}, ROUTE#{route_id}#{timestamp}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// GSI3 for performance queries - FED_ROUTE_PERF#{performance_tier}, LATENCY#{avg_latency}#{route_id}
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
 
 	// Route identification
-	RouteID           string `dynamorm:"attr:routeID" json:"route_id"`                     // Unique route identifier
-	DestinationDomain string `dynamorm:"attr:destinationDomain" json:"destination_domain"` // Target domain
-	RouteType         string `dynamorm:"attr:routeType" json:"route_type"`                 // primary, backup, failover
-	RoutePriority     int    `dynamorm:"attr:routePriority" json:"route_priority"`         // Priority order (1=highest)
-	ServerEndpoint    string `dynamorm:"attr:serverEndpoint" json:"server_endpoint"`       // Full endpoint URL
-	Protocol          string `dynamorm:"attr:protocol" json:"protocol"`                    // HTTP, HTTPS
-	Port              int    `dynamorm:"attr:port" json:"port"`                            // Target port
+	RouteID           string `theorydb:"attr:routeID" json:"route_id"`                     // Unique route identifier
+	DestinationDomain string `theorydb:"attr:destinationDomain" json:"destination_domain"` // Target domain
+	RouteType         string `theorydb:"attr:routeType" json:"route_type"`                 // primary, backup, failover
+	RoutePriority     int    `theorydb:"attr:routePriority" json:"route_priority"`         // Priority order (1=highest)
+	ServerEndpoint    string `theorydb:"attr:serverEndpoint" json:"server_endpoint"`       // Full endpoint URL
+	Protocol          string `theorydb:"attr:protocol" json:"protocol"`                    // HTTP, HTTPS
+	Port              int    `theorydb:"attr:port" json:"port"`                            // Target port
 
 	// Performance metrics (aggregated for the time period)
-	TotalAttempts      int64   `dynamorm:"attr:totalAttempts" json:"total_attempts"`           // Total delivery attempts
-	SuccessfulAttempts int64   `dynamorm:"attr:successfulAttempts" json:"successful_attempts"` // Successful deliveries
-	FailedAttempts     int64   `dynamorm:"attr:failedAttempts" json:"failed_attempts"`         // Failed deliveries
-	SuccessRate        float64 `dynamorm:"attr:successRate" json:"success_rate"`               // Success percentage
-	AvgLatencyMs       int64   `dynamorm:"attr:avgLatencyMs" json:"avg_latency_ms"`            // Average response time
-	MedianLatencyMs    int64   `dynamorm:"attr:medianLatencyMs" json:"median_latency_ms"`      // Median response time
-	P95LatencyMs       int64   `dynamorm:"attr:p95LatencyMs" json:"p95_latency_ms"`            // 95th percentile latency
-	P99LatencyMs       int64   `dynamorm:"attr:p99LatencyMs" json:"p99_latency_ms"`            // 99th percentile latency
-	MinLatencyMs       int64   `dynamorm:"attr:minLatencyMs" json:"min_latency_ms"`            // Fastest response
-	MaxLatencyMs       int64   `dynamorm:"attr:maxLatencyMs" json:"max_latency_ms"`            // Slowest response
-	TimeoutCount       int64   `dynamorm:"attr:timeoutCount" json:"timeout_count"`             // Number of timeouts
-	TimeoutRate        float64 `dynamorm:"attr:timeoutRate" json:"timeout_rate"`               // Timeout percentage
+	TotalAttempts      int64   `theorydb:"attr:totalAttempts" json:"total_attempts"`           // Total delivery attempts
+	SuccessfulAttempts int64   `theorydb:"attr:successfulAttempts" json:"successful_attempts"` // Successful deliveries
+	FailedAttempts     int64   `theorydb:"attr:failedAttempts" json:"failed_attempts"`         // Failed deliveries
+	SuccessRate        float64 `theorydb:"attr:successRate" json:"success_rate"`               // Success percentage
+	AvgLatencyMs       int64   `theorydb:"attr:avgLatencyMs" json:"avg_latency_ms"`            // Average response time
+	MedianLatencyMs    int64   `theorydb:"attr:medianLatencyMs" json:"median_latency_ms"`      // Median response time
+	P95LatencyMs       int64   `theorydb:"attr:p95LatencyMs" json:"p95_latency_ms"`            // 95th percentile latency
+	P99LatencyMs       int64   `theorydb:"attr:p99LatencyMs" json:"p99_latency_ms"`            // 99th percentile latency
+	MinLatencyMs       int64   `theorydb:"attr:minLatencyMs" json:"min_latency_ms"`            // Fastest response
+	MaxLatencyMs       int64   `theorydb:"attr:maxLatencyMs" json:"max_latency_ms"`            // Slowest response
+	TimeoutCount       int64   `theorydb:"attr:timeoutCount" json:"timeout_count"`             // Number of timeouts
+	TimeoutRate        float64 `theorydb:"attr:timeoutRate" json:"timeout_rate"`               // Timeout percentage
 
 	// Error tracking
-	ErrorBreakdown      map[string]int64 `dynamorm:"attr:errorBreakdown" json:"error_breakdown"`            // Error code -> count
-	ConsecutiveFailures int64            `dynamorm:"attr:consecutiveFailures" json:"consecutive_failures"`  // Current failure streak
-	MaxConsecutiveFails int64            `dynamorm:"attr:maxConsecutiveFails" json:"max_consecutive_fails"` // Longest failure streak
-	LastErrorCode       string           `dynamorm:"attr:lastErrorCode" json:"last_error_code"`             // Most recent error
-	LastErrorMessage    string           `dynamorm:"attr:lastErrorMessage" json:"last_error_message"`       // Most recent error message
-	LastErrorTime       *time.Time       `dynamorm:"attr:lastErrorTime" json:"last_error_time"`             // When last error occurred
-	RecoveryTime        *time.Time       `dynamorm:"attr:recoveryTime" json:"recovery_time"`                // When route recovered
+	ErrorBreakdown      map[string]int64 `theorydb:"attr:errorBreakdown" json:"error_breakdown"`            // Error code -> count
+	ConsecutiveFailures int64            `theorydb:"attr:consecutiveFailures" json:"consecutive_failures"`  // Current failure streak
+	MaxConsecutiveFails int64            `theorydb:"attr:maxConsecutiveFails" json:"max_consecutive_fails"` // Longest failure streak
+	LastErrorCode       string           `theorydb:"attr:lastErrorCode" json:"last_error_code"`             // Most recent error
+	LastErrorMessage    string           `theorydb:"attr:lastErrorMessage" json:"last_error_message"`       // Most recent error message
+	LastErrorTime       *time.Time       `theorydb:"attr:lastErrorTime" json:"last_error_time"`             // When last error occurred
+	RecoveryTime        *time.Time       `theorydb:"attr:recoveryTime" json:"recovery_time"`                // When route recovered
 
 	// Cost metrics (aggregated)
-	TotalCostMicroCents int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost for this route
-	AvgCostPerDelivery  int64   `dynamorm:"attr:avgCostPerDelivery" json:"avg_cost_per_delivery"`   // Average cost per delivery
-	CostEfficiencyScore float64 `dynamorm:"attr:costEfficiencyScore" json:"cost_efficiency_score"`  // Cost vs. performance ratio
-	DataTransferBytes   int64   `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"`      // Total bytes transferred
-	AvgPayloadSize      int64   `dynamorm:"attr:avgPayloadSize" json:"avg_payload_size"`            // Average payload size
+	TotalCostMicroCents int64   `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost for this route
+	AvgCostPerDelivery  int64   `theorydb:"attr:avgCostPerDelivery" json:"avg_cost_per_delivery"`   // Average cost per delivery
+	CostEfficiencyScore float64 `theorydb:"attr:costEfficiencyScore" json:"cost_efficiency_score"`  // Cost vs. performance ratio
+	DataTransferBytes   int64   `theorydb:"attr:dataTransferBytes" json:"data_transfer_bytes"`      // Total bytes transferred
+	AvgPayloadSize      int64   `theorydb:"attr:avgPayloadSize" json:"avg_payload_size"`            // Average payload size
 
 	// Retry analysis
-	TotalRetries       int64   `dynamorm:"attr:totalRetries" json:"total_retries"`              // Total retry attempts
-	AvgRetriesPerFail  float64 `dynamorm:"attr:avgRetriesPerFail" json:"avg_retries_per_fail"`  // Average retries before giving up
-	RetrySuccessRate   float64 `dynamorm:"attr:retrySuccessRate" json:"retry_success_rate"`     // Success rate of retries
-	AvgRetryDelayMs    int64   `dynamorm:"attr:avgRetryDelayMs" json:"avg_retry_delay_ms"`      // Average delay between retries
-	RetryBackoffFactor float64 `dynamorm:"attr:retryBackoffFactor" json:"retry_backoff_factor"` // Exponential backoff factor
+	TotalRetries       int64   `theorydb:"attr:totalRetries" json:"total_retries"`              // Total retry attempts
+	AvgRetriesPerFail  float64 `theorydb:"attr:avgRetriesPerFail" json:"avg_retries_per_fail"`  // Average retries before giving up
+	RetrySuccessRate   float64 `theorydb:"attr:retrySuccessRate" json:"retry_success_rate"`     // Success rate of retries
+	AvgRetryDelayMs    int64   `theorydb:"attr:avgRetryDelayMs" json:"avg_retry_delay_ms"`      // Average delay between retries
+	RetryBackoffFactor float64 `theorydb:"attr:retryBackoffFactor" json:"retry_backoff_factor"` // Exponential backoff factor
 
 	// Circuit breaker state
-	CircuitBreakerState string     `dynamorm:"attr:circuitBreakerState" json:"circuit_breaker_state"` // closed, open, half_open
-	StateChangeTime     *time.Time `dynamorm:"attr:stateChangeTime" json:"state_change_time"`         // When state last changed
-	NextRetryTime       *time.Time `dynamorm:"attr:nextRetryTime" json:"next_retry_time"`             // When to try again if open
+	CircuitBreakerState string     `theorydb:"attr:circuitBreakerState" json:"circuit_breaker_state"` // closed, open, half_open
+	StateChangeTime     *time.Time `theorydb:"attr:stateChangeTime" json:"state_change_time"`         // When state last changed
+	NextRetryTime       *time.Time `theorydb:"attr:nextRetryTime" json:"next_retry_time"`             // When to try again if open
 
 	// Health scoring
-	HealthScore      float64   `dynamorm:"attr:healthScore" json:"health_score"`           // Overall route health (0.0-1.0)
-	ReliabilityScore float64   `dynamorm:"attr:reliabilityScore" json:"reliability_score"` // Reliability metric
-	PerformanceScore float64   `dynamorm:"attr:performanceScore" json:"performance_score"` // Speed metric
-	StabilityScore   float64   `dynamorm:"attr:stabilityScore" json:"stability_score"`     // Consistency metric
-	HealthHistory    []float64 `dynamorm:"attr:healthHistory" json:"health_history"`       // Historical health scores
-	LastHealthCheck  time.Time `dynamorm:"attr:lastHealthCheck" json:"last_health_check"`  // When health was last calculated
-	HealthTrend      string    `dynamorm:"attr:healthTrend" json:"health_trend"`           // improving, stable, degrading
+	HealthScore      float64   `theorydb:"attr:healthScore" json:"health_score"`           // Overall route health (0.0-1.0)
+	ReliabilityScore float64   `theorydb:"attr:reliabilityScore" json:"reliability_score"` // Reliability metric
+	PerformanceScore float64   `theorydb:"attr:performanceScore" json:"performance_score"` // Speed metric
+	StabilityScore   float64   `theorydb:"attr:stabilityScore" json:"stability_score"`     // Consistency metric
+	HealthHistory    []float64 `theorydb:"attr:healthHistory" json:"health_history"`       // Historical health scores
+	LastHealthCheck  time.Time `theorydb:"attr:lastHealthCheck" json:"last_health_check"`  // When health was last calculated
+	HealthTrend      string    `theorydb:"attr:healthTrend" json:"health_trend"`           // improving, stable, degrading
 
 	// Load balancing metrics
-	CurrentWeight      float64    `dynamorm:"attr:currentWeight" json:"current_weight"`            // Current load balancing weight
-	OptimalWeight      float64    `dynamorm:"attr:optimalWeight" json:"optimal_weight"`            // Calculated optimal weight
-	WeightAdjustments  int        `dynamorm:"attr:weightAdjustments" json:"weight_adjustments"`    // Number of weight changes
-	LastWeightChange   *time.Time `dynamorm:"attr:lastWeightChange" json:"last_weight_change"`     // When weight was last adjusted
-	LoadBalancingScore float64    `dynamorm:"attr:loadBalancingScore" json:"load_balancing_score"` // Effectiveness score
+	CurrentWeight      float64    `theorydb:"attr:currentWeight" json:"current_weight"`            // Current load balancing weight
+	OptimalWeight      float64    `theorydb:"attr:optimalWeight" json:"optimal_weight"`            // Calculated optimal weight
+	WeightAdjustments  int        `theorydb:"attr:weightAdjustments" json:"weight_adjustments"`    // Number of weight changes
+	LastWeightChange   *time.Time `theorydb:"attr:lastWeightChange" json:"last_weight_change"`     // When weight was last adjusted
+	LoadBalancingScore float64    `theorydb:"attr:loadBalancingScore" json:"load_balancing_score"` // Effectiveness score
 
 	// Geographic and network info
-	DataCenter     string `dynamorm:"attr:dataCenter" json:"data_center"`         // Which DC the route goes through
-	NetworkPath    string `dynamorm:"attr:networkPath" json:"network_path"`       // Network routing information
-	IPAddress      string `dynamorm:"attr:ipAddress" json:"ip_address"`           // Resolved IP address
-	ASN            string `dynamorm:"attr:asn" json:"asn"`                        // Autonomous System Number
-	GeographicZone string `dynamorm:"attr:geographicZone" json:"geographic_zone"` // Geographic region
-	CDNProvider    string `dynamorm:"attr:cdnProvider" json:"cdn_provider"`       // CDN if applicable
+	DataCenter     string `theorydb:"attr:dataCenter" json:"data_center"`         // Which DC the route goes through
+	NetworkPath    string `theorydb:"attr:networkPath" json:"network_path"`       // Network routing information
+	IPAddress      string `theorydb:"attr:ipAddress" json:"ip_address"`           // Resolved IP address
+	ASN            string `theorydb:"attr:asn" json:"asn"`                        // Autonomous System Number
+	GeographicZone string `theorydb:"attr:geographicZone" json:"geographic_zone"` // Geographic region
+	CDNProvider    string `theorydb:"attr:cdnProvider" json:"cdn_provider"`       // CDN if applicable
 
 	// Aggregation period
-	PeriodType  string    `dynamorm:"attr:periodType" json:"period_type"`   // hour, day, week, month
-	PeriodStart time.Time `dynamorm:"attr:periodStart" json:"period_start"` // Start of aggregation period
-	PeriodEnd   time.Time `dynamorm:"attr:periodEnd" json:"period_end"`     // End of aggregation period
+	PeriodType  string    `theorydb:"attr:periodType" json:"period_type"`   // hour, day, week, month
+	PeriodStart time.Time `theorydb:"attr:periodStart" json:"period_start"` // Start of aggregation period
+	PeriodEnd   time.Time `theorydb:"attr:periodEnd" json:"period_end"`     // End of aggregation period
 
 	// Timestamps
-	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	FirstUsed   time.Time `dynamorm:"attr:firstUsed" json:"first_used"`     // When route was first used
-	LastUsed    time.Time `dynamorm:"attr:lastUsed" json:"last_used"`       // When route was last used
-	LastSuccess time.Time `dynamorm:"attr:lastSuccess" json:"last_success"` // When route last succeeded
+	CreatedAt   time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt   time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	FirstUsed   time.Time `theorydb:"attr:firstUsed" json:"first_used"`     // When route was first used
+	LastUsed    time.Time `theorydb:"attr:lastUsed" json:"last_used"`       // When route was last used
+	LastSuccess time.Time `theorydb:"attr:lastSuccess" json:"last_success"` // When route last succeeded
 
 	// TTL for automatic cleanup (90 days for route metrics)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the primary keys for the FederationRouteMetrics model
@@ -563,15 +563,15 @@ func (FederationRouteMetrics) TableName() string {
 
 // FederationRouteAggregation represents aggregated route metrics across multiple time periods
 type FederationRouteAggregation struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - route aggregation uses FED_ROUTE_AGG#{period}#{route_id} pattern
-	PK string `dynamorm:"pk" json:"pk"`
-	SK string `dynamorm:"sk" json:"sk"`
+	PK string `theorydb:"pk" json:"pk"`
+	SK string `theorydb:"sk" json:"sk"`
 
 	// GSI1 for route comparison queries - FED_ROUTE_COMPARE#{period}, SCORE#{health_score}#{route_id}
-	GSI1PK string `dynamorm:"index:gsi1,pk" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk" json:"gsi1_sk"`
 
 	// Aggregation metadata
 	RouteID           string    `json:"route_id"`
@@ -627,7 +627,7 @@ type FederationRouteAggregation struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// TTL for automatic cleanup (1 year for aggregated data)
-	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL int64 `json:"ttl,omitempty" theorydb:"ttl"`
 }
 
 // TableName returns the DynamoDB table backing FederationRouteAggregation.

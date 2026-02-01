@@ -301,7 +301,6 @@ func classifyInboxResponse(statusCode int, url string, logger *zap.Logger) error
 	}
 }
 
-
 // ============================================================================
 // Additional validation tests
 // ============================================================================
@@ -692,76 +691,76 @@ func TestValidateSearchMessage(t *testing.T) {
 
 func TestGetDefaultStrategy(t *testing.T) {
 	tests := []struct {
-		name                   string
-		service                string
-		expectedMaxRetries     int
-		expectedDelaySeconds   int32
-		expectedBackoff        string
-		expectedValidateFirst  bool
-		expectedCheckAccess    bool
+		name                  string
+		service               string
+		expectedMaxRetries    int
+		expectedDelaySeconds  int32
+		expectedBackoff       string
+		expectedValidateFirst bool
+		expectedCheckAccess   bool
 	}{
 		{
-			name:                   "notification processor",
-			service:                "notification-processor",
-			expectedMaxRetries:     3,
-			expectedDelaySeconds:   30,
-			expectedBackoff:        "exponential",
-			expectedValidateFirst:  true,
-			expectedCheckAccess:    false,
+			name:                  "notification processor",
+			service:               "notification-processor",
+			expectedMaxRetries:    3,
+			expectedDelaySeconds:  30,
+			expectedBackoff:       "exponential",
+			expectedValidateFirst: true,
+			expectedCheckAccess:   false,
 		},
 		{
-			name:                   "activity processor",
-			service:                "activity-processor",
-			expectedMaxRetries:     5,
-			expectedDelaySeconds:   60,
-			expectedBackoff:        "exponential",
-			expectedValidateFirst:  true,
-			expectedCheckAccess:    true,
+			name:                  "activity processor",
+			service:               "activity-processor",
+			expectedMaxRetries:    5,
+			expectedDelaySeconds:  60,
+			expectedBackoff:       "exponential",
+			expectedValidateFirst: true,
+			expectedCheckAccess:   true,
 		},
 		{
-			name:                   "media processor",
-			service:                "media-processor",
-			expectedMaxRetries:     3,
-			expectedDelaySeconds:   120,
-			expectedBackoff:        "linear",
-			expectedValidateFirst:  true,
-			expectedCheckAccess:    true,
+			name:                  "media processor",
+			service:               "media-processor",
+			expectedMaxRetries:    3,
+			expectedDelaySeconds:  120,
+			expectedBackoff:       "linear",
+			expectedValidateFirst: true,
+			expectedCheckAccess:   true,
 		},
 		{
-			name:                   "federation delivery",
-			service:                "federation-delivery",
-			expectedMaxRetries:     5,
-			expectedDelaySeconds:   300,
-			expectedBackoff:        "exponential",
-			expectedValidateFirst:  true,
-			expectedCheckAccess:    true,
+			name:                  "federation delivery",
+			service:               "federation-delivery",
+			expectedMaxRetries:    5,
+			expectedDelaySeconds:  300,
+			expectedBackoff:       "exponential",
+			expectedValidateFirst: true,
+			expectedCheckAccess:   true,
 		},
 		{
-			name:                   "search indexer",
-			service:                "search-indexer",
-			expectedMaxRetries:     3,
-			expectedDelaySeconds:   60,
-			expectedBackoff:        "fixed",
-			expectedValidateFirst:  true,
-			expectedCheckAccess:    false,
+			name:                  "search indexer",
+			service:               "search-indexer",
+			expectedMaxRetries:    3,
+			expectedDelaySeconds:  60,
+			expectedBackoff:       "fixed",
+			expectedValidateFirst: true,
+			expectedCheckAccess:   false,
 		},
 		{
-			name:                   "unknown service - default",
-			service:                "unknown-service",
-			expectedMaxRetries:     3,
-			expectedDelaySeconds:   60,
-			expectedBackoff:        "exponential",
-			expectedValidateFirst:  true,
-			expectedCheckAccess:    false,
+			name:                  "unknown service - default",
+			service:               "unknown-service",
+			expectedMaxRetries:    3,
+			expectedDelaySeconds:  60,
+			expectedBackoff:       "exponential",
+			expectedValidateFirst: true,
+			expectedCheckAccess:   false,
 		},
 		{
-			name:                   "empty service - default",
-			service:                "",
-			expectedMaxRetries:     3,
-			expectedDelaySeconds:   60,
-			expectedBackoff:        "exponential",
-			expectedValidateFirst:  true,
-			expectedCheckAccess:    false,
+			name:                  "empty service - default",
+			service:               "",
+			expectedMaxRetries:    3,
+			expectedDelaySeconds:  60,
+			expectedBackoff:       "exponential",
+			expectedValidateFirst: true,
+			expectedCheckAccess:   false,
 		},
 	}
 
@@ -947,7 +946,6 @@ func TestReprocessorQueueURLCaching(t *testing.T) {
 		t.Error("Queue URL not cached correctly")
 	}
 }
-
 
 // ============================================================================
 // ReprocessConfig struct tests
@@ -1275,7 +1273,6 @@ func TestGetDefaultStrategy_Comparison(t *testing.T) {
 // ============================================================================
 // Import for fmt
 // ============================================================================
-
 
 // ============================================================================
 // Tests with Mock SQS Client for Reprocessor
@@ -1998,7 +1995,6 @@ func TestReprocessWithValidation_InvalidJSON(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid test message format")
 }
-
 
 // ============================================================================
 // HTTP Accessibility Tests

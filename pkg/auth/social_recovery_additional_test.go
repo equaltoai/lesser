@@ -17,7 +17,9 @@ type socialRecoveryRepoDeleteErr struct {
 	err error
 }
 
-func (r *socialRecoveryRepoDeleteErr) DeleteTrustee(_ context.Context, _, _ string) error { return r.err }
+func (r *socialRecoveryRepoDeleteErr) DeleteTrustee(_ context.Context, _, _ string) error {
+	return r.err
+}
 
 type socialRecoveryRepoGetTrusteesErr struct {
 	*inMemorySocialRecoveryRepo

@@ -14,7 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"go.uber.org/zap"
 )
 
@@ -29,15 +29,15 @@ type enhancedRetryProcessor interface {
 }
 
 var (
-	newLambdaOptimizedClientFn      = dynamorm.NewLambdaOptimizedClient
-	newSQSClientFn                  = sqs.NewFromConfig
-	newFederationStorageFn          = federation.NewDynamORMFederationStorage
-	newDeliveryServiceFn            = federation.NewDeliveryService
-	newEnhancedRetryProcessorFn     = func(deliveryService *federation.DeliveryService, sqsClient *sqs.Client, queueURL string) enhancedRetryProcessor {
+	newLambdaOptimizedClientFn  = theorydb.NewLambdaOptimizedClient
+	newSQSClientFn              = sqs.NewFromConfig
+	newFederationStorageFn      = federation.NewDynamORMFederationStorage
+	newDeliveryServiceFn        = federation.NewDeliveryService
+	newEnhancedRetryProcessorFn = func(deliveryService *federation.DeliveryService, sqsClient *sqs.Client, queueURL string) enhancedRetryProcessor {
 		return federation.NewEnhancedRetryProcessor(deliveryService, sqsClient, queueURL)
 	}
-	mustInitializeLambdaFn          = common.MustInitializeLambda
-	lambdaStartFn                   = lambda.Start
+	mustInitializeLambdaFn = common.MustInitializeLambda
+	lambdaStartFn          = lambda.Start
 )
 
 // NewHandler creates a new enhanced federation processor handler

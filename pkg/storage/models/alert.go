@@ -7,74 +7,74 @@ import (
 
 // Alert represents a system alert that can be triggered for monitoring purposes
 type Alert struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key: ALERT#{alert_id}
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
 	// Sort key: METADATA
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1: Alert type index for querying by alert type
 	// GSI1PK: ALERT_TYPE#{type}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
 	// GSI1SK: TIMESTAMP#{timestamp}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2: Service index for querying alerts by service
 	// GSI2PK: SERVICE#{service}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
 	// GSI2SK: SEVERITY#{severity}#TIMESTAMP#{timestamp}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// GSI3: Status index for querying alerts by status
 	// GSI3PK: STATUS#{status}
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
 	// GSI3SK: PRIORITY#{priority}#TIMESTAMP#{timestamp}
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
 
 	// Alert identification
-	AlertID  string `dynamorm:"attr:alertID" json:"alert_id"`
-	Type     string `dynamorm:"attr:type" json:"type"`         // error_rate, latency, cost, health, security, capacity
-	Severity string `dynamorm:"attr:severity" json:"severity"` // info, warning, error, critical
-	Priority string `dynamorm:"attr:priority" json:"priority"` // P0, P1, P2
-	Status   string `dynamorm:"attr:status" json:"status"`     // firing, resolved, acknowledged, suppressed
+	AlertID  string `theorydb:"attr:alertID" json:"alert_id"`
+	Type     string `theorydb:"attr:type" json:"type"`         // error_rate, latency, cost, health, security, capacity
+	Severity string `theorydb:"attr:severity" json:"severity"` // info, warning, error, critical
+	Priority string `theorydb:"attr:priority" json:"priority"` // P0, P1, P2
+	Status   string `theorydb:"attr:status" json:"status"`     // firing, resolved, acknowledged, suppressed
 
 	// Alert content
-	Title       string `dynamorm:"attr:title" json:"title"`
-	Description string `dynamorm:"attr:description" json:"description"`
-	Message     string `dynamorm:"attr:message" json:"message"`
-	RunbookURL  string `dynamorm:"attr:runbookURL" json:"runbook_url,omitempty"`
+	Title       string `theorydb:"attr:title" json:"title"`
+	Description string `theorydb:"attr:description" json:"description"`
+	Message     string `theorydb:"attr:message" json:"message"`
+	RunbookURL  string `theorydb:"attr:runbookURL" json:"runbook_url,omitempty"`
 
 	// Context information
-	Service    string            `dynamorm:"attr:service" json:"service"`
-	Region     string            `dynamorm:"attr:region" json:"region"`
-	Source     string            `dynamorm:"attr:source" json:"source"`
-	Dimensions map[string]string `dynamorm:"attr:dimensions" json:"dimensions"`
+	Service    string            `theorydb:"attr:service" json:"service"`
+	Region     string            `theorydb:"attr:region" json:"region"`
+	Source     string            `theorydb:"attr:source" json:"source"`
+	Dimensions map[string]string `theorydb:"attr:dimensions" json:"dimensions"`
 
 	// Alert data
-	Metadata   map[string]interface{} `dynamorm:"attr:metadata" json:"metadata"`
-	Values     map[string]float64     `dynamorm:"attr:values" json:"values"`
-	Thresholds map[string]float64     `dynamorm:"attr:thresholds" json:"thresholds"`
+	Metadata   map[string]interface{} `theorydb:"attr:metadata" json:"metadata"`
+	Values     map[string]float64     `theorydb:"attr:values" json:"values"`
+	Thresholds map[string]float64     `theorydb:"attr:thresholds" json:"thresholds"`
 
 	// Timing information
-	FiredAt    time.Time  `dynamorm:"attr:firedAt" json:"fired_at"`
-	ResolvedAt *time.Time `dynamorm:"attr:resolvedAt" json:"resolved_at,omitempty"`
-	CreatedAt  time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt  time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
+	FiredAt    time.Time  `theorydb:"attr:firedAt" json:"fired_at"`
+	ResolvedAt *time.Time `theorydb:"attr:resolvedAt" json:"resolved_at,omitempty"`
+	CreatedAt  time.Time  `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// Escalation and delivery
-	EscalationLevel  int        `dynamorm:"attr:escalationLevel" json:"escalation_level"`
-	DeliveryChannels []string   `dynamorm:"attr:deliveryChannels" json:"delivery_channels"` // webhook, sns, email, slack
-	DeliveryAttempts int        `dynamorm:"attr:deliveryAttempts" json:"delivery_attempts"`
-	LastDeliveryAt   *time.Time `dynamorm:"attr:lastDeliveryAt" json:"last_delivery_at,omitempty"`
-	NextRetryAt      *time.Time `dynamorm:"attr:nextRetryAt" json:"next_retry_at,omitempty"`
+	EscalationLevel  int        `theorydb:"attr:escalationLevel" json:"escalation_level"`
+	DeliveryChannels []string   `theorydb:"attr:deliveryChannels" json:"delivery_channels"` // webhook, sns, email, slack
+	DeliveryAttempts int        `theorydb:"attr:deliveryAttempts" json:"delivery_attempts"`
+	LastDeliveryAt   *time.Time `theorydb:"attr:lastDeliveryAt" json:"last_delivery_at,omitempty"`
+	NextRetryAt      *time.Time `theorydb:"attr:nextRetryAt" json:"next_retry_at,omitempty"`
 
 	// Alert grouping and suppression
-	GroupKey         string     `dynamorm:"attr:groupKey" json:"group_key,omitempty"`
-	SuppressionUntil *time.Time `dynamorm:"attr:suppressionUntil" json:"suppression_until,omitempty"`
+	GroupKey         string     `theorydb:"attr:groupKey" json:"group_key,omitempty"`
+	SuppressionUntil *time.Time `theorydb:"attr:suppressionUntil" json:"suppression_until,omitempty"`
 
 	// TTL for automatic cleanup (alerts older than 30 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the partition and sort keys based on alert data
@@ -246,69 +246,69 @@ func (Alert) TableName() string {
 
 // WebhookDelivery represents a webhook delivery attempt for an alert
 type WebhookDelivery struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key: WEBHOOK#{webhook_id}
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
 	// Sort key: DELIVERY#{delivery_id}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1: Alert index for querying deliveries by alert
 	// GSI1PK: ALERT#{alert_id}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
 	// GSI1SK: STATUS#{status}#TIMESTAMP#{timestamp}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2: Status index for querying by delivery status
 	// GSI2PK: STATUS#{status}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
 	// GSI2SK: TIMESTAMP#{timestamp}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Delivery identification
-	DeliveryID string `dynamorm:"attr:deliveryID" json:"delivery_id"`
-	AlertID    string `dynamorm:"attr:alertID" json:"alert_id"`
-	WebhookID  string `dynamorm:"attr:webhookID" json:"webhook_id"`
+	DeliveryID string `theorydb:"attr:deliveryID" json:"delivery_id"`
+	AlertID    string `theorydb:"attr:alertID" json:"alert_id"`
+	WebhookID  string `theorydb:"attr:webhookID" json:"webhook_id"`
 
 	// Webhook configuration
-	URL         string            `dynamorm:"attr:url" json:"url"`
-	Headers     map[string]string `dynamorm:"attr:headers" json:"headers"`
-	SecretToken string            `dynamorm:"attr:secretToken" json:"secret_token,omitempty"`
-	Timeout     int               `dynamorm:"attr:timeoutSeconds" json:"timeout_seconds"`
+	URL         string            `theorydb:"attr:url" json:"url"`
+	Headers     map[string]string `theorydb:"attr:headers" json:"headers"`
+	SecretToken string            `theorydb:"attr:secretToken" json:"secret_token,omitempty"`
+	Timeout     int               `theorydb:"attr:timeoutSeconds" json:"timeout_seconds"`
 	// InsecureSkipTLSVerify disables TLS certificate verification when delivering the webhook (debug-only).
-	InsecureSkipTLSVerify bool `dynamorm:"attr:insecureSkipTLSVerify" json:"insecure_skip_tls_verify,omitempty"`
+	InsecureSkipTLSVerify bool `theorydb:"attr:insecureSkipTLSVerify" json:"insecure_skip_tls_verify,omitempty"`
 
 	// Delivery details
-	Status        string `dynamorm:"attr:status" json:"status"` // pending, success, failed, retrying
-	AttemptNumber int    `dynamorm:"attr:attemptNumber" json:"attempt_number"`
-	MaxAttempts   int    `dynamorm:"attr:maxAttempts" json:"max_attempts"`
+	Status        string `theorydb:"attr:status" json:"status"` // pending, success, failed, retrying
+	AttemptNumber int    `theorydb:"attr:attemptNumber" json:"attempt_number"`
+	MaxAttempts   int    `theorydb:"attr:maxAttempts" json:"max_attempts"`
 
 	// Request/Response data
-	RequestBody     string            `dynamorm:"attr:requestBody" json:"request_body"`
-	ResponseCode    int               `dynamorm:"attr:responseCode" json:"response_code,omitempty"`
-	ResponseBody    string            `dynamorm:"attr:responseBody" json:"response_body,omitempty"`
-	ResponseHeaders map[string]string `dynamorm:"attr:responseHeaders" json:"response_headers,omitempty"`
+	RequestBody     string            `theorydb:"attr:requestBody" json:"request_body"`
+	ResponseCode    int               `theorydb:"attr:responseCode" json:"response_code,omitempty"`
+	ResponseBody    string            `theorydb:"attr:responseBody" json:"response_body,omitempty"`
+	ResponseHeaders map[string]string `theorydb:"attr:responseHeaders" json:"response_headers,omitempty"`
 
 	// Error information
-	ErrorMessage string `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
-	ErrorType    string `dynamorm:"attr:errorType" json:"error_type,omitempty"` // network, timeout, server_error, client_error
+	ErrorMessage string `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
+	ErrorType    string `theorydb:"attr:errorType" json:"error_type,omitempty"` // network, timeout, server_error, client_error
 
 	// Timing information
-	ScheduledAt time.Time  `dynamorm:"attr:scheduledAt" json:"scheduled_at"`
-	StartedAt   *time.Time `dynamorm:"attr:startedAt" json:"started_at,omitempty"`
-	CompletedAt *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"`
-	Duration    int64      `dynamorm:"attr:durationMs" json:"duration_ms,omitempty"` // Duration in milliseconds
+	ScheduledAt time.Time  `theorydb:"attr:scheduledAt" json:"scheduled_at"`
+	StartedAt   *time.Time `theorydb:"attr:startedAt" json:"started_at,omitempty"`
+	CompletedAt *time.Time `theorydb:"attr:completedAt" json:"completed_at,omitempty"`
+	Duration    int64      `theorydb:"attr:durationMs" json:"duration_ms,omitempty"` // Duration in milliseconds
 
 	// Retry configuration
-	NextRetryAt   *time.Time `dynamorm:"attr:nextRetryAt" json:"next_retry_at,omitempty"`
-	RetryInterval int        `dynamorm:"attr:retryIntervalSeconds" json:"retry_interval_seconds"`
+	NextRetryAt   *time.Time `theorydb:"attr:nextRetryAt" json:"next_retry_at,omitempty"`
+	RetryInterval int        `theorydb:"attr:retryIntervalSeconds" json:"retry_interval_seconds"`
 
 	// Metadata
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for cleanup (deliveries older than 7 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the partition and sort keys based on delivery data
@@ -441,8 +441,8 @@ func (WebhookDelivery) TableName() string {
 
 // DeadLetterMessage represents a message that failed processing
 type DeadLetterMessage struct {
-	PK            string                 `dynamorm:"pk" json:"pk"`
-	SK            string                 `dynamorm:"sk" json:"sk"`
+	PK            string                 `theorydb:"pk" json:"pk"`
+	SK            string                 `theorydb:"sk" json:"sk"`
 	MessageID     string                 `json:"message_id"`
 	OriginalType  string                 `json:"original_type"`
 	OriginalID    string                 `json:"original_id"`
@@ -452,7 +452,7 @@ type DeadLetterMessage struct {
 	LastAttemptAt time.Time              `json:"last_attempt_at"`
 	Payload       map[string]interface{} `json:"payload"`
 	CreatedAt     time.Time              `json:"created_at"`
-	TTL           int64                  `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL           int64                  `json:"ttl,omitempty" theorydb:"ttl"`
 }
 
 // UpdateKeys sets the partition and sort keys

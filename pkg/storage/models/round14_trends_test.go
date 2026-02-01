@@ -13,7 +13,7 @@ func TestTrends_UpdateKeysAndTTL(t *testing.T) {
 
 	t.Run("HashtagTrend UpdateKeys sets keys and TTL", func(t *testing.T) {
 		h := &HashtagTrend{
-			Name:      "golang",
+			Name:       "golang",
 			TrendScore: 1.234,
 			UpdatedAt:  ts,
 		}
@@ -30,7 +30,7 @@ func TestTrends_UpdateKeysAndTTL(t *testing.T) {
 
 	t.Run("StatusTrend UpdateKeys sets keys and preserves pre-set TTL", func(t *testing.T) {
 		s := &StatusTrend{
-			ID:        "st1",
+			ID:         "st1",
 			TrendScore: 2.0,
 			UpdatedAt:  ts,
 			TTL:        123,
@@ -44,7 +44,7 @@ func TestTrends_UpdateKeysAndTTL(t *testing.T) {
 
 	t.Run("LinkTrend UpdateKeys sets keys and TTL", func(t *testing.T) {
 		l := &LinkTrend{
-			URL:       "https://example.com",
+			URL:        "https://example.com",
 			TrendScore: 0.5,
 			UpdatedAt:  ts,
 		}
@@ -100,4 +100,3 @@ func TestTrends_UpdateKeysAndTTL(t *testing.T) {
 		assert.Equal(t, int64(999), p.TTL)
 	})
 }
-

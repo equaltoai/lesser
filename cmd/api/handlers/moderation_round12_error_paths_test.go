@@ -13,8 +13,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	stdErrors "github.com/equaltoai/lesser/pkg/errors"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
 func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {

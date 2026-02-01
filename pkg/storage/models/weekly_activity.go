@@ -12,15 +12,15 @@ import (
 // PK: USER#username
 // SK: ACTIVITY#WEEK#{weekStartDate}
 type WeeklyActivity struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK            string `dynamorm:"pk,attr:PK" json:"-"`
-	SK            string `dynamorm:"sk,attr:SK" json:"-"`
-	UserID        string `dynamorm:"attr:userID" json:"user_id,omitempty"`    // Optional: for user-specific activity
-	Week          int64  `dynamorm:"attr:week" json:"week"`                   // Unix timestamp of week start
-	Statuses      int64  `dynamorm:"attr:statuses" json:"statuses"`           // Number of statuses created
-	Logins        int64  `dynamorm:"attr:logins" json:"logins"`               // Number of unique logins
-	Registrations int64  `dynamorm:"attr:registrations" json:"registrations"` // Number of new registrations
+	PK            string `theorydb:"pk,attr:PK" json:"-"`
+	SK            string `theorydb:"sk,attr:SK" json:"-"`
+	UserID        string `theorydb:"attr:userID" json:"user_id,omitempty"`    // Optional: for user-specific activity
+	Week          int64  `theorydb:"attr:week" json:"week"`                   // Unix timestamp of week start
+	Statuses      int64  `theorydb:"attr:statuses" json:"statuses"`           // Number of statuses created
+	Logins        int64  `theorydb:"attr:logins" json:"logins"`               // Number of unique logins
+	Registrations int64  `theorydb:"attr:registrations" json:"registrations"` // Number of new registrations
 }
 
 // UpdateKeys updates the DynamoDB keys based on the activity data

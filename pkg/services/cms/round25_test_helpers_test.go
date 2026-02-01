@@ -3,8 +3,8 @@ package cms
 import (
 	"testing"
 
-	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 func newCMSMockDB(t *testing.T) (*dynamormMocks.MockDB, *dynamormMocks.MockQuery) {
@@ -25,4 +25,3 @@ func newCMSMockDB(t *testing.T) (*dynamormMocks.MockDB, *dynamormMocks.MockQuery
 
 	return db, q
 }
-

@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -55,4 +55,3 @@ func TestSeveranceRepository_Round09_FinalPush(t *testing.T) {
 		require.Error(t, repo.UpdateSeveranceStatus(ctx, "local_remote_1", models.SeveranceStatusActive))
 	})
 }
-

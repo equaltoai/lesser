@@ -14,12 +14,12 @@ import (
 )
 
 type fakeDynamoClient struct {
-	putCalls  int
-	getCalls  int
+	putCalls   int
+	getCalls   int
 	queryCalls int
 
-	lastPut  *dynamodb.PutItemInput
-	lastGet  *dynamodb.GetItemInput
+	lastPut   *dynamodb.PutItemInput
+	lastGet   *dynamodb.GetItemInput
 	lastQuery *dynamodb.QueryInput
 
 	putFn   func(ctx context.Context, in *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error)
@@ -196,4 +196,3 @@ func TestStorage_QueryCostsByDate_DelegatesAndSurfacesErrors(t *testing.T) {
 	_, err = st.QueryCostsByDate(context.Background(), "2024-01-01")
 	require.Error(t, err)
 }
-

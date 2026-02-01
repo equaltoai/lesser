@@ -10,27 +10,27 @@ import (
 
 // PatternFeedback represents feedback on pattern matching results
 type PatternFeedback struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // PATTERN#{patternID}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // FEEDBACK#{timestamp}#{feedbackID}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // PATTERN#{patternID}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // FEEDBACK#{timestamp}#{feedbackID}
 
 	// Attributes from interface
-	WasMatch         bool `dynamorm:"attr:wasMatch" json:"was_match"`
-	WasFalsePositive bool `dynamorm:"attr:wasFalsePositive" json:"was_false_positive"`
+	WasMatch         bool `theorydb:"attr:wasMatch" json:"was_match"`
+	WasFalsePositive bool `theorydb:"attr:wasFalsePositive" json:"was_false_positive"`
 
 	// Additional attributes
-	PatternID   string    `dynamorm:"attr:patternID" json:"pattern_id"`
-	FeedbackID  string    `dynamorm:"attr:feedbackID" json:"feedback_id"`
-	SubmittedBy string    `dynamorm:"attr:submittedBy" json:"submitted_by"` // User or system that submitted feedback
-	SubmittedAt time.Time `dynamorm:"attr:submittedAt" json:"submitted_at"`
-	ContentID   string    `dynamorm:"attr:contentID" json:"content_id"`     // ID of content that was evaluated
-	ContentType string    `dynamorm:"attr:contentType" json:"content_type"` // Type of content (status, user, etc)
-	PatternType string    `dynamorm:"attr:patternType" json:"pattern_type"` // spam, abuse, etc
-	Confidence  float64   `dynamorm:"attr:confidence" json:"confidence"`    // Original confidence score
-	Notes       string    `dynamorm:"attr:notes" json:"notes,omitempty"`    // Additional feedback notes
-	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`    // 90 days retention
+	PatternID   string    `theorydb:"attr:patternID" json:"pattern_id"`
+	FeedbackID  string    `theorydb:"attr:feedbackID" json:"feedback_id"`
+	SubmittedBy string    `theorydb:"attr:submittedBy" json:"submitted_by"` // User or system that submitted feedback
+	SubmittedAt time.Time `theorydb:"attr:submittedAt" json:"submitted_at"`
+	ContentID   string    `theorydb:"attr:contentID" json:"content_id"`     // ID of content that was evaluated
+	ContentType string    `theorydb:"attr:contentType" json:"content_type"` // Type of content (status, user, etc)
+	PatternType string    `theorydb:"attr:patternType" json:"pattern_type"` // spam, abuse, etc
+	Confidence  float64   `theorydb:"attr:confidence" json:"confidence"`    // Original confidence score
+	Notes       string    `theorydb:"attr:notes" json:"notes,omitempty"`    // Additional feedback notes
+	TTL         int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`    // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys

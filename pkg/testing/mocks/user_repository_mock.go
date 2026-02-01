@@ -123,7 +123,6 @@ func (m *MockUserRepositoryInterface) GetLinkedProviders(ctx context.Context, us
 	return args.Get(0).([]string), args.Error(1)
 }
 
-
 // Account pins (endorsed accounts)
 
 // CreateAccountPin mocks the CreateAccountPin method
@@ -261,7 +260,6 @@ func (m *MockUserRepositoryInterface) GetMonthlyVouchCount(ctx context.Context, 
 	return args.Int(0), args.Error(1)
 }
 
-
 // Trust relationship operations
 
 // CreateTrustRelationship mocks the CreateTrustRelationship method
@@ -396,7 +394,6 @@ func (m *MockUserRepositoryInterface) UpdatePreferences(ctx context.Context, use
 	args := m.Called(ctx, username, preferences)
 	return args.Error(0)
 }
-
 
 // Follow operations
 

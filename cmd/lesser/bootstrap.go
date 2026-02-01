@@ -32,11 +32,11 @@ type bootstrapWallet struct {
 }
 
 var (
-	determineBootstrapWalletFn      = determineBootstrapWallet
-	writeBootstrapKeyMaterialFn     = writeBootstrapKeyMaterial
-	readBootstrapKeyMaterialFn      = readBootstrapKeyMaterial
-	inspectBootstrapRequirementsFn  = inspectBootstrapRequirements
-	ensureStageBootstrapStateFn     = ensureStageBootstrapState
+	determineBootstrapWalletFn     = determineBootstrapWallet
+	writeBootstrapKeyMaterialFn    = writeBootstrapKeyMaterial
+	readBootstrapKeyMaterialFn     = readBootstrapKeyMaterial
+	inspectBootstrapRequirementsFn = inspectBootstrapRequirements
+	ensureStageBootstrapStateFn    = ensureStageBootstrapState
 )
 
 type dynamodbAPI interface {

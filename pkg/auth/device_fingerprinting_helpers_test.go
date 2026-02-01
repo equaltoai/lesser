@@ -59,4 +59,3 @@ func TestDeviceFingerprintManager_HelperCoverage(t *testing.T) {
 	require.False(t, dfm.isIPInSameNetwork("bad", "192.0.2.1"))
 	require.False(t, dfm.isIPInSameNetwork("2001:db8::1", "2001:db8::2"))
 }
-

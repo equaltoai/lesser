@@ -7,40 +7,40 @@ import (
 
 // InstanceMetrics tracks platform-wide metrics and statistics
 type InstanceMetrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Key fields - EXACT pattern from legacy: PK=`INSTANCE_METRICS#date`, SK=`METRIC#type`
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI fields for time-based queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
 	// Business fields from legacy
-	Date       string    `dynamorm:"attr:date" json:"date"`              // YYYY-MM-DD format
-	MetricType string    `dynamorm:"attr:metricType" json:"metric_type"` // total_users, active_users_daily, etc.
-	Value      int64     `dynamorm:"attr:value" json:"value"`
-	Delta      int64     `dynamorm:"attr:delta" json:"delta"` // change from previous period
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Date       string    `theorydb:"attr:date" json:"date"`              // YYYY-MM-DD format
+	MetricType string    `theorydb:"attr:metricType" json:"metric_type"` // total_users, active_users_daily, etc.
+	Value      int64     `theorydb:"attr:value" json:"value"`
+	Delta      int64     `theorydb:"attr:delta" json:"delta"` // change from previous period
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// Additional metric types from legacy
-	TotalUsers         int64 `dynamorm:"attr:totalUsers" json:"total_users,omitempty"`
-	ActiveUsersDaily   int64 `dynamorm:"attr:activeUsersDaily" json:"active_users_daily,omitempty"`
-	ActiveUsersWeekly  int64 `dynamorm:"attr:activeUsersWeekly" json:"active_users_weekly,omitempty"`
-	TotalStatuses      int64 `dynamorm:"attr:totalStatuses" json:"total_statuses,omitempty"`
-	TotalMedia         int64 `dynamorm:"attr:totalMedia" json:"total_media,omitempty"`
-	FederationInbound  int64 `dynamorm:"attr:federationInbound" json:"federation_inbound,omitempty"`
-	FederationOutbound int64 `dynamorm:"attr:federationOutbound" json:"federation_outbound,omitempty"`
+	TotalUsers         int64 `theorydb:"attr:totalUsers" json:"total_users,omitempty"`
+	ActiveUsersDaily   int64 `theorydb:"attr:activeUsersDaily" json:"active_users_daily,omitempty"`
+	ActiveUsersWeekly  int64 `theorydb:"attr:activeUsersWeekly" json:"active_users_weekly,omitempty"`
+	TotalStatuses      int64 `theorydb:"attr:totalStatuses" json:"total_statuses,omitempty"`
+	TotalMedia         int64 `theorydb:"attr:totalMedia" json:"total_media,omitempty"`
+	FederationInbound  int64 `theorydb:"attr:federationInbound" json:"federation_inbound,omitempty"`
+	FederationOutbound int64 `theorydb:"attr:federationOutbound" json:"federation_outbound,omitempty"`
 
 	// Weekly activity tracking
-	Week          int64 `dynamorm:"attr:week" json:"week,omitempty"`                   // Unix timestamp of week start
-	Statuses      int32 `dynamorm:"attr:statuses" json:"statuses,omitempty"`           // Status count for the week
-	Logins        int32 `dynamorm:"attr:logins" json:"logins,omitempty"`               // Login count for the week
-	Registrations int32 `dynamorm:"attr:registrations" json:"registrations,omitempty"` // Registration count for the week
+	Week          int64 `theorydb:"attr:week" json:"week,omitempty"`                   // Unix timestamp of week start
+	Statuses      int32 `theorydb:"attr:statuses" json:"statuses,omitempty"`           // Status count for the week
+	Logins        int32 `theorydb:"attr:logins" json:"logins,omitempty"`               // Login count for the week
+	Registrations int32 `theorydb:"attr:registrations" json:"registrations,omitempty"` // Registration count for the week
 
 	// TTL field
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing InstanceMetrics.

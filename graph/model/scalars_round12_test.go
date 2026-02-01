@@ -66,4 +66,3 @@ func TestRound12ModelScalars_TimeAndCursor(t *testing.T) {
 	require.Equal(t, "\"xyz\"", cursorBuf.String())
 	require.NotPanics(t, func() { Cursor("bad").MarshalGQL(round12ErrWriter{}) })
 }
-

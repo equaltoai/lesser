@@ -7,30 +7,30 @@ import (
 
 // RelayInfo represents information about a federation relay
 type RelayInfo struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying active relays
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
 
 	// GSI fields for querying by status
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
 
 	// Business fields
-	URL        string    `dynamorm:"attr:url" json:"url"`
-	InboxURL   string    `dynamorm:"attr:inboxURL" json:"inbox_url"`
-	Active     bool      `dynamorm:"attr:active" json:"active"`
-	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	LastSeenAt time.Time `dynamorm:"attr:lastSeenAt" json:"last_seen_at"`
-	Domain     string    `dynamorm:"attr:domain" json:"domain"`
-	Status     string    `dynamorm:"attr:status" json:"status,omitempty"` // pending/active/rejected/error
-	ErrorCount int       `dynamorm:"attr:errorCount" json:"error_count,omitempty"`
-	TTL        int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
+	URL        string    `theorydb:"attr:url" json:"url"`
+	InboxURL   string    `theorydb:"attr:inboxURL" json:"inbox_url"`
+	Active     bool      `theorydb:"attr:active" json:"active"`
+	CreatedAt  time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	LastSeenAt time.Time `theorydb:"attr:lastSeenAt" json:"last_seen_at"`
+	Domain     string    `theorydb:"attr:domain" json:"domain"`
+	Status     string    `theorydb:"attr:status" json:"status,omitempty"` // pending/active/rejected/error
+	ErrorCount int       `theorydb:"attr:errorCount" json:"error_count,omitempty"`
+	TTL        int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
 }
 
 // TableName returns the DynamoDB table backing RelayInfo.

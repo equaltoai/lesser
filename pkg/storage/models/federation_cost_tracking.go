@@ -9,120 +9,120 @@ import (
 
 // FederationCostTracking represents comprehensive cost tracking for federation activities
 type FederationCostTracking struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - federation cost tracking uses FED_COST#{domain}#{timestamp} pattern
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - FED_COSTS#{date}, TS#{timestamp}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for activity type queries - FED_TYPE#{activity_type}, DOMAIN#{domain}#{timestamp}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Federation activity metadata
-	ActivityID     string `dynamorm:"attr:activityID" json:"activity_id"`
-	Domain         string `dynamorm:"attr:domain" json:"domain"`                  // Remote instance domain
-	InstanceDomain string `dynamorm:"attr:instanceDomain" json:"instance_domain"` // Alias for Domain for compatibility
-	ActivityType   string `dynamorm:"attr:activityType" json:"activity_type"`     // Create, Follow, Like, etc.
-	Direction      string `dynamorm:"attr:direction" json:"direction"`            // inbound, outbound
-	OperationType  string `dynamorm:"attr:operationType" json:"operation_type"`   // inbox_processing, outbox_delivery, signature_verification
+	ActivityID     string `theorydb:"attr:activityID" json:"activity_id"`
+	Domain         string `theorydb:"attr:domain" json:"domain"`                  // Remote instance domain
+	InstanceDomain string `theorydb:"attr:instanceDomain" json:"instance_domain"` // Alias for Domain for compatibility
+	ActivityType   string `theorydb:"attr:activityType" json:"activity_type"`     // Create, Follow, Like, etc.
+	Direction      string `theorydb:"attr:direction" json:"direction"`            // inbound, outbound
+	OperationType  string `theorydb:"attr:operationType" json:"operation_type"`   // inbox_processing, outbox_delivery, signature_verification
 
 	// Billing period tracking
-	BillingPeriod string    `dynamorm:"attr:billingPeriod" json:"billing_period"` // YYYY-MM format
-	LastUpdated   time.Time `dynamorm:"attr:lastUpdated" json:"last_updated"`     // Last update timestamp
+	BillingPeriod string    `theorydb:"attr:billingPeriod" json:"billing_period"` // YYYY-MM format
+	LastUpdated   time.Time `theorydb:"attr:lastUpdated" json:"last_updated"`     // Last update timestamp
 
 	// Legacy compatibility fields for aggregated metrics
-	IngressBytes   int64   `dynamorm:"attr:ingressBytes" json:"ingress_bytes"`      // Inbound data bytes
-	EgressBytes    int64   `dynamorm:"attr:egressBytes" json:"egress_bytes"`        // Outbound data bytes
-	RequestCount   int     `dynamorm:"attr:requestCount" json:"request_count"`      // Number of requests
-	ErrorCount     int     `dynamorm:"attr:errorCount" json:"error_count"`          // Number of errors
-	ErrorRate      float64 `dynamorm:"attr:errorRate" json:"error_rate"`            // Error rate percentage
-	AverageCostUSD float64 `dynamorm:"attr:averageCostUSD" json:"average_cost_usd"` // Average cost in USD
+	IngressBytes   int64   `theorydb:"attr:ingressBytes" json:"ingress_bytes"`      // Inbound data bytes
+	EgressBytes    int64   `theorydb:"attr:egressBytes" json:"egress_bytes"`        // Outbound data bytes
+	RequestCount   int     `theorydb:"attr:requestCount" json:"request_count"`      // Number of requests
+	ErrorCount     int     `theorydb:"attr:errorCount" json:"error_count"`          // Number of errors
+	ErrorRate      float64 `theorydb:"attr:errorRate" json:"error_rate"`            // Error rate percentage
+	AverageCostUSD float64 `theorydb:"attr:averageCostUSD" json:"average_cost_usd"` // Average cost in USD
 
 	// Success/failure tracking
-	Success      bool   `dynamorm:"attr:success" json:"success"`
-	ErrorMessage string `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
+	Success      bool   `theorydb:"attr:success" json:"success"`
+	ErrorMessage string `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
 
 	// Lambda execution costs (all in microdollars)
-	LambdaExecutionCost int64 `dynamorm:"attr:lambdaExecutionCost" json:"lambda_execution_cost"` // Lambda compute cost
-	LambdaDurationMs    int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"`       // Lambda execution time
-	LambdaMemoryMB      int64 `dynamorm:"attr:lambdaMemoryMB" json:"lambda_memory_mb"`           // Lambda memory allocation
+	LambdaExecutionCost int64 `theorydb:"attr:lambdaExecutionCost" json:"lambda_execution_cost"` // Lambda compute cost
+	LambdaDurationMs    int64 `theorydb:"attr:lambdaDurationMs" json:"lambda_duration_ms"`       // Lambda execution time
+	LambdaMemoryMB      int64 `theorydb:"attr:lambdaMemoryMB" json:"lambda_memory_mb"`           // Lambda memory allocation
 
 	// HTTP signature verification costs (CPU intensive)
-	SignatureVerificationMs   int64 `dynamorm:"attr:signatureVerificationMs" json:"signature_verification_ms"`     // Time spent verifying signatures
-	SignatureVerificationCost int64 `dynamorm:"attr:signatureVerificationCost" json:"signature_verification_cost"` // CPU cost for signature verification
+	SignatureVerificationMs   int64 `theorydb:"attr:signatureVerificationMs" json:"signature_verification_ms"`     // Time spent verifying signatures
+	SignatureVerificationCost int64 `theorydb:"attr:signatureVerificationCost" json:"signature_verification_cost"` // CPU cost for signature verification
 
 	// Network costs
-	HTTPRequestCount  int64 `dynamorm:"attr:httpRequestCount" json:"http_request_count"`   // Number of HTTP requests made
-	HTTPRequestCost   int64 `dynamorm:"attr:httpRequestCost" json:"http_request_cost"`     // Cost of HTTP requests ($0.0001 per request)
-	DataTransferBytes int64 `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Bytes transferred (inbound/outbound)
-	DataTransferCost  int64 `dynamorm:"attr:dataTransferCost" json:"data_transfer_cost"`   // Data transfer costs ($0.09 per GB outbound)
+	HTTPRequestCount  int64 `theorydb:"attr:httpRequestCount" json:"http_request_count"`   // Number of HTTP requests made
+	HTTPRequestCost   int64 `theorydb:"attr:httpRequestCost" json:"http_request_cost"`     // Cost of HTTP requests ($0.0001 per request)
+	DataTransferBytes int64 `theorydb:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Bytes transferred (inbound/outbound)
+	DataTransferCost  int64 `theorydb:"attr:dataTransferCost" json:"data_transfer_cost"`   // Data transfer costs ($0.09 per GB outbound)
 
 	// DynamoDB costs
-	DynamoDBWriteCount int64   `dynamorm:"attr:dynamodbWriteCount" json:"dynamodb_write_count"` // Number of write operations
-	DynamoDBReadCount  int64   `dynamorm:"attr:dynamodbReadCount" json:"dynamodb_read_count"`   // Number of read operations
-	DynamoDBWriteUnits float64 `dynamorm:"attr:dynamodbWriteUnits" json:"dynamodb_write_units"` // Write capacity consumed
-	DynamoDBReadUnits  float64 `dynamorm:"attr:dynamodbReadUnits" json:"dynamodb_read_units"`   // Read capacity consumed
-	DynamoDBWriteCost  int64   `dynamorm:"attr:dynamodbWriteCost" json:"dynamodb_write_cost"`   // Write operation costs
-	DynamoDBReadCost   int64   `dynamorm:"attr:dynamodbReadCost" json:"dynamodb_read_cost"`     // Read operation costs
+	DynamoDBWriteCount int64   `theorydb:"attr:dynamodbWriteCount" json:"dynamodb_write_count"` // Number of write operations
+	DynamoDBReadCount  int64   `theorydb:"attr:dynamodbReadCount" json:"dynamodb_read_count"`   // Number of read operations
+	DynamoDBWriteUnits float64 `theorydb:"attr:dynamodbWriteUnits" json:"dynamodb_write_units"` // Write capacity consumed
+	DynamoDBReadUnits  float64 `theorydb:"attr:dynamodbReadUnits" json:"dynamodb_read_units"`   // Read capacity consumed
+	DynamoDBWriteCost  int64   `theorydb:"attr:dynamodbWriteCost" json:"dynamodb_write_cost"`   // Write operation costs
+	DynamoDBReadCost   int64   `theorydb:"attr:dynamodbReadCost" json:"dynamodb_read_cost"`     // Read operation costs
 
 	// DNS/WebFinger costs
-	DNSLookupCount int64 `dynamorm:"attr:dnsLookupCount" json:"dns_lookup_count"` // Number of DNS lookups
-	DNSLookupCost  int64 `dynamorm:"attr:dnsLookupCost" json:"dns_lookup_cost"`   // DNS lookup costs ($0.0004 per query)
-	WebFingerCount int64 `dynamorm:"attr:webFingerCount" json:"webfinger_count"`  // WebFinger lookups
-	WebFingerCost  int64 `dynamorm:"attr:webFingerCost" json:"webfinger_cost"`    // WebFinger lookup costs
+	DNSLookupCount int64 `theorydb:"attr:dnsLookupCount" json:"dns_lookup_count"` // Number of DNS lookups
+	DNSLookupCost  int64 `theorydb:"attr:dnsLookupCost" json:"dns_lookup_cost"`   // DNS lookup costs ($0.0004 per query)
+	WebFingerCount int64 `theorydb:"attr:webFingerCount" json:"webfinger_count"`  // WebFinger lookups
+	WebFingerCost  int64 `theorydb:"attr:webFingerCost" json:"webfinger_cost"`    // WebFinger lookup costs
 
 	// SQS costs (for outbound delivery queue)
-	SQSMessageCount int64 `dynamorm:"attr:sqsMessageCount" json:"sqs_message_count"` // SQS messages sent
-	SQSMessageCost  int64 `dynamorm:"attr:sqsMessageCost" json:"sqs_message_cost"`   // SQS message costs ($0.0000004 per message)
+	SQSMessageCount int64 `theorydb:"attr:sqsMessageCount" json:"sqs_message_count"` // SQS messages sent
+	SQSMessageCost  int64 `theorydb:"attr:sqsMessageCost" json:"sqs_message_cost"`   // SQS message costs ($0.0000004 per message)
 
 	// Retry penalty costs
-	RetryCount int   `dynamorm:"attr:retryCount" json:"retry_count"` // Number of retries performed
-	RetryCost  int64 `dynamorm:"attr:retryCost" json:"retry_cost"`   // Additional cost penalties for retries
+	RetryCount int   `theorydb:"attr:retryCount" json:"retry_count"` // Number of retries performed
+	RetryCost  int64 `theorydb:"attr:retryCost" json:"retry_cost"`   // Additional cost penalties for retries
 
 	// Detailed per-delivery attribution
-	BytesSent         int64            `dynamorm:"attr:bytesSent" json:"bytes_sent"`                 // Actual bytes sent per delivery attempt
-	RetryAttempts     int              `dynamorm:"attr:retryAttempts" json:"retry_attempts"`         // Number of retry attempts for this specific delivery
-	DeliveryAttempts  int              `dynamorm:"attr:deliveryAttempts" json:"delivery_attempts"`   // Total delivery attempts (including first)
-	RouteID           string           `dynamorm:"attr:routeID" json:"route_id,omitempty"`           // Route used for delivery
-	DestinationServer string           `dynamorm:"attr:destinationServer" json:"destination_server"` // Destination server domain
-	RouteBreakdown    map[string]int64 `dynamorm:"attr:routeBreakdown" json:"route_breakdown"`       // Per-route cost breakdown in microcents
+	BytesSent         int64            `theorydb:"attr:bytesSent" json:"bytes_sent"`                 // Actual bytes sent per delivery attempt
+	RetryAttempts     int              `theorydb:"attr:retryAttempts" json:"retry_attempts"`         // Number of retry attempts for this specific delivery
+	DeliveryAttempts  int              `theorydb:"attr:deliveryAttempts" json:"delivery_attempts"`   // Total delivery attempts (including first)
+	RouteID           string           `theorydb:"attr:routeID" json:"route_id,omitempty"`           // Route used for delivery
+	DestinationServer string           `theorydb:"attr:destinationServer" json:"destination_server"` // Destination server domain
+	RouteBreakdown    map[string]int64 `theorydb:"attr:routeBreakdown" json:"route_breakdown"`       // Per-route cost breakdown in microcents
 
 	// Per-route delivery metrics
-	RouteLatency      map[string]int64   `dynamorm:"attr:routeLatency" json:"route_latency"`            // Per-route response times in ms
-	RouteErrors       map[string]int     `dynamorm:"attr:routeErrors" json:"route_errors"`              // Per-route error counts
-	RouteAttempts     map[string]int     `dynamorm:"attr:routeAttempts" json:"route_attempts"`          // Per-route total attempts
-	RouteSuccessRates map[string]float64 `dynamorm:"attr:routeSuccessRates" json:"route_success_rates"` // Per-route success rates
+	RouteLatency      map[string]int64   `theorydb:"attr:routeLatency" json:"route_latency"`            // Per-route response times in ms
+	RouteErrors       map[string]int     `theorydb:"attr:routeErrors" json:"route_errors"`              // Per-route error counts
+	RouteAttempts     map[string]int     `theorydb:"attr:routeAttempts" json:"route_attempts"`          // Per-route total attempts
+	RouteSuccessRates map[string]float64 `theorydb:"attr:routeSuccessRates" json:"route_success_rates"` // Per-route success rates
 
 	// Enhanced retry tracking
-	RetryDelaySeconds  []int64  `dynamorm:"attr:retryDelaySeconds" json:"retry_delay_seconds"`   // Delay between retry attempts
-	RetryErrorMessages []string `dynamorm:"attr:retryErrorMessages" json:"retry_error_messages"` // Error messages for each retry
-	FinalRetrySuccess  bool     `dynamorm:"attr:finalRetrySuccess" json:"final_retry_success"`   // Whether final retry succeeded
+	RetryDelaySeconds  []int64  `theorydb:"attr:retryDelaySeconds" json:"retry_delay_seconds"`   // Delay between retry attempts
+	RetryErrorMessages []string `theorydb:"attr:retryErrorMessages" json:"retry_error_messages"` // Error messages for each retry
+	FinalRetrySuccess  bool     `theorydb:"attr:finalRetrySuccess" json:"final_retry_success"`   // Whether final retry succeeded
 
 	// Performance metrics
-	ResponseTimeMs   int64 `dynamorm:"attr:responseTimeMs" json:"response_time_ms"`     // Total response time
-	ProcessingTimeMs int64 `dynamorm:"attr:processingTimeMs" json:"processing_time_ms"` // Time spent processing
-	QueueWaitTimeMs  int64 `dynamorm:"attr:queueWaitTimeMs" json:"queue_wait_time_ms"`  // Time spent waiting in queue
+	ResponseTimeMs   int64 `theorydb:"attr:responseTimeMs" json:"response_time_ms"`     // Total response time
+	ProcessingTimeMs int64 `theorydb:"attr:processingTimeMs" json:"processing_time_ms"` // Time spent processing
+	QueueWaitTimeMs  int64 `theorydb:"attr:queueWaitTimeMs" json:"queue_wait_time_ms"`  // Time spent waiting in queue
 
 	// Data volume metrics
-	PayloadSize      int64   `dynamorm:"attr:payloadSize" json:"payload_size"`           // Size of activity payload
-	CompressedSize   int64   `dynamorm:"attr:compressedSize" json:"compressed_size"`     // Size after compression
-	CompressionRatio float64 `dynamorm:"attr:compressionRatio" json:"compression_ratio"` // Compression efficiency
+	PayloadSize      int64   `theorydb:"attr:payloadSize" json:"payload_size"`           // Size of activity payload
+	CompressedSize   int64   `theorydb:"attr:compressedSize" json:"compressed_size"`     // Size after compression
+	CompressionRatio float64 `theorydb:"attr:compressionRatio" json:"compression_ratio"` // Compression efficiency
 
 	// Total cost breakdown
-	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost in microcents
+	TotalCostMicroCents int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost in microcents
 
 	// Timestamps
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for detailed cost records)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the primary keys for the FederationCostTracking model
@@ -358,62 +358,62 @@ func (f *FederationCostTracking) GetRetryEfficiency() map[string]interface{} {
 
 // FederationBudget represents budget limits for federation operations per instance
 type FederationBudget struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - federation budgets use FED_BUDGET#{domain}#{period} pattern
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for active budget queries - ACTIVE_BUDGETS, DOMAIN#{domain}#{period}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// Budget configuration
-	Domain string `dynamorm:"attr:domain" json:"domain"`
-	Period string `dynamorm:"attr:period" json:"period"` // daily, weekly, monthly
+	Domain string `theorydb:"attr:domain" json:"domain"`
+	Period string `theorydb:"attr:period" json:"period"` // daily, weekly, monthly
 
 	// Budget limits (in microcents)
-	InboundLimitMicroCents  int64 `dynamorm:"attr:inboundLimitMicroCents" json:"inbound_limit_micro_cents"`
-	OutboundLimitMicroCents int64 `dynamorm:"attr:outboundLimitMicroCents" json:"outbound_limit_micro_cents"`
-	CombinedLimitMicroCents int64 `dynamorm:"attr:combinedLimitMicroCents" json:"combined_limit_micro_cents"`
+	InboundLimitMicroCents  int64 `theorydb:"attr:inboundLimitMicroCents" json:"inbound_limit_micro_cents"`
+	OutboundLimitMicroCents int64 `theorydb:"attr:outboundLimitMicroCents" json:"outbound_limit_micro_cents"`
+	CombinedLimitMicroCents int64 `theorydb:"attr:combinedLimitMicroCents" json:"combined_limit_micro_cents"`
 
 	// Per-activity type limits
-	ActivityTypeLimits map[string]int64 `dynamorm:"attr:activityTypeLimits" json:"activity_type_limits,omitempty"`
+	ActivityTypeLimits map[string]int64 `theorydb:"attr:activityTypeLimits" json:"activity_type_limits,omitempty"`
 
 	// Current usage (reset per period)
-	CurrentInboundCost  int64 `dynamorm:"attr:currentInboundCost" json:"current_inbound_cost"`
-	CurrentOutboundCost int64 `dynamorm:"attr:currentOutboundCost" json:"current_outbound_cost"`
-	CurrentCombinedCost int64 `dynamorm:"attr:currentCombinedCost" json:"current_combined_cost"`
+	CurrentInboundCost  int64 `theorydb:"attr:currentInboundCost" json:"current_inbound_cost"`
+	CurrentOutboundCost int64 `theorydb:"attr:currentOutboundCost" json:"current_outbound_cost"`
+	CurrentCombinedCost int64 `theorydb:"attr:currentCombinedCost" json:"current_combined_cost"`
 
 	// Activity type usage
-	ActivityTypeUsage map[string]int64 `dynamorm:"attr:activityTypeUsage" json:"activity_type_usage,omitempty"`
+	ActivityTypeUsage map[string]int64 `theorydb:"attr:activityTypeUsage" json:"activity_type_usage,omitempty"`
 
 	// Usage tracking
-	InboundActivityCount  int64      `dynamorm:"attr:inboundActivityCount" json:"inbound_activity_count"`
-	OutboundActivityCount int64      `dynamorm:"attr:outboundActivityCount" json:"outbound_activity_count"`
-	LastInboundAt         *time.Time `dynamorm:"attr:lastInboundAt" json:"last_inbound_at,omitempty"`
-	LastOutboundAt        *time.Time `dynamorm:"attr:lastOutboundAt" json:"last_outbound_at,omitempty"`
+	InboundActivityCount  int64      `theorydb:"attr:inboundActivityCount" json:"inbound_activity_count"`
+	OutboundActivityCount int64      `theorydb:"attr:outboundActivityCount" json:"outbound_activity_count"`
+	LastInboundAt         *time.Time `theorydb:"attr:lastInboundAt" json:"last_inbound_at,omitempty"`
+	LastOutboundAt        *time.Time `theorydb:"attr:lastOutboundAt" json:"last_outbound_at,omitempty"`
 
 	// Period tracking
-	PeriodStart time.Time `dynamorm:"attr:periodStart" json:"period_start"`
-	PeriodEnd   time.Time `dynamorm:"attr:periodEnd" json:"period_end"`
+	PeriodStart time.Time `theorydb:"attr:periodStart" json:"period_start"`
+	PeriodEnd   time.Time `theorydb:"attr:periodEnd" json:"period_end"`
 
 	// Alert settings
-	AlertThresholdPercent float64    `dynamorm:"attr:alertThresholdPercent" json:"alert_threshold_percent"` // Send alert at this % of limit
-	AlertSendingEnabled   bool       `dynamorm:"attr:alertSendingEnabled" json:"alert_sending_enabled"`
-	LastAlertSentAt       *time.Time `dynamorm:"attr:lastAlertSentAt" json:"last_alert_sent_at,omitempty"`
+	AlertThresholdPercent float64    `theorydb:"attr:alertThresholdPercent" json:"alert_threshold_percent"` // Send alert at this % of limit
+	AlertSendingEnabled   bool       `theorydb:"attr:alertSendingEnabled" json:"alert_sending_enabled"`
+	LastAlertSentAt       *time.Time `theorydb:"attr:lastAlertSentAt" json:"last_alert_sent_at,omitempty"`
 
 	// Enforcement settings
-	BlockOnLimitExceeded bool `dynamorm:"attr:blockOnLimitExceeded" json:"block_on_limit_exceeded"`
-	RateLimitOnThreshold bool `dynamorm:"attr:rateLimitOnThreshold" json:"rate_limit_on_threshold"`
+	BlockOnLimitExceeded bool `theorydb:"attr:blockOnLimitExceeded" json:"block_on_limit_exceeded"`
+	RateLimitOnThreshold bool `theorydb:"attr:rateLimitOnThreshold" json:"rate_limit_on_threshold"`
 
 	// Status
-	IsActive bool   `dynamorm:"attr:isActive" json:"is_active"`
-	Status   string `dynamorm:"attr:status" json:"status"` // active, suspended, over_limit
+	IsActive bool   `theorydb:"attr:isActive" json:"is_active"`
+	Status   string `theorydb:"attr:status" json:"status"` // active, suspended, over_limit
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys sets the primary keys for the FederationBudget model

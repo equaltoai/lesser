@@ -39,7 +39,6 @@ func NewMediaSessionRepository() *MediaSessionRepository {
 	}
 }
 
-
 // ===== Session Lifecycle Operations =====
 
 // StartStreamingSession creates and initializes a new streaming session
@@ -106,7 +105,6 @@ func (r *MediaSessionRepository) UpdateStreamingMetrics(_ context.Context, sessi
 	return nil
 }
 
-
 // ===== Legacy Session Operations =====
 
 // CreateSession creates a new streaming session (legacy compatibility)
@@ -154,7 +152,6 @@ func (r *MediaSessionRepository) UpdateSession(_ context.Context, session *types
 func (r *MediaSessionRepository) EndSession(ctx context.Context, sessionID string) error {
 	return r.EndStreamingSession(ctx, sessionID)
 }
-
 
 // ===== Session Queries =====
 
@@ -222,7 +219,6 @@ func (r *MediaSessionRepository) GetSessionsByTimeRange(_ context.Context, start
 	}
 	return sessions, nil
 }
-
 
 // ===== Session Validation and Access =====
 

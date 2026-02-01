@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamoerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	dynamoerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 

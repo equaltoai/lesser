@@ -7,13 +7,13 @@ import (
 
 // UserDomainBlock represents a user-level domain block
 type UserDomainBlock struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK        string    `dynamorm:"pk,attr:PK"`
-	SK        string    `dynamorm:"sk,attr:SK"`
-	Username  string    `dynamorm:"attr:username" json:"username"`
-	Domain    string    `dynamorm:"attr:domain" json:"domain"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	PK        string    `theorydb:"pk,attr:PK"`
+	SK        string    `theorydb:"sk,attr:SK"`
+	Username  string    `theorydb:"attr:username" json:"username"`
+	Domain    string    `theorydb:"attr:domain" json:"domain"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table backing UserDomainBlock.
@@ -40,25 +40,25 @@ func (d *UserDomainBlock) GetSK() string {
 
 // InstanceDomainBlock represents an instance-level domain block
 type InstanceDomainBlock struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK             string    `dynamorm:"pk,attr:PK"`
-	SK             string    `dynamorm:"sk,attr:SK"`
-	GSI1PK         string    `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK         string    `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
-	ID             string    `dynamorm:"attr:id" json:"ID"`
-	Domain         string    `dynamorm:"attr:domain" json:"Domain"`
-	Severity       string    `dynamorm:"attr:severity" json:"Severity"` // "silence" or "suspend"
-	RejectMedia    bool      `dynamorm:"attr:rejectMedia" json:"RejectMedia"`
-	RejectReports  bool      `dynamorm:"attr:rejectReports" json:"RejectReports"`
-	PrivateComment string    `dynamorm:"attr:privateComment" json:"PrivateComment"` // Admin-only notes
-	PublicComment  string    `dynamorm:"attr:publicComment" json:"PublicComment"`   // Public reason
-	Obfuscate      bool      `dynamorm:"attr:obfuscate" json:"Obfuscate"`           // Whether to obfuscate in public lists
-	CreatedBy      string    `dynamorm:"attr:createdBy" json:"CreatedBy"`           // Admin username who created
-	CreatedByID    string    `dynamorm:"attr:createdByID" json:"CreatedByID"`       // Admin actor ID
-	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
-	UpdatedAt      time.Time `dynamorm:"attr:updatedAt" json:"UpdatedAt"`
-	Type           string    `dynamorm:"attr:type" json:"Type"`
+	PK             string    `theorydb:"pk,attr:PK"`
+	SK             string    `theorydb:"sk,attr:SK"`
+	GSI1PK         string    `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK         string    `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	ID             string    `theorydb:"attr:id" json:"ID"`
+	Domain         string    `theorydb:"attr:domain" json:"Domain"`
+	Severity       string    `theorydb:"attr:severity" json:"Severity"` // "silence" or "suspend"
+	RejectMedia    bool      `theorydb:"attr:rejectMedia" json:"RejectMedia"`
+	RejectReports  bool      `theorydb:"attr:rejectReports" json:"RejectReports"`
+	PrivateComment string    `theorydb:"attr:privateComment" json:"PrivateComment"` // Admin-only notes
+	PublicComment  string    `theorydb:"attr:publicComment" json:"PublicComment"`   // Public reason
+	Obfuscate      bool      `theorydb:"attr:obfuscate" json:"Obfuscate"`           // Whether to obfuscate in public lists
+	CreatedBy      string    `theorydb:"attr:createdBy" json:"CreatedBy"`           // Admin username who created
+	CreatedByID    string    `theorydb:"attr:createdByID" json:"CreatedByID"`       // Admin actor ID
+	CreatedAt      time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`
+	UpdatedAt      time.Time `theorydb:"attr:updatedAt" json:"UpdatedAt"`
+	Type           string    `theorydb:"attr:type" json:"Type"`
 }
 
 // TableName returns the DynamoDB table backing InstanceDomainBlock.
@@ -88,16 +88,16 @@ func (d *InstanceDomainBlock) GetSK() string {
 
 // EmailDomainBlock represents an email domain block
 type EmailDomainBlock struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK        string    `dynamorm:"pk,attr:PK"`
-	SK        string    `dynamorm:"sk,attr:SK"`
-	GSI1PK    string    `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK    string    `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
-	ID        string    `dynamorm:"attr:id" json:"ID"`
-	Domain    string    `dynamorm:"attr:domain" json:"Domain"`
-	CreatedBy string    `dynamorm:"attr:createdBy" json:"CreatedBy"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
+	PK        string    `theorydb:"pk,attr:PK"`
+	SK        string    `theorydb:"sk,attr:SK"`
+	GSI1PK    string    `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK    string    `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	ID        string    `theorydb:"attr:id" json:"ID"`
+	Domain    string    `theorydb:"attr:domain" json:"Domain"`
+	CreatedBy string    `theorydb:"attr:createdBy" json:"CreatedBy"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`
 }
 
 // TableName returns the DynamoDB table backing EmailDomainBlock.
@@ -136,16 +136,16 @@ func (d *EmailDomainBlock) GetDomain() string {
 
 // DomainAllow represents a domain in the allowlist
 type DomainAllow struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK        string    `dynamorm:"pk,attr:PK"`
-	SK        string    `dynamorm:"sk,attr:SK"`
-	GSI1PK    string    `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK    string    `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
-	ID        string    `dynamorm:"attr:id" json:"ID"`
-	Domain    string    `dynamorm:"attr:domain" json:"Domain"`
-	CreatedBy string    `dynamorm:"attr:createdBy" json:"CreatedBy"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
+	PK        string    `theorydb:"pk,attr:PK"`
+	SK        string    `theorydb:"sk,attr:SK"`
+	GSI1PK    string    `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK    string    `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	ID        string    `theorydb:"attr:id" json:"ID"`
+	Domain    string    `theorydb:"attr:domain" json:"Domain"`
+	CreatedBy string    `theorydb:"attr:createdBy" json:"CreatedBy"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`
 }
 
 // TableName returns the DynamoDB table backing DomainAllow.

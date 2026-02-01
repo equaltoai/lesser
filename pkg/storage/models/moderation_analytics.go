@@ -4,33 +4,33 @@ import "time"
 
 // ModerationAnalytics tracks moderation actions and statistics
 type ModerationAnalytics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Key fields - Pattern from legacy: PK=`MOD_ANALYTICS#date`, SK=`type#count`
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// GSI fields for querying by type
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
 
 	// Business fields from legacy
-	Date                  string           `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD format
-	ReportType            string           `dynamorm:"attr:reportType" json:"report_type"`
-	Count                 int64            `dynamorm:"attr:count" json:"count"`
-	ResolvedCount         int64            `dynamorm:"attr:resolvedCount" json:"resolved_count"`
-	AverageResolutionTime float64          `dynamorm:"attr:averageResolutionTime" json:"average_resolution_time"` // in hours
-	ModeratorActions      map[string]int64 `dynamorm:"attr:moderatorActions" json:"moderator_actions"`            // moderator -> action count
-	UpdatedAt             time.Time        `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Date                  string           `theorydb:"attr:date" json:"date"` // YYYY-MM-DD format
+	ReportType            string           `theorydb:"attr:reportType" json:"report_type"`
+	Count                 int64            `theorydb:"attr:count" json:"count"`
+	ResolvedCount         int64            `theorydb:"attr:resolvedCount" json:"resolved_count"`
+	AverageResolutionTime float64          `theorydb:"attr:averageResolutionTime" json:"average_resolution_time"` // in hours
+	ModeratorActions      map[string]int64 `theorydb:"attr:moderatorActions" json:"moderator_actions"`            // moderator -> action count
+	UpdatedAt             time.Time        `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// Additional fields for pattern analytics (keeping compatibility)
-	PatternID string    `dynamorm:"attr:patternID" json:"pattern_id,omitempty"`
-	Matched   bool      `dynamorm:"attr:matched" json:"matched,omitempty"`
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp,omitempty"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	PatternID string    `theorydb:"attr:patternID" json:"pattern_id,omitempty"`
+	Matched   bool      `theorydb:"attr:matched" json:"matched,omitempty"`
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 
 	// TTL field - 90 days as per legacy
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing ModerationAnalytics.

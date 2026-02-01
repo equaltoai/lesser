@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 type skGetter interface {

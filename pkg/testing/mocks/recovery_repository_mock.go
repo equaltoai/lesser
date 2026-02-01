@@ -62,7 +62,6 @@ func (m *MockRecoveryRepository) GetRecoveryRequest(ctx context.Context, request
 	return args.Get(0).(*storage.SocialRecoveryRequest), args.Error(1)
 }
 
-
 // UpdateRecoveryRequest mocks the UpdateRecoveryRequest method
 func (m *MockRecoveryRepository) UpdateRecoveryRequest(ctx context.Context, request *storage.SocialRecoveryRequest) error {
 	args := m.Called(ctx, request)

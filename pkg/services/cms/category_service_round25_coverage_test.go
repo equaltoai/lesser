@@ -9,10 +9,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -112,17 +112,17 @@ func TestCategoryService_Round25_CreateUpdateDelete(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-		t.Run("create blocks legacy slug collision", func(t *testing.T) {
-			slug := "my-slug"
-			legacy := common.GenerateObjectID("example.com", "categories", slug)
-			repo.categories[legacy] = &models.Category{ID: legacy, Name: "legacy", Slug: slug}
+	t.Run("create blocks legacy slug collision", func(t *testing.T) {
+		slug := "my-slug"
+		legacy := common.GenerateObjectID("example.com", "categories", slug)
+		repo.categories[legacy] = &models.Category{ID: legacy, Name: "legacy", Slug: slug}
 
-			db, _ := newCMSMockDB(t)
-			repo.db = db
+		db, _ := newCMSMockDB(t)
+		repo.db = db
 
-			err := svc.CreateCategory(ctx, &models.Category{
-				ID:   "https://example.com/categories/other",
-				Name: "name",
+		err := svc.CreateCategory(ctx, &models.Category{
+			ID:   "https://example.com/categories/other",
+			Name: "name",
 			Slug: slug,
 		})
 		require.Error(t, err)

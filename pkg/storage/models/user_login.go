@@ -7,19 +7,19 @@ import (
 
 // UserLogin represents a login attempt record
 type UserLogin struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // USER#{username}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // LOGIN#{timestamp}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // USER#{username}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // LOGIN#{timestamp}
 
-	Username  string    `dynamorm:"attr:username" json:"username"`
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	Success   bool      `dynamorm:"attr:success" json:"success"`
-	IPAddress string    `dynamorm:"attr:ipAddress" json:"ip_address,omitempty"`
-	UserAgent string    `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
+	Username  string    `theorydb:"attr:username" json:"username"`
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	Success   bool      `theorydb:"attr:success" json:"success"`
+	IPAddress string    `theorydb:"attr:ipAddress" json:"ip_address,omitempty"`
+	UserAgent string    `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
 
 	// TTL for automatic cleanup (e.g., 90 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

@@ -6,24 +6,24 @@ import (
 
 // RefreshToken represents an OAuth 2.0 refresh token
 type RefreshToken struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys - MUST match legacy exactly
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // REFRESHTOKEN#token
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // TOKEN
+	PK string `theorydb:"pk,attr:PK" json:"-"` // REFRESHTOKEN#token
+	SK string `theorydb:"sk,attr:SK" json:"-"` // TOKEN
 
 	// Core fields from legacy storage.RefreshToken
-	Token     string    `dynamorm:"attr:token" json:"Token"`
-	ClientID  string    `dynamorm:"attr:clientID" json:"ClientID"`
-	Username  string    `dynamorm:"attr:username" json:"Username"`
-	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"ExpiresAt"`
-	Scopes    []string  `dynamorm:"attr:scopes" json:"Scopes"`
+	Token     string    `theorydb:"attr:token" json:"Token"`
+	ClientID  string    `theorydb:"attr:clientID" json:"ClientID"`
+	Username  string    `theorydb:"attr:username" json:"Username"`
+	ExpiresAt time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
+	Scopes    []string  `theorydb:"attr:scopes" json:"Scopes"`
 
 	// Tracking fields
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`
 
 	// TTL field for automatic expiration
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
 }
 
 // TableName returns the DynamoDB table name

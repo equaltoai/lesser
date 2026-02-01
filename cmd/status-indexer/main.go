@@ -18,8 +18,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/google/uuid"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -353,14 +353,14 @@ func (si *StatusIndexer) processStatusEvent(ctx context.Context, statusID, conte
 // indexWord indexes a word for search using DynamORM
 func (si *StatusIndexer) indexWord(ctx context.Context, word, statusID string, published time.Time) error {
 	wordIndex := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
-		GSI5PK    string `dynamorm:"index:gsi5,pk"`
-		GSI5SK    string `dynamorm:"index:gsi5,sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
+		GSI5PK    string `theorydb:"index:gsi5,pk"`
+		GSI5SK    string `theorydb:"index:gsi5,sk"`
 		StatusID  string `json:"status_id"`
 		Word      string `json:"word"`
 		IndexedAt string `json:"indexed_at"`
-		TTL       int64  `dynamorm:"ttl"`
+		TTL       int64  `theorydb:"ttl"`
 	}{
 		PK:        fmt.Sprintf("WORD#%s#%s", word, statusID),
 		SK:        "INDEX",
@@ -378,14 +378,14 @@ func (si *StatusIndexer) indexWord(ctx context.Context, word, statusID string, p
 // indexHashtag indexes a hashtag for search using DynamORM
 func (si *StatusIndexer) indexHashtag(ctx context.Context, tag, statusID string, published time.Time) error {
 	tagIndex := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
-		GSI6PK    string `dynamorm:"index:gsi6,pk"`
-		GSI6SK    string `dynamorm:"index:gsi6,sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
+		GSI6PK    string `theorydb:"index:gsi6,pk"`
+		GSI6SK    string `theorydb:"index:gsi6,sk"`
 		StatusID  string `json:"status_id"`
 		Tag       string `json:"tag"`
 		IndexedAt string `json:"indexed_at"`
-		TTL       int64  `dynamorm:"ttl"`
+		TTL       int64  `theorydb:"ttl"`
 	}{
 		PK:        fmt.Sprintf("TAG#%s#%s", tag, statusID),
 		SK:        "INDEX",
@@ -403,14 +403,14 @@ func (si *StatusIndexer) indexHashtag(ctx context.Context, tag, statusID string,
 // indexByAuthor indexes a status by author using DynamORM
 func (si *StatusIndexer) indexByAuthor(ctx context.Context, authorID, statusID string, published time.Time) error {
 	authorIndex := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
-		GSI7PK    string `dynamorm:"index:gsi7,pk"`
-		GSI7SK    string `dynamorm:"index:gsi7,sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
+		GSI7PK    string `theorydb:"index:gsi7,pk"`
+		GSI7SK    string `theorydb:"index:gsi7,sk"`
 		StatusID  string `json:"status_id"`
 		AuthorID  string `json:"author_id"`
 		IndexedAt string `json:"indexed_at"`
-		TTL       int64  `dynamorm:"ttl"`
+		TTL       int64  `theorydb:"ttl"`
 	}{
 		PK:        fmt.Sprintf("AUTHOR#%s#%s", authorID, statusID),
 		SK:        "INDEX",
@@ -600,17 +600,17 @@ func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, 
 	hour := time.Now().Format("2006-01-02-15") // Hour-level granularity
 
 	trendingHashtag := struct {
-		PK            string    `dynamorm:"pk"`
-		SK            string    `dynamorm:"sk"`
-		GSI6PK        string    `dynamorm:"index:gsi6,pk"`
-		GSI6SK        string    `dynamorm:"index:gsi6,sk"`
+		PK            string    `theorydb:"pk"`
+		SK            string    `theorydb:"sk"`
+		GSI6PK        string    `theorydb:"index:gsi6,pk"`
+		GSI6SK        string    `theorydb:"index:gsi6,sk"`
 		Tag           string    `json:"tag"`
 		Date          string    `json:"date"`
 		Hour          string    `json:"hour"`
 		EngagementSum float64   `json:"engagement_sum"`
 		PostCount     int       `json:"post_count"`
 		LastUpdated   time.Time `json:"last_updated"`
-		TTL           int64     `dynamorm:"ttl"`
+		TTL           int64     `theorydb:"ttl"`
 	}{
 		PK:            fmt.Sprintf("TRENDING_TAG#%s#%s", tag, hour),
 		SK:            "METRICS",
@@ -627,17 +627,17 @@ func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, 
 
 	// Try to get existing record first and update it
 	var existing struct {
-		PK            string    `dynamorm:"pk"`
-		SK            string    `dynamorm:"sk"`
-		GSI6PK        string    `dynamorm:"index:gsi6,pk"`
-		GSI6SK        string    `dynamorm:"index:gsi6,sk"`
+		PK            string    `theorydb:"pk"`
+		SK            string    `theorydb:"sk"`
+		GSI6PK        string    `theorydb:"index:gsi6,pk"`
+		GSI6SK        string    `theorydb:"index:gsi6,sk"`
 		Tag           string    `json:"tag"`
 		Date          string    `json:"date"`
 		Hour          string    `json:"hour"`
 		EngagementSum float64   `json:"engagement_sum"`
 		PostCount     int       `json:"post_count"`
 		LastUpdated   time.Time `json:"last_updated"`
-		TTL           int64     `dynamorm:"ttl"`
+		TTL           int64     `theorydb:"ttl"`
 	}
 
 	err := si.db.WithContext(ctx).Model(&existing).

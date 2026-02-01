@@ -12,9 +12,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -166,13 +166,13 @@ func TestAIProcessor_ProcessRecord_Round12(t *testing.T) {
 
 	analysis := &ai.AIAnalysis{
 		ID:               "analysis-1",
-		ObjectID:          "123",
-		ObjectType:        "Note",
-		ModerationAction:  ai.ActionFlag,
-		OverallRisk:       0.8,
-		SpamAnalysis:      &ai.SpamAnalysis{SpamScore: 0.8},
-		AnalyzedAt:        time.Now().UTC(),
-		Version:           "1.0",
+		ObjectID:         "123",
+		ObjectType:       "Note",
+		ModerationAction: ai.ActionFlag,
+		OverallRisk:      0.8,
+		SpamAnalysis:     &ai.SpamAnalysis{SpamScore: 0.8},
+		AnalyzedAt:       time.Now().UTC(),
+		Version:          "1.0",
 	}
 
 	analyzer := &fakeAnalyzer{analysis: analysis}
@@ -352,13 +352,13 @@ func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 
 		analyzer := &fakeAnalyzer{analysis: &ai.AIAnalysis{
 			ID:               "analysis-1",
-			ObjectID:          "123",
-			ObjectType:        "Note",
-			ModerationAction:  ai.ActionFlag,
-			OverallRisk:       0.8,
-			SpamAnalysis:      &ai.SpamAnalysis{SpamScore: 0.8},
-			AnalyzedAt:        time.Now().UTC(),
-			Version:           "1.0",
+			ObjectID:         "123",
+			ObjectType:       "Note",
+			ModerationAction: ai.ActionFlag,
+			OverallRisk:      0.8,
+			SpamAnalysis:     &ai.SpamAnalysis{SpamScore: 0.8},
+			AnalyzedAt:       time.Now().UTC(),
+			Version:          "1.0",
 		}}
 		saver := &fakeSaver{}
 
@@ -438,7 +438,7 @@ func TestAIProcessor_Entrypoint_Round12(t *testing.T) {
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
 
 	analysis := &ai.AIAnalysis{
-		ID:              "analysis-1",
+		ID:               "analysis-1",
 		ObjectID:         "123",
 		ObjectType:       "Note",
 		ModerationAction: ai.ActionNone,

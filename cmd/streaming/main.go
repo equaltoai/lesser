@@ -23,9 +23,9 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -34,10 +34,10 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/streaming/handlers"
 )
@@ -138,7 +138,7 @@ var (
 		costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger, nil)
 		return repositories.NewWebSocketCostTracker(costRepo, logger)
 	}
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newRepositoryFactoryFn     = factory.NewRepositoryFactory
 	newServiceRegistryFn       = func(repos core.RepositoryStorage, publisher streaming.Publisher, logger *zap.Logger, serviceConfig *services.ServiceConfig) (*services.Registry, error) {
 		return services.NewRegistry(

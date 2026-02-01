@@ -9,57 +9,57 @@ import (
 
 // MediaAnalytics tracks media streaming analytics with variant-level cost attribution
 type MediaAnalytics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB Keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // MEDIA_ANALYTICS#{format} or MANIFEST#{format}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // {timestamp}#{mediaID} or {date}#{mediaID}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // MEDIA_ANALYTICS#{format} or MANIFEST#{format}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // {timestamp}#{mediaID} or {date}#{mediaID}
 
 	// GSI keys for querying
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // DATE#{date}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {format}#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // DATE#{date}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {format}#{timestamp}
 
 	// GSI2 for variant-level queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // VARIANT#{variant_key}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // COST#{timestamp}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // VARIANT#{variant_key}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // COST#{timestamp}
 
 	// Business fields
-	MediaID   string    `dynamorm:"attr:mediaID" json:"media_id"`
-	Format    string    `dynamorm:"attr:format" json:"format"`       // hls, dash
-	Duration  float64   `dynamorm:"attr:duration" json:"duration"`   // Media duration in seconds
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"` // When the event occurred
-	Date      string    `dynamorm:"attr:date" json:"date"`           // YYYY-MM-DD for daily aggregation
+	MediaID   string    `theorydb:"attr:mediaID" json:"media_id"`
+	Format    string    `theorydb:"attr:format" json:"format"`       // hls, dash
+	Duration  float64   `theorydb:"attr:duration" json:"duration"`   // Media duration in seconds
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"` // When the event occurred
+	Date      string    `theorydb:"attr:date" json:"date"`           // YYYY-MM-DD for daily aggregation
 
 	// Metadata
-	EventType string `dynamorm:"attr:eventType" json:"event_type,omitempty"` // manifest_generated, quality_changed, etc.
-	UserID    string `dynamorm:"attr:userID" json:"user_id,omitempty"`       // User requesting the manifest
-	Quality   string `dynamorm:"attr:quality" json:"quality,omitempty"`      // Video quality if applicable
+	EventType string `theorydb:"attr:eventType" json:"event_type,omitempty"` // manifest_generated, quality_changed, etc.
+	UserID    string `theorydb:"attr:userID" json:"user_id,omitempty"`       // User requesting the manifest
+	Quality   string `theorydb:"attr:quality" json:"quality,omitempty"`      // Video quality if applicable
 
 	// NEW: Variant-level cost metrics (all costs in microdollars)
-	VariantCosts     map[string]MediaVariantCost `dynamorm:"attr:variantCosts" json:"variant_costs"`          // Per-variant cost breakdown
-	TotalVariantCost int64                       `dynamorm:"attr:totalVariantCost" json:"total_variant_cost"` // Sum of all variant costs
-	DominantVariant  string                      `dynamorm:"attr:dominantVariant" json:"dominant_variant"`    // Most expensive variant
+	VariantCosts     map[string]MediaVariantCost `theorydb:"attr:variantCosts" json:"variant_costs"`          // Per-variant cost breakdown
+	TotalVariantCost int64                       `theorydb:"attr:totalVariantCost" json:"total_variant_cost"` // Sum of all variant costs
+	DominantVariant  string                      `theorydb:"attr:dominantVariant" json:"dominant_variant"`    // Most expensive variant
 
 	// NEW: Processing cost breakdown by service
-	MediaConvertCost int64 `dynamorm:"attr:mediaConvertCost" json:"mediaconvert_cost"` // MediaConvert processing costs
-	S3StorageCost    int64 `dynamorm:"attr:s3StorageCost" json:"s3_storage_cost"`      // S3 storage costs for variants
-	CloudFrontCost   int64 `dynamorm:"attr:cloudFrontCost" json:"cloudfront_cost"`     // CDN delivery costs
-	LambdaCost       int64 `dynamorm:"attr:lambdaCost" json:"lambda_cost"`             // Lambda processing costs
-	RekognitionCost  int64 `dynamorm:"attr:rekognitionCost" json:"rekognition_cost"`   // Content analysis costs
+	MediaConvertCost int64 `theorydb:"attr:mediaConvertCost" json:"mediaconvert_cost"` // MediaConvert processing costs
+	S3StorageCost    int64 `theorydb:"attr:s3StorageCost" json:"s3_storage_cost"`      // S3 storage costs for variants
+	CloudFrontCost   int64 `theorydb:"attr:cloudFrontCost" json:"cloudfront_cost"`     // CDN delivery costs
+	LambdaCost       int64 `theorydb:"attr:lambdaCost" json:"lambda_cost"`             // Lambda processing costs
+	RekognitionCost  int64 `theorydb:"attr:rekognitionCost" json:"rekognition_cost"`   // Content analysis costs
 
 	// NEW: Bandwidth and streaming metrics
-	TotalBandwidthBytes int64            `dynamorm:"attr:totalBandwidthBytes" json:"total_bandwidth_bytes"` // Total bytes delivered
-	VariantBandwidth    map[string]int64 `dynamorm:"attr:variantBandwidth" json:"variant_bandwidth"`        // Bytes per variant
-	StreamingSessions   int              `dynamorm:"attr:streamingSessions" json:"streaming_sessions"`      // Number of active sessions
-	QualityDistribution map[string]int   `dynamorm:"attr:qualityDistribution" json:"quality_distribution"`  // Viewer count per quality
+	TotalBandwidthBytes int64            `theorydb:"attr:totalBandwidthBytes" json:"total_bandwidth_bytes"` // Total bytes delivered
+	VariantBandwidth    map[string]int64 `theorydb:"attr:variantBandwidth" json:"variant_bandwidth"`        // Bytes per variant
+	StreamingSessions   int              `theorydb:"attr:streamingSessions" json:"streaming_sessions"`      // Number of active sessions
+	QualityDistribution map[string]int   `theorydb:"attr:qualityDistribution" json:"quality_distribution"`  // Viewer count per quality
 
 	// NEW: Performance metrics per variant
-	VariantLatency      map[string]int64   `dynamorm:"attr:variantLatency" json:"variant_latency"`             // Response time per variant (ms)
-	VariantErrorRate    map[string]float64 `dynamorm:"attr:variantErrorRate" json:"variant_error_rate"`        // Error rate per variant
-	VariantCacheHitRate map[string]float64 `dynamorm:"attr:variantCacheHitRate" json:"variant_cache_hit_rate"` // CDN cache hit rate per variant
+	VariantLatency      map[string]int64   `theorydb:"attr:variantLatency" json:"variant_latency"`             // Response time per variant (ms)
+	VariantErrorRate    map[string]float64 `theorydb:"attr:variantErrorRate" json:"variant_error_rate"`        // Error rate per variant
+	VariantCacheHitRate map[string]float64 `theorydb:"attr:variantCacheHitRate" json:"variant_cache_hit_rate"` // CDN cache hit rate per variant
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing MediaAnalytics.

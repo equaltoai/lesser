@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	dynamormtesting "github.com/pay-theory/dynamorm/pkg/testing"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormtesting "github.com/theory-cloud/tabletheory/pkg/testing"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"

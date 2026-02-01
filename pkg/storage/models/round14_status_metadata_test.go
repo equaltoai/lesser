@@ -89,4 +89,3 @@ func TestStatusMetadata_QuotesFlagsAndReplyCounts(t *testing.T) {
 		assert.True(t, sm.UpdatedAt.After(prev))
 	})
 }
-

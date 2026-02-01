@@ -7,16 +7,16 @@ import (
 
 // StatusPin represents a pinned status on a user's profile
 type StatusPin struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk,attr:PK" json:"PK"` // USER#{username}#PINS
-	SK string `dynamorm:"sk,attr:SK" json:"SK"` // STATUS#{status_id}
+	PK string `theorydb:"pk,attr:PK" json:"PK"` // USER#{username}#PINS
+	SK string `theorydb:"sk,attr:SK" json:"SK"` // STATUS#{status_id}
 
 	// Core fields from legacy
-	Username  string    `dynamorm:"attr:username" json:"username"`    // Who pinned the status
-	StatusID  string    `dynamorm:"attr:statusID" json:"status_id"`   // The status that was pinned
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"` // When it was pinned
+	Username  string    `theorydb:"attr:username" json:"username"`    // Who pinned the status
+	StatusID  string    `theorydb:"attr:statusID" json:"status_id"`   // The status that was pinned
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"` // When it was pinned
 }
 
 // TableName returns the DynamoDB table name

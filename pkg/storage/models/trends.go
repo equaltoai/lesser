@@ -9,21 +9,21 @@ import (
 
 // HashtagTrend represents a trending hashtag
 type HashtagTrend struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK          string    `dynamorm:"pk,attr:PK"`
-	SK          string    `dynamorm:"sk,attr:SK"`
-	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsi8SK"`
-	Name        string    `dynamorm:"attr:name" json:"name"`
-	URL         string    `dynamorm:"attr:url" json:"url"`
-	UsageCount  int64     `dynamorm:"attr:usageCount" json:"usage_count"`
-	UniqueUsers int64     `dynamorm:"attr:uniqueUsers" json:"unique_users"`
-	LastUsed    time.Time `dynamorm:"attr:lastUsed" json:"last_used"`
-	FirstSeen   time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`
-	TrendScore  float64   `dynamorm:"attr:trendScore" json:"trend_score"`
-	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	PK          string    `theorydb:"pk,attr:PK"`
+	SK          string    `theorydb:"sk,attr:SK"`
+	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	Name        string    `theorydb:"attr:name" json:"name"`
+	URL         string    `theorydb:"attr:url" json:"url"`
+	UsageCount  int64     `theorydb:"attr:usageCount" json:"usage_count"`
+	UniqueUsers int64     `theorydb:"attr:uniqueUsers" json:"unique_users"`
+	LastUsed    time.Time `theorydb:"attr:lastUsed" json:"last_used"`
+	FirstSeen   time.Time `theorydb:"attr:firstSeen" json:"first_seen"`
+	TrendScore  float64   `theorydb:"attr:trendScore" json:"trend_score"`
+	UpdatedAt   time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	TTL         int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing HashtagTrend.
@@ -62,21 +62,21 @@ func (h *HashtagTrend) GetSK() string {
 
 // StatusTrend represents a trending status
 type StatusTrend struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK          string    `dynamorm:"pk,attr:PK"`
-	SK          string    `dynamorm:"sk,attr:SK"`
-	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsi8SK"`
-	ID          string    `dynamorm:"attr:id" json:"id"`
-	URL         string    `dynamorm:"attr:url" json:"url"`
-	AuthorID    string    `dynamorm:"attr:authorID" json:"author_id"`
-	Content     string    `dynamorm:"attr:content" json:"content"`
-	Engagements int64     `dynamorm:"attr:engagements" json:"engagements"`
-	PublishedAt time.Time `dynamorm:"attr:publishedAt" json:"published_at"`
-	TrendScore  float64   `dynamorm:"attr:trendScore" json:"trend_score"`
-	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	PK          string    `theorydb:"pk,attr:PK"`
+	SK          string    `theorydb:"sk,attr:SK"`
+	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	ID          string    `theorydb:"attr:id" json:"id"`
+	URL         string    `theorydb:"attr:url" json:"url"`
+	AuthorID    string    `theorydb:"attr:authorID" json:"author_id"`
+	Content     string    `theorydb:"attr:content" json:"content"`
+	Engagements int64     `theorydb:"attr:engagements" json:"engagements"`
+	PublishedAt time.Time `theorydb:"attr:publishedAt" json:"published_at"`
+	TrendScore  float64   `theorydb:"attr:trendScore" json:"trend_score"`
+	UpdatedAt   time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	TTL         int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing StatusTrend.
@@ -106,22 +106,22 @@ func (s *StatusTrend) UpdateKeys() error {
 
 // LinkTrend represents a trending link
 type LinkTrend struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK          string    `dynamorm:"pk,attr:PK"`
-	SK          string    `dynamorm:"sk,attr:SK"`
-	GSI8PK      string    `dynamorm:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK      string    `dynamorm:"index:gsi8,sk,attr:gsi8SK"`
-	URL         string    `dynamorm:"attr:url" json:"url"`
-	Title       string    `dynamorm:"attr:title" json:"title"`
-	Description string    `dynamorm:"attr:description" json:"description"`
-	Type        string    `dynamorm:"attr:type" json:"type"` // "link", "video", "photo"
-	AuthorName  string    `dynamorm:"attr:authorName" json:"author_name"`
-	Image       string    `dynamorm:"attr:image" json:"image"`
-	ShareCount  int64     `dynamorm:"attr:shareCount" json:"share_count"`
-	TrendScore  float64   `dynamorm:"attr:trendScore" json:"trend_score"`
-	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	PK          string    `theorydb:"pk,attr:PK"`
+	SK          string    `theorydb:"sk,attr:SK"`
+	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	URL         string    `theorydb:"attr:url" json:"url"`
+	Title       string    `theorydb:"attr:title" json:"title"`
+	Description string    `theorydb:"attr:description" json:"description"`
+	Type        string    `theorydb:"attr:type" json:"type"` // "link", "video", "photo"
+	AuthorName  string    `theorydb:"attr:authorName" json:"author_name"`
+	Image       string    `theorydb:"attr:image" json:"image"`
+	ShareCount  int64     `theorydb:"attr:shareCount" json:"share_count"`
+	TrendScore  float64   `theorydb:"attr:trendScore" json:"trend_score"`
+	UpdatedAt   time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	TTL         int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing LinkTrend.
@@ -151,15 +151,15 @@ func (l *LinkTrend) UpdateKeys() error {
 
 // SearchQuery represents a search query for analytics
 type SearchQuery struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK          string    `dynamorm:"pk,attr:PK"`
-	SK          string    `dynamorm:"sk,attr:SK"`
-	Query       string    `dynamorm:"attr:query" json:"query"`
-	UserID      string    `dynamorm:"attr:userID" json:"user_id"`
-	ResultCount int       `dynamorm:"attr:resultCount" json:"result_count"`
-	SearchedAt  time.Time `dynamorm:"attr:searchedAt" json:"searched_at"`
-	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	PK          string    `theorydb:"pk,attr:PK"`
+	SK          string    `theorydb:"sk,attr:SK"`
+	Query       string    `theorydb:"attr:query" json:"query"`
+	UserID      string    `theorydb:"attr:userID" json:"user_id"`
+	ResultCount int       `theorydb:"attr:resultCount" json:"result_count"`
+	SearchedAt  time.Time `theorydb:"attr:searchedAt" json:"searched_at"`
+	TTL         int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing SearchQuery.
@@ -192,26 +192,26 @@ func (s *SearchQuery) GetSK() string {
 
 // PopularQueryCounter represents an atomic counter for popular search queries
 type PopularQueryCounter struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Key fields for atomic counter operations
-	PK     string `dynamorm:"pk,attr:PK"`                // POPULAR_QUERY#query_hash
-	SK     string `dynamorm:"sk,attr:SK"`                // COUNTER#time_bucket (daily, weekly, monthly)
-	GSI8PK string `dynamorm:"index:gsi8,pk,attr:gsi8PK"` // For time-based queries
-	GSI8SK string `dynamorm:"index:gsi8,sk,attr:gsi8SK"` // For ranking by count
+	PK     string `theorydb:"pk,attr:PK"`                // POPULAR_QUERY#query_hash
+	SK     string `theorydb:"sk,attr:SK"`                // COUNTER#time_bucket (daily, weekly, monthly)
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"` // For time-based queries
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"` // For ranking by count
 
 	// Business fields
-	QueryHash    string    `dynamorm:"attr:queryHash" json:"query_hash"`       // Hashed query for privacy
-	Query        string    `dynamorm:"attr:query" json:"query"`                // Original query (if not sensitive)
-	TimeBucket   string    `dynamorm:"attr:timeBucket" json:"time_bucket"`     // daily, weekly, monthly
-	Date         string    `dynamorm:"attr:date" json:"date"`                  // YYYY-MM-DD format
-	Count        int64     `dynamorm:"attr:count" json:"count"`                // Atomic counter value
-	UserCount    int64     `dynamorm:"attr:userCount" json:"user_count"`       // Unique users who searched
-	AvgResults   float64   `dynamorm:"attr:avgResults" json:"avg_results"`     // Average result count
-	LastQueried  time.Time `dynamorm:"attr:lastQueried" json:"last_queried"`   // Most recent query time
-	FirstQueried time.Time `dynamorm:"attr:firstQueried" json:"first_queried"` // First time this query was seen
-	UpdatedAt    time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	QueryHash    string    `theorydb:"attr:queryHash" json:"query_hash"`       // Hashed query for privacy
+	Query        string    `theorydb:"attr:query" json:"query"`                // Original query (if not sensitive)
+	TimeBucket   string    `theorydb:"attr:timeBucket" json:"time_bucket"`     // daily, weekly, monthly
+	Date         string    `theorydb:"attr:date" json:"date"`                  // YYYY-MM-DD format
+	Count        int64     `theorydb:"attr:count" json:"count"`                // Atomic counter value
+	UserCount    int64     `theorydb:"attr:userCount" json:"user_count"`       // Unique users who searched
+	AvgResults   float64   `theorydb:"attr:avgResults" json:"avg_results"`     // Average result count
+	LastQueried  time.Time `theorydb:"attr:lastQueried" json:"last_queried"`   // Most recent query time
+	FirstQueried time.Time `theorydb:"attr:firstQueried" json:"first_queried"` // First time this query was seen
+	UpdatedAt    time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	TTL          int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing PopularQueryCounter.

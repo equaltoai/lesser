@@ -7,36 +7,36 @@ import (
 
 // InstanceHealth represents health status for a federated instance
 type InstanceHealth struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys - Using same pattern as legacy health checker
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // INSTANCE#domain
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // HEALTH#timestamp_nano
+	PK string `theorydb:"pk,attr:PK" json:"-"` // INSTANCE#domain
+	SK string `theorydb:"sk,attr:SK" json:"-"` // HEALTH#timestamp_nano
 
 	// Core health data
-	Domain       string        `dynamorm:"attr:domain" json:"domain"`
-	Timestamp    time.Time     `dynamorm:"attr:timestamp" json:"timestamp"`
-	Reachable    bool          `dynamorm:"attr:reachable" json:"reachable"`
-	ResponseTime time.Duration `dynamorm:"attr:responseTime" json:"response_time"`
-	StatusCode   int           `dynamorm:"attr:statusCode" json:"status_code"`
-	ErrorMessage string        `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
+	Domain       string        `theorydb:"attr:domain" json:"domain"`
+	Timestamp    time.Time     `theorydb:"attr:timestamp" json:"timestamp"`
+	Reachable    bool          `theorydb:"attr:reachable" json:"reachable"`
+	ResponseTime time.Duration `theorydb:"attr:responseTime" json:"response_time"`
+	StatusCode   int           `theorydb:"attr:statusCode" json:"status_code"`
+	ErrorMessage string        `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
 
 	// Resource usage metrics
-	CPUUsage    float64 `dynamorm:"attr:cpuUsage" json:"cpu_usage,omitempty"`
-	MemoryUsage float64 `dynamorm:"attr:memoryUsage" json:"memory_usage,omitempty"`
-	DiskUsage   float64 `dynamorm:"attr:diskUsage" json:"disk_usage,omitempty"`
+	CPUUsage    float64 `theorydb:"attr:cpuUsage" json:"cpu_usage,omitempty"`
+	MemoryUsage float64 `theorydb:"attr:memoryUsage" json:"memory_usage,omitempty"`
+	DiskUsage   float64 `theorydb:"attr:diskUsage" json:"disk_usage,omitempty"`
 
 	// Federation metrics
-	InboxBacklog    int           `dynamorm:"attr:inboxBacklog" json:"inbox_backlog,omitempty"`
-	ProcessingDelay time.Duration `dynamorm:"attr:processingDelay" json:"processing_delay,omitempty"`
-	ErrorRate       float64       `dynamorm:"attr:errorRate" json:"error_rate,omitempty"`
+	InboxBacklog    int           `theorydb:"attr:inboxBacklog" json:"inbox_backlog,omitempty"`
+	ProcessingDelay time.Duration `theorydb:"attr:processingDelay" json:"processing_delay,omitempty"`
+	ErrorRate       float64       `theorydb:"attr:errorRate" json:"error_rate,omitempty"`
 
 	// Additional metadata
-	CheckerVersion string `dynamorm:"attr:checkerVersion" json:"checker_version,omitempty"`
-	UserAgent      string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
+	CheckerVersion string `theorydb:"attr:checkerVersion" json:"checker_version,omitempty"`
+	UserAgent      string `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
 
 	// TTL for automatic cleanup (7 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing InstanceHealth.
@@ -126,32 +126,32 @@ func (h *InstanceHealth) GetHealthScore() float64 {
 
 // InstanceHealthSummary represents aggregated health data for an instance
 type InstanceHealthSummary struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys for summary data
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // INSTANCE#domain
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // SUMMARY#window (e.g., SUMMARY#1h, SUMMARY#24h)
+	PK string `theorydb:"pk,attr:PK" json:"-"` // INSTANCE#domain
+	SK string `theorydb:"sk,attr:SK" json:"-"` // SUMMARY#window (e.g., SUMMARY#1h, SUMMARY#24h)
 
 	// Metadata
-	Domain      string        `dynamorm:"attr:domain" json:"domain"`
-	Window      time.Duration `dynamorm:"attr:window" json:"window"` // Time window for aggregation
-	LastUpdated time.Time     `dynamorm:"attr:lastUpdated" json:"last_updated"`
-	SampleCount int           `dynamorm:"attr:sampleCount" json:"sample_count"`
+	Domain      string        `theorydb:"attr:domain" json:"domain"`
+	Window      time.Duration `theorydb:"attr:window" json:"window"` // Time window for aggregation
+	LastUpdated time.Time     `theorydb:"attr:lastUpdated" json:"last_updated"`
+	SampleCount int           `theorydb:"attr:sampleCount" json:"sample_count"`
 
 	// Aggregated metrics
-	Availability    float64       `dynamorm:"attr:availability" json:"availability"` // Percentage of successful checks
-	AvgResponseTime time.Duration `dynamorm:"attr:avgResponseTime" json:"avg_response_time"`
-	MaxResponseTime time.Duration `dynamorm:"attr:maxResponseTime" json:"max_response_time"`
-	ErrorRate       float64       `dynamorm:"attr:errorRate" json:"error_rate"`
-	AvgInboxBacklog int           `dynamorm:"attr:avgInboxBacklog" json:"avg_inbox_backlog"`
-	MaxInboxBacklog int           `dynamorm:"attr:maxInboxBacklog" json:"max_inbox_backlog"`
-	HealthScore     float64       `dynamorm:"attr:healthScore" json:"health_score"` // 0-100
+	Availability    float64       `theorydb:"attr:availability" json:"availability"` // Percentage of successful checks
+	AvgResponseTime time.Duration `theorydb:"attr:avgResponseTime" json:"avg_response_time"`
+	MaxResponseTime time.Duration `theorydb:"attr:maxResponseTime" json:"max_response_time"`
+	ErrorRate       float64       `theorydb:"attr:errorRate" json:"error_rate"`
+	AvgInboxBacklog int           `theorydb:"attr:avgInboxBacklog" json:"avg_inbox_backlog"`
+	MaxInboxBacklog int           `theorydb:"attr:maxInboxBacklog" json:"max_inbox_backlog"`
+	HealthScore     float64       `theorydb:"attr:healthScore" json:"health_score"` // 0-100
 
 	// Status code distribution
-	StatusCodeCounts map[string]int `dynamorm:"attr:statusCodeCounts" json:"status_code_counts"` // JSON serialized map
+	StatusCodeCounts map[string]int `theorydb:"attr:statusCodeCounts" json:"status_code_counts"` // JSON serialized map
 
 	// TTL for cleanup (summaries kept longer - 30 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing InstanceHealthSummary.

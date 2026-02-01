@@ -9,10 +9,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
-	dynamormtesting "github.com/pay-theory/dynamorm/pkg/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormtesting "github.com/theory-cloud/tabletheory/pkg/testing"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -204,14 +204,14 @@ func TestAlertingSystem_SendSNSAlert_ErrorIsWrapped(t *testing.T) {
 	}
 
 	err := sys.sendSNSAlert(context.Background(), &models.Alert{
-		AlertID:   "a1",
-		Type:      "t",
-		Severity:  "critical",
-		Priority:  "P0",
-		Service:   "svc",
-		Title:     "title",
-		FiredAt:   time.Now(),
-		Metadata:  map[string]interface{}{"k": "v"},
+		AlertID:    "a1",
+		Type:       "t",
+		Severity:   "critical",
+		Priority:   "P0",
+		Service:    "svc",
+		Title:      "title",
+		FiredAt:    time.Now(),
+		Metadata:   map[string]interface{}{"k": "v"},
 		RunbookURL: "https://example.com",
 	})
 	require.Error(t, err)

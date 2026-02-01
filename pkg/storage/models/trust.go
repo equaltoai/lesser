@@ -35,34 +35,34 @@ func (TrustEvidence) TableName() string {
 
 // TrustRelationship represents a trust relationship between two actors
 type TrustRelationship struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - exact patterns from legacy
-	PK string `dynamorm:"pk,attr:PK"` // TRUST#trusterID#category
-	SK string `dynamorm:"sk,attr:SK"` // TRUSTEE#trusteeID
+	PK string `theorydb:"pk,attr:PK"` // TRUST#trusterID#category
+	SK string `theorydb:"sk,attr:SK"` // TRUSTEE#trusteeID
 
 	// GSI1 - for reverse lookups (who trusts this trustee)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // TRUSTED#trusteeID#category
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // TRUSTER#trusterID
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // TRUSTED#trusteeID#category
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // TRUSTER#trusterID
 
 	// GSI2 - for domain-based queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"` // DOMAIN#domain
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"` // TRUST#category#score
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"` // DOMAIN#domain
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"` // TRUST#category#score
 
 	// Business fields
-	ID         string          `dynamorm:"attr:id" json:"id"`
-	TrusterID  string          `dynamorm:"attr:trusterID" json:"truster_id"`
-	TrusteeID  string          `dynamorm:"attr:trusteeID" json:"trustee_id"`
-	Category   TrustCategory   `dynamorm:"attr:category" json:"category"`
-	Score      float64         `dynamorm:"attr:score" json:"score"`           // -1.0 to 1.0
-	Confidence float64         `dynamorm:"attr:confidence" json:"confidence"` // 0.0 to 1.0
-	Evidence   []TrustEvidence `dynamorm:"attr:evidence" json:"evidence,omitempty"`
-	TTL        int64           `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
-	Created    time.Time       `dynamorm:"attr:created" json:"created"`
-	Updated    time.Time       `dynamorm:"attr:updated" json:"updated"`
+	ID         string          `theorydb:"attr:id" json:"id"`
+	TrusterID  string          `theorydb:"attr:trusterID" json:"truster_id"`
+	TrusteeID  string          `theorydb:"attr:trusteeID" json:"trustee_id"`
+	Category   TrustCategory   `theorydb:"attr:category" json:"category"`
+	Score      float64         `theorydb:"attr:score" json:"score"`           // -1.0 to 1.0
+	Confidence float64         `theorydb:"attr:confidence" json:"confidence"` // 0.0 to 1.0
+	Evidence   []TrustEvidence `theorydb:"attr:evidence" json:"evidence,omitempty"`
+	TTL        int64           `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
+	Created    time.Time       `theorydb:"attr:created" json:"created"`
+	Updated    time.Time       `theorydb:"attr:updated" json:"updated"`
 
 	// Type marker for filtering
-	Type string `dynamorm:"attr:type" json:"type"` // Always "RELATIONSHIP"
+	Type string `theorydb:"attr:type" json:"type"` // Always "RELATIONSHIP"
 }
 
 // TableName returns the DynamoDB table backing TrustRelationship.
@@ -102,27 +102,27 @@ func (tr *TrustRelationship) GetSK() string {
 
 // TrustScore represents a cached trust score for an actor
 type TrustScore struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys for cached scores
-	PK string `dynamorm:"pk,attr:PK"` // SCORE#actorID#category
-	SK string `dynamorm:"sk,attr:SK"` // CURRENT
+	PK string `theorydb:"pk,attr:PK"` // SCORE#actorID#category
+	SK string `theorydb:"sk,attr:SK"` // CURRENT
 
 	// Business fields
-	ActorID         string             `dynamorm:"attr:actorID" json:"actor_id"`
-	Category        TrustCategory      `dynamorm:"attr:category" json:"category"`
-	Score           float64            `dynamorm:"attr:score" json:"score"`                      // Aggregated score
-	DirectScore     float64            `dynamorm:"attr:directScore" json:"direct_score"`         // Score from direct relationships
-	PropagatedScore float64            `dynamorm:"attr:propagatedScore" json:"propagated_score"` // Score from network propagation
-	Confidence      float64            `dynamorm:"attr:confidence" json:"confidence"`            // Confidence in score
-	TrusterCount    int                `dynamorm:"attr:trusterCount" json:"truster_count"`       // Number of direct trusters
-	CategoryScores  map[string]float64 `dynamorm:"attr:categoryScores" json:"category_scores"`   // Scores by category
-	LastCalculated  time.Time          `dynamorm:"attr:lastCalculated" json:"last_calculated"`
-	CacheTTL        time.Time          `dynamorm:"attr:cacheTTL" json:"cache_ttl"`
-	TTL             int64              `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	ActorID         string             `theorydb:"attr:actorID" json:"actor_id"`
+	Category        TrustCategory      `theorydb:"attr:category" json:"category"`
+	Score           float64            `theorydb:"attr:score" json:"score"`                      // Aggregated score
+	DirectScore     float64            `theorydb:"attr:directScore" json:"direct_score"`         // Score from direct relationships
+	PropagatedScore float64            `theorydb:"attr:propagatedScore" json:"propagated_score"` // Score from network propagation
+	Confidence      float64            `theorydb:"attr:confidence" json:"confidence"`            // Confidence in score
+	TrusterCount    int                `theorydb:"attr:trusterCount" json:"truster_count"`       // Number of direct trusters
+	CategoryScores  map[string]float64 `theorydb:"attr:categoryScores" json:"category_scores"`   // Scores by category
+	LastCalculated  time.Time          `theorydb:"attr:lastCalculated" json:"last_calculated"`
+	CacheTTL        time.Time          `theorydb:"attr:cacheTTL" json:"cache_ttl"`
+	TTL             int64              `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // Always "SCORE"
+	Type string `theorydb:"attr:type" json:"type"` // Always "SCORE"
 }
 
 // TableName returns the DynamoDB table backing TrustScore.
@@ -155,23 +155,23 @@ func (ts *TrustScore) GetSK() string {
 
 // TrustUpdate represents a trust score update event
 type TrustUpdate struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys for update history
-	PK string `dynamorm:"pk,attr:PK"` // UPDATES#actorID
-	SK string `dynamorm:"sk,attr:SK"` // TIME#timestamp#eventID
+	PK string `theorydb:"pk,attr:PK"` // UPDATES#actorID
+	SK string `theorydb:"sk,attr:SK"` // TIME#timestamp#eventID
 
 	// Business fields
-	ActorID   string        `dynamorm:"attr:actorID" json:"actor_id"`
-	EventID   string        `dynamorm:"attr:eventID" json:"event_id"`
-	Category  TrustCategory `dynamorm:"attr:category" json:"category"`
-	Delta     float64       `dynamorm:"attr:delta" json:"delta"`   // Change in trust score
-	Reason    string        `dynamorm:"attr:reason" json:"reason"` // Why the update occurred
-	Timestamp time.Time     `dynamorm:"attr:timestamp" json:"timestamp"`
-	TTL       int64         `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	ActorID   string        `theorydb:"attr:actorID" json:"actor_id"`
+	EventID   string        `theorydb:"attr:eventID" json:"event_id"`
+	Category  TrustCategory `theorydb:"attr:category" json:"category"`
+	Delta     float64       `theorydb:"attr:delta" json:"delta"`   // Change in trust score
+	Reason    string        `theorydb:"attr:reason" json:"reason"` // Why the update occurred
+	Timestamp time.Time     `theorydb:"attr:timestamp" json:"timestamp"`
+	TTL       int64         `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // Always "UPDATE"
+	Type string `theorydb:"attr:type" json:"type"` // Always "UPDATE"
 }
 
 // TableName returns the DynamoDB table backing TrustUpdate.

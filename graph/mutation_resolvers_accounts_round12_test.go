@@ -19,7 +19,7 @@ func TestRound12MutationResolvers_Accounts_RegisterAccount_AndVisibility(t *test
 
 	// Register attempt through real service (may fail due to existing account); error path still exercises resolver.
 	_, err = mut.RegisterAccount(context.Background(), model.RegisterAccountInput{
-		Username:   "alice",
+		Username:  "alice",
 		Agreement: true,
 	})
 	require.Error(t, err)

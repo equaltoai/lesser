@@ -128,4 +128,3 @@ func TestMetricsTracker_addToBatch_NoCloudWatch(t *testing.T) {
 	defer tracker.batchMutex.RUnlock()
 	assert.Empty(t, tracker.metricsBatch)
 }
-

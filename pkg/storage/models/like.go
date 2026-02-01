@@ -7,23 +7,23 @@ import (
 
 // Like represents a Like activity in DynamoDB
 type Like struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - by object and actor (to prevent duplicate likes)
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "object#{object_id}#likes"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "actor#{actor_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "object#{object_id}#likes"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "actor#{actor_id}"
 
 	// GSI1 - by actor (to list user's likes)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "actor#{actor_id}#likes"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{object_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "actor#{actor_id}#likes"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{object_id}"
 
 	// Like data
-	ID             string    `dynamorm:"attr:id" json:"id"`                           // Like activity ID
-	Actor          string    `dynamorm:"attr:actor" json:"actor"`                     // Who liked (actor URL)
-	Object         string    `dynamorm:"attr:object" json:"object"`                   // What was liked (object URL)
-	StatusAuthorID string    `dynamorm:"attr:statusAuthorID" json:"status_author_id"` // Author of the status being liked
-	Published      time.Time `dynamorm:"attr:published" json:"published"`             // When it was liked
-	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"created_at"`            // When stored in DB
+	ID             string    `theorydb:"attr:id" json:"id"`                           // Like activity ID
+	Actor          string    `theorydb:"attr:actor" json:"actor"`                     // Who liked (actor URL)
+	Object         string    `theorydb:"attr:object" json:"object"`                   // What was liked (object URL)
+	StatusAuthorID string    `theorydb:"attr:statusAuthorID" json:"status_author_id"` // Author of the status being liked
+	Published      time.Time `theorydb:"attr:published" json:"published"`             // When it was liked
+	CreatedAt      time.Time `theorydb:"attr:createdAt" json:"created_at"`            // When stored in DB
 }
 
 // TableName returns the DynamoDB table backing Like.

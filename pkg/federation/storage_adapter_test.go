@@ -162,4 +162,3 @@ func TestRepositoryStorageAdapter_ErrorPassthrough(t *testing.T) {
 	assert.Error(t, adapter.CacheRemoteActor(ctx, "alice@remote.example", nil, time.Second))
 	assert.Error(t, adapter.RecordFederationActivity(ctx, &storage.FederationActivity{}))
 }
-

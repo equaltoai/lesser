@@ -16,9 +16,9 @@ import (
 
 type storageProviderNoAccount struct{}
 
-func (s storageProviderNoAccount) Account() *repositories.AccountRepository          { return nil }
-func (s storageProviderNoAccount) Actor() storageinterfaces.ActorRepository         { return nil }
-func (s storageProviderNoAccount) Activity() storageinterfaces.ActivityRepository   { return nil }
+func (s storageProviderNoAccount) Account() *repositories.AccountRepository       { return nil }
+func (s storageProviderNoAccount) Actor() storageinterfaces.ActorRepository       { return nil }
+func (s storageProviderNoAccount) Activity() storageinterfaces.ActivityRepository { return nil }
 func (s storageProviderNoAccount) Notification() storageinterfaces.NotificationRepository {
 	return nil
 }

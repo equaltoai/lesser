@@ -10,10 +10,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/converters"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ type RepositoryFactory struct {
 	cfg       *config.Config
 
 	// Storage adapter for unified interface access
-	storageAdapter *dynamorm.StorageAdapter
+	storageAdapter *theorydb.StorageAdapter
 
 	// Repository instances (initialize once)
 	accountRepo             *repositories.AccountRepository
@@ -121,7 +121,7 @@ func NewRepositoryFactory(db dynamormCore.DB, tableName string, logger *zap.Logg
 	factory.setupDependencies()
 
 	// Initialize storage adapter with factory as RepositoryStorage
-	factory.storageAdapter = dynamorm.NewStorageAdapter(factory)
+	factory.storageAdapter = theorydb.NewStorageAdapter(factory)
 
 	return factory, nil
 }
@@ -639,7 +639,7 @@ func (f *RepositoryFactory) PublicationMember() interfaces.PublicationMemberRepo
 // This provides access to both repository methods AND legacy storage operations
 func (f *RepositoryFactory) GetStorageAdapter() interfaces.Storage {
 	if f.storageAdapter == nil {
-		f.storageAdapter = dynamorm.NewStorageAdapter(f)
+		f.storageAdapter = theorydb.NewStorageAdapter(f)
 	}
 	return f.storageAdapter
 }
@@ -653,7 +653,7 @@ func (f *RepositoryFactory) AsStorage() interfaces.Storage {
 // ResetStorageAdapter recreates the storage adapter
 // Useful for testing and when repository dependencies change
 func (f *RepositoryFactory) ResetStorageAdapter() {
-	f.storageAdapter = dynamorm.NewStorageAdapter(f)
+	f.storageAdapter = theorydb.NewStorageAdapter(f)
 }
 
 // Ensure RepositoryFactory implements RepositoryStorage interface

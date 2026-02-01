@@ -12,11 +12,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -86,8 +86,10 @@ func (r fullRelationshipRepo) GetMutedUsers(context.Context, string, interfaces.
 	return &interfaces.PaginatedResult[*storage.Account]{}, nil
 }
 
-func (r fullRelationshipRepo) GetFollowerCount(context.Context, string) (int64, error)  { return 0, nil }
-func (r fullRelationshipRepo) GetFollowingCount(context.Context, string) (int64, error) { return 0, nil }
+func (r fullRelationshipRepo) GetFollowerCount(context.Context, string) (int64, error) { return 0, nil }
+func (r fullRelationshipRepo) GetFollowingCount(context.Context, string) (int64, error) {
+	return 0, nil
+}
 func (r fullRelationshipRepo) GetMutualFollowCount(context.Context, string, string) (int64, error) {
 	return 0, nil
 }

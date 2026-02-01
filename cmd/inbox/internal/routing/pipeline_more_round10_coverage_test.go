@@ -9,9 +9,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/golang-jwt/jwt/v5"
-	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/repositories"

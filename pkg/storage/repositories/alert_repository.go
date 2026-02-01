@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -510,8 +510,8 @@ type DeadLetterRepository interface {
 
 // DeadLetterMessage represents a message that failed processing
 type DeadLetterMessage struct {
-	PK            string                 `dynamorm:"pk" json:"pk"`
-	SK            string                 `dynamorm:"sk" json:"sk"`
+	PK            string                 `theorydb:"pk" json:"pk"`
+	SK            string                 `theorydb:"sk" json:"sk"`
 	MessageID     string                 `json:"message_id"`
 	OriginalType  string                 `json:"original_type"`
 	OriginalID    string                 `json:"original_id"`
@@ -521,7 +521,7 @@ type DeadLetterMessage struct {
 	LastAttemptAt time.Time              `json:"last_attempt_at"`
 	Payload       map[string]interface{} `json:"payload"`
 	CreatedAt     time.Time              `json:"created_at"`
-	TTL           int64                  `json:"ttl,omitempty" dynamorm:"ttl"`
+	TTL           int64                  `json:"ttl,omitempty" theorydb:"ttl"`
 }
 
 // UpdateKeys sets the partition and sort keys

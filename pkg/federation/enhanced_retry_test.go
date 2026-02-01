@@ -83,9 +83,9 @@ func TestEnhancedRetryProcessor_ProcessEnhancedRetry_AllSuccess_RecordsFinalSucc
 	require.NoError(t, err)
 
 	signingActor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: "https://local.example/users/alice"},
-		PreferredUsername:  "alice",
-		PublicKey:          &activitypub.PublicKey{ID: "https://local.example/users/alice#main-key"},
+		BaseObject:                activitypub.BaseObject{ID: "https://local.example/users/alice"},
+		PreferredUsername:         "alice",
+		PublicKey:                 &activitypub.PublicKey{ID: "https://local.example/users/alice#main-key"},
 		ManuallyApprovesFollowers: false,
 	}
 

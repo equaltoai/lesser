@@ -119,12 +119,12 @@ func TestRound12Helpers_ThreadAndHashtagConversions(t *testing.T) {
 		Content:      "hello",
 	}
 	threadCtx := resolver.convertThreadContextResultToModel(context.Background(), &threads.ThreadContextResult{
-		RootNote:          root,
-		ReplyCount:        2,
-		ParticipantCount:  1,
-		MissingCount:      0,
-		LastActivity:      time.Now(),
-		SyncStatus:        threads.SyncStatusComplete,
+		RootNote:         root,
+		ReplyCount:       2,
+		ParticipantCount: 1,
+		MissingCount:     0,
+		LastActivity:     time.Now(),
+		SyncStatus:       threads.SyncStatusComplete,
 	})
 	require.NotNil(t, threadCtx)
 	require.NotNil(t, threadCtx.RootNote)
@@ -143,13 +143,13 @@ func TestRound12Helpers_ThreadAndHashtagConversions(t *testing.T) {
 		},
 	}
 	h := &hashtags.Hashtag{
-		Name:          "tag",
-		PostCount:     1,
-		FollowerCount: 2,
-		TrendingScore: 3.0,
-		IsFollowing:   true,
-		Related:       []string{"a", "", "b"},
-		FollowedAt:    ptrTime(time.Now().Add(-time.Minute)),
+		Name:                 "tag",
+		PostCount:            1,
+		FollowerCount:        2,
+		TrendingScore:        3.0,
+		IsFollowing:          true,
+		Related:              []string{"a", "", "b"},
+		FollowedAt:           ptrTime(time.Now().Add(-time.Minute)),
 		NotificationSettings: settings,
 	}
 	hashtagModel := resolver.convertHashtagToModel(context.Background(), h, "alice")

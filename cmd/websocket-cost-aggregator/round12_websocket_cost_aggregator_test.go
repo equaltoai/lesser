@@ -22,7 +22,7 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
-	"github.com/pay-theory/dynamorm"
+	"github.com/theory-cloud/tabletheory"
 )
 
 type fakeCostRepo struct {
@@ -729,7 +729,7 @@ func TestInitializeAndMain_RoutesEventBridge(t *testing.T) {
 		DynamoDB: nil,
 	}
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeCtx }
-	getLambdaClientFn = func(context.Context) (*dynamorm.LambdaDB, error) { return &dynamorm.LambdaDB{}, nil }
+	getLambdaClientFn = func(context.Context) (*tabletheory.LambdaDB, error) { return &tabletheory.LambdaDB{}, nil }
 	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
 		return aws.Config{Region: "us-east-1"}, nil
 	}
@@ -800,7 +800,7 @@ func TestInitializeWebSocketCostAggregator_LoadAWSConfigError(t *testing.T) {
 		DynamoDB: nil,
 	}
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeCtx }
-	getLambdaClientFn = func(context.Context) (*dynamorm.LambdaDB, error) { return &dynamorm.LambdaDB{}, nil }
+	getLambdaClientFn = func(context.Context) (*tabletheory.LambdaDB, error) { return &tabletheory.LambdaDB{}, nil }
 	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
 		return aws.Config{}, errors.New("load failed")
 	}

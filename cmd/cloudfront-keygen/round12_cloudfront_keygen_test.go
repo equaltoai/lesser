@@ -287,7 +287,9 @@ func TestHandler_CreateSecret_ResourceExists_Round12(t *testing.T) {
 		return aws.Config{Region: "us-east-1"}, nil
 	}
 	rsaGenerateKeyFn = func(r io.Reader, _ int) (*rsa.PrivateKey, error) { return rsa.GenerateKey(r, 1024) }
-	ensureCloudFrontResourcesFn = func(context.Context, cloudFrontAPI, string, string, string) (string, string, error) { return "pk", "kg", nil }
+	ensureCloudFrontResourcesFn = func(context.Context, cloudFrontAPI, string, string, string) (string, string, error) {
+		return "pk", "kg", nil
+	}
 
 	physical, data, err := handler(context.Background(), cfn.Event{
 		RequestType:       cfn.RequestUpdate,
@@ -325,7 +327,9 @@ func TestHandler_CreateSecret_CreateFails_Round12(t *testing.T) {
 	}
 	newCloudFrontClientFn = func(aws.Config) cloudFrontAPI { return nil }
 	rsaGenerateKeyFn = func(r io.Reader, _ int) (*rsa.PrivateKey, error) { return rsa.GenerateKey(r, 1024) }
-	ensureCloudFrontResourcesFn = func(context.Context, cloudFrontAPI, string, string, string) (string, string, error) { return "pk", "kg", nil }
+	ensureCloudFrontResourcesFn = func(context.Context, cloudFrontAPI, string, string, string) (string, string, error) {
+		return "pk", "kg", nil
+	}
 	_, _, err := handler(context.Background(), cfn.Event{
 		RequestType:       cfn.RequestCreate,
 		LogicalResourceID: "Res",

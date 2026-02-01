@@ -36,13 +36,13 @@ func TestParseOriginalMessage(t *testing.T) {
 	processor := newTestProcessor(t)
 
 	tests := []struct {
-		name                    string
-		record                  events.SQSMessage
-		expectedMessageID       string
-		expectedBody            string
-		expectedSourceQueue     string
-		expectedOriginalMsgID   string
-		expectedAttributeCount  int
+		name                   string
+		record                 events.SQSMessage
+		expectedMessageID      string
+		expectedBody           string
+		expectedSourceQueue    string
+		expectedOriginalMsgID  string
+		expectedAttributeCount int
 	}{
 		{
 			name: "basic message parsing",
@@ -574,7 +574,6 @@ func TestProcessorLogging(t *testing.T) {
 	assert.NotNil(t, processor.logger)
 }
 
-
 // ============================================================================
 // Additional processor tests for better coverage
 // ============================================================================
@@ -705,7 +704,6 @@ func TestCreateDLQMessage_EdgeCases(t *testing.T) {
 		})
 	}
 }
-
 
 // ============================================================================
 // Additional Processor Tests for Coverage

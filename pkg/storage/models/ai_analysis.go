@@ -9,38 +9,38 @@ import (
 
 // AIAnalysis represents an AI analysis result stored in DynamoDB
 type AIAnalysis struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "AI#{object_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ANALYSIS#{analysis_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "AI#{object_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "ANALYSIS#{analysis_id}"
 
 	// GSI4 for temporal queries (reusing cost tracking GSI)
-	GSI4PK string `dynamorm:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
-	GSI4SK string `dynamorm:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{timestamp}"
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{timestamp}"
 
 	// Core fields
-	ID         string    `dynamorm:"attr:id" json:"id"`
-	ObjectID   string    `dynamorm:"attr:objectID" json:"object_id"`
-	ObjectType string    `dynamorm:"attr:objectType" json:"object_type"`
-	AnalyzedAt time.Time `dynamorm:"attr:analyzedAt" json:"analyzed_at"`
-	Version    string    `dynamorm:"attr:version" json:"version"`
+	ID         string    `theorydb:"attr:id" json:"id"`
+	ObjectID   string    `theorydb:"attr:objectID" json:"object_id"`
+	ObjectType string    `theorydb:"attr:objectType" json:"object_type"`
+	AnalyzedAt time.Time `theorydb:"attr:analyzedAt" json:"analyzed_at"`
+	Version    string    `theorydb:"attr:version" json:"version"`
 
 	// Analysis results
-	TextAnalysis  *ai.TextAnalysis  `dynamorm:"attr:textAnalysis" json:"text_analysis,omitempty"`
-	ImageAnalysis *ai.ImageAnalysis `dynamorm:"attr:imageAnalysis" json:"image_analysis,omitempty"`
-	AIDetection   *ai.AIDetection   `dynamorm:"attr:aiDetection" json:"ai_detection,omitempty"`
-	SpamAnalysis  *ai.SpamAnalysis  `dynamorm:"attr:spamAnalysis" json:"spam_analysis,omitempty"`
+	TextAnalysis  *ai.TextAnalysis  `theorydb:"attr:textAnalysis" json:"text_analysis,omitempty"`
+	ImageAnalysis *ai.ImageAnalysis `theorydb:"attr:imageAnalysis" json:"image_analysis,omitempty"`
+	AIDetection   *ai.AIDetection   `theorydb:"attr:aiDetection" json:"ai_detection,omitempty"`
+	SpamAnalysis  *ai.SpamAnalysis  `theorydb:"attr:spamAnalysis" json:"spam_analysis,omitempty"`
 
 	// Composite scores
-	OverallRisk      float64 `dynamorm:"attr:overallRisk" json:"overall_risk"`
-	ModerationAction string  `dynamorm:"attr:moderationAction" json:"moderation_action"`
-	Confidence       float64 `dynamorm:"attr:confidence" json:"confidence"`
+	OverallRisk      float64 `theorydb:"attr:overallRisk" json:"overall_risk"`
+	ModerationAction string  `theorydb:"attr:moderationAction" json:"moderation_action"`
+	Confidence       float64 `theorydb:"attr:confidence" json:"confidence"`
 
 	// DynamoDB metadata
-	Type      string    `dynamorm:"attr:type" json:"type"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Type      string    `theorydb:"attr:type" json:"type"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys updates the GSI keys for the AI analysis
@@ -85,15 +85,15 @@ func (AIAnalysis) TableName() string {
 
 // AIAnalysisQueue represents a queued object for AI analysis
 type AIAnalysisQueue struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Using object keys for updating
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "OBJECT#{object_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "OBJECT#{object_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "OBJECT#{object_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "OBJECT#{object_id}"
 
 	// Queue metadata
-	ForceAnalysis bool      `dynamorm:"attr:forceAnalysis" json:"force_analysis"`
-	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	ForceAnalysis bool      `theorydb:"attr:forceAnalysis" json:"force_analysis"`
+	UpdatedAt     time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys updates the keys for the queue entry

@@ -31,4 +31,3 @@ func TestResolveReceiptPath_DefaultHome(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, statePath, got)
 }
-

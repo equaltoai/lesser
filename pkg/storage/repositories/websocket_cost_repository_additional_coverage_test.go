@@ -9,9 +9,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -59,19 +59,19 @@ func populateWebSocketSliceForCoverage(target any, baseTime time.Time) {
 	case reflect.TypeOf(models.WebSocketCostRecord{}):
 		for i := range 3 {
 			record := &models.WebSocketCostRecord{
-				ID:                 "id-1",
-				ConnectionID:       "conn-1",
-				UserID:             "user-1",
-				Username:           "alice",
-				Timestamp:          baseTime.Add(time.Duration(i) * time.Minute),
-				TotalCostMicroCents: int64(1000 + i*500),
+				ID:                   "id-1",
+				ConnectionID:         "conn-1",
+				UserID:               "user-1",
+				Username:             "alice",
+				Timestamp:            baseTime.Add(time.Duration(i) * time.Minute),
+				TotalCostMicroCents:  int64(1000 + i*500),
 				ConnectionDurationMs: 120000,
-				MessageCount:       2,
-				MessageSizeBytes:   1024,
-				ProcessingTimeMs:   10,
-				ResponseLatencyMs:  5,
-				MemoryUsedMB:       128,
-				ActiveStreams:      []string{"public", "notifications"},
+				MessageCount:         2,
+				MessageSizeBytes:     1024,
+				ProcessingTimeMs:     10,
+				ResponseLatencyMs:    5,
+				MemoryUsedMB:         128,
+				ActiveStreams:        []string{"public", "notifications"},
 			}
 			switch i {
 			case 0:
@@ -92,40 +92,40 @@ func populateWebSocketSliceForCoverage(target any, baseTime time.Time) {
 	case reflect.TypeOf(models.WebSocketCostBudget{}):
 		budgets := []*models.WebSocketCostBudget{
 			{
-				UserID:             "user-1",
-				Username:           "alice",
-				Period:             "daily",
-				BudgetMicroCents:   100000,
-				UsedMicroCents:     120000,
+				UserID:              "user-1",
+				Username:            "alice",
+				Period:              "daily",
+				BudgetMicroCents:    100000,
+				UsedMicroCents:      120000,
 				RemainingMicroCents: 0,
-				UsagePercent:       120,
-				Status:             "exceeded",
-				WindowStart:        baseTime.Add(-time.Hour),
-				WindowEnd:          baseTime.Add(time.Hour),
+				UsagePercent:        120,
+				Status:              "exceeded",
+				WindowStart:         baseTime.Add(-time.Hour),
+				WindowEnd:           baseTime.Add(time.Hour),
 			},
 			{
-				UserID:             "user-1",
-				Username:           "alice",
-				Period:             "weekly",
-				BudgetMicroCents:   100000,
-				UsedMicroCents:     90000,
+				UserID:              "user-1",
+				Username:            "alice",
+				Period:              "weekly",
+				BudgetMicroCents:    100000,
+				UsedMicroCents:      90000,
 				RemainingMicroCents: 10000,
-				UsagePercent:       90,
-				Status:             "warning",
-				WindowStart:        baseTime.Add(-time.Hour),
-				WindowEnd:          baseTime.Add(time.Hour),
+				UsagePercent:        90,
+				Status:              "warning",
+				WindowStart:         baseTime.Add(-time.Hour),
+				WindowEnd:           baseTime.Add(time.Hour),
 			},
 			{
-				UserID:             "user-1",
-				Username:           "alice",
-				Period:             "monthly",
-				BudgetMicroCents:   100000,
-				UsedMicroCents:     1,
+				UserID:              "user-1",
+				Username:            "alice",
+				Period:              "monthly",
+				BudgetMicroCents:    100000,
+				UsedMicroCents:      1,
 				RemainingMicroCents: 99999,
-				UsagePercent:       0.001,
-				Status:             "active",
-				WindowStart:        baseTime.Add(-48 * time.Hour),
-				WindowEnd:          baseTime.Add(-24 * time.Hour), // out of window: skipped
+				UsagePercent:        0.001,
+				Status:              "active",
+				WindowStart:         baseTime.Add(-48 * time.Hour),
+				WindowEnd:           baseTime.Add(-24 * time.Hour), // out of window: skipped
 			},
 		}
 		for _, budget := range budgets {
@@ -215,13 +215,13 @@ func TestWebSocketCostRepository_CoverageSweep(t *testing.T) {
 
 	// CreateRecord success
 	require.NoError(t, repo.CreateRecord(ctx, &models.WebSocketCostRecord{
-		ID:               "id-1",
-		OperationType:    "connect",
-		ConnectionID:     "conn-1",
-		UserID:           "user-1",
-		Username:         "alice",
+		ID:                  "id-1",
+		OperationType:       "connect",
+		ConnectionID:        "conn-1",
+		UserID:              "user-1",
+		Username:            "alice",
 		TotalCostMicroCents: 1000,
-		Timestamp:        baseTime,
+		Timestamp:           baseTime,
 	}))
 
 	// BatchCreate: empty slice is a no-op (avoid recursion bug)
@@ -616,7 +616,7 @@ func TestWebSocketCostRepository_processOperationMetrics_MoreBranches(t *testing
 		TotalCostMicroCents: 500,
 	}, agg, collectors)
 	repo.processOperationMetrics(&models.WebSocketCostRecord{
-		OperationType:       WSEventDisconnect,
+		OperationType:        WSEventDisconnect,
 		ConnectionDurationMs: 60000,
 		TotalCostMicroCents:  100,
 	}, agg, collectors)

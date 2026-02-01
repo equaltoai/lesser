@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -55,15 +55,15 @@ func TestThreatIntelRepository_Round09_Coverage(t *testing.T) {
 				out := args.Get(0).(*[]map[string]interface{})
 				*out = append(*out,
 					map[string]interface{}{
-						"PK":          "THREATS",
-						"SK":          "TIME#1",
-						"ID":          "t2",
-						"ThreatType":  "spam",
-						"Severity":    "low",
-						"Description": "x",
-						"Indicators":  []string{"i1"},
-						"HitCount":    int64(1),
-						"Confidence":  float64(0.5),
+						"PK":           "THREATS",
+						"SK":           "TIME#1",
+						"ID":           "t2",
+						"ThreatType":   "spam",
+						"Severity":     "low",
+						"Description":  "x",
+						"Indicators":   []string{"i1"},
+						"HitCount":     int64(1),
+						"Confidence":   float64(0.5),
 						"SourceDomain": "src",
 						"FirstSeen":    baseTime.Add(-time.Hour),
 						"LastSeen":     baseTime,

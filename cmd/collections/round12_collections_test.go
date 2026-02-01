@@ -15,11 +15,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	pkgtypes "github.com/pay-theory/dynamorm/pkg/types"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
 	"go.uber.org/zap"
 )
 

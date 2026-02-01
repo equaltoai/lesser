@@ -10,9 +10,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/federation"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -126,4 +126,3 @@ func TestActivityProcessor_DeletionHandlersAndErrorBranches(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 	mockDB.AssertExpectations(t)
 }
-

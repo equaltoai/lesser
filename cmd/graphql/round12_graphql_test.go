@@ -14,10 +14,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pay-theory/dynamorm"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
@@ -521,7 +521,7 @@ func TestInitializeManualServices_Round12(t *testing.T) {
 	}
 
 	var gotTable string
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(_ dynamormCore.DB, tableName string, _ *zap.Logger) (storagecore.RepositoryStorage, error) {
 		gotTable = tableName
 		return &testingmocks.MockRepositoryStorage{}, nil
@@ -558,7 +558,7 @@ func TestInitializeManualServices_UsesConfiguredTableName_Round12(t *testing.T) 
 	}
 
 	var gotTable string
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(_ dynamormCore.DB, tableName string, _ *zap.Logger) (storagecore.RepositoryStorage, error) {
 		gotTable = tableName
 		return &testingmocks.MockRepositoryStorage{}, nil
@@ -609,7 +609,7 @@ func TestResolveStreamQueue_UsesLambdaContextDynamoDB_Round12(t *testing.T) {
 	logger = zap.NewNop()
 	cfg = &config.Config{Region: "us-east-1", DynamoTableName: "tbl"}
 	repos = nil
-	lambdaCtx = &common.LambdaContext{DynamoDB: &dynamorm.LambdaDB{}}
+	lambdaCtx = &common.LambdaContext{DynamoDB: &tabletheory.LambdaDB{}}
 	require.NotNil(t, resolveStreamQueue())
 }
 
@@ -629,7 +629,7 @@ func TestResolveStreamQueue_UsesReposGetDB_Round12(t *testing.T) {
 	cfg = &config.Config{Region: "us-east-1", DynamoTableName: "tbl"}
 
 	mockStorage := &testingmocks.MockRepositoryStorage{}
-	mockStorage.On("GetDB").Return(&dynamorm.LambdaDB{})
+	mockStorage.On("GetDB").Return(&tabletheory.LambdaDB{})
 	repos = mockStorage
 	lambdaCtx = &common.LambdaContext{}
 
@@ -655,7 +655,7 @@ func TestResolveStreamQueue_CreatesClientWhenNoDB_Round12(t *testing.T) {
 	cfg = &config.Config{Region: "us-east-1", DynamoTableName: "tbl"}
 	repos = nil
 	lambdaCtx = &common.LambdaContext{}
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 
 	require.NotNil(t, resolveStreamQueue())
 }

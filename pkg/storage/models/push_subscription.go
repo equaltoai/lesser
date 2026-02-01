@@ -31,30 +31,30 @@ func (PushSubscriptionAlerts) TableName() string {
 
 // PushSubscription represents a push subscription stored in DynamoDB
 type PushSubscription struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // PUSH#username
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // SUB#subscriptionID
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // PUSH#username
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // SUB#subscriptionID
 
 	// GSI for endpoint lookup (to prevent duplicates)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // PUSH_ENDPOINT#endpoint_hash
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // username
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // PUSH_ENDPOINT#endpoint_hash
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // username
 
 	// Core subscription data
-	ID        string                 `dynamorm:"attr:id" json:"id"`
-	Username  string                 `dynamorm:"attr:username" json:"username"`
-	Endpoint  string                 `dynamorm:"attr:endpoint" json:"endpoint"`
-	P256dh    string                 `dynamorm:"attr:p256dh" json:"p256dh"` // Public key for encryption
-	Auth      string                 `dynamorm:"attr:auth" json:"auth"`     // Auth secret
-	Alerts    PushSubscriptionAlerts `dynamorm:"attr:alerts" json:"alerts"` // Which notifications to send
-	Policy    string                 `dynamorm:"attr:policy" json:"policy,omitempty"`
-	UserAgent string                 `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
+	ID        string                 `theorydb:"attr:id" json:"id"`
+	Username  string                 `theorydb:"attr:username" json:"username"`
+	Endpoint  string                 `theorydb:"attr:endpoint" json:"endpoint"`
+	P256dh    string                 `theorydb:"attr:p256dh" json:"p256dh"` // Public key for encryption
+	Auth      string                 `theorydb:"attr:auth" json:"auth"`     // Auth secret
+	Alerts    PushSubscriptionAlerts `theorydb:"attr:alerts" json:"alerts"` // Which notifications to send
+	Policy    string                 `theorydb:"attr:policy" json:"policy,omitempty"`
+	UserAgent string                 `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	LastUsed  time.Time `dynamorm:"attr:lastUsed" json:"last_used,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	LastUsed  time.Time `theorydb:"attr:lastUsed" json:"last_used,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

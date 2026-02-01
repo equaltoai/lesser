@@ -73,13 +73,13 @@ func TestTrendingStatus_ScoringAndKeys(t *testing.T) {
 
 	t.Run("constructors and key helpers", func(t *testing.T) {
 		base := &TrendingStatus{
-			ID:        "s2",
-			URL:       "https://example/statuses/2",
-			AuthorID:  "alice",
-			Content:   "hi",
-			Likes:     2,
-			Boosts:    1,
-			Replies:   0,
+			ID:          "s2",
+			URL:         "https://example/statuses/2",
+			AuthorID:    "alice",
+			Content:     "hi",
+			Likes:       2,
+			Boosts:      1,
+			Replies:     0,
 			PublishedAt: time.Now().Add(time.Hour), // no decay
 		}
 		trending := NewTrendingStatus("2025-01-01", base)
@@ -456,9 +456,9 @@ func TestStreamingCloudWatchMetrics_QualitySelectionAndAdaptation(t *testing.T) 
 func TestNotification_BeforeCreate_BeforeUpdate_UpdateKeys(t *testing.T) {
 	t.Run("BeforeCreate populates defaults, keys, and validates", func(t *testing.T) {
 		n := &Notification{
-			UserID:  "u1",
-			Type:    "mention",
-			ActorID: "a1",
+			UserID:   "u1",
+			Type:     "mention",
+			ActorID:  "a1",
 			TargetID: "s1",
 		}
 		require.NoError(t, n.BeforeCreate())
@@ -531,13 +531,13 @@ func TestImportBudget_WeeklyMonthlyBranchesAndAlerts(t *testing.T) {
 
 	t.Run("ShouldSendAlert respects toggle, last-sent, and usage thresholds", func(t *testing.T) {
 		b := &ImportBudget{
-			Username:             "alice",
-			Period:               PeriodDaily,
-			IsActive:             true,
-			AlertSendingEnabled:  false,
+			Username:              "alice",
+			Period:                PeriodDaily,
+			IsActive:              true,
+			AlertSendingEnabled:   false,
 			AlertThresholdPercent: 50,
-			ImportLimitMicroCents:  100,
-			CurrentImportCost:      90,
+			ImportLimitMicroCents: 100,
+			CurrentImportCost:     90,
 		}
 		require.NoError(t, b.BeforeCreate())
 		assert.False(t, b.ShouldSendAlert())

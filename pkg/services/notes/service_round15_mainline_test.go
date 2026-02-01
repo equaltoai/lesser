@@ -15,12 +15,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -386,8 +386,10 @@ func (s *stubSocialRepo) HasUserAnnounced(_ context.Context, _, _ string) (bool,
 func (s *stubSocialRepo) GetActorAnnounces(_ context.Context, _ string, _ int, _ string) ([]*storage.Announce, string, error) {
 	return nil, "", nil
 }
-func (s *stubSocialRepo) CountObjectAnnounces(_ context.Context, _ string) (int, error) { return 0, nil }
-func (s *stubSocialRepo) CascadeDeleteAnnounces(_ context.Context, _ string) error      { return nil }
+func (s *stubSocialRepo) CountObjectAnnounces(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
+func (s *stubSocialRepo) CascadeDeleteAnnounces(_ context.Context, _ string) error { return nil }
 func (s *stubSocialRepo) CreateAccountPin(_ context.Context, _ *storage.AccountPin) error {
 	return nil
 }

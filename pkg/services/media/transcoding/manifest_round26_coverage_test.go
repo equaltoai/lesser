@@ -232,4 +232,3 @@ func TestManifestService_PreloadManifests_round26_coverage(t *testing.T) {
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(s3Client.headCalls), 2)
 }
-

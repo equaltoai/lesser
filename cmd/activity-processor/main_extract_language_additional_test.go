@@ -38,4 +38,3 @@ func TestActivityProcessor_ExtractLanguage_AdditionalBranches(t *testing.T) {
 	require.Equal(t, "pt", ap.extractLanguage(&activitypub.Note{Content: " o a de "}))
 	require.Equal(t, "it", ap.extractLanguage(&activitypub.Note{Content: " il la di "}))
 }
-

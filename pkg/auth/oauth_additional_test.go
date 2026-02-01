@@ -156,4 +156,3 @@ func TestOAuthService_GenerateTokensWithContext_AndEnhancedValidation(t *testing
 	_, err = svc.ValidateAccessTokenWithContext(rsTokenString, "", "", 0)
 	require.ErrorIs(t, err, ErrInvalidToken)
 }
-

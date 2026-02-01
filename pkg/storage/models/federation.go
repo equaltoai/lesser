@@ -9,23 +9,23 @@ import (
 
 // FederationInstance represents federation instance information in DynamoDB
 type FederationInstance struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
-	Domain        string    `dynamorm:"attr:domain" json:"domain"`
-	Software      string    `dynamorm:"attr:software" json:"software"`            // mastodon, pleroma, etc.
-	Version       string    `dynamorm:"attr:version" json:"version"`              // Software version
-	FirstSeen     time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`         // When we first saw this instance
-	LastSeen      time.Time `dynamorm:"attr:lastSeen" json:"last_seen"`           // Last activity from this instance
-	PublicKey     string    `dynamorm:"attr:publicKey" json:"public_key"`         // Instance actor public key
-	SharedInbox   string    `dynamorm:"attr:sharedInbox" json:"shared_inbox"`     // Shared inbox endpoint
-	TrustScore    float64   `dynamorm:"attr:trustScore" json:"trust_score"`       // Calculated trust score
-	ActiveUsers   int       `dynamorm:"attr:activeUsers" json:"active_users"`     // Number of active users
-	TotalMessages int64     `dynamorm:"attr:totalMessages" json:"total_messages"` // Total messages received
+	Domain        string    `theorydb:"attr:domain" json:"domain"`
+	Software      string    `theorydb:"attr:software" json:"software"`            // mastodon, pleroma, etc.
+	Version       string    `theorydb:"attr:version" json:"version"`              // Software version
+	FirstSeen     time.Time `theorydb:"attr:firstSeen" json:"first_seen"`         // When we first saw this instance
+	LastSeen      time.Time `theorydb:"attr:lastSeen" json:"last_seen"`           // Last activity from this instance
+	PublicKey     string    `theorydb:"attr:publicKey" json:"public_key"`         // Instance actor public key
+	SharedInbox   string    `theorydb:"attr:sharedInbox" json:"shared_inbox"`     // Shared inbox endpoint
+	TrustScore    float64   `theorydb:"attr:trustScore" json:"trust_score"`       // Calculated trust score
+	ActiveUsers   int       `theorydb:"attr:activeUsers" json:"active_users"`     // Number of active users
+	TotalMessages int64     `theorydb:"attr:totalMessages" json:"total_messages"` // Total messages received
 }
 
 // TableName returns the DynamoDB table backing FederationInstance.
@@ -46,23 +46,23 @@ func (f *FederationInstance) UpdateKeys() {
 
 // FederationCostActivity represents a federation activity for cost tracking
 type FederationCostActivity struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
-	ID           string    `dynamorm:"attr:id" json:"id"`
-	Domain       string    `dynamorm:"attr:domain" json:"domain"`
-	Type         string    `dynamorm:"attr:type" json:"type"`                  // ingress/egress
-	ActivityType string    `dynamorm:"attr:activityType" json:"activity_type"` // Create/Update/Delete/Follow/etc
-	ByteSize     int64     `dynamorm:"attr:byteSize" json:"byte_size"`
-	Success      bool      `dynamorm:"attr:success" json:"success"`
-	ResponseTime int64     `dynamorm:"attr:responseTime" json:"response_time"` // milliseconds
-	ErrorMessage string    `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
-	Timestamp    time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	ID           string    `theorydb:"attr:id" json:"id"`
+	Domain       string    `theorydb:"attr:domain" json:"domain"`
+	Type         string    `theorydb:"attr:type" json:"type"`                  // ingress/egress
+	ActivityType string    `theorydb:"attr:activityType" json:"activity_type"` // Create/Update/Delete/Follow/etc
+	ByteSize     int64     `theorydb:"attr:byteSize" json:"byte_size"`
+	Success      bool      `theorydb:"attr:success" json:"success"`
+	ResponseTime int64     `theorydb:"attr:responseTime" json:"response_time"` // milliseconds
+	ErrorMessage string    `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
+	Timestamp    time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	TTL          int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing FederationCostActivity.
@@ -103,21 +103,21 @@ func (f *FederationCostActivity) UpdateKeys() error {
 
 // FederationCost represents aggregated federation cost data
 type FederationCost struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
-	Domain           string    `dynamorm:"attr:domain" json:"domain"`
-	Period           string    `dynamorm:"attr:period" json:"period"` // daily/monthly
-	IngressBytes     int64     `dynamorm:"attr:ingressBytes" json:"ingress_bytes"`
-	EgressBytes      int64     `dynamorm:"attr:egressBytes" json:"egress_bytes"`
-	RequestCount     int64     `dynamorm:"attr:requestCount" json:"request_count"`
-	ErrorCount       int64     `dynamorm:"attr:errorCount" json:"error_count"`
-	ErrorRate        float64   `dynamorm:"attr:errorRate" json:"error_rate"`
-	AvgResponseTime  float64   `dynamorm:"attr:avgResponseTime" json:"avg_response_time"`
-	EstimatedCostUSD float64   `dynamorm:"attr:estimatedCostUSD" json:"estimated_cost_usd"`
-	LastUpdated      time.Time `dynamorm:"attr:lastUpdated" json:"last_updated"`
+	Domain           string    `theorydb:"attr:domain" json:"domain"`
+	Period           string    `theorydb:"attr:period" json:"period"` // daily/monthly
+	IngressBytes     int64     `theorydb:"attr:ingressBytes" json:"ingress_bytes"`
+	EgressBytes      int64     `theorydb:"attr:egressBytes" json:"egress_bytes"`
+	RequestCount     int64     `theorydb:"attr:requestCount" json:"request_count"`
+	ErrorCount       int64     `theorydb:"attr:errorCount" json:"error_count"`
+	ErrorRate        float64   `theorydb:"attr:errorRate" json:"error_rate"`
+	AvgResponseTime  float64   `theorydb:"attr:avgResponseTime" json:"avg_response_time"`
+	EstimatedCostUSD float64   `theorydb:"attr:estimatedCostUSD" json:"estimated_cost_usd"`
+	LastUpdated      time.Time `theorydb:"attr:lastUpdated" json:"last_updated"`
 }
 
 // TableName returns the DynamoDB table backing FederationCost.
@@ -152,33 +152,33 @@ func (FederationHealthReport) TableName() string {
 
 // FederationNode represents a node in the federation graph
 type FederationNode struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK"`
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK"`
 
-	Domain            string         `dynamorm:"attr:domain" json:"domain"`
-	DisplayName       string         `dynamorm:"attr:displayName" json:"display_name"`
-	Description       string         `dynamorm:"attr:description" json:"description,omitempty"`
-	Software          string         `dynamorm:"attr:software" json:"software"`
-	Version           string         `dynamorm:"attr:version" json:"version"`
-	UserCount         int64          `dynamorm:"attr:userCount" json:"user_count"`
-	StatusCount       int64          `dynamorm:"attr:statusCount" json:"status_count"`
-	ActiveUsers       int64          `dynamorm:"attr:activeUsers" json:"active_users"`
-	FirstSeen         time.Time      `dynamorm:"attr:firstSeen" json:"first_seen"`
-	LastSeen          time.Time      `dynamorm:"attr:lastSeen" json:"last_seen"`
-	Health            string         `dynamorm:"attr:health" json:"health"` // healthy/warning/critical/unknown
-	ErrorRate         float64        `dynamorm:"attr:errorRate" json:"error_rate"`
-	ResponseTime      float64        `dynamorm:"attr:responseTime" json:"response_time"`
-	ConnectionType    string         `dynamorm:"attr:connectionType" json:"connection_type"` // direct/relay/blocked
-	TotalConnections  int64          `dynamorm:"attr:totalConnections" json:"total_connections,omitempty"`
-	ActiveConnections int64          `dynamorm:"attr:activeConnections" json:"active_connections,omitempty"`
-	ActivityVolume    int64          `dynamorm:"attr:activityVolume" json:"activity_volume,omitempty"`
-	Metadata          map[string]any `dynamorm:"attr:metadata" json:"metadata,omitempty"`
+	Domain            string         `theorydb:"attr:domain" json:"domain"`
+	DisplayName       string         `theorydb:"attr:displayName" json:"display_name"`
+	Description       string         `theorydb:"attr:description" json:"description,omitempty"`
+	Software          string         `theorydb:"attr:software" json:"software"`
+	Version           string         `theorydb:"attr:version" json:"version"`
+	UserCount         int64          `theorydb:"attr:userCount" json:"user_count"`
+	StatusCount       int64          `theorydb:"attr:statusCount" json:"status_count"`
+	ActiveUsers       int64          `theorydb:"attr:activeUsers" json:"active_users"`
+	FirstSeen         time.Time      `theorydb:"attr:firstSeen" json:"first_seen"`
+	LastSeen          time.Time      `theorydb:"attr:lastSeen" json:"last_seen"`
+	Health            string         `theorydb:"attr:health" json:"health"` // healthy/warning/critical/unknown
+	ErrorRate         float64        `theorydb:"attr:errorRate" json:"error_rate"`
+	ResponseTime      float64        `theorydb:"attr:responseTime" json:"response_time"`
+	ConnectionType    string         `theorydb:"attr:connectionType" json:"connection_type"` // direct/relay/blocked
+	TotalConnections  int64          `theorydb:"attr:totalConnections" json:"total_connections,omitempty"`
+	ActiveConnections int64          `theorydb:"attr:activeConnections" json:"active_connections,omitempty"`
+	ActivityVolume    int64          `theorydb:"attr:activityVolume" json:"activity_volume,omitempty"`
+	Metadata          map[string]any `theorydb:"attr:metadata" json:"metadata,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing FederationNode.
@@ -202,23 +202,23 @@ func (f *FederationNode) UpdateKeys() {
 
 // FederationEdge represents an edge between federation nodes
 type FederationEdge struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
 
-	SourceDomain   string    `dynamorm:"attr:sourceDomain" json:"source_domain"`
-	TargetDomain   string    `dynamorm:"attr:targetDomain" json:"target_domain"`
-	ConnectionType string    `dynamorm:"attr:connectionType" json:"connection_type"` // follows/mentions/boosts/replies
-	VolumeIn       int64     `dynamorm:"attr:volumeIn" json:"volume_in"`
-	VolumeOut      int64     `dynamorm:"attr:volumeOut" json:"volume_out"`
-	Strength       float64   `dynamorm:"attr:strength" json:"strength"` // 0.0-1.0 based on activity volume
-	LastActivity   time.Time `dynamorm:"attr:lastActivity" json:"last_activity"`
-	SharedUsers    int64     `dynamorm:"attr:sharedUsers" json:"shared_users"`
-	ErrorCount     int64     `dynamorm:"attr:errorCount" json:"error_count"`
-	SuccessRate    float64   `dynamorm:"attr:successRate" json:"success_rate"`
+	SourceDomain   string    `theorydb:"attr:sourceDomain" json:"source_domain"`
+	TargetDomain   string    `theorydb:"attr:targetDomain" json:"target_domain"`
+	ConnectionType string    `theorydb:"attr:connectionType" json:"connection_type"` // follows/mentions/boosts/replies
+	VolumeIn       int64     `theorydb:"attr:volumeIn" json:"volume_in"`
+	VolumeOut      int64     `theorydb:"attr:volumeOut" json:"volume_out"`
+	Strength       float64   `theorydb:"attr:strength" json:"strength"` // 0.0-1.0 based on activity volume
+	LastActivity   time.Time `theorydb:"attr:lastActivity" json:"last_activity"`
+	SharedUsers    int64     `theorydb:"attr:sharedUsers" json:"shared_users"`
+	ErrorCount     int64     `theorydb:"attr:errorCount" json:"error_count"`
+	SuccessRate    float64   `theorydb:"attr:successRate" json:"success_rate"`
 }
 
 // TableName returns the DynamoDB table backing FederationEdge.
@@ -238,26 +238,26 @@ func (f *FederationEdge) UpdateKeys() {
 
 // InstanceMetadata contains detailed metadata about a federated instance
 type InstanceMetadata struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
-	Domain          string    `dynamorm:"attr:domain" json:"domain"`
-	DisplayName     string    `dynamorm:"attr:displayName" json:"display_name,omitempty"`
-	Description     string    `dynamorm:"attr:description" json:"description,omitempty"`
-	Software        string    `dynamorm:"attr:software" json:"software,omitempty"`
-	Version         string    `dynamorm:"attr:version" json:"version,omitempty"`
-	UserCount       int64     `dynamorm:"attr:userCount" json:"user_count,omitempty"`
-	StatusCount     int64     `dynamorm:"attr:statusCount" json:"status_count,omitempty"`
-	NodeInfo        string    `dynamorm:"attr:nodeInfo" json:"nodeinfo"`          // JSON string of nodeinfo response
-	InstanceInfo    string    `dynamorm:"attr:instanceInfo" json:"instance_info"` // JSON string of instance API response
-	AdminContact    string    `dynamorm:"attr:adminContact" json:"admin_contact,omitempty"`
-	Rules           []string  `dynamorm:"attr:rules" json:"rules,omitempty"`
-	Languages       []string  `dynamorm:"attr:languages" json:"languages,omitempty"`
-	Categories      []string  `dynamorm:"attr:categories" json:"categories,omitempty"`
-	FederationNotes string    `dynamorm:"attr:federationNotes" json:"federation_notes,omitempty"`
-	LastUpdated     time.Time `dynamorm:"attr:lastUpdated" json:"last_updated"`
+	Domain          string    `theorydb:"attr:domain" json:"domain"`
+	DisplayName     string    `theorydb:"attr:displayName" json:"display_name,omitempty"`
+	Description     string    `theorydb:"attr:description" json:"description,omitempty"`
+	Software        string    `theorydb:"attr:software" json:"software,omitempty"`
+	Version         string    `theorydb:"attr:version" json:"version,omitempty"`
+	UserCount       int64     `theorydb:"attr:userCount" json:"user_count,omitempty"`
+	StatusCount     int64     `theorydb:"attr:statusCount" json:"status_count,omitempty"`
+	NodeInfo        string    `theorydb:"attr:nodeInfo" json:"nodeinfo"`          // JSON string of nodeinfo response
+	InstanceInfo    string    `theorydb:"attr:instanceInfo" json:"instance_info"` // JSON string of instance API response
+	AdminContact    string    `theorydb:"attr:adminContact" json:"admin_contact,omitempty"`
+	Rules           []string  `theorydb:"attr:rules" json:"rules,omitempty"`
+	Languages       []string  `theorydb:"attr:languages" json:"languages,omitempty"`
+	Categories      []string  `theorydb:"attr:categories" json:"categories,omitempty"`
+	FederationNotes string    `theorydb:"attr:federationNotes" json:"federation_notes,omitempty"`
+	LastUpdated     time.Time `theorydb:"attr:lastUpdated" json:"last_updated"`
 }
 
 // TableName returns the DynamoDB table backing InstanceMetadata.
@@ -273,21 +273,21 @@ func (i *InstanceMetadata) UpdateKeys() {
 
 // InstanceCluster represents a group of closely connected instances
 type InstanceCluster struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
-	ClusterID   string    `dynamorm:"attr:clusterID" json:"cluster_id"`
-	Name        string    `dynamorm:"attr:name" json:"name"`
-	Instances   []string  `dynamorm:"attr:instances" json:"instances"`
-	CenterNode  string    `dynamorm:"attr:centerNode" json:"center_node"` // Most connected instance
-	Cohesion    float64   `dynamorm:"attr:cohesion" json:"cohesion"`      // How tightly connected (0.0-1.0)
-	Size        int       `dynamorm:"attr:size" json:"size"`
-	Description string    `dynamorm:"attr:description" json:"description,omitempty"`
-	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	ClusterID   string    `theorydb:"attr:clusterID" json:"cluster_id"`
+	Name        string    `theorydb:"attr:name" json:"name"`
+	Instances   []string  `theorydb:"attr:instances" json:"instances"`
+	CenterNode  string    `theorydb:"attr:centerNode" json:"center_node"` // Most connected instance
+	Cohesion    float64   `theorydb:"attr:cohesion" json:"cohesion"`      // How tightly connected (0.0-1.0)
+	Size        int       `theorydb:"attr:size" json:"size"`
+	Description string    `theorydb:"attr:description" json:"description,omitempty"`
+	UpdatedAt   time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing InstanceCluster.
@@ -307,21 +307,21 @@ func (i *InstanceCluster) UpdateKeys() {
 
 // InstanceConnection represents a specific connection type between instances
 type InstanceConnection struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
 
-	Domain         string    `dynamorm:"attr:domain" json:"domain"`
-	TargetDomain   string    `dynamorm:"attr:targetDomain" json:"target_domain"`
-	Direction      string    `dynamorm:"attr:direction" json:"direction"` // inbound/outbound
-	ConnectionType string    `dynamorm:"attr:connectionType" json:"connection_type"`
-	VolumeIn       int64     `dynamorm:"attr:volumeIn" json:"volume_in"`
-	VolumeOut      int64     `dynamorm:"attr:volumeOut" json:"volume_out"`
-	LastActivity   time.Time `dynamorm:"attr:lastActivity" json:"last_activity"`
-	Success        bool      `dynamorm:"attr:success" json:"success"`
+	Domain         string    `theorydb:"attr:domain" json:"domain"`
+	TargetDomain   string    `theorydb:"attr:targetDomain" json:"target_domain"`
+	Direction      string    `theorydb:"attr:direction" json:"direction"` // inbound/outbound
+	ConnectionType string    `theorydb:"attr:connectionType" json:"connection_type"`
+	VolumeIn       int64     `theorydb:"attr:volumeIn" json:"volume_in"`
+	VolumeOut      int64     `theorydb:"attr:volumeOut" json:"volume_out"`
+	LastActivity   time.Time `theorydb:"attr:lastActivity" json:"last_activity"`
+	Success        bool      `theorydb:"attr:success" json:"success"`
 }
 
 // TableName returns the DynamoDB table backing InstanceConnection.

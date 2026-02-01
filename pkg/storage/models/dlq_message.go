@@ -11,79 +11,79 @@ import (
 
 // DLQMessage represents a failed message captured from a dead letter queue
 type DLQMessage struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - service and date for partitioning
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "DLQ#service#date"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "MSG#timestamp#messageId"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "DLQ#service#date"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "MSG#timestamp#messageId"
 
 	// GSI1 - Error type analysis
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "DLQ_ERROR#errorType"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{service}#{messageId}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "DLQ_ERROR#errorType"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{service}#{messageId}"
 
 	// GSI2 - Retry analysis and reprocessing
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "DLQ_RETRY#{service}#{status}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{messageId}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "DLQ_RETRY#{service}#{status}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{messageId}"
 
 	// GSI3 - Service-wide analysis
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DLQ_SERVICE#{service}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{timestamp}#{errorType}#{messageId}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DLQ_SERVICE#{service}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{timestamp}#{errorType}#{messageId}"
 
 	// Core message data
-	ID                string `dynamorm:"attr:id" json:"id"`                                 // Unique DLQ message ID
-	OriginalMessageID string `dynamorm:"attr:originalMessageID" json:"original_message_id"` // Original SQS message ID
-	Service           string `dynamorm:"attr:service" json:"service"`                       // Service that failed (e.g., "notification-processor")
-	QueueName         string `dynamorm:"attr:queueName" json:"queue_name"`                  // Name of the source DLQ
-	SourceQueue       string `dynamorm:"attr:sourceQueue" json:"source_queue"`              // Original queue name
+	ID                string `theorydb:"attr:id" json:"id"`                                 // Unique DLQ message ID
+	OriginalMessageID string `theorydb:"attr:originalMessageID" json:"original_message_id"` // Original SQS message ID
+	Service           string `theorydb:"attr:service" json:"service"`                       // Service that failed (e.g., "notification-processor")
+	QueueName         string `theorydb:"attr:queueName" json:"queue_name"`                  // Name of the source DLQ
+	SourceQueue       string `theorydb:"attr:sourceQueue" json:"source_queue"`              // Original queue name
 
 	// Message content
-	MessageBody       string                 `dynamorm:"attr:messageBody" json:"message_body"`                       // Original message body
-	MessageAttributes map[string]string      `dynamorm:"attr:messageAttributes" json:"message_attributes,omitempty"` // SQS message attributes
-	MessageMetadata   map[string]interface{} `dynamorm:"attr:messageMetadata" json:"message_metadata,omitempty"`     // Additional metadata
+	MessageBody       string                 `theorydb:"attr:messageBody" json:"message_body"`                       // Original message body
+	MessageAttributes map[string]string      `theorydb:"attr:messageAttributes" json:"message_attributes,omitempty"` // SQS message attributes
+	MessageMetadata   map[string]interface{} `theorydb:"attr:messageMetadata" json:"message_metadata,omitempty"`     // Additional metadata
 
 	// Error information
-	ErrorType     string `dynamorm:"attr:errorType" json:"error_type"`             // Categorized error type
-	ErrorMessage  string `dynamorm:"attr:errorMessage" json:"error_message"`       // Full error message
-	ErrorStack    string `dynamorm:"attr:errorStack" json:"error_stack,omitempty"` // Stack trace if available
-	FailureReason string `dynamorm:"attr:failureReason" json:"failure_reason"`     // Human-readable failure reason
-	IsPermanent   bool   `dynamorm:"attr:isPermanent" json:"is_permanent"`         // Whether this is a permanent failure
+	ErrorType     string `theorydb:"attr:errorType" json:"error_type"`             // Categorized error type
+	ErrorMessage  string `theorydb:"attr:errorMessage" json:"error_message"`       // Full error message
+	ErrorStack    string `theorydb:"attr:errorStack" json:"error_stack,omitempty"` // Stack trace if available
+	FailureReason string `theorydb:"attr:failureReason" json:"failure_reason"`     // Human-readable failure reason
+	IsPermanent   bool   `theorydb:"attr:isPermanent" json:"is_permanent"`         // Whether this is a permanent failure
 
 	// Processing context
-	FunctionName    string `dynamorm:"attr:functionName" json:"function_name"`                 // Lambda function that failed
-	FunctionVersion string `dynamorm:"attr:functionVersion" json:"function_version,omitempty"` // Lambda function version
-	LogGroup        string `dynamorm:"attr:logGroup" json:"log_group,omitempty"`               // CloudWatch log group
-	LogStream       string `dynamorm:"attr:logStream" json:"log_stream,omitempty"`             // CloudWatch log stream
-	RequestID       string `dynamorm:"attr:requestID" json:"request_id,omitempty"`             // AWS request ID
+	FunctionName    string `theorydb:"attr:functionName" json:"function_name"`                 // Lambda function that failed
+	FunctionVersion string `theorydb:"attr:functionVersion" json:"function_version,omitempty"` // Lambda function version
+	LogGroup        string `theorydb:"attr:logGroup" json:"log_group,omitempty"`               // CloudWatch log group
+	LogStream       string `theorydb:"attr:logStream" json:"log_stream,omitempty"`             // CloudWatch log stream
+	RequestID       string `theorydb:"attr:requestID" json:"request_id,omitempty"`             // AWS request ID
 
 	// Retry information
-	OriginalRetryCount   int        `dynamorm:"attr:originalRetryCount" json:"original_retry_count"`     // How many times original message was retried
-	ReprocessingCount    int        `dynamorm:"attr:reprocessingCount" json:"reprocessing_count"`        // How many times we've tried to reprocess
-	MaxReprocessAttempts int        `dynamorm:"attr:maxReprocessAttempts" json:"max_reprocess_attempts"` // Maximum reprocessing attempts
-	NextRetryAt          *time.Time `dynamorm:"attr:nextRetryAt" json:"next_retry_at,omitempty"`         // When to retry next
-	Status               string     `dynamorm:"attr:status" json:"status"`                               // "new", "reprocessing", "failed", "resolved", "abandoned"
+	OriginalRetryCount   int        `theorydb:"attr:originalRetryCount" json:"original_retry_count"`     // How many times original message was retried
+	ReprocessingCount    int        `theorydb:"attr:reprocessingCount" json:"reprocessing_count"`        // How many times we've tried to reprocess
+	MaxReprocessAttempts int        `theorydb:"attr:maxReprocessAttempts" json:"max_reprocess_attempts"` // Maximum reprocessing attempts
+	NextRetryAt          *time.Time `theorydb:"attr:nextRetryAt" json:"next_retry_at,omitempty"`         // When to retry next
+	Status               string     `theorydb:"attr:status" json:"status"`                               // "new", "reprocessing", "failed", "resolved", "abandoned"
 
 	// Analysis metadata
-	SimilarityHash string   `dynamorm:"attr:similarityHash" json:"similarity_hash"`           // Hash for grouping similar errors
-	Tags           []string `dynamorm:"attr:tags" json:"tags,omitempty"`                      // Tags for categorization
-	Priority       string   `dynamorm:"attr:priority" json:"priority"`                        // "low", "medium", "high", "critical"
-	BusinessImpact string   `dynamorm:"attr:businessImpact" json:"business_impact,omitempty"` // Impact assessment
+	SimilarityHash string   `theorydb:"attr:similarityHash" json:"similarity_hash"`           // Hash for grouping similar errors
+	Tags           []string `theorydb:"attr:tags" json:"tags,omitempty"`                      // Tags for categorization
+	Priority       string   `theorydb:"attr:priority" json:"priority"`                        // "low", "medium", "high", "critical"
+	BusinessImpact string   `theorydb:"attr:businessImpact" json:"business_impact,omitempty"` // Impact assessment
 
 	// Cost tracking
-	ProcessingCostMicroCents   int64 `dynamorm:"attr:processingCostMicroCents" json:"processing_cost_micro_cents"`     // Cost of processing attempts
-	ReprocessingCostMicroCents int64 `dynamorm:"attr:reprocessingCostMicroCents" json:"reprocessing_cost_micro_cents"` // Cost of reprocessing
+	ProcessingCostMicroCents   int64 `theorydb:"attr:processingCostMicroCents" json:"processing_cost_micro_cents"`     // Cost of processing attempts
+	ReprocessingCostMicroCents int64 `theorydb:"attr:reprocessingCostMicroCents" json:"reprocessing_cost_micro_cents"` // Cost of reprocessing
 
 	// Timestamps
-	FirstSeenAt     time.Time  `dynamorm:"attr:firstSeenAt" json:"first_seen_at"`                   // When first captured in DLQ
-	LastProcessedAt *time.Time `dynamorm:"attr:lastProcessedAt" json:"last_processed_at,omitempty"` // Last processing attempt
-	ResolvedAt      *time.Time `dynamorm:"attr:resolvedAt" json:"resolved_at,omitempty"`            // When successfully reprocessed
-	CreatedAt       time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt       time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
+	FirstSeenAt     time.Time  `theorydb:"attr:firstSeenAt" json:"first_seen_at"`                   // When first captured in DLQ
+	LastProcessedAt *time.Time `theorydb:"attr:lastProcessedAt" json:"last_processed_at,omitempty"` // Last processing attempt
+	ResolvedAt      *time.Time `theorydb:"attr:resolvedAt" json:"resolved_at,omitempty"`            // When successfully reprocessed
+	CreatedAt       time.Time  `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt       time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (90 days for DLQ messages)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version,attr:version" json:"version"`
+	Version int `theorydb:"version,attr:version" json:"version"`
 }
 
 // DLQMessageBuilder helps create DLQ messages with proper defaults

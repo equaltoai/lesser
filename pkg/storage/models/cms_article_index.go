@@ -20,12 +20,12 @@ const (
 // CMSArticleIndex stores an indexed view of articles grouped by author/series/category.
 // It enables efficient queries without scans (single-table design).
 type CMSArticleIndex struct {
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
-	ArticleID   string    `dynamorm:"attr:articleID" json:"article_id"`
-	PublishedAt time.Time `dynamorm:"attr:publishedAt" json:"published_at"`
-	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ArticleID   string    `theorydb:"attr:articleID" json:"article_id"`
+	PublishedAt time.Time `theorydb:"attr:publishedAt" json:"published_at"`
+	CreatedAt   time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table backing CMSArticleIndex.

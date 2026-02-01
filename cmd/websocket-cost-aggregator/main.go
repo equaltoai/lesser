@@ -36,9 +36,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 type websocketCostRepository interface {
@@ -87,7 +87,7 @@ var (
 
 var (
 	mustInitializeLambdaFn = common.MustInitializeLambda
-	getLambdaClientFn      = dynamorm.GetLambdaClient
+	getLambdaClientFn      = theorydb.GetLambdaClient
 	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
 	newSNSClientFn         = func(cfg aws.Config) snsPublisher { return sns.NewFromConfig(cfg) }
 	timeNowFn              = time.Now

@@ -211,4 +211,3 @@ func TestMarkers(t *testing.T) {
 		require.NoError(t, tm.UpdateKeys())
 	})
 }
-

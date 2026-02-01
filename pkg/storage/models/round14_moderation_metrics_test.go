@@ -49,10 +49,10 @@ func TestModerationMetricsModels_UpdateKeys(t *testing.T) {
 	t.Run("ModerationDecisionSample UpdateKeys sets keys, marker, and TTL", func(t *testing.T) {
 		ts := time.Unix(1700000000, 0).UTC()
 		ds := &ModerationDecisionSample{
-			ContentID:  "c1",
-			Decision:   "allow",
-			Date:       "2024-01-01",
-			Timestamp:  ts,
+			ContentID: "c1",
+			Decision:  "allow",
+			Date:      "2024-01-01",
+			Timestamp: ts,
 		}
 		before := time.Now()
 		require.NoError(t, ds.UpdateKeys())
@@ -92,4 +92,3 @@ func TestModerationMetricsModels_UpdateKeys(t *testing.T) {
 		assert.Equal(t, MainTableName, (PatternStats{}).TableName())
 	})
 }
-

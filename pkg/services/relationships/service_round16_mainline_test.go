@@ -16,12 +16,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -203,7 +203,7 @@ func populateStructWithTime(target any, state *permissiveQueryState, at time.Tim
 				Type: "Person",
 			},
 			PreferredUsername: username,
-			URL:              fmt.Sprintf("https://remote.social/@%s", username),
+			URL:               fmt.Sprintf("https://remote.social/@%s", username),
 		}
 		model.CreatedAt = at
 		model.UpdatedAt = at
@@ -307,7 +307,7 @@ func (s *testRepositoryStorage) Relay() *repositories.RelayRepository { return n
 func (s *testRepositoryStorage) CommunityNote() *repositories.CommunityNoteRepository {
 	return nil
 }
-func (s *testRepositoryStorage) Emoji() *repositories.EmojiRepository     { return nil }
+func (s *testRepositoryStorage) Emoji() *repositories.EmojiRepository { return nil }
 func (s *testRepositoryStorage) RateLimit() *repositories.RateLimitRepository {
 	return nil
 }
@@ -1283,10 +1283,10 @@ func TestService_RemoveRelationshipGeneric_ErrorBranches(t *testing.T) {
 
 	// Existence check error short-circuits.
 	_, err := service.removeRelationshipGeneric(ctx, removeRelationshipParams{
-		actorID:      "alice",
-		targetID:     "bob",
-		actorName:    "actor_id",
-		targetName:   "target_id",
+		actorID:    "alice",
+		targetID:   "bob",
+		actorName:  "actor_id",
+		targetName: "target_id",
 		checkExistsFn: func(context.Context, string, string) (bool, error) {
 			return false, fmt.Errorf("exists check failed")
 		},
@@ -1303,11 +1303,11 @@ func TestService_RemoveRelationshipGeneric_ErrorBranches(t *testing.T) {
 	service.storage = nil
 
 	_, err = service.removeRelationshipGeneric(ctx, removeRelationshipParams{
-		actorID:      "alice",
-		targetID:     "bob",
-		actorName:    "actor_id",
-		targetName:   "target_id",
-		checkExistsFn: func(context.Context, string, string) (bool, error) { return true, nil },
+		actorID:        "alice",
+		targetID:       "bob",
+		actorName:      "actor_id",
+		targetName:     "target_id",
+		checkExistsFn:  func(context.Context, string, string) (bool, error) { return true, nil },
 		removeFn:       func(context.Context, string, string) error { return nil },
 		emitEventsFn:   func(context.Context, *storage.Account, *storage.Account) []*streaming.Event { return nil },
 		federationType: "Follow",
@@ -1322,11 +1322,11 @@ func TestService_RemoveRelationshipGeneric_ErrorBranches(t *testing.T) {
 	service.storage = nil
 
 	_, err = service.removeRelationshipGeneric(ctx, removeRelationshipParams{
-		actorID:      "alice",
-		targetID:     "bob",
-		actorName:    "actor_id",
-		targetName:   "target_id",
-		checkExistsFn: func(context.Context, string, string) (bool, error) { return true, nil },
+		actorID:        "alice",
+		targetID:       "bob",
+		actorName:      "actor_id",
+		targetName:     "target_id",
+		checkExistsFn:  func(context.Context, string, string) (bool, error) { return true, nil },
 		removeFn:       func(context.Context, string, string) error { return nil },
 		emitEventsFn:   func(context.Context, *storage.Account, *storage.Account) []*streaming.Event { return nil },
 		federationType: "Follow",
@@ -1338,11 +1338,11 @@ func TestService_RemoveRelationshipGeneric_ErrorBranches(t *testing.T) {
 		q.On("First", mock.Anything).Return(fmt.Errorf("db down")).Once()
 	})
 	_, err = failingSvc.removeRelationshipGeneric(ctx, removeRelationshipParams{
-		actorID:      "alice",
-		targetID:     "bob",
-		actorName:    "actor_id",
-		targetName:   "target_id",
-		checkExistsFn: func(context.Context, string, string) (bool, error) { return true, nil },
+		actorID:        "alice",
+		targetID:       "bob",
+		actorName:      "actor_id",
+		targetName:     "target_id",
+		checkExistsFn:  func(context.Context, string, string) (bool, error) { return true, nil },
 		removeFn:       func(context.Context, string, string) error { return nil },
 		emitEventsFn:   func(context.Context, *storage.Account, *storage.Account) []*streaming.Event { return nil },
 		federationType: "Follow",
@@ -1352,11 +1352,11 @@ func TestService_RemoveRelationshipGeneric_ErrorBranches(t *testing.T) {
 	// removeFn error after minimal account construction (no accountRepo/storage).
 	noStorageSvc := NewService(nil, nil, streaming.NewMockPublisher(), nil, zap.NewNop(), "example.com")
 	_, err = noStorageSvc.removeRelationshipGeneric(ctx, removeRelationshipParams{
-		actorID:      "alice",
-		targetID:     "bob",
-		actorName:    "actor_id",
-		targetName:   "target_id",
-		checkExistsFn: func(context.Context, string, string) (bool, error) { return true, nil },
+		actorID:        "alice",
+		targetID:       "bob",
+		actorName:      "actor_id",
+		targetName:     "target_id",
+		checkExistsFn:  func(context.Context, string, string) (bool, error) { return true, nil },
 		removeFn:       func(context.Context, string, string) error { return fmt.Errorf("remove failed") },
 		emitEventsFn:   func(context.Context, *storage.Account, *storage.Account) []*streaming.Event { return nil },
 		federationType: "Follow",

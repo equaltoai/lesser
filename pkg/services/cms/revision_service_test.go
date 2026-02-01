@@ -9,8 +9,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 

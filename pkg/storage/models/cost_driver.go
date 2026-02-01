@@ -7,27 +7,27 @@ import (
 
 // Driver represents a major cost contributor
 type Driver struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // COST#DRIVER
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // {category}#{resource}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // COST#DRIVER
+	SK string `theorydb:"sk,attr:SK" json:"-"` // {category}#{resource}
 
 	// Attributes from interface
-	Type           string  `dynamorm:"attr:type" json:"type"`
-	Domain         string  `dynamorm:"attr:domain" json:"domain,omitempty"`
-	Cost           float64 `dynamorm:"attr:cost" json:"cost"`
-	PercentOfTotal float64 `dynamorm:"attr:percentOfTotal" json:"percent_of_total"`
-	Trend          string  `dynamorm:"attr:trend" json:"trend"` // increasing/stable/decreasing
+	Type           string  `theorydb:"attr:type" json:"type"`
+	Domain         string  `theorydb:"attr:domain" json:"domain,omitempty"`
+	Cost           float64 `theorydb:"attr:cost" json:"cost"`
+	PercentOfTotal float64 `theorydb:"attr:percentOfTotal" json:"percent_of_total"`
+	Trend          string  `theorydb:"attr:trend" json:"trend"` // increasing/stable/decreasing
 
 	// Additional attributes
-	Category      string           `dynamorm:"attr:category" json:"category"` // storage/compute/network/api
-	Resource      string           `dynamorm:"attr:resource" json:"resource"` // specific resource identifier
-	Period        string           `dynamorm:"attr:period" json:"period"`     // daily/weekly/monthly
-	MeasuredAt    time.Time        `dynamorm:"attr:measuredAt" json:"measured_at"`
-	PreviousCost  float64          `dynamorm:"attr:previousCost" json:"previous_cost"`             // For trend calculation
-	VolumeMetrics map[string]int64 `dynamorm:"attr:volumeMetrics" json:"volume_metrics,omitempty"` // requests, bytes, etc
-	TTL           int64            `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`                  // 90 days retention
+	Category      string           `theorydb:"attr:category" json:"category"` // storage/compute/network/api
+	Resource      string           `theorydb:"attr:resource" json:"resource"` // specific resource identifier
+	Period        string           `theorydb:"attr:period" json:"period"`     // daily/weekly/monthly
+	MeasuredAt    time.Time        `theorydb:"attr:measuredAt" json:"measured_at"`
+	PreviousCost  float64          `theorydb:"attr:previousCost" json:"previous_cost"`             // For trend calculation
+	VolumeMetrics map[string]int64 `theorydb:"attr:volumeMetrics" json:"volume_metrics,omitempty"` // requests, bytes, etc
+	TTL           int64            `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`                  // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys

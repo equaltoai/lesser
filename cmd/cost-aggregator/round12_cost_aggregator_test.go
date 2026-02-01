@@ -17,9 +17,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -35,7 +35,7 @@ type fakeCostRepo struct {
 
 	createAggregatedErr error
 	createErr           error
-	aggregateErr error
+	aggregateErr        error
 
 	getAggregatedFn func(period, opType string) (*models.DynamoDBCostAggregation, error)
 	highCostOps     []*models.DynamoDBCostRecord
@@ -181,14 +181,14 @@ func TestCostAggregator_extractCostFromStreamRecord_Round12(t *testing.T) {
 	cost, err = ca.extractCostFromStreamRecord(events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
-			"PK":                  events.NewStringAttribute("cost#PutItem"),
-			"operation_type":      events.NewStringAttribute("PutItem"),
-			"table_name":          events.NewStringAttribute("tbl"),
-			"read_capacity_units": events.NewNumberAttribute("0"),
+			"PK":                   events.NewStringAttribute("cost#PutItem"),
+			"operation_type":       events.NewStringAttribute("PutItem"),
+			"table_name":           events.NewStringAttribute("tbl"),
+			"read_capacity_units":  events.NewNumberAttribute("0"),
 			"write_capacity_units": events.NewNumberAttribute("10"),
-			"item_count":          events.NewNumberAttribute("1"),
-			"service_name":        events.NewStringAttribute("api"),
-			"timestamp":           events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+			"item_count":           events.NewNumberAttribute("1"),
+			"service_name":         events.NewStringAttribute("api"),
+			"timestamp":            events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
 		}},
 	})
 	require.NoError(t, err)

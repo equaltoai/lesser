@@ -11,9 +11,9 @@ import (
 func TestTrendingLink_KeysScoringAndDisplayHelpers(t *testing.T) {
 	t.Run("UpdateKeys sets PK/SK, extracts domain, and sets TTL from date", func(t *testing.T) {
 		tl := &TrendingLink{
-			URL:          "https://Example.com/path",
-			Date:         "2024-01-01",
-			LinkID:       "id-1",
+			URL:           "https://Example.com/path",
+			Date:          "2024-01-01",
+			LinkID:        "id-1",
 			TrendingScore: 123,
 		}
 		tl.UpdateKeys()
@@ -112,4 +112,3 @@ func TestTrendingLink_KeysScoringAndDisplayHelpers(t *testing.T) {
 		assert.Equal(t, prefix, prefix2)
 	})
 }
-

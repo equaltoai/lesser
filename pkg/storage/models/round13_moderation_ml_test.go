@@ -116,4 +116,3 @@ func TestModerationMLModels_UpdateKeys_AndMetrics(t *testing.T) {
 	assert.Equal(t, "REVIEW#true", pred.GSI2PK)
 	assert.Equal(t, "ML_PREDICTION", pred.Type)
 }
-

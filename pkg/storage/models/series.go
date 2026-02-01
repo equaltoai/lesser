@@ -7,23 +7,23 @@ import (
 
 // Series represents a multi-part content series
 type Series struct {
-	PK string `dynamorm:"pk,attr:PK"` // AUTHOR#{author_id}#SERIES
-	SK string `dynamorm:"sk,attr:SK"` // ID#{series_id}
+	PK string `theorydb:"pk,attr:PK"` // AUTHOR#{author_id}#SERIES
+	SK string `theorydb:"sk,attr:SK"` // ID#{series_id}
 
-	ID          string `dynamorm:"attr:id" json:"id"`
-	AuthorID    string `dynamorm:"attr:authorID" json:"author_id"`
-	Title       string `dynamorm:"attr:title" json:"title"`
-	Description string `dynamorm:"attr:description" json:"description,omitempty"`
-	Slug        string `dynamorm:"attr:slug" json:"slug"`
-	CoverImage  string `dynamorm:"attr:coverImage" json:"cover_image,omitempty"`
+	ID          string `theorydb:"attr:id" json:"id"`
+	AuthorID    string `theorydb:"attr:authorID" json:"author_id"`
+	Title       string `theorydb:"attr:title" json:"title"`
+	Description string `theorydb:"attr:description" json:"description,omitempty"`
+	Slug        string `theorydb:"attr:slug" json:"slug"`
+	CoverImage  string `theorydb:"attr:coverImage" json:"cover_image,omitempty"`
 
 	// Status
-	IsComplete   bool `dynamorm:"attr:isComplete" json:"is_complete"`
-	ArticleCount int  `dynamorm:"attr:articleCount" json:"article_count"`
+	IsComplete   bool `theorydb:"attr:isComplete" json:"is_complete"`
+	ArticleCount int  `theorydb:"attr:articleCount" json:"article_count"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing Series.

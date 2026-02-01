@@ -10,9 +10,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -72,8 +72,8 @@ func TestActivityHandler_ErrorBranches(t *testing.T) {
 		objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(errors.New("boom"))
 
 		handler := &ActivityHandler{
-			Logger:    zap.NewNop(),
-			ObjectRepo: objectRepo,
+			Logger:       zap.NewNop(),
+			ObjectRepo:   objectRepo,
 			TimelineRepo: testmocks.NewMockTimelineRepositoryInterface(),
 		}
 
@@ -101,10 +101,10 @@ func TestActivityHandler_ErrorBranches(t *testing.T) {
 		}
 
 		status := &models.Status{
-			StatusID:   "s1",
-			AuthorID:   "https://example.com/users/alice",
+			StatusID:    "s1",
+			AuthorID:    "https://example.com/users/alice",
 			PublishedAt: time.Now(),
-			Note:       &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
+			Note:        &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
 		}
 		require.Error(t, handler.processStatusForTimelines(ctx, status, VisibilityPublic, "alice"))
 		timelineRepo.AssertExpectations(t)
@@ -125,8 +125,8 @@ func TestActivityHandler_ErrorBranches(t *testing.T) {
 		}, nil)
 
 		handler := &ActivityHandler{
-			DB:        mockDB,
-			Logger:    zap.NewNop(),
+			DB:         mockDB,
+			Logger:     zap.NewNop(),
 			ObjectRepo: objectRepo,
 		}
 
@@ -194,4 +194,3 @@ func TestActivityHandler_ErrorBranches(t *testing.T) {
 		require.Equal(t, "https://example.com/users/bob", handler.getObjectAuthor(map[string]any{"actor": "https://example.com/users/bob"}))
 	})
 }
-

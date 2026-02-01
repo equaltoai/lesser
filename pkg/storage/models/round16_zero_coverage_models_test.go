@@ -428,10 +428,10 @@ func TestDevice_KeysTrustAndActivity(t *testing.T) {
 
 func TestUserAppConsent_ScopesAndRevocation(t *testing.T) {
 	c := &UserAppConsent{
-		UserID:  "u1",
-		AppID:   "app1",
-		Scopes:  []string{"read", "write"},
-		Active:  true,
+		UserID:    "u1",
+		AppID:     "app1",
+		Scopes:    []string{"read", "write"},
+		Active:    true,
 		RevokedAt: nil,
 	}
 

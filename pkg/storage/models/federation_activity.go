@@ -11,53 +11,53 @@ import (
 
 // FederationActivity represents activity from federated instances
 type FederationActivity struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using domain as partition key with timestamp sort key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "fed_activity#{domain}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "activity#{timestamp}#{id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "fed_activity#{domain}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "activity#{timestamp}#{id}"
 
 	// GSI1 - Activity type queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "FED_TYPE#{type}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{domain}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "FED_TYPE#{type}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{domain}#{id}"
 
 	// GSI2 - Actor queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "FED_ACTOR#{actorID}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "FED_ACTOR#{actorID}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core activity data
-	ID           string    `dynamorm:"attr:id" json:"id"`
-	Domain       string    `dynamorm:"attr:domain" json:"domain"`              // Remote instance domain
-	ActivityType string    `dynamorm:"attr:activityType" json:"activity_type"` // Create, Update, Delete, Follow, etc.
-	ActorID      string    `dynamorm:"attr:actorID" json:"actor_id"`           // Remote actor ID (full URL)
-	ObjectID     string    `dynamorm:"attr:objectID" json:"object_id"`         // Object being acted upon
-	ObjectType   string    `dynamorm:"attr:objectType" json:"object_type"`     // Note, Actor, etc.
-	Timestamp    time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	ID           string    `theorydb:"attr:id" json:"id"`
+	Domain       string    `theorydb:"attr:domain" json:"domain"`              // Remote instance domain
+	ActivityType string    `theorydb:"attr:activityType" json:"activity_type"` // Create, Update, Delete, Follow, etc.
+	ActorID      string    `theorydb:"attr:actorID" json:"actor_id"`           // Remote actor ID (full URL)
+	ObjectID     string    `theorydb:"attr:objectID" json:"object_id"`         // Object being acted upon
+	ObjectType   string    `theorydb:"attr:objectType" json:"object_type"`     // Note, Actor, etc.
+	Timestamp    time.Time `theorydb:"attr:timestamp" json:"timestamp"`
 
 	// Instance information
-	InstanceInfo *InstanceInfo `dynamorm:"attr:instanceInfo" json:"instance_info,omitempty"`
+	InstanceInfo *InstanceInfo `theorydb:"attr:instanceInfo" json:"instance_info,omitempty"`
 
 	// Activity details
-	Success      bool    `dynamorm:"attr:success" json:"success"`
-	ErrorMessage string  `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
-	ResponseTime float64 `dynamorm:"attr:responseTime" json:"response_time_ms"` // Response time in milliseconds
+	Success      bool    `theorydb:"attr:success" json:"success"`
+	ErrorMessage string  `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
+	ResponseTime float64 `theorydb:"attr:responseTime" json:"response_time_ms"` // Response time in milliseconds
 
 	// Volume tracking
-	InboundSize  int64 `dynamorm:"attr:inboundSize" json:"inbound_size"`   // Size of inbound data in bytes
-	OutboundSize int64 `dynamorm:"attr:outboundSize" json:"outbound_size"` // Size of outbound data in bytes
+	InboundSize  int64 `theorydb:"attr:inboundSize" json:"inbound_size"`   // Size of inbound data in bytes
+	OutboundSize int64 `theorydb:"attr:outboundSize" json:"outbound_size"` // Size of outbound data in bytes
 
 	// Additional metadata
-	UserAgent  string                 `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
-	RemoteIP   string                 `dynamorm:"attr:remoteIP" json:"remote_ip,omitempty"`
-	Headers    map[string]string      `dynamorm:"attr:headers" json:"headers,omitempty"`
-	Properties map[string]interface{} `dynamorm:"attr:properties" json:"properties,omitempty"`
+	UserAgent  string                 `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
+	RemoteIP   string                 `theorydb:"attr:remoteIP" json:"remote_ip,omitempty"`
+	Headers    map[string]string      `theorydb:"attr:headers" json:"headers,omitempty"`
+	Properties map[string]interface{} `theorydb:"attr:properties" json:"properties,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (90 days)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // InstanceInfo contains information about a federated instance

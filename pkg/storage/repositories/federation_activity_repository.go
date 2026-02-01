@@ -7,7 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -326,8 +326,8 @@ type DomainStats struct {
 
 // InstanceInfoItem represents instance information in DynamoDB
 type InstanceInfoItem struct {
-	PK string `dynamorm:"pk"`
-	SK string `dynamorm:"sk"`
+	PK string `theorydb:"pk"`
+	SK string `theorydb:"sk"`
 
 	Domain      string    `json:"domain"`
 	Software    string    `json:"software,omitempty"`

@@ -6,31 +6,31 @@ import (
 
 // UserPreferences represents user preferences in DynamoDB
 type UserPreferences struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// User preferences fields (matching storage.UserPreferences exactly)
-	Language                  string          `dynamorm:"attr:language" json:"language"`
-	DefaultPostingVisibility  string          `dynamorm:"attr:defaultPostingVisibility" json:"default_posting_visibility"`
-	DefaultMediaSensitive     bool            `dynamorm:"attr:defaultMediaSensitive" json:"default_media_sensitive"`
-	ExpandSpoilers            bool            `dynamorm:"attr:expandSpoilers" json:"expand_spoilers"`
-	ExpandMedia               string          `dynamorm:"attr:expandMedia" json:"expand_media"`
-	AutoplayGifs              bool            `dynamorm:"attr:autoplayGifs" json:"autoplay_gifs"`
-	ShowFollowCounts          bool            `dynamorm:"attr:showFollowCounts" json:"show_follow_counts"`
-	PreferredTimelineOrder    string          `dynamorm:"attr:preferredTimelineOrder" json:"preferred_timeline_order"`
-	SearchSuggestionsEnabled  bool            `dynamorm:"attr:searchSuggestionsEnabled" json:"search_suggestions_enabled"`
-	PersonalizedSearchEnabled bool            `dynamorm:"attr:personalizedSearchEnabled" json:"personalized_search_enabled"`
-	ReblogFilters             map[string]bool `dynamorm:"attr:reblogFilters" json:"reblog_filters,omitempty"`
-	StreamingDefaultQuality   string          `dynamorm:"attr:streamingDefaultQuality" json:"streaming_default_quality"`
-	StreamingAutoQuality      bool            `dynamorm:"attr:streamingAutoQuality" json:"streaming_auto_quality"`
-	StreamingPreloadNext      bool            `dynamorm:"attr:streamingPreloadNext" json:"streaming_preload_next"`
-	StreamingDataSaver        bool            `dynamorm:"attr:streamingDataSaver" json:"streaming_data_saver"`
+	Language                  string          `theorydb:"attr:language" json:"language"`
+	DefaultPostingVisibility  string          `theorydb:"attr:defaultPostingVisibility" json:"default_posting_visibility"`
+	DefaultMediaSensitive     bool            `theorydb:"attr:defaultMediaSensitive" json:"default_media_sensitive"`
+	ExpandSpoilers            bool            `theorydb:"attr:expandSpoilers" json:"expand_spoilers"`
+	ExpandMedia               string          `theorydb:"attr:expandMedia" json:"expand_media"`
+	AutoplayGifs              bool            `theorydb:"attr:autoplayGifs" json:"autoplay_gifs"`
+	ShowFollowCounts          bool            `theorydb:"attr:showFollowCounts" json:"show_follow_counts"`
+	PreferredTimelineOrder    string          `theorydb:"attr:preferredTimelineOrder" json:"preferred_timeline_order"`
+	SearchSuggestionsEnabled  bool            `theorydb:"attr:searchSuggestionsEnabled" json:"search_suggestions_enabled"`
+	PersonalizedSearchEnabled bool            `theorydb:"attr:personalizedSearchEnabled" json:"personalized_search_enabled"`
+	ReblogFilters             map[string]bool `theorydb:"attr:reblogFilters" json:"reblog_filters,omitempty"`
+	StreamingDefaultQuality   string          `theorydb:"attr:streamingDefaultQuality" json:"streaming_default_quality"`
+	StreamingAutoQuality      bool            `theorydb:"attr:streamingAutoQuality" json:"streaming_auto_quality"`
+	StreamingPreloadNext      bool            `theorydb:"attr:streamingPreloadNext" json:"streaming_preload_next"`
+	StreamingDataSaver        bool            `theorydb:"attr:streamingDataSaver" json:"streaming_data_saver"`
 
 	// Metadata
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// Username for key generation
 	Username string `json:"-"`

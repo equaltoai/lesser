@@ -8,10 +8,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -40,10 +40,10 @@ func TestAIRepository_SaveAndGetAndStats_CoverageSweep(t *testing.T) {
 			PIIEntities:   []ai.PIIEntity{{Type: ai.PiiEmail, Text: "a@b.com"}},
 			Categories:    []ai.ContentCategory{{Name: "news"}, {Name: "sports"}},
 		},
-		ImageAnalysis: &ai.ImageAnalysis{IsNSFW: true},
-		AIDetection:   &ai.AIDetection{AIGeneratedProbability: 0.9},
-		SpamAnalysis:  &ai.SpamAnalysis{SpamScore: 0.9},
-		OverallRisk:   0.8,
+		ImageAnalysis:    &ai.ImageAnalysis{IsNSFW: true},
+		AIDetection:      &ai.AIDetection{AIGeneratedProbability: 0.9},
+		SpamAnalysis:     &ai.SpamAnalysis{SpamScore: 0.9},
+		OverallRisk:      0.8,
 		ModerationAction: "hide",
 		Confidence:       0.99,
 	}
@@ -108,10 +108,10 @@ func TestAIRepository_SaveAndGetAndStats_CoverageSweep(t *testing.T) {
 					ToxicityScore: 0.9,
 					PIIEntities:   []ai.PIIEntity{{Type: ai.PiiEmail, Text: "a@b.com"}},
 				},
-				SpamAnalysis:      &ai.SpamAnalysis{SpamScore: 0.9},
-				AIDetection:       &ai.AIDetection{AIGeneratedProbability: 0.9},
-				ImageAnalysis:     &ai.ImageAnalysis{IsNSFW: true},
-				ModerationAction:  "review",
+				SpamAnalysis:     &ai.SpamAnalysis{SpamScore: 0.9},
+				AIDetection:      &ai.AIDetection{AIGeneratedProbability: 0.9},
+				ImageAnalysis:    &ai.ImageAnalysis{IsNSFW: true},
+				ModerationAction: "review",
 			},
 		}
 	}).Return(nil).Once()

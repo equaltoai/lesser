@@ -12,45 +12,45 @@ const (
 
 // StreamingCloudWatchMetrics caches CloudWatch metrics for streaming optimization
 type StreamingCloudWatchMetrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB Keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // STREAMING_METRICS#{metric_type}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // {media_id}#{timestamp}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // STREAMING_METRICS#{metric_type}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // {media_id}#{timestamp}
 
 	// GSI keys for time-based queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRIC_TIME#{date}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {metric_type}#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRIC_TIME#{date}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {metric_type}#{timestamp}
 
 	// GSI2 for media-specific queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // MEDIA#{media_id}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // {metric_type}#{timestamp}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // MEDIA#{media_id}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // {metric_type}#{timestamp}
 
 	// Business fields
-	MediaID    string    `dynamorm:"attr:mediaID" json:"media_id"`
-	MetricType string    `dynamorm:"attr:metricType" json:"metric_type"` // quality_breakdown, geographic_data, concurrent_viewers, performance
-	Timestamp  time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	Date       string    `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD for daily aggregation
+	MediaID    string    `theorydb:"attr:mediaID" json:"media_id"`
+	MetricType string    `theorydb:"attr:metricType" json:"metric_type"` // quality_breakdown, geographic_data, concurrent_viewers, performance
+	Timestamp  time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	Date       string    `theorydb:"attr:date" json:"date"` // YYYY-MM-DD for daily aggregation
 
 	// Quality breakdown metrics (when MetricType = "quality_breakdown")
-	QualityMetrics map[string]QualityMetric `dynamorm:"attr:qualityMetrics" json:"quality_metrics,omitempty"`
+	QualityMetrics map[string]QualityMetric `theorydb:"attr:qualityMetrics" json:"quality_metrics,omitempty"`
 
 	// Geographic distribution metrics (when MetricType = "geographic_data")
-	GeographicMetrics map[string]GeographicMetric `dynamorm:"attr:geographicMetrics" json:"geographic_metrics,omitempty"`
+	GeographicMetrics map[string]GeographicMetric `theorydb:"attr:geographicMetrics" json:"geographic_metrics,omitempty"`
 
 	// Concurrent viewer metrics (when MetricType = "concurrent_viewers")
-	ConcurrentViewers ConcurrentViewerMetrics `dynamorm:"attr:concurrentViewers" json:"concurrent_viewers,omitempty"`
+	ConcurrentViewers ConcurrentViewerMetrics `theorydb:"attr:concurrentViewers" json:"concurrent_viewers,omitempty"`
 
 	// Performance metrics (when MetricType = "performance")
-	PerformanceMetrics StreamingPerformanceMetrics `dynamorm:"attr:performanceMetrics" json:"performance_metrics,omitempty"`
+	PerformanceMetrics StreamingPerformanceMetrics `theorydb:"attr:performanceMetrics" json:"performance_metrics,omitempty"`
 
 	// Caching metadata
-	CloudWatchQueryTime time.Time `dynamorm:"attr:cloudWatchQueryTime" json:"cloudwatch_query_time"` // When the data was fetched from CloudWatch
-	DataFreshness       int64     `dynamorm:"attr:dataFreshness" json:"data_freshness"`              // Seconds since CloudWatch query
-	CacheExpiry         time.Time `dynamorm:"attr:cacheExpiry" json:"cache_expiry"`                  // When this cache entry expires
+	CloudWatchQueryTime time.Time `theorydb:"attr:cloudWatchQueryTime" json:"cloudwatch_query_time"` // When the data was fetched from CloudWatch
+	DataFreshness       int64     `theorydb:"attr:dataFreshness" json:"data_freshness"`              // Seconds since CloudWatch query
+	CacheExpiry         time.Time `theorydb:"attr:cacheExpiry" json:"cache_expiry"`                  // When this cache entry expires
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing StreamingCloudWatchMetrics.

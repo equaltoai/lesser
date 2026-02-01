@@ -104,4 +104,3 @@ func TestLinkMetadata_KeysAndSanitization(t *testing.T) {
 		assert.ElementsMatch(t, []string{"go", "test"}, lm.Keywords)
 	})
 }
-

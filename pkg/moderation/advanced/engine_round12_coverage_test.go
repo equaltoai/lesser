@@ -24,10 +24,10 @@ import (
 	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -252,9 +252,9 @@ func setupPermissiveDynamormMocks(db *mocks.MockDB, q *mocks.MockQuery, ub *mock
 
 type stubPatternRepo struct{}
 
-func (stubPatternRepo) CreatePattern(context.Context, *ModerationPattern) error                 { return nil }
-func (stubPatternRepo) UpdatePattern(context.Context, string, *ModerationPattern) error        { return nil }
-func (stubPatternRepo) DeletePattern(context.Context, string) error                            { return nil }
+func (stubPatternRepo) CreatePattern(context.Context, *ModerationPattern) error         { return nil }
+func (stubPatternRepo) UpdatePattern(context.Context, string, *ModerationPattern) error { return nil }
+func (stubPatternRepo) DeletePattern(context.Context, string) error                     { return nil }
 func (stubPatternRepo) GetPattern(_ context.Context, patternID string) (*ModerationPattern, error) {
 	return &ModerationPattern{
 		ID:      patternID,
@@ -264,9 +264,13 @@ func (stubPatternRepo) GetPattern(_ context.Context, patternID string) (*Moderat
 		Active:  true,
 	}, nil
 }
-func (stubPatternRepo) GetPatterns(context.Context, PatternFilter) ([]*ModerationPattern, error) { return nil, nil }
-func (stubPatternRepo) IncrementHitCount(context.Context, string) error                        { return nil }
-func (stubPatternRepo) LoadActivePatterns(context.Context) ([]*ModerationPattern, error)       { return nil, nil }
+func (stubPatternRepo) GetPatterns(context.Context, PatternFilter) ([]*ModerationPattern, error) {
+	return nil, nil
+}
+func (stubPatternRepo) IncrementHitCount(context.Context, string) error { return nil }
+func (stubPatternRepo) LoadActivePatterns(context.Context) ([]*ModerationPattern, error) {
+	return nil, nil
+}
 
 type stubThreatRepo struct{}
 
@@ -282,8 +286,10 @@ func (stubThreatRepo) IncrementHitCount(context.Context, string) error          
 func (stubThreatRepo) LoadActiveThreats(context.Context) ([]*repositories.ThreatIntel, error) {
 	return nil, nil
 }
-func (stubThreatRepo) GetThreatByID(context.Context, string) (*repositories.ThreatIntel, error) { return nil, nil }
-func (stubThreatRepo) GetIndicatorThreat(context.Context, string) (string, error)              { return "", nil }
+func (stubThreatRepo) GetThreatByID(context.Context, string) (*repositories.ThreatIntel, error) {
+	return nil, nil
+}
+func (stubThreatRepo) GetIndicatorThreat(context.Context, string) (string, error) { return "", nil }
 
 type stubTextAnalyzer struct {
 	analysis *ContentAnalysis
@@ -383,10 +389,10 @@ func TestEngine_storeAnalysisResult_BuildsAllSections(t *testing.T) {
 	setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder)
 
 	engine := &Engine{
-		config:     &ModerationConfig{ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8},
-		logger:     logger,
-		dynamoRM:   mockDB,
-		tableName:  "test-table",
+		config:      &ModerationConfig{ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8},
+		logger:      logger,
+		dynamoRM:    mockDB,
+		tableName:   "test-table",
 		costTracker: nil,
 	}
 
@@ -398,22 +404,22 @@ func TestEngine_storeAnalysisResult_BuildsAllSections(t *testing.T) {
 			ContentType: ContentTypeText,
 		},
 		TextAnalysis: &ContentAnalysis{
-			ContentID: "c1",
-			Sentiment: SentimentAnalysis{Sentiment: "NEUTRAL", Confidence: 0.9},
-			Toxicity:  ToxicityAnalysis{IsToxic: false, ToxicityScore: 0.1, Confidence: 0.9},
-			PII:       []PIIEntity{{Type: "PHONE", Text: "+1-555-0100", BeginIndex: 0, EndIndex: 11, Confidence: 0.9}},
-			Topics:    []Topic{{Name: "t", Score: 0.8, Category: "test"}},
-			Language:  LanguageDetection{LanguageCode: "en", Confidence: 0.9},
-			Threats:   []ThreatIndicator{{Type: "NONE", Severity: SeverityLow, Confidence: 0.1}},
+			ContentID:  "c1",
+			Sentiment:  SentimentAnalysis{Sentiment: "NEUTRAL", Confidence: 0.9},
+			Toxicity:   ToxicityAnalysis{IsToxic: false, ToxicityScore: 0.1, Confidence: 0.9},
+			PII:        []PIIEntity{{Type: "PHONE", Text: "+1-555-0100", BeginIndex: 0, EndIndex: 11, Confidence: 0.9}},
+			Topics:     []Topic{{Name: "t", Score: 0.8, Category: "test"}},
+			Language:   LanguageDetection{LanguageCode: "en", Confidence: 0.9},
+			Threats:    []ThreatIndicator{{Type: "NONE", Severity: SeverityLow, Confidence: 0.1}},
 			AnalyzedAt: now,
 		},
 		ImageAnalysis: &ImageAnalysis{
-			ImageURL: "s3://test-bucket/img.jpg",
-			Explicit: ExplicitContent{IsExplicit: false, Confidence: 0.2},
-			Violence: ViolenceDetection{HasViolence: false, Confidence: 0.1},
-			Text:     []TextInImage{{Text: "hi", Confidence: 0.9}},
-			Objects:  []ObjectDetection{{Name: "Object", Confidence: 0.9}},
-			Faces:    []FaceAnalysis{{Confidence: 0.9}},
+			ImageURL:   "s3://test-bucket/img.jpg",
+			Explicit:   ExplicitContent{IsExplicit: false, Confidence: 0.2},
+			Violence:   ViolenceDetection{HasViolence: false, Confidence: 0.1},
+			Text:       []TextInImage{{Text: "hi", Confidence: 0.9}},
+			Objects:    []ObjectDetection{{Name: "Object", Confidence: 0.9}},
+			Faces:      []FaceAnalysis{{Confidence: 0.9}},
 			AnalyzedAt: now,
 		},
 		VideoAnalysis: &VideoAnalysis{
@@ -426,15 +432,15 @@ func TestEngine_storeAnalysisResult_BuildsAllSections(t *testing.T) {
 		PatternMatches: []PatternMatch{{PatternID: "p1", PatternName: "pat", MatchText: "x", Location: "body", Confidence: 0.9}},
 		ThreatMatches:  []ThreatMatch{{ThreatID: "t1", ThreatType: "spam", Indicator: "x", Confidence: 0.9}},
 		ReputationScore: &ReputationScore{
-			ActorID:             "alice",
-			Score:               50,
-			Level:               "normal",
-			ViolationCount:      1,
-			FalsePositiveCount:  0,
-			ContentCount:        2,
-			LastViolation:       now,
-			Factors:             []ReputationFactor{{Factor: "a", Impact: 1, Description: "test"}},
-			UpdatedAt:           now,
+			ActorID:            "alice",
+			Score:              50,
+			Level:              "normal",
+			ViolationCount:     1,
+			FalsePositiveCount: 0,
+			ContentCount:       2,
+			LastViolation:      now,
+			Factors:            []ReputationFactor{{Factor: "a", Impact: 1, Description: "test"}},
+			UpdatedAt:          now,
 		},
 	}
 	decision := &ModerationDecision{Decision: ActionAllow, Confidence: 0.9}
@@ -466,16 +472,16 @@ func TestEngine_storeDecision_EnforcementBranches(t *testing.T) {
 	}
 
 	metadata := ContentMetadata{
-		ContentID:     "c1",
-		AuthorID:      "alice",
-		ContentType:   ContentTypeText,
-		AuthorDomain:  "example.com",
-		Language:      "en",
-		Context:       "test",
-		Mentions:      []string{"bob"},
-		Hashtags:      []string{"tag"},
-		URLs:          []string{"https://example.com"},
-		Timestamp:     time.Now(),
+		ContentID:    "c1",
+		AuthorID:     "alice",
+		ContentType:  ContentTypeText,
+		AuthorDomain: "example.com",
+		Language:     "en",
+		Context:      "test",
+		Mentions:     []string{"bob"},
+		Hashtags:     []string{"tag"},
+		URLs:         []string{"https://example.com"},
+		Timestamp:    time.Now(),
 	}
 
 	now := time.Now()
@@ -516,12 +522,12 @@ func TestVideoAnalyzer_FrameIOHelpers(t *testing.T) {
 	uploader := manager.NewUploader(s3Client)
 
 	va := &VideoAnalyzer{
-		logger:      logger,
-		config:      &ModerationConfig{S3Bucket: "test-bucket", ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8},
-		s3Client:    s3Client,
-		s3Uploader:  uploader,
-		bucketName:  "test-bucket",
-		cacheTTL:    time.Minute,
+		logger:     logger,
+		config:     &ModerationConfig{S3Bucket: "test-bucket", ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8},
+		s3Client:   s3Client,
+		s3Uploader: uploader,
+		bucketName: "test-bucket",
+		cacheTTL:   time.Minute,
 		imageAnalyzer: NewImageAnalyzer(rekognition.NewFromConfig(awsCfg), logger, &ModerationConfig{
 			S3Bucket:            "test-bucket",
 			EnableImageAnalysis: false,
@@ -691,13 +697,13 @@ func TestJobPoller_CollectAllPages_WarnsAndBreaksOnError(t *testing.T) {
 				return nil, fmt.Errorf("boom")
 			}
 			return &rekognition.GetContentModerationOutput{
-				JobStatus:  "SUCCEEDED",
-				NextToken:  nextToken,
+				JobStatus:     "SUCCEEDED",
+				NextToken:     nextToken,
 				StatusMessage: nil,
 			}, nil
 		},
-		getJobStatus: func(interface{}) rekognitionTypes.VideoJobStatus { return rekognitionTypes.VideoJobStatusSucceeded },
-		getNextToken: func(interface{}) *string { return nextToken },
+		getJobStatus:     func(interface{}) rekognitionTypes.VideoJobStatus { return rekognitionTypes.VideoJobStatusSucceeded },
+		getNextToken:     func(interface{}) *string { return nextToken },
 		getStatusMessage: func(interface{}) *string { return nil },
 	}
 
@@ -936,15 +942,17 @@ func TestJobPoller_FailedAndUnexpectedStatus(t *testing.T) {
 			getResult: func(context.Context, string, *string) (interface{}, error) {
 				msg := "nope"
 				return &rekognition.GetContentModerationOutput{
-					JobStatus:      rekognitionTypes.VideoJobStatusFailed,
+					JobStatus:     rekognitionTypes.VideoJobStatusFailed,
 					StatusMessage: &msg,
 				}, nil
 			},
 			getJobStatus: func(result interface{}) rekognitionTypes.VideoJobStatus {
 				return result.(*rekognition.GetContentModerationOutput).JobStatus
 			},
-			getNextToken:     func(interface{}) *string { return nil },
-			getStatusMessage: func(result interface{}) *string { return result.(*rekognition.GetContentModerationOutput).StatusMessage },
+			getNextToken: func(interface{}) *string { return nil },
+			getStatusMessage: func(result interface{}) *string {
+				return result.(*rekognition.GetContentModerationOutput).StatusMessage
+			},
 		}
 		p := &jobPoller{va: va, handler: handler}
 		_, err := p.poll(context.Background(), "job-1")
@@ -1188,9 +1196,11 @@ func TestEngine_Wrappers_And_AnalyzeContentBatch(t *testing.T) {
 	threatIntel := NewThreatIntelligence(stubThreatRepo{}, logger)
 
 	engine := &Engine{
-		config:           cfg,
-		logger:           logger,
-		textAnalyzer:     textAnalyzerFunc(func(_ context.Context, text string, _ ContentMetadata) (*ContentAnalysis, error) { return &ContentAnalysis{ContentID: text, AnalyzedAt: time.Now()}, nil }),
+		config: cfg,
+		logger: logger,
+		textAnalyzer: textAnalyzerFunc(func(_ context.Context, text string, _ ContentMetadata) (*ContentAnalysis, error) {
+			return &ContentAnalysis{ContentID: text, AnalyzedAt: time.Now()}, nil
+		}),
 		imageAnalyzer:    NewNoOpImageAnalyzer(logger, cfg),
 		patternMatcher:   patternMatcher,
 		reputationScorer: reputationScorer,

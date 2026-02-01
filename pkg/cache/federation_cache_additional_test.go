@@ -130,4 +130,3 @@ func TestFederationCache_GetOrFetchInstance_CachesOnSuccessAndHitSkipsFetch(t *t
 	require.NotNil(t, entry)
 	require.Equal(t, 1, calls)
 }
-

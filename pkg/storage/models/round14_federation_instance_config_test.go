@@ -60,9 +60,9 @@ func TestFederationInstanceConfigTracking_Defaults_Keys_AndLimits(t *testing.T) 
 
 	t.Run("BeforeUpdate bumps LastModified", func(t *testing.T) {
 		cfg := &FederationInstanceConfigTracking{
-			Domain:        "example.com",
-			Tier:          FederationTierFree,
-			LastModified:  time.Unix(1700000000, 0).UTC(),
+			Domain:          "example.com",
+			Tier:            FederationTierFree,
+			LastModified:    time.Unix(1700000000, 0).UTC(),
 			CacheTTLSeconds: 1,
 		}
 
@@ -97,4 +97,3 @@ func TestFederationInstanceConfigTracking_Defaults_Keys_AndLimits(t *testing.T) 
 		assert.Equal(t, 100, (&FederationInstanceConfigTracking{Tier: FederationTier("unknown")}).GetRateLimit())
 	})
 }
-

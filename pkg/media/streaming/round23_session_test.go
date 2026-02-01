@@ -15,10 +15,10 @@ type inMemoryMediaSessionRepo struct {
 	sessions map[string]*StreamingSession
 	ttl      time.Duration
 
-	createErr error
-	getErr    error
-	updateErr error
-	endErr    error
+	createErr  error
+	getErr     error
+	updateErr  error
+	endErr     error
 	cleanupErr error
 }
 

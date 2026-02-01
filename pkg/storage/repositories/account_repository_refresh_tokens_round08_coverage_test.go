@@ -8,10 +8,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -19,10 +19,10 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 	baseTime := time.Now().UTC()
 	ctx := context.Background()
 
-		t.Run("create and get variants", func(t *testing.T) {
-			mockDB := new(mocks.MockDB)
-			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+	t.Run("create and get variants", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*models.AuthRefreshToken)
 			*dst = models.AuthRefreshToken{
 				Token:     "token-ok",
@@ -31,29 +31,29 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 				ExpiresAt: baseTime.Add(time.Hour).Unix(),
 				Revoked:   false,
 			}
-			}).Return(nil).Once()
-			mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Return(dynamormErrors.ErrItemNotFound).Once()
-			mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
-				dst := args.Get(0).(*models.AuthRefreshToken)
-				*dst = models.AuthRefreshToken{
-					Token:     "expired-01",
-					UserID:    "user-1",
-					Family:    "family",
-					ExpiresAt: baseTime.Add(-time.Minute).Unix(),
-					Revoked:   false,
-				}
-			}).Return(nil).Once()
-			mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
-				dst := args.Get(0).(*models.AuthRefreshToken)
-				*dst = models.AuthRefreshToken{
-					Token:     "revoked-01",
-					UserID:    "user-1",
-					Family:    "family",
-					ExpiresAt: baseTime.Add(time.Hour).Unix(),
-					Revoked:   true,
-				}
-			}).Return(nil).Once()
-			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+		}).Return(nil).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+			dst := args.Get(0).(*models.AuthRefreshToken)
+			*dst = models.AuthRefreshToken{
+				Token:     "expired-01",
+				UserID:    "user-1",
+				Family:    "family",
+				ExpiresAt: baseTime.Add(-time.Minute).Unix(),
+				Revoked:   false,
+			}
+		}).Return(nil).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+			dst := args.Get(0).(*models.AuthRefreshToken)
+			*dst = models.AuthRefreshToken{
+				Token:     "revoked-01",
+				UserID:    "user-1",
+				Family:    "family",
+				ExpiresAt: baseTime.Add(time.Hour).Unix(),
+				Revoked:   true,
+			}
+		}).Return(nil).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
 
@@ -66,13 +66,13 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 		_, err = repo.GetAdvancedRefreshToken(ctx, token.Token)
 		require.NoError(t, err)
 
-			_, err = repo.GetAdvancedRefreshToken(ctx, "missing")
-			require.ErrorIs(t, err, common.ErrTokenNotFound)
-			_, err = repo.GetAdvancedRefreshToken(ctx, "expired-01")
-			require.ErrorIs(t, err, common.ErrTokenExpired)
-			_, err = repo.GetAdvancedRefreshToken(ctx, "revoked-01")
-			require.ErrorIs(t, err, common.ErrTokenRevoked)
-		})
+		_, err = repo.GetAdvancedRefreshToken(ctx, "missing")
+		require.ErrorIs(t, err, common.ErrTokenNotFound)
+		_, err = repo.GetAdvancedRefreshToken(ctx, "expired-01")
+		require.ErrorIs(t, err, common.ErrTokenExpired)
+		_, err = repo.GetAdvancedRefreshToken(ctx, "revoked-01")
+		require.ErrorIs(t, err, common.ErrTokenRevoked)
+	})
 
 	t.Run("rotate token and revoke helper", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
@@ -134,55 +134,55 @@ func TestRound08_AccountRepository_AdvancedRefreshTokens(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-		t.Run("active filtering, last-used update, cleanup, stats", func(t *testing.T) {
-			mockDB := new(mocks.MockDB)
-			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+	t.Run("active filtering, last-used update, cleanup, stats", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
 			dst := args.Get(0).(*[]models.AuthRefreshToken)
 			nowUnix := time.Now().Unix()
 			*dst = []models.AuthRefreshToken{
 				{Token: "token-active-01", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix + 3600, Revoked: false, LastUsedAt: nowUnix - 5},
 				{Token: "token-revoked", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix + 3600, Revoked: true, LastUsedAt: nowUnix - 10},
-					{Token: "token-expired", UserID: "user-1", Family: "family-2", ExpiresAt: nowUnix - 10, Revoked: false, LastUsedAt: nowUnix - 1},
-				}
-			}).Return(nil).Maybe()
-			mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Return(dynamormErrors.ErrItemNotFound).Once()
-			mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
-				dst := args.Get(0).(*models.AuthRefreshToken)
-				*dst = models.AuthRefreshToken{
-					Token:     "update",
-					UserID:    "user-1",
-					Family:    "family-1",
-					ExpiresAt: time.Now().Add(time.Hour).Unix(),
-					Revoked:   false,
-				}
-			}).Return(nil).Once()
-			mockQuery.On("Delete").Return(errors.New("delete failed")).Once()
-			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+				{Token: "token-expired", UserID: "user-1", Family: "family-2", ExpiresAt: nowUnix - 10, Revoked: false, LastUsedAt: nowUnix - 1},
+			}
+		}).Return(nil).Maybe()
+		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+			dst := args.Get(0).(*models.AuthRefreshToken)
+			*dst = models.AuthRefreshToken{
+				Token:     "update",
+				UserID:    "user-1",
+				Family:    "family-1",
+				ExpiresAt: time.Now().Add(time.Hour).Unix(),
+				Revoked:   false,
+			}
+		}).Return(nil).Once()
+		mockQuery.On("Delete").Return(errors.New("delete failed")).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
-			repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
 
-			active, err := repo.GetActiveAdvancedTokensForUser(ctx, "user-1")
-			require.NoError(t, err)
-			require.Len(t, active, 1)
+		active, err := repo.GetActiveAdvancedTokensForUser(ctx, "user-1")
+		require.NoError(t, err)
+		require.Len(t, active, 1)
 
-			err = repo.UpdateAdvancedTokenLastUsed(ctx, "missing", "")
-			require.ErrorIs(t, err, common.ErrTokenNotFound)
+		err = repo.UpdateAdvancedTokenLastUsed(ctx, "missing", "")
+		require.ErrorIs(t, err, common.ErrTokenNotFound)
 
-			err = repo.UpdateAdvancedTokenLastUsed(ctx, "update", "127.0.0.1")
-			require.NoError(t, err)
+		err = repo.UpdateAdvancedTokenLastUsed(ctx, "update", "127.0.0.1")
+		require.NoError(t, err)
 
-			mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
-				dst := args.Get(0).(*[]models.AuthRefreshToken)
-				nowUnix := time.Now().Unix()
-				*dst = []models.AuthRefreshToken{
-					{Token: "token-expired", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix - 10},
-					{Token: "token-active-02", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix + 3600},
-				}
-			}).Return(nil).Once()
-			deleted, err := repo.CleanupExpiredAdvancedTokens(ctx)
-			require.NoError(t, err)
-			require.Equal(t, 0, deleted)
+		mockQuery.On("All", mock.AnythingOfType("*[]models.AuthRefreshToken")).Run(func(args mock.Arguments) {
+			dst := args.Get(0).(*[]models.AuthRefreshToken)
+			nowUnix := time.Now().Unix()
+			*dst = []models.AuthRefreshToken{
+				{Token: "token-expired", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix - 10},
+				{Token: "token-active-02", UserID: "user-1", Family: "family-1", ExpiresAt: nowUnix + 3600},
+			}
+		}).Return(nil).Once()
+		deleted, err := repo.CleanupExpiredAdvancedTokens(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0, deleted)
 
 		stats, err := repo.GetAdvancedTokenStats(ctx, "user-1")
 		require.NoError(t, err)

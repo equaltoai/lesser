@@ -59,7 +59,6 @@ func (m *MockWebSocketCostRepository) Get(ctx context.Context, operationType, id
 	return args.Get(0).(*models.WebSocketCostRecord), args.Error(1)
 }
 
-
 // ListByOperationType mocks the ListByOperationType method
 func (m *MockWebSocketCostRepository) ListByOperationType(ctx context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.WebSocketCostRecord, error) {
 	args := m.Called(ctx, operationType, startTime, endTime, limit)
@@ -115,7 +114,6 @@ func (m *MockWebSocketCostRepository) GetUserCostSummary(ctx context.Context, us
 	}
 	return args.Get(0).(*interfaces.WebSocketUserCostSummary), args.Error(1)
 }
-
 
 // ===== Budget Management Operations =====
 
@@ -186,7 +184,6 @@ func (m *MockWebSocketCostRepository) GetAggregation(ctx context.Context, period
 	}
 	return args.Get(0).(*models.WebSocketCostAggregation), args.Error(1)
 }
-
 
 // GetUserAggregation mocks the GetUserAggregation method
 func (m *MockWebSocketCostRepository) GetUserAggregation(ctx context.Context, userID, period, operationType string, windowStart time.Time) (*models.WebSocketCostAggregation, error) {

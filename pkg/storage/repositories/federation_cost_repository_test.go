@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -56,14 +56,14 @@ func TestFederationCostRepository_RecordFederationCost_SuccessAndError(t *testin
 	mockQuery.On("Create").Return(nil).Once()
 
 	record := &models.FederationCostTracking{
-		Domain:             "example.com",
-		ActivityType:       "Create",
-		ActivityID:         "act-1",
-		Timestamp:          time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC),
-		Success:            true,
+		Domain:              "example.com",
+		ActivityType:        "Create",
+		ActivityID:          "act-1",
+		Timestamp:           time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC),
+		Success:             true,
 		TotalCostMicroCents: 123,
-		DataTransferBytes:  100,
-		ResponseTimeMs:     50,
+		DataTransferBytes:   100,
+		ResponseTimeMs:      50,
 	}
 	require.NoError(t, repo.RecordFederationCost(ctx, record))
 
@@ -431,4 +431,3 @@ func TestFederationCostRepository_GetActiveBudgets_Error(t *testing.T) {
 	_, err := repo.GetActiveBudgets(ctx, 10)
 	require.Error(t, err)
 }
-

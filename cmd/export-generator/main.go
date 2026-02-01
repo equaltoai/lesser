@@ -18,8 +18,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -27,11 +27,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 // ExportProcessor handles data export generation from SQS messages
@@ -212,7 +212,7 @@ func (a exportStorageAdapter) Media() mediaRepo {
 var (
 	processor            *ExportProcessor
 	mustInitializeLambda = common.MustInitializeLambda
-	getDynamormClient    = dynamorm.GetClient
+	getDynamormClient    = theorydb.GetClient
 	newRepoFactory       = factory.NewRepositoryFactory
 	newExportRepo        = repositories.NewExportRepository
 	newTrackingRepo      = repositories.NewTrackingRepository

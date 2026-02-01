@@ -22,9 +22,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -56,7 +56,7 @@ var (
 	newSecretsManagerClientFn = func(cfg aws.Config) secretsClient { return secretsmanager.NewFromConfig(cfg) }
 	generateVAPIDKeysFn       = generateVAPIDKeys
 	generateSecurePasswordFn  = generateSecurePassword
-	getDynamormClientFn       = dynamorm.GetClient
+	getDynamormClientFn       = theorydb.GetClient
 	newRepositoryFactoryFn    = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (userRepositoryFactory, error) {
 		repos, err := factory.NewRepositoryFactory(db, tableName, logger)
 		if err != nil {

@@ -24,7 +24,9 @@ type sessionRepoGetSessionErr struct {
 	err error
 }
 
-func (r *sessionRepoGetSessionErr) GetSession(_ context.Context, _ string) (*Session, error) { return nil, r.err }
+func (r *sessionRepoGetSessionErr) GetSession(_ context.Context, _ string) (*Session, error) {
+	return nil, r.err
+}
 
 func TestSessionLifecycleManager_CreateSessionWithLifecycle_ConcurrencyAndFixationBranches(t *testing.T) {
 	t.Parallel()
@@ -147,4 +149,3 @@ func TestSessionLifecycleManager_RefreshSessionWithRotation_Branches(t *testing.
 	_, err = slm4.GetSessionHealth(context.Background(), "missing")
 	require.Error(t, err)
 }
-

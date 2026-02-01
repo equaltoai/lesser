@@ -15,52 +15,52 @@ const (
 
 // EmojiModel represents a custom emoji with DynamORM tags
 type EmojiModel struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // EMOJI#shortcode
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // EMOJI
+	PK string `theorydb:"pk,attr:PK" json:"-"` // EMOJI#shortcode
+	SK string `theorydb:"sk,attr:SK" json:"-"` // EMOJI
 
 	// GSI keys - for querying all emojis
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // ALL_EMOJIS
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // EMOJI#shortcode
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // ALL_EMOJIS
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // EMOJI#shortcode
 
 	// GSI keys - for querying by category
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"-"` // CATEGORY#category
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"-"` // EMOJI#shortcode
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // CATEGORY#category
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // EMOJI#shortcode
 
 	// GSI keys - for search and domain queries
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"-"` // SEARCH#prefix or DOMAIN#domain
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"-"` // EMOJI#shortcode
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // SEARCH#prefix or DOMAIN#domain
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // EMOJI#shortcode
 
 	// GSI keys - for usage statistics and popularity
-	GSI4PK string `dynamorm:"index:gsi4,pk,attr:gsi4PK" json:"-"` // USAGE#domain
-	GSI4SK string `dynamorm:"index:gsi4,sk,attr:gsi4SK" json:"-"` // SCORE#usage_count#shortcode
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"-"` // USAGE#domain
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"-"` // SCORE#usage_count#shortcode
 
 	// Business fields
-	Shortcode           string    `dynamorm:"attr:shortcode" json:"shortcode"`
-	URL                 string    `dynamorm:"attr:url" json:"url"`
-	StaticURL           string    `dynamorm:"attr:staticURL" json:"static_url"`
-	VisibleInPicker     bool      `dynamorm:"attr:visibleInPicker" json:"visible_in_picker"`
-	Category            string    `dynamorm:"attr:category" json:"category,omitempty"`
-	CreatedAt           time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt           time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	Disabled            bool      `dynamorm:"attr:disabled" json:"disabled"`
-	Domain              string    `dynamorm:"attr:domain" json:"domain,omitempty"` // Empty for local emojis
-	ImageRemoteURL      string    `dynamorm:"attr:imageRemoteURL" json:"image_remote_url,omitempty"`
-	ImageStorageVersion int       `dynamorm:"attr:imageStorageVersion" json:"image_storage_version"`
-	ImageFileSize       int64     `dynamorm:"attr:imageFileSize" json:"image_file_size"`
-	ImageContentType    string    `dynamorm:"attr:imageContentType" json:"image_content_type"`
-	ImageWidth          int       `dynamorm:"attr:imageWidth" json:"image_width"`
-	ImageHeight         int       `dynamorm:"attr:imageHeight" json:"image_height"`
-	ImageUpdatedAt      time.Time `dynamorm:"attr:imageUpdatedAt" json:"image_updated_at"`
+	Shortcode           string    `theorydb:"attr:shortcode" json:"shortcode"`
+	URL                 string    `theorydb:"attr:url" json:"url"`
+	StaticURL           string    `theorydb:"attr:staticURL" json:"static_url"`
+	VisibleInPicker     bool      `theorydb:"attr:visibleInPicker" json:"visible_in_picker"`
+	Category            string    `theorydb:"attr:category" json:"category,omitempty"`
+	CreatedAt           time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt           time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	Disabled            bool      `theorydb:"attr:disabled" json:"disabled"`
+	Domain              string    `theorydb:"attr:domain" json:"domain,omitempty"` // Empty for local emojis
+	ImageRemoteURL      string    `theorydb:"attr:imageRemoteURL" json:"image_remote_url,omitempty"`
+	ImageStorageVersion int       `theorydb:"attr:imageStorageVersion" json:"image_storage_version"`
+	ImageFileSize       int64     `theorydb:"attr:imageFileSize" json:"image_file_size"`
+	ImageContentType    string    `theorydb:"attr:imageContentType" json:"image_content_type"`
+	ImageWidth          int       `theorydb:"attr:imageWidth" json:"image_width"`
+	ImageHeight         int       `theorydb:"attr:imageHeight" json:"image_height"`
+	ImageUpdatedAt      time.Time `theorydb:"attr:imageUpdatedAt" json:"image_updated_at"`
 
 	// Enhanced fields for sophisticated queries
-	UsageCount      int64     `dynamorm:"attr:usageCount" json:"usage_count"`           // How many times this emoji has been used
-	LastUsedAt      time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`          // When this emoji was last used
-	PopularityScore float64   `dynamorm:"attr:popularityScore" json:"popularity_score"` // Calculated popularity score
-	SearchKeywords  []string  `dynamorm:"attr:searchKeywords" json:"search_keywords"`   // Additional search terms
-	AltText         string    `dynamorm:"attr:altText" json:"alt_text,omitempty"`       // Alternative text for accessibility
+	UsageCount      int64     `theorydb:"attr:usageCount" json:"usage_count"`           // How many times this emoji has been used
+	LastUsedAt      time.Time `theorydb:"attr:lastUsedAt" json:"last_used_at"`          // When this emoji was last used
+	PopularityScore float64   `theorydb:"attr:popularityScore" json:"popularity_score"` // Calculated popularity score
+	SearchKeywords  []string  `theorydb:"attr:searchKeywords" json:"search_keywords"`   // Additional search terms
+	AltText         string    `theorydb:"attr:altText" json:"alt_text,omitempty"`       // Alternative text for accessibility
 }
 
 // GetPK returns the partition key

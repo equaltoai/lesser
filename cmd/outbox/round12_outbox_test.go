@@ -17,10 +17,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/golang-jwt/jwt/v5"
-	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 

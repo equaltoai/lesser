@@ -7,15 +7,15 @@ import (
 
 // StatusEngagement tracks engagement on statuses (like, boost, reply)
 type StatusEngagement struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK             string    `dynamorm:"pk,attr:PK"`                                 // STATUS_ENGAGEMENT#statusID
-	SK             string    `dynamorm:"sk,attr:SK"`                                 // engagementType#timestamp#userID
-	StatusID       string    `dynamorm:"attr:statusID" json:"status_id"`             // Status being engaged with
-	EngagementType string    `dynamorm:"attr:engagementType" json:"engagement_type"` // like, boost, reply
-	UserID         string    `dynamorm:"attr:userID" json:"user_id"`                 // User performing engagement
-	EngagedAt      time.Time `dynamorm:"attr:engagedAt" json:"engaged_at"`           // When engagement occurred
-	TTL            int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`          // 7 day TTL
+	PK             string    `theorydb:"pk,attr:PK"`                                 // STATUS_ENGAGEMENT#statusID
+	SK             string    `theorydb:"sk,attr:SK"`                                 // engagementType#timestamp#userID
+	StatusID       string    `theorydb:"attr:statusID" json:"status_id"`             // Status being engaged with
+	EngagementType string    `theorydb:"attr:engagementType" json:"engagement_type"` // like, boost, reply
+	UserID         string    `theorydb:"attr:userID" json:"user_id"`                 // User performing engagement
+	EngagedAt      time.Time `theorydb:"attr:engagedAt" json:"engaged_at"`           // When engagement occurred
+	TTL            int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`          // 7 day TTL
 }
 
 // TableName returns the DynamoDB table backing StatusEngagement.
@@ -44,15 +44,15 @@ func (s *StatusEngagement) GetSK() string {
 
 // LinkShare tracks when links are shared in statuses
 type LinkShare struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK       string    `dynamorm:"pk,attr:PK"`                        // LINK_SHARE#url
-	SK       string    `dynamorm:"sk,attr:SK"`                        // STATUS#statusID
-	URL      string    `dynamorm:"attr:url" json:"url"`               // The shared URL
-	StatusID string    `dynamorm:"attr:statusID" json:"status_id"`    // Status containing the link
-	AuthorID string    `dynamorm:"attr:authorID" json:"author_id"`    // User who shared the link
-	SharedAt time.Time `dynamorm:"attr:sharedAt" json:"shared_at"`    // When the link was shared
-	TTL      int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // 7 day TTL
+	PK       string    `theorydb:"pk,attr:PK"`                        // LINK_SHARE#url
+	SK       string    `theorydb:"sk,attr:SK"`                        // STATUS#statusID
+	URL      string    `theorydb:"attr:url" json:"url"`               // The shared URL
+	StatusID string    `theorydb:"attr:statusID" json:"status_id"`    // Status containing the link
+	AuthorID string    `theorydb:"attr:authorID" json:"author_id"`    // User who shared the link
+	SharedAt time.Time `theorydb:"attr:sharedAt" json:"shared_at"`    // When the link was shared
+	TTL      int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // 7 day TTL
 }
 
 // UpdateKeys updates GSI keys for LinkShare - no GSIs needed for this model
@@ -81,35 +81,35 @@ func (LinkShare) TableName() string {
 
 // EngagementMetrics tracks engagement metrics for platform usage analysis
 type EngagementMetrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Key fields - EXACT pattern from legacy: PK=`METRICS#type#date`, SK=`target#targetID`
-	PK     string `dynamorm:"pk,attr:PK"`                // METRICS#type#date or STATUS#statusID or ENGAGEMENT#bucket
-	SK     string `dynamorm:"sk,attr:SK"`                // target#targetID or ENGAGEMENT#METRICS or STATUS#timestamp#statusID
-	GSI8PK string `dynamorm:"index:gsi8,pk,attr:gsi8PK"` // For date range queries
-	GSI8SK string `dynamorm:"index:gsi8,sk,attr:gsi8SK"` // For date range queries
+	PK     string `theorydb:"pk,attr:PK"`                // METRICS#type#date or STATUS#statusID or ENGAGEMENT#bucket
+	SK     string `theorydb:"sk,attr:SK"`                // target#targetID or ENGAGEMENT#METRICS or STATUS#timestamp#statusID
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"` // For date range queries
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"` // For date range queries
 
 	// Business fields from legacy
-	MetricType  string    `dynamorm:"attr:metricType" json:"metric_type,omitempty"`
-	TargetID    string    `dynamorm:"attr:targetID" json:"target_id,omitempty"` // user/post/hashtag ID
-	Date        string    `dynamorm:"attr:date" json:"date,omitempty"`          // YYYY-MM-DD format
-	Views       int64     `dynamorm:"attr:views" json:"views,omitempty"`
-	Likes       int64     `dynamorm:"attr:likes" json:"likes,omitempty"`
-	Shares      int64     `dynamorm:"attr:shares" json:"shares,omitempty"`
-	Replies     int64     `dynamorm:"attr:replies" json:"replies,omitempty"`
-	UniqueUsers int64     `dynamorm:"attr:uniqueUsers" json:"unique_users,omitempty"`
-	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at,omitempty"`
+	MetricType  string    `theorydb:"attr:metricType" json:"metric_type,omitempty"`
+	TargetID    string    `theorydb:"attr:targetID" json:"target_id,omitempty"` // user/post/hashtag ID
+	Date        string    `theorydb:"attr:date" json:"date,omitempty"`          // YYYY-MM-DD format
+	Views       int64     `theorydb:"attr:views" json:"views,omitempty"`
+	Likes       int64     `theorydb:"attr:likes" json:"likes,omitempty"`
+	Shares      int64     `theorydb:"attr:shares" json:"shares,omitempty"`
+	Replies     int64     `theorydb:"attr:replies" json:"replies,omitempty"`
+	UniqueUsers int64     `theorydb:"attr:uniqueUsers" json:"unique_users,omitempty"`
+	UpdatedAt   time.Time `theorydb:"attr:updatedAt" json:"updated_at,omitempty"`
 
 	// Additional fields for status metrics
-	StatusID         string  `dynamorm:"attr:statusID" json:"status_id,omitempty"`
-	LikeCount        int64   `dynamorm:"attr:likeCount" json:"like_count,omitempty"`
-	BoostCount       int64   `dynamorm:"attr:boostCount" json:"boost_count,omitempty"`
-	ReplyCount       int64   `dynamorm:"attr:replyCount" json:"reply_count,omitempty"`
-	Score            float64 `dynamorm:"attr:score" json:"score,omitempty"`
-	EngagementBucket string  `dynamorm:"attr:engagementBucket" json:"engagement_bucket,omitempty"`
+	StatusID         string  `theorydb:"attr:statusID" json:"status_id,omitempty"`
+	LikeCount        int64   `theorydb:"attr:likeCount" json:"like_count,omitempty"`
+	BoostCount       int64   `theorydb:"attr:boostCount" json:"boost_count,omitempty"`
+	ReplyCount       int64   `theorydb:"attr:replyCount" json:"reply_count,omitempty"`
+	Score            float64 `theorydb:"attr:score" json:"score,omitempty"`
+	EngagementBucket string  `theorydb:"attr:engagementBucket" json:"engagement_bucket,omitempty"`
 
 	// TTL field
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys updates GSI keys for EngagementMetrics

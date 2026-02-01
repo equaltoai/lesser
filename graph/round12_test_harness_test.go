@@ -19,11 +19,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 

@@ -8,41 +8,41 @@ import (
 // StatusMetadata represents additional metadata for a status/object
 // This handles features like quote permissions, withdrawal status, etc.
 type StatusMetadata struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "STATUS_META#{status_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "STATUS_META#{status_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
 	// Core identification
-	StatusID string `dynamorm:"attr:statusID" json:"status_id"`
+	StatusID string `theorydb:"attr:statusID" json:"status_id"`
 
 	// Quote-related metadata
-	QuoteType           string `dynamorm:"attr:quoteType" json:"quote_type"`                      // "public", "followers", "mentioned", "disabled"
-	WithdrawnFromQuotes bool   `dynamorm:"attr:withdrawnFromQuotes" json:"withdrawn_from_quotes"` // Whether status is withdrawn from quotes
-	AllowQuotes         bool   `dynamorm:"attr:allowQuotes" json:"allow_quotes"`                  // Whether quotes are allowed at all
-	QuotePermissions    string `dynamorm:"attr:quotePermissions" json:"quote_permissions"`        // JSON serialized quote permissions
+	QuoteType           string `theorydb:"attr:quoteType" json:"quote_type"`                      // "public", "followers", "mentioned", "disabled"
+	WithdrawnFromQuotes bool   `theorydb:"attr:withdrawnFromQuotes" json:"withdrawn_from_quotes"` // Whether status is withdrawn from quotes
+	AllowQuotes         bool   `theorydb:"attr:allowQuotes" json:"allow_quotes"`                  // Whether quotes are allowed at all
+	QuotePermissions    string `theorydb:"attr:quotePermissions" json:"quote_permissions"`        // JSON serialized quote permissions
 
 	// Reply-related metadata
-	AllowReplies     bool   `dynamorm:"attr:allowReplies" json:"allow_replies"`         // Whether replies are allowed
-	ReplyPermissions string `dynamorm:"attr:replyPermissions" json:"reply_permissions"` // JSON serialized reply permissions
-	ReplyCount       int    `dynamorm:"attr:replyCount" json:"reply_count"`             // Cache of reply count
+	AllowReplies     bool   `theorydb:"attr:allowReplies" json:"allow_replies"`         // Whether replies are allowed
+	ReplyPermissions string `theorydb:"attr:replyPermissions" json:"reply_permissions"` // JSON serialized reply permissions
+	ReplyCount       int    `theorydb:"attr:replyCount" json:"reply_count"`             // Cache of reply count
 
 	// Moderation metadata
-	ContentWarning  string   `dynamorm:"attr:contentWarning" json:"content_warning"`   // Content warning text
-	ModerationFlags []string `dynamorm:"attr:moderationFlags" json:"moderation_flags"` // Applied moderation flags
-	ModerationNotes string   `dynamorm:"attr:moderationNotes" json:"moderation_notes"` // Internal moderation notes
+	ContentWarning  string   `theorydb:"attr:contentWarning" json:"content_warning"`   // Content warning text
+	ModerationFlags []string `theorydb:"attr:moderationFlags" json:"moderation_flags"` // Applied moderation flags
+	ModerationNotes string   `theorydb:"attr:moderationNotes" json:"moderation_notes"` // Internal moderation notes
 
 	// Engagement settings
-	DisableLikes   bool `dynamorm:"attr:disableLikes" json:"disable_likes"`     // Whether likes are disabled
-	DisableReblogs bool `dynamorm:"attr:disableReblogs" json:"disable_reblogs"` // Whether reblogs are disabled
+	DisableLikes   bool `theorydb:"attr:disableLikes" json:"disable_likes"`     // Whether likes are disabled
+	DisableReblogs bool `theorydb:"attr:disableReblogs" json:"disable_reblogs"` // Whether reblogs are disabled
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version,attr:version" json:"version"`
+	Version int `theorydb:"version,attr:version" json:"version"`
 }
 
 // NewStatusMetadata creates a new status metadata record

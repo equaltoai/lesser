@@ -146,8 +146,8 @@ type fakeS3BucketClient struct {
 	listOutputs []*s3.ListObjectsV2Output
 	listErr     error
 
-	deleteErr   error
-	deleteCalls int
+	deleteErr     error
+	deleteCalls   int
 	deleteBatches [][]s3types.ObjectIdentifier
 }
 
@@ -185,7 +185,7 @@ func TestDeleteAllObjects_PaginatesAndBatches(t *testing.T) {
 	t.Run("delete error", func(t *testing.T) {
 		fake := &fakeS3BucketClient{
 			listOutputs: []*s3.ListObjectsV2Output{{
-				Contents: []s3types.Object{{Key: aws.String("a")}},
+				Contents:    []s3types.Object{{Key: aws.String("a")}},
 				IsTruncated: aws.Bool(false),
 			}},
 			deleteErr: errors.New("delete failed"),
@@ -204,8 +204,8 @@ func TestDeleteAllObjects_PaginatesAndBatches(t *testing.T) {
 
 		fake := &fakeS3BucketClient{
 			listOutputs: []*s3.ListObjectsV2Output{{
-				Contents:     objects,
-				IsTruncated:  aws.Bool(false),
+				Contents:    objects,
+				IsTruncated: aws.Bool(false),
 			}},
 		}
 		require.NoError(t, deleteAllObjects(context.Background(), fake, "bucket"))

@@ -130,7 +130,7 @@ func TestSignatureService_VerifySignature_CachedAndFetchedKeys(t *testing.T) {
 				Type: activitypub.PersonType,
 			},
 			PublicKey: &activitypub.PublicKey{
-				ID:          keyID,
+				ID:           keyID,
 				PublicKeyPem: string(publicKeyPEM),
 			},
 		}

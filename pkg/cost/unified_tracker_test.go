@@ -369,7 +369,6 @@ func TestOperationInfo_Fields(t *testing.T) {
 	assert.Equal(t, int64(256), info.MemoryMB)
 }
 
-
 func TestUnifiedTracker_TrackMultipleOperations_AllTypes(t *testing.T) {
 	logger := zap.NewNop()
 	tracker := NewUnifiedTracker(nil, logger, "user-123", "req-456")

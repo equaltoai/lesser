@@ -282,12 +282,12 @@ func TestSearchResultsAndHistory(t *testing.T) {
 		assert.Equal(t, MainTableName, e.TableName())
 		assert.Equal(t, hashQuery("golang"), hashQuery("golang"))
 
-			e.AddClickedID("x")
-			e.AddClickedID("x")
-			assert.Len(t, e.ClickedIDs, 1)
-			assert.InDelta(t, 0.1, e.GetClickRate(), 0.0001)
-			e.SearchedAt = time.Now().Add(-1 * time.Hour)
-			assert.True(t, e.IsRecent(24*time.Hour))
+		e.AddClickedID("x")
+		e.AddClickedID("x")
+		assert.Len(t, e.ClickedIDs, 1)
+		assert.InDelta(t, 0.1, e.GetClickRate(), 0.0001)
+		e.SearchedAt = time.Now().Add(-1 * time.Hour)
+		assert.True(t, e.IsRecent(24*time.Hour))
 
 		e.ResultCount = 0
 		assert.Equal(t, 0.0, e.GetClickRate())

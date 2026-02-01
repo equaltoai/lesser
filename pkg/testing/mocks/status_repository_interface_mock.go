@@ -253,7 +253,6 @@ func (m *MockStatusRepositoryInterface) GetStatusEngagement(ctx context.Context,
 // Ensure MockStatusRepositoryInterface implements interfaces.StatusRepository
 var _ interfaces.StatusRepository = (*MockStatusRepositoryInterface)(nil)
 
-
 // Count operations
 
 // CountStatusesByAuthor mocks the CountStatusesByAuthor method

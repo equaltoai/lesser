@@ -20,4 +20,3 @@ func TestDashboards_Basics(t *testing.T) {
 	all := GetAllDashboards("us-east-1", "test")
 	require.Len(t, all, 4)
 }
-

@@ -7,25 +7,25 @@ import (
 
 // ThreadSync represents thread synchronization metadata
 type ThreadSync struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // THREAD_SYNC#{statusID}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // METADATA
+	PK string `theorydb:"pk,attr:PK" json:"-"` // THREAD_SYNC#{statusID}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // METADATA
 
 	// Thread sync data
-	StatusID         string    `dynamorm:"attr:statusID" json:"status_id"`
-	LastSyncAt       time.Time `dynamorm:"attr:lastSyncAt" json:"last_sync_at"`
-	SyncStatus       string    `dynamorm:"attr:syncStatus" json:"sync_status"`         // "pending", "syncing", "completed", "failed"
-	MissingReplies   []string  `dynamorm:"attr:missingReplies" json:"missing_replies"` // List of missing reply IDs
-	RemoteFetched    bool      `dynamorm:"attr:remoteFetched" json:"remote_fetched"`   // Whether we've attempted remote fetch
-	ThreadDepth      int       `dynamorm:"attr:threadDepth" json:"thread_depth"`       // Current thread depth known
-	LastErrorMessage string    `dynamorm:"attr:lastErrorMessage" json:"last_error_message,omitempty"`
-	UpdatedAt        time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	CreatedAt        time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	StatusID         string    `theorydb:"attr:statusID" json:"status_id"`
+	LastSyncAt       time.Time `theorydb:"attr:lastSyncAt" json:"last_sync_at"`
+	SyncStatus       string    `theorydb:"attr:syncStatus" json:"sync_status"`         // "pending", "syncing", "completed", "failed"
+	MissingReplies   []string  `theorydb:"attr:missingReplies" json:"missing_replies"` // List of missing reply IDs
+	RemoteFetched    bool      `theorydb:"attr:remoteFetched" json:"remote_fetched"`   // Whether we've attempted remote fetch
+	ThreadDepth      int       `theorydb:"attr:threadDepth" json:"thread_depth"`       // Current thread depth known
+	LastErrorMessage string    `theorydb:"attr:lastErrorMessage" json:"last_error_message,omitempty"`
+	UpdatedAt        time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	CreatedAt        time.Time `theorydb:"attr:createdAt" json:"created_at"`
 
 	// TTL for auto-cleanup (30 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // NewThreadSync creates a new thread sync record

@@ -9,9 +9,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -208,4 +208,3 @@ func TestPublicationService_Round25_CreateUpdateDeleteAndMembers(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
-

@@ -10,69 +10,69 @@ import (
 
 // NotificationCostTracking tracks costs for notification delivery operations
 type NotificationCostTracking struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - notification cost tracking uses NOTIF_COST#{notification_id}#{timestamp} pattern
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for user queries - USER#{username}, COST#{timestamp}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for delivery method queries - METHOD#{delivery_method}, TIMESTAMP#{timestamp}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// GSI3 for daily aggregation - DAILY#{date}, COST#{timestamp}
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
 
 	// Core tracking fields
-	ID               string `dynamorm:"attr:id" json:"id"`
-	NotificationID   string `dynamorm:"attr:notificationID" json:"notification_id"`
-	UserID           string `dynamorm:"attr:userID" json:"user_id"`
-	Username         string `dynamorm:"attr:username" json:"username"`
-	DeliveryMethod   string `dynamorm:"attr:deliveryMethod" json:"delivery_method"`     // push, websocket
-	NotificationType string `dynamorm:"attr:notificationType" json:"notification_type"` // mention, follow, favourite, etc.
-	Channel          string `dynamorm:"attr:channel" json:"channel"`                    // specific channel within method
-	Success          bool   `dynamorm:"attr:success" json:"success"`
-	ErrorMessage     string `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
-	RetryCount       int    `dynamorm:"attr:retryCount" json:"retry_count"`
+	ID               string `theorydb:"attr:id" json:"id"`
+	NotificationID   string `theorydb:"attr:notificationID" json:"notification_id"`
+	UserID           string `theorydb:"attr:userID" json:"user_id"`
+	Username         string `theorydb:"attr:username" json:"username"`
+	DeliveryMethod   string `theorydb:"attr:deliveryMethod" json:"delivery_method"`     // push, websocket
+	NotificationType string `theorydb:"attr:notificationType" json:"notification_type"` // mention, follow, favourite, etc.
+	Channel          string `theorydb:"attr:channel" json:"channel"`                    // specific channel within method
+	Success          bool   `theorydb:"attr:success" json:"success"`
+	ErrorMessage     string `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
+	RetryCount       int    `theorydb:"attr:retryCount" json:"retry_count"`
 
 	// Cost breakdown (all in micro-cents for precision)
-	PushCostMicroCents      int64 `dynamorm:"attr:pushCostMicroCents" json:"push_cost_micro_cents"`
-	WebSocketCostMicroCents int64 `dynamorm:"attr:webSocketCostMicroCents" json:"websocket_cost_micro_cents"`
-	LambdaCostMicroCents    int64 `dynamorm:"attr:lambdaCostMicroCents" json:"lambda_cost_micro_cents"`
-	DynamoDBCostMicroCents  int64 `dynamorm:"attr:dynamoDBCostMicroCents" json:"dynamodb_cost_micro_cents"`
-	TotalCostMicroCents     int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	PushCostMicroCents      int64 `theorydb:"attr:pushCostMicroCents" json:"push_cost_micro_cents"`
+	WebSocketCostMicroCents int64 `theorydb:"attr:webSocketCostMicroCents" json:"websocket_cost_micro_cents"`
+	LambdaCostMicroCents    int64 `theorydb:"attr:lambdaCostMicroCents" json:"lambda_cost_micro_cents"`
+	DynamoDBCostMicroCents  int64 `theorydb:"attr:dynamoDBCostMicroCents" json:"dynamodb_cost_micro_cents"`
+	TotalCostMicroCents     int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
 	// Cost breakdown in dollars (calculated from micro-cents)
-	PushCostDollars      float64 `dynamorm:"attr:pushCostDollars" json:"push_cost_dollars"`
-	WebSocketCostDollars float64 `dynamorm:"attr:webSocketCostDollars" json:"websocket_cost_dollars"`
-	LambdaCostDollars    float64 `dynamorm:"attr:lambdaCostDollars" json:"lambda_cost_dollars"`
-	DynamoDBCostDollars  float64 `dynamorm:"attr:dynamoDBCostDollars" json:"dynamodb_cost_dollars"`
-	TotalCostDollars     float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	PushCostDollars      float64 `theorydb:"attr:pushCostDollars" json:"push_cost_dollars"`
+	WebSocketCostDollars float64 `theorydb:"attr:webSocketCostDollars" json:"websocket_cost_dollars"`
+	LambdaCostDollars    float64 `theorydb:"attr:lambdaCostDollars" json:"lambda_cost_dollars"`
+	DynamoDBCostDollars  float64 `theorydb:"attr:dynamoDBCostDollars" json:"dynamodb_cost_dollars"`
+	TotalCostDollars     float64 `theorydb:"attr:totalCostDollars" json:"total_cost_dollars"`
 
 	// Performance metrics
-	ProcessingTimeMs int64 `dynamorm:"attr:processingTimeMs" json:"processing_time_ms"`
-	DeliveryTimeMs   int64 `dynamorm:"attr:deliveryTimeMs" json:"delivery_time_ms"`
-	TotalTimeMs      int64 `dynamorm:"attr:totalTimeMs" json:"total_time_ms"`
-	ResponseCode     int   `dynamorm:"attr:responseCode" json:"response_code,omitempty"`
-	ResponseSize     int64 `dynamorm:"attr:responseSize" json:"response_size,omitempty"`
+	ProcessingTimeMs int64 `theorydb:"attr:processingTimeMs" json:"processing_time_ms"`
+	DeliveryTimeMs   int64 `theorydb:"attr:deliveryTimeMs" json:"delivery_time_ms"`
+	TotalTimeMs      int64 `theorydb:"attr:totalTimeMs" json:"total_time_ms"`
+	ResponseCode     int   `theorydb:"attr:responseCode" json:"response_code,omitempty"`
+	ResponseSize     int64 `theorydb:"attr:responseSize" json:"response_size,omitempty"`
 
 	// Context and metadata
-	RequestID          string                 `dynamorm:"attr:requestID" json:"request_id"`
-	ServiceName        string                 `dynamorm:"attr:serviceName" json:"service_name"` // notification-processor
-	LambdaFunctionName string                 `dynamorm:"attr:lambdaFunctionName" json:"lambda_function_name"`
-	LambdaRequestID    string                 `dynamorm:"attr:lambdaRequestID" json:"lambda_request_id"`
-	Properties         map[string]interface{} `dynamorm:"attr:properties" json:"properties,omitempty"` // Additional metadata
-	Tags               map[string]string      `dynamorm:"attr:tags" json:"tags,omitempty"`             // User-defined tags
+	RequestID          string                 `theorydb:"attr:requestID" json:"request_id"`
+	ServiceName        string                 `theorydb:"attr:serviceName" json:"service_name"` // notification-processor
+	LambdaFunctionName string                 `theorydb:"attr:lambdaFunctionName" json:"lambda_function_name"`
+	LambdaRequestID    string                 `theorydb:"attr:lambdaRequestID" json:"lambda_request_id"`
+	Properties         map[string]interface{} `theorydb:"attr:properties" json:"properties,omitempty"` // Additional metadata
+	Tags               map[string]string      `theorydb:"attr:tags" json:"tags,omitempty"`             // User-defined tags
 
 	// Timestamps
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing NotificationCostTracking.
@@ -195,56 +195,56 @@ func (n *NotificationCostTracking) SetSuccess() {
 
 // NotificationCostAggregation aggregates notification costs by period
 type NotificationCostAggregation struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "NOTIF_AGG#{period}#{delivery_method}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "WINDOW#{windowStart}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "NOTIF_AGG#{period}#{delivery_method}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "WINDOW#{windowStart}"
 
 	// Aggregation details
-	Period         string    `dynamorm:"attr:period" json:"period"`                  // daily, hourly, weekly, monthly
-	DeliveryMethod string    `dynamorm:"attr:deliveryMethod" json:"delivery_method"` // push, websocket, all
-	WindowStart    time.Time `dynamorm:"attr:windowStart" json:"window_start"`
-	WindowEnd      time.Time `dynamorm:"attr:windowEnd" json:"window_end"`
+	Period         string    `theorydb:"attr:period" json:"period"`                  // daily, hourly, weekly, monthly
+	DeliveryMethod string    `theorydb:"attr:deliveryMethod" json:"delivery_method"` // push, websocket, all
+	WindowStart    time.Time `theorydb:"attr:windowStart" json:"window_start"`
+	WindowEnd      time.Time `theorydb:"attr:windowEnd" json:"window_end"`
 
 	// Aggregate statistics
-	TotalNotifications   int64 `dynamorm:"attr:totalNotifications" json:"total_notifications"`
-	SuccessfulDeliveries int64 `dynamorm:"attr:successfulDeliveries" json:"successful_deliveries"`
-	FailedDeliveries     int64 `dynamorm:"attr:failedDeliveries" json:"failed_deliveries"`
-	TotalRetries         int64 `dynamorm:"attr:totalRetries" json:"total_retries"`
+	TotalNotifications   int64 `theorydb:"attr:totalNotifications" json:"total_notifications"`
+	SuccessfulDeliveries int64 `theorydb:"attr:successfulDeliveries" json:"successful_deliveries"`
+	FailedDeliveries     int64 `theorydb:"attr:failedDeliveries" json:"failed_deliveries"`
+	TotalRetries         int64 `theorydb:"attr:totalRetries" json:"total_retries"`
 
 	// Cost aggregations (micro-cents)
-	TotalPushCostMicroCents      int64 `dynamorm:"attr:totalPushCostMicroCents" json:"total_push_cost_micro_cents"`
-	TotalWebSocketCostMicroCents int64 `dynamorm:"attr:totalWebSocketCostMicroCents" json:"total_websocket_cost_micro_cents"`
-	TotalLambdaCostMicroCents    int64 `dynamorm:"attr:totalLambdaCostMicroCents" json:"total_lambda_cost_micro_cents"`
-	TotalDynamoDBCostMicroCents  int64 `dynamorm:"attr:totalDynamoDBCostMicroCents" json:"total_dynamodb_cost_micro_cents"`
-	TotalCostMicroCents          int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalPushCostMicroCents      int64 `theorydb:"attr:totalPushCostMicroCents" json:"total_push_cost_micro_cents"`
+	TotalWebSocketCostMicroCents int64 `theorydb:"attr:totalWebSocketCostMicroCents" json:"total_websocket_cost_micro_cents"`
+	TotalLambdaCostMicroCents    int64 `theorydb:"attr:totalLambdaCostMicroCents" json:"total_lambda_cost_micro_cents"`
+	TotalDynamoDBCostMicroCents  int64 `theorydb:"attr:totalDynamoDBCostMicroCents" json:"total_dynamodb_cost_micro_cents"`
+	TotalCostMicroCents          int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
 	// Cost aggregations (dollars)
-	TotalPushCostDollars      float64 `dynamorm:"attr:totalPushCostDollars" json:"total_push_cost_dollars"`
-	TotalWebSocketCostDollars float64 `dynamorm:"attr:totalWebSocketCostDollars" json:"total_websocket_cost_dollars"`
-	TotalLambdaCostDollars    float64 `dynamorm:"attr:totalLambdaCostDollars" json:"total_lambda_cost_dollars"`
-	TotalDynamoDBCostDollars  float64 `dynamorm:"attr:totalDynamoDBCostDollars" json:"total_dynamodb_cost_dollars"`
-	TotalCostDollars          float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	TotalPushCostDollars      float64 `theorydb:"attr:totalPushCostDollars" json:"total_push_cost_dollars"`
+	TotalWebSocketCostDollars float64 `theorydb:"attr:totalWebSocketCostDollars" json:"total_websocket_cost_dollars"`
+	TotalLambdaCostDollars    float64 `theorydb:"attr:totalLambdaCostDollars" json:"total_lambda_cost_dollars"`
+	TotalDynamoDBCostDollars  float64 `theorydb:"attr:totalDynamoDBCostDollars" json:"total_dynamodb_cost_dollars"`
+	TotalCostDollars          float64 `theorydb:"attr:totalCostDollars" json:"total_cost_dollars"`
 
 	// Performance metrics
-	AverageProcessingTimeMs float64 `dynamorm:"attr:averageProcessingTimeMs" json:"average_processing_time_ms"`
-	AverageDeliveryTimeMs   float64 `dynamorm:"attr:averageDeliveryTimeMs" json:"average_delivery_time_ms"`
-	AverageTotalTimeMs      float64 `dynamorm:"attr:averageTotalTimeMs" json:"average_total_time_ms"`
+	AverageProcessingTimeMs float64 `theorydb:"attr:averageProcessingTimeMs" json:"average_processing_time_ms"`
+	AverageDeliveryTimeMs   float64 `theorydb:"attr:averageDeliveryTimeMs" json:"average_delivery_time_ms"`
+	AverageTotalTimeMs      float64 `theorydb:"attr:averageTotalTimeMs" json:"average_total_time_ms"`
 
 	// Rate calculations
-	SuccessRate     float64 `dynamorm:"attr:successRate" json:"success_rate"`          // Percentage of successful deliveries
-	RetryRate       float64 `dynamorm:"attr:retryRate" json:"retry_rate"`              // Percentage requiring retries
-	CostPerDelivery float64 `dynamorm:"attr:costPerDelivery" json:"cost_per_delivery"` // Average cost per delivery attempt
+	SuccessRate     float64 `theorydb:"attr:successRate" json:"success_rate"`          // Percentage of successful deliveries
+	RetryRate       float64 `theorydb:"attr:retryRate" json:"retry_rate"`              // Percentage requiring retries
+	CostPerDelivery float64 `theorydb:"attr:costPerDelivery" json:"cost_per_delivery"` // Average cost per delivery attempt
 
 	// Breakdown by notification type
-	TypeBreakdown    map[string]*NotificationTypeCostStats    `dynamorm:"attr:typeBreakdown" json:"type_breakdown,omitempty"`
-	ChannelBreakdown map[string]*NotificationChannelCostStats `dynamorm:"attr:channelBreakdown" json:"channel_breakdown,omitempty"`
-	UserBreakdown    map[string]*NotificationUserCostStats    `dynamorm:"attr:userBreakdown" json:"user_breakdown,omitempty"`
+	TypeBreakdown    map[string]*NotificationTypeCostStats    `theorydb:"attr:typeBreakdown" json:"type_breakdown,omitempty"`
+	ChannelBreakdown map[string]*NotificationChannelCostStats `theorydb:"attr:channelBreakdown" json:"channel_breakdown,omitempty"`
+	UserBreakdown    map[string]*NotificationUserCostStats    `theorydb:"attr:userBreakdown" json:"user_breakdown,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing NotificationCostAggregation.
@@ -370,46 +370,46 @@ func (NotificationUserCostStats) TableName() string {
 
 // NotificationBudget represents a budget limit for notification sending per user
 type NotificationBudget struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "NOTIF_BUDGET#{username}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PERIOD#{period}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "NOTIF_BUDGET#{username}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "PERIOD#{period}"
 
 	// Budget details
-	Username            string  `dynamorm:"attr:username" json:"username"`
-	Period              string  `dynamorm:"attr:period" json:"period"`                             // daily, weekly, monthly
-	LimitMicroCents     int64   `dynamorm:"attr:limitMicroCents" json:"limit_micro_cents"`         // Budget limit in micro-cents
-	LimitDollars        float64 `dynamorm:"attr:limitDollars" json:"limit_dollars"`                // Budget limit in dollars
-	SpentMicroCents     int64   `dynamorm:"attr:spentMicroCents" json:"spent_micro_cents"`         // Amount spent in current period
-	SpentDollars        float64 `dynamorm:"attr:spentDollars" json:"spent_dollars"`                // Amount spent in dollars
-	RemainingMicroCents int64   `dynamorm:"attr:remainingMicroCents" json:"remaining_micro_cents"` // Remaining budget
-	RemainingDollars    float64 `dynamorm:"attr:remainingDollars" json:"remaining_dollars"`        // Remaining budget in dollars
+	Username            string  `theorydb:"attr:username" json:"username"`
+	Period              string  `theorydb:"attr:period" json:"period"`                             // daily, weekly, monthly
+	LimitMicroCents     int64   `theorydb:"attr:limitMicroCents" json:"limit_micro_cents"`         // Budget limit in micro-cents
+	LimitDollars        float64 `theorydb:"attr:limitDollars" json:"limit_dollars"`                // Budget limit in dollars
+	SpentMicroCents     int64   `theorydb:"attr:spentMicroCents" json:"spent_micro_cents"`         // Amount spent in current period
+	SpentDollars        float64 `theorydb:"attr:spentDollars" json:"spent_dollars"`                // Amount spent in dollars
+	RemainingMicroCents int64   `theorydb:"attr:remainingMicroCents" json:"remaining_micro_cents"` // Remaining budget
+	RemainingDollars    float64 `theorydb:"attr:remainingDollars" json:"remaining_dollars"`        // Remaining budget in dollars
 
 	// Period tracking
-	PeriodStart   time.Time `dynamorm:"attr:periodStart" json:"period_start"`
-	PeriodEnd     time.Time `dynamorm:"attr:periodEnd" json:"period_end"`
-	NextResetTime time.Time `dynamorm:"attr:nextResetTime" json:"next_reset_time"`
+	PeriodStart   time.Time `theorydb:"attr:periodStart" json:"period_start"`
+	PeriodEnd     time.Time `theorydb:"attr:periodEnd" json:"period_end"`
+	NextResetTime time.Time `theorydb:"attr:nextResetTime" json:"next_reset_time"`
 
 	// Notification limits
-	MaxNotificationsPerPeriod   int64 `dynamorm:"attr:maxNotificationsPerPeriod" json:"max_notifications_per_period,omitempty"`
-	NotificationsSentThisPeriod int64 `dynamorm:"attr:notificationsSentThisPeriod" json:"notifications_sent_this_period"`
+	MaxNotificationsPerPeriod   int64 `theorydb:"attr:maxNotificationsPerPeriod" json:"max_notifications_per_period,omitempty"`
+	NotificationsSentThisPeriod int64 `theorydb:"attr:notificationsSentThisPeriod" json:"notifications_sent_this_period"`
 
 	// Enforcement settings
-	Enabled                bool     `dynamorm:"attr:enabled" json:"enabled"`                                           // Whether budget is actively enforced
-	SendWarningAt          float64  `dynamorm:"attr:sendWarningAt" json:"send_warning_at"`                             // Send warning at X% of budget
-	BlockDeliveryAt        float64  `dynamorm:"attr:blockDeliveryAt" json:"block_delivery_at"`                         // Block delivery at X% of budget
-	AllowedDeliveryMethods []string `dynamorm:"attr:allowedDeliveryMethods" json:"allowed_delivery_methods,omitempty"` // Restrict to specific methods
+	Enabled                bool     `theorydb:"attr:enabled" json:"enabled"`                                           // Whether budget is actively enforced
+	SendWarningAt          float64  `theorydb:"attr:sendWarningAt" json:"send_warning_at"`                             // Send warning at X% of budget
+	BlockDeliveryAt        float64  `theorydb:"attr:blockDeliveryAt" json:"block_delivery_at"`                         // Block delivery at X% of budget
+	AllowedDeliveryMethods []string `theorydb:"attr:allowedDeliveryMethods" json:"allowed_delivery_methods,omitempty"` // Restrict to specific methods
 
 	// Status
-	BudgetExceeded   bool      `dynamorm:"attr:budgetExceeded" json:"budget_exceeded"`
-	WarningsSent     int       `dynamorm:"attr:warningsSent" json:"warnings_sent"`
-	LastWarningTime  time.Time `dynamorm:"attr:lastWarningTime" json:"last_warning_time,omitempty"`
-	LastExceededTime time.Time `dynamorm:"attr:lastExceededTime" json:"last_exceeded_time,omitempty"`
+	BudgetExceeded   bool      `theorydb:"attr:budgetExceeded" json:"budget_exceeded"`
+	WarningsSent     int       `theorydb:"attr:warningsSent" json:"warnings_sent"`
+	LastWarningTime  time.Time `theorydb:"attr:lastWarningTime" json:"last_warning_time,omitempty"`
+	LastExceededTime time.Time `theorydb:"attr:lastExceededTime" json:"last_exceeded_time,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing NotificationBudget.

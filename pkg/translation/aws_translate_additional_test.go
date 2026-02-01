@@ -311,8 +311,12 @@ func TestService_DetectLanguage_UsesTranslateAutoDetection(t *testing.T) {
 	}
 
 	svc := &Service{
-		client:       client,
-		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) { return &dynamodb.GetItemOutput{}, nil }, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) { return &dynamodb.PutItemOutput{}, nil }},
+		client: client,
+		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{}, nil
+		}, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return &dynamodb.PutItemOutput{}, nil
+		}},
 		tableName:    "tbl",
 		logger:       zap.NewNop(),
 		cacheEnabled: false,
@@ -342,8 +346,12 @@ func TestService_TranslateHTML_StripsTagsBeforeTranslation(t *testing.T) {
 	}
 
 	svc := &Service{
-		client:       client,
-		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) { return &dynamodb.GetItemOutput{}, nil }, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) { return &dynamodb.PutItemOutput{}, nil }},
+		client: client,
+		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{}, nil
+		}, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return &dynamodb.PutItemOutput{}, nil
+		}},
 		tableName:    "tbl",
 		logger:       zap.NewNop(),
 		cacheEnabled: false,
@@ -369,8 +377,12 @@ func TestService_TranslateText_TranslateErrorSurfaces(t *testing.T) {
 	}
 
 	svc := &Service{
-		client:       client,
-		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) { return &dynamodb.GetItemOutput{}, nil }, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) { return &dynamodb.PutItemOutput{}, nil }},
+		client: client,
+		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{}, nil
+		}, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return &dynamodb.PutItemOutput{}, nil
+		}},
 		tableName:    "tbl",
 		logger:       zap.NewNop(),
 		cacheEnabled: false,
@@ -395,8 +407,12 @@ func TestService_GetSupportedLanguages_ListErrorSurfaces(t *testing.T) {
 	}
 
 	svc := &Service{
-		client:       client,
-		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) { return &dynamodb.GetItemOutput{}, nil }, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) { return &dynamodb.PutItemOutput{}, nil }},
+		client: client,
+		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{}, nil
+		}, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return &dynamodb.PutItemOutput{}, nil
+		}},
 		tableName:    "tbl",
 		logger:       zap.NewNop(),
 		cacheEnabled: false,
@@ -420,8 +436,12 @@ func TestService_DetectLanguage_ErrorSurfaces(t *testing.T) {
 	}
 
 	svc := &Service{
-		client:       client,
-		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) { return &dynamodb.GetItemOutput{}, nil }, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) { return &dynamodb.PutItemOutput{}, nil }},
+		client: client,
+		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{}, nil
+		}, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return &dynamodb.PutItemOutput{}, nil
+		}},
 		tableName:    "tbl",
 		logger:       zap.NewNop(),
 		cacheEnabled: false,
@@ -445,8 +465,12 @@ func TestService_TranslateHTML_PropagatesTranslateError(t *testing.T) {
 	}
 
 	svc := &Service{
-		client:       client,
-		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) { return &dynamodb.GetItemOutput{}, nil }, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) { return &dynamodb.PutItemOutput{}, nil }},
+		client: client,
+		dynamoClient: &fakeDynamo{getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{}, nil
+		}, putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return &dynamodb.PutItemOutput{}, nil
+		}},
 		tableName:    "tbl",
 		logger:       zap.NewNop(),
 		cacheEnabled: false,
@@ -491,7 +515,11 @@ func TestService_CacheReadErrorsSurfaceFromHelpers(t *testing.T) {
 	}
 
 	svc := &Service{
-		client:       &fakeTranslate{translateFn: func(_ context.Context, _ *translate.TranslateTextInput) (*translate.TranslateTextOutput, error) { return &translate.TranslateTextOutput{}, nil }, listFn: func(_ context.Context, _ *translate.ListLanguagesInput) (*translate.ListLanguagesOutput, error) { return &translate.ListLanguagesOutput{}, nil }},
+		client: &fakeTranslate{translateFn: func(_ context.Context, _ *translate.TranslateTextInput) (*translate.TranslateTextOutput, error) {
+			return &translate.TranslateTextOutput{}, nil
+		}, listFn: func(_ context.Context, _ *translate.ListLanguagesInput) (*translate.ListLanguagesOutput, error) {
+			return &translate.ListLanguagesOutput{}, nil
+		}},
 		dynamoClient: dynamo,
 		tableName:    "tbl",
 		logger:       zap.NewNop(),

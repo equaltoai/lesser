@@ -38,4 +38,3 @@ func TestEnsureToolsAvailable_PropagatesError(t *testing.T) {
 
 	require.ErrorContains(t, ensureToolsAvailable(), "missing")
 }
-

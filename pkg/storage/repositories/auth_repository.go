@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -426,8 +426,8 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 
 	// Query using the index model
 	type IndexRecord struct {
-		PK       string `dynamorm:"pk"`
-		SK       string `dynamorm:"sk"`
+		PK       string `theorydb:"pk"`
+		SK       string `theorydb:"sk"`
 		Type     string `json:"Type"`
 		Username string `json:"Username"`
 	}
@@ -561,8 +561,8 @@ func (r *AuthRepository) DeleteWalletCredential(ctx context.Context, username, a
 
 		// Delete using the index model
 		type IndexRecord struct {
-			PK string `dynamorm:"pk"`
-			SK string `dynamorm:"sk"`
+			PK string `theorydb:"pk"`
+			SK string `theorydb:"sk"`
 		}
 		_ = r.db.WithContext(ctx).Model(&IndexRecord{}).
 			Where("PK", "=", reverseIndexPK).

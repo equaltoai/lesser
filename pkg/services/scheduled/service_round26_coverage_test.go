@@ -638,4 +638,3 @@ func TestService_GetScheduledMediaAttachments_round26_coverage(t *testing.T) {
 		assert.Equal(t, "m1", items[0].MediaID)
 	})
 }
-

@@ -52,7 +52,6 @@ func (r *EmojiRepository) GetCustomEmoji(_ context.Context, shortcode string) (*
 	return emoji, nil
 }
 
-
 // GetCustomEmojis retrieves all custom emojis (not disabled)
 func (r *EmojiRepository) GetCustomEmojis(_ context.Context) ([]*storage.CustomEmoji, error) {
 	r.mu.RLock()

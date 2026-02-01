@@ -41,4 +41,3 @@ func TestSessionLifecycleManager_CleanupAndRevokeAllUserSessionsWithReason(t *te
 	slmErr := NewSessionLifecycleManager(sessionManagerErr, securityManager, nil, zap.NewNop(), nil)
 	require.Error(t, slmErr.RevokeAllUserSessionsWithReason(context.Background(), "alice", "logout_all"))
 }
-

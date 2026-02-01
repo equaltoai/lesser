@@ -15,11 +15,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/marshalers"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -44,9 +44,9 @@ type AccountRepository struct {
 
 type userVersionProjection struct {
 	Table string `json:"-"`
-	PK    string `dynamorm:"pk"`
-	SK    string `dynamorm:"sk"`
-	Value int    `dynamorm:"version"`
+	PK    string `theorydb:"pk"`
+	SK    string `theorydb:"sk"`
+	Value int    `theorydb:"version"`
 }
 
 func (p userVersionProjection) TableName() string {

@@ -12,15 +12,15 @@ func TestEnhancedPatterns_UpdateKeys_AndMetrics(t *testing.T) {
 	t.Run("EnhancedModerationPattern UpdateKeys sets GSIs and TTL (active)", func(t *testing.T) {
 		now := time.Unix(1700000000, 0).UTC()
 		p := &EnhancedModerationPattern{
-			PatternID:   "p1",
-			PatternType: "url_exact",
-			Category:    "spam",
-			Severity:    "high",
-			Priority:    7,
-			Active:      true,
-			MatchCount:  12,
+			PatternID:     "p1",
+			PatternType:   "url_exact",
+			Category:      "spam",
+			Severity:      "high",
+			Priority:      7,
+			Active:        true,
+			MatchCount:    12,
 			Effectiveness: 0.875,
-			UpdatedAt:   now,
+			UpdatedAt:     now,
 		}
 
 		before := time.Now()
@@ -126,11 +126,11 @@ func TestEnhancedPatterns_UpdateKeys_AndMetrics(t *testing.T) {
 
 	t.Run("PatternPerformanceMetric UpdateKeys and CalculateQualityMetrics", func(t *testing.T) {
 		m := &PatternPerformanceMetric{
-			PatternID:     "p1",
-			PatternType:   "url_exact",
-			Date:          "2024-01-01",
-			Hour:          3,
-			TruePositives: 8,
+			PatternID:      "p1",
+			PatternType:    "url_exact",
+			Date:           "2024-01-01",
+			Hour:           3,
+			TruePositives:  8,
 			FalsePositives: 2,
 		}
 		before := time.Now()
@@ -187,4 +187,3 @@ func TestEnhancedPatterns_UpdateKeys_AndMetrics(t *testing.T) {
 		assert.Equal(t, tr.SK, tr.GetSK())
 	})
 }
-

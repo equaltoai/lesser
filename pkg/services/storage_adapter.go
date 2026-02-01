@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -504,8 +504,8 @@ func (r *repositoryStorageAdapter) checkDatabaseHealth(ctx context.Context) ([]*
 	// Test database connectivity with a simple health check query
 	start := time.Now()
 	var healthCheck struct {
-		PK string `dynamorm:"pk"`
-		SK string `dynamorm:"sk"`
+		PK string `theorydb:"pk"`
+		SK string `theorydb:"sk"`
 	}
 
 	if db == nil {

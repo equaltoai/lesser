@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/config"
-	dynamormtesting "github.com/pay-theory/dynamorm/pkg/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormtesting "github.com/theory-cloud/tabletheory/pkg/testing"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -238,4 +238,3 @@ func TestWebhookDeliveryService_SendToDeadLetterQueue_NoRepoNoop(t *testing.T) {
 	svc := &WebhookDeliveryService{logger: logger, deadLetterRepo: nil}
 	require.NoError(t, svc.sendToDeadLetterQueue(context.Background(), &models.WebhookDelivery{DeliveryID: "d"}, &models.Alert{AlertID: "a"}, errors.New("boom")))
 }
-

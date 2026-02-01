@@ -9,8 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	pkgtypes "github.com/pay-theory/dynamorm/pkg/types"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
 )
 
 var contextValueType = reflect.TypeOf(activitypub.ContextValue{})

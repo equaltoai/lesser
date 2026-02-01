@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 

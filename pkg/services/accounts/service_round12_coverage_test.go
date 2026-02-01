@@ -103,16 +103,16 @@ func TestService_validateUpdatePreferencesCommand_InvalidValues(t *testing.T) {
 	assert.Error(t, err)
 
 	err = svc.validateUpdatePreferencesCommand(context.Background(), &UpdatePreferencesCommand{
-		Username:   "alice",
-		UpdaterID:  "alice",
+		Username:    "alice",
+		UpdaterID:   "alice",
 		ExpandMedia: "nope",
 	})
 	assert.ErrorIs(t, err, ErrInvalidExpandMediaSetting)
 
 	err = svc.validateUpdatePreferencesCommand(context.Background(), &UpdatePreferencesCommand{
-		Username:                "alice",
-		UpdaterID:               "alice",
-		PreferredTimelineOrder:  "nope",
+		Username:               "alice",
+		UpdaterID:              "alice",
+		PreferredTimelineOrder: "nope",
 	})
 	assert.ErrorIs(t, err, ErrInvalidTimelineOrder)
 }
@@ -294,4 +294,3 @@ func TestService_isValidPostingVisibility(t *testing.T) {
 	assert.True(t, isValidPostingVisibility(models.VisibilityDirect))
 	assert.False(t, isValidPostingVisibility("nope"))
 }
-

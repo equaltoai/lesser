@@ -19,9 +19,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -474,7 +474,7 @@ func (s *repoStorageStub) Recovery() *repositories.RecoveryRepository           
 func (s *repoStorageStub) Analytics() *repositories.TrendingRepository                  { return nil }
 func (s *repoStorageStub) Social() *repositories.SocialRepository                       { return nil }
 func (s *repoStorageStub) User() interfaces.UserRepository                              { return nil }
-func (s *repoStorageStub) Status() interfaces.StatusRepository                       { return nil }
+func (s *repoStorageStub) Status() interfaces.StatusRepository                          { return nil }
 func (s *repoStorageStub) Cost() *repositories.TrackingRepository                       { return nil }
 func (s *repoStorageStub) WebSocketCost() *repositories.WebSocketCostRepository         { return nil }
 func (s *repoStorageStub) Trust() interfaces.TrustRepository                            { return nil }
@@ -495,17 +495,17 @@ func (s *repoStorageStub) CloudWatchMetrics() *repositories.CloudWatchMetricsRep
 func (s *repoStorageStub) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
 	return nil
 }
-func (s *repoStorageStub) Audit() *repositories.AuditRepository                     { return nil }
-func (s *repoStorageStub) OAuth() *repositories.OAuthRepository                     { return nil }
-func (s *repoStorageStub) DNSCache() *repositories.DNSCacheRepository               { return nil }
-func (s *repoStorageStub) Filter() *repositories.FilterRepository                   { return nil }
-func (s *repoStorageStub) Thread() *repositories.ThreadRepository                   { return nil }
-func (s *repoStorageStub) Severance() *repositories.SeveranceRepository             { return nil }
-func (s *repoStorageStub) ModerationML() *repositories.ModerationMLRepository       { return nil }
-func (s *repoStorageStub) Quote() *repositories.QuoteRepository                     { return nil }
-func (s *repoStorageStub) MediaAnalytics() interfaces.MediaAnalyticsRepository     { return nil }
-func (s *repoStorageStub) MediaPopularity() interfaces.MediaPopularityRepository   { return nil }
-func (s *repoStorageStub) MediaSession() interfaces.MediaSessionRepository         { return nil }
+func (s *repoStorageStub) Audit() *repositories.AuditRepository                  { return nil }
+func (s *repoStorageStub) OAuth() *repositories.OAuthRepository                  { return nil }
+func (s *repoStorageStub) DNSCache() *repositories.DNSCacheRepository            { return nil }
+func (s *repoStorageStub) Filter() *repositories.FilterRepository                { return nil }
+func (s *repoStorageStub) Thread() *repositories.ThreadRepository                { return nil }
+func (s *repoStorageStub) Severance() *repositories.SeveranceRepository          { return nil }
+func (s *repoStorageStub) ModerationML() *repositories.ModerationMLRepository    { return nil }
+func (s *repoStorageStub) Quote() *repositories.QuoteRepository                  { return nil }
+func (s *repoStorageStub) MediaAnalytics() interfaces.MediaAnalyticsRepository   { return nil }
+func (s *repoStorageStub) MediaPopularity() interfaces.MediaPopularityRepository { return nil }
+func (s *repoStorageStub) MediaSession() interfaces.MediaSessionRepository       { return nil }
 func (s *repoStorageStub) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }

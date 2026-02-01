@@ -12,9 +12,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
 func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {

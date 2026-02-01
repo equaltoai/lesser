@@ -9,17 +9,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pay-theory/dynamorm"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory"
 	"go.uber.org/zap"
 )
 
 type csrfStoreAlwaysErr struct{ err error }
 
-func (s csrfStoreAlwaysErr) Store(string, CSRFToken) error      { return s.err }
-func (s csrfStoreAlwaysErr) Get(string) (*CSRFToken, error)     { return nil, s.err }
-func (s csrfStoreAlwaysErr) Delete(string) error                { return s.err }
-func (s csrfStoreAlwaysErr) CleanExpired() error                { return s.err }
+func (s csrfStoreAlwaysErr) Store(string, CSRFToken) error  { return s.err }
+func (s csrfStoreAlwaysErr) Get(string) (*CSRFToken, error) { return nil, s.err }
+func (s csrfStoreAlwaysErr) Delete(string) error            { return s.err }
+func (s csrfStoreAlwaysErr) CleanExpired() error            { return s.err }
 
 func TestGenerateCSRFTokenHandler_UnauthorizedAndSuccessAndError(t *testing.T) {
 	t.Parallel()
@@ -113,8 +113,7 @@ func TestCSRFMiddleware_AdditionalBranches(t *testing.T) {
 func TestNewCSRFManagerWithDynamORM_ConstructsManager(t *testing.T) {
 	t.Parallel()
 
-	manager := NewCSRFManagerWithDynamORM(&dynamorm.DB{}, "test-table", zap.NewNop())
+	manager := NewCSRFManagerWithDynamORM(&tabletheory.DB{}, "test-table", zap.NewNop())
 	require.NotNil(t, manager)
 	require.NotNil(t, manager.store)
 }
-

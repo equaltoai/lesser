@@ -27,17 +27,17 @@ func TestAddressingValidator_ValidateRecipient(t *testing.T) {
 		assert.ErrorIs(t, err, ErrInvalidRecipientURL)
 	})
 
-		t.Run("invalid scheme", func(t *testing.T) {
-			// url.Parse treats many strings as URLs with custom schemes, so test both an unknown scheme
-			// and a well-formed but disallowed scheme.
-			err := v.validateRecipient("not-a-url", "to")
-			require.Error(t, err)
-			assert.ErrorIs(t, err, ErrInvalidURLScheme)
+	t.Run("invalid scheme", func(t *testing.T) {
+		// url.Parse treats many strings as URLs with custom schemes, so test both an unknown scheme
+		// and a well-formed but disallowed scheme.
+		err := v.validateRecipient("not-a-url", "to")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidURLScheme)
 
-			err = v.validateRecipient("ftp://example.com/users/alice", "to")
-			require.Error(t, err)
-			assert.ErrorIs(t, err, ErrInvalidURLScheme)
-		})
+		err = v.validateRecipient("ftp://example.com/users/alice", "to")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidURLScheme)
+	})
 
 	t.Run("invalid recipient format", func(t *testing.T) {
 		err := v.validateRecipient("https://example.com/not-a-user", "to")

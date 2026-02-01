@@ -9,62 +9,62 @@ import (
 
 // SearchCostTracking tracks costs for search operations
 type SearchCostTracking struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK   string `dynamorm:"pk,attr:PK"`            // SEARCH_COST#date#user_id
-	SK   string `dynamorm:"sk,attr:SK"`            // OPERATION#timestamp#operation_type
-	Type string `dynamorm:"attr:type" json:"type"` // Always "SearchCostTracking"
+	PK   string `theorydb:"pk,attr:PK"`            // SEARCH_COST#date#user_id
+	SK   string `theorydb:"sk,attr:SK"`            // OPERATION#timestamp#operation_type
+	Type string `theorydb:"attr:type" json:"type"` // Always "SearchCostTracking"
 
 	// Core identifiers
-	UserID        string `dynamorm:"attr:userID" json:"user_id"`
-	RequestID     string `dynamorm:"attr:requestID" json:"request_id"`
-	OperationType string `dynamorm:"attr:operationType" json:"operation_type"` // text_search, hashtag_search, user_search, semantic_search, search_suggestions, search_indexing
+	UserID        string `theorydb:"attr:userID" json:"user_id"`
+	RequestID     string `theorydb:"attr:requestID" json:"request_id"`
+	OperationType string `theorydb:"attr:operationType" json:"operation_type"` // text_search, hashtag_search, user_search, semantic_search, search_suggestions, search_indexing
 
 	// Search-specific details
-	Query           string  `dynamorm:"attr:query" json:"query"`
-	SearchType      string  `dynamorm:"attr:searchType" json:"search_type"`           // accounts, statuses, hashtags, all, suggestions, semantic
-	ResultCount     int     `dynamorm:"attr:resultCount" json:"result_count"`         // Number of results returned
-	QueryLength     int     `dynamorm:"attr:queryLength" json:"query_length"`         // Length of search query
-	CacheHit        bool    `dynamorm:"attr:cacheHit" json:"cache_hit"`               // Whether result was cached
-	QueryComplexity float64 `dynamorm:"attr:queryComplexity" json:"query_complexity"` // Complexity score for the query
+	Query           string  `theorydb:"attr:query" json:"query"`
+	SearchType      string  `theorydb:"attr:searchType" json:"search_type"`           // accounts, statuses, hashtags, all, suggestions, semantic
+	ResultCount     int     `theorydb:"attr:resultCount" json:"result_count"`         // Number of results returned
+	QueryLength     int     `theorydb:"attr:queryLength" json:"query_length"`         // Length of search query
+	CacheHit        bool    `theorydb:"attr:cacheHit" json:"cache_hit"`               // Whether result was cached
+	QueryComplexity float64 `theorydb:"attr:queryComplexity" json:"query_complexity"` // Complexity score for the query
 
 	// DynamoDB costs
-	DynamoReads    int64 `dynamorm:"attr:dynamoReads" json:"dynamo_reads"`       // Read capacity units consumed
-	DynamoWrites   int64 `dynamorm:"attr:dynamoWrites" json:"dynamo_writes"`     // Write capacity units consumed
-	DynamoQueries  int   `dynamorm:"attr:dynamoQueries" json:"dynamo_queries"`   // Number of DynamoDB queries executed
-	GSIQueries     int   `dynamorm:"attr:gsiQueries" json:"gsi_queries"`         // Number of GSI queries executed
-	ScanOperations int   `dynamorm:"attr:scanOperations" json:"scan_operations"` // Number of scan operations
+	DynamoReads    int64 `theorydb:"attr:dynamoReads" json:"dynamo_reads"`       // Read capacity units consumed
+	DynamoWrites   int64 `theorydb:"attr:dynamoWrites" json:"dynamo_writes"`     // Write capacity units consumed
+	DynamoQueries  int   `theorydb:"attr:dynamoQueries" json:"dynamo_queries"`   // Number of DynamoDB queries executed
+	GSIQueries     int   `theorydb:"attr:gsiQueries" json:"gsi_queries"`         // Number of GSI queries executed
+	ScanOperations int   `theorydb:"attr:scanOperations" json:"scan_operations"` // Number of scan operations
 
 	// Bedrock/AI costs (for semantic search)
-	BedrockRequests    int   `dynamorm:"attr:bedrockRequests" json:"bedrock_requests"`       // Number of Bedrock API calls
-	EmbeddingTokens    int   `dynamorm:"attr:embeddingTokens" json:"embedding_tokens"`       // Tokens used for embedding generation
-	EmbeddingDimension int   `dynamorm:"attr:embeddingDimension" json:"embedding_dimension"` // Dimension of embeddings
-	VectorComparisons  int   `dynamorm:"attr:vectorComparisons" json:"vector_comparisons"`   // Number of vector similarity comparisons
-	BedrockCostMicros  int64 `dynamorm:"attr:bedrockCostMicros" json:"bedrock_cost_micros"`  // Bedrock cost in microcents
+	BedrockRequests    int   `theorydb:"attr:bedrockRequests" json:"bedrock_requests"`       // Number of Bedrock API calls
+	EmbeddingTokens    int   `theorydb:"attr:embeddingTokens" json:"embedding_tokens"`       // Tokens used for embedding generation
+	EmbeddingDimension int   `theorydb:"attr:embeddingDimension" json:"embedding_dimension"` // Dimension of embeddings
+	VectorComparisons  int   `theorydb:"attr:vectorComparisons" json:"vector_comparisons"`   // Number of vector similarity comparisons
+	BedrockCostMicros  int64 `theorydb:"attr:bedrockCostMicros" json:"bedrock_cost_micros"`  // Bedrock cost in microcents
 
 	// Lambda execution costs
-	LambdaDurationMs int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"` // Lambda execution time
-	LambdaMemoryMB   int64 `dynamorm:"attr:lambdaMemoryMB" json:"lambda_memory_mb"`     // Lambda memory allocation
+	LambdaDurationMs int64 `theorydb:"attr:lambdaDurationMs" json:"lambda_duration_ms"` // Lambda execution time
+	LambdaMemoryMB   int64 `theorydb:"attr:lambdaMemoryMB" json:"lambda_memory_mb"`     // Lambda memory allocation
 
 	// Search performance metrics
-	ResponseTimeMs    int64 `dynamorm:"attr:responseTimeMs" json:"response_time_ms"`        // Total response time
-	IndexLookupTimeMs int64 `dynamorm:"attr:indexLookupTimeMs" json:"index_lookup_time_ms"` // Time spent on index lookups
-	FilteringTimeMs   int64 `dynamorm:"attr:filteringTimeMs" json:"filtering_time_ms"`      // Time spent filtering results
-	RankingTimeMs     int64 `dynamorm:"attr:rankingTimeMs" json:"ranking_time_ms"`          // Time spent ranking/sorting results
+	ResponseTimeMs    int64 `theorydb:"attr:responseTimeMs" json:"response_time_ms"`        // Total response time
+	IndexLookupTimeMs int64 `theorydb:"attr:indexLookupTimeMs" json:"index_lookup_time_ms"` // Time spent on index lookups
+	FilteringTimeMs   int64 `theorydb:"attr:filteringTimeMs" json:"filtering_time_ms"`      // Time spent filtering results
+	RankingTimeMs     int64 `theorydb:"attr:rankingTimeMs" json:"ranking_time_ms"`          // Time spent ranking/sorting results
 
 	// Cost calculations
-	TotalCostMicros  int64 `dynamorm:"attr:totalCostMicros" json:"total_cost_micros"`   // Total cost in microcents
-	DynamoCostMicros int64 `dynamorm:"attr:dynamoCostMicros" json:"dynamo_cost_micros"` // DynamoDB cost in microcents
-	LambdaCostMicros int64 `dynamorm:"attr:lambdaCostMicros" json:"lambda_cost_micros"` // Lambda cost in microcents
-	CostPerResult    int64 `dynamorm:"attr:costPerResult" json:"cost_per_result"`       // Cost per result in microcents
-	EstimatedSavings int64 `dynamorm:"attr:estimatedSavings" json:"estimated_savings"`  // Savings from caching in microcents
+	TotalCostMicros  int64 `theorydb:"attr:totalCostMicros" json:"total_cost_micros"`   // Total cost in microcents
+	DynamoCostMicros int64 `theorydb:"attr:dynamoCostMicros" json:"dynamo_cost_micros"` // DynamoDB cost in microcents
+	LambdaCostMicros int64 `theorydb:"attr:lambdaCostMicros" json:"lambda_cost_micros"` // Lambda cost in microcents
+	CostPerResult    int64 `theorydb:"attr:costPerResult" json:"cost_per_result"`       // Cost per result in microcents
+	EstimatedSavings int64 `theorydb:"attr:estimatedSavings" json:"estimated_savings"`  // Savings from caching in microcents
 
 	// Timestamps
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	Date      string    `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD for aggregation
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	Date      string    `theorydb:"attr:date" json:"date"` // YYYY-MM-DD for aggregation
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl"`
 }
 
 // TableName returns the DynamoDB table backing SearchCostTracking.
@@ -111,44 +111,44 @@ func (sct *SearchCostTracking) GetSK() string {
 
 // SearchBudget tracks search budgets and limits per user
 type SearchBudget struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK   string `dynamorm:"pk,attr:PK"`            // SEARCH_BUDGET#user_id
-	SK   string `dynamorm:"sk,attr:SK"`            // PERIOD#date_period
-	Type string `dynamorm:"attr:type" json:"type"` // Always "SearchBudget"
+	PK   string `theorydb:"pk,attr:PK"`            // SEARCH_BUDGET#user_id
+	SK   string `theorydb:"sk,attr:SK"`            // PERIOD#date_period
+	Type string `theorydb:"attr:type" json:"type"` // Always "SearchBudget"
 
 	// Budget identifiers
-	UserID     string `dynamorm:"attr:userID" json:"user_id"`
-	Period     string `dynamorm:"attr:period" json:"period"`          // daily, monthly, yearly
-	PeriodDate string `dynamorm:"attr:periodDate" json:"period_date"` // 2024-01-15, 2024-01, 2024
+	UserID     string `theorydb:"attr:userID" json:"user_id"`
+	Period     string `theorydb:"attr:period" json:"period"`          // daily, monthly, yearly
+	PeriodDate string `theorydb:"attr:periodDate" json:"period_date"` // 2024-01-15, 2024-01, 2024
 
 	// Budget limits (in microcents)
-	BudgetLimitMicros    int64 `dynamorm:"attr:budgetLimitMicros" json:"budget_limit_micros"`       // Total budget limit
-	SearchBudgetMicros   int64 `dynamorm:"attr:searchBudgetMicros" json:"search_budget_micros"`     // Budget for regular search
-	SemanticBudgetMicros int64 `dynamorm:"attr:semanticBudgetMicros" json:"semantic_budget_micros"` // Budget for semantic search
-	IndexingBudgetMicros int64 `dynamorm:"attr:indexingBudgetMicros" json:"indexing_budget_micros"` // Budget for search indexing
+	BudgetLimitMicros    int64 `theorydb:"attr:budgetLimitMicros" json:"budget_limit_micros"`       // Total budget limit
+	SearchBudgetMicros   int64 `theorydb:"attr:searchBudgetMicros" json:"search_budget_micros"`     // Budget for regular search
+	SemanticBudgetMicros int64 `theorydb:"attr:semanticBudgetMicros" json:"semantic_budget_micros"` // Budget for semantic search
+	IndexingBudgetMicros int64 `theorydb:"attr:indexingBudgetMicros" json:"indexing_budget_micros"` // Budget for search indexing
 
 	// Current usage (in microcents)
-	UsedBudgetMicros   int64 `dynamorm:"attr:usedBudgetMicros" json:"used_budget_micros"`     // Total used budget
-	SearchUsedMicros   int64 `dynamorm:"attr:searchUsedMicros" json:"search_used_micros"`     // Used for regular search
-	SemanticUsedMicros int64 `dynamorm:"attr:semanticUsedMicros" json:"semantic_used_micros"` // Used for semantic search
-	IndexingUsedMicros int64 `dynamorm:"attr:indexingUsedMicros" json:"indexing_used_micros"` // Used for indexing
+	UsedBudgetMicros   int64 `theorydb:"attr:usedBudgetMicros" json:"used_budget_micros"`     // Total used budget
+	SearchUsedMicros   int64 `theorydb:"attr:searchUsedMicros" json:"search_used_micros"`     // Used for regular search
+	SemanticUsedMicros int64 `theorydb:"attr:semanticUsedMicros" json:"semantic_used_micros"` // Used for semantic search
+	IndexingUsedMicros int64 `theorydb:"attr:indexingUsedMicros" json:"indexing_used_micros"` // Used for indexing
 
 	// Request limits
-	MaxRequestsPerHour      int `dynamorm:"attr:maxRequestsPerHour" json:"max_requests_per_hour"`          // Max search requests per hour
-	MaxSemanticPerHour      int `dynamorm:"attr:maxSemanticPerHour" json:"max_semantic_per_hour"`          // Max semantic searches per hour
-	CurrentRequests         int `dynamorm:"attr:currentRequests" json:"current_requests"`                  // Current requests in period
-	CurrentSemanticRequests int `dynamorm:"attr:currentSemanticRequests" json:"current_semantic_requests"` // Current semantic requests
+	MaxRequestsPerHour      int `theorydb:"attr:maxRequestsPerHour" json:"max_requests_per_hour"`          // Max search requests per hour
+	MaxSemanticPerHour      int `theorydb:"attr:maxSemanticPerHour" json:"max_semantic_per_hour"`          // Max semantic searches per hour
+	CurrentRequests         int `theorydb:"attr:currentRequests" json:"current_requests"`                  // Current requests in period
+	CurrentSemanticRequests int `theorydb:"attr:currentSemanticRequests" json:"current_semantic_requests"` // Current semantic requests
 
 	// Budget status
-	BudgetExceeded bool      `dynamorm:"attr:budgetExceeded" json:"budget_exceeded"` // Whether budget is exceeded
-	LastResetTime  time.Time `dynamorm:"attr:lastResetTime" json:"last_reset_time"`  // When budget was last reset
-	LastUsageTime  time.Time `dynamorm:"attr:lastUsageTime" json:"last_usage_time"`  // When budget was last used
-	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt      time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	BudgetExceeded bool      `theorydb:"attr:budgetExceeded" json:"budget_exceeded"` // Whether budget is exceeded
+	LastResetTime  time.Time `theorydb:"attr:lastResetTime" json:"last_reset_time"`  // When budget was last reset
+	LastUsageTime  time.Time `theorydb:"attr:lastUsageTime" json:"last_usage_time"`  // When budget was last used
+	CreatedAt      time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt      time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl"`
 }
 
 // TableName returns the DynamoDB table backing SearchBudget.
@@ -247,8 +247,8 @@ func (sb *SearchBudget) RecordUsage(operationType string, costMicros int64) {
 
 // SearchCostAggregation provides aggregated cost data for reporting
 type SearchCostAggregation struct {
-	PK   string `dynamorm:"pk"` // SEARCH_AGG#date#aggregation_type
-	SK   string `dynamorm:"sk"` // METRIC#metric_name
+	PK   string `theorydb:"pk"` // SEARCH_AGG#date#aggregation_type
+	SK   string `theorydb:"sk"` // METRIC#metric_name
 	Type string `json:"type"`   // Always "SearchCostAggregation"
 
 	// Aggregation identifiers
@@ -287,7 +287,7 @@ type SearchCostAggregation struct {
 	GeneratedAt time.Time `json:"generated_at"`
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl"`
+	TTL int64 `theorydb:"ttl"`
 }
 
 // TableName returns the DynamoDB table backing SearchCostAggregation.
@@ -324,8 +324,8 @@ func (sca *SearchCostAggregation) GetSK() string {
 
 // SearchQueryStats tracks statistics for specific search queries
 type SearchQueryStats struct {
-	PK   string `dynamorm:"pk"` // SEARCH_STATS#query_hash
-	SK   string `dynamorm:"sk"` // STATS#period
+	PK   string `theorydb:"pk"` // SEARCH_STATS#query_hash
+	SK   string `theorydb:"sk"` // STATS#period
 	Type string `json:"type"`   // Always "SearchQueryStats"
 
 	// Query identifiers
@@ -359,7 +359,7 @@ type SearchQueryStats struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl"`
+	TTL int64 `theorydb:"ttl"`
 }
 
 // TableName returns the DynamoDB table backing SearchQueryStats.
