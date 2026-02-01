@@ -11,8 +11,9 @@ import (
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/jsii-runtime-go"
-	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
@@ -31,13 +32,50 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 
 	staticPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(stack, jsii.String("dev.example.com"))
 
-	_ = liftcdk.NewPathRoutedFrontendDistribution(stack, jsii.String("ClientFrontend"), &liftcdk.PathRoutedFrontendDistributionProps{
-		HostedZone:                 hostedZone,
-		DomainName:                 jsii.String("dev.example.com"),
-		ApiOriginDomainName:        jsii.String("api.dev.example.com"),
-		ClientBucketName:           jsii.String("test-dev-client-123456789012-us-east-1"),
-		AuthBucketName:             jsii.String("test-dev-auth-ui-123456789012-us-east-1"),
-		StaticResponseHeadersPolicy: staticPolicy,
+	clientBucket := awss3.NewBucket(stack, jsii.String("ClientBucket"), &awss3.BucketProps{
+		BucketName: jsii.String("test-dev-client-123456789012-us-east-1"),
+	})
+	authBucket := awss3.NewBucket(stack, jsii.String("AuthBucket"), &awss3.BucketProps{
+		BucketName: jsii.String("test-dev-auth-ui-123456789012-us-east-1"),
+	})
+
+	_ = apptheorycdk.NewAppTheoryPathRoutedFrontend(stack, jsii.String("ClientFrontend"), &apptheorycdk.AppTheoryPathRoutedFrontendProps{
+		ApiOriginUrl: jsii.String("api.dev.example.com"),
+		Domain: &apptheorycdk.PathRoutedFrontendDomainConfig{
+			HostedZone:       hostedZone,
+			DomainName:       jsii.String("dev.example.com"),
+			CreateAAAARecord: jsii.Bool(true),
+		},
+		ApiBypassPaths: &[]*apptheorycdk.ApiBypassConfig{
+			{PathPattern: jsii.String("/auth/wallet/*")},
+		},
+		SpaOrigins: &[]*apptheorycdk.SpaOriginConfig{
+			{
+				Bucket:                  authBucket,
+				PathPattern:             jsii.String("/auth/*"),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+			},
+			{
+				Bucket:                  authBucket,
+				PathPattern:             jsii.String("/auth"),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+			},
+			{
+				Bucket:                  clientBucket,
+				PathPattern:             jsii.String("/l/*"),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+			},
+			{
+				Bucket:                  clientBucket,
+				PathPattern:             jsii.String("/l"),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+			},
+		},
+		SpaResponseHeadersPolicy: staticPolicy,
 	})
 
 	app.Synth(nil)
@@ -76,10 +114,10 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 
 	cacheBehaviors := extractCacheBehaviors(t, dist)
 	needPolicy := map[string]struct{}{
-		"auth":    {},
-		"auth/*":  {},
-		"l":       {},
-		"l/*":     {},
+		"/auth":   {},
+		"/auth/*": {},
+		"/l":      {},
+		"/l/*":    {},
 	}
 	for _, behavior := range cacheBehaviors {
 		pathPattern, _ := behavior["PathPattern"].(string)
@@ -88,7 +126,7 @@ func TestFrontendStaticCSPIsStrictAndBehaviorScoped(t *testing.T) {
 		if shouldHave && !has {
 			t.Fatalf("behavior %q missing ResponseHeadersPolicyId", pathPattern)
 		}
-		if !shouldHave && has && strings.HasPrefix(pathPattern, "auth/wallet") {
+		if !shouldHave && has && strings.HasPrefix(pathPattern, "/auth/wallet") {
 			t.Fatalf("behavior %q must not attach ResponseHeadersPolicyId (API-owned route)", pathPattern)
 		}
 		if !shouldHave || !has {
@@ -235,4 +273,3 @@ func requireContainsAll(t *testing.T, haystack string, needles []string) {
 		}
 	}
 }
-

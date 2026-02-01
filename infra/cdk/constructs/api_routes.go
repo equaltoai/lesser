@@ -15,7 +15,7 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type APIGatewayProps struct {
@@ -29,7 +29,7 @@ type APIGatewayProps struct {
 }
 
 type APIGateway struct {
-	RestApi             *liftcdk.LiftRestAPI
+	RestApi             apptheorycdk.AppTheoryRestApiRouter
 	WebSocketApi        awsapigatewayv2.WebSocketApi
 	GraphQLWebSocketApi awsapigatewayv2.WebSocketApi
 }
@@ -52,18 +52,17 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	streamTimeoutSeconds := 15 * 60
 
 	apiName := naming.ResourceNameWithApp(appName, "api", props.Environment)
-	restProps := &liftcdk.LiftRestAPIProps{
-		APICommonProps: liftcdk.APICommonProps{
-			Name:                jsii.String(apiName),
-			Description:         jsii.String(fmt.Sprintf("Lesser %s REST API", props.Environment)),
-			EnableCORS:          jsii.Bool(true),
-			EnableAccessLogging: jsii.Bool(true),
-			AccessLogGroup:      logGroup,
-			StageName:           jsii.String(string(apiStage)),
+	restProps := &apptheorycdk.AppTheoryRestApiRouterProps{
+		ApiName:     jsii.String(apiName),
+		Description: jsii.String(fmt.Sprintf("Lesser %s REST API", props.Environment)),
+		Cors:        jsii.Bool(true),
+		Stage: &apptheorycdk.AppTheoryRestApiRouterStageOptions{
+			StageName:          jsii.String(string(apiStage)),
+			AccessLogging:      logGroup,
+			DetailedMetrics:    jsii.Bool(true),
+			AccessLogFormat:    nil,
+			AccessLogRetention: awslogs.RetentionDays_ONE_WEEK,
 		},
-		EnableStreaming:       jsii.Bool(false), // enable per-method for SSE endpoints
-		StreamingTimeout:      &streamTimeoutSeconds,
-		EnableDetailedMetrics: jsii.Bool(true),
 	}
 
 	// Add custom domain if certificate is provided
@@ -72,28 +71,15 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 		apiDomain = fmt.Sprintf("api.%s", props.Domain)
 	}
 	if props.Certificate != nil && apiDomain != "" {
-		restProps.DomainName = jsii.String(apiDomain)
-		restProps.Certificate = props.Certificate
+		restProps.Domain = &apptheorycdk.AppTheoryRestApiRouterDomainOptions{
+			DomainName:       jsii.String(apiDomain),
+			Certificate:      props.Certificate,
+			HostedZone:       props.HostedZone,
+			CreateAAAARecord: jsii.Bool(true),
+		}
 	}
 
-	gateway.RestApi = liftcdk.NewLiftRestAPI(scope, jsii.String("RestApi"), restProps)
-
-	if props.HostedZone != nil && apiDomain != "" && gateway.RestApi.RestAPI.DomainName() != nil {
-		recordName := relativeRecordName(apiDomain, props.HostedZone)
-		target := awsroute53targets.NewApiGatewayDomain(gateway.RestApi.RestAPI.DomainName())
-
-		awsroute53.NewARecord(scope, jsii.String("ApiAliasARecord"), &awsroute53.ARecordProps{
-			Zone:       props.HostedZone,
-			RecordName: recordName,
-			Target:     awsroute53.RecordTarget_FromAlias(target),
-		})
-
-		awsroute53.NewAaaaRecord(scope, jsii.String("ApiAliasAAAARecord"), &awsroute53.AaaaRecordProps{
-			Zone:       props.HostedZone,
-			RecordName: recordName,
-			Target:     awsroute53.RecordTarget_FromAlias(target),
-		})
-	}
+	gateway.RestApi = apptheorycdk.NewAppTheoryRestApiRouter(scope, jsii.String("RestApi"), restProps)
 
 	// Add routes
 	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds)
@@ -132,35 +118,36 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	return gateway
 }
 
-func addRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions, streamTimeoutSeconds int) {
+func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFunctions, streamTimeoutSeconds int) {
 	apiFn := functions.Must("api")
 	graphqlFn := functions.Must("graphql")
 	sseFn := functions.Must("sse")
 	healthFn := apiFn
 
 	// Mastodon streaming (SSE) routes.
-	// NOTE: Response-streaming integrations are currently disabled for REST APIs to avoid
-	// CloudFormation/API Gateway provisioning issues. These endpoints still exist but use
-	// standard Lambda proxy integrations.
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/health"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user/notification"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/local"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/remote"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag/local"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/list"), jsii.String("GET"), sseFn)
-	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/direct"), jsii.String("GET"), sseFn)
+	sseOptions := &apptheorycdk.AppTheoryRestApiRouterIntegrationOptions{
+		Streaming: jsii.Bool(true),
+		Timeout:   awscdk.Duration_Seconds(jsii.Number(float64(streamTimeoutSeconds))),
+	}
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/health"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/user/notification"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/local"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/public/remote"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag/local"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/list"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/direct"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
 
 	// Mastodon API routes (Lift handles internal routing).
-	api.AddLambdaIntegration(jsii.String("/api/v1/{proxy+}"), jsii.String("ANY"), apiFn)
-	api.AddLambdaIntegration(jsii.String("/api/v2/{proxy+}"), jsii.String("ANY"), apiFn)
+	api.AddLambdaIntegration(jsii.String("/api/v1/{proxy+}"), &[]*string{jsii.String("ANY")}, apiFn, nil)
+	api.AddLambdaIntegration(jsii.String("/api/v2/{proxy+}"), &[]*string{jsii.String("ANY")}, apiFn, nil)
 
 	// GraphQL routes.
-	api.AddLambdaIntegration(jsii.String("/api/graphql"), jsii.String("GET"), graphqlFn)
-	api.AddLambdaIntegration(jsii.String("/api/graphql"), jsii.String("POST"), graphqlFn)
+	api.AddLambdaIntegration(jsii.String("/api/graphql"), &[]*string{jsii.String("GET")}, graphqlFn, nil)
+	api.AddLambdaIntegration(jsii.String("/api/graphql"), &[]*string{jsii.String("POST")}, graphqlFn, nil)
 
 	// Federation routes (inventory-driven; Spec 03).
 	addInventoryRestRoutes(api, functions, map[string]struct{}{
@@ -173,13 +160,13 @@ func addRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions, streamT
 	})
 
 	// Catch-all fallback to ensure unexpected routes reach the API Lambda.
-	api.AddLambdaIntegration(jsii.String("/{proxy+}"), jsii.String("ANY"), apiFn)
+	api.AddLambdaIntegration(jsii.String("/{proxy+}"), &[]*string{jsii.String("ANY")}, apiFn, nil)
 
 	// Health check.
-	api.AddLambdaIntegration(jsii.String("/health"), jsii.String("GET"), healthFn)
+	api.AddLambdaIntegration(jsii.String("/health"), &[]*string{jsii.String("GET")}, healthFn, nil)
 }
 
-func addInventoryRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions, include map[string]struct{}) {
+func addInventoryRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFunctions, include map[string]struct{}) {
 	for _, spec := range inventory.LambdaInventory.Lambdas {
 		if _, ok := include[spec.Name]; !ok {
 			continue
@@ -187,7 +174,7 @@ func addInventoryRestRoutes(api *liftcdk.LiftRestAPI, functions *LambdaFunctions
 
 		handler := functions.Must(spec.Name)
 		for _, route := range spec.HTTPRoutes {
-			api.AddLambdaIntegration(jsii.String(route.Path), jsii.String(route.Method), handler)
+			api.AddLambdaIntegration(jsii.String(route.Path), &[]*string{jsii.String(route.Method)}, handler, nil)
 		}
 	}
 }

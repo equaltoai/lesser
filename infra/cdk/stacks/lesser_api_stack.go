@@ -19,7 +19,7 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type LesserApiStackProps struct {
@@ -245,29 +245,77 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	clientBucket := naming.S3BucketName(s.AppName, stage, "client", s.AccountID, s.Region)
 	authBucket := naming.S3BucketName(s.AppName, stage, "auth-ui", s.AccountID, s.Region)
 
-	frontend := liftcdk.NewPathRoutedFrontendDistribution(s.Stack, jsii.String("ClientFrontend"), &liftcdk.PathRoutedFrontendDistributionProps{
-		HostedZone:          s.HostedZone,
-		Certificate:         s.CDNCertificate,
-		DomainName:          jsii.String(domain),
-		ApiOriginDomainName: jsii.String(apiOrigin),
-		AppName:             jsii.String(s.AppName),
-		Stage:               jsii.String(string(stage)),
-		ClientBucketName:    jsii.String(clientBucket),
-		AuthBucketName:      jsii.String(authBucket),
-		StaticResponseHeadersPolicy: localconstructs.NewFrontendStaticResponseHeadersPolicy(
-			s.Stack,
-			jsii.String(domain),
-		),
-		AuthSinglePageApp:   jsii.Bool(false),
-		RemovalPolicy:       getRemovalPolicy(isProd),
-		AutoDeleteObjects:   jsii.Bool(!isProd),
-		PriceClass:          awscloudfront.PriceClass_PRICE_CLASS_100,
-		HttpVersion:         awscloudfront.HttpVersion_HTTP2,
+	clientAssetsBucket := awss3.NewBucket(s.Stack, jsii.String("ClientBucket"), &awss3.BucketProps{
+		BucketName:        jsii.String(clientBucket),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		EnforceSSL:        jsii.Bool(true),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
 	})
 
-	s.FrontendDistribution = frontend.Distribution
-	s.ClientBucket = frontend.ClientBucket
-	s.AuthUIBucket = frontend.AuthBucket
+	authAssetsBucket := awss3.NewBucket(s.Stack, jsii.String("AuthBucket"), &awss3.BucketProps{
+		BucketName:        jsii.String(authBucket),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		EnforceSSL:        jsii.Bool(true),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
+	})
+
+	staticPolicy := localconstructs.NewFrontendStaticResponseHeadersPolicy(s.Stack, jsii.String(domain))
+
+	frontend := apptheorycdk.NewAppTheoryPathRoutedFrontend(s.Stack, jsii.String("ClientFrontend"), &apptheorycdk.AppTheoryPathRoutedFrontendProps{
+		ApiOriginUrl: jsii.String(apiOrigin),
+		Domain: &apptheorycdk.PathRoutedFrontendDomainConfig{
+			DomainName:       jsii.String(domain),
+			Certificate:      s.CDNCertificate,
+			HostedZone:       s.HostedZone,
+			CreateAAAARecord: jsii.Bool(true),
+		},
+		ApiBypassPaths: &[]*apptheorycdk.ApiBypassConfig{
+			{PathPattern: jsii.String("/auth/wallet/*")},
+		},
+		SpaOrigins: &[]*apptheorycdk.SpaOriginConfig{
+			{
+				Bucket:                  clientAssetsBucket,
+				PathPattern:             jsii.String("/l/*"),
+				ResponseHeadersPolicy:   staticPolicy,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
+			},
+			{
+				Bucket:                  authAssetsBucket,
+				PathPattern:             jsii.String("/auth/*"),
+				ResponseHeadersPolicy:   staticPolicy,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
+			},
+			// Exact prefix paths (no wildcard) for behavior-scoped CSP parity with Lift.
+			{
+				Bucket:                  clientAssetsBucket,
+				PathPattern:             jsii.String("/l"),
+				ResponseHeadersPolicy:   staticPolicy,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_SPA,
+			},
+			{
+				Bucket:                  authAssetsBucket,
+				PathPattern:             jsii.String("/auth"),
+				ResponseHeadersPolicy:   staticPolicy,
+				StripPrefixBeforeOrigin: jsii.Bool(true),
+				RewriteMode:             apptheorycdk.AppTheorySpaRewriteMode_NONE,
+			},
+		},
+		SpaResponseHeadersPolicy: staticPolicy,
+		RemovalPolicy:            getRemovalPolicy(isProd),
+		AutoDeleteObjects:        jsii.Bool(!isProd),
+		PriceClass:               awscloudfront.PriceClass_PRICE_CLASS_100,
+	})
+
+	s.FrontendDistribution = frontend.Distribution()
+	s.ClientBucket = clientAssetsBucket
+	s.AuthUIBucket = authAssetsBucket
 }
 
 func (s *LesserApiStack) createSharedResources() {
@@ -275,44 +323,47 @@ func (s *LesserApiStack) createSharedResources() {
 
 	// Create main DynamoDB table with streams
 	mainTableName := naming.ResourceNameWithApp(s.AppName, "main-table", s.Environment)
-	mainTable := liftcdk.NewLiftTable(s.Stack, jsii.String("LesserTable"), &liftcdk.LiftTableProps{
+	mainTable := apptheorycdk.NewAppTheoryDynamoTable(s.Stack, jsii.String("LesserTable"), &apptheorycdk.AppTheoryDynamoTableProps{
 		TableName:                 jsii.String(mainTableName),
 		PartitionKeyName:          jsii.String("PK"),
 		SortKeyName:               jsii.String("SK"),
-		EnableStreams:             jsii.Bool(true),
+		BillingMode:               awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		EnableStream:              jsii.Bool(true),
 		StreamViewType:            awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
 		TimeToLiveAttribute:       jsii.String("ttl"),
 		EnablePointInTimeRecovery: jsii.Bool(isProd),
 		DeletionProtection:        jsii.Bool(isProd),
 		RemovalPolicy:             getRemovalPolicy(isProd),
 	})
-	s.MainTable = mainTable.Table
+	s.MainTable = mainTable.Table()
 
 	// Stream event log table for Mastodon-compatible SSE endpoints.
 	// This table is polled by the SSE Lambda during response streaming invocations.
-	streamEventsTable := liftcdk.NewLiftTable(s.Stack, jsii.String("StreamEventsTable"), &liftcdk.LiftTableProps{
+	streamEventsTable := apptheorycdk.NewAppTheoryDynamoTable(s.Stack, jsii.String("StreamEventsTable"), &apptheorycdk.AppTheoryDynamoTableProps{
 		TableName:                 jsii.String(naming.ResourceNameWithApp(s.AppName, "stream-events-table", s.Environment)),
 		PartitionKeyName:          jsii.String("PK"),
 		SortKeyName:               jsii.String("SK"),
+		BillingMode:               awsdynamodb.BillingMode_PAY_PER_REQUEST,
 		TimeToLiveAttribute:       jsii.String("ttl"),
 		EnablePointInTimeRecovery: jsii.Bool(isProd),
 		DeletionProtection:        jsii.Bool(isProd),
 		RemovalPolicy:             getRemovalPolicy(isProd),
 	})
-	s.StreamEventsTable = streamEventsTable.Table
+	s.StreamEventsTable = streamEventsTable.Table()
 
 	// Create rate limit table for Lift's limited library
 	// The limited library uses its own table structure for rate limiting
-	rateLimitTable := liftcdk.NewLiftTable(s.Stack, jsii.String("RateLimitTable"), &liftcdk.LiftTableProps{
+	rateLimitTable := apptheorycdk.NewAppTheoryDynamoTable(s.Stack, jsii.String("RateLimitTable"), &apptheorycdk.AppTheoryDynamoTableProps{
 		TableName:                 jsii.String(naming.ResourceNameWithApp(s.AppName, "rate-limits-table", s.Environment)),
 		PartitionKeyName:          jsii.String("PK"),
 		SortKeyName:               jsii.String("SK"),
+		BillingMode:               awsdynamodb.BillingMode_PAY_PER_REQUEST,
 		TimeToLiveAttribute:       jsii.String("ExpiresAt"),
 		EnablePointInTimeRecovery: jsii.Bool(isProd),
 		DeletionProtection:        jsii.Bool(false),             // Rate limit data is transient
 		RemovalPolicy:             awscdk.RemovalPolicy_DESTROY, // Can be recreated
 	})
-	s.RateLimitTable = rateLimitTable.Table
+	s.RateLimitTable = rateLimitTable.Table()
 
 	// Add GSI1-GSI8 (generic pattern-based GSIs)
 	// Using camelCase attribute names to match DynamORM conventions (gsi1PK, gsi2PK, etc.)
@@ -364,22 +415,30 @@ func (s *LesserApiStack) createMediaInfrastructure(domain string) {
 		panic("Media infrastructure requires HostedZone")
 	}
 
-	mediaCDN := liftcdk.NewMediaCDN(s.Stack, jsii.String("MediaCDN"), &liftcdk.MediaCDNProps{
-		HostedZone:        s.HostedZone,
-		Certificate:       s.CDNCertificate,
-		DomainName:        jsii.String(mediaDomain),
-		AppName:           jsii.String(s.AppName),
-		Stage:             jsii.String(string(stage)),
+	mediaBucket := awss3.NewBucket(s.Stack, jsii.String("MediaBucket"), &awss3.BucketProps{
 		BucketName:        jsii.String(naming.S3BucketName(s.AppName, stage, "media", s.AccountID, s.Region)),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		EnforceSSL:        jsii.Bool(true),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
+	})
+
+	mediaCDN := apptheorycdk.NewAppTheoryMediaCdn(s.Stack, jsii.String("MediaCDN"), &apptheorycdk.AppTheoryMediaCdnProps{
+		Bucket: mediaBucket,
+		Domain: &apptheorycdk.MediaCdnDomainConfig{
+			HostedZone:       s.HostedZone,
+			Certificate:      s.CDNCertificate,
+			DomainName:       jsii.String(mediaDomain),
+			CreateAAAARecord: jsii.Bool(true),
+		},
 		RemovalPolicy:     getRemovalPolicy(isProd),
 		AutoDeleteObjects: jsii.Bool(!isProd),
 		PriceClass:        awscloudfront.PriceClass_PRICE_CLASS_100, // US and Europe only for cost optimization
-		HttpVersion:       awscloudfront.HttpVersion_HTTP2,
-		EnableIpv6:        jsii.Bool(true),
 	})
 
-	s.MediaBucket = mediaCDN.Bucket
-	s.MediaDistribution = mediaCDN.Distribution
+	s.MediaBucket = mediaBucket
+	s.MediaDistribution = mediaCDN.Distribution()
 
 	// Enhanced CORS configuration for media uploads and reads
 	s.MediaBucket.AddCorsRule(&awss3.CorsRule{
@@ -516,6 +575,7 @@ func (s *LesserApiStack) createStreamingAndMLInfrastructure() {
 }
 
 func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair {
+	isProd := naming.IsLiveEnvironment(s.Environment)
 	queuePairs := map[string]localconstructs.QueuePair{}
 	defaultVisibility := awscdk.Duration_Minutes(jsii.Number(2))
 	defaultRetention := awscdk.Duration_Days(jsii.Number(4))
@@ -545,55 +605,51 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 			logical := trigger.Queue
 			primaryName := naming.ResourceNameWithApp(s.AppName, logical, s.Environment)
 
-			dlqLogical := trigger.DeadLetterQueue
-			if dlqLogical == "" {
-				dlqLogical = fmt.Sprintf("%s-dlq", logical)
-			}
-			dlqName := naming.ResourceNameWithApp(s.AppName, dlqLogical, s.Environment)
+			queue := apptheorycdk.NewAppTheoryQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &apptheorycdk.AppTheoryQueueProps{
+				QueueName:              jsii.String(primaryName),
+				VisibilityTimeout:      defaultVisibility,
+				RetentionPeriod:        defaultRetention,
+				ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
+				EnableDlq:              jsii.Bool(true),
+				MaxReceiveCount:        defaultMaxReceive,
+				DlqRetentionPeriod:     awscdk.Duration_Days(jsii.Number(14)),
+				RemovalPolicy:          getRemovalPolicy(isProd),
+			})
 
-			anchorName := primaryConsumerByQueue[logical]
-			if anchorName == "" {
-				anchorName = "api"
-			}
-			consumer := s.Functions.Must(anchorName)
-
-			queueProps := &liftcdk.LiftSQSQueueProps{
-				Function:                consumer,
-				QueueName:               jsii.String(primaryName),
-				VisibilityTimeout:       defaultVisibility,
-				MessageRetentionPeriod:  defaultRetention,
-				ReceiveMessageWaitTime:  awscdk.Duration_Seconds(jsii.Number(20)),
-				EnableDeadLetterQueue:   jsii.Bool(true),
-				DeadLetterQueueName:     jsii.String(dlqName),
-				MaxReceiveCount:         defaultMaxReceive,
-				DLQRetentionPeriod:      awscdk.Duration_Days(jsii.Number(14)),
-				EnableEventSource:       jsii.Bool(false),
-				ReportBatchItemFailures: jsii.Bool(false),
-			}
+			primaryQueue := queue.Queue()
+			deadLetterQueue := queue.DeadLetterQueue()
 
 			if primaryTrig, ok := primaryTriggerByQueue[logical]; ok {
-				queueProps.EnableEventSource = jsii.Bool(true)
-				queueProps.ReportBatchItemFailures = jsii.Bool(primaryTrig.EnablePartialFailure)
+				consumerName := primaryConsumerByQueue[logical]
+				if consumerName == "" {
+					panic(fmt.Sprintf("queue %s has trigger but no consumer mapping", logical))
+				}
+				consumer := s.Functions.Must(consumerName)
+
+				consumerProps := &apptheorycdk.AppTheoryQueueConsumerProps{
+					Queue:                   primaryQueue,
+					Consumer:                consumer,
+					ReportBatchItemFailures: jsii.Bool(primaryTrig.EnablePartialFailure),
+				}
 				if primaryTrig.BatchSize > 0 {
-					queueProps.BatchSize = jsii.Number(float64(primaryTrig.BatchSize))
+					consumerProps.BatchSize = jsii.Number(float64(primaryTrig.BatchSize))
 				}
 				if primaryTrig.MaxBatchingWindowSeconds > 0 {
-					queueProps.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(primaryTrig.MaxBatchingWindowSeconds)))
+					consumerProps.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(primaryTrig.MaxBatchingWindowSeconds)))
 				}
+				apptheorycdk.NewAppTheoryQueueConsumer(s.Stack, jsii.String(fmt.Sprintf("%sConsumer", sanitizeQueueId(logical))), consumerProps)
 			}
 
-			liftQueue := liftcdk.NewLiftSQSQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), queueProps)
-
-			if liftQueue.Queue != nil {
-				awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
-				awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
+			if primaryQueue != nil {
+				awscdk.Tags_Of(primaryQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
+				awscdk.Tags_Of(primaryQueue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
 			}
-			if liftQueue.DeadLetterQueue != nil {
-				awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
-				awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
+			if deadLetterQueue != nil {
+				awscdk.Tags_Of(deadLetterQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
+				awscdk.Tags_Of(deadLetterQueue).Add(jsii.String("stage"), jsii.String(string(naming.StageForEnvironment(s.Environment))), nil)
 			}
 
-			queuePairs[logical] = localconstructs.QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
+			queuePairs[logical] = localconstructs.QueuePair{Primary: primaryQueue, DLQ: deadLetterQueue}
 		}
 	}
 
@@ -602,36 +658,30 @@ func (s *LesserApiStack) createSQSQueues() map[string]localconstructs.QueuePair 
 	if _, exists := queuePairs["scheduled-queue"]; !exists {
 		logical := "scheduled-queue"
 		primaryName := naming.ResourceNameWithApp(s.AppName, logical, s.Environment)
-		dlqLogical := fmt.Sprintf("%s-dlq", logical)
-		dlqName := naming.ResourceNameWithApp(s.AppName, dlqLogical, s.Environment)
-
-		anchor := s.Functions.Must("api")
-		liftQueue := liftcdk.NewLiftSQSQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &liftcdk.LiftSQSQueueProps{
-			Function:                anchor,
-			QueueName:               jsii.String(primaryName),
-			VisibilityTimeout:       defaultVisibility,
-			MessageRetentionPeriod:  defaultRetention,
-			ReceiveMessageWaitTime:  awscdk.Duration_Seconds(jsii.Number(20)),
-			EnableDeadLetterQueue:   jsii.Bool(true),
-			DeadLetterQueueName:     jsii.String(dlqName),
-			MaxReceiveCount:         defaultMaxReceive,
-			DLQRetentionPeriod:      awscdk.Duration_Days(jsii.Number(14)),
-			EnableEventSource:       jsii.Bool(false),
-			GrantConsumeMessages:    jsii.Bool(false),
-			GrantSendMessages:       jsii.Bool(false),
-			ReportBatchItemFailures: jsii.Bool(false),
+		queue := apptheorycdk.NewAppTheoryQueue(s.Stack, jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueId(logical))), &apptheorycdk.AppTheoryQueueProps{
+			QueueName:              jsii.String(primaryName),
+			VisibilityTimeout:      defaultVisibility,
+			RetentionPeriod:        defaultRetention,
+			ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
+			EnableDlq:              jsii.Bool(true),
+			MaxReceiveCount:        defaultMaxReceive,
+			DlqRetentionPeriod:     awscdk.Duration_Days(jsii.Number(14)),
+			RemovalPolicy:          getRemovalPolicy(isProd),
 		})
 
-		if liftQueue.Queue != nil {
-			awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
-			awscdk.Tags_Of(liftQueue.Queue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+		primaryQueue := queue.Queue()
+		deadLetterQueue := queue.DeadLetterQueue()
+
+		if primaryQueue != nil {
+			awscdk.Tags_Of(primaryQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
+			awscdk.Tags_Of(primaryQueue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
 		}
-		if liftQueue.DeadLetterQueue != nil {
-			awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
-			awscdk.Tags_Of(liftQueue.DeadLetterQueue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
+		if deadLetterQueue != nil {
+			awscdk.Tags_Of(deadLetterQueue).Add(jsii.String("app"), jsii.String(s.AppName), nil)
+			awscdk.Tags_Of(deadLetterQueue).Add(jsii.String("environment"), jsii.String(s.Environment), nil)
 		}
 
-		queuePairs[logical] = localconstructs.QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
+		queuePairs[logical] = localconstructs.QueuePair{Primary: primaryQueue, DLQ: deadLetterQueue}
 	}
 
 	if qp, ok := queuePairs["federation-delivery-queue"]; ok {
@@ -712,7 +762,7 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 
 	// Output API URLs
 	awscdk.NewCfnOutput(s.Stack, jsii.String("RestApiUrl"), &awscdk.CfnOutputProps{
-		Value:       s.API.RestApi.GetUrl(),
+		Value:       s.API.RestApi.Api().Url(),
 		Description: jsii.String("REST API Gateway URL"),
 	})
 

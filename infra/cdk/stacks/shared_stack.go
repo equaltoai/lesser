@@ -11,7 +11,7 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type SharedStackProps struct {
@@ -36,28 +36,32 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 	}
 
 	// Create KMS key for encryption
-	encryptionKey := liftcdk.NewLiftKMSKey(stack, jsii.String("LesserEncryptionKey"), &liftcdk.LiftKMSKeyProps{
+	encryptionKey := apptheorycdk.NewAppTheoryKmsKey(stack, jsii.String("LesserEncryptionKey"), &apptheorycdk.AppTheoryKmsKeyProps{
 		Description:       jsii.String(fmt.Sprintf("%s encryption key for actor private keys", props.AppName)),
 		EnableKeyRotation: jsii.Bool(true),
 		AliasName:         jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(props.AppName, "encryption"))),
 		RemovalPolicy:     awscdk.RemovalPolicy_RETAIN,
 	})
-	sharedStack.EncryptionKey = encryptionKey.Key
+	sharedStack.EncryptionKey = encryptionKey.Key()
 
 	// Create Lambda execution role for functions needing KMS encryption
-	lambdaEncryptionRole := liftcdk.NewLiftLambdaRole(stack, jsii.String("LambdaEncryptionRole"), &liftcdk.LiftLambdaRoleProps{
+	lambdaEncryptionRole := apptheorycdk.NewAppTheoryLambdaRole(stack, jsii.String("LambdaEncryptionRole"), &apptheorycdk.AppTheoryLambdaRoleProps{
 		RoleName:    jsii.String(naming.SharedResourceName(props.AppName, "lambda-encryption-role")),
 		Description: jsii.String("Role for Lambdas requiring KMS encryption for actor private keys"),
-		KMSKeys:     []awskms.IKey{sharedStack.EncryptionKey},
+		EnableXRay:  jsii.Bool(true),
+		ApplicationKmsKeys: &[]awskms.IKey{
+			sharedStack.EncryptionKey,
+		},
 	})
-	sharedStack.LambdaEncryptionRole = lambdaEncryptionRole.Role
+	sharedStack.LambdaEncryptionRole = lambdaEncryptionRole.Role()
 
 	// Create Lambda execution role for functions without encryption needs
-	lambdaBasicRole := liftcdk.NewLiftLambdaRole(stack, jsii.String("LambdaBasicRole"), &liftcdk.LiftLambdaRoleProps{
+	lambdaBasicRole := apptheorycdk.NewAppTheoryLambdaRole(stack, jsii.String("LambdaBasicRole"), &apptheorycdk.AppTheoryLambdaRoleProps{
 		RoleName:    jsii.String(naming.SharedResourceName(props.AppName, "lambda-basic-role")),
 		Description: jsii.String("Role for Lambdas without encryption requirements"),
+		EnableXRay:  jsii.Bool(true),
 	})
-	sharedStack.LambdaBasicRole = lambdaBasicRole.Role
+	sharedStack.LambdaBasicRole = lambdaBasicRole.Role()
 
 	// Attach all application policies to roles using wildcard patterns
 	sharedStack.attachApplicationPolicies(props.AppName)
