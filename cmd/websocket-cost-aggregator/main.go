@@ -10,7 +10,7 @@ This Lambda function runs on a scheduled basis to:
 3. Update user budgets and alert on overages
 4. Clean up stale connection records
 
-Uses Lift framework and DynamORM patterns.
+Uses AppTheory runtime and DynamORM patterns.
 */
 
 import (
