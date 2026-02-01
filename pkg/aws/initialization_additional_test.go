@@ -38,7 +38,6 @@ func TestInitializeWithConfig_InitializesRequestedClients(t *testing.T) {
 
 	services := InitializeWithConfig(cfg, ServiceConfig{
 		ServiceName:            "all",
-		RequiresDynamoDB:       true,
 		RequiresS3:             true,
 		RequiresSQS:            true,
 		RequiresCloudWatch:     true,
@@ -49,7 +48,6 @@ func TestInitializeWithConfig_InitializesRequestedClients(t *testing.T) {
 		RequiresLambda:         true,
 	}, zap.NewNop())
 
-	require.NotNil(t, services.DynamoDB)
 	require.NotNil(t, services.S3)
 	require.NotNil(t, services.SQS)
 	require.NotNil(t, services.CloudWatch)
@@ -72,7 +70,6 @@ func TestInitializeServices_SuccessAndMustInitializeServices(t *testing.T) {
 		Region:                 "us-east-1",
 		RequestTimeout:         0,
 		RetryMaxAttempts:       0,
-		RequiresDynamoDB:       true,
 		RequiresS3:             true,
 		RequiresSQS:            true,
 		RequiresCloudWatch:     true,
@@ -84,7 +81,6 @@ func TestInitializeServices_SuccessAndMustInitializeServices(t *testing.T) {
 	}, logger)
 	require.NoError(t, err)
 	require.NotNil(t, services)
-	require.NotNil(t, services.DynamoDB)
 	require.NotNil(t, services.S3)
 	require.NotNil(t, services.SQS)
 	require.NotNil(t, services.CloudWatch)
@@ -95,9 +91,8 @@ func TestInitializeServices_SuccessAndMustInitializeServices(t *testing.T) {
 	require.NotNil(t, services.Lambda)
 
 	services = MustInitializeServices(context.Background(), ServiceConfig{
-		ServiceName:      "test",
-		Region:           "us-east-1",
-		RequiresDynamoDB: true,
+		ServiceName: "test",
+		Region:      "us-east-1",
 	}, logger)
 	require.NotNil(t, services)
 }
