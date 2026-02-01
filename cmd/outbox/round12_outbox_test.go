@@ -18,12 +18,37 @@ import (
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/golang-jwt/jwt/v5"
 	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
+
+func multiMap(in map[string]string) map[string][]string {
+	out := map[string][]string{}
+	for k, v := range in {
+		out[k] = []string{v}
+	}
+	return out
+}
+
+func serveOutbox(app *apptheory.App, method, path string, query map[string]string, headers map[string]string, body string) apptheory.Response {
+	req := apptheory.Request{
+		Method:  method,
+		Path:    path,
+		Query:   multiMap(query),
+		Headers: multiMap(headers),
+		Body:    []byte(body),
+	}
+	return app.Serve(context.Background(), req)
+}
+
+func mustUnmarshalBody[T any](t *testing.T, resp apptheory.Response) T {
+	t.Helper()
+	var out T
+	require.NoError(t, json.Unmarshal(resp.Body, &out))
+	return out
+}
 
 type round12FederationService struct {
 	deliverErrors    []error
@@ -229,13 +254,6 @@ func TestOutboxProcessor_ProcessMessage_Round12(t *testing.T) {
 	outboxRunAsync = func(fn func()) { fn() }
 	outboxSleep = func(time.Duration) {}
 
-	req := lift.NewRequest(&adapters.Request{
-		Method:      "POST",
-		Path:        "/",
-		TriggerType: lift.TriggerAPIGatewayV2,
-	})
-	ctx := lift.NewContext(context.Background(), req)
-
 	buildProcessor := func() (*OutboxProcessor, *round12FederationService, *round12FederationActivityRepo, *round12FederationCostRepo) {
 		fedSvc := &round12FederationService{}
 		fedActivityRepo := &round12FederationActivityRepo{}
@@ -257,7 +275,7 @@ func TestOutboxProcessor_ProcessMessage_Round12(t *testing.T) {
 
 	t.Run("invalid_json", func(t *testing.T) {
 		op, _, _, _ := buildProcessor()
-		err := op.processMessage(ctx, events.SQSMessage{MessageId: "msg-1", Body: "not-json"})
+		err := op.processMessage(context.Background(), "req", events.SQSMessage{MessageId: "msg-1", Body: "not-json"})
 		require.Error(t, err)
 	})
 
@@ -268,7 +286,7 @@ func TestOutboxProcessor_ProcessMessage_Round12(t *testing.T) {
 			TargetInbox: "https://remote.example/inbox",
 		})
 		require.NoError(t, err)
-		err = op.processMessage(ctx, events.SQSMessage{MessageId: "msg-1", Body: string(body)})
+		err = op.processMessage(context.Background(), "req", events.SQSMessage{MessageId: "msg-1", Body: string(body)})
 		require.Error(t, err)
 	})
 
@@ -289,7 +307,7 @@ func TestOutboxProcessor_ProcessMessage_Round12(t *testing.T) {
 			Attempt:     1,
 		})
 		require.NoError(t, err)
-		err = op.processMessage(ctx, events.SQSMessage{MessageId: "msg-1", Body: string(body)})
+		err = op.processMessage(context.Background(), "req", events.SQSMessage{MessageId: "msg-1", Body: string(body)})
 		require.Error(t, err)
 		require.Equal(t, 0, fedSvc.deliverCalls)
 		require.Len(t, fedCostRepo.recorded, 1)
@@ -309,7 +327,7 @@ func TestOutboxProcessor_ProcessMessage_Round12(t *testing.T) {
 			Attempt:     1,
 		})
 		require.NoError(t, err)
-		err = op.processMessage(ctx, events.SQSMessage{MessageId: "msg-1", Body: string(body)})
+		err = op.processMessage(context.Background(), "req", events.SQSMessage{MessageId: "msg-1", Body: string(body)})
 		require.NoError(t, err)
 		require.Equal(t, 1, fedSvc.deliverCalls)
 		require.Len(t, fedActivityRepo.created, 1)
@@ -333,13 +351,13 @@ func TestOutboxProcessor_ProcessMessage_Round12(t *testing.T) {
 			Attempt:     1,
 		})
 		require.NoError(t, err)
-		err = op.processMessage(ctx, events.SQSMessage{MessageId: "msg-1", Body: string(body)})
+		err = op.processMessage(context.Background(), "req", events.SQSMessage{MessageId: "msg-1", Body: string(body)})
 		require.Error(t, err)
 		require.Equal(t, 1, fedSvc.deliverCalls)
 	})
 }
 
-func TestOutboxProcessor_HandleSQS_Round12(t *testing.T) {
+func TestOutboxProcessor_HandleSQSMessage_Round12(t *testing.T) {
 	origAsync := outboxRunAsync
 	origSleep := outboxSleep
 	t.Cleanup(func() {
@@ -348,13 +366,6 @@ func TestOutboxProcessor_HandleSQS_Round12(t *testing.T) {
 	})
 	outboxRunAsync = func(fn func()) { fn() }
 	outboxSleep = func(time.Duration) {}
-
-	req := lift.NewRequest(&adapters.Request{
-		Method:      "POST",
-		Path:        "/",
-		TriggerType: lift.TriggerAPIGatewayV2,
-	})
-	ctx := lift.NewContext(context.Background(), req)
 
 	op := &OutboxProcessor{
 		federationService:            &round12FederationService{},
@@ -382,14 +393,8 @@ func TestOutboxProcessor_HandleSQS_Round12(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, op.HandleSQS(ctx, events.SQSEvent{Records: []events.SQSMessage{
-		{MessageId: "msg-1", Body: string(body)},
-	}}))
-
-	err = op.HandleSQS(ctx, events.SQSEvent{Records: []events.SQSMessage{
-		{MessageId: "msg-1", Body: "not-json"},
-	}})
-	require.Error(t, err)
+	require.NoError(t, op.HandleSQSMessage(context.Background(), "req", events.SQSMessage{MessageId: "msg-1", Body: string(body)}))
+	require.Error(t, op.HandleSQSMessage(context.Background(), "req", events.SQSMessage{MessageId: "msg-1", Body: "not-json"}))
 }
 
 func TestOutboxErrors_Round12(t *testing.T) {
@@ -483,13 +488,6 @@ func TestOutboxProcessor_TriggerFederationDelivery_Round12(t *testing.T) {
 }
 
 func TestOutboxApp_HTTPHandlers_ErrorBranches_Round12(t *testing.T) {
-	origStart := startLambda
-	origNew := newOutboxProc
-	t.Cleanup(func() {
-		startLambda = origStart
-		newOutboxProc = origNew
-	})
-
 	mockDB := new(dynamock.MockDB)
 	mockQuery := new(dynamock.MockQuery)
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
@@ -543,48 +541,11 @@ func TestOutboxApp_HTTPHandlers_ErrorBranches_Round12(t *testing.T) {
 		},
 	}, nil).Maybe()
 
-	newOutboxProc = func() (*OutboxProcessor, error) { return processor, nil }
-
-	var captured func(context.Context, interface{}) (interface{}, error)
-	startLambda = func(handler interface{}) {
-		if h, ok := handler.(func(context.Context, interface{}) (interface{}, error)); ok {
-			captured = h
-		}
-	}
-
-	main()
-	require.NotNil(t, captured)
-
-	call := func(method, path, rawQuery string, headers map[string]any, body string) *lift.Response {
-		if headers == nil {
-			headers = map[string]any{}
-		}
-		event := map[string]any{
-			"version":        "2.0",
-			"routeKey":       method + " " + path,
-			"rawPath":        path,
-			"rawQueryString": rawQuery,
-			"headers":        headers,
-			"requestContext": map[string]any{
-				"requestId": "test-request-id",
-				"http": map[string]any{
-					"method": method,
-					"path":   path,
-				},
-			},
-			"body":            body,
-			"isBase64Encoded": false,
-		}
-		result, err := captured(context.Background(), event)
-		require.NoError(t, err)
-		resp, ok := result.(*lift.Response)
-		require.True(t, ok)
-		return resp
-	}
+	app := buildOutboxApp(processor)
 
 	// Locked bootstrap actor is forbidden without hitting actor lookup.
-	resp := call("GET", "/users/bootstrap/outbox", "", nil, "")
-	require.Equal(t, 403, resp.StatusCode)
+	resp := serveOutbox(app, "GET", "/users/bootstrap/outbox", nil, nil, "")
+	require.Equal(t, 403, resp.Status)
 
 	// Locked non-bootstrap actor returns an empty collection/page but still checks actor existence.
 	actorRepo.On("GetActorByUsername", mock.Anything, "alice").Return(&activitypub.Actor{
@@ -594,26 +555,27 @@ func TestOutboxApp_HTTPHandlers_ErrorBranches_Round12(t *testing.T) {
 			Context: activitypub.DefaultContext,
 		},
 	}, nil).Once()
-	resp = call("GET", "/users/alice/outbox", "", nil, "")
-	require.Equal(t, 200, resp.StatusCode)
+	resp = serveOutbox(app, "GET", "/users/alice/outbox", nil, nil, "")
+	require.Equal(t, 200, resp.Status)
 
 	// Actor not found (unlocked).
 	instanceRepo.state = &models.InstanceState{Locked: false}
 	actorRepo.On("GetActorByUsername", mock.Anything, "missing").Return(nil, common.ActorNotFoundError{Username: "missing"}).Once()
-	resp = call("GET", "/users/missing/outbox", "", nil, "")
-	require.Equal(t, 404, resp.StatusCode)
+	resp = serveOutbox(app, "GET", "/users/missing/outbox", nil, nil, "")
+	require.Equal(t, 404, resp.Status)
 
 	// POST blocked while locked.
 	instanceRepo.state = &models.InstanceState{Locked: true}
-	resp = call("POST", "/users/alice/outbox", "", nil, `{"type":"Create","object":{"type":"Note"}}`)
-	require.Equal(t, 403, resp.StatusCode)
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{"Content-Type": "application/json"}, `{"type":"Create","object":{"type":"Note"}}`)
+	require.Equal(t, 403, resp.Status)
 
 	// POST with invalid token.
 	instanceRepo.state = &models.InstanceState{Locked: false}
-	resp = call("POST", "/users/alice/outbox", "", map[string]any{
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
 		"authorization": "Bearer bad.token.value",
+		"Content-Type":  "application/json",
 	}, `{"type":"Create","object":{"type":"Note"}}`)
-	require.Equal(t, 401, resp.StatusCode)
+	require.Equal(t, 401, resp.Status)
 
 	// POST with insufficient scope.
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &auth.Claims{
@@ -622,11 +584,11 @@ func TestOutboxApp_HTTPHandlers_ErrorBranches_Round12(t *testing.T) {
 	})
 	signed, err := token.SignedString([]byte("secret"))
 	require.NoError(t, err)
-	resp = call("POST", "/users/alice/outbox", "", map[string]any{
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
 		"authorization": "Bearer " + signed,
-		"content-type":  "application/json",
+		"Content-Type":  "application/json",
 	}, `{"type":"Create","object":{"type":"Note"}}`)
-	require.Equal(t, 403, resp.StatusCode)
+	require.Equal(t, 403, resp.Status)
 
 	// POST invalid JSON.
 	token = jwt.NewWithClaims(jwt.SigningMethodHS256, &auth.Claims{
@@ -635,34 +597,30 @@ func TestOutboxApp_HTTPHandlers_ErrorBranches_Round12(t *testing.T) {
 	})
 	signed, err = token.SignedString([]byte("secret"))
 	require.NoError(t, err)
-	resp = call("POST", "/users/alice/outbox", "", map[string]any{
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
 		"authorization": "Bearer " + signed,
-		"content-type":  "application/json",
+		"Content-Type":  "application/json",
 	}, `{`)
-	require.Equal(t, 400, resp.StatusCode)
+	require.Equal(t, 400, resp.Status)
 
 	// POST unsupported activity type.
-	resp = call("POST", "/users/alice/outbox", "", map[string]any{
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
 		"authorization": "Bearer " + signed,
-		"content-type":  "application/json",
+		"Content-Type":  "application/json",
 	}, `{"type":"Nope","object":{"type":"Note"}}`)
-	require.Equal(t, 422, resp.StatusCode)
+	require.Equal(t, 422, resp.Status)
 
 	// POST invalid ActivityPub format (missing object).
-	resp = call("POST", "/users/alice/outbox", "", map[string]any{
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
 		"authorization": "Bearer " + signed,
-		"content-type":  "application/json",
+		"Content-Type":  "application/json",
 	}, `{"type":"Create"}`)
-	require.Equal(t, 422, resp.StatusCode)
+	require.Equal(t, 422, resp.Status)
 }
 
 func TestOutboxApp_HTTPHandlers_Round12(t *testing.T) {
-	origStart := startLambda
-	origNew := newOutboxProc
 	origAsync := outboxRunAsync
 	t.Cleanup(func() {
-		startLambda = origStart
-		newOutboxProc = origNew
 		outboxRunAsync = origAsync
 	})
 
@@ -720,56 +678,25 @@ func TestOutboxApp_HTTPHandlers_Round12(t *testing.T) {
 		{BaseObject: activitypub.BaseObject{ID: "https://example.com/activities/1", Type: activitypub.CreateType}},
 	}, "next", nil).Maybe()
 
-	newOutboxProc = func() (*OutboxProcessor, error) { return processor, nil }
-
-	var captured func(context.Context, interface{}) (interface{}, error)
-	startLambda = func(handler interface{}) {
-		if h, ok := handler.(func(context.Context, interface{}) (interface{}, error)); ok {
-			captured = h
-		}
-	}
-
-	main()
-	require.NotNil(t, captured)
-
-	call := func(method, path, rawQuery string, headers map[string]any, body string) *lift.Response {
-		if headers == nil {
-			headers = map[string]any{}
-		}
-		event := map[string]any{
-			"version":        "2.0",
-			"routeKey":       method + " " + path,
-			"rawPath":        path,
-			"rawQueryString": rawQuery,
-			"headers":        headers,
-			"requestContext": map[string]any{
-				"requestId": "test-request-id",
-				"http": map[string]any{
-					"method": method,
-					"path":   path,
-				},
-			},
-			"body":            body,
-			"isBase64Encoded": false,
-		}
-		result, err := captured(context.Background(), event)
-		require.NoError(t, err)
-		resp, ok := result.(*lift.Response)
-		require.True(t, ok)
-		return resp
-	}
+	app := buildOutboxApp(processor)
 
 	// GET collection metadata (counts via DB)
-	resp := call("GET", "/users/alice/outbox", "", nil, "")
-	require.Equal(t, 200, resp.StatusCode)
+	resp := serveOutbox(app, "GET", "/users/alice/outbox", nil, nil, "")
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, contentTypeActivityJSON, resp.Headers["content-type"][0])
 
 	// GET page=true (activities via repository)
-	resp = call("GET", "/users/alice/outbox", "page=true&limit=1&cursor=prev", nil, "")
-	require.Equal(t, 200, resp.StatusCode)
+	resp = serveOutbox(app, "GET", "/users/alice/outbox", map[string]string{
+		"page":   "true",
+		"limit":  "1",
+		"cursor": "prev",
+	}, nil, "")
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, contentTypeActivityJSON, resp.Headers["content-type"][0])
 
 	// POST: unauthenticated
-	resp = call("POST", "/users/alice/outbox", "", map[string]any{"content-type": "application/json"}, `{"type":"Create","object":{}}`)
-	require.Equal(t, 401, resp.StatusCode)
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{"Content-Type": "application/json"}, `{"type":"Create","object":{}}`)
+	require.Equal(t, 401, resp.Status)
 
 	// POST: happy path
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &auth.Claims{
@@ -791,16 +718,14 @@ func TestOutboxApp_HTTPHandlers_Round12(t *testing.T) {
 	}, nil).Once()
 	activityRepo.On("CreateActivity", mock.Anything, mock.Anything).Return(nil).Once()
 
-	resp = call("POST", "/users/alice/outbox", "", map[string]any{
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
 		"authorization": "Bearer " + signed,
-		"content-type":  "application/json",
+		"Content-Type":  "application/json",
 	}, `{"type":"Create","to":["https://www.w3.org/ns/activitystreams#Public"],"object":{"type":"Note"}}`)
-	require.Equalf(t, 201, resp.StatusCode, "body=%v headers=%v", resp.Body, resp.Headers)
+	require.Equalf(t, 201, resp.Status, "body=%s headers=%v", string(resp.Body), resp.Headers)
 
 	var created activitypub.Activity
-	bodyBytes, err := json.Marshal(resp.Body)
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(bodyBytes, &created))
+	require.NoError(t, json.Unmarshal(resp.Body, &created))
 	require.Equal(t, activitypub.CreateType, created.Type)
 	require.Equal(t, "https://example.com/users/alice", created.Actor)
 	require.NotEmpty(t, created.ID)
@@ -867,47 +792,6 @@ func TestOutboxProcessor_TrackDeliveryStatus_ErrorBranches_Round12(t *testing.T)
 	}, DeliveryResult{Success: false, StatusCode: 500, Duration: 10 * time.Millisecond, Attempt: 1, Error: errors.New("delivery failed")}))
 }
 
-func TestBuildOutboxApp_SQSHandler_ParseBranches_Round12(t *testing.T) {
-	processor := &OutboxProcessor{
-		logger:    zap.NewNop(),
-		lambdaCtx: &common.LambdaContext{Logger: zap.NewNop()},
-	}
-	app := buildOutboxApp(processor)
-
-	makeCtx := func(rawEvent any) *lift.Context {
-		req := lift.NewRequest(&adapters.Request{
-			TriggerType: lift.TriggerSQS,
-			RawEvent:    rawEvent,
-			Records: []any{
-				map[string]any{
-					"eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:outbox-delivery",
-				},
-			},
-		})
-		return lift.NewContext(context.Background(), req)
-	}
-
-	call := func(ctx *lift.Context) error {
-		h, err := app.GetEventRouter().FindEventHandler(ctx)
-		require.NoError(t, err)
-		return h.HandleEvent(ctx)
-	}
-
-	require.Error(t, call(makeCtx(nil)))
-	require.NoError(t, call(makeCtx(events.SQSEvent{})))
-	require.NoError(t, call(makeCtx(map[string]any{"Records": []any{}})))
-	require.Error(t, call(makeCtx(map[string]any{"Records": "not-a-slice"})))
-	require.Error(t, call(makeCtx(map[string]any{
-		"Records": []any{
-			map[string]any{
-				"eventSource":    "aws:sqs",
-				"eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:outbox-delivery",
-			},
-		},
-		"bad": make(chan int),
-	})))
-}
-
 func TestOutboxMain_PanicsWhenInitializationFails_Round12(t *testing.T) {
 	origProc := newOutboxProc
 	origStart := startLambda
@@ -938,17 +822,17 @@ func TestOutboxProcessor_HandleOutboxGet_DirectErrorBranches_Round12(t *testing.
 		},
 	}
 
-	// Missing username param.
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	require.NoError(t, op.HandleOutboxGet(ctx))
-	require.Equal(t, 400, ctx.Response.StatusCode)
+	// Missing ctx (treat as missing username).
+	directResp, err := op.HandleOutboxGet(nil)
+	require.NoError(t, err)
+	require.Equal(t, 400, directResp.Status)
+
+	app := buildOutboxApp(op)
 
 	// Actor lookup failure (non-not-found) returns 500.
 	actorRepo.On("GetActorByUsername", mock.Anything, "boom").Return(nil, errors.New("db down")).Once()
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.SetParam("username", "boom")
-	require.NoError(t, op.HandleOutboxGet(ctx))
-	require.Equal(t, 500, ctx.Response.StatusCode)
+	resp := serveOutbox(app, "GET", "/users/boom/outbox", nil, nil, "")
+	require.Equal(t, 500, resp.Status)
 
 	// Locked page=true response when instance state cannot be loaded.
 	instanceRepo.err = errors.New("no state")
@@ -960,17 +844,13 @@ func TestOutboxProcessor_HandleOutboxGet_DirectErrorBranches_Round12(t *testing.
 		},
 		Outbox: "https://example.com/users/alice/outbox",
 	}, nil).Once()
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		QueryParams: map[string]string{
-			"page":  "true",
-			"limit": "0",
-		},
-	}))
-	ctx.SetParam("username", "alice")
-	require.NoError(t, op.HandleOutboxGet(ctx))
-	require.Equal(t, 200, ctx.Response.StatusCode)
-	_, ok := ctx.Response.Body.(*activitypub.OrderedCollectionPage)
-	require.True(t, ok)
+	resp = serveOutbox(app, "GET", "/users/alice/outbox", map[string]string{
+		"page":  "true",
+		"limit": "0",
+	}, nil, "")
+	require.Equal(t, 200, resp.Status)
+
+	_ = mustUnmarshalBody[activitypub.OrderedCollectionPage](t, resp)
 }
 
 func TestOutboxProcessor_HandleOutboxGet_CountAndActivitiesErrors_Round12(t *testing.T) {
@@ -1005,16 +885,11 @@ func TestOutboxProcessor_HandleOutboxGet_CountAndActivitiesErrors_Round12(t *tes
 		},
 	}, nil).Once()
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		QueryParams: map[string]string{
-			"limit": "0",
-		},
-	}))
-	ctx.SetParam("username", "count")
-	require.NoError(t, op.HandleOutboxGet(ctx))
-	require.Equal(t, 200, ctx.Response.StatusCode)
-	body, ok := ctx.Response.Body.(*activitypub.OrderedCollection)
-	require.True(t, ok)
+	app := buildOutboxApp(op)
+	resp := serveOutbox(app, "GET", "/users/count/outbox", map[string]string{"limit": "0"}, nil, "")
+	require.Equal(t, 200, resp.Status)
+
+	body := mustUnmarshalBody[activitypub.OrderedCollection](t, resp)
 	require.Equal(t, 0, body.TotalItems)
 
 	actorRepo.On("GetActorByUsername", mock.Anything, "bob").Return(&activitypub.Actor{
@@ -1027,14 +902,8 @@ func TestOutboxProcessor_HandleOutboxGet_CountAndActivitiesErrors_Round12(t *tes
 	}, nil).Once()
 	activityRepo.On("GetOutboxActivities", mock.Anything, "bob", mock.Anything, mock.Anything).Return(nil, "", errors.New("repo down")).Once()
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		QueryParams: map[string]string{
-			"page": "true",
-		},
-	}))
-	ctx.SetParam("username", "bob")
-	require.NoError(t, op.HandleOutboxGet(ctx))
-	require.Equal(t, 500, ctx.Response.StatusCode)
+	resp = serveOutbox(app, "GET", "/users/bob/outbox", map[string]string{"page": "true"}, nil, "")
+	require.Equal(t, 500, resp.Status)
 }
 
 func TestOutboxProcessor_HandleOutboxPost_CreateActivityFailure_Round12(t *testing.T) {
@@ -1076,19 +945,12 @@ func TestOutboxProcessor_HandleOutboxPost_CreateActivityFailure_Round12(t *testi
 	}, nil).Once()
 	activityRepo.On("CreateActivity", mock.Anything, mock.Anything).Return(errors.New("write failed")).Once()
 
-	req := lift.NewRequest(&adapters.Request{
-		Method: "POST",
-		Headers: map[string]string{
-			"Authorization": "Bearer " + signed,
-			"Content-Type":  "application/json",
-		},
-		Body: []byte(`{"type":"Create","to":["https://www.w3.org/ns/activitystreams#Public"],"object":{"type":"Note"}}`),
-	})
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.SetParam("username", "alice")
-
-	require.NoError(t, op.HandleOutboxPost(ctx))
-	require.Equal(t, 500, ctx.Response.StatusCode)
+	app := buildOutboxApp(op)
+	resp := serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
+		"Authorization": "Bearer " + signed,
+		"Content-Type":  "application/json",
+	}, `{"type":"Create","to":["https://www.w3.org/ns/activitystreams#Public"],"object":{"type":"Note"}}`)
+	require.Equal(t, 500, resp.Status)
 }
 
 func TestOutboxProcessor_HandleOutboxPost_TriggerFederationDeliveryFailure_Round12(t *testing.T) {
@@ -1130,23 +992,17 @@ func TestOutboxProcessor_HandleOutboxPost_TriggerFederationDeliveryFailure_Round
 	}, nil).Once()
 	activityRepo.On("CreateActivity", mock.Anything, mock.Anything).Return(nil).Once()
 
-	req := lift.NewRequest(&adapters.Request{
-		Method: "POST",
-		Headers: map[string]string{
-			"Authorization": "Bearer " + signed,
-			"Content-Type":  "application/json",
-		},
-		Body: []byte(`{"type":"Create","to":["https://www.w3.org/ns/activitystreams#Public"],"object":{"type":"Note"}}`),
-	})
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.SetParam("username", "alice")
-
-	require.NoError(t, op.HandleOutboxPost(ctx))
-	require.Equal(t, 201, ctx.Response.StatusCode)
+	app := buildOutboxApp(op)
+	resp := serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
+		"Authorization": "Bearer " + signed,
+		"Content-Type":  "application/json",
+	}, `{"type":"Create","to":["https://www.w3.org/ns/activitystreams#Public"],"object":{"type":"Note"}}`)
+	require.Equal(t, 201, resp.Status)
 }
 
 func TestOutboxProcessor_AuthenticateOutboxRequest_MismatchAndActorError_Round12(t *testing.T) {
 	actorRepo := testmocks.NewMockActorRepository()
+	instanceRepo := &round12InstanceRepo{state: &models.InstanceState{Locked: false}}
 
 	lambdaCtx := &common.LambdaContext{
 		Logger: zap.NewNop(),
@@ -1154,9 +1010,10 @@ func TestOutboxProcessor_AuthenticateOutboxRequest_MismatchAndActorError_Round12
 	}
 
 	op := &OutboxProcessor{
-		actorRepository: actorRepo,
-		logger:          zap.NewNop(),
-		lambdaCtx:       lambdaCtx,
+		actorRepository:    actorRepo,
+		instanceRepository: instanceRepo,
+		logger:             zap.NewNop(),
+		lambdaCtx:          lambdaCtx,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &auth.Claims{
@@ -1166,22 +1023,21 @@ func TestOutboxProcessor_AuthenticateOutboxRequest_MismatchAndActorError_Round12
 	signed, err := token.SignedString([]byte("secret"))
 	require.NoError(t, err)
 
-	makeCtx := func() *lift.Context {
-		req := lift.NewRequest(&adapters.Request{
-			Headers: map[string]string{
-				"Authorization": "Bearer " + signed,
-				"Content-Type":  "application/json",
-			},
-		})
-		return lift.NewContext(context.Background(), req)
-	}
+	app := buildOutboxApp(op)
 
-	_, _, err = op.authenticateOutboxRequest(makeCtx(), "bob")
-	require.Error(t, err)
+	// Username mismatch (token vs path).
+	resp := serveOutbox(app, "POST", "/users/bob/outbox", nil, map[string]string{
+		"Authorization": "Bearer " + signed,
+		"Content-Type":  "application/json",
+	}, `{"type":"Create","object":{"type":"Note"}}`)
+	require.Equal(t, 403, resp.Status)
 
 	actorRepo.On("GetActor", mock.Anything, "alice").Return(nil, errors.New("db down")).Once()
-	_, _, err = op.authenticateOutboxRequest(makeCtx(), "alice")
-	require.Error(t, err)
+	resp = serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
+		"Authorization": "Bearer " + signed,
+		"Content-Type":  "application/json",
+	}, `{"type":"Create","object":{"type":"Note"}}`)
+	require.Equal(t, 500, resp.Status)
 }
 
 func TestOutboxProcessor_ValidateJWTToken_UnexpectedSigningMethod_Round12(t *testing.T) {
@@ -1219,15 +1075,22 @@ func TestOutboxActivityValidationMap_OmitsNilObject_Round12(t *testing.T) {
 }
 
 func TestOutboxProcessor_GetBearerToken_InvalidHeader_Round12(t *testing.T) {
-	op := &OutboxProcessor{}
-
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Headers: map[string]string{
-			"Authorization": "Token abc123",
+	instanceRepo := &round12InstanceRepo{state: &models.InstanceState{Locked: false}}
+	op := &OutboxProcessor{
+		instanceRepository: instanceRepo,
+		logger:             zap.NewNop(),
+		lambdaCtx: &common.LambdaContext{
+			Logger: zap.NewNop(),
+			Config: &config.Config{Domain: "example.com", Region: "us-east-1", JWTSecret: "secret"},
 		},
-	}))
+	}
 
-	require.Equal(t, "", op.getBearerToken(ctx))
+	app := buildOutboxApp(op)
+	resp := serveOutbox(app, "POST", "/users/alice/outbox", nil, map[string]string{
+		"Authorization": "Token abc123",
+		"Content-Type":  "application/json",
+	}, `{"type":"Create","object":{"type":"Note"}}`)
+	require.Equal(t, 401, resp.Status)
 }
 
 func TestOutboxProcessor_HandleOutboxGet_BootstrapUsernameOverride_Round12(t *testing.T) {
@@ -1247,8 +1110,7 @@ func TestOutboxProcessor_HandleOutboxGet_BootstrapUsernameOverride_Round12(t *te
 		},
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.SetParam("username", "admin")
-	require.NoError(t, op.HandleOutboxGet(ctx))
-	require.Equal(t, 403, ctx.Response.StatusCode)
+	app := buildOutboxApp(op)
+	resp := serveOutbox(app, "GET", "/users/admin/outbox", nil, nil, "")
+	require.Equal(t, 403, resp.Status)
 }
