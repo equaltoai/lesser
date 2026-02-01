@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/json"
@@ -8,19 +8,18 @@ import (
 	originalai "github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
 	ai "github.com/equaltoai/lesser/pkg/services/ai"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 // Removed global AI storage - now using AIRepository
 
 // HandleGetAIAnalysisLift returns AI analysis for an object
 // GET /api/v1/ai/analysis/:object_id
-func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Auth - require read scope
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
 			"error": "authentication required",
 		})
 	}
@@ -29,8 +28,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	_, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
 			"error": "invalid token",
 		})
 	}
@@ -39,7 +37,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 	objectID := ctx.Param("object_id")
 
 	// Test mode fallback - extract from path
-	if err := common.ValidateRequiredParam("object_id", objectID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil && ctx.Request.Path != "" {
 		// Extract object_id from path like /api/v1/ai/analysis/test-object-123
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[4] == "analysis" {
@@ -48,36 +46,32 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
 	}
 
 	// Get analysis using AI service
-	result, err := h.registry.AI().GetAnalysis(ctx.Context, &ai.GetAnalysisQuery{
+	result, err := h.registry.AI().GetAnalysis(ctx.Context(), &ai.GetAnalysisQuery{
 		ObjectID: objectID,
 	})
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusNotFound, map[string]string{
 			"error": "analysis not found",
 		})
 	}
 
 	// Return analysis
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(result.Analysis)
+	return okJSON(result.Analysis)
 }
 
 // HandleRequestAIAnalysisLift triggers AI analysis for an object
 // POST /api/v1/ai/analyze
-func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
+func (h *Handler) HandleRequestAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Auth - require moderation scope
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
 			"error": "authentication required",
 		})
 	}
@@ -86,16 +80,14 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
 			"error": "invalid token",
 		})
 	}
 
 	// Check moderation scope
 	if !claims.HasScope("moderation") {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusForbidden, map[string]string{
 			"error": "moderation scope required",
 		})
 	}
@@ -106,39 +98,30 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 		Force      bool   `json:"force"` // Force re-analysis
 	}
 
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-				ctx.Status(http.StatusBadRequest)
-				return ctx.JSON(map[string]string{
-					"error": "invalid request body",
-				})
-			}
-		} else {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid request body",
-			})
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		// Fallback for test environments / missing content-type
+		if len(ctx.Request.Body) == 0 {
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		}
+		if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		}
 	}
 
 	if err := common.ValidateRequiredParam("object_id", req.ObjectID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
 	}
 
 	// Queue for analysis using AI service
-	queueResult, err := h.registry.AI().QueueForAnalysis(ctx.Context, &ai.QueueAnalysisCommand{
+	queueResult, err := h.registry.AI().QueueForAnalysis(ctx.Context(), &ai.QueueAnalysisCommand{
 		ObjectID:   req.ObjectID,
 		ObjectType: req.ObjectType,
 		Force:      req.Force,
 	})
 	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "failed to queue analysis",
 		})
 	}
@@ -146,12 +129,11 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 	// If not queued (already exists), return existing
 	if !queueResult.Queued {
 		// Get the existing analysis
-		result, _ := h.registry.AI().GetAnalysis(ctx.Context, &ai.GetAnalysisQuery{
+		result, _ := h.registry.AI().GetAnalysis(ctx.Context(), &ai.GetAnalysisQuery{
 			ObjectID: req.ObjectID,
 		})
 		if result != nil && result.Analysis != nil {
-			ctx.Status(http.StatusOK)
-			return ctx.JSON(result.Analysis)
+			return okJSON(result.Analysis)
 		}
 	}
 
@@ -161,55 +143,37 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 		"estimated_time": "10-30 seconds",
 	}
 
-	ctx.Status(http.StatusAccepted)
-	return ctx.JSON(response)
+	return apptheory.JSON(http.StatusAccepted, response)
 }
 
 // HandleGetAIStatsLift returns AI analysis statistics
 // GET /api/v1/ai/stats
-func (h *Handler) HandleGetAIStatsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAIStatsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Public endpoint - no auth required
 
 	// Get time range
-	period := ctx.Query("period")
-
-	// Test mode fallback - extract from path query string
-	if period == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
-		parts := strings.Split(ctx.Request.Path, "?")
-		if len(parts) > 1 {
-			params := strings.Split(parts[1], "&")
-			for _, param := range params {
-				kv := strings.Split(param, "=")
-				if len(kv) == 2 && kv[0] == "period" {
-					period = kv[1]
-					break
-				}
-			}
-		}
-	}
+	period := queryValue(ctx, "period")
 
 	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "day"
 	}
 
 	// Get stats using AI service
-	result, err := h.registry.AI().GetStats(ctx.Context, &ai.GetStatsQuery{
+	result, err := h.registry.AI().GetStats(ctx.Context(), &ai.GetStatsQuery{
 		Period: period,
 	})
 	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "failed to get stats",
 		})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(result.Stats)
+	return okJSON(result.Stats)
 }
 
 // HandleGetAISummaryLift returns a summary of AI features and capabilities
 // GET /api/v1/ai/capabilities
-func (h *Handler) HandleGetAISummaryLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAISummaryLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	capabilities := map[string]any{
 		"text_analysis": map[string]any{
 			"sentiment_analysis": true,
@@ -242,8 +206,7 @@ func (h *Handler) HandleGetAISummaryLift(ctx *lift.Context) error {
 		"cost_per_analysis": originalai.CostPerOperation,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(capabilities)
+	return okJSON(capabilities)
 }
 
 // Helper methods removed - now handled by AIRepository

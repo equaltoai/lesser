@@ -1,7 +1,7 @@
 // statuses_full.go - Complete service-based implementation of status endpoints
 // This implements Phase 3 with full ActivityPub and federation support
 
-package lift
+package handlers
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -28,17 +28,20 @@ const (
 )
 
 // HandleCreateStatusFull creates a new status using the Notes service
-func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
+func (h *Handler) HandleCreateStatusFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request
 	var req models.CreateStatusRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondBadRequest(ctx, "invalid request format")
 	}
 
 	// Authenticate with write scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Extract poll data if poll is provided
@@ -66,7 +69,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	}
 
 	// Call Notes service
-	result, err := h.registry.Notes().CreateNote(ctx.Context, &notes.CreateNoteCommand{
+	result, err := h.registry.Notes().CreateNote(ctx.Context(), &notes.CreateNoteCommand{
 		AuthorID:       claims.Username,
 		Content:        req.Status,
 		Visibility:     req.Visibility,
@@ -89,16 +92,16 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	mastodonStatus := transformations.NotesToStatusAny(result.Note, h.cfg.BaseURL())
 
 	// Enrich with poll data if poll exists
-	if err := h.enrichStatusWithPoll(ctx.Context, &mastodonStatus, result.Note.StatusID, claims.Username); err != nil {
+	if err := h.enrichStatusWithPoll(ctx.Context(), &mastodonStatus, result.Note.StatusID, claims.Username); err != nil {
 		h.logger.Warn("failed to enrich status with poll data", zap.Error(err))
 	}
 
 	// Return created status
-	return ctx.Status(201).JSON(mastodonStatus)
+	return createdJSON(mastodonStatus)
 }
 
 // HandleGetStatusFull retrieves a status by ID using the Notes service
-func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
+func (h *Handler) HandleGetStatusFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return common.RespondBadRequest(ctx, "missing status id")
@@ -108,7 +111,7 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 	viewerID := h.getOptionalAuthenticatedUser(ctx)
 
 	// Call Notes service to get the note
-	note, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	note, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "status not found")
@@ -120,7 +123,7 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 	}
 
 	// Check privacy permissions for the viewer using robust authorization
-	canView, err := h.checkStatusViewPermission(ctx.Context, note, viewerID)
+	canView, err := h.checkStatusViewPermission(ctx.Context(), note, viewerID)
 	if err != nil {
 		h.logger.Error("failed to check status view permissions",
 			zap.String("status_id", statusID),
@@ -137,15 +140,15 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 	mastodonStatus := transformations.NotesToStatusAny(note, h.cfg.BaseURL())
 
 	// Enrich with poll data if poll exists
-	if err := h.enrichStatusWithPoll(ctx.Context, &mastodonStatus, note.StatusID, viewerID); err != nil {
+	if err := h.enrichStatusWithPoll(ctx.Context(), &mastodonStatus, note.StatusID, viewerID); err != nil {
 		h.logger.Warn("failed to enrich status with poll data", zap.Error(err))
 	}
 
-	return ctx.JSON(mastodonStatus)
+	return okJSON(mastodonStatus)
 }
 
 // HandleDeleteStatusFull deletes a status using the Notes service
-func (h *Handler) HandleDeleteStatusFull(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteStatusFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return common.RespondBadRequest(ctx, "missing status id")
@@ -154,11 +157,14 @@ func (h *Handler) HandleDeleteStatusFull(ctx *lift.Context) error {
 	// Authenticate with write scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Call Notes service
-	err = h.registry.Notes().DeleteNote(ctx.Context, &notes.DeleteNoteCommand{
+	err = h.registry.Notes().DeleteNote(ctx.Context(), &notes.DeleteNoteCommand{
 		StatusID:  statusID,
 		DeleterID: claims.Username,
 	})
@@ -173,7 +179,7 @@ func (h *Handler) HandleDeleteStatusFull(ctx *lift.Context) error {
 	}
 
 	// Return empty response for successful deletion
-	return ctx.JSON(map[string]interface{}{})
+	return okJSON(map[string]interface{}{})
 }
 
 // Helper methods

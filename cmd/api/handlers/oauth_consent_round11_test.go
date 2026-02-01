@@ -1,12 +1,9 @@
-package lift
+package handlers
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
-	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/common"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -34,12 +31,10 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 	handler, _, _ := round11NewHandler(t, cfg, state)
 
 	ctxDeny := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-1&action=deny"))
-	require.NoError(t, handler.HandleOAuthConsentLift(ctxDeny))
-	require.Equal(t, http.StatusOK, ctxDeny.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleOAuthConsentLift(ctxDeny))
 
 	ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-2&action=approve"))
-	require.NoError(t, handler.HandleOAuthConsentLift(ctxApprove))
-	require.Equal(t, http.StatusOK, ctxApprove.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleOAuthConsentLift(ctxApprove))
 
 	authRequest := `{"client_id":"client-1","redirect_uri":"https://client.example/callback","state":"xyz","code_challenge":"abc","code_challenge_method":"plain","scope":"read write"}`
 	ctxLogin, err := round10NewLiftContext(http.MethodGet, "/oauth/login", nil, map[string]string{
@@ -47,8 +42,6 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 		"return_to":    "/oauth/authorize",
 	}, nil)
 	require.NoError(t, err)
-	ctxLogin.Context = context.WithValue(ctxLogin.Context, common.ContextKeyClaims, &auth.Claims{Username: "alice"})
-	require.NoError(t, handler.HandleOAuthLoginLift(ctxLogin))
-	require.Equal(t, http.StatusFound, ctxLogin.Response.StatusCode)
-	require.Contains(t, ctxLogin.Response.Headers["Location"], "https://example.com/auth/login")
+	respLogin := requireStatus(t, http.StatusFound)(handler.HandleOAuthLoginLift(ctxLogin))
+	require.Contains(t, firstStringValue(respLogin.Headers, "location"), "https://example.com/auth/login")
 }

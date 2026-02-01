@@ -1,27 +1,30 @@
-package lift
+package handlers
 
 import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetRelationshipsLift handles GET /api/v1/accounts/relationships
 // It accepts multiple account IDs as query parameters: id[]=1&id[]=2
-func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetRelationshipsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
 	username, err := h.authenticateUser(ctx, []string{"read:follows", auth.ScopeRead})
 	if err != nil {
-		return err // Error response already set by authenticateUser
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	return h.handleRelationshipsLogic(ctx, username)
 }
 
 // handleRelationshipsLogic contains the main relationships logic, separated for testing
-func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) error {
+func (h *Handler) handleRelationshipsLogic(ctx *apptheory.Context, username string) (*apptheory.Response, error) {
 	// Extract account IDs from query parameters
 	accountIDs := h.extractAccountIDsLift(ctx)
 	if err := common.ValidateSliceNotEmpty("account_ids", accountIDs); err != nil {
@@ -41,7 +44,7 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) e
 		}
 
 		// Check if account exists (basic validation)
-		_, err := h.registry.Accounts().GetAccount(ctx.Context, accountID)
+		_, err := h.registry.Accounts().GetAccount(ctx.Context(), accountID)
 		if err != nil {
 			// Skip accounts that don't exist
 			h.logger.Warn("account not found for relationship",
@@ -51,7 +54,7 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) e
 		}
 
 		// Use the Relationships service to get relationship data
-		relationshipData, err := h.registry.Relationships().GetRelationship(ctx.Context, username, accountID)
+		relationshipData, err := h.registry.Relationships().GetRelationship(ctx.Context(), username, accountID)
 		if err != nil {
 			h.logger.Error("failed to get relationship from service",
 				zap.String("requester", username),
@@ -79,12 +82,12 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) e
 		relationships = append(relationships, relationship)
 	}
 
-	return ctx.JSON(relationships)
+	return okJSON(relationships)
 }
 
 // extractAccountIDsLift extracts account IDs from query parameters
 // Supports both id[]=1&id[]=2 and id=1,2 formats
-func (h *Handler) extractAccountIDsLift(ctx *lift.Context) []string {
+func (h *Handler) extractAccountIDsLift(ctx *apptheory.Context) []string {
 	// Use the shared parseArrayParam helper
 	return h.parseArrayParam(ctx, "id")
 }

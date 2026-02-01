@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -22,8 +23,7 @@ func TestCreateReportLiftRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateReportLift(ctx))
 	})
 
 	t.Run("insufficient scope returns forbidden", func(t *testing.T) {
@@ -37,8 +37,7 @@ func TestCreateReportLiftRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleCreateReportLift(ctx))
 	})
 
 	t.Run("unauthorized when Authorization header is malformed", func(t *testing.T) {
@@ -51,8 +50,7 @@ func TestCreateReportLiftRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateReportLift(ctx))
 	})
 
 	t.Run("unauthorized when access token is invalid", func(t *testing.T) {
@@ -65,8 +63,7 @@ func TestCreateReportLiftRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateReportLift(ctx))
 	})
 
 	t.Run("invalid JSON body returns bad request", func(t *testing.T) {
@@ -76,8 +73,7 @@ func TestCreateReportLiftRound12(t *testing.T) {
 			"Authorization": "Bearer " + token,
 		}, nil, []byte("{"))
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateReportLift(ctx))
 	})
 
 	t.Run("create report storage failure returns internal error", func(t *testing.T) {
@@ -92,8 +88,7 @@ func TestCreateReportLiftRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleCreateReportLift(ctx))
 	})
 
 	t.Run("validation error returns bad request", func(t *testing.T) {
@@ -107,8 +102,7 @@ func TestCreateReportLiftRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateReportLift(ctx))
 	})
 
 	t.Run("success creates report and returns response", func(t *testing.T) {
@@ -126,14 +120,14 @@ func TestCreateReportLiftRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateReportLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleCreateReportLift(ctx))
 
-		resp := ctx.Response.Body.(*apimodels.Report)
-		require.Equal(t, "spam", resp.Category)
-		require.Equal(t, []string{"status-1"}, resp.StatusIDs)
-		require.Equal(t, []int{1, 2}, resp.RuleIDs)
-		require.NotNil(t, resp.TargetAccount)
+		var body apimodels.Report
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "spam", body.Category)
+		require.Equal(t, []string{"status-1"}, body.StatusIDs)
+		require.Equal(t, []int{1, 2}, body.RuleIDs)
+		require.NotNil(t, body.TargetAccount)
 	})
 }
 

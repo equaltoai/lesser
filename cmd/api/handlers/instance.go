@@ -1,11 +1,10 @@
-package lift
+package handlers
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -25,22 +24,22 @@ const (
 )
 
 // HandleGetInstanceV1Lift returns instance information in v1 (legacy) format
-func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
 
-	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context)
+	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context())
 	locked := stateErr != nil || state.Locked
 
 	// Get rules from storage
-	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context)
+	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get instance rules", zap.Error(err))
 		rules = []storage.InstanceRule{}
 	}
 
 	// Get extended description
-	extendedDescription, _, err := h.repos.Instance().GetExtendedDescription(ctx.Context)
+	extendedDescription, _, err := h.repos.Instance().GetExtendedDescription(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get extended description", zap.Error(err))
 		extendedDescription = ""
@@ -48,7 +47,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 
 	// Get VAPID public key
 	var vapidPublicKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
 	if err != nil {
 		// Check if we're in production mode
 		env := h.cfg.Stage
@@ -65,19 +64,19 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	}
 
 	// Get real instance metrics
-	userCount, err := h.repos.Analytics().GetTotalUserCount(ctx.Context)
+	userCount, err := h.repos.Analytics().GetTotalUserCount(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get user count", zap.Error(err))
 		userCount = 0
 	}
 
-	statusCount, err := h.repos.Instance().GetTotalStatusCount(ctx.Context)
+	statusCount, err := h.repos.Instance().GetTotalStatusCount(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get status count", zap.Error(err))
 		statusCount = 0
 	}
 
-	domainCount, err := h.repos.Instance().GetTotalDomainCount(ctx.Context)
+	domainCount, err := h.repos.Instance().GetTotalDomainCount(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get domain count", zap.Error(err))
 		domainCount = 0
@@ -85,7 +84,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 
 	// Get contact account (admin)
 	var contactAccount map[string]any
-	adminActor, err := h.repos.Instance().GetContactAccount(ctx.Context)
+	adminActor, err := h.repos.Instance().GetContactAccount(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get contact account", zap.Error(err))
 	} else if adminActor != nil {
@@ -106,9 +105,9 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 			"avatar_static":   adminActor.Avatar,
 			"header":          "", // ActorRecord doesn't have header
 			"header_static":   "", // ActorRecord doesn't have header
-			"followers_count": h.getAccountFollowersCountLift(ctx.Context, adminActor.Username),
-			"following_count": h.getAccountFollowingCountLift(ctx.Context, adminActor.Username),
-			"statuses_count":  h.getAccountStatusesCountLift(ctx.Context, adminActor.Username),
+			"followers_count": h.getAccountFollowersCountLift(ctx.Context(), adminActor.Username),
+			"following_count": h.getAccountFollowingCountLift(ctx.Context(), adminActor.Username),
+			"statuses_count":  h.getAccountStatusesCountLift(ctx.Context(), adminActor.Username),
 			"emojis":          []any{},
 			"fields":          []any{}, // ActorRecord doesn't have fields
 		}
@@ -165,12 +164,11 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 		Rules:               rules,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleGetInstancePeersLift returns connected domains (federation peers)
-func (h *Handler) HandleGetInstancePeersLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstancePeersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Federation peers tracked in DynamoDB via federation service
 	// For now, check if we have any remote actors in our system
 
@@ -178,7 +176,7 @@ func (h *Handler) HandleGetInstancePeersLift(ctx *lift.Context) error {
 
 	// Get unique domains from remote actors
 	// This is a simplified implementation - in production you'd want to track this separately
-	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "@", 100, false, 0)
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context(), "@", 100, false, 0)
 	if err != nil {
 		h.logger.Warn("failed to search for remote actors", zap.Error(err))
 	} else {
@@ -202,12 +200,11 @@ func (h *Handler) HandleGetInstancePeersLift(ctx *lift.Context) error {
 		}
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(peers)
+	return okJSON(peers)
 }
 
 // HandleGetInstanceActivityLift returns instance activity statistics
-func (h *Handler) HandleGetInstanceActivityLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceActivityLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Generate weekly activity data for the past 12 weeks
 	activity := make([]apimodels.InstanceActivityEntry, 12)
 
@@ -225,7 +222,7 @@ func (h *Handler) HandleGetInstanceActivityLift(ctx *lift.Context) error {
 		weekTimestamp := thisWeekStart.Unix()
 
 		// Get activity data from storage
-		weekActivity, err := h.repos.Instance().GetWeeklyActivity(ctx.Context, weekTimestamp)
+		weekActivity, err := h.repos.Instance().GetWeeklyActivity(ctx.Context(), weekTimestamp)
 		if err != nil {
 			h.logger.Warn("failed to get weekly activity",
 				zap.Int64("week", weekTimestamp),
@@ -248,19 +245,17 @@ func (h *Handler) HandleGetInstanceActivityLift(ctx *lift.Context) error {
 		}
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(activity)
+	return okJSON(activity)
 }
 
 // HandleGetInstanceDomainBlocksLift returns public domain blocks
-func (h *Handler) HandleGetInstanceDomainBlocksLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceDomainBlocksLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get domain blocks from storage
-	domainBlocks, _, err := h.repos.DomainBlock().ListInstanceDomainBlocks(ctx.Context, 100, "")
+	domainBlocks, _, err := h.repos.DomainBlock().ListInstanceDomainBlocks(ctx.Context(), 100, "")
 	if err != nil {
 		h.logger.Warn("failed to get domain blocks", zap.Error(err))
 		// Return empty array on error
-		ctx.Status(http.StatusOK)
-		return ctx.JSON([]apimodels.InstanceDomainBlock{})
+		return okJSON([]apimodels.InstanceDomainBlock{})
 	}
 
 	// Convert to API format
@@ -281,12 +276,11 @@ func (h *Handler) HandleGetInstanceDomainBlocksLift(ctx *lift.Context) error {
 		}
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(blocks)
+	return okJSON(blocks)
 }
 
 // HandleGetInstancePrivacyPolicyLift returns the privacy policy
-func (h *Handler) HandleGetInstancePrivacyPolicyLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstancePrivacyPolicyLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Store privacy policy content as a constant for Lambda environment
 	// In production, you might want to store this in DynamoDB or S3
 	const privacyPolicyContent = `# Privacy Policy
@@ -323,12 +317,11 @@ Last updated: 2025-01-01`
 		"updated_at": "2025-01-01T00:00:00Z",
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetInstanceTermsOfServiceLift returns the terms of service
-func (h *Handler) HandleGetInstanceTermsOfServiceLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceTermsOfServiceLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Store terms of service content as a constant for Lambda environment
 	// In production, you might want to store this in DynamoDB or S3
 	const termsContent = `# Terms of Service
@@ -371,8 +364,7 @@ Last updated: 2025-01-01`
 		"updated_at": "2025-01-01T00:00:00Z",
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // markdownToHTMLLift converts markdown to HTML (basic implementation)

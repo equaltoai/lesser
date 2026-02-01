@@ -9,7 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/errors"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -37,9 +37,9 @@ func DefaultErrorConfig(serviceName string, logger *zap.Logger) ErrorMiddlewareC
 }
 
 // ErrorHandlingMiddleware creates centralized error handling middleware for Lift
-func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) (err error) {
+func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (resp *apptheory.Response, err error) {
 			// Add panic recovery if enabled
 			if config.EnablePanicRecovery {
 				defer func() {
@@ -56,31 +56,43 @@ func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) lift.Middleware {
 							zap.String("stack", string(buf)))
 
 						// Return generic internal server error
-						err = RespondInternalServerError(ctx, "Internal server error")
+						resp, err = RespondInternalServerError(ctx, "Internal server error")
 					}
 				}()
 			}
 
 			// Process the request
-			err = next.Handle(ctx)
+			resp, err = next(ctx)
 
 			// Handle any errors returned by handlers
 			if err != nil {
-				handleRequestError(ctx, err, config)
-				return nil
+				handled, handleErr := handleRequestError(ctx, err, config)
+				if handleErr != nil {
+					return nil, handleErr
+				}
+				return handled, nil
 			}
 
-			return err
-		})
+			return resp, nil
+		}
 	}
 }
 
 // handleRequestError processes errors from request handlers using centralized patterns
-func handleRequestError(ctx *lift.Context, err error, config ErrorMiddlewareConfig) {
+func handleRequestError(ctx *apptheory.Context, err error, config ErrorMiddlewareConfig) (*apptheory.Response, error) {
+	// AppTheory runtime errors (timeouts, rate limits, etc.) should be preserved.
+	var atErr *apptheory.AppError
+	if stdErrors.As(err, &atErr) {
+		status := appTheoryStatusForErrorCode(atErr.Code)
+		return apptheory.JSON(status, StandardErrorResponse{
+			Error: atErr.Message,
+			Code:  errorCodeForHTTPStatus(status),
+		})
+	}
+
 	// Check if it's already a centralized AppError
 	if appErr, ok := errors.AsAppError(err); ok {
-		handleAppError(ctx, appErr, config)
-		return
+		return handleAppError(ctx, appErr, config)
 	}
 
 	// Check for common error patterns and convert to centralized AppError
@@ -103,11 +115,40 @@ func handleRequestError(ctx *lift.Context, err error, config ErrorMiddlewareConf
 		appErr = errors.InternalWithCause(err, "An error occurred processing your request")
 	}
 
-	handleAppError(ctx, appErr, config)
+	return handleAppError(ctx, appErr, config)
+}
+
+func appTheoryStatusForErrorCode(code string) int {
+	switch code {
+	case "app.bad_request", "app.validation_failed":
+		return 400
+	case "app.unauthorized":
+		return 401
+	case "app.forbidden":
+		return 403
+	case "app.not_found":
+		return 404
+	case "app.method_not_allowed":
+		return 405
+	case "app.conflict":
+		return 409
+	case "app.too_large":
+		return 413
+	case "app.timeout":
+		return 408
+	case "app.rate_limited":
+		return 429
+	case "app.overloaded":
+		return 503
+	case "app.internal":
+		return 500
+	default:
+		return 500
+	}
 }
 
 // handleAppError processes AppError instances with safe user message handling
-func handleAppError(ctx *lift.Context, appErr *errors.AppError, config ErrorMiddlewareConfig) {
+func handleAppError(ctx *apptheory.Context, appErr *errors.AppError, config ErrorMiddlewareConfig) (*apptheory.Response, error) {
 	// Log the internal error details
 	logFields := []zap.Field{
 		zap.String("service", config.ServiceName),
@@ -122,8 +163,8 @@ func handleAppError(ctx *lift.Context, appErr *errors.AppError, config ErrorMidd
 		logFields = append(logFields, zap.Any("username", username))
 	}
 
-	if requestID := ctx.Get("request_id"); requestID != nil {
-		logFields = append(logFields, zap.Any("request_id", requestID))
+	if ctx != nil && ctx.RequestID != "" {
+		logFields = append(logFields, zap.String("request_id", ctx.RequestID))
 	}
 
 	// Log internal error (truncated if too long)
@@ -162,7 +203,7 @@ func handleAppError(ctx *lift.Context, appErr *errors.AppError, config ErrorMidd
 	}
 
 	// Return safe response to client
-	_ = ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
 		Code:  string(appErr.Code),
 	})
@@ -184,7 +225,7 @@ func emitErrorMetrics(appErr *errors.AppError, config ErrorMiddlewareConfig) {
 }
 
 // ValidationErrorMiddleware creates middleware specifically for validation error handling
-func ValidationErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
+func ValidationErrorMiddleware(serviceName string, logger *zap.Logger) apptheory.Middleware {
 	config := DefaultErrorConfig(serviceName, logger)
 	config.EnableStackTrace = false // Don't need stack traces for validation errors
 
@@ -192,7 +233,7 @@ func ValidationErrorMiddleware(serviceName string, logger *zap.Logger) lift.Midd
 }
 
 // ProductionErrorMiddleware creates error middleware optimized for production
-func ProductionErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
+func ProductionErrorMiddleware(serviceName string, logger *zap.Logger) apptheory.Middleware {
 	config := DefaultErrorConfig(serviceName, logger)
 	config.EnableStackTrace = false
 	config.EnablePanicRecovery = true
@@ -203,7 +244,7 @@ func ProductionErrorMiddleware(serviceName string, logger *zap.Logger) lift.Midd
 }
 
 // DevelopmentErrorMiddleware creates error middleware optimized for development
-func DevelopmentErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
+func DevelopmentErrorMiddleware(serviceName string, logger *zap.Logger) apptheory.Middleware {
 	config := DefaultErrorConfig(serviceName, logger)
 	config.EnableStackTrace = true
 	config.EnablePanicRecovery = true
@@ -216,27 +257,23 @@ func DevelopmentErrorMiddleware(serviceName string, logger *zap.Logger) lift.Mid
 // Helper middleware for specific error handling patterns
 
 // NotFoundMiddleware creates middleware that handles 404 errors gracefully
-func NotFoundMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			err := next.Handle(ctx)
-
-			// If no error but no response was set, it's likely a 404
-			if err == nil && ctx.Response.StatusCode == 0 {
+func NotFoundMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
+			if err == nil && resp == nil {
 				return RespondNotFound(ctx)
 			}
-
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
 // TimeoutErrorMiddleware creates middleware that handles timeout errors
-func TimeoutErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			err := next.Handle(ctx)
-
+func TimeoutErrorMiddleware(serviceName string, logger *zap.Logger) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
 			if err != nil && isTimeoutError(err) {
 				logger.Warn("request timeout",
 					zap.String("service", serviceName),
@@ -246,8 +283,8 @@ func TimeoutErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middlew
 				return RespondServiceUnavailable(ctx, "request timeout")
 			}
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
@@ -276,43 +313,47 @@ func isTimeoutError(err error) bool {
 }
 
 // ErrorRecoveryMiddleware provides graceful degradation for critical errors
-func ErrorRecoveryMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			err := next.Handle(ctx)
-
-			if err != nil {
-				// Attempt graceful recovery for specific error types
-				recoveredErr := attemptErrorRecovery(ctx, err, serviceName, logger)
-				if recoveredErr == nil {
-					return nil
-				}
-				return recoveredErr
+func ErrorRecoveryMiddleware(serviceName string, logger *zap.Logger) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
+			if err == nil {
+				return resp, nil
 			}
 
-			return err
-		})
+			recovered, recoveredResp, recoveredErr := attemptErrorRecovery(ctx, err, serviceName, logger)
+			if recoveredErr != nil {
+				return nil, recoveredErr
+			}
+			if recovered {
+				return recoveredResp, nil
+			}
+
+			return resp, err
+		}
 	}
 }
 
 // attemptErrorRecovery attempts to recover from specific types of errors
-func attemptErrorRecovery(ctx *lift.Context, err error, serviceName string, logger *zap.Logger) error {
+func attemptErrorRecovery(ctx *apptheory.Context, err error, serviceName string, logger *zap.Logger) (bool, *apptheory.Response, error) {
 	switch {
 	case isTemporaryError(err):
 		logger.Info("temporary error - returning degraded response",
 			zap.String("service", serviceName),
 			zap.Error(err))
-		return RespondServiceUnavailable(ctx, "temporary service issue")
+		resp, respErr := RespondServiceUnavailable(ctx, "temporary service issue")
+		return true, resp, respErr
 
 	case isRetryableError(err):
 		logger.Info("retryable error detected",
 			zap.String("service", serviceName),
 			zap.Error(err))
 		// Could implement retry logic here
-		return RespondServiceUnavailable(ctx, "please retry")
+		resp, respErr := RespondServiceUnavailable(ctx, "please retry")
+		return true, resp, respErr
 
 	default:
-		return err // No recovery possible
+		return false, nil, nil // No recovery possible
 	}
 }
 
@@ -356,7 +397,7 @@ func isRetryableError(err error) bool {
 }
 
 // CreateStandardErrorMiddleware creates the standard error handling middleware stack
-func CreateStandardErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
+func CreateStandardErrorMiddleware(serviceName string, logger *zap.Logger) apptheory.Middleware {
 	cfg := config.Get()
 	if cfg.Environment == "production" {
 		return ProductionErrorMiddleware(serviceName, logger)
@@ -365,16 +406,16 @@ func CreateStandardErrorMiddleware(serviceName string, logger *zap.Logger) lift.
 }
 
 // CreateAPIErrorMiddleware creates error middleware specifically for API services
-func CreateAPIErrorMiddleware(logger *zap.Logger) lift.Middleware {
+func CreateAPIErrorMiddleware(logger *zap.Logger) apptheory.Middleware {
 	return CreateStandardErrorMiddleware("api", logger)
 }
 
 // CreateGraphQLErrorMiddleware creates error middleware specifically for GraphQL services
-func CreateGraphQLErrorMiddleware(logger *zap.Logger) lift.Middleware {
+func CreateGraphQLErrorMiddleware(logger *zap.Logger) apptheory.Middleware {
 	return CreateStandardErrorMiddleware("graphql", logger)
 }
 
 // CreateFederationErrorMiddleware creates error middleware specifically for federation services
-func CreateFederationErrorMiddleware(logger *zap.Logger) lift.Middleware {
+func CreateFederationErrorMiddleware(logger *zap.Logger) apptheory.Middleware {
 	return CreateStandardErrorMiddleware("federation", logger)
 }

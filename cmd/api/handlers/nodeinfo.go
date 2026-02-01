@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -6,14 +6,14 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleNodeInfoWellKnownLift handles /.well-known/nodeinfo requests
-func (h *Handler) HandleNodeInfoWellKnownLift(ctx *lift.Context) error {
+func (h *Handler) HandleNodeInfoWellKnownLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("nodeinfo well-known request",
-		zap.String("user_agent", ctx.Header("User-Agent")))
+		zap.String("user_agent", headerValue(ctx, "User-Agent")))
 
 	response := apimodels.NodeInfoWellKnown{
 		Links: []apimodels.NodeInfoLink{
@@ -24,13 +24,13 @@ func (h *Handler) HandleNodeInfoWellKnownLift(ctx *lift.Context) error {
 		},
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleNodeInfoLift handles /nodeinfo/2.0 requests
-func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
+func (h *Handler) HandleNodeInfoLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("nodeinfo request",
-		zap.String("user_agent", ctx.Header("User-Agent")))
+		zap.String("user_agent", headerValue(ctx, "User-Agent")))
 
 	// Get instance configuration - using default values in test environment
 	var instanceConfig *config.InstanceConfig
@@ -56,7 +56,7 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 	}
 
 	// Get instance statistics using Accounts service
-	stats, err := h.registry.Accounts().GetInstanceStats(ctx.Context, &accounts.GetInstanceStatsQuery{})
+	stats, err := h.registry.Accounts().GetInstanceStats(ctx.Context(), &accounts.GetInstanceStatsQuery{})
 	if err != nil {
 		h.logger.Warn("failed to get instance stats", zap.Error(err))
 		// Use defaults
@@ -121,5 +121,5 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 		},
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }

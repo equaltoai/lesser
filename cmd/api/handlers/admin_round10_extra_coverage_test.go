@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
@@ -182,19 +183,17 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx0, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/approve", headers, nil, nil)
 		require.NoError(t, err)
-		ctx0.SetParam("id", "user-alice")
-		require.NoError(t, h.adminAction(ctx0, "approve", func(_ string) (map[string]any, error) {
+		ctx0.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusInternalServerError)(h.adminAction(ctx0, "approve", func(_ string) (map[string]any, error) {
 			return nil, errors.New("boom")
 		}))
-		require.Equal(t, http.StatusInternalServerError, ctx0.Response.StatusCode)
 
 		ctx1, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/reject", headers, nil, nil)
 		require.NoError(t, err)
-		ctx1.SetParam("id", "user-alice")
-		require.NoError(t, h.adminAccountAction(ctx1, "reject", func(_ string) error {
+		ctx1.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusInternalServerError)(h.adminAccountAction(ctx1, "reject", func(_ string) error {
 			return errors.New("boom")
 		}))
-		require.Equal(t, http.StatusInternalServerError, ctx1.Response.StatusCode)
 	})
 
 	t.Run("UpdateUser failure returns 500", func(t *testing.T) {
@@ -204,9 +203,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/approve", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminApproveAccountLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminApproveAccountLift(ctx))
 	})
 
 	t.Run("Mark status sensitive returns 500 on UpdateStatus error", func(t *testing.T) {
@@ -216,9 +214,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/s1/sensitive", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminMarkStatusSensitiveLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminMarkStatusSensitiveLift(ctx))
 	})
 
 	t.Run("Delete status returns 500 on DeleteStatus error", func(t *testing.T) {
@@ -228,9 +225,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminDeleteStatusLift(ctx))
 	})
 
 	t.Run("Delete status returns 500 on GetStatus error", func(t *testing.T) {
@@ -240,9 +236,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminDeleteStatusLift(ctx))
 	})
 
 	t.Run("Demote admin returns 400", func(t *testing.T) {
@@ -250,9 +245,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-admin/demote", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "user-admin")
-		require.NoError(t, h.HandleAdminDemoteModeratorLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "user-admin"
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminDemoteModeratorLift(ctx))
 	})
 
 	t.Run("Moderation events parsing branches", func(t *testing.T) {
@@ -264,16 +258,14 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 			"min_severity": "not-an-int",
 		}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetModerationEventsLift(ctxDefaultLimit))
-		require.Equal(t, http.StatusOK, ctxDefaultLimit.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetModerationEventsLift(ctxDefaultLimit))
 	})
 
 	t.Run("Moderation events limit parse error returns 400", func(t *testing.T) {
 		h := newHandler(t, baseState)
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/events", headers, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetModerationEventsLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminGetModerationEventsLift(ctx))
 	})
 
 	t.Run("Moderation events returns 500 on repository error", func(t *testing.T) {
@@ -283,8 +275,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/events", headers, map[string]string{"event_type": "flagged"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetModerationEventsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetModerationEventsLift(ctx))
 	})
 
 	t.Run("Account detail error branches", func(t *testing.T) {
@@ -295,9 +286,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts/user-missing", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "user-missing")
-			require.NoError(t, h.HandleAdminGetAccountLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["id"] = "user-missing"
+			requireStatus(t, http.StatusNotFound)(h.HandleAdminGetAccountLift(ctx))
 		})
 
 		t.Run("actor read error", func(t *testing.T) {
@@ -307,9 +297,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts/user-alice", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "user-alice")
-			require.NoError(t, h.HandleAdminGetAccountLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "user-alice"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetAccountLift(ctx))
 		})
 
 		t.Run("sessions error tolerated", func(t *testing.T) {
@@ -319,9 +308,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts/user-alice", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "user-alice")
-			require.NoError(t, h.HandleAdminGetAccountLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			ctx.Params["id"] = "user-alice"
+			requireStatus(t, http.StatusOK)(h.HandleAdminGetAccountLift(ctx))
 		})
 	})
 
@@ -329,16 +317,14 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 		h := newHandler(t, baseState)
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts", headers, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetAccountsLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminGetAccountsLift(ctx))
 	})
 
 	t.Run("Reports list invalid limit returns 400", func(t *testing.T) {
 		h := newHandler(t, baseState)
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports", headers, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetReportsLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminGetReportsLift(ctx))
 	})
 
 	t.Run("Reviewers tolerates reviewer stats failure", func(t *testing.T) {
@@ -350,8 +336,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/reviewers", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetReviewersLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetReviewersLift(ctx))
 	})
 
 	t.Run("Status filter parsing covers date branches", func(t *testing.T) {
@@ -380,8 +365,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 		h := newHandler(t, baseState)
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/trust/graph", headers, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetTrustGraphLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminGetTrustGraphLift(ctx))
 	})
 
 	t.Run("Update trust returns 500 on repository error", func(t *testing.T) {
@@ -392,10 +376,9 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 		updateReq := apimodels.AdminUpdateTrustRequest{Trust: 0.2, Category: "general", Reason: "test"}
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/moderation/trust/a/b", headers, nil, updateReq)
 		require.NoError(t, err)
-		ctx.SetParam("from", "https://example.com/users/admin")
-		ctx.SetParam("to", "https://example.com/users/alice")
-		require.NoError(t, h.HandleAdminUpdateTrustLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["from"] = "https://example.com/users/admin"
+		ctx.Params["to"] = "https://example.com/users/alice"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminUpdateTrustLift(ctx))
 	})
 
 	t.Run("Trust graph storage error returns 500", func(t *testing.T) {
@@ -405,8 +388,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/trust/graph", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetTrustGraphLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetTrustGraphLift(ctx))
 	})
 
 	t.Run("Enable account returns 500 on update error", func(t *testing.T) {
@@ -416,9 +398,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/enable", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminEnableAccountLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminEnableAccountLift(ctx))
 	})
 
 	t.Run("GetStatus returns 500 on storage error", func(t *testing.T) {
@@ -428,9 +409,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminGetStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetStatusLift(ctx))
 	})
 
 	t.Run("Pagination header omits when no cursor", func(t *testing.T) {
@@ -438,8 +418,9 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/statuses", headers, map[string]string{"limit": "1"}, nil)
 		require.NoError(t, err)
 
-		h.addPaginationHeader(ctx, "", AdminStatusPagination{Limit: 1, Cursor: ""})
-		require.NotContains(t, ctx.Response.Headers, "Link")
+		resp := &apptheory.Response{Headers: map[string][]string{}}
+		h.addPaginationHeader(ctx, resp, "", AdminStatusPagination{Limit: 1, Cursor: ""})
+		require.NotContains(t, resp.Headers, "link")
 	})
 
 	t.Run("DeleteStatus logs and continues when audit log fails", func(t *testing.T) {
@@ -449,9 +430,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminDeleteStatusLift(ctx))
 	})
 
 	t.Run("Status sensitive action tolerates audit log failure", func(t *testing.T) {
@@ -461,18 +441,16 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/s1/sensitive", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminMarkStatusSensitiveLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminMarkStatusSensitiveLift(ctx))
 	})
 
 	t.Run("Account action parse error returns 400", func(t *testing.T) {
 		h := newHandler(t, baseState)
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, []byte("{"))
-		ctx.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminAccountActionLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminAccountActionLift(ctx))
 	})
 
 	t.Run("Account action returns 500 on UpdateUser error", func(t *testing.T) {
@@ -482,9 +460,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, apimodels.AdminAccountActionRequest{Type: "disable"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminAccountActionLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminAccountActionLift(ctx))
 	})
 
 	t.Run("Account action logs errors from helper operations", func(t *testing.T) {
@@ -495,9 +472,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, apimodels.AdminAccountActionRequest{Type: "suspend"})
 			require.NoError(t, err)
-			ctx.SetParam("id", "user-alice")
-			require.NoError(t, h.HandleAdminAccountActionLift(ctx))
-			require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+			ctx.Params["id"] = "user-alice"
+			requireStatus(t, http.StatusNoContent)(h.HandleAdminAccountActionLift(ctx))
 		})
 
 		t.Run("unsensitive continues when unmark fails", func(t *testing.T) {
@@ -507,9 +483,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, apimodels.AdminAccountActionRequest{Type: "unsensitive"})
 			require.NoError(t, err)
-			ctx.SetParam("id", "user-alice")
-			require.NoError(t, h.HandleAdminAccountActionLift(ctx))
-			require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+			ctx.Params["id"] = "user-alice"
+			requireStatus(t, http.StatusNoContent)(h.HandleAdminAccountActionLift(ctx))
 		})
 	})
 
@@ -522,8 +497,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/reviewers", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetReviewersLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetReviewersLift(ctx))
 	})
 
 	t.Run("Moderation overview covers empty queue and reports", func(t *testing.T) {
@@ -534,8 +508,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/overview", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminModerationOverviewLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminModerationOverviewLift(ctx))
 	})
 
 	t.Run("Promote/demote moderator error branches", func(t *testing.T) {
@@ -546,9 +519,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-alice/promote", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "user-alice")
-			require.NoError(t, h.HandleAdminPromoteModeratorLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "user-alice"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminPromoteModeratorLift(ctx))
 		})
 
 		t.Run("demote returns 500 on UpdateUser error", func(t *testing.T) {
@@ -558,9 +530,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-mod/demote", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "user-mod")
-			require.NoError(t, h.HandleAdminDemoteModeratorLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "user-mod"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminDemoteModeratorLift(ctx))
 		})
 	})
 
@@ -572,9 +543,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/resolve", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "r1")
-			require.NoError(t, h.HandleAdminResolveReportLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "r1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminResolveReportLift(ctx))
 		})
 
 		t.Run("reopen", func(t *testing.T) {
@@ -584,9 +554,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/reopen", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "r1")
-			require.NoError(t, h.HandleAdminReopenReportLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "r1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminReopenReportLift(ctx))
 		})
 
 		t.Run("assign", func(t *testing.T) {
@@ -596,9 +565,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/assign_to_self", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "r1")
-			require.NoError(t, h.HandleAdminAssignReportLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "r1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminAssignReportLift(ctx))
 		})
 
 		t.Run("unassign", func(t *testing.T) {
@@ -608,9 +576,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/unassign", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "r1")
-			require.NoError(t, h.HandleAdminUnassignReportLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "r1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminUnassignReportLift(ctx))
 		})
 	})
 
@@ -622,9 +589,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/assign_to_self", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "r1")
-			require.NoError(t, h.HandleAdminAssignReportLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "r1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminAssignReportLift(ctx))
 		})
 
 		t.Run("unassign", func(t *testing.T) {
@@ -634,9 +600,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/unassign", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "r1")
-			require.NoError(t, h.HandleAdminUnassignReportLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "r1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleAdminUnassignReportLift(ctx))
 		})
 	})
 
@@ -684,9 +649,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports/r1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminGetReportLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "r1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetReportLift(ctx))
 	})
 
 	t.Run("Report detail returns 500 when reporter actor lookup fails", func(t *testing.T) {
@@ -696,9 +660,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports/r1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminGetReportLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "r1"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetReportLift(ctx))
 	})
 
 	t.Run("Helper methods cover loops and error tolerance", func(t *testing.T) {
@@ -751,9 +714,8 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports/r1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminGetReportLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "r1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetReportLift(ctx))
 	})
 
 	t.Run("Recent consensus decisions returns empty on repo error", func(t *testing.T) {
@@ -788,8 +750,7 @@ func TestAdminLift_Round10Coverage_ExtraPaths(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, apimodels.AdminAccountActionRequest{Type: "sensitive"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminAccountActionLift(ctx))
-		require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+		ctx.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminAccountActionLift(ctx))
 	})
 }

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"github.com/equaltoai/lesser/pkg/storage/core"

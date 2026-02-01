@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -35,8 +35,7 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/directory", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetDirectoryLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetDirectoryLift(ctx))
 	})
 
 	t.Run("directory: service error", func(t *testing.T) {
@@ -50,8 +49,7 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/directory", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetDirectoryLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetDirectoryLift(ctx))
 	})
 
 	t.Run("directory: query fallback + parse defaults", func(t *testing.T) {
@@ -80,8 +78,7 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/directory?limit=2&offset=10&local=true", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetDirectoryLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleGetDirectoryLift(ctx))
 
 		// cover extractFromPathQuery edge cases
 		require.Equal(t, "", h.extractFromPathQuery("/api/v1/directory", "limit"))
@@ -108,13 +105,11 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 
 		ctxMissing, err := round10NewLiftContext(http.MethodGet, "/api/v1/suggestions", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetSuggestionsV1Lift(ctxMissing))
-		require.Equal(t, http.StatusUnauthorized, ctxMissing.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetSuggestionsV1Lift(ctxMissing))
 
 		ctxInvalid, err := round10NewLiftContext(http.MethodGet, "/api/v1/suggestions", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetSuggestionsV1Lift(ctxInvalid))
-		require.Equal(t, http.StatusUnauthorized, ctxInvalid.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetSuggestionsV1Lift(ctxInvalid))
 
 		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
 		headers := map[string]string{"Authorization": "Bearer " + token}
@@ -122,13 +117,11 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		ctxNoSvc, err := round10NewLiftContext(http.MethodGet, "/api/v1/suggestions", headers, nil, nil)
 		require.NoError(t, err)
 		hNoSvc, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{SearchSvc: nil})
-		require.NoError(t, hNoSvc.HandleGetSuggestionsV1Lift(ctxNoSvc))
-		require.Equal(t, http.StatusInternalServerError, ctxNoSvc.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(hNoSvc.HandleGetSuggestionsV1Lift(ctxNoSvc))
 
 		ctxErr, err := round10NewLiftContext(http.MethodGet, "/api/v1/suggestions", headers, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetSuggestionsV1Lift(ctxErr))
-		require.Equal(t, http.StatusInternalServerError, ctxErr.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetSuggestionsV1Lift(ctxErr))
 	})
 
 	t.Run("suggestions v2: success + service nil", func(t *testing.T) {
@@ -152,14 +145,12 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 
 		ctxOK, err := round10NewLiftContext(http.MethodGet, "/api/v2/suggestions", headers, map[string]string{"limit": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetSuggestionsV2Lift(ctxOK))
-		require.Equal(t, http.StatusOK, ctxOK.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleGetSuggestionsV2Lift(ctxOK))
 
 		ctxNoSvc, err := round10NewLiftContext(http.MethodGet, "/api/v2/suggestions", headers, nil, nil)
 		require.NoError(t, err)
 		hNoSvc, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{SearchSvc: nil})
-		require.NoError(t, hNoSvc.HandleGetSuggestionsV2Lift(ctxNoSvc))
-		require.Equal(t, http.StatusInternalServerError, ctxNoSvc.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(hNoSvc.HandleGetSuggestionsV2Lift(ctxNoSvc))
 	})
 
 	t.Run("remove suggestion: path fallback + errors", func(t *testing.T) {
@@ -169,24 +160,20 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		ctxMissing, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", nil, nil, nil)
 		require.NoError(t, err)
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{SearchSvc: &SearchServiceStub{}})
-		require.NoError(t, h.HandleRemoveSuggestionLift(ctxMissing))
-		require.Equal(t, http.StatusUnauthorized, ctxMissing.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleRemoveSuggestionLift(ctxMissing))
 
 		ctxInvalid, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleRemoveSuggestionLift(ctxInvalid))
-		require.Equal(t, http.StatusUnauthorized, ctxInvalid.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleRemoveSuggestionLift(ctxInvalid))
 
 		ctxBadPath, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleRemoveSuggestionLift(ctxBadPath))
-		require.Equal(t, http.StatusBadRequest, ctxBadPath.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleRemoveSuggestionLift(ctxBadPath))
 
 		hNoSvc, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{SearchSvc: nil})
 		ctxNoSvc, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, hNoSvc.HandleRemoveSuggestionLift(ctxNoSvc))
-		require.Equal(t, http.StatusInternalServerError, ctxNoSvc.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(hNoSvc.HandleRemoveSuggestionLift(ctxNoSvc))
 
 		searchStub := &SearchServiceStub{
 			RemoveSuggestionFunc: func(_ context.Context, _ *search.RemoveSuggestionCommand) error {
@@ -196,8 +183,7 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		hErr, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{SearchSvc: searchStub})
 		ctxErr, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, hErr.HandleRemoveSuggestionLift(ctxErr))
-		require.Equal(t, http.StatusInternalServerError, ctxErr.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(hErr.HandleRemoveSuggestionLift(ctxErr))
 
 		searchOK := &SearchServiceStub{
 			RemoveSuggestionFunc: func(_ context.Context, cmd *search.RemoveSuggestionCommand) error {
@@ -209,8 +195,6 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		hOK, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{SearchSvc: searchOK})
 		ctxOK, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, hOK.HandleRemoveSuggestionLift(ctxOK))
-		require.Equal(t, http.StatusOK, ctxOK.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(hOK.HandleRemoveSuggestionLift(ctxOK))
 	})
 }
-

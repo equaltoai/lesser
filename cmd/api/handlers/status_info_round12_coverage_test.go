@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -22,8 +22,8 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
-			ID:   cfg.BaseURL() + "/objects/123",
-			Type: "Note",
+			ID:        cfg.BaseURL() + "/objects/123",
+			Type:      "Note",
 			Summary:   "spoiler",
 			Sensitive: true,
 		},
@@ -45,15 +45,13 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 
 		ctxBad, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/bad id/source", nil, nil, nil)
 		require.NoError(t, err)
-		ctxBad.SetParam("id", "bad id")
-		require.NoError(t, h.HandleGetStatusSourceLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		ctxBad.Params["id"] = "bad id"
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetStatusSourceLift(ctxBad))
 
 		ctxNF, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/source", nil, nil, nil)
 		require.NoError(t, err)
-		ctxNF.SetParam("id", "123")
-		require.NoError(t, h.HandleGetStatusSourceLift(ctxNF))
-		require.Equal(t, http.StatusNotFound, ctxNF.Response.StatusCode)
+		ctxNF.Params["id"] = "123"
+		requireStatus(t, http.StatusNotFound)(h.HandleGetStatusSourceLift(ctxNF))
 	})
 
 	t.Run("history validation + not found", func(t *testing.T) {
@@ -66,15 +64,13 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 
 		ctxBad, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/bad id/history", nil, nil, nil)
 		require.NoError(t, err)
-		ctxBad.SetParam("id", "bad id")
-		require.NoError(t, h.HandleGetStatusHistoryLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		ctxBad.Params["id"] = "bad id"
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetStatusHistoryLift(ctxBad))
 
 		ctxNF, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/history", nil, nil, nil)
 		require.NoError(t, err)
-		ctxNF.SetParam("id", "123")
-		require.NoError(t, h.HandleGetStatusHistoryLift(ctxNF))
-		require.Equal(t, http.StatusNotFound, ctxNF.Response.StatusCode)
+		ctxNF.Params["id"] = "123"
+		requireStatus(t, http.StatusNotFound)(h.HandleGetStatusHistoryLift(ctxNF))
 	})
 
 	t.Run("history optional auth paths + edit history failure", func(t *testing.T) {
@@ -94,10 +90,9 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/history", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "123")
+		ctx.Params["id"] = "123"
 
-		require.NoError(t, h.HandleGetStatusHistoryLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleGetStatusHistoryLift(ctx))
 	})
 
 	t.Run("helper coverage for attribution + edits", func(t *testing.T) {
@@ -105,9 +100,9 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 			GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
 				return &storage.Account{
 					Actor: &activitypub.Actor{
-						BaseObject:         activitypub.BaseObject{ID: cfg.BaseURL() + "/users/" + username},
-						PreferredUsername:  username,
-						Name:               username,
+						BaseObject:                activitypub.BaseObject{ID: cfg.BaseURL() + "/users/" + username},
+						PreferredUsername:         username,
+						Name:                      username,
 						ManuallyApprovesFollowers: false,
 					},
 				}, nil

@@ -1,9 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -13,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/trust"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -49,47 +48,30 @@ func parseSeverity(severity string) int {
 }
 
 // HandleModerationFlagLift handles POST /api/v1/moderation/flag
-func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleModerationFlagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
-	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Parse request
 	var req models.FlagRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate request
 	if err := common.ValidateRequiredParam("object_id", req.ObjectID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 	if err := common.ValidateRequiredParam("reason", req.Reason); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 	if common.ValidateRequiredParam("category", req.Category) != nil {
 		req.Category = moderationCategoryOther
@@ -102,13 +84,10 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 	}
 
 	// Get actor ID for the flagger
-	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Create moderation event
@@ -148,12 +127,9 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 		Updated:         event.Updated,
 		TTL:             event.TTL,
 	}
-	if err := h.repos.Moderation().CreateModerationEvent(ctx.Context, storageEvent); err != nil {
+	if err := h.repos.Moderation().CreateModerationEvent(ctx.Context(), storageEvent); err != nil {
 		h.logger.Error("failed to create moderation event", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Convert to response format
@@ -169,56 +145,41 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 		CreatedAt:       event.Created.Format(time.RFC3339),
 	}
 
-	ctx.Status(http.StatusCreated)
-	return ctx.JSON(resp)
+	return createdJSON(resp)
 }
 
 // HandleModerationQueueLift handles GET /api/v1/moderation/queue
-func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleModerationQueueLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
-	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), claims.Username)
 	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "requires admin or moderator role",
-		})
+		return common.RespondForbidden(ctx, "requires admin or moderator role")
 	}
 
 	// Parse query parameters
-	limit, err := common.ParseAndValidateAPILimit(ctx.Query("limit"), 100)
+	limit, err := common.ParseAndValidateAPILimit(queryValue(ctx, "limit"), 100)
 	if err != nil {
 		limit = 20 // Use default on error
 	}
 
-	cursor := ctx.Query("cursor")
+	cursor := queryValue(ctx, "cursor")
 
 	// Get queue items from storage
-	queueItems, nextCursor, err := h.repos.Moderation().GetModerationQueuePaginated(ctx.Context, limit, cursor)
+	queueItems, nextCursor, err := h.repos.Moderation().GetModerationQueuePaginated(ctx.Context(), limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get moderation queue", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Convert to response format
@@ -228,7 +189,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 			ID:              item.Event.ID,
 			ObjectID:        item.Event.ObjectID,
 			ObjectType:      item.Event.ObjectType,
-			ObjectPreview:   h.getObjectPreview(ctx.Context, item.Event.ObjectID, item.Event.ObjectType),
+			ObjectPreview:   h.getObjectPreview(ctx.Context(), item.Event.ObjectID, item.Event.ObjectType),
 			AuthorID:        item.Event.ActorID,
 			Category:        item.Event.Category,
 			Severity:        parseSeverity(item.Event.Severity),
@@ -242,74 +203,55 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 
 	// Add pagination header if there's more data
 	if nextCursor != "" {
-		ctx.Response.Header("X-Next-Cursor", nextCursor)
+		resp, err := okJSON(response)
+		if err != nil {
+			return nil, err
+		}
+		setHeader(resp, "X-Next-Cursor", nextCursor)
+		return resp, nil
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleModerationReviewLift handles POST /api/v1/moderation/review
-func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleModerationReviewLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
-	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), claims.Username)
 	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "requires admin or moderator role",
-		})
+		return common.RespondForbidden(ctx, "requires admin or moderator role")
 	}
 
 	// Parse request
 	var req models.ReviewRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate request
 	if err := common.ValidateRequiredParam("event_id", req.EventID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 	if err := common.ValidateFloatRange("confidence", req.Confidence, 0, 1); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Get reviewer's actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Create review
@@ -338,12 +280,9 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 		Confidence:  review.Confidence,
 		Created:     review.Created,
 	}
-	if err := h.repos.Moderation().AddModerationReview(ctx.Context, storageReview); err != nil {
+	if err := h.repos.Moderation().AddModerationReview(ctx.Context(), storageReview); err != nil {
 		h.logger.Error("failed to add moderation review", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Return response
@@ -354,57 +293,40 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 		ReviewedAt: review.Created.Format(time.RFC3339),
 	}
 
-	ctx.Status(http.StatusCreated)
-	return ctx.JSON(resp)
+	return createdJSON(resp)
 }
 
 // HandleModerationHistoryLift handles GET /api/v1/moderation/history/:object_id
-func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleModerationHistoryLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), claims.Username)
 	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "requires admin or moderator role",
-		})
+		return common.RespondForbidden(ctx, "requires admin or moderator role")
 	}
 
 	// Get object ID from path parameter
 	objectID := ctx.Param("object_id")
 	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Get moderation history
-	history, err := h.repos.Moderation().GetModerationHistory(ctx.Context, objectID)
+	history, err := h.repos.Moderation().GetModerationHistory(ctx.Context(), objectID)
 	if err != nil {
 		h.logger.Error("failed to get moderation history", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Convert to response format
@@ -433,78 +355,58 @@ func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 		LastUpdated:   time.Now().Format(time.RFC3339),
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleGetConsensusLift handles GET /api/v1/moderation/consensus/:event_id
-func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleGetConsensusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), claims.Username)
 	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "requires admin or moderator role",
-		})
+		return common.RespondForbidden(ctx, "requires admin or moderator role")
 	}
 
 	// Get event ID from path parameter
 	eventID := ctx.Param("event_id")
 	if err := common.ValidateRequiredParam("eventID", eventID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "event_id is required",
-		})
+		return common.RespondMissingParameter(ctx, "event_id")
 	}
 
 	// Get event
-	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context, eventID)
+	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context(), eventID)
 	if err != nil {
 		h.logger.Error("failed to get moderation event", zap.Error(err))
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{
-			"error": "event not found",
-		})
+		return common.RespondNotFound(ctx, "event not found")
 	}
 
 	// Get reviews
-	reviews, err := h.repos.Moderation().GetModerationReviews(ctx.Context, eventID)
+	reviews, err := h.repos.Moderation().GetModerationReviews(ctx.Context(), eventID)
 	if err != nil {
 		h.logger.Error("failed to get moderation reviews", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Get decision if exists
-	decision, _ := h.repos.Moderation().GetModerationDecision(ctx.Context, event.ObjectID)
+	decision, _ := h.repos.Moderation().GetModerationDecision(ctx.Context(), event.ObjectID)
 
 	// Convert reviews to response format
 	reviewResponses := make([]*models.ConsensusReview, len(reviews))
 	for i, review := range reviews {
 		// Get reviewer trust score
 		trustScore := 0.5 // Default
-		score, err := h.repos.Trust().GetTrustScore(ctx.Context, review.ReviewerID, string(trust.TrustCategoryContent))
+		score, err := h.repos.Trust().GetTrustScore(ctx.Context(), review.ReviewerID, string(trust.TrustCategoryContent))
 		if err == nil && score != nil {
 			trustScore = score.Score
 		}
@@ -536,50 +438,36 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 		resp.DecidedAt = decision.Decided.Format(time.RFC3339)
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleGetTrustRelationshipsLift handles GET /api/v1/moderation/trust
-func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleGetTrustRelationshipsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Get actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Get direction parameter (default to outgoing)
-	direction := ctx.Query("direction")
+	direction := queryValue(ctx, "direction")
 	if direction == "" {
 		direction = "outgoing"
 	} else if err := common.ValidateEnum("direction", direction, []string{"outgoing", "incoming"}); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "direction must be 'outgoing' or 'incoming'",
-		})
+		return common.RespondBadRequest(ctx, "direction must be 'outgoing' or 'incoming'")
 	}
 
 	// Get relationships based on direction
@@ -588,17 +476,14 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 
 	switch direction {
 	case "outgoing":
-		relationships, nextCursor, err = h.repos.Trust().GetTrustRelationships(ctx.Context, actor.ID, 100, "")
+		relationships, nextCursor, err = h.repos.Trust().GetTrustRelationships(ctx.Context(), actor.ID, 100, "")
 	case "incoming":
-		relationships, nextCursor, err = h.repos.Trust().GetTrustedByRelationships(ctx.Context, actor.ID, 100, "")
+		relationships, nextCursor, err = h.repos.Trust().GetTrustedByRelationships(ctx.Context(), actor.ID, 100, "")
 	}
 
 	if err != nil {
 		h.logger.Error("failed to get trust relationships", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Convert to response format
@@ -617,74 +502,56 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 
 	// Add pagination header if there's more data
 	if nextCursor != "" {
-		ctx.Response.Header("X-Next-Cursor", nextCursor)
+		resp, err := okJSON(response)
+		if err != nil {
+			return nil, err
+		}
+		setHeader(resp, "X-Next-Cursor", nextCursor)
+		return resp, nil
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleUpdateTrustLift handles PUT /api/v1/moderation/trust
-func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleUpdateTrustLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Parse request
 	var req models.UpdateTrustRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate request
 	if err := common.ValidateRequiredParam("trusteeID", req.TrusteeID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "trustee_id is required",
-		})
+		return common.RespondMissingParameter(ctx, "trustee_id")
 	}
 	if err := common.ValidateFloatRange("score", req.Score, -1, 1); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 	if err := common.ValidateFloatRange("confidence", req.Confidence, 0, 1); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": err.Error(),
-		})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 	if common.ValidateRequiredParam("category", req.Category) != nil {
 		req.Category = moderationCategoryGeneral
 	}
 
 	// Get truster's actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Create or update trust relationship
@@ -706,73 +573,53 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 	}
 
 	// Check if relationship exists
-	existing, err := h.repos.Trust().GetTrustRelationship(ctx.Context, actor.ID, req.TrusteeID, req.Category)
+	existing, err := h.repos.Trust().GetTrustRelationship(ctx.Context(), actor.ID, req.TrusteeID, req.Category)
 	if err == nil && existing != nil {
 		// Update existing
 		relationship.Created = existing.Created
-		if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context, relationship); err != nil {
+		if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context(), relationship); err != nil {
 			h.logger.Error("failed to update trust relationship", zap.Error(err))
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{
-				"error": "internal server error",
-			})
+			return common.RespondInternalServerError(ctx, "internal server error")
 		}
 	} else {
 		// Create new
 		relationship.Created = time.Now()
-		if err := h.repos.Trust().CreateTrustRelationship(ctx.Context, relationship); err != nil {
+		if err := h.repos.Trust().CreateTrustRelationship(ctx.Context(), relationship); err != nil {
 			h.logger.Error("failed to create trust relationship", zap.Error(err))
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{
-				"error": "internal server error",
-			})
+			return common.RespondInternalServerError(ctx, "internal server error")
 		}
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(models.SuccessResponse{
+	return okJSON(models.SuccessResponse{
 		Success: true,
 		Message: "Trust relationship updated successfully",
 	})
 }
 
 // HandleGetTrustScoreLift handles GET /api/v1/moderation/trust/:actor_id/score
-func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
-	// Extract and validate token
+func (h *Handler) HandleGetTrustScoreLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check if user is moderator or admin
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), claims.Username)
 	if err != nil || (user.Role != roleModerator && user.Role != roleAdmin) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "requires admin or moderator role",
-		})
+		return common.RespondForbidden(ctx, "requires admin or moderator role")
 	}
 
 	// Get actor ID from path parameter
 	actorID := ctx.Param("actor_id")
 	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "actor_id is required",
-		})
+		return common.RespondMissingParameter(ctx, "actor_id")
 	}
 
 	// Clean up actor ID (remove @ prefix if present)
@@ -791,7 +638,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 	validScores := 0
 
 	for _, category := range categories {
-		score, err := h.repos.Trust().GetTrustScore(ctx.Context, actorID, string(category))
+		score, err := h.repos.Trust().GetTrustScore(ctx.Context(), actorID, string(category))
 		if err == nil && score != nil {
 			scores[string(category)] = score.Score
 			overallScore += score.Score
@@ -808,7 +655,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 	}
 
 	// Get number of trusters
-	trusters, _, err := h.repos.Trust().GetTrustedByRelationships(ctx.Context, actorID, 100, "")
+	trusters, _, err := h.repos.Trust().GetTrustedByRelationships(ctx.Context(), actorID, 100, "")
 	trusterCount := 0
 	if err == nil {
 		trusterCount = len(trusters)
@@ -829,8 +676,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 		CalculatedAt: time.Now().Format(time.RFC3339),
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // Helper methods for moderation

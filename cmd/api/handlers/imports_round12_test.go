@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -27,8 +29,7 @@ func TestImportsRound12_HandleCreateImportLift_Branches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateImportLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateImportLift(ctx))
 	})
 
 	t.Run("invalid_type_returns_400", func(t *testing.T) {
@@ -45,8 +46,7 @@ func TestImportsRound12_HandleCreateImportLift_Branches(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateImportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateImportLift(ctx))
 	})
 
 	t.Run("existing_import_conflict_returns_409", func(t *testing.T) {
@@ -74,8 +74,7 @@ func TestImportsRound12_HandleCreateImportLift_Branches(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateImportLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(h.HandleCreateImportLift(ctx))
 	})
 
 	t.Run("budget_limit_exceeded_returns_402", func(t *testing.T) {
@@ -108,8 +107,7 @@ func TestImportsRound12_HandleCreateImportLift_Branches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", headers, nil, *req)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateImportLift(ctx))
-		require.Equal(t, http.StatusPaymentRequired, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusPaymentRequired)(h.HandleCreateImportLift(ctx))
 	})
 
 	t.Run("storeImportFile_bucket_missing_returns_500_without_double_write", func(t *testing.T) {
@@ -126,8 +124,7 @@ func TestImportsRound12_HandleCreateImportLift_Branches(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreateImportLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleCreateImportLift(ctx))
 	})
 }
 
@@ -142,7 +139,7 @@ func TestImportsRound12_AuthAndParsingHelpers(t *testing.T) {
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		ctx2.Request.Request.Headers = map[string]string{"Authorization": "Bearer y"}
+		ctx2.Request.Headers["Authorization"] = []string{"Bearer y"}
 		require.Equal(t, "Bearer y", h.extractImportAuthHeader(ctx2))
 	})
 
@@ -152,9 +149,9 @@ func TestImportsRound12_AuthAndParsingHelpers(t *testing.T) {
 			require.NoError(t, err)
 
 			username, err := h.validateImportToken(ctx, "")
-			require.NoError(t, err)
 			require.Empty(t, username)
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			require.Error(t, err)
+			require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
 		})
 
 		t.Run("invalid_token", func(t *testing.T) {
@@ -162,9 +159,9 @@ func TestImportsRound12_AuthAndParsingHelpers(t *testing.T) {
 			require.NoError(t, err)
 
 			username, err := h.validateImportToken(ctx, "bad")
-			require.NoError(t, err)
 			require.Empty(t, username)
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			require.Error(t, err)
+			require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
 		})
 
 		t.Run("insufficient_scope", func(t *testing.T) {
@@ -173,9 +170,9 @@ func TestImportsRound12_AuthAndParsingHelpers(t *testing.T) {
 
 			token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-1")
 			username, err := h.validateImportToken(ctx, token)
-			require.NoError(t, err)
 			require.Empty(t, username)
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			require.Error(t, err)
+			require.True(t, apperrors.HasCode(err, apperrors.CodeInsufficientScope))
 		})
 
 		t.Run("success", func(t *testing.T) {
@@ -196,8 +193,9 @@ func TestImportsRound12_AuthAndParsingHelpers(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		parsed, err := h.parseImportRequest(ctx)
+		parsed, resp, err := h.parseImportRequest(ctx)
 		require.NoError(t, err)
+		require.Nil(t, resp)
 		require.Equal(t, "merge", parsed.Mode)
 
 		ctxMode, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, apimodels.ImportRequest{
@@ -206,22 +204,25 @@ func TestImportsRound12_AuthAndParsingHelpers(t *testing.T) {
 			Data: base64.StdEncoding.EncodeToString([]byte("x")),
 		})
 		require.NoError(t, err)
-		parsedMode, err := h.parseImportRequest(ctxMode)
+		parsedMode, respMode, err := h.parseImportRequest(ctxMode)
 		require.NoError(t, err)
+		require.Nil(t, respMode)
 		require.Equal(t, "overwrite", parsedMode.Mode)
 
 		ctxBad := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/imports", nil, nil, []byte("{"))
-		parsed2, err := h.parseImportRequest(ctxBad)
+		parsed2, respBad, err := h.parseImportRequest(ctxBad)
 		require.NoError(t, err)
 		require.Nil(t, parsed2)
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		require.NotNil(t, respBad)
+		require.Equal(t, http.StatusBadRequest, respBad.Status)
 
 		ctxEmpty, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		parsed3, err := h.parseImportRequest(ctxEmpty)
+		parsed3, respEmpty, err := h.parseImportRequest(ctxEmpty)
 		require.NoError(t, err)
 		require.Nil(t, parsed3)
-		require.Equal(t, http.StatusBadRequest, ctxEmpty.Response.StatusCode)
+		require.NotNil(t, respEmpty)
+		require.Equal(t, http.StatusBadRequest, respEmpty.Status)
 	})
 }
 
@@ -242,22 +243,28 @@ func TestImportsRound12_ValidationAndCostHelpers(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
 
-		_, err = h.processImportFileData(ctx, "")
+		fileData, resp, err := h.processImportFileData(ctx, "")
 		require.NoError(t, err)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.Nil(t, fileData)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		_, err = h.processImportFileData(ctx2, "not-base64")
+		fileData2, resp2, err := h.processImportFileData(ctx2, "not-base64")
 		require.NoError(t, err)
-		require.Equal(t, http.StatusBadRequest, ctx2.Response.StatusCode)
+		require.Nil(t, fileData2)
+		require.NotNil(t, resp2)
+		require.Equal(t, http.StatusBadRequest, resp2.Status)
 
 		tooLarge := base64.StdEncoding.EncodeToString(make([]byte, 10*1024*1024+1))
 		ctx3, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		_, err = h.processImportFileData(ctx3, tooLarge)
+		fileData3, resp3, err := h.processImportFileData(ctx3, tooLarge)
 		require.NoError(t, err)
-		require.Equal(t, http.StatusBadRequest, ctx3.Response.StatusCode)
+		require.Nil(t, fileData3)
+		require.NotNil(t, resp3)
+		require.Equal(t, http.StatusBadRequest, resp3.Status)
 	})
 
 	t.Run("detectContentType_and_isValidImportFormat", func(t *testing.T) {
@@ -296,7 +303,9 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.checkExistingImports(ctx, "alice", "followers"))
+		resp, err := h.checkExistingImports(ctx, "alice", "followers")
+		require.NoError(t, err)
+		require.Nil(t, resp)
 
 		state2 := &round10QueryState{
 			importsByUser: map[string][]storagemodels.Import{
@@ -306,8 +315,10 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 		h2, _, _ := round11NewHandler(t, cfg, state2)
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h2.checkExistingImports(ctx2, "alice", "followers"))
-		require.Equal(t, http.StatusConflict, ctx2.Response.StatusCode)
+		resp2, err := h2.checkExistingImports(ctx2, "alice", "followers")
+		require.NoError(t, err)
+		require.NotNil(t, resp2)
+		require.Equal(t, http.StatusConflict, resp2.Status)
 	})
 
 	t.Run("checkImportRateLimit", func(t *testing.T) {
@@ -315,8 +326,9 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 		errorHandler, _, _ := round11NewHandler(t, cfg, errorState)
 		errorCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, errorHandler.checkImportRateLimit(errorCtx, "alice", "followers"))
-		require.False(t, errorCtx.Response.IsWritten())
+		resp, err := errorHandler.checkImportRateLimit(errorCtx, "alice", "followers")
+		require.NoError(t, err)
+		require.Nil(t, resp)
 
 		state := &round10QueryState{
 			importsByUser: map[string][]storagemodels.Import{
@@ -327,8 +339,10 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.checkImportRateLimit(ctx, "alice", "followers"))
-		require.Equal(t, http.StatusTooManyRequests, ctx.Response.StatusCode)
+		resp2, err := h.checkImportRateLimit(ctx, "alice", "followers")
+		require.NoError(t, err)
+		require.NotNil(t, resp2)
+		require.Equal(t, http.StatusTooManyRequests, resp2.Status)
 	})
 
 	t.Run("checkImportBudgetLimits_import_and_combined", func(t *testing.T) {
@@ -353,8 +367,10 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 		importBudget.UpdateKeys()
 		state.importBudgetsByPKSK[importBudget.PK+"#"+importBudget.SK] = importBudget
 
-		require.NoError(t, h.checkImportBudgetLimits(ctx, "alice", importReq, 1024))
-		require.Equal(t, http.StatusPaymentRequired, ctx.Response.StatusCode)
+		resp, err := h.checkImportBudgetLimits(ctx, "alice", importReq, 1024)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusPaymentRequired, resp.Status)
 
 		combinedCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
@@ -372,8 +388,10 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 		combinedBudget.UpdateKeys()
 		state.importBudgetsByPKSK[combinedBudget.PK+"#"+combinedBudget.SK] = combinedBudget
 
-		require.NoError(t, h.checkImportBudgetLimits(combinedCtx, "alice", importReq, 1024))
-		require.Equal(t, http.StatusPaymentRequired, combinedCtx.Response.StatusCode)
+		resp2, err := h.checkImportBudgetLimits(combinedCtx, "alice", importReq, 1024)
+		require.NoError(t, err)
+		require.NotNil(t, resp2)
+		require.Equal(t, http.StatusPaymentRequired, resp2.Status)
 	})
 
 	t.Run("storeImportFile_and_createImportRecord_and_queueImportJobSQS", func(t *testing.T) {
@@ -383,10 +401,11 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 		require.NoError(t, err)
 
 		// storeImportFile should fail when bucket is not configured (no double write)
-		key, err := h.storeImportFile(baseCtx, "alice", uuid.New().String(), "followers", []byte("x"))
+		key, resp, err := h.storeImportFile(baseCtx, "alice", uuid.New().String(), "followers", []byte("x"))
 		require.NoError(t, err)
 		require.Empty(t, key)
-		require.Equal(t, http.StatusInternalServerError, baseCtx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 
 		t.Run("aws_config_load_error_returns_500", func(t *testing.T) {
 			configPath := filepath.Join(t.TempDir(), "config")
@@ -402,10 +421,11 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 			require.NoError(t, err)
 
-			key, err := h.storeImportFile(ctx, "alice", "import-1", "followers", []byte("x"))
+			key, resp, err := h.storeImportFile(ctx, "alice", "import-1", "followers", []byte("x"))
 			require.NoError(t, err)
 			require.Empty(t, key)
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			require.NotNil(t, resp)
+			require.Equal(t, http.StatusInternalServerError, resp.Status)
 		})
 
 		t.Run("createImportRecord_success_queues_without_error", func(t *testing.T) {
@@ -413,8 +433,9 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 			require.NoError(t, err)
 
 			req := &apimodels.ImportRequest{Type: "followers", Mode: "merge"}
-			require.NoError(t, h.createImportRecord(ctx, "import-2", "alice", req, "s3key"))
-			require.False(t, ctx.Response.IsWritten())
+			resp, err := h.createImportRecord(ctx, "import-2", "alice", req, "s3key")
+			require.NoError(t, err)
+			require.Nil(t, resp)
 		})
 
 		// createImportRecord fails on CreateImport error
@@ -422,8 +443,7 @@ func TestImportsRound12_RepositoryAndQueueHelpers(t *testing.T) {
 		errorHandler, _, _ := round11NewHandler(t, cfg, errorState)
 		createCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, errorHandler.createImportRecord(createCtx, "import-1", "alice", &apimodels.ImportRequest{Type: "followers", Mode: "merge"}, "s3key"))
-		require.Equal(t, http.StatusInternalServerError, createCtx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(errorHandler.createImportRecord(createCtx, "import-1", "alice", &apimodels.ImportRequest{Type: "followers", Mode: "merge"}, "s3key"))
 
 		// queueImportJobSQS errors when AWS config can't load
 		t.Run("queue_error", func(t *testing.T) {
@@ -488,16 +508,14 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 	t.Run("HandleGetImportStatusLift_requires_id_and_ownership", func(t *testing.T) {
 		ctxMissing, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports/", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetImportStatusLift(ctxMissing))
-		require.Equal(t, http.StatusBadRequest, ctxMissing.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetImportStatusLift(ctxMissing))
 
 		ctxForbidden, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports/import-1", headers, nil, nil)
 		require.NoError(t, err)
-		ctxForbidden.SetParam("id", "import-1")
+		ctxForbidden.Params["id"] = "import-1"
 		// Force ownership mismatch
 		state.importsByID["import-1"] = storagemodels.Import{ID: "import-1", Username: "bob", CreatedAt: time.Now()}
-		require.NoError(t, h.HandleGetImportStatusLift(ctxForbidden))
-		require.Equal(t, http.StatusForbidden, ctxForbidden.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleGetImportStatusLift(ctxForbidden))
 	})
 
 	t.Run("HandleGetImportStatusLift_success_includes_results", func(t *testing.T) {
@@ -518,10 +536,9 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports/import-1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "import-1")
+		ctx.Params["id"] = "import-1"
 
-		require.NoError(t, h.HandleGetImportStatusLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleGetImportStatusLift(ctx))
 	})
 
 	t.Run("HandleListImportsLift_repo_error", func(t *testing.T) {
@@ -531,8 +548,7 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", headers, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, errHandler.HandleListImportsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(errHandler.HandleListImportsLift(ctx))
 	})
 
 	t.Run("HandleListImportsLift_success", func(t *testing.T) {
@@ -559,9 +575,9 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", headers, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, listHandler.HandleListImportsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		jobs := ctx.Response.Body.([]apimodels.ImportJob)
+		resp := requireStatus(t, http.StatusOK)(listHandler.HandleListImportsLift(ctx))
+		var jobs []apimodels.ImportJob
+		require.NoError(t, json.Unmarshal(resp.Body, &jobs))
 		require.Len(t, jobs, 1)
 		require.NotNil(t, jobs[0].Results)
 		require.NotNil(t, jobs[0].Total)
@@ -578,10 +594,9 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
+		ctx.Params["id"] = "missing"
 
-		require.NoError(t, notFoundHandler.HandleGetImportStatusLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(notFoundHandler.HandleGetImportStatusLift(ctx))
 	})
 
 	t.Run("HandleCancelImportLift_conflicts_and_update_error", func(t *testing.T) {
@@ -605,10 +620,9 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/imports/import-1", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "import-1")
+				ctx.Params["id"] = "import-1"
 
-				require.NoError(t, localHandler.HandleCancelImportLift(ctx))
-				require.Equal(t, tc.wantStatus, ctx.Response.StatusCode)
+				requireStatus(t, tc.wantStatus)(localHandler.HandleCancelImportLift(ctx))
 			})
 		}
 
@@ -622,10 +636,9 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 
 		ctxUpdate, err := round10NewLiftContext(http.MethodDelete, "/api/v1/imports/import-1", headers, nil, nil)
 		require.NoError(t, err)
-		ctxUpdate.SetParam("id", "import-1")
+		ctxUpdate.Params["id"] = "import-1"
 
-		require.NoError(t, updateHandler.HandleCancelImportLift(ctxUpdate))
-		require.Equal(t, http.StatusInternalServerError, ctxUpdate.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(updateHandler.HandleCancelImportLift(ctxUpdate))
 	})
 
 	t.Run("HandleCancelImportLift_success_forbidden_not_found", func(t *testing.T) {
@@ -638,10 +651,10 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 
 		ctxSuccess, err := round10NewLiftContext(http.MethodDelete, "/api/v1/imports/import-1", headers, nil, nil)
 		require.NoError(t, err)
-		ctxSuccess.SetParam("id", "import-1")
-		require.NoError(t, successHandler.HandleCancelImportLift(ctxSuccess))
-		require.Equal(t, http.StatusOK, ctxSuccess.Response.StatusCode)
-		job := ctxSuccess.Response.Body.(apimodels.ImportJob)
+		ctxSuccess.Params["id"] = "import-1"
+		respSuccess := requireStatus(t, http.StatusOK)(successHandler.HandleCancelImportLift(ctxSuccess))
+		var job apimodels.ImportJob
+		require.NoError(t, json.Unmarshal(respSuccess.Body, &job))
 		require.Equal(t, "cancelled", job.Status)
 		require.NotNil(t, job.Total)
 
@@ -653,9 +666,8 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 		forbiddenHandler, _, _ := round11NewHandler(t, cfg, forbiddenState)
 		ctxForbidden, err := round10NewLiftContext(http.MethodDelete, "/api/v1/imports/import-1", headers, nil, nil)
 		require.NoError(t, err)
-		ctxForbidden.SetParam("id", "import-1")
-		require.NoError(t, forbiddenHandler.HandleCancelImportLift(ctxForbidden))
-		require.Equal(t, http.StatusForbidden, ctxForbidden.Response.StatusCode)
+		ctxForbidden.Params["id"] = "import-1"
+		requireStatus(t, http.StatusForbidden)(forbiddenHandler.HandleCancelImportLift(ctxForbidden))
 
 		notFoundState := &round10QueryState{
 			notFoundPKSK: map[string]bool{
@@ -665,9 +677,8 @@ func TestImportsRound12_StatusListCancelHandlers(t *testing.T) {
 		notFoundHandler, _, _ := round11NewHandler(t, cfg, notFoundState)
 		ctxNotFound, err := round10NewLiftContext(http.MethodDelete, "/api/v1/imports/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctxNotFound.SetParam("id", "missing")
-		require.NoError(t, notFoundHandler.HandleCancelImportLift(ctxNotFound))
-		require.Equal(t, http.StatusNotFound, ctxNotFound.Response.StatusCode)
+		ctxNotFound.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(notFoundHandler.HandleCancelImportLift(ctxNotFound))
 	})
 }
 
@@ -681,8 +692,10 @@ func TestImportsRound12_validateImportFile(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.validateImportFile(ctx, []byte{}, "followers"))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		resp, err := h.validateImportFile(ctx, []byte{}, "followers")
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("warnings_do_not_fail", func(t *testing.T) {
@@ -690,7 +703,9 @@ func TestImportsRound12_validateImportFile(t *testing.T) {
 		require.NoError(t, err)
 
 		data := []byte(`{"script":"<script>alert(1)</script>"}`)
-		require.NoError(t, h.validateImportFile(ctx, data, "followers"))
+		resp, err := h.validateImportFile(ctx, data, "followers")
+		require.NoError(t, err)
+		require.Nil(t, resp)
 	})
 
 	t.Run("file_validator_creation_failure_falls_back_to_basic", func(t *testing.T) {
@@ -707,7 +722,10 @@ func TestImportsRound12_validateImportFile(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.Error(t, h.validateImportFile(ctx, []byte("no-commas-and-not-json"), "followers"))
+		resp, err := h.validateImportFile(ctx, []byte("no-commas-and-not-json"), "followers")
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnsupportedMediaType, resp.Status)
 	})
 }
 
@@ -720,9 +738,9 @@ func TestImportsRound12_authenticateImportStatusRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		username, err := h.authenticateImportStatusRequest(ctx)
-		require.NoError(t, err)
 		require.Empty(t, username)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.Error(t, err)
+		require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
 	})
 
 	t.Run("invalid_token_returns_401", func(t *testing.T) {
@@ -730,9 +748,9 @@ func TestImportsRound12_authenticateImportStatusRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		username, err := h.authenticateImportStatusRequest(ctx)
-		require.NoError(t, err)
 		require.Empty(t, username)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.Error(t, err)
+		require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
 	})
 
 	t.Run("success_returns_username", func(t *testing.T) {

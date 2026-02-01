@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -101,7 +101,7 @@ func TestNewHandlerRound12(t *testing.T) {
 	logger := round10TestLogger(t)
 
 	t.Run("nil stream queue", func(t *testing.T) {
-		h := NewHandler(cfg, repos, logger, nil, nil)
+		h := NewHandler(cfg, repos, logger, nil)
 		require.NotNil(t, h)
 		require.NotNil(t, h.converter)
 		require.NotNil(t, h.loaders)
@@ -111,7 +111,7 @@ func TestNewHandlerRound12(t *testing.T) {
 
 	t.Run("stream queue without publisher", func(t *testing.T) {
 		queue := &streamQueueStub{}
-		h := NewHandler(cfg, repos, logger, nil, queue)
+		h := NewHandler(cfg, repos, logger, queue)
 		require.NotNil(t, h)
 		require.Equal(t, queue, h.streamQueue)
 		require.NotNil(t, h.registry)
@@ -119,7 +119,7 @@ func TestNewHandlerRound12(t *testing.T) {
 
 	t.Run("stream queue implements publisher", func(t *testing.T) {
 		queue := &streamQueuePublisherStub{}
-		h := NewHandler(cfg, repos, logger, nil, queue)
+		h := NewHandler(cfg, repos, logger, queue)
 		require.NotNil(t, h)
 		require.Equal(t, queue, h.streamQueue)
 		require.NotNil(t, h.registry)
@@ -218,4 +218,3 @@ func TestGetOptionalAuthenticatedUserRound12(t *testing.T) {
 		require.Equal(t, "alice", h.getOptionalAuthenticatedUser(ctx))
 	})
 }
-

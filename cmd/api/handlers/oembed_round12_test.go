@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"strings"
@@ -93,22 +94,19 @@ func TestOEmbed_Round12(t *testing.T) {
 		t.Run("missing url returns 400", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/oembed", nil, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleOEmbedLift(ctx))
 		})
 
 		t.Run("invalid URL returns 400", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/oembed", nil, map[string]string{"url": "::::"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleOEmbedLift(ctx))
 		})
 
 		t.Run("foreign host returns 404", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/oembed", nil, map[string]string{"url": "https://evil.com/@alice/123"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusNotFound)(h.HandleOEmbedLift(ctx))
 		})
 
 		t.Run("json default format returns oembed struct", func(t *testing.T) {
@@ -117,15 +115,15 @@ func TestOEmbed_Round12(t *testing.T) {
 				"maxwidth": "900",
 			}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			resp := requireStatus(t, http.StatusOK)(h.HandleOEmbedLift(ctx))
 
-			resp := ctx.Response.Body.(*apimodels.OEmbedResponse)
-			require.Equal(t, "rich", resp.Type)
-			require.Equal(t, 900, resp.Width)
-			require.NotEmpty(t, resp.HTML)
-			require.NotEmpty(t, resp.Title)
-			require.NotEmpty(t, resp.ThumbnailURL)
+			var body apimodels.OEmbedResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "rich", body.Type)
+			require.Equal(t, 900, body.Width)
+			require.NotEmpty(t, body.HTML)
+			require.NotEmpty(t, body.Title)
+			require.NotEmpty(t, body.ThumbnailURL)
 		})
 
 		t.Run("xml format returns xml body", func(t *testing.T) {
@@ -134,10 +132,9 @@ func TestOEmbed_Round12(t *testing.T) {
 				"format": "xml",
 			}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			require.Equal(t, "text/xml; charset=utf-8", ctx.Response.Headers["Content-Type"])
-			require.Contains(t, ctx.Response.Body.(string), "<oembed>")
+			resp := requireStatus(t, http.StatusOK)(h.HandleOEmbedLift(ctx))
+			require.Equal(t, "text/xml; charset=utf-8", firstStringValue(resp.Headers, "content-type"))
+			require.Contains(t, string(resp.Body), "<oembed>")
 		})
 
 		t.Run("unsupported format returns 400", func(t *testing.T) {
@@ -146,8 +143,7 @@ func TestOEmbed_Round12(t *testing.T) {
 				"format": "yaml",
 			}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleOEmbedLift(ctx))
 		})
 
 		t.Run("not embeddable returns 403", func(t *testing.T) {
@@ -155,28 +151,26 @@ func TestOEmbed_Round12(t *testing.T) {
 			hPrivate := makeHandler(t, privateNote, nil, nil, "Alice")
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/oembed", nil, map[string]string{"url": cfg.BaseURL() + "/@alice/123"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, hPrivate.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusForbidden)(hPrivate.HandleOEmbedLift(ctx))
 		})
 
 		t.Run("notes service error returns 404", func(t *testing.T) {
 			hErr := makeHandler(t, note, stdErrors.New("boom"), nil, "Alice")
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/oembed", nil, map[string]string{"url": cfg.BaseURL() + "/@alice/123"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, hErr.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusNotFound)(hErr.HandleOEmbedLift(ctx))
 		})
 
 		t.Run("accounts lookup error returns minimal actor", func(t *testing.T) {
 			hAcctErr := makeHandler(t, note, nil, stdErrors.New("boom"), "Alice")
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/oembed", nil, map[string]string{"url": cfg.BaseURL() + "/@alice/123"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, hAcctErr.HandleOEmbedLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			resp := requireStatus(t, http.StatusOK)(hAcctErr.HandleOEmbedLift(ctx))
 
-			resp := ctx.Response.Body.(*apimodels.OEmbedResponse)
-			require.Equal(t, "alice", resp.AuthorName)
-			require.Equal(t, cfg.BaseURL()+"/users/alice", resp.AuthorURL)
+			var body apimodels.OEmbedResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "alice", body.AuthorName)
+			require.Equal(t, cfg.BaseURL()+"/users/alice", body.AuthorURL)
 		})
 	})
 
@@ -204,14 +198,13 @@ func TestOEmbed_Round12(t *testing.T) {
 			h := makeHandler(t, note, nil, nil, "")
 			ctx, err := round10NewLiftContext(http.MethodGet, "/embed/123", nil, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "123")
+			ctx.Params["id"] = "123"
 
-			require.NoError(t, h.HandleEmbedPageLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			require.Equal(t, "text/html", ctx.Response.Headers["Content-Type"])
-			require.Equal(t, "ALLOWALL", ctx.Response.Headers["X-Frame-Options"])
-			require.Contains(t, ctx.Response.Body.(string), "<article")
-			require.Contains(t, ctx.Response.Body.(string), "hello")
+			resp := requireStatus(t, http.StatusOK)(h.HandleEmbedPageLift(ctx))
+			require.Equal(t, "text/html; charset=utf-8", firstStringValue(resp.Headers, "content-type"))
+			require.Equal(t, "ALLOWALL", firstStringValue(resp.Headers, "x-frame-options"))
+			require.Contains(t, string(resp.Body), "<article")
+			require.Contains(t, string(resp.Body), "hello")
 		})
 
 		t.Run("path fallback extracts id", func(t *testing.T) {
@@ -219,16 +212,14 @@ func TestOEmbed_Round12(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/embed/123", nil, nil, nil)
 			require.NoError(t, err)
 			// Do not set ctx.Param("id") to exercise fallback extraction.
-			require.NoError(t, h.HandleEmbedPageLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(h.HandleEmbedPageLift(ctx))
 		})
 
 		t.Run("missing id returns 400", func(t *testing.T) {
 			h := makeHandler(t, note, nil, nil, "Alice")
 			ctx, err := round10NewLiftContext(http.MethodGet, "/embed/", nil, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleEmbedPageLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleEmbedPageLift(ctx))
 		})
 
 		t.Run("not embeddable returns 403", func(t *testing.T) {
@@ -236,18 +227,16 @@ func TestOEmbed_Round12(t *testing.T) {
 			h := makeHandler(t, privateNote, nil, nil, "Alice")
 			ctx, err := round10NewLiftContext(http.MethodGet, "/embed/123", nil, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "123")
-			require.NoError(t, h.HandleEmbedPageLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			ctx.Params["id"] = "123"
+			requireStatus(t, http.StatusForbidden)(h.HandleEmbedPageLift(ctx))
 		})
 
 		t.Run("notes service error returns 404", func(t *testing.T) {
 			h := makeHandler(t, note, stdErrors.New("boom"), nil, "Alice")
 			ctx, err := round10NewLiftContext(http.MethodGet, "/embed/123", nil, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "123")
-			require.NoError(t, h.HandleEmbedPageLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["id"] = "123"
+			requireStatus(t, http.StatusNotFound)(h.HandleEmbedPageLift(ctx))
 		})
 	})
 }

@@ -1,11 +1,10 @@
-package lift
+package handlers
 
 import (
 	"net/http"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/stretchr/testify/require"
 )
 
 func TestHandleCreateReportLift(t *testing.T) {
@@ -23,5 +22,5 @@ func TestHandleCreateReportLift(t *testing.T) {
 	token := round11SignToken(t, h.cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-1")
 	headers := map[string]string{"Authorization": "Bearer " + token}
 	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/reports", headers, nil, round11JSONBody(t, body))
-	require.NoError(t, h.HandleCreateReportLift(ctx))
+	requireStatus(t, http.StatusOK)(h.HandleCreateReportLift(ctx))
 }

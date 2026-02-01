@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -291,8 +291,7 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses", headers, nil, []byte("{"))
-		require.NoError(t, handler.HandleCreateStatusFull(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateStatusFull(ctx))
 	})
 
 	t.Run("create_status_create_note_error_returns_500", func(t *testing.T) {
@@ -305,8 +304,7 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, apimodels.CreateStatusRequest{Status: "hello"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateStatusFull(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateStatusFull(ctx))
 	})
 
 	t.Run("get_status_missing_id", func(t *testing.T) {
@@ -319,8 +317,7 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetStatusFull(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetStatusFull(ctx))
 	})
 
 	t.Run("get_status_notes_errors_map_to_status_codes", func(t *testing.T) {
@@ -347,9 +344,8 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "s1")
-				require.NoError(t, handler.HandleGetStatusFull(ctx))
-				require.Equal(t, tt.wantCode, ctx.Response.StatusCode)
+				ctx.Params["id"] = "s1"
+				requireStatus(t, tt.wantCode)(handler.HandleGetStatusFull(ctx))
 			})
 		}
 	})
@@ -368,9 +364,8 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, handler.HandleGetStatusFull(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetStatusFull(ctx))
 	})
 
 	t.Run("get_status_permission_check_error_returns_500", func(t *testing.T) {
@@ -390,9 +385,8 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, handler.HandleGetStatusFull(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetStatusFull(ctx))
 	})
 
 	t.Run("delete_status_missing_id", func(t *testing.T) {
@@ -400,8 +394,7 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteStatusFull(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteStatusFull(ctx))
 	})
 
 	t.Run("delete_status_not_authorized_and_internal_error", func(t *testing.T) {
@@ -414,17 +407,15 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 		ctxForbidden, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctxForbidden.SetParam("id", "s1")
-		require.NoError(t, handler.HandleDeleteStatusFull(ctxForbidden))
-		require.Equal(t, http.StatusForbidden, ctxForbidden.Response.StatusCode)
+		ctxForbidden.Params["id"] = "s1"
+		requireStatus(t, http.StatusForbidden)(handler.HandleDeleteStatusFull(ctxForbidden))
 
 		notesStub.DeleteNoteFunc = func(_ context.Context, _ *notes.DeleteNoteCommand) error {
 			return stdErrors.New("boom")
 		}
 		ctxInternal, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctxInternal.SetParam("id", "s1")
-		require.NoError(t, handler.HandleDeleteStatusFull(ctxInternal))
-		require.Equal(t, http.StatusInternalServerError, ctxInternal.Response.StatusCode)
+		ctxInternal.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDeleteStatusFull(ctxInternal))
 	})
 }

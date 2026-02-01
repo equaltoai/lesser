@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -91,14 +91,12 @@ func TestScheduledStatusHandlers_Round11(t *testing.T) {
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", readHeaders, map[string]string{"limit": "5"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetScheduledStatusesLift(ctxList))
-	require.Equal(t, http.StatusOK, ctxList.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetScheduledStatusesLift(ctxList))
 
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses/sched-1", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxGet.SetParam("id", "sched-1")
-	require.NoError(t, handler.HandleGetScheduledStatusLift(ctxGet))
-	require.Equal(t, http.StatusOK, ctxGet.Response.StatusCode)
+	ctxGet.Params["id"] = "sched-1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetScheduledStatusLift(ctxGet))
 
 	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
 	writeHeaders := map[string]string{"Authorization": "Bearer " + writeToken}
@@ -106,15 +104,13 @@ func TestScheduledStatusHandlers_Round11(t *testing.T) {
 	updateReq := models.ScheduledStatusUpdateRequest{ScheduledAt: now.Format(time.RFC3339)}
 	ctxUpdate, err := round10NewLiftContext(http.MethodPut, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, updateReq)
 	require.NoError(t, err)
-	ctxUpdate.SetParam("id", "sched-1")
-	require.NoError(t, handler.HandleUpdateScheduledStatusLift(ctxUpdate))
-	require.Equal(t, http.StatusOK, ctxUpdate.Response.StatusCode)
+	ctxUpdate.Params["id"] = "sched-1"
+	requireStatus(t, http.StatusOK)(handler.HandleUpdateScheduledStatusLift(ctxUpdate))
 
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxDelete.SetParam("id", "sched-1")
-	require.NoError(t, handler.HandleDeleteScheduledStatusLift(ctxDelete))
-	require.Equal(t, http.StatusOK, ctxDelete.Response.StatusCode)
+	ctxDelete.Params["id"] = "sched-1"
+	requireStatus(t, http.StatusOK)(handler.HandleDeleteScheduledStatusLift(ctxDelete))
 
 	statusReq := models.CreateStatusRequest{
 		Status:      "future post",
@@ -123,10 +119,11 @@ func TestScheduledStatusHandlers_Round11(t *testing.T) {
 	}
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, statusReq)
 	require.NoError(t, err)
-	created, err := handler.HandleCreateScheduledStatusLift(ctxCreate, &statusReq)
+	created, resp, err := handler.HandleCreateScheduledStatusLift(ctxCreate, &statusReq)
 	require.NoError(t, err)
 	require.Nil(t, created)
-	require.Equal(t, http.StatusUnprocessableEntity, ctxCreate.Response.StatusCode)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
 }
 
 func TestSearchHandlers_Round11(t *testing.T) {
@@ -168,20 +165,17 @@ func TestSearchHandlers_Round11(t *testing.T) {
 
 	ctxAcct, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search", nil, map[string]string{"q": "alice", "resolve": "true"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleAccountSearchLift(ctxAcct))
-	require.Equal(t, http.StatusOK, ctxAcct.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleAccountSearchLift(ctxAcct))
 
 	suggestCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search/suggestions", nil, map[string]string{"q": "he"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetSearchSuggestionsLift(suggestCtx))
-	require.Equal(t, http.StatusOK, suggestCtx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetSearchSuggestionsLift(suggestCtx))
 
 	readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
 	readHeaders := map[string]string{"Authorization": "Bearer " + readToken}
 	statusCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/search/statuses", readHeaders, map[string]string{"q": "hello"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleStatusSearchLift(statusCtx))
-	require.Equal(t, http.StatusOK, statusCtx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleStatusSearchLift(statusCtx))
 
 	require.True(t, isValidHandle("@user@example.com"))
 	require.False(t, isValidHandle("plain"))

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -38,35 +38,30 @@ func TestConversationHandlers_DeleteConversation_ErrorBranches_Round12(t *testin
 		ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/conversations/", writeHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleDeleteConversationLift(ctxDelete))
-		require.Equal(t, http.StatusBadRequest, ctxDelete.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteConversationLift(ctxDelete))
 	})
 
 	t.Run("not found returns 404", func(t *testing.T) {
 		ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/conversations/conv-not-found", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxDelete.SetParam("id", "conv-not-found")
+		ctxDelete.Params["id"] = "conv-not-found"
 
-		require.NoError(t, handler.HandleDeleteConversationLift(ctxDelete))
-		require.Equal(t, http.StatusNotFound, ctxDelete.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteConversationLift(ctxDelete))
 	})
 
 	t.Run("not a participant returns 404", func(t *testing.T) {
 		ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/conversations/conv-not-participant", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxDelete.SetParam("id", "conv-not-participant")
+		ctxDelete.Params["id"] = "conv-not-participant"
 
-		require.NoError(t, handler.HandleDeleteConversationLift(ctxDelete))
-		require.Equal(t, http.StatusNotFound, ctxDelete.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteConversationLift(ctxDelete))
 	})
 
 	t.Run("other error returns 500", func(t *testing.T) {
 		ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/conversations/conv-error", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxDelete.SetParam("id", "conv-error")
+		ctxDelete.Params["id"] = "conv-error"
 
-		require.NoError(t, handler.HandleDeleteConversationLift(ctxDelete))
-		require.Equal(t, http.StatusInternalServerError, ctxDelete.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDeleteConversationLift(ctxDelete))
 	})
 }
-

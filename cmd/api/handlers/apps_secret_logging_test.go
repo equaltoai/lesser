@@ -1,6 +1,7 @@
-package lift
+package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -40,15 +41,17 @@ func TestCreateOAuthClientAndRespond_DoesNotLogClientSecret(t *testing.T) {
 		Website:      "https://example.com",
 	}
 
-	require.NoError(t, handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
-	resp := ctx.Response.Body.(apimodels.AppRegistrationResponse)
-	require.NotEmpty(t, resp.ClientSecret)
+	resp := requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+
+	var registration apimodels.AppRegistrationResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &registration))
+	require.NotEmpty(t, registration.ClientSecret)
 
 	for _, entry := range observed.All() {
-		require.False(t, strings.Contains(entry.Message, resp.ClientSecret), "log message should not contain client secret")
+		require.False(t, strings.Contains(entry.Message, registration.ClientSecret), "log message should not contain client secret")
 		for _, v := range entry.ContextMap() {
 			if s, ok := v.(string); ok {
-				require.False(t, strings.Contains(s, resp.ClientSecret), "log field should not contain client secret")
+				require.False(t, strings.Contains(s, registration.ClientSecret), "log field should not contain client secret")
 			}
 		}
 	}

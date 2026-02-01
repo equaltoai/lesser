@@ -8,7 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 // AuthenticatedAccount represents an authenticated user account
@@ -17,9 +17,9 @@ type AuthenticatedAccount struct {
 	Claims   *Claims
 }
 
-// GetAccountFromContext extracts the authenticated account from the Lift context
+// GetAccountFromContext extracts the authenticated account from an AppTheory context.
 // This consolidates the common pattern: claims, err := h.oauthService.ValidateAccessToken(token)
-func GetAccountFromContext(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
+func GetAccountFromContext(ctx *apptheory.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
 	// Extract Authorization header with fallbacks
 	authHeader := common.ExtractAuthHeader(ctx)
 	if authHeader == "" {
@@ -46,7 +46,7 @@ func GetAccountFromContext(ctx *lift.Context, oauthService OAuthServiceInterface
 
 // GetUsernameFromContext extracts just the username from the context
 // This consolidates the pattern: username, err := h.authenticateRequestWithScope(ctx, "read")
-func GetUsernameFromContext(ctx *lift.Context, oauthService OAuthServiceInterface) (string, error) {
+func GetUsernameFromContext(ctx *apptheory.Context, oauthService OAuthServiceInterface) (string, error) {
 	account, err := GetAccountFromContext(ctx, oauthService)
 	if err != nil {
 		return "", err
@@ -56,14 +56,14 @@ func GetUsernameFromContext(ctx *lift.Context, oauthService OAuthServiceInterfac
 
 // RequireAuth ensures the request is authenticated
 // This consolidates the pattern of checking if username is empty after auth
-func RequireAuth(ctx *lift.Context, oauthService OAuthServiceInterface) error {
+func RequireAuth(ctx *apptheory.Context, oauthService OAuthServiceInterface) error {
 	_, err := GetAccountFromContext(ctx, oauthService)
 	return err
 }
 
 // RequireAuthWithScope ensures the request is authenticated with a specific scope
 // This consolidates the most common auth pattern across all handlers
-func RequireAuthWithScope(ctx *lift.Context, oauthService OAuthServiceInterface, scope string) (*AuthenticatedAccount, error) {
+func RequireAuthWithScope(ctx *apptheory.Context, oauthService OAuthServiceInterface, scope string) (*AuthenticatedAccount, error) {
 	account, err := GetAccountFromContext(ctx, oauthService)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func RequireAuthWithScope(ctx *lift.Context, oauthService OAuthServiceInterface,
 
 // RequireAuthWithMultipleScopes allows any of the specified scopes
 // This consolidates the pattern where either read OR write scope is acceptable
-func RequireAuthWithMultipleScopes(ctx *lift.Context, oauthService OAuthServiceInterface, scopes []string) (*AuthenticatedAccount, error) {
+func RequireAuthWithMultipleScopes(ctx *apptheory.Context, oauthService OAuthServiceInterface, scopes []string) (*AuthenticatedAccount, error) {
 	account, err := GetAccountFromContext(ctx, oauthService)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func RequireAuthWithMultipleScopes(ctx *lift.Context, oauthService OAuthServiceI
 
 // ExtractOptionalAuth extracts authentication if present, but doesn't require it
 // This consolidates the pattern used in public endpoints that benefit from auth context
-func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
+func ExtractOptionalAuth(ctx *apptheory.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
 	// Extract Authorization header
 	authHeader := common.ExtractAuthHeader(ctx)
 	if authHeader == "" {
@@ -131,22 +131,22 @@ func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) 
 }
 
 // RequireReadScope is a convenience function for requiring read access
-func RequireReadScope(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
+func RequireReadScope(ctx *apptheory.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
 	return RequireAuthWithScope(ctx, oauthService, ScopeRead)
 }
 
 // RequireWriteScope is a convenience function for requiring write access
-func RequireWriteScope(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
+func RequireWriteScope(ctx *apptheory.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
 	return RequireAuthWithScope(ctx, oauthService, ScopeWrite)
 }
 
 // RequireAdminScope is a convenience function for requiring admin access
-func RequireAdminScope(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
+func RequireAdminScope(ctx *apptheory.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
 	return RequireAuthWithScope(ctx, oauthService, ScopeAdmin)
 }
 
 // RequireReadOrWriteScope allows either read or write scope
-func RequireReadOrWriteScope(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
+func RequireReadOrWriteScope(ctx *apptheory.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
 	return RequireAuthWithMultipleScopes(ctx, oauthService, []string{ScopeRead, ScopeWrite})
 }
 
@@ -190,50 +190,50 @@ func NewAuthenticationMiddleware(oauthService OAuthServiceInterface) *Authentica
 	}
 }
 
-// RequireAuthMiddleware returns a Lift middleware that requires authentication
-// Note: This would need to be implemented based on the specific Lift middleware interface
-func (am *AuthenticationMiddleware) RequireAuthMiddleware() func(*lift.Context) error {
-	return func(ctx *lift.Context) error {
-		_, err := GetAccountFromContext(ctx, am.oauthService)
-		if err != nil {
-			return common.RespondUnauthorized(ctx, err.Error())
-		}
-		// Continue to next handler - implementation depends on Lift framework
-		return nil
-	}
-}
-
-// RequireScopeMiddleware returns a Lift middleware that requires a specific scope
-func (am *AuthenticationMiddleware) RequireScopeMiddleware(scope string) func(*lift.Context) error {
-	return func(ctx *lift.Context) error {
-		_, err := RequireAuthWithScope(ctx, am.oauthService, scope)
-		if err != nil {
-			// Check if it's an auth error or scope error
-			if apperrors.HasCode(err, apperrors.CodeUnauthorized) {
+// RequireAuthMiddleware returns middleware that requires authentication.
+func (am *AuthenticationMiddleware) RequireAuthMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			_, err := GetAccountFromContext(ctx, am.oauthService)
+			if err != nil {
 				return common.RespondUnauthorized(ctx, err.Error())
 			}
-			return common.RespondForbidden(ctx, err.Error())
+			return next(ctx)
 		}
-		// Continue to next handler - implementation depends on Lift framework
-		return nil
 	}
 }
 
-// OptionalAuthMiddleware returns a Lift middleware that extracts optional auth
-// The auth context is stored in the Lift context for downstream handlers
-func (am *AuthenticationMiddleware) OptionalAuthMiddleware() func(*lift.Context) error {
-	return func(ctx *lift.Context) error {
-		account, _ := ExtractOptionalAuth(ctx, am.oauthService)
-		if account != nil {
-			ctx.Set("authenticated_account", account)
+// RequireScopeMiddleware returns middleware that requires a specific scope.
+func (am *AuthenticationMiddleware) RequireScopeMiddleware(scope string) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			_, err := RequireAuthWithScope(ctx, am.oauthService, scope)
+			if err != nil {
+				if apperrors.HasCode(err, apperrors.CodeUnauthorized) {
+					return common.RespondUnauthorized(ctx, err.Error())
+				}
+				return common.RespondForbidden(ctx, err.Error())
+			}
+			return next(ctx)
 		}
-		// Continue to next handler - implementation depends on Lift framework
-		return nil
 	}
 }
 
-// GetAuthenticatedAccountFromContext retrieves the account set by OptionalAuthMiddleware
-func GetAuthenticatedAccountFromContext(ctx *lift.Context) (*AuthenticatedAccount, bool) {
+// OptionalAuthMiddleware extracts optional auth and stores it in context for downstream handlers.
+func (am *AuthenticationMiddleware) OptionalAuthMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			account, _ := ExtractOptionalAuth(ctx, am.oauthService)
+			if account != nil {
+				ctx.Set("authenticated_account", account)
+			}
+			return next(ctx)
+		}
+	}
+}
+
+// GetAuthenticatedAccountFromContext retrieves the account set by OptionalAuthMiddleware.
+func GetAuthenticatedAccountFromContext(ctx *apptheory.Context) (*AuthenticatedAccount, bool) {
 	if account := ctx.Get("authenticated_account"); account != nil {
 		if authAccount, ok := account.(*AuthenticatedAccount); ok {
 			return authAccount, true

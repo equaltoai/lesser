@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -30,14 +30,9 @@ type WebFingerLink struct {
 }
 
 // HandleWebFingerLift handles /.well-known/webfinger requests
-func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
+func (h *Handler) HandleWebFingerLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get resource parameter
-	resource := ctx.Query("resource")
-
-	// Fallback to direct query param access if ctx.Query doesn't work
-	if err := common.ValidateRequiredParam("resource", resource); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		resource = ctx.Request.Request.QueryParams["resource"]
-	}
+	resource := queryValue(ctx, "resource")
 
 	if err := common.ValidateRequiredParam("resource", resource); err != nil {
 		return common.RespondBadRequest(ctx, "resource parameter is required")
@@ -53,7 +48,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 
 	h.logger.Info("webfinger request",
 		zap.String("resource", resource),
-		zap.String("user_agent", ctx.Header("User-Agent")))
+		zap.String("user_agent", headerValue(ctx, "User-Agent")))
 
 	// Parse the resource
 	username, domain, err := h.parseWebFingerResourceLift(resource)
@@ -73,7 +68,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 	}
 
 	// Look up the user using Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
 	if err != nil {
 		h.logger.Warn("account not found for webfinger",
 			zap.String("username", username),
@@ -126,7 +121,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // parseWebFingerResourceLift parses a WebFinger resource identifier

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -61,49 +61,41 @@ func TestListsLift_CRUDAndMembership(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/lists", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetListsLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleGetListsLift(ctx))
 
 	ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/lists", jsonHeaders, nil, models.CreateListRequest{Title: "Test", RepliesPolicy: "list"})
 	require.NoError(t, err)
-	require.NoError(t, h.HandleCreateListLift(ctx2))
-	require.Equal(t, http.StatusCreated, ctx2.Response.StatusCode)
+	requireStatus(t, http.StatusCreated)(h.HandleCreateListLift(ctx2))
 
 	ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/lists/list-1", headers, nil, nil)
 	require.NoError(t, err)
-	ctx3.SetParam("id", "list-1")
-	require.NoError(t, h.HandleGetListLift(ctx3))
-	require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
+	ctx3.Params["id"] = "list-1"
+	requireStatus(t, http.StatusOK)(h.HandleGetListLift(ctx3))
 
 	ctx4, err := round10NewLiftContext(http.MethodPut, "/api/v1/lists/list-1", jsonHeaders, nil, models.UpdateListRequest{Title: "Updated"})
 	require.NoError(t, err)
-	ctx4.SetParam("id", "list-1")
-	require.NoError(t, h.HandleUpdateListLift(ctx4))
-	require.Equal(t, http.StatusOK, ctx4.Response.StatusCode)
+	ctx4.Params["id"] = "list-1"
+	requireStatus(t, http.StatusOK)(h.HandleUpdateListLift(ctx4))
 
 	ctx5, err := round10NewLiftContext(http.MethodDelete, "/api/v1/lists/list-1", headers, nil, nil)
 	require.NoError(t, err)
-	ctx5.SetParam("id", "list-1")
-	require.NoError(t, h.HandleDeleteListLift(ctx5))
-	require.Equal(t, http.StatusOK, ctx5.Response.StatusCode)
+	ctx5.Params["id"] = "list-1"
+	requireStatus(t, http.StatusOK)(h.HandleDeleteListLift(ctx5))
 
 	ctx6, err := round10NewLiftContext(http.MethodGet, "/api/v1/lists/list-1/accounts", headers, nil, nil)
 	require.NoError(t, err)
-	ctx6.SetParam("id", "list-1")
-	require.NoError(t, h.HandleGetListAccountsLift(ctx6))
-	require.Equal(t, http.StatusOK, ctx6.Response.StatusCode)
+	ctx6.Params["id"] = "list-1"
+	requireStatus(t, http.StatusOK)(h.HandleGetListAccountsLift(ctx6))
 
 	ctx7, err := round10NewLiftContext(http.MethodPost, "/api/v1/lists/list-1/accounts", jsonHeaders, nil, models.AddAccountsRequest{AccountIDs: []string{"bob"}})
 	require.NoError(t, err)
-	ctx7.SetParam("id", "list-1")
-	require.NoError(t, h.HandleAddAccountsToListLift(ctx7))
-	require.Equal(t, http.StatusOK, ctx7.Response.StatusCode)
+	ctx7.Params["id"] = "list-1"
+	requireStatus(t, http.StatusOK)(h.HandleAddAccountsToListLift(ctx7))
 
 	ctx8, err := round10NewLiftContext(http.MethodDelete, "/api/v1/lists/list-1/accounts", jsonHeaders, nil, models.RemoveAccountsRequest{AccountIDs: []string{"bob"}})
 	require.NoError(t, err)
-	ctx8.SetParam("id", "list-1")
-	require.NoError(t, h.HandleRemoveAccountsFromListLift(ctx8))
-	require.Equal(t, http.StatusOK, ctx8.Response.StatusCode)
+	ctx8.Params["id"] = "list-1"
+	requireStatus(t, http.StatusOK)(h.HandleRemoveAccountsFromListLift(ctx8))
 }
 
 func TestFollowRequestsLift(t *testing.T) {
@@ -145,18 +137,15 @@ func TestFollowRequestsLift(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/follow_requests", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetFollowRequestsLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleGetFollowRequestsLift(ctx))
 
 	ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/follow_requests/bob/authorize", headers, nil, nil)
 	require.NoError(t, err)
-	ctx2.SetParam("account_id", "bob")
-	require.NoError(t, h.HandleAuthorizeFollowRequestLift(ctx2))
-	require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+	ctx2.Params["account_id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleAuthorizeFollowRequestLift(ctx2))
 
 	unlockedActor := &activitypub.Actor{PreferredUsername: "alice", ManuallyApprovesFollowers: false}
 	ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/follow_requests", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.handleGetFollowRequestsLogic(ctx3, unlockedActor, "alice"))
-	require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.handleGetFollowRequestsLogic(ctx3, unlockedActor, "alice"))
 }

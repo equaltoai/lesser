@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -36,49 +36,49 @@ type authorizeFlow struct {
 	scopes   []string
 }
 
-func (h *Handler) isOAuthAuthorizeUIMode(ctx *lift.Context) bool {
-	if strings.EqualFold(ctx.Query("mode"), "ui") {
+func (h *Handler) isOAuthAuthorizeUIMode(ctx *apptheory.Context) bool {
+	if strings.EqualFold(queryValue(ctx, "mode"), "ui") {
 		return true
 	}
 
-	accept := ctx.Header("Accept")
+	accept := headerValue(ctx, "Accept")
 	if accept == "" {
-		accept = ctx.Header("accept")
+		accept = headerValue(ctx, "accept")
 	}
 
 	return strings.Contains(accept, "application/json")
 }
 
-func (h *Handler) writeOAuthAuthorizeRedirect(ctx *lift.Context, nextURL string) error {
+func (h *Handler) writeOAuthAuthorizeRedirect(ctx *apptheory.Context, nextURL string) (*apptheory.Response, error) {
 	if h.isOAuthAuthorizeUIMode(ctx) {
-		return ctx.Status(http.StatusOK).JSON(apimodels.OAuthAuthorizeResponse{NextURL: nextURL})
+		return okJSON(apimodels.OAuthAuthorizeResponse{NextURL: nextURL})
 	}
 
-	ctx.Response.Header("Location", nextURL)
-	ctx.Status(http.StatusFound)
-	return nil
+	resp := &apptheory.Response{Status: http.StatusFound}
+	setHeader(resp, "Location", nextURL)
+	return resp, nil
 }
 
 // HandleOAuthAuthorizeLift handles the OAuth authorization endpoint using native Lift patterns
 // GET /oauth/authorize
-func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
-	flow, handled, err := h.initializeAuthorizeFlow(ctx)
-	if err != nil || handled {
-		return err
+func (h *Handler) HandleOAuthAuthorizeLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	flow, resp, err := h.initializeAuthorizeFlow(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
-	handled, err = h.ensureConsentForFlow(ctx, flow)
-	if err != nil || handled {
-		return err
+	resp, err = h.ensureConsentForFlow(ctx, flow)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	return h.completeAuthorizationFlow(ctx, flow)
 }
 
-func (h *Handler) initializeAuthorizeFlow(ctx *lift.Context) (*authorizeFlow, bool, error) {
-	req, handled, err := h.extractAuthorizeRequest(ctx)
-	if err != nil || handled {
-		return nil, handled, err
+func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlow, *apptheory.Response, error) {
+	req, resp, err := h.extractAuthorizeRequest(ctx)
+	if resp != nil || err != nil {
+		return nil, resp, err
 	}
 
 	flow := &authorizeFlow{
@@ -86,52 +86,56 @@ func (h *Handler) initializeAuthorizeFlow(ctx *lift.Context) (*authorizeFlow, bo
 		oauthSvc: createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger),
 	}
 
-	if err := flow.oauthSvc.ValidateRedirectURI(ctx.Context, req.clientID, req.redirectURI); err != nil {
+	if err := flow.oauthSvc.ValidateRedirectURI(ctx.Context(), req.clientID, req.redirectURI); err != nil {
 		h.logger.Error("invalid redirect URI",
 			zap.String("client_id", req.clientID),
 			zap.String("redirect_uri", req.redirectURI),
 			zap.Error(err))
-		return nil, true, h.oauthErrorLift(ctx, "invalid_request", "Invalid redirect_uri", "", req.state)
+		resp, respErr := h.oauthErrorLift(ctx, "invalid_request", "Invalid redirect_uri", "", req.state)
+		return nil, resp, respErr
 	}
 
-	username, handled, err := h.resolveAuthorizeUser(ctx, req)
-	if err != nil || handled {
-		return nil, handled, err
+	username, resp, err := h.resolveAuthorizeUser(ctx, req)
+	if resp != nil || err != nil {
+		return nil, resp, err
 	}
 	flow.username = username
 
 	scopes, err := h.normalizeAuthorizeScopes(req.scope)
 	if err != nil {
-		return nil, true, h.oauthErrorLift(ctx, "invalid_scope", err.Error(), req.redirectURI, req.state)
+		resp, respErr := h.oauthErrorLift(ctx, "invalid_scope", err.Error(), req.redirectURI, req.state)
+		return nil, resp, respErr
 	}
 	flow.scopes = scopes
 
-	return flow, false, nil
+	return flow, nil, nil
 }
 
-func (h *Handler) extractAuthorizeRequest(ctx *lift.Context) (*authorizeRequest, bool, error) {
+func (h *Handler) extractAuthorizeRequest(ctx *apptheory.Context) (*authorizeRequest, *apptheory.Response, error) {
 	req := &authorizeRequest{
-		responseType:        ctx.Query("response_type"),
-		clientID:            ctx.Query("client_id"),
-		redirectURI:         ctx.Query("redirect_uri"),
-		scope:               ctx.Query("scope"),
-		state:               ctx.Query("state"),
-		codeChallenge:       ctx.Query("code_challenge"),
-		codeChallengeMethod: ctx.Query("code_challenge_method"),
+		responseType:        queryValue(ctx, "response_type"),
+		clientID:            queryValue(ctx, "client_id"),
+		redirectURI:         queryValue(ctx, "redirect_uri"),
+		scope:               queryValue(ctx, "scope"),
+		state:               queryValue(ctx, "state"),
+		codeChallenge:       queryValue(ctx, "code_challenge"),
+		codeChallengeMethod: queryValue(ctx, "code_challenge_method"),
 	}
 
 	if req.responseType != "code" {
-		return nil, true, h.oauthErrorLift(ctx, "unsupported_response_type", "Only 'code' response type is supported", req.redirectURI, req.state)
+		resp, err := h.oauthErrorLift(ctx, "unsupported_response_type", "Only 'code' response type is supported", req.redirectURI, req.state)
+		return nil, resp, err
 	}
 
 	if req.clientID == "" || req.redirectURI == "" {
-		return nil, true, h.redirectMissingAuthorizeParams(ctx, req)
+		resp, err := h.redirectMissingAuthorizeParams(ctx, req)
+		return nil, resp, err
 	}
 
-	return req, false, nil
+	return req, nil, nil
 }
 
-func (h *Handler) redirectMissingAuthorizeParams(ctx *lift.Context, req *authorizeRequest) error {
+func (h *Handler) redirectMissingAuthorizeParams(ctx *apptheory.Context, req *authorizeRequest) (*apptheory.Response, error) {
 	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
 	errorMessage := "Invalid authorization request - missing required parameters. Please restart the authorization flow from your application."
 
@@ -157,20 +161,18 @@ func (h *Handler) redirectMissingAuthorizeParams(ctx *lift.Context, req *authori
 	return h.writeOAuthAuthorizeRedirect(ctx, errorURL)
 }
 
-func (h *Handler) resolveAuthorizeUser(ctx *lift.Context, req *authorizeRequest) (string, bool, error) {
+func (h *Handler) resolveAuthorizeUser(ctx *apptheory.Context, req *authorizeRequest) (string, *apptheory.Response, error) {
 	username := h.getUserFromSessionLift(ctx)
 
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		if err := h.redirectUserToLogin(ctx, req); err != nil {
-			return "", true, err
-		}
-		return "", true, nil
+		resp, respErr := h.redirectUserToLogin(ctx, req)
+		return "", resp, respErr
 	}
 
-	return username, false, nil
+	return username, nil, nil
 }
 
-func (h *Handler) redirectUserToLogin(ctx *lift.Context, req *authorizeRequest) error {
+func (h *Handler) redirectUserToLogin(ctx *apptheory.Context, req *authorizeRequest) (*apptheory.Response, error) {
 	authUIBaseURL := fmt.Sprintf("https://%s/auth", h.cfg.Domain)
 	authRequest := map[string]string{
 		"client_id":             req.clientID,
@@ -208,14 +210,14 @@ func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
 	return scopes, nil
 }
 
-func (h *Handler) ensureConsentForFlow(ctx *lift.Context, flow *authorizeFlow) (bool, error) {
+func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFlow) (*apptheory.Response, error) {
 	if h.registry == nil {
 		h.logger.Error("service registry not initialized for OAuth authorization")
-		return true, h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
+		return h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
 	}
 
-	if h.hasUserConsentedToApp(ctx.Context, flow.username, flow.request.clientID, flow.scopes) {
-		return false, nil
+	if h.hasUserConsentedToApp(ctx.Context(), flow.username, flow.request.clientID, flow.scopes) {
+		return nil, nil
 	}
 
 	authState := &storage.OAuthState{
@@ -229,22 +231,22 @@ func (h *Handler) ensureConsentForFlow(ctx *lift.Context, flow *authorizeFlow) (
 		ExpiresAt:           time.Now().Add(10 * time.Minute),
 	}
 
-	if _, err := h.registry.Accounts().StoreOAuthState(ctx.Context, &accounts.StoreOAuthStateCommand{
+	if _, err := h.registry.Accounts().StoreOAuthState(ctx.Context(), &accounts.StoreOAuthStateCommand{
 		State:      authState.State,
 		OAuthState: authState,
 	}); err != nil {
 		h.logger.Error("failed to save OAuth state", zap.Error(err))
-		return true, h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", flow.request.redirectURI, flow.request.state)
+		return h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", flow.request.redirectURI, flow.request.state)
 	}
 
 	h.logger.Info("redirecting to consent UI",
 		zap.String("username", flow.username),
 		zap.String("client_id", flow.request.clientID))
 
-	return true, h.redirectToConsentUI(ctx, authState)
+	return h.redirectToConsentUI(ctx, authState)
 }
 
-func (h *Handler) completeAuthorizationFlow(ctx *lift.Context, flow *authorizeFlow) error {
+func (h *Handler) completeAuthorizationFlow(ctx *apptheory.Context, flow *authorizeFlow) (*apptheory.Response, error) {
 	code, err := flow.oauthSvc.GenerateAuthorizationCode()
 	if err != nil {
 		h.logger.Error("failed to generate authorization code", zap.Error(err))
@@ -260,7 +262,7 @@ func (h *Handler) completeAuthorizationFlow(ctx *lift.Context, flow *authorizeFl
 		Scopes:        flow.scopes,
 	}
 
-	if _, err := h.registry.Accounts().CreateAuthorizationCode(ctx.Context, &accounts.CreateAuthorizationCodeCommand{
+	if _, err := h.registry.Accounts().CreateAuthorizationCode(ctx.Context(), &accounts.CreateAuthorizationCodeCommand{
 		AuthCode: authCode,
 	}); err != nil {
 		h.logger.Error("failed to store authorization code", zap.Error(err))
@@ -280,10 +282,10 @@ func (h *Handler) completeAuthorizationFlow(ctx *lift.Context, flow *authorizeFl
 // Helper methods for Lift implementation
 
 // oauthErrorLift handles OAuth errors in Lift style
-func (h *Handler) oauthErrorLift(ctx *lift.Context, errorCode, errorDescription, redirectURI, state string) error {
+func (h *Handler) oauthErrorLift(ctx *apptheory.Context, errorCode, errorDescription, redirectURI, state string) (*apptheory.Response, error) {
 	// If no redirect URI, return JSON error
 	if err := common.ValidateRequiredParam("redirect_uri", redirectURI); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             errorCode,
 			"error_description": errorDescription,
 		})
@@ -292,7 +294,7 @@ func (h *Handler) oauthErrorLift(ctx *lift.Context, errorCode, errorDescription,
 	// Build redirect URL with error parameters
 	u, err := url.Parse(redirectURI)
 	if err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": "Invalid redirect_uri",
 		})
@@ -309,7 +311,7 @@ func (h *Handler) oauthErrorLift(ctx *lift.Context, errorCode, errorDescription,
 }
 
 // getUserFromSessionLift extracts the username from the session using Lift patterns
-func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
+func (h *Handler) getUserFromSessionLift(ctx *apptheory.Context) string {
 	// Check for authentication context from unified middleware
 	if username := ctx.Get("username"); username != nil {
 		if usernameStr, ok := username.(string); ok && usernameStr != "" {
@@ -318,9 +320,9 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 	}
 
 	// Check for Bearer token in Authorization header (for cross-subdomain auth)
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 	if authHeader != "" {
 		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
@@ -335,23 +337,26 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 }
 
 // redirectToConsentUI redirects to the hosted OAuth consent UI
-func (h *Handler) redirectToConsentUI(ctx *lift.Context, authState *storage.OAuthState) error {
+func (h *Handler) redirectToConsentUI(ctx *apptheory.Context, authState *storage.OAuthState) (*apptheory.Response, error) {
 	// Check if registry is initialized
 	if h.registry == nil {
 		h.logger.Error("service registry not initialized for OAuth consent")
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
 			"error":             "server_error",
 			"error_description": "Service unavailable",
 		})
 	}
 
 	// Get app details to pass to consent UI
-	result, err := h.registry.Accounts().GetOAuthApp(ctx.Context, &accounts.GetOAuthAppQuery{
+	result, err := h.registry.Accounts().GetOAuthApp(ctx.Context(), &accounts.GetOAuthAppQuery{
 		ClientID: authState.ClientID,
 	})
 	if err != nil {
 		h.logger.Error("failed to get OAuth app", zap.Error(err))
-		return errors.New("client not found")
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "client not found",
+		})
 	}
 	app := result.App
 
@@ -397,10 +402,10 @@ func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID 
 
 // HandleOAuthTokenLift handles the OAuth token endpoint using native Lift patterns
 // POST /oauth/token
-func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
+func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse form data from request body
 	if err := common.ValidateSliceNotEmpty("request_body", ctx.Request.Body); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": "Empty request body",
 		})
@@ -408,7 +413,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 
 	params, err := common.ParseFormURLEncoded(string(ctx.Request.Body))
 	if err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": "Unable to parse form data",
 		})
@@ -434,44 +439,44 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 			"client_id":    clientID,
 			"redirect_uri": redirectURI,
 		}); err != nil {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_request",
 				"error_description": err.Error(),
 			})
 		}
 
 		// Exchange authorization code for tokens
-		accessToken, refreshTokenOut, err := h.exchangeAuthorizationCode(ctx.Context, oauthSvc, code, clientID, redirectURI, codeVerifier, clientSecret)
+		accessToken, refreshTokenOut, err := h.exchangeAuthorizationCode(ctx.Context(), oauthSvc, code, clientID, redirectURI, codeVerifier, clientSecret)
 		if err != nil {
 			h.logger.Error("failed to exchange authorization code", zap.Error(err))
 
 			// Return appropriate OAuth error based on the error type
 			if err == auth.ErrInvalidGrant {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				return apptheory.JSON(http.StatusBadRequest, map[string]string{
 					"error":             "invalid_grant",
 					"error_description": "Invalid authorization code or expired",
 				})
 			}
 			if err == auth.ErrInvalidClient {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				return apptheory.JSON(http.StatusBadRequest, map[string]string{
 					"error":             "invalid_client",
 					"error_description": "Invalid client credentials",
 				})
 			}
 			if err == auth.ErrInvalidCodeChallenge {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				return apptheory.JSON(http.StatusBadRequest, map[string]string{
 					"error":             "invalid_grant",
 					"error_description": "PKCE verification failed",
 				})
 			}
 
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
 				"error_description": "Authorization code exchange failed",
 			})
 		}
 
-		return ctx.JSON(apimodels.OAuthTokenResponse{
+		return okJSON(apimodels.OAuthTokenResponse{
 			AccessToken:  accessToken,
 			TokenType:    "Bearer",
 			Scope:        "read write follow push",
@@ -486,38 +491,38 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 			"refresh_token": refreshToken,
 			"client_id":     clientID,
 		}); err != nil {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_request",
 				"error_description": err.Error(),
 			})
 		}
 
 		// Exchange refresh token for new tokens
-		accessToken, newRefreshToken, err := h.exchangeRefreshToken(ctx.Context, oauthSvc, refreshToken, clientID, clientSecret)
+		accessToken, newRefreshToken, err := h.exchangeRefreshToken(ctx.Context(), oauthSvc, refreshToken, clientID, clientSecret)
 		if err != nil {
 			h.logger.Error("failed to refresh tokens", zap.Error(err))
 
 			// Return appropriate OAuth error based on the error type
 			if err == auth.ErrInvalidToken {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				return apptheory.JSON(http.StatusBadRequest, map[string]string{
 					"error":             "invalid_grant",
 					"error_description": "Invalid or expired refresh token",
 				})
 			}
 			if err == auth.ErrInvalidClient {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				return apptheory.JSON(http.StatusBadRequest, map[string]string{
 					"error":             "invalid_client",
 					"error_description": "Invalid client credentials",
 				})
 			}
 
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
 				"error_description": "Refresh token exchange failed",
 			})
 		}
 
-		return ctx.JSON(apimodels.OAuthTokenResponse{
+		return okJSON(apimodels.OAuthTokenResponse{
 			AccessToken:  accessToken,
 			TokenType:    "Bearer",
 			Scope:        "read write follow push",
@@ -527,7 +532,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 		})
 
 	default:
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "unsupported_grant_type",
 			"error_description": "Only authorization_code and refresh_token grant types are supported",
 		})

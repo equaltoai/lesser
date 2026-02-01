@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -59,25 +59,21 @@ func TestExportHandlers_Round11(t *testing.T) {
 	createReq := apimodels.ExportRequest{Type: ExportTypeFollowers, Format: "csv"}
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, createReq)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateExportLift(ctxCreate))
-	require.Equal(t, http.StatusAccepted, ctxCreate.Response.StatusCode)
+	requireStatus(t, http.StatusAccepted)(handler.HandleCreateExportLift(ctxCreate))
 
 	ctxStatus, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-1", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxStatus.SetParam("id", "exp-1")
-	require.NoError(t, handler.HandleGetExportStatusLift(ctxStatus))
-	require.Equal(t, http.StatusOK, ctxStatus.Response.StatusCode)
+	ctxStatus.Params["id"] = "exp-1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetExportStatusLift(ctxStatus))
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", map[string]string{"X-Test-Username": "testuser_with_exports"}, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleListExportsLift(ctxList))
-	require.Equal(t, http.StatusOK, ctxList.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleListExportsLift(ctxList))
 
 	ctxDownload, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-1/download", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxDownload.SetParam("id", "exp-1")
-	require.NoError(t, handler.HandleDownloadExportLift(ctxDownload))
-	require.Equal(t, http.StatusFound, ctxDownload.Response.StatusCode)
+	ctxDownload.Params["id"] = "exp-1"
+	requireStatus(t, http.StatusFound)(handler.HandleDownloadExportLift(ctxDownload))
 
 	job := handler.convertSingleExportToResponse(&state.exportList[0])
 	require.Equal(t, ExportStatusCompleted, job.Status)

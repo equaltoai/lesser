@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -27,7 +27,7 @@ type followRequestConfig struct {
 }
 
 // handleFollowRequestOperation consolidates common follow request operation logic
-func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activitypub.Actor, username, accountID string, config followRequestConfig) error {
+func (h *Handler) handleFollowRequestOperation(ctx *apptheory.Context, actor *activitypub.Actor, username, accountID string, config followRequestConfig) (*apptheory.Response, error) {
 	// Only locked accounts can have follow requests
 	if !actor.ManuallyApprovesFollowers {
 		return common.RespondBadRequest(ctx, "account is not locked")
@@ -40,14 +40,14 @@ func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activit
 	switch config.actionType {
 	case "accept":
 		if acceptMethod, ok := config.serviceMethod.(func(context.Context, *relationships.AcceptFollowRequestCommand) (*relationships.RelationshipResult, error)); ok {
-			result, err = acceptMethod(ctx.Context, &relationships.AcceptFollowRequestCommand{
+			result, err = acceptMethod(ctx.Context(), &relationships.AcceptFollowRequestCommand{
 				RequesterID: username,
 				FollowerID:  accountID,
 			})
 		}
 	case "reject":
 		if rejectMethod, ok := config.serviceMethod.(func(context.Context, *relationships.RejectFollowRequestCommand) (*relationships.RelationshipResult, error)); ok {
-			result, err = rejectMethod(ctx.Context, &relationships.RejectFollowRequestCommand{
+			result, err = rejectMethod(ctx.Context(), &relationships.RejectFollowRequestCommand{
 				RequesterID: username,
 				FollowerID:  accountID,
 			})
@@ -64,7 +64,7 @@ func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activit
 
 	// Send activity to the follower
 	go func() {
-		if err := config.activitySender(ctx.Context, accountID, username); err != nil {
+		if err := config.activitySender(ctx.Context(), accountID, username); err != nil {
 			h.logger.Error(config.activityLogError, zap.Error(err))
 		}
 	}()
@@ -79,20 +79,12 @@ func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activit
 
 // HandleGetFollowRequestsLift handles GET /api/v1/follow_requests
 // Returns pending follow requests for locked accounts
-func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFollowRequestsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 
 	// Extract token from Authorization header using centralized validation
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -113,7 +105,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 	}
 
 	// Get the user's actor
-	result, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	result, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "internal server error")
@@ -124,14 +116,14 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 }
 
 // handleGetFollowRequestsLogic contains the main follow requests logic, separated for testing
-func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activitypub.Actor, username string) error {
+func (h *Handler) handleGetFollowRequestsLogic(ctx *apptheory.Context, actor *activitypub.Actor, username string) (*apptheory.Response, error) {
 	// If account is not locked, return empty array
 	if !actor.ManuallyApprovesFollowers {
-		return ctx.JSON([]apimodels.Account{})
+		return okJSON([]apimodels.Account{})
 	}
 
 	// Use the Relationships service to get pending follow requests
-	result, err := h.registry.Relationships().GetPendingFollowRequests(ctx.Context, &relationships.GetFollowRequestsQuery{
+	result, err := h.registry.Relationships().GetPendingFollowRequests(ctx.Context(), &relationships.GetFollowRequestsQuery{
 		UserID: username,
 		Limit:  100,
 	})
@@ -143,7 +135,7 @@ func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activit
 	accounts := make([]apimodels.Account, 0, len(result.FollowerIDs))
 	for _, followerID := range result.FollowerIDs {
 		// Get follower actor
-		followerResult, err := h.registry.Accounts().GetAccount(ctx.Context, followerID)
+		followerResult, err := h.registry.Accounts().GetAccount(ctx.Context(), followerID)
 		if err != nil {
 			h.logger.Warn("failed to get follower actor",
 				zap.String("follower_id", followerID),
@@ -152,24 +144,24 @@ func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activit
 		}
 		followerActor := followerResult.Actor
 
-		accounts = append(accounts, h.convertActorToAccountWithCounts(ctx.Context, followerActor))
+		accounts = append(accounts, h.convertActorToAccountWithCounts(ctx.Context(), followerActor))
 	}
 
 	h.logger.Info("follow requests retrieved",
 		zap.String("username", username),
 		zap.Int("count", len(accounts)))
 
-	return ctx.JSON(accounts)
+	return okJSON(accounts)
 }
 
 // HandleAuthorizeFollowRequestLift handles POST /api/v1/follow_requests/:account_id/authorize
 // Accepts a pending follow request
-func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
+func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleFollowRequestAction(ctx, "authorize", h.handleAuthorizeFollowRequestLogic)
 }
 
 // handleAuthorizeFollowRequestLogic contains the main authorize logic, separated for testing
-func (h *Handler) handleAuthorizeFollowRequestLogic(ctx *lift.Context, actor *activitypub.Actor, username, accountID string) error {
+func (h *Handler) handleAuthorizeFollowRequestLogic(ctx *apptheory.Context, actor *activitypub.Actor, username, accountID string) (*apptheory.Response, error) {
 	return h.handleFollowRequestOperation(ctx, actor, username, accountID, followRequestConfig{
 		actionType:       "accept",
 		serviceMethod:    h.registry.Relationships().AcceptFollowRequest,
@@ -182,30 +174,22 @@ func (h *Handler) handleAuthorizeFollowRequestLogic(ctx *lift.Context, actor *ac
 
 // HandleRejectFollowRequestLift handles POST /api/v1/follow_requests/:account_id/reject
 // Rejects a pending follow request
-func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
+func (h *Handler) HandleRejectFollowRequestLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleFollowRequestAction(ctx, "reject", h.handleRejectFollowRequestLogic)
 }
 
 // handleFollowRequestAction consolidates the common authentication and validation logic
 // for both authorize and reject follow request actions
-func (h *Handler) handleFollowRequestAction(ctx *lift.Context, _ string, logicHandler func(*lift.Context, *activitypub.Actor, string, string) error) error {
+func (h *Handler) handleFollowRequestAction(ctx *apptheory.Context, _ string, logicHandler func(*apptheory.Context, *activitypub.Actor, string, string) (*apptheory.Response, error)) (*apptheory.Response, error) {
 	accountID := ctx.Param("account_id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Extract token from Authorization header using centralized validation
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -226,7 +210,7 @@ func (h *Handler) handleFollowRequestAction(ctx *lift.Context, _ string, logicHa
 	}
 
 	// Get the user's actor
-	result, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	result, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "internal server error")
@@ -237,7 +221,7 @@ func (h *Handler) handleFollowRequestAction(ctx *lift.Context, _ string, logicHa
 }
 
 // handleRejectFollowRequestLogic contains the main reject logic, separated for testing
-func (h *Handler) handleRejectFollowRequestLogic(ctx *lift.Context, actor *activitypub.Actor, username, accountID string) error {
+func (h *Handler) handleRejectFollowRequestLogic(ctx *apptheory.Context, actor *activitypub.Actor, username, accountID string) (*apptheory.Response, error) {
 	return h.handleFollowRequestOperation(ctx, actor, username, accountID, followRequestConfig{
 		actionType:       "reject",
 		serviceMethod:    h.registry.Relationships().RejectFollowRequest,
@@ -323,7 +307,7 @@ func (h *Handler) deliverActivityLift(_ context.Context, activity *activitypub.A
 
 // respondWithRelationship consolidates the duplicate relationship response formatting
 // This eliminates the identical relationship mapping found in authorize and reject handlers
-func (h *Handler) respondWithRelationship(ctx *lift.Context, accountID string, relationship *relationships.RelationshipData) error {
+func (h *Handler) respondWithRelationship(ctx *apptheory.Context, accountID string, relationship *relationships.RelationshipData) (*apptheory.Response, error) {
 	// Convert relationship data to Mastodon API format
 	relationshipResponse := map[string]any{
 		"id":                   accountID,
@@ -341,5 +325,5 @@ func (h *Handler) respondWithRelationship(ctx *lift.Context, accountID string, r
 		"note":                 relationship.Note,
 	}
 
-	return ctx.JSON(relationshipResponse)
+	return okJSON(relationshipResponse)
 }

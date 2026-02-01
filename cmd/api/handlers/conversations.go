@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -56,16 +56,19 @@ func (h *Handler) convertConversationToAPI(ctx context.Context, conv *storageMod
 }
 
 // HandleGetConversationsLift retrieves all conversations for the authenticated user
-func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetConversationsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
-	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Parse query parameters
 	limit := h.parseConversationLimit(ctx)
-	maxID := ctx.Query("max_id")
+	maxID := queryValue(ctx, "max_id")
 
 	// Build pagination options
 	pagination := interfaces.PaginationOptions{
@@ -74,8 +77,8 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 	}
 
 	// Call service
-	result, err := h.registry.Conversations().ListConversations(ctx.Context, &conversations.ListConversationsQuery{
-		UserID:     claims.Username,
+	result, err := h.registry.Conversations().ListConversations(ctx.Context(), &conversations.ListConversationsQuery{
+		UserID:     username,
 		Pagination: pagination,
 	})
 	if err != nil {
@@ -83,26 +86,31 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	// Set pagination header if there are more results
-	if result.Conversations.HasMore && result.Conversations.NextCursor != "" {
-		h.setConversationPaginationHeader(ctx, result.Conversations.NextCursor, limit)
-	}
-
 	response := make([]apimodels.Conversation, 0, len(result.Conversations.Items))
 	for _, conv := range result.Conversations.Items {
-		apiConv, err := h.convertConversationToAPI(ctx.Context, conv, claims.Username)
+		apiConv, err := h.convertConversationToAPI(ctx.Context(), conv, username)
 		if err != nil {
 			continue
 		}
 		response = append(response, apiConv)
 	}
 
-	return ctx.JSON(response)
+	resp, err := okJSON(response)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set pagination header if there are more results
+	if result.Conversations.HasMore && result.Conversations.NextCursor != "" {
+		h.setConversationPaginationHeader(resp, result.Conversations.NextCursor, limit)
+	}
+
+	return resp, nil
 }
 
 // parseConversationLimit parses the limit query parameter
-func (h *Handler) parseConversationLimit(ctx *lift.Context) int {
-	limitStr := ctx.Query("limit")
+func (h *Handler) parseConversationLimit(ctx *apptheory.Context) int {
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseTimelineLimit(limitStr)
 	if err != nil {
 		limit = 20
@@ -111,7 +119,7 @@ func (h *Handler) parseConversationLimit(ctx *lift.Context) int {
 }
 
 // setConversationPaginationHeader sets the Link header for pagination
-func (h *Handler) setConversationPaginationHeader(ctx *lift.Context, cursor string, limit int) {
+func (h *Handler) setConversationPaginationHeader(resp *apptheory.Response, cursor string, limit int) {
 	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
 		return
 	}
@@ -120,26 +128,29 @@ func (h *Handler) setConversationPaginationHeader(ctx *lift.Context, cursor stri
 	if limit != 20 {
 		nextURL += fmt.Sprintf("&limit=%d", limit)
 	}
-	ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+	setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
 }
 
 // HandleDeleteConversationLift removes a conversation from the user's list
-func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteConversationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	conversationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("conversation_id", conversationID); err != nil {
 		return common.RespondBadRequest(ctx, "missing conversation id")
 	}
 
 	// Authenticate user
-	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Call service to delete conversation
-	_, err = h.registry.Conversations().DeleteConversation(ctx.Context, &conversations.DeleteConversationCommand{
+	_, err = h.registry.Conversations().DeleteConversation(ctx.Context(), &conversations.DeleteConversationCommand{
 		ConversationID: conversationID,
-		UserID:         claims.Username,
+		UserID:         username,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -152,35 +163,38 @@ func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.Status(200).JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // HandleMarkConversationReadLift marks a conversation as read
-func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
+func (h *Handler) HandleMarkConversationReadLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	conversationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("conversation_id", conversationID); err != nil {
 		return common.RespondBadRequest(ctx, "missing conversation id")
 	}
 
 	// Authenticate user
-	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Call service
-	result, err := h.registry.Conversations().MarkConversationRead(ctx.Context, &conversations.MarkConversationReadCommand{
+	result, err := h.registry.Conversations().MarkConversationRead(ctx.Context(), &conversations.MarkConversationReadCommand{
 		ConversationID: conversationID,
-		UserID:         claims.Username,
+		UserID:         username,
 	})
 	if err != nil {
 		h.logger.Error("failed to mark conversation as read", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
-	apiConv, err := h.convertConversationToAPI(ctx.Context, result.Conversation, claims.Username)
+	apiConv, err := h.convertConversationToAPI(ctx.Context(), result.Conversation, username)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
-	return ctx.JSON(apiConv)
+	return okJSON(apiConv)
 }

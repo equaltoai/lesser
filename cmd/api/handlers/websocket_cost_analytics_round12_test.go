@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -25,7 +25,7 @@ func TestWebSocketCostAnalytics_TrendAnalysis_Round12(t *testing.T) {
 		points := make([]WebSocketCostDataPoint, 0, len(costs))
 		for i, cost := range costs {
 			points = append(points, WebSocketCostDataPoint{
-				Timestamp:  start.Add(time.Duration(i) * time.Hour),
+				Timestamp:   start.Add(time.Duration(i) * time.Hour),
 				CostDollars: cost,
 				Connections: 1,
 				Messages:    1,
@@ -190,7 +190,7 @@ func TestWebSocketBudgetHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("user_id", "alice")
+		ctx.Params["user_id"] = "alice"
 
 		_, err = handler.GetUserWebSocketBudget(ctx)
 		require.Error(t, err)
@@ -206,7 +206,7 @@ func TestWebSocketBudgetHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("user_id", "alice")
+		ctx.Params["user_id"] = "alice"
 
 		_, err = handler.GetUserWebSocketBudget(ctx)
 		require.Error(t, err)
@@ -217,14 +217,14 @@ func TestWebSocketBudgetHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctxMissingBody, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 		require.NoError(t, err)
-		ctxMissingBody.SetParam("user_id", "alice")
+		ctxMissingBody.Params["user_id"] = "alice"
 
 		_, err = handler.CreateUserWebSocketBudget(ctxMissingBody)
 		require.Error(t, err)
 
 		ctxBadJSON, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 		require.NoError(t, err)
-		ctxBadJSON.SetParam("user_id", "alice")
+		ctxBadJSON.Params["user_id"] = "alice"
 		ctxBadJSON.Request.Body = []byte("{invalid")
 
 		_, err = handler.CreateUserWebSocketBudget(ctxBadJSON)
@@ -245,7 +245,7 @@ func TestWebSocketBudgetHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctxUpdate, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 		require.NoError(t, err)
-		ctxUpdate.SetParam("user_id", "alice")
+		ctxUpdate.Params["user_id"] = "alice"
 		ctxUpdate.Request.Body = bodyBytes
 
 		_, err = handler.CreateUserWebSocketBudget(ctxUpdate)
@@ -260,7 +260,7 @@ func TestWebSocketBudgetHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 		require.NoError(t, err)
-		ctxCreate.SetParam("user_id", "alice")
+		ctxCreate.Params["user_id"] = "alice"
 		ctxCreate.Request.Body = bodyBytes
 
 		_, err = handler.CreateUserWebSocketBudget(ctxCreate)
@@ -330,7 +330,7 @@ func TestWebSocketCostAnalytics_MiscBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("user_id", "alice")
+		ctx.Params["user_id"] = "alice"
 		ctx.Request.Body = []byte(`{"period":"weekly","budget_dollars":1}`)
 
 		_, err = handler.CreateUserWebSocketBudget(ctx)

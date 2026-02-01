@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -108,7 +108,7 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 }
 
 // authenticateUser handles the common pattern of extracting and validating user authentication
-func (h *Handler) authenticateUser(ctx *lift.Context, requiredScopes []string) (username string, err error) {
+func (h *Handler) authenticateUser(ctx *apptheory.Context, requiredScopes []string) (username string, err error) {
 
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
@@ -144,7 +144,7 @@ func (h *Handler) authenticateUser(ctx *lift.Context, requiredScopes []string) (
 // Returns empty string if no authentication provided, or username if valid auth
 //
 //nolint:unused // Utility function for optional authentication patterns
-func (h *Handler) authenticateUserOptional(ctx *lift.Context, requiredScopes []string) (username string, err error) {
+func (h *Handler) authenticateUserOptional(ctx *apptheory.Context, requiredScopes []string) (username string, err error) {
 
 	// Extract token - if none provided, return empty string (no error)
 	token := h.getBearerTokenLift(ctx)
@@ -177,7 +177,7 @@ func (h *Handler) authenticateUserOptional(ctx *lift.Context, requiredScopes []s
 }
 
 // statusActionHandler provides a generic handler for status operations like bookmark, favorite, etc.
-func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, action func(statusID, username string) (*models.Status, error)) error {
+func (h *Handler) statusActionHandler(ctx *apptheory.Context, requiredScope string, action func(statusID, username string) (*models.Status, error)) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -207,22 +207,14 @@ func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, a
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(status)
+	return okJSON(status)
 }
 
 // getAuthHeader extracts authorization header from request
-func (h *Handler) getAuthHeader(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
+func (h *Handler) getAuthHeader(ctx *apptheory.Context) string {
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	return authHeader
@@ -476,7 +468,7 @@ func createOAuthService(jwtSecret string, cfg *config.Config, repos core.Reposit
 
 // parsePaginationParams extracts common pagination parameters from a Lift context
 // This method now uses the centralized common.GetPaginationParams internally
-func (h *Handler) parsePaginationParams(ctx *lift.Context) *PaginationParams {
+func (h *Handler) parsePaginationParams(ctx *apptheory.Context) *PaginationParams {
 	// Use the centralized pagination parameter extraction
 	commonParams := common.GetPaginationParams(ctx)
 
@@ -493,11 +485,16 @@ func (h *Handler) parsePaginationParams(ctx *lift.Context) *PaginationParams {
 }
 
 // respondWithError sends a standardized error response using common helpers
-func (h *Handler) respondWithError(ctx *lift.Context, statusCode int, message string) error {
+func (h *Handler) respondWithError(ctx *apptheory.Context, statusCode int, message string) (*apptheory.Response, error) {
+	path := ""
+	if ctx != nil {
+		path = ctx.Request.Path
+	}
+
 	h.logger.Error("API error",
 		zap.Int("status", statusCode),
 		zap.String("message", message),
-		zap.String("path", ctx.Request.Path),
+		zap.String("path", path),
 	)
 
 	// Use the centralized error response helper
@@ -505,17 +502,17 @@ func (h *Handler) respondWithError(ctx *lift.Context, statusCode int, message st
 }
 
 // respondNotFound sends a standardized 404 response
-func (h *Handler) respondNotFound(ctx *lift.Context, resourceType string) error {
+func (h *Handler) respondNotFound(ctx *apptheory.Context, resourceType string) (*apptheory.Response, error) {
 	return h.respondWithError(ctx, 404, fmt.Sprintf("%s not found", resourceType))
 }
 
 // respondUnauthorized sends a standardized 401 response
-func (h *Handler) respondUnauthorized(ctx *lift.Context) error {
+func (h *Handler) respondUnauthorized(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.respondWithError(ctx, 401, "unauthorized")
 }
 
 // respondForbidden sends a standardized 403 response
-func (h *Handler) respondForbidden(ctx *lift.Context, reason string) error {
+func (h *Handler) respondForbidden(ctx *apptheory.Context, reason string) (*apptheory.Response, error) {
 	if err := common.ValidateRequiredParam("reason", reason); err != nil {
 		reason = "forbidden"
 	}
@@ -523,7 +520,7 @@ func (h *Handler) respondForbidden(ctx *lift.Context, reason string) error {
 }
 
 // respondBadRequest sends a standardized 400 response
-func (h *Handler) respondBadRequest(ctx *lift.Context, message string) error {
+func (h *Handler) respondBadRequest(ctx *apptheory.Context, message string) (*apptheory.Response, error) {
 	if err := common.ValidateRequiredParam("message", message); err != nil {
 		message = "bad request"
 	}
@@ -533,7 +530,7 @@ func (h *Handler) respondBadRequest(ctx *lift.Context, message string) error {
 // Additional standardized error response functions for common patterns
 
 // respondInternalError sends a standardized 500 response
-func (h *Handler) respondInternalError(ctx *lift.Context, message string) error {
+func (h *Handler) respondInternalError(ctx *apptheory.Context, message string) (*apptheory.Response, error) {
 	if common.ValidateRequiredParam("message", message) != nil {
 		message = "internal server error"
 	}
@@ -543,7 +540,7 @@ func (h *Handler) respondInternalError(ctx *lift.Context, message string) error 
 // respondConflict sends a standardized 409 response
 //
 //nolint:unused // Part of complete set of standardized HTTP response helpers
-func (h *Handler) respondConflict(ctx *lift.Context, message string) error {
+func (h *Handler) respondConflict(ctx *apptheory.Context, message string) (*apptheory.Response, error) {
 	if common.ValidateRequiredParam("message", message) != nil {
 		message = "conflict"
 	}
@@ -551,7 +548,7 @@ func (h *Handler) respondConflict(ctx *lift.Context, message string) error {
 }
 
 // respondUnprocessableEntity sends a standardized 422 response
-func (h *Handler) respondUnprocessableEntity(ctx *lift.Context, message string) error {
+func (h *Handler) respondUnprocessableEntity(ctx *apptheory.Context, message string) (*apptheory.Response, error) {
 	if common.ValidateRequiredParam("message", message) != nil {
 		message = "unprocessable entity"
 	}
@@ -559,16 +556,13 @@ func (h *Handler) respondUnprocessableEntity(ctx *lift.Context, message string) 
 }
 
 // respondInsufficientScope sends a standardized 403 response for scope issues
-func (h *Handler) respondInsufficientScope(ctx *lift.Context) error {
+func (h *Handler) respondInsufficientScope(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.respondForbidden(ctx, "insufficient scope")
 }
 
 // parseBoolParam parses a boolean parameter from the request
-func (h *Handler) parseBoolParam(ctx *lift.Context, param string) bool {
-	value := ctx.Query(param)
-	if common.ValidateRequiredParam("value", value) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		value = ctx.Request.Request.QueryParams[param]
-	}
+func (h *Handler) parseBoolParam(ctx *apptheory.Context, param string) bool {
+	value := queryValue(ctx, param)
 	if common.ValidateRequiredParam("value", value) != nil {
 		return false
 	}
@@ -577,30 +571,18 @@ func (h *Handler) parseBoolParam(ctx *lift.Context, param string) bool {
 
 // parseArrayParam parses an array parameter from the request
 // Supports both id[]=1&id[]=2 and id=1,2 formats
-func (h *Handler) parseArrayParam(ctx *lift.Context, param string) []string {
+func (h *Handler) parseArrayParam(ctx *apptheory.Context, param string) []string {
 	var values []string
 
-	// First, try to get all query parameters to handle array format param[]
-	var queryParams map[string]string
-	if ctx.Request != nil && ctx.Request.Request != nil {
-		queryParams = ctx.Request.Request.QueryParams
-	}
-
-	for key, value := range queryParams {
+	for key, valueSet := range ctx.Request.Query {
 		if strings.HasPrefix(key, param+"[") && strings.HasSuffix(key, "]") {
-			values = append(values, value)
+			values = append(values, valueSet...)
 		}
 	}
 
 	// If no array format found, check for comma-separated format
 	if err := common.ValidateSliceNotEmpty("parsed values", values); err != nil {
-		value := ctx.Query(param)
-		if common.ValidateRequiredParam("value", value) != nil && queryParams != nil {
-			value = queryParams[param]
-		}
-		if value != "" {
-			values = strings.Split(value, ",")
-		}
+		values = append(values, queryValues(ctx, param)...)
 	}
 
 	// Remove duplicates and trim
@@ -608,6 +590,16 @@ func (h *Handler) parseArrayParam(ctx *lift.Context, param string) []string {
 	unique := []string{}
 	for _, v := range values {
 		v = common.SanitizeInput(v)
+		if strings.Contains(v, ",") {
+			for _, split := range strings.Split(v, ",") {
+				split = common.SanitizeInput(split)
+				if split != "" && !seen[split] {
+					seen[split] = true
+					unique = append(unique, split)
+				}
+			}
+			continue
+		}
 		if v != "" && !seen[v] {
 			seen[v] = true
 			unique = append(unique, v)
@@ -635,28 +627,22 @@ func buildLinkHeader(baseURL string, params *PaginationParams, hasNext, hasPrev 
 }
 
 // withPaginationHeaders adds standard pagination headers to the response
-func (h *Handler) withPaginationHeaders(ctx *lift.Context, baseURL string, params *PaginationParams, hasNext, hasPrev bool) {
+func (h *Handler) withPaginationHeaders(resp *apptheory.Response, baseURL string, params *PaginationParams, hasNext, hasPrev bool) {
 	if linkHeader := buildLinkHeader(baseURL, params, hasNext, hasPrev); linkHeader != "" {
-		ctx.Response.Header("Link", linkHeader)
+		setHeader(resp, "Link", linkHeader)
 	}
 }
 
 // parseRequestBody is a generic function to parse request bodies with standardized error handling
-func (h *Handler) parseRequestBody(ctx *lift.Context, dest interface{}) error {
-	if err := ctx.ParseRequest(dest); err != nil {
+func (h *Handler) parseRequestBody(ctx *apptheory.Context, dest interface{}) error {
+	if err := common.ParseRequestWithFallback(ctx, dest); err != nil {
 		// Fallback for test environments - try parsing directly from request body
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if jsonErr := json.Unmarshal(ctx.Request.Body, dest); jsonErr != nil {
-				h.logger.Debug("failed to parse request body",
-					zap.Error(err),
-					zap.Error(jsonErr),
-					zap.String("path", ctx.Request.Path),
-				)
-				return h.respondBadRequest(ctx, "invalid request body")
+		if len(ctx.Request.Body) > 0 {
+			if jsonErr := json.Unmarshal(ctx.Request.Body, dest); jsonErr == nil {
+				return nil
 			}
-		} else {
-			return h.respondBadRequest(ctx, "invalid request body")
 		}
+		return err
 	}
 	return nil
 }
@@ -674,35 +660,38 @@ func (h *Handler) getAuthService() (*auth.AuthService, error) {
 }
 
 // handleAuthServiceError handles common auth service errors with appropriate HTTP responses
-func (h *Handler) handleAuthServiceError(ctx *lift.Context, err error, operation string) error {
+func (h *Handler) handleAuthServiceError(ctx *apptheory.Context, err error, operation string) (*apptheory.Response, error) {
 	if err == nil {
-		return nil
+		return nil, nil
 	}
 
-	switch err {
-	case auth.ErrWebAuthnNotConfigured:
+	switch {
+	case errors.Is(err, auth.ErrWebAuthnNotConfigured):
 		h.logger.Error("WebAuthn not configured", zap.String("operation", operation))
 		return h.respondWithError(ctx, 500, "WebAuthn not configured")
 
-	case auth.ErrChallengeNotFound:
+	case errors.Is(err, auth.ErrChallengeNotFound):
 		return h.respondBadRequest(ctx, "invalid or expired challenge")
 
-	case auth.ErrUserHasNoCredentials:
+	case errors.Is(err, auth.ErrUserHasNoCredentials):
 		return h.respondBadRequest(ctx, "no passkeys registered for this user")
 
-	case auth.ErrInvalidCredential:
+	case errors.Is(err, auth.ErrInvalidCredential):
 		return h.respondUnauthorized(ctx)
 
-	case auth.ErrInvalidCredentials:
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		return h.respondUnauthorized(ctx)
 
-	case auth.ErrUserNotFound:
+	case errors.Is(err, auth.ErrSignatureVerificationFailed):
+		return h.respondUnauthorized(ctx)
+
+	case errors.Is(err, auth.ErrUserNotFound):
 		return h.respondBadRequest(ctx, "user not found")
 
-	case auth.ErrUserSuspended:
+	case errors.Is(err, auth.ErrUserSuspended):
 		return h.respondForbidden(ctx, "user account is suspended")
 
-	case auth.ErrUserNotApproved:
+	case errors.Is(err, auth.ErrUserNotApproved):
 		return h.respondForbidden(ctx, "user account is not approved")
 
 	default:
@@ -711,22 +700,23 @@ func (h *Handler) handleAuthServiceError(ctx *lift.Context, err error, operation
 	}
 }
 
-// requireAuthService gets the auth service or returns an error response
-func (h *Handler) requireAuthService(ctx *lift.Context) (*auth.AuthService, error) {
+// requireAuthService gets the auth service or returns a 500 response
+func (h *Handler) requireAuthService(ctx *apptheory.Context) (*auth.AuthService, *apptheory.Response, error) {
 	authService, err := h.getAuthService()
 	if err != nil {
 		h.logger.Error("failed to get auth service", zap.Error(err))
-		return nil, h.respondWithError(ctx, 500, "internal server error")
+		resp, respErr := h.respondWithError(ctx, 500, "internal server error")
+		return nil, resp, respErr
 	}
-	return authService, nil
+	return authService, nil, nil
 }
 
 // getDeviceInfo extracts device information from request headers
-func (h *Handler) getDeviceInfo(ctx *lift.Context) (userAgent, ipAddress string) {
-	userAgent = ctx.Header("User-Agent")
-	ipAddress = ctx.Header("X-Forwarded-For")
+func (h *Handler) getDeviceInfo(ctx *apptheory.Context) (userAgent, ipAddress string) {
+	userAgent = headerValue(ctx, "User-Agent")
+	ipAddress = headerValue(ctx, "X-Forwarded-For")
 	if common.ValidateRequiredParam("ipAddress", ipAddress) != nil {
-		ipAddress = ctx.Header("X-Real-IP")
+		ipAddress = headerValue(ctx, "X-Real-IP")
 	}
 	if common.ValidateRequiredParam("ipAddress", ipAddress) != nil {
 		ipAddress = "unknown"
@@ -735,11 +725,8 @@ func (h *Handler) getDeviceInfo(ctx *lift.Context) (userAgent, ipAddress string)
 }
 
 // parseLimitParam parses a limit parameter with validation and default value
-func (h *Handler) parseLimitParam(ctx *lift.Context, defaultLimit, maxLimit int) int {
-	limitStr := ctx.Query("limit")
-	if common.ValidateRequiredParam("limitStr", limitStr) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
+func (h *Handler) parseLimitParam(ctx *apptheory.Context, defaultLimit, maxLimit int) int {
+	limitStr := queryValue(ctx, "limit")
 
 	// Use centralized validation with bounds checking
 	limit, err := common.ParseAndValidateIntWithBounds("limit", limitStr, 0, maxLimit, defaultLimit)
@@ -750,7 +737,7 @@ func (h *Handler) parseLimitParam(ctx *lift.Context, defaultLimit, maxLimit int)
 }
 
 //nolint:unused // Part of comprehensive authentication helper set for complex auth scenarios
-func (h *Handler) authenticateWithClaims(ctx *lift.Context, requiredScopes []string) (*auth.Claims, error) {
+func (h *Handler) authenticateWithClaims(ctx *apptheory.Context, requiredScopes []string) (*auth.Claims, error) {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
@@ -783,46 +770,16 @@ func (h *Handler) authenticateWithClaims(ctx *lift.Context, requiredScopes []str
 
 // authenticateUserWithWriteScope handles the common authentication pattern with write scope requirement
 // Returns the authenticated username or triggers an HTTP error response
-func (h *Handler) authenticateUserWithWriteScope(ctx *lift.Context) (string, error) {
-	// Extract and validate token using centralized validation
-	authHeader := ctx.Header("Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token and require write scope
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	if !claims.HasScope(auth.ScopeWrite) {
-		return "", common.RespondInsufficientScope(ctx)
-	}
-
-	return claims.Username, nil
+func (h *Handler) authenticateUserWithWriteScope(ctx *apptheory.Context) (string, error) {
+	return h.authenticateUser(ctx, []string{auth.ScopeWrite})
 }
 
 // respondOK sends a 200 OK response with data
-func (h *Handler) respondOK(ctx *lift.Context, data interface{}) error {
+func (h *Handler) respondOK(ctx *apptheory.Context, data interface{}) (*apptheory.Response, error) {
 	return common.SendOK(ctx, data)
 }
 
 // respondCreated sends a 201 Created response with data
-func (h *Handler) respondCreated(ctx *lift.Context, data interface{}) error {
+func (h *Handler) respondCreated(ctx *apptheory.Context, data interface{}) (*apptheory.Response, error) {
 	return common.SendCreated(ctx, data)
 }

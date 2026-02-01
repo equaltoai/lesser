@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -123,4 +123,3 @@ func TestHandler_authenticateWithClaims(t *testing.T) {
 		require.Nil(t, claims)
 	})
 }
-

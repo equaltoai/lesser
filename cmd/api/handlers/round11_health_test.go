@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"io"
@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 type round11RoundTrip func(req *http.Request) (*http.Response, error)
@@ -32,15 +32,21 @@ func TestHealthCheckerHandlers(t *testing.T) {
 
 	ctxLive, err := round10NewLiftContext(http.MethodGet, "/health/live", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, checker.HandleLivenessCheck(ctxLive))
+	respLive, err := checker.HandleLivenessCheck(ctxLive)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, respLive.Status)
 
 	ctxReady, err := round10NewLiftContext(http.MethodGet, "/health/ready", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, checker.HandleReadinessCheck(ctxReady))
+	respReady, err := checker.HandleReadinessCheck(ctxReady)
+	require.NoError(t, err)
+	require.NotNil(t, respReady)
 
 	ctxDetailed, err := round10NewLiftContext(http.MethodGet, "/health/detailed", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, checker.HandleDetailedHealthCheck(ctxDetailed))
+	respDetailed, err := checker.HandleDetailedHealthCheck(ctxDetailed)
+	require.NoError(t, err)
+	require.NotNil(t, respDetailed)
 }
 
 func TestHealthMiddleware(t *testing.T) {
@@ -49,7 +55,9 @@ func TestHealthMiddleware(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/health", nil, nil, nil)
 	require.NoError(t, err)
 
-	handler := mw(lift.HandlerFunc(func(c *lift.Context) error { return nil }))
-	require.NoError(t, handler.Handle(ctx))
-	require.NotEmpty(t, ctx.Response.Headers["X-Health-Check-Time"])
+	handler := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(http.StatusOK, "ok"), nil
+	})
+	resp := requireStatus(t, http.StatusOK)(handler(ctx))
+	require.NotEmpty(t, firstStringValue(resp.Headers, "x-health-check-time"))
 }

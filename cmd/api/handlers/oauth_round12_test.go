@@ -1,9 +1,10 @@
-package lift
+package handlers
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -28,9 +29,9 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthAuthorizeLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "unsupported_response_type", body["error"])
 	})
 
@@ -45,14 +46,14 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthAuthorizeLift(ctx))
 
-		resp := ctx.Response.Body.(apimodels.OAuthAuthorizeResponse)
-		require.Contains(t, resp.NextURL, "https://example.com/auth/oauth/authorize?")
-		require.Contains(t, resp.NextURL, "error=")
-		require.Contains(t, resp.NextURL, "redirect_uri=")
-		require.Contains(t, resp.NextURL, "state=")
+		var body apimodels.OAuthAuthorizeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body.NextURL, "https://example.com/auth/oauth/authorize?")
+		require.Contains(t, body.NextURL, "error=")
+		require.Contains(t, body.NextURL, "redirect_uri=")
+		require.Contains(t, body.NextURL, "state=")
 	})
 
 	t.Run("invalid redirect_uri returns invalid_request JSON error", func(t *testing.T) {
@@ -65,9 +66,9 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthAuthorizeLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
@@ -83,13 +84,13 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthAuthorizeLift(ctx))
 
-		resp := ctx.Response.Body.(apimodels.OAuthAuthorizeResponse)
-		require.Contains(t, resp.NextURL, "https://example.com/auth/login")
-		require.Contains(t, resp.NextURL, "return_to=%2Foauth%2Fauthorize")
-		require.Contains(t, resp.NextURL, "auth_request=")
+		var body apimodels.OAuthAuthorizeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body.NextURL, "https://example.com/auth/login")
+		require.Contains(t, body.NextURL, "return_to=%2Foauth%2Fauthorize")
+		require.Contains(t, body.NextURL, "auth_request=")
 	})
 
 	t.Run("invalid scopes returns invalid_scope redirect (handled)", func(t *testing.T) {
@@ -114,11 +115,11 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Set("username", "alice")
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthAuthorizeLift(ctx))
 
-		resp := ctx.Response.Body.(apimodels.OAuthAuthorizeResponse)
-		require.Contains(t, resp.NextURL, "error=invalid_scope")
+		var body apimodels.OAuthAuthorizeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body.NextURL, "error=invalid_scope")
 	})
 
 	t.Run("service registry missing returns server_error redirect (handled)", func(t *testing.T) {
@@ -133,11 +134,11 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Set("username", "alice")
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthAuthorizeLift(ctx))
 
-		resp := ctx.Response.Body.(apimodels.OAuthAuthorizeResponse)
-		require.Contains(t, resp.NextURL, "error=server_error")
+		var body apimodels.OAuthAuthorizeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body.NextURL, "error=server_error")
 	})
 
 	t.Run("missing consent stores state and redirects to consent UI", func(t *testing.T) {
@@ -172,9 +173,8 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Set("username", "alice")
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusFound, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers["Location"], "/auth/consent?")
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		require.Contains(t, firstStringValue(resp.Headers, "location"), "/auth/consent?")
 		require.NotNil(t, storedState)
 	})
 
@@ -199,10 +199,10 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Set("username", "alice")
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusFound, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
 
-		redirectURL := ctx.Response.Headers["Location"]
+		redirectURL := firstStringValue(resp.Headers, "location")
+		require.NotEmpty(t, redirectURL)
 		parsed, parseErr := url.Parse(redirectURL)
 		require.NoError(t, parseErr)
 		require.NotEmpty(t, parsed.Query().Get("code"))
@@ -230,11 +230,11 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Set("username", "alice")
 
-		require.NoError(t, h.HandleOAuthAuthorizeLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthAuthorizeLift(ctx))
 
-		resp := ctx.Response.Body.(apimodels.OAuthAuthorizeResponse)
-		require.Contains(t, resp.NextURL, "error=server_error")
+		var body apimodels.OAuthAuthorizeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Contains(t, body.NextURL, "error=server_error")
 	})
 }
 
@@ -247,19 +247,19 @@ func TestOAuthAuthorizeHelpersRound12(t *testing.T) {
 		require.NoError(t, err)
 
 		require.True(t, h.isOAuthAuthorizeUIMode(ctx))
-		require.NoError(t, h.writeOAuthAuthorizeRedirect(ctx, "https://next.example/step"))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.OAuthAuthorizeResponse)
-		require.Equal(t, "https://next.example/step", resp.NextURL)
+		resp := requireStatus(t, http.StatusOK)(h.writeOAuthAuthorizeRedirect(ctx, "https://next.example/step"))
+		var body apimodels.OAuthAuthorizeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "https://next.example/step", body.NextURL)
 	})
 
 	t.Run("oauthErrorLift falls back to JSON on invalid redirect URI", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.oauthErrorLift(ctx, "invalid_request", "Invalid redirect_uri", "https://example.com/\n", ""))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.oauthErrorLift(ctx, "invalid_request", "Invalid redirect_uri", "https://example.com/\n", ""))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
@@ -286,14 +286,14 @@ func TestOAuthAuthorizeHelpersRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.redirectToConsentUI(ctx, &storage.OAuthState{
+		resp := requireStatus(t, http.StatusInternalServerError)(h.redirectToConsentUI(ctx, &storage.OAuthState{
 			State:       "state-1",
 			ClientID:    "client-1",
 			RedirectURI: "https://example.com/callback",
 			Scopes:      []string{"read"},
 		}))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "server_error", body["error"])
 	})
 
@@ -307,13 +307,15 @@ func TestOAuthAuthorizeHelpersRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, nil, nil)
 		require.NoError(t, err)
 
-		err = hWithRegistry.redirectToConsentUI(ctx, &storage.OAuthState{
+		resp := requireStatus(t, http.StatusBadRequest)(hWithRegistry.redirectToConsentUI(ctx, &storage.OAuthState{
 			State:       "state-1",
 			ClientID:    "client-1",
 			RedirectURI: "https://example.com/callback",
 			Scopes:      []string{"read"},
-		})
-		require.Error(t, err)
+		}))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
 	})
 }
 
@@ -323,54 +325,54 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 	t.Run("empty request body", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, nil)
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
 	t.Run("invalid form encoding", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("a=%ZZ"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
 	t.Run("unsupported grant type", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=password&client_id=client-1"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "unsupported_grant_type", body["error"])
 	})
 
 	t.Run("authorization_code missing params", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&client_id=client-1"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
 	t.Run("authorization_code invalid_client", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&client_secret=wrong"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_client", body["error"])
 	})
 
 	t.Run("authorization_code invalid_grant mismatched client", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-2&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_grant", body["error"])
 	})
 
@@ -394,9 +396,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=pkce&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&code_verifier=wrong"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_grant", body["error"])
 		require.Contains(t, body["error_description"], "PKCE")
 	})
@@ -409,19 +411,19 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, state)
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.OAuthTokenResponse)
-		require.NotEmpty(t, resp.AccessToken)
-		require.NotEmpty(t, resp.RefreshToken)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
 	})
 
 	t.Run("refresh_token missing params", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&client_id=client-1"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
@@ -433,9 +435,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-1&client_id=client-1&client_secret=wrong"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_client", body["error"])
 	})
 
@@ -447,9 +449,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=missing&client_id=client-1"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_grant", body["error"])
 	})
 
@@ -461,9 +463,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-2&client_id=client-2"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_grant", body["error"])
 	})
 
@@ -476,9 +478,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-3&client_id=client-1"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]string)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "invalid_grant", body["error"])
 	})
 
@@ -491,10 +493,10 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-4&client_id=client-1"))
-		require.NoError(t, h.HandleOAuthTokenLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.OAuthTokenResponse)
-		require.NotEmpty(t, resp.AccessToken)
-		require.NotEmpty(t, resp.RefreshToken)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
 	})
 }

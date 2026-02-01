@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -66,13 +66,11 @@ func TestMiscSearchAndHelpers_Round11(t *testing.T) {
 
 	ctxSearch, err := round10NewLiftContext(http.MethodGet, "/api/v1/search", nil, map[string]string{"q": "hello"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleSearchLift(ctxSearch))
-	require.Equal(t, http.StatusOK, ctxSearch.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleSearchLift(ctxSearch))
 
 	ctxSearch2, err := round10NewLiftContext(http.MethodGet, "/api/v2/search", nil, map[string]string{"q": "hello"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleSearchV2Lift(ctxSearch2))
-	require.Equal(t, http.StatusOK, ctxSearch2.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleSearchV2Lift(ctxSearch2))
 
 	objResult := handler.convertObjectToStatusResult(&state.objectList[0])
 	require.NotNil(t, objResult)
@@ -169,39 +167,33 @@ func TestMiscNotificationsAndGrouping_Round11(t *testing.T) {
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications", readHeaders, map[string]string{"limit": "5"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetNotificationsLift(ctxList))
-	require.Equal(t, http.StatusOK, ctxList.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetNotificationsLift(ctxList))
 
 	ctxSingle, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/notif-1", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxSingle.SetParam("id", "notif-1")
-	require.NoError(t, handler.HandleGetNotificationLift(ctxSingle))
-	require.Equal(t, http.StatusOK, ctxSingle.Response.StatusCode)
+	ctxSingle.Params["id"] = "notif-1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetNotificationLift(ctxSingle))
 
 	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:notifications", auth.ScopeWrite})
 	writeHeaders := map[string]string{"Authorization": "Bearer " + writeToken}
 
 	ctxClear, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/clear", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleClearNotificationsLift(ctxClear))
-	require.Equal(t, http.StatusNoContent, ctxClear.Response.StatusCode)
+	requireStatus(t, http.StatusNoContent)(handler.HandleClearNotificationsLift(ctxClear))
 
 	ctxDismiss, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/notif-1/dismiss", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxDismiss.SetParam("id", "notif-1")
-	require.NoError(t, handler.HandleDismissNotificationLift(ctxDismiss))
-	require.Equal(t, http.StatusNoContent, ctxDismiss.Response.StatusCode)
+	ctxDismiss.Params["id"] = "notif-1"
+	requireStatus(t, http.StatusNoContent)(handler.HandleDismissNotificationLift(ctxDismiss))
 
 	ctxGrouped, err := round10NewLiftContext(http.MethodGet, "/api/v2/notifications/grouped", readHeaders, map[string]string{"include_all": "true", "group_by_type": "false"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetGroupedNotificationsLift(ctxGrouped))
-	require.Equal(t, http.StatusOK, ctxGrouped.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetGroupedNotificationsLift(ctxGrouped))
 
 	ctxMarkGroup, err := round10NewLiftContext(http.MethodPost, "/api/v2/notifications/groups/group-1/read", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxMarkGroup.SetParam("group_id", "group-1")
-	require.NoError(t, handler.HandleMarkGroupAsReadLift(ctxMarkGroup))
-	require.Equal(t, http.StatusOK, ctxMarkGroup.Response.StatusCode)
+	ctxMarkGroup.Params["group_id"] = "group-1"
+	requireStatus(t, http.StatusOK)(handler.HandleMarkGroupAsReadLift(ctxMarkGroup))
 }
 
 func TestMiscInstanceAndCost_Round11(t *testing.T) {
@@ -248,18 +240,15 @@ func TestMiscInstanceAndCost_Round11(t *testing.T) {
 
 	ctxCost, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/costs", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstanceCostsLift(ctxCost))
-	require.Equal(t, http.StatusOK, ctxCost.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstanceCostsLift(ctxCost))
 
 	ctxConfig, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/configuration", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstanceConfigurationLift(ctxConfig))
-	require.Equal(t, http.StatusOK, ctxConfig.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstanceConfigurationLift(ctxConfig))
 
 	ctxV2, err := round10NewLiftContext(http.MethodGet, "/api/v2/instance", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstanceV2Lift(ctxV2))
-	require.Equal(t, http.StatusOK, ctxV2.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstanceV2Lift(ctxV2))
 
 	require.Equal(t, "0", handler.getUniqueAccountsForDay(ctxV2, "bad-day"))
 	require.GreaterOrEqual(t, handler.getActiveMonthlyUsers(ctxV2), 0)

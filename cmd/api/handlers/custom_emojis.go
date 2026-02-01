@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/json"
@@ -7,13 +7,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetCustomEmojisLift handles GET /api/v1/custom_emojis
 // This endpoint is public and doesn't require authentication
-func (h *Handler) HandleGetCustomEmojisLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetCustomEmojisLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get emoji service
 	emojiService := h.registry.Emoji()
 	if emojiService == nil {
@@ -22,7 +22,7 @@ func (h *Handler) HandleGetCustomEmojisLift(ctx *lift.Context) error {
 	}
 
 	// List all visible emojis
-	result, err := emojiService.ListEmojis(ctx.Context, &emoji.ListEmojisQuery{
+	result, err := emojiService.ListEmojis(ctx.Context(), &emoji.ListEmojisQuery{
 		OnlyVisible:     true,
 		IncludeDisabled: false,
 	})
@@ -44,28 +44,18 @@ func (h *Handler) HandleGetCustomEmojisLift(ctx *lift.Context) error {
 		apiEmojis = append(apiEmojis, apiEmoji)
 	}
 
-	return ctx.JSON(apiEmojis)
+	return okJSON(apiEmojis)
 }
 
 // HandleCreateCustomEmojiLift handles POST /api/v1/admin/custom_emojis (admin only)
-func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
-	// Authenticate and check admin role
-	username, err := h.authenticateAdminRequest(ctx)
+func (h *Handler) HandleCreateCustomEmojiLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	// Require admin authentication
+	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		return err
-	}
-	if username == "" {
-		return nil
-	}
-
-	// Check admin role using Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
-	if err != nil {
-		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
-		return common.RespondInternalServerError(ctx)
-	}
-	if account.User == nil || account.User.Role != roleAdmin {
-		return common.RespondForbidden(ctx, "admin access required")
+		if err.Error() == common.ErrorAdminAccessRequired {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse request
@@ -90,7 +80,7 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Create emoji using service
-	result, err := emojiService.CreateEmoji(ctx.Context, &emoji.CreateEmojiCommand{
+	result, err := emojiService.CreateEmoji(ctx.Context(), &emoji.CreateEmojiCommand{
 		Shortcode:       req.Shortcode,
 		ImageURL:        req.URL,
 		Category:        req.Category,
@@ -116,34 +106,24 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 		Category:        result.Emoji.Category,
 	}
 
-	return ctx.JSON(apiEmoji)
+	return okJSON(apiEmoji)
 }
 
 // HandleUpdateCustomEmojiLift handles PUT /api/v1/admin/custom_emojis/:shortcode (admin only)
-func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateCustomEmojiLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get shortcode from path parameter
 	shortcode := ctx.Param("shortcode")
 	if err := common.ValidateRequiredParam("shortcode", shortcode); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Authenticate and check admin role
-	username, err := h.authenticateAdminRequest(ctx)
+	// Require admin authentication
+	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		return err
-	}
-	if username == "" {
-		return nil
-	}
-
-	// Check admin role using Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
-	if err != nil {
-		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
-		return common.RespondInternalServerError(ctx)
-	}
-	if account.User == nil || account.User.Role != roleAdmin {
-		return common.RespondForbidden(ctx, "admin access required")
+		if err.Error() == common.ErrorAdminAccessRequired {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse request
@@ -160,7 +140,7 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Update emoji using service
-	result, err := emojiService.UpdateEmoji(ctx.Context, &emoji.UpdateEmojiCommand{
+	result, err := emojiService.UpdateEmoji(ctx.Context(), &emoji.UpdateEmojiCommand{
 		Shortcode:       shortcode,
 		Category:        req.Category,
 		VisibleInPicker: req.VisibleInPicker,
@@ -186,34 +166,24 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 		Category:        result.Emoji.Category,
 	}
 
-	return ctx.JSON(apiEmoji)
+	return okJSON(apiEmoji)
 }
 
 // HandleDeleteCustomEmojiLift handles DELETE /api/v1/admin/custom_emojis/:shortcode (admin only)
-func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteCustomEmojiLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get shortcode from path parameter
 	shortcode := ctx.Param("shortcode")
 	if err := common.ValidateRequiredParam("shortcode", shortcode); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Authenticate and check admin role
-	username, err := h.authenticateAdminRequest(ctx)
+	// Require admin authentication
+	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		return err
-	}
-	if username == "" {
-		return nil
-	}
-
-	// Check admin role using Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
-	if err != nil {
-		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
-		return common.RespondInternalServerError(ctx)
-	}
-	if account.User == nil || account.User.Role != roleAdmin {
-		return common.RespondForbidden(ctx, "admin access required")
+		if err.Error() == common.ErrorAdminAccessRequired {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get emoji service
@@ -224,7 +194,7 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Delete emoji using service
-	err = emojiService.DeleteEmoji(ctx.Context, &emoji.DeleteEmojiCommand{
+	err = emojiService.DeleteEmoji(ctx.Context(), &emoji.DeleteEmojiCommand{
 		Shortcode: shortcode,
 	})
 	if err != nil {
@@ -239,47 +209,39 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Return empty object
-	return ctx.JSON(models.EmptyObject{})
+	return okJSON(models.EmptyObject{})
 }
 
 // Helper methods
 
 // authenticateAdminRequest handles authentication for admin endpoints
-func (h *Handler) authenticateAdminRequest(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateAdminRequest(ctx *apptheory.Context) (string, error) {
 	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", err
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", err
 	}
 
 	return claims.Username, nil
 }
 
 // parseEmojiRequest parses emoji request with fallback for test environments
-func (h *Handler) parseEmojiRequest(ctx *lift.Context, req interface{}) error {
-	if err := ctx.ParseRequest(req); err != nil {
+func (h *Handler) parseEmojiRequest(ctx *apptheory.Context, req interface{}) error {
+	if err := common.ParseRequestWithFallback(ctx, req); err != nil {
 		// Fallback for test environment - try parsing directly from request body
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+		if len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, req); jsonErr != nil {
 				h.logger.Debug("invalid emoji request",
 					zap.Error(err),

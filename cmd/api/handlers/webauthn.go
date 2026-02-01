@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -44,21 +44,21 @@ func webAuthnPublicKeyMap(options any) (map[string]any, error) {
 
 // HandleBeginWebAuthnRegistrationLift starts the WebAuthn registration process
 // POST /api/v1/auth/webauthn/register/begin
-func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
+func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return h.respondUnauthorized(ctx)
+		return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required")
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Begin registration
-	options, challenge, err := authService.BeginWebAuthnRegistration(ctx.Context, username)
+	options, challenge, err := authService.BeginWebAuthnRegistration(ctx.Context(), username)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "begin registration")
 	}
@@ -75,23 +75,22 @@ func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
 		Challenge: challenge,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleFinishWebAuthnRegistrationLift completes the WebAuthn registration process
 // POST /api/v1/auth/webauthn/register/finish
-func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error {
+func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return h.respondUnauthorized(ctx)
+		return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required")
 	}
 
 	// Parse request body
 	var req apimodels.WebAuthnFinishRegistrationRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
-		return err // Error response already set by parseRequestBody
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	if err := common.ValidateRequiredParam("challenge", req.Challenge); err != nil {
@@ -99,9 +98,9 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Finish registration
@@ -110,24 +109,23 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 		return h.respondBadRequest(ctx, "invalid response payload")
 	}
 
-	err = authService.FinishWebAuthnRegistration(ctx.Context, username, req.Challenge, rawResponse, req.CredentialName)
+	err = authService.FinishWebAuthnRegistration(ctx.Context(), username, req.Challenge, rawResponse, req.CredentialName)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "complete registration")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.MessageResponse{
+	return okJSON(apimodels.MessageResponse{
 		Message: "passkey registered successfully",
 	})
 }
 
 // HandleBeginWebAuthnLoginLift starts the WebAuthn login process
 // POST /api/v1/auth/webauthn/login/begin
-func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
+func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request body
 	var req apimodels.WebAuthnBeginLoginRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
-		return err // Error response already set by parseRequestBody
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
@@ -135,13 +133,13 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Begin login
-	options, challenge, err := authService.BeginWebAuthnLogin(ctx.Context, req.Username)
+	options, challenge, err := authService.BeginWebAuthnLogin(ctx.Context(), req.Username)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "begin login")
 	}
@@ -158,17 +156,16 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 		Challenge: challenge,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleFinishWebAuthnLoginLift completes the WebAuthn login process
 // POST /api/v1/auth/webauthn/login/finish
-func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
+func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request body
 	var req apimodels.WebAuthnFinishLoginRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
-		return err // Error response already set by parseRequestBody
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
@@ -185,9 +182,9 @@ func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Finish login and create session
@@ -196,45 +193,33 @@ func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 		return h.respondBadRequest(ctx, "invalid response payload")
 	}
 
-	authResponse, err := authService.FinishWebAuthnLogin(ctx.Context, req.Username, req.Challenge, rawResponse, req.DeviceName, userAgent, ipAddress)
+	authResponse, err := authService.FinishWebAuthnLogin(ctx.Context(), req.Username, req.Challenge, rawResponse, req.DeviceName, userAgent, ipAddress)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "complete login")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(authResponse)
+	return okJSON(authResponse)
 }
 
 // HandleListWebAuthnCredentialsLift returns all WebAuthn credentials for the authenticated user
 // GET /api/v1/auth/webauthn/credentials
-func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *lift.Context) error {
+func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required")
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.cfg, h.repos)
-	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get credentials
-	credentials, err := authService.GetWebAuthnCredentials(ctx.Context, username)
+	credentials, err := authService.GetWebAuthnCredentials(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get WebAuthn credentials", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to get credentials",
-		})
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to get credentials")
 	}
 
 	// Format response
@@ -248,133 +233,90 @@ func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *lift.Context) error {
 		})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.WebAuthnCredentialsResponse{
+	return okJSON(apimodels.WebAuthnCredentialsResponse{
 		Credentials: response,
 	})
 }
 
 // HandleDeleteWebAuthnCredentialLift removes a WebAuthn credential
 // DELETE /api/v1/auth/webauthn/credentials/{credentialId}
-func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required")
 	}
 
 	// Get credential ID from path
 	credentialID := ctx.Param("credentialId")
 	if err := common.ValidateRequiredParam("credentialId", credentialID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "credential ID required",
-		})
+		return h.respondBadRequest(ctx, "credential ID required")
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.cfg, h.repos)
-	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Delete credential
-	err = authService.DeleteWebAuthnCredential(ctx.Context, username, credentialID)
+	err = authService.DeleteWebAuthnCredential(ctx.Context(), username, credentialID)
 	if err != nil {
 		if err == auth.ErrCredentialNotFound {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{
-				"error": "credential not found",
-			})
+			return h.respondWithError(ctx, http.StatusNotFound, "credential not found")
 		}
 		if strings.Contains(strings.ToLower(err.Error()), "cannot delete last authentication method") {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "cannot delete last authentication method",
-			})
+			return h.respondBadRequest(ctx, "cannot delete last authentication method")
 		}
 		h.logger.Error("failed to delete WebAuthn credential", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to delete credential",
-		})
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to delete credential")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.MessageResponse{
+	return okJSON(apimodels.MessageResponse{
 		Message: "credential deleted successfully",
 	})
 }
 
 // HandleUpdateWebAuthnCredentialNameLift updates the display name of a WebAuthn credential
 // PUT /api/v1/auth/webauthn/credentials/{credentialId}
-func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required")
 	}
 
 	// Get credential ID from path
 	credentialID := ctx.Param("credentialId")
 	if err := common.ValidateRequiredParam("credentialId", credentialID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "credential ID required",
-		})
+		return h.respondBadRequest(ctx, "credential ID required")
 	}
 
 	// Parse request body
 	var req apimodels.WebAuthnUpdateCredentialRequest
-	if err := h.parseRequestBody(ctx, &req); err != nil || ctx.Response.IsWritten() {
-		return err
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	if err := common.ValidateRequiredParam("name", req.Name); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "name required",
-		})
+		return h.respondBadRequest(ctx, "name required")
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.cfg, h.repos)
-	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Update credential name
-	err = authService.UpdateWebAuthnCredentialName(ctx.Context, username, credentialID, req.Name)
+	err = authService.UpdateWebAuthnCredentialName(ctx.Context(), username, credentialID, req.Name)
 	if err != nil {
 		if err == auth.ErrCredentialNotFound {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{
-				"error": "credential not found",
-			})
+			return h.respondWithError(ctx, http.StatusNotFound, "credential not found")
 		}
 		h.logger.Error("failed to update WebAuthn credential name", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to update credential",
-		})
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to update credential")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.MessageResponse{
+	return okJSON(apimodels.MessageResponse{
 		Message: "credential updated successfully",
 	})
 }

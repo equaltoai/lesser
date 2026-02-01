@@ -1,24 +1,22 @@
-package lift
+package handlers
 
 import (
 	"context"
 	"time"
 
-	"net/http"
-
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 const bytesPerGB = 1024 * 1024 * 1024
 
 // HandleGetInstanceMetricsLift returns current instance metrics
-func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceMetricsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("HandleGetInstanceMetricsLift called")
 
 	// Get current metrics from DynamoDB
-	activeUsers, err := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30) // Active in last 30 days
+	activeUsers, err := h.repos.Analytics().GetActiveUserCount(ctx.Context(), 30) // Active in last 30 days
 	if err != nil {
 		h.logger.Warn("failed to get active user count", zap.Error(err))
 		activeUsers = 0
@@ -29,14 +27,14 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 	avgLatencyMs := 0.0
 
 	// Calculate actual request rate from time-series data
-	requestsPerMinute = h.calculateRequestRateLift(ctx.Context)
+	requestsPerMinute = h.calculateRequestRateLift(ctx.Context())
 
 	// Get today's metrics from cost tracking repository
 	now := time.Now()
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
-	dailyCosts, err := h.repos.Cost().GetCostsByDateRange(ctx.Context, startOfDay, endOfDay)
+	dailyCosts, err := h.repos.Cost().GetCostsByDateRange(ctx.Context(), startOfDay, endOfDay)
 	if err == nil && len(dailyCosts) > 0 {
 		// Count operations as proxy for requests
 		todayRequests := int64(len(dailyCosts))
@@ -49,7 +47,7 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 			}
 
 			// Get real latency data from MetricRecord repository
-			avgLatencyMs = h.calculateRealLatencyMetricsLift(ctx.Context, startOfDay, endOfDay)
+			avgLatencyMs = h.calculateRealLatencyMetricsLift(ctx.Context(), startOfDay, endOfDay)
 		}
 	}
 
@@ -67,16 +65,15 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 		},
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(metrics)
+	return okJSON(metrics)
 }
 
 // HandleGetDailyAggregatesLift returns daily aggregated metrics
-func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetDailyAggregatesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("HandleGetDailyAggregatesLift called")
 
 	// Parse query parameters
-	daysStr := ctx.Query("days")
+	daysStr := queryValue(ctx, "days")
 	days, err := common.ParseAndValidateIntWithBounds("days", daysStr, 0, 30, 7)
 	if err != nil {
 		days = 7 // Default to last 7 days
@@ -89,7 +86,7 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 	var dailyMetrics []map[string]any
 
 	// Get aggregated daily costs from repository
-	dailyAggregates, err := h.repos.Cost().GetDailyAggregates(ctx.Context, startDate, endDate)
+	dailyAggregates, err := h.repos.Cost().GetDailyAggregates(ctx.Context(), startDate, endDate)
 	if err != nil {
 		h.logger.Error("failed to get daily aggregates", zap.Error(err))
 	} else {
@@ -121,12 +118,11 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 		"daily_aggregates": dailyMetrics,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetPredictiveAnalyticsLift returns predictive analytics
-func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("HandleGetPredictiveAnalyticsLift called")
 
 	// Get current month data for projections
@@ -139,7 +135,7 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 	userGrowthRate := 0.0
 
 	// Get current month aggregates
-	monthlyAggregate, err := h.repos.Cost().GetMonthlyAggregate(ctx.Context, now.Year(), int(now.Month()))
+	monthlyAggregate, err := h.repos.Cost().GetMonthlyAggregate(ctx.Context(), now.Year(), int(now.Month()))
 	if err != nil {
 		h.logger.Error("failed to get monthly aggregate", zap.Error(err))
 	} else if monthlyAggregate != nil {
@@ -158,7 +154,7 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 	// Get last 30 days of data to calculate trends
 	endDate := now
 	startDate := now.AddDate(0, 0, -30)
-	dailyAggregates, err := h.repos.Cost().GetDailyAggregates(ctx.Context, startDate, endDate)
+	dailyAggregates, err := h.repos.Cost().GetDailyAggregates(ctx.Context(), startDate, endDate)
 	if err == nil && len(dailyAggregates) > 7 {
 		// Simple growth rate calculation: compare last week to first week
 		firstWeekRequests := int64(0)
@@ -197,13 +193,13 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 			},
 			"storage_growth": map[string]any{
 				"monthly_rate_percent": storageGrowthRate,
-				"projected_gb_30_days": h.calculateStorageProjectionLift(ctx.Context, 30),
-				"projected_gb_90_days": h.calculateStorageProjectionLift(ctx.Context, 90),
+				"projected_gb_30_days": h.calculateStorageProjectionLift(ctx.Context(), 30),
+				"projected_gb_90_days": h.calculateStorageProjectionLift(ctx.Context(), 90),
 			},
 			"user_growth": map[string]any{
 				"monthly_rate_percent":  userGrowthRate,
-				"projected_mau_30_days": h.calculateUserProjectionLift(ctx.Context, 30),
-				"projected_mau_90_days": h.calculateUserProjectionLift(ctx.Context, 90),
+				"projected_mau_30_days": h.calculateUserProjectionLift(ctx.Context(), 30),
+				"projected_mau_90_days": h.calculateUserProjectionLift(ctx.Context(), 90),
 			},
 		},
 		"recommendations": []map[string]any{
@@ -223,8 +219,7 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(analytics)
+	return okJSON(analytics)
 }
 
 // Removed getCostStorageLift - now using TrackingRepository

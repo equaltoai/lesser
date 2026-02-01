@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -13,12 +13,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // requireAdminLift validates admin authentication for Lift handlers
-func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
+func (h *Handler) requireAdminLift(ctx *apptheory.Context) (*auth.Claims, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return nil, errors.New("missing authentication")
@@ -31,7 +31,7 @@ func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
 	}
 
 	// Check admin role
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), claims.Username)
 	if err != nil || user.Role != roleAdmin {
 		return nil, errors.New(common.ErrorAdminAccessRequired)
 	}
@@ -40,29 +40,27 @@ func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
 }
 
 // HandleGetAdminDomainBlocksLift handles GET /api/v1/admin/domain_blocks
-func (h *Handler) HandleGetAdminDomainBlocksLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAdminDomainBlocksLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse query parameters
-	limitStr := ctx.Query("limit")
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseFederationLimit(limitStr)
 	if err != nil {
 		limit = 100
 	}
 
-	cursor := ctx.Query("max_id")
+	cursor := queryValue(ctx, "max_id")
 
 	// Get domain blocks from storage
-	blocks, nextCursor, err := h.repos.DomainBlock().GetDomainBlocks(ctx.Context, limit, cursor)
+	blocks, nextCursor, err := h.repos.DomainBlock().GetDomainBlocks(ctx.Context(), limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get domain blocks", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get domain blocks"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get domain blocks"})
 	}
 
 	// Convert to response format
@@ -83,43 +81,43 @@ func (h *Handler) HandleGetAdminDomainBlocksLift(ctx *lift.Context) error {
 		responses = append(responses, resp)
 	}
 
+	resp, err := okJSON(responses)
+	if err != nil {
+		return nil, err
+	}
+
 	// Add Link header for pagination
 	if nextCursor != "" && len(responses) > 0 {
 		linkHeader := fmt.Sprintf(`<%s/api/v1/admin/domain_blocks?max_id=%s&limit=%d>; rel="next"`,
 			h.cfg.BaseURL(), nextCursor, limit)
-		ctx.Response.Header("Link", linkHeader)
+		setHeader(resp, "Link", linkHeader)
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(responses)
+	return resp, nil
 }
 
 // HandleGetAdminDomainBlockLift handles GET /api/v1/admin/domain_blocks/:id
-func (h *Handler) HandleGetAdminDomainBlockLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAdminDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get domain block ID from path
 	blockID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "block ID required"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "block ID required"})
 	}
 
 	// Get domain block from storage
-	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
+	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context(), blockID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "domain block not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "domain block not found"})
 		}
 		h.logger.Error("failed to get domain block", zap.String("id", blockID), zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get domain block"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get domain block"})
 	}
 
 	// Convert to response format
@@ -136,31 +134,27 @@ func (h *Handler) HandleGetAdminDomainBlockLift(ctx *lift.Context) error {
 		UpdatedAt:      block.UpdatedAt,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleCreateAdminDomainBlockLift handles POST /api/v1/admin/domain_blocks
-func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse request body
 	var req apimodels.AdminDomainBlockRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		h.logger.Debug("invalid domain block request", zap.Error(err))
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "invalid request"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
 	// Validate domain using centralized validation
 	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "domain is required"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "domain is required"})
 	}
 
 	// Clean domain (remove protocol, path, etc.)
@@ -168,8 +162,7 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Validate domain format
 	if _, err := url.Parse("https://" + req.Domain); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "invalid domain format"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid domain format"})
 	}
 
 	// Validate severity
@@ -177,8 +170,7 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 		req.Severity = actionSuspend // Default to suspend
 	}
 	if req.Severity != actionSilence && req.Severity != actionSuspend {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "severity must be 'silence' or 'suspend'"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "severity must be 'silence' or 'suspend'"})
 	}
 
 	// Create domain block
@@ -193,17 +185,15 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 		CreatedBy:      adminClaims.Username,
 	}
 
-	if err := h.repos.DomainBlock().CreateDomainBlock(ctx.Context, block); err != nil {
+	if err := h.repos.DomainBlock().CreateDomainBlock(ctx.Context(), block); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			ctx.Status(http.StatusUnprocessableEntity)
-			return ctx.JSON(map[string]string{"error": "domain block already exists"})
+			return apptheory.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "domain block already exists"})
 		}
 		h.logger.Error("failed to create domain block",
 			zap.String("domain", req.Domain),
 			zap.String("admin", adminClaims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to create domain block"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create domain block"})
 	}
 
 	// Log admin action
@@ -226,40 +216,35 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 		UpdatedAt:      block.UpdatedAt,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleUpdateAdminDomainBlockLift handles PUT /api/v1/admin/domain_blocks/:id
-func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get domain block ID from path
 	blockID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "block ID required"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "block ID required"})
 	}
 
 	// Parse request body
 	var req apimodels.AdminDomainBlockRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		h.logger.Debug("invalid domain block update request", zap.Error(err))
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "invalid request"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
 	// Build updates map
 	updates := make(map[string]any)
 	if err := common.ValidateRequiredParam("severity", req.Severity); err == nil {
 		if req.Severity != actionSilence && req.Severity != actionSuspend {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{"error": "severity must be 'silence' or 'suspend'"})
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "severity must be 'silence' or 'suspend'"})
 		}
 		updates["severity"] = req.Severity
 	}
@@ -270,25 +255,22 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 	updates["obfuscate"] = req.Obfuscate
 
 	// Update domain block
-	if err := h.repos.DomainBlock().UpdateDomainBlock(ctx.Context, blockID, updates); err != nil {
+	if err := h.repos.DomainBlock().UpdateDomainBlock(ctx.Context(), blockID, updates); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "domain block not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "domain block not found"})
 		}
 		h.logger.Error("failed to update domain block",
 			zap.String("id", blockID),
 			zap.String("admin", adminClaims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to update domain block"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update domain block"})
 	}
 
 	// Get updated block
-	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
+	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context(), blockID)
 	if err != nil {
 		h.logger.Error("failed to get updated domain block", zap.String("id", blockID), zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get updated domain block"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get updated domain block"})
 	}
 
 	// Log admin action
@@ -310,46 +292,40 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 		UpdatedAt:      block.UpdatedAt,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleDeleteAdminDomainBlockLift handles DELETE /api/v1/admin/domain_blocks/:id
-func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get domain block ID from path
 	blockID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "block ID required"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "block ID required"})
 	}
 
 	// Get block before deletion for logging
-	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context, blockID)
+	block, err := h.repos.DomainBlock().GetDomainBlock(ctx.Context(), blockID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "domain block not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "domain block not found"})
 		}
 		h.logger.Error("failed to get domain block", zap.String("id", blockID), zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get domain block"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get domain block"})
 	}
 
 	// Delete domain block
-	if err := h.repos.DomainBlock().DeleteDomainBlock(ctx.Context, blockID); err != nil {
+	if err := h.repos.DomainBlock().DeleteDomainBlock(ctx.Context(), blockID); err != nil {
 		h.logger.Error("failed to delete domain block",
 			zap.String("id", blockID),
 			zap.String("admin", adminClaims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to delete domain block"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete domain block"})
 	}
 
 	// Log admin action
@@ -358,34 +334,31 @@ func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
 		zap.String("admin", adminClaims.Username))
 
 	// Return empty object (Mastodon compatibility)
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // HandleGetAdminDomainAllowsLift handles GET /api/v1/admin/domain_allows
-func (h *Handler) HandleGetAdminDomainAllowsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAdminDomainAllowsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse query parameters
-	limitStr := ctx.Query("limit")
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseFederationLimit(limitStr)
 	if err != nil {
 		limit = 100
 	}
 
-	cursor := ctx.Query("max_id")
+	cursor := queryValue(ctx, "max_id")
 
 	// Get domain allows from storage
-	allows, nextCursor, err := h.repos.DomainBlock().GetDomainAllows(ctx.Context, limit, cursor)
+	allows, nextCursor, err := h.repos.DomainBlock().GetDomainAllows(ctx.Context(), limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get domain allows", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get domain allows"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get domain allows"})
 	}
 
 	// Convert to response format
@@ -399,38 +372,38 @@ func (h *Handler) HandleGetAdminDomainAllowsLift(ctx *lift.Context) error {
 		responses = append(responses, resp)
 	}
 
-	// Add Link header for pagination
+	resp, err := okJSON(responses)
+	if err != nil {
+		return nil, err
+	}
+
 	if nextCursor != "" && len(responses) > 0 {
 		linkHeader := fmt.Sprintf(`<%s/api/v1/admin/domain_allows?max_id=%s&limit=%d>; rel="next"`,
 			h.cfg.BaseURL(), nextCursor, limit)
-		ctx.Response.Header("Link", linkHeader)
+		setHeader(resp, "Link", linkHeader)
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(responses)
+	return resp, nil
 }
 
 // HandleCreateAdminDomainAllowLift handles POST /api/v1/admin/domain_allows
-func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse request body
 	var req apimodels.AdminDomainAllowRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		h.logger.Debug("invalid domain allow request", zap.Error(err))
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "invalid request"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
 	// Validate domain using centralized validation
 	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "domain is required"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "domain is required"})
 	}
 
 	// Clean domain
@@ -438,8 +411,7 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 
 	// Validate domain format
 	if _, err := url.Parse("https://" + req.Domain); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "invalid domain format"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid domain format"})
 	}
 
 	// Create domain allow
@@ -448,17 +420,15 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 		CreatedBy: adminClaims.Username,
 	}
 
-	if err := h.repos.DomainBlock().CreateDomainAllow(ctx.Context, allow); err != nil {
+	if err := h.repos.DomainBlock().CreateDomainAllow(ctx.Context(), allow); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			ctx.Status(http.StatusUnprocessableEntity)
-			return ctx.JSON(map[string]string{"error": "domain allow already exists"})
+			return apptheory.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "domain allow already exists"})
 		}
 		h.logger.Error("failed to create domain allow",
 			zap.String("domain", req.Domain),
 			zap.String("admin", adminClaims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to create domain allow"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create domain allow"})
 	}
 
 	// Log admin action
@@ -473,49 +443,46 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 		CreatedAt: allow.CreatedAt,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleDeleteAdminDomainAllowLift handles DELETE /api/v1/admin/domain_allows/:id
-func (h *Handler) HandleDeleteAdminDomainAllowLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteAdminDomainAllowLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminDomainDeleteAction(ctx, "allow", "allow ID required", "domain allow not found",
 		func(itemID string) error {
-			return h.repos.DomainBlock().DeleteDomainAllow(ctx.Context, itemID)
+			return h.repos.DomainBlock().DeleteDomainAllow(ctx.Context(), itemID)
 		})
 }
 
 // HandleGetFederationInstancesLift handles GET /api/v1/admin/federation/instances
-func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFederationInstancesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse query parameters
-	limitStr := ctx.Query("limit")
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseFederationLimit(limitStr)
 	if err != nil {
 		limit = 100
 	}
 
-	cursor := ctx.Query("cursor")
+	cursor := queryValue(ctx, "cursor")
 
 	// Get known instances from storage
-	instances, nextCursor, err := h.repos.Federation().GetKnownInstances(ctx.Context, limit, cursor)
+	instances, nextCursor, err := h.repos.Federation().GetKnownInstances(ctx.Context(), limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get known instances", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get instances"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get instances"})
 	}
 
 	// Convert to response format
 	responses := make([]apimodels.InstanceInfoResponse, 0, len(instances))
 	for _, instance := range instances {
 		// Check if domain is blocked
-		isBlocked, block, err := h.repos.DomainBlock().IsDomainBlocked(ctx.Context, instance.Domain)
+		isBlocked, block, err := h.repos.DomainBlock().IsDomainBlocked(ctx.Context(), instance.Domain)
 		if err != nil {
 			h.logger.Warn("failed to check domain block status",
 				zap.String("domain", instance.Domain),
@@ -549,43 +516,38 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 		result.NextCursor = &nextCursor
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(result)
+	return okJSON(result)
 }
 
 // HandleGetFederationInstanceLift handles GET /api/v1/admin/federation/instance/:domain
-func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFederationInstanceLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get domain from path
 	domain := ctx.Param("domain")
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "domain required"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "domain required"})
 	}
 
 	// Clean domain
 	domain = cleanDomain(domain)
 
 	// Get instance info from storage
-	instance, err := h.repos.Federation().GetInstanceInfo(ctx.Context, domain)
+	instance, err := h.repos.Federation().GetInstanceInfo(ctx.Context(), domain)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "instance not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "instance not found"})
 		}
 		h.logger.Error("failed to get instance info", zap.String("domain", domain), zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get instance info"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get instance info"})
 	}
 
 	// Check if domain is blocked
-	isBlocked, block, err := h.repos.DomainBlock().IsDomainBlocked(ctx.Context, instance.Domain)
+	isBlocked, block, err := h.repos.DomainBlock().IsDomainBlocked(ctx.Context(), instance.Domain)
 	if err != nil {
 		h.logger.Warn("failed to check domain block status",
 			zap.String("domain", instance.Domain),
@@ -609,7 +571,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 	}
 
 	// Add detailed federation information
-	details := h.getFederationDetails(ctx.Context, domain)
+	details := h.getFederationDetails(ctx.Context(), domain)
 
 	// Create response with instance info and details
 	responseData := apimodels.FederationInstanceResponse{
@@ -617,40 +579,37 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 		Details:  details,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(responseData)
+	return okJSON(responseData)
 }
 
 // HandleGetFederationStatisticsLift handles GET /api/v1/admin/federation/statistics
-func (h *Handler) HandleGetFederationStatisticsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFederationStatisticsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get time range from query parameters (default to last 7 days)
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -7)
 
-	if startStr := ctx.Query("start"); startStr != "" {
+	if startStr := queryValue(ctx, "start"); startStr != "" {
 		if t, err := time.Parse(time.RFC3339, startStr); err == nil {
 			startTime = t
 		}
 	}
-	if endStr := ctx.Query("end"); endStr != "" {
+	if endStr := queryValue(ctx, "end"); endStr != "" {
 		if t, err := time.Parse(time.RFC3339, endStr); err == nil {
 			endTime = t
 		}
 	}
 
 	// Get federation statistics from storage
-	stats, err := h.repos.Federation().GetFederationStatistics(ctx.Context, startTime, endTime)
+	stats, err := h.repos.Federation().GetFederationStatistics(ctx.Context(), startTime, endTime)
 	if err != nil {
 		h.logger.Error("failed to get federation statistics", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get statistics"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get statistics"})
 	}
 
 	// Build response
@@ -664,34 +623,31 @@ func (h *Handler) HandleGetFederationStatisticsLift(ctx *lift.Context) error {
 		},
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleGetEmailDomainBlocksLift handles GET /api/v1/admin/email_domain_blocks
-func (h *Handler) HandleGetEmailDomainBlocksLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetEmailDomainBlocksLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse query parameters
-	limitStr := ctx.Query("limit")
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseFederationLimit(limitStr)
 	if err != nil {
 		limit = 100
 	}
 
-	cursor := ctx.Query("cursor")
+	cursor := queryValue(ctx, "cursor")
 
 	// Get email domain blocks from storage
-	blocks, nextCursor, err := h.repos.DomainBlock().GetEmailDomainBlocks(ctx.Context, limit, cursor)
+	blocks, nextCursor, err := h.repos.DomainBlock().GetEmailDomainBlocks(ctx.Context(), limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get email domain blocks", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get email domain blocks"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get email domain blocks"})
 	}
 
 	// Convert to response format
@@ -713,31 +669,27 @@ func (h *Handler) HandleGetEmailDomainBlocksLift(ctx *lift.Context) error {
 		result.NextCursor = &nextCursor
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(result)
+	return okJSON(result)
 }
 
 // HandleCreateEmailDomainBlockLift handles POST /api/v1/admin/email_domain_blocks
-func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin authentication
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse request body
 	var req apimodels.EmailDomainBlockRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		h.logger.Debug("invalid email domain block request", zap.Error(err))
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "invalid request"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
 	// Validate domain using centralized validation
 	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "domain is required"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "domain is required"})
 	}
 
 	// Clean domain (remove @ if present)
@@ -750,17 +702,15 @@ func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
 		CreatedBy: adminClaims.Username,
 	}
 
-	if err := h.repos.DomainBlock().CreateEmailDomainBlock(ctx.Context, block); err != nil {
+	if err := h.repos.DomainBlock().CreateEmailDomainBlock(ctx.Context(), block); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			ctx.Status(http.StatusUnprocessableEntity)
-			return ctx.JSON(map[string]string{"error": "email domain block already exists"})
+			return apptheory.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "email domain block already exists"})
 		}
 		h.logger.Error("failed to create email domain block",
 			zap.String("domain", req.Domain),
 			zap.String("admin", adminClaims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to create email domain block"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create email domain block"})
 	}
 
 	// Log admin action
@@ -775,46 +725,41 @@ func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
 		CreatedAt: block.CreatedAt,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleDeleteEmailDomainBlockLift handles DELETE /api/v1/admin/email_domain_blocks/:id
-func (h *Handler) HandleDeleteEmailDomainBlockLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteEmailDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminDomainDeleteAction(ctx, "email domain block", "block ID required", "email domain block not found",
 		func(itemID string) error {
-			return h.repos.DomainBlock().DeleteEmailDomainBlock(ctx.Context, itemID)
+			return h.repos.DomainBlock().DeleteEmailDomainBlock(ctx.Context(), itemID)
 		})
 }
 
 // adminDomainDeleteAction consolidates domain deletion operations
-func (h *Handler) adminDomainDeleteAction(ctx *lift.Context, itemType, validationError, notFoundError string, deleteFn func(string) error) error {
+func (h *Handler) adminDomainDeleteAction(ctx *apptheory.Context, itemType, validationError, notFoundError string, deleteFn func(string) error) (*apptheory.Response, error) {
 	// Check admin authentication
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get item ID from path
 	itemID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("itemID", itemID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": validationError})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": validationError})
 	}
 
 	// Delete the item
 	if err := deleteFn(itemID); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": notFoundError})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": notFoundError})
 		}
 		h.logger.Error("failed to delete "+itemType,
 			zap.String("id", itemID),
 			zap.String("admin", adminClaims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to delete " + itemType})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete " + itemType})
 	}
 
 	// Log admin action
@@ -823,8 +768,7 @@ func (h *Handler) adminDomainDeleteAction(ctx *lift.Context, itemType, validatio
 		zap.String("admin", adminClaims.Username))
 
 	// Return empty object (Mastodon compatibility)
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // cleanDomain removes protocol, path, and trailing slashes from a domain

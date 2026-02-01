@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -22,8 +22,7 @@ func TestAdminCreateUserRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/users", nil, nil, apimodels.AdminCreateUserRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleAdminCreateUserLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleAdminCreateUserLift(ctx))
 	})
 
 	t.Run("unprocessable entity when body invalid", func(t *testing.T) {
@@ -37,8 +36,7 @@ func TestAdminCreateUserRound12(t *testing.T) {
 			"Authorization": "Bearer " + adminToken,
 		}, nil, []byte("{"))
 
-		require.NoError(t, h.HandleAdminCreateUserLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleAdminCreateUserLift(ctx))
 	})
 
 	t.Run("internal error when user create fails", func(t *testing.T) {
@@ -60,8 +58,7 @@ func TestAdminCreateUserRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleAdminCreateUserLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminCreateUserLift(ctx))
 	})
 
 	t.Run("success creates user", func(t *testing.T) {
@@ -82,7 +79,6 @@ func TestAdminCreateUserRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleAdminCreateUserLift(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusCreated)(h.HandleAdminCreateUserLift(ctx))
 	})
 }

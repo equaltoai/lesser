@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -51,15 +52,14 @@ func TestSetupStatusLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/status", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupStatusLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleSetupStatusLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.SetupStatusResponse)
-		require.True(t, ok)
-		require.Equal(t, "locked", resp.InstanceState)
-		require.True(t, resp.Locked)
-		require.Equal(t, storagemodels.DefaultBootstrapUsername, resp.Bootstrap.Username)
-		require.Equal(t, storagemodels.DefaultBootstrapUsername, resp.BootstrapActor.Username)
+		var body apimodels.SetupStatusResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "locked", body.InstanceState)
+		require.True(t, body.Locked)
+		require.Equal(t, storagemodels.DefaultBootstrapUsername, body.Bootstrap.Username)
+		require.Equal(t, storagemodels.DefaultBootstrapUsername, body.BootstrapActor.Username)
 	})
 
 	t.Run("success unlocked returns active", func(t *testing.T) {
@@ -74,14 +74,13 @@ func TestSetupStatusLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/status", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupStatusLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleSetupStatusLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.SetupStatusResponse)
-		require.True(t, ok)
-		require.Equal(t, "active", resp.InstanceState)
-		require.False(t, resp.Locked)
-		require.False(t, resp.FinalizeAllowed)
+		var body apimodels.SetupStatusResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "active", body.InstanceState)
+		require.False(t, body.Locked)
+		require.False(t, body.FinalizeAllowed)
 	})
 
 	t.Run("instance repo error returns 500", func(t *testing.T) {
@@ -91,8 +90,7 @@ func TestSetupStatusLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/status", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupStatusLift(ctx))
 	})
 }
 
@@ -107,8 +105,7 @@ func TestSetupBootstrapChallengeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/challenge", nil, nil, apimodels.SetupBootstrapChallengeRequest{Address: bootstrapAddr})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapChallengeLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupBootstrapChallengeLift(ctx))
 	})
 
 	t.Run("conflict when already activated", func(t *testing.T) {
@@ -118,8 +115,7 @@ func TestSetupBootstrapChallengeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/challenge", nil, nil, apimodels.SetupBootstrapChallengeRequest{Address: bootstrapAddr})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapChallengeLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleSetupBootstrapChallengeLift(ctx))
 	})
 
 	t.Run("bad request when address missing", func(t *testing.T) {
@@ -129,8 +125,7 @@ func TestSetupBootstrapChallengeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/challenge", nil, nil, apimodels.SetupBootstrapChallengeRequest{})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapChallengeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSetupBootstrapChallengeLift(ctx))
 	})
 
 	t.Run("conflict when bootstrap wallet not configured", func(t *testing.T) {
@@ -140,8 +135,7 @@ func TestSetupBootstrapChallengeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/challenge", nil, nil, apimodels.SetupBootstrapChallengeRequest{Address: bootstrapAddr})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapChallengeLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleSetupBootstrapChallengeLift(ctx))
 	})
 
 	t.Run("forbidden when wallet mismatch", func(t *testing.T) {
@@ -151,8 +145,7 @@ func TestSetupBootstrapChallengeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/challenge", nil, nil, apimodels.SetupBootstrapChallengeRequest{Address: "0xdef"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapChallengeLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleSetupBootstrapChallengeLift(ctx))
 	})
 
 	t.Run("auth service create failure returns 500", func(t *testing.T) {
@@ -164,8 +157,7 @@ func TestSetupBootstrapChallengeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/challenge", nil, nil, apimodels.SetupBootstrapChallengeRequest{Address: bootstrapAddr})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapChallengeLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupBootstrapChallengeLift(ctx))
 	})
 
 	t.Run("success returns challenge", func(t *testing.T) {
@@ -176,16 +168,15 @@ func TestSetupBootstrapChallengeLiftRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/challenge", nil, nil, apimodels.SetupBootstrapChallengeRequest{Address: bootstrapAddr})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapChallengeLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleSetupBootstrapChallengeLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.SetupBootstrapChallengeResponse)
-		require.True(t, ok)
-		require.NotEmpty(t, resp.ChallengeID)
-		require.NotEmpty(t, resp.Challenge)
-		require.Equal(t, 1, resp.ChainID)
-		require.Equal(t, strings.ToLower(bootstrapAddr), strings.ToLower(resp.Address))
-		require.Equal(t, storagemodels.DefaultBootstrapUsername, resp.Username)
+		var body apimodels.SetupBootstrapChallengeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.ChallengeID)
+		require.NotEmpty(t, body.Challenge)
+		require.Equal(t, 1, body.ChainID)
+		require.Equal(t, strings.ToLower(bootstrapAddr), strings.ToLower(body.Address))
+		require.Equal(t, storagemodels.DefaultBootstrapUsername, body.Username)
 	})
 }
 
@@ -199,8 +190,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("bad request missing fields", func(t *testing.T) {
@@ -210,8 +200,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{Address: "0xabc"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("bad request when address missing", func(t *testing.T) {
@@ -221,8 +210,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "c1", Signature: "sig", Message: "msg"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("bad request when signature missing", func(t *testing.T) {
@@ -232,8 +220,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "c1", Address: "0xabc", Message: "msg"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("bad request when message missing", func(t *testing.T) {
@@ -243,8 +230,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "c1", Address: "0xabc", Signature: "sig"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("conflict when bootstrap wallet not configured", func(t *testing.T) {
@@ -254,8 +240,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "c1", Address: "0xabc", Signature: "sig", Message: "msg"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("forbidden when wallet mismatch", func(t *testing.T) {
@@ -265,8 +250,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "c1", Address: "0xdef", Signature: "sig", Message: "msg"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("unauthorized when challenge missing", func(t *testing.T) {
@@ -280,8 +264,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "missing", Address: "0xabc", Signature: "sig", Message: "msg"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("forbidden when challenge username mismatch", func(t *testing.T) {
@@ -294,8 +277,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "c1", Address: "0xabc", Signature: "sig", Message: "msg"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("invalid signature handled", func(t *testing.T) {
@@ -308,8 +290,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, apimodels.SetupBootstrapVerifyRequest{ChallengeID: "c1", Address: "0xabc", Signature: "sig", Message: "message"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.NotEqual(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("create session failure returns 500", func(t *testing.T) {
@@ -351,8 +332,7 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, req)
 		require.NoError(t, err)
 		_ = tmpHandler
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupBootstrapVerifyLift(ctx))
 	})
 
 	t.Run("success returns setup token", func(t *testing.T) {
@@ -389,14 +369,13 @@ func TestSetupBootstrapVerifyLiftRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/bootstrap/verify", nil, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupBootstrapVerifyLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleSetupBootstrapVerifyLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.SetupBootstrapVerifyResponse)
-		require.True(t, ok)
-		require.Equal(t, "Bearer", resp.TokenType)
-		require.NotEmpty(t, resp.Token)
-		require.NotEmpty(t, resp.SetupToken)
+		var body apimodels.SetupBootstrapVerifyResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "Bearer", body.TokenType)
+		require.NotEmpty(t, body.Token)
+		require.NotEmpty(t, body.SetupToken)
 	})
 }
 
@@ -415,10 +394,10 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
+		_, resp, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("expired session unauthorized and deleted", func(t *testing.T) {
@@ -442,10 +421,10 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", headers, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
+		_, resp, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("missing session unauthorized", func(t *testing.T) {
@@ -461,10 +440,10 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", headers, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
+		_, resp, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("storage error returns 500", func(t *testing.T) {
@@ -480,10 +459,10 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", headers, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
+		_, resp, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 
 	t.Run("wrong purpose unauthorized", func(t *testing.T) {
@@ -507,10 +486,10 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", headers, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
+		_, resp, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("wallet mismatch unauthorized", func(t *testing.T) {
@@ -534,10 +513,10 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", headers, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
+		_, resp, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("bootstrap username mismatch unauthorized", func(t *testing.T) {
@@ -561,10 +540,10 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", headers, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.requireSetupSession(ctx, "wrong", baseState)
+		_, resp, err := handler.requireSetupSession(ctx, "wrong", baseState)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("success returns session", func(t *testing.T) {
@@ -588,9 +567,9 @@ func TestRequireSetupSessionRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/setup/admin", headers, nil, nil)
 		require.NoError(t, err)
 
-		got, handled, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
+		got, resp, err := handler.requireSetupSession(ctx, "bootstrap", baseState)
 		require.NoError(t, err)
-		require.False(t, handled)
+		require.Nil(t, resp)
 		require.NotNil(t, got)
 		require.Equal(t, session.ID, got.ID)
 	})
@@ -603,10 +582,10 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		_, handled, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 
 	t.Run("register account success uses actor id", func(t *testing.T) {
@@ -622,9 +601,9 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		actorID, handled, err := handler.ensureSetupAdminAccount(ctx, "new")
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "new")
 		require.NoError(t, err)
-		require.False(t, handled)
+		require.Nil(t, resp)
 		require.Equal(t, "https://example.com/users/new", actorID)
 	})
 
@@ -643,9 +622,9 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		actorID, handled, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
 		require.NoError(t, err)
-		require.False(t, handled)
+		require.Nil(t, resp)
 		require.Equal(t, "https://example.com/users/alice", actorID)
 	})
 
@@ -660,10 +639,10 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		_, handled, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
 	})
 
 	t.Run("username taken but actor lookup fails returns 422", func(t *testing.T) {
@@ -681,10 +660,10 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		_, handled, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		_, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
 	})
 
 	t.Run("register returns no actor falls back to config URL", func(t *testing.T) {
@@ -698,9 +677,9 @@ func TestEnsureSetupAdminAccountRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
-		actorID, handled, err := handler.ensureSetupAdminAccount(ctx, "alice")
+		actorID, resp, err := handler.ensureSetupAdminAccount(ctx, "alice")
 		require.NoError(t, err)
-		require.False(t, handled)
+		require.Nil(t, resp)
 		require.Equal(t, cfg.ActorURL("alice"), actorID)
 	})
 }
@@ -717,10 +696,10 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		authSvc, err := auth.NewAuthService(cfg, handler.repos)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{})
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("missing address rejected", func(t *testing.T) {
@@ -732,10 +711,10 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		authSvc, err := auth.NewAuthService(cfg, repos)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "c1"})
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "c1"})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("missing signature rejected", func(t *testing.T) {
@@ -747,10 +726,10 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		authSvc, err := auth.NewAuthService(cfg, repos)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "c1", Address: "0xabc"})
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "c1", Address: "0xabc"})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("missing message rejected", func(t *testing.T) {
@@ -762,10 +741,10 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		authSvc, err := auth.NewAuthService(cfg, repos)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "c1", Address: "0xabc", Signature: "sig"})
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "c1", Address: "0xabc", Signature: "sig"})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("challenge not found unauthorized", func(t *testing.T) {
@@ -779,10 +758,10 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		authSvc, err := auth.NewAuthService(cfg, repos)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "missing", Address: "0xabc", Signature: "sig", Message: "msg"})
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{ChallengeID: "missing", Address: "0xabc", Signature: "sig", Message: "msg"})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("challenge username mismatch forbidden", func(t *testing.T) {
@@ -798,15 +777,15 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
 			ChallengeID: "c1",
 			Address:     "0xabc",
 			Signature:   "sig",
 			Message:     "message",
 		})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 	})
 
 	t.Run("wallet index lookup error returns 500", func(t *testing.T) {
@@ -837,15 +816,15 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
 			ChallengeID: challenge.ID,
 			Address:     address,
 			Signature:   sig,
 			Message:     challenge.Message,
 		})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 
 	t.Run("invalid signature returns error response", func(t *testing.T) {
@@ -861,15 +840,15 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
 			ChallengeID: "c1",
 			Address:     "0xabc",
 			Signature:   "sig",
 			Message:     "message",
 		})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("wallet already linked conflict", func(t *testing.T) {
@@ -902,15 +881,15 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
 
-		_, _, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
+		_, _, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
 			ChallengeID: challenge.ID,
 			Address:     address,
 			Signature:   sig,
 			Message:     challenge.Message,
 		})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusConflict, resp.Status)
 	})
 
 	t.Run("success returns chain and address", func(t *testing.T) {
@@ -939,14 +918,14 @@ func TestVerifySetupCreateAdminWalletRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, nil)
 		require.NoError(t, err)
 
-		chainID, addr, handled, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
+		chainID, addr, resp, err := handler.verifySetupCreateAdminWallet(ctx, authSvc, "alice", auth.WalletVerifyRequest{
 			ChallengeID: challenge.ID,
 			Address:     address,
 			Signature:   sig,
 			Message:     challenge.Message,
 		})
 		require.NoError(t, err)
-		require.False(t, handled)
+		require.Nil(t, resp)
 		require.Equal(t, 1, chainID)
 		require.Equal(t, strings.ToLower(address), addr)
 	})
@@ -962,8 +941,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, apimodels.SetupCreateAdminRequest{Username: "alice"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("conflict when primary admin already created", func(t *testing.T) {
@@ -973,8 +951,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, apimodels.SetupCreateAdminRequest{Username: "alice"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("requires setup session token", func(t *testing.T) {
@@ -984,8 +961,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: &AccountsServiceStub{}})
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", nil, nil, apimodels.SetupCreateAdminRequest{Username: "alice"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("bad request when username missing", func(t *testing.T) {
@@ -1011,8 +987,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer token"}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, apimodels.SetupCreateAdminRequest{})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("bad request when username is reserved", func(t *testing.T) {
@@ -1039,8 +1014,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		req := apimodels.SetupCreateAdminRequest{Username: "bootstrap"}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("wallet already linked returns conflict", func(t *testing.T) {
@@ -1096,8 +1070,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("update user failure returns 500", func(t *testing.T) {
@@ -1161,8 +1134,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupCreateAdminLift(ctx))
 		_ = tmpHandler
 	})
 
@@ -1226,8 +1198,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 		}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("registry missing returns 500", func(t *testing.T) {
@@ -1288,8 +1259,7 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleSetupCreateAdminLift(ctx))
 	})
 
 	t.Run("success creates admin", func(t *testing.T) {
@@ -1358,13 +1328,12 @@ func TestSetupCreateAdminLiftRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/admin", headers, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleSetupCreateAdminLift(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusCreated)(handler.HandleSetupCreateAdminLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.SetupCreateAdminResponse)
-		require.True(t, ok)
-		require.Equal(t, "admin", resp.Username)
-		require.NotEmpty(t, resp.Actor)
+		var body apimodels.SetupCreateAdminResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "admin", body.Username)
+		require.NotEmpty(t, body.Actor)
 	})
 }
 
@@ -1380,8 +1349,8 @@ func TestSetupFinalizeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/finalize", nil, nil, nil)
 		require.NoError(t, err)
-		handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		resp := handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("forbidden when not admin role", func(t *testing.T) {
@@ -1394,8 +1363,8 @@ func TestSetupFinalizeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/finalize", headers, nil, nil)
 		require.NoError(t, err)
-		handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		resp := handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 	})
 
 	t.Run("conflict when already activated", func(t *testing.T) {
@@ -1405,8 +1374,8 @@ func TestSetupFinalizeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/finalize", headers, nil, nil)
 		require.NoError(t, err)
-		handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		resp := handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
+		require.Equal(t, http.StatusConflict, resp.Status)
 	})
 
 	t.Run("forbidden when not primary admin", func(t *testing.T) {
@@ -1422,8 +1391,8 @@ func TestSetupFinalizeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/finalize", headers, nil, nil)
 		require.NoError(t, err)
-		handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		resp := handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 	})
 
 	t.Run("unlock failure returns 500", func(t *testing.T) {
@@ -1440,8 +1409,8 @@ func TestSetupFinalizeLiftRound12(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, state)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/finalize", headers, nil, nil)
 		require.NoError(t, err)
-		handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		resp := handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 
 	t.Run("success unlocks instance", func(t *testing.T) {
@@ -1460,13 +1429,13 @@ func TestSetupFinalizeLiftRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/setup/finalize", headers, nil, nil)
 		require.NoError(t, err)
-		handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := handleWithAPIMiddleware(t, handler.HandleSetupFinalizeLift, ctx)
+		require.Equal(t, http.StatusOK, resp.Status)
 
-		resp, ok := ctx.Response.Body.(apimodels.SetupFinalizeResponse)
-		require.True(t, ok)
-		require.Equal(t, "active", resp.InstanceState)
-		require.False(t, resp.Locked)
+		var body apimodels.SetupFinalizeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "active", body.InstanceState)
+		require.False(t, body.Locked)
 	})
 }
 

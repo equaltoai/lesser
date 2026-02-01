@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -42,5 +42,5 @@ func TestHandleGetFavouritesLift(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/favourites", map[string]string{"Authorization": "Bearer " + token}, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleGetFavouritesLift(ctx))
+	requireStatus(t, http.StatusOK)(h.HandleGetFavouritesLift(ctx))
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 // Context represents the authenticated user context
@@ -22,11 +22,11 @@ type Context struct {
 	Authenticated bool      `json:"authenticated"`
 }
 
-// AuthContextKey is the key used to store AuthContext in lift.Context
+// AuthContextKey is the key used to store AuthContext in request context.
 const AuthContextKey = "auth_context"
 
-// GetAuthContext retrieves authentication context from lift.Context
-func GetAuthContext(ctx *lift.Context) *Context {
+// GetAuthContext retrieves authentication context from an AppTheory context.
+func GetAuthContext(ctx *apptheory.Context) *Context {
 	if auth := ctx.Get(AuthContextKey); auth != nil {
 		if authCtx, ok := auth.(*Context); ok {
 			return authCtx
@@ -35,8 +35,8 @@ func GetAuthContext(ctx *lift.Context) *Context {
 	return &Context{Authenticated: false}
 }
 
-// SetAuthContext stores authentication context in lift.Context
-func SetAuthContext(ctx *lift.Context, authCtx *Context) {
+// SetAuthContext stores authentication context in an AppTheory context.
+func SetAuthContext(ctx *apptheory.Context, authCtx *Context) {
 	ctx.Set(AuthContextKey, authCtx)
 }
 
@@ -81,24 +81,24 @@ func (ac *Context) IsAdmin() bool {
 	return ac.HasScope("admin")
 }
 
-// RequireAuthWithResponse returns lift response error if not authenticated
-func (ac *Context) RequireAuthWithResponse(ctx *lift.Context) error {
+// RequireAuthWithResponse returns an unauthorized response if not authenticated.
+func (ac *Context) RequireAuthWithResponse(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if !ac.Authenticated {
 		return common.RespondUnauthorized(ctx)
 	}
-	return nil
+	return nil, nil
 }
 
-// RequireScopeWithResponse returns lift response error if scope missing
-func (ac *Context) RequireScopeWithResponse(ctx *lift.Context, scope string) error {
-	if err := ac.RequireAuthWithResponse(ctx); err != nil {
-		return err
+// RequireScopeWithResponse returns an insufficient-scope response if scope missing.
+func (ac *Context) RequireScopeWithResponse(ctx *apptheory.Context, scope string) (*apptheory.Response, error) {
+	if resp, err := ac.RequireAuthWithResponse(ctx); resp != nil || err != nil {
+		return resp, err
 	}
 
 	if !ac.HasScope(scope) {
 		return common.RespondInsufficientScope(ctx)
 	}
-	return nil
+	return nil, nil
 }
 
 // CreateAuthContext creates a new authentication context from OAuth claims

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -56,7 +56,7 @@ func (r *round11TestRepos) Instance() *repositories.InstanceRepository { return 
 func (r *round11TestRepos) MetricRecord() *repositories.MetricRecordRepository {
 	return r.metricRecord
 }
-func (r *round11TestRepos) Status() interfaces.StatusRepository { return r.status }
+func (r *round11TestRepos) Status() interfaces.StatusRepository    { return r.status }
 func (r *round11TestRepos) Like() *repositories.LikeRepository     { return r.like }
 func (r *round11TestRepos) Social() *repositories.SocialRepository { return r.social }
 func (r *round11TestRepos) Bookmark() *repositories.BookmarkRepository {

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	lconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/version"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -79,7 +79,7 @@ func (h *HealthChecker) httpClientOrDefault() *http.Client {
 }
 
 // HandleLivenessCheck handles GET /health/live - basic liveness check
-func (h *HealthChecker) HandleLivenessCheck(c *lift.Context) error {
+func (h *HealthChecker) HandleLivenessCheck(_ *apptheory.Context) (*apptheory.Response, error) {
 	response := HealthCheckResponse{
 		Status:    HealthStatusHealthy,
 		Timestamp: time.Now(),
@@ -88,12 +88,12 @@ func (h *HealthChecker) HandleLivenessCheck(c *lift.Context) error {
 		Uptime:    time.Since(h.startTime),
 	}
 
-	return c.Status(http.StatusOK).JSON(response)
+	return apptheory.JSON(http.StatusOK, response)
 }
 
 // HandleReadinessCheck handles GET /health/ready - full readiness check
-func (h *HealthChecker) HandleReadinessCheck(c *lift.Context) error {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+func (h *HealthChecker) HandleReadinessCheck(c *apptheory.Context) (*apptheory.Response, error) {
+	ctx, cancel := context.WithTimeout(c.Context(), 30*time.Second)
 	defer cancel()
 
 	checks := make(map[string]CheckResult)
@@ -133,12 +133,12 @@ func (h *HealthChecker) HandleReadinessCheck(c *lift.Context) error {
 		statusCode = http.StatusOK // Still serve traffic but indicate degraded state
 	}
 
-	return c.Status(statusCode).JSON(response)
+	return apptheory.JSON(statusCode, response)
 }
 
 // HandleDetailedHealthCheck handles GET /health/detailed - comprehensive health check
-func (h *HealthChecker) HandleDetailedHealthCheck(c *lift.Context) error {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+func (h *HealthChecker) HandleDetailedHealthCheck(c *apptheory.Context) (*apptheory.Response, error) {
+	ctx, cancel := context.WithTimeout(c.Context(), 30*time.Second)
 	defer cancel()
 
 	checks := make(map[string]CheckResult)
@@ -177,7 +177,7 @@ func (h *HealthChecker) HandleDetailedHealthCheck(c *lift.Context) error {
 		statusCode = http.StatusServiceUnavailable
 	}
 
-	return c.Status(statusCode).JSON(response)
+	return apptheory.JSON(statusCode, response)
 }
 
 // checkDatabase checks database connectivity and health
@@ -630,31 +630,36 @@ func (h *HealthChecker) checkFederationConnectivity(_ context.Context) CheckResu
 }
 
 // RegisterHealthRoutes registers health check routes
-func RegisterHealthRoutes(app *lift.App, storage core.RepositoryStorage, logger *zap.Logger) {
+func RegisterHealthRoutes(app *apptheory.App, storage core.RepositoryStorage, logger *zap.Logger) {
 	healthChecker := NewHealthChecker(logger, storage)
 
 	// Liveness probe - simple check that service is running
-	_ = app.GET("/health/live", lift.HandlerFunc(healthChecker.HandleLivenessCheck))
+	app.Get("/health/live", healthChecker.HandleLivenessCheck)
 
 	// Readiness probe - checks that service is ready to handle traffic
-	_ = app.GET("/health/ready", lift.HandlerFunc(healthChecker.HandleReadinessCheck))
+	app.Get("/health/ready", healthChecker.HandleReadinessCheck)
 
 	// Detailed health check - comprehensive status information
-	_ = app.GET("/health/detailed", lift.HandlerFunc(healthChecker.HandleDetailedHealthCheck))
+	app.Get("/health/detailed", healthChecker.HandleDetailedHealthCheck)
 
 	// Legacy health endpoint for backward compatibility
-	_ = app.GET("/health", lift.HandlerFunc(healthChecker.HandleLivenessCheck))
+	app.Get("/health", healthChecker.HandleLivenessCheck)
 }
 
 // HealthCheckMiddleware adds health check information to request context
-func HealthCheckMiddleware(_ *zap.Logger) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(c *lift.Context) error {
-			// Add health check timestamp to response headers
-			c.Response.Header("X-Health-Check-Time", time.Now().UTC().Format(time.RFC3339))
-			c.Response.Header("X-Service-Name", "lesser-api")
+func HealthCheckMiddleware(_ *zap.Logger) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(c *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(c)
+			if resp == nil {
+				return resp, err
+			}
 
-			return next.Handle(c)
-		})
+			// Add health check timestamp to response headers
+			setHeader(resp, "X-Health-Check-Time", time.Now().UTC().Format(time.RFC3339))
+			setHeader(resp, "X-Service-Name", "lesser-api")
+
+			return resp, err
+		}
 	}
 }

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -61,26 +61,23 @@ func TestAccountsFull_Round12_HandleGetAccountFull_Errors(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetAccountFull(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetAccountFull(ctx))
 	})
 
 	t.Run("not_found", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/missing", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
+		ctx.Params["id"] = "missing"
 
-		require.NoError(t, handler.HandleGetAccountFull(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetAccountFull(ctx))
 	})
 
 	t.Run("internal_error", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/boom", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "boom")
+		ctx.Params["id"] = "boom"
 
-		require.NoError(t, handler.HandleGetAccountFull(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetAccountFull(ctx))
 	})
 }
 
@@ -116,8 +113,7 @@ func TestAccountsFull_Round12_AccountStatusesFallback(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/missing/statuses", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.handleAccountStatusesFallback(ctx, "missing", 20, "", ""))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.handleAccountStatusesFallback(ctx, "missing", 20, "", ""))
 	})
 
 	t.Run("timeline_error", func(t *testing.T) {
@@ -138,8 +134,7 @@ func TestAccountsFull_Round12_AccountStatusesFallback(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/statuses", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.handleAccountStatusesFallback(ctx, "alice", 20, "", ""))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.handleAccountStatusesFallback(ctx, "alice", 20, "", ""))
 	})
 
 	t.Run("success_sets_link_header", func(t *testing.T) {
@@ -181,9 +176,8 @@ func TestAccountsFull_Round12_AccountStatusesFallback(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/statuses", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.handleAccountStatusesFallback(ctx, "alice", 20, "", ""))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.NotEmpty(t, ctx.Response.Headers["Link"])
+		resp := requireStatus(t, http.StatusOK)(handler.handleAccountStatusesFallback(ctx, "alice", 20, "", ""))
+		require.NotEmpty(t, resp.Headers["link"])
 	})
 }
 
@@ -382,20 +376,19 @@ func TestAccountsFull_Round12_FollowersFollowing_EdgeCases(t *testing.T) {
 	t.Run("followers_skip_nil_entries", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/followers", readHeaders, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "alice")
+		ctx.Params["id"] = "alice"
 
-		require.NoError(t, handler.HandleGetAccountFollowersFull(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetAccountFollowersFull(ctx))
 	})
 
 	t.Run("following_sets_pagination_link", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/following", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "alice")
+		ctx.Params["id"] = "alice"
 
-		require.NoError(t, handler.HandleGetAccountFollowingFull(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers["Link"], "max_id=next")
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetAccountFollowingFull(ctx))
+		require.NotEmpty(t, resp.Headers["link"])
+		require.Contains(t, resp.Headers["link"][0], "max_id=next")
 	})
 
 	t.Run("build_account_response_includes_optional_fields", func(t *testing.T) {
@@ -423,7 +416,7 @@ func TestAccountsFull_Round12_VerifyCredentialsAuthError(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", nil, nil, nil)
 	require.NoError(t, err)
 
-	require.Error(t, handler.HandleVerifyCredentialsFull(ctx))
+	requireStatus(t, http.StatusUnauthorized)(handler.HandleVerifyCredentialsFull(ctx))
 }
 
 func TestAccountsFull_Round12_UpdateCredentials_ParseError(t *testing.T) {
@@ -435,8 +428,7 @@ func TestAccountsFull_Round12_UpdateCredentials_ParseError(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer " + token}
 	ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, []byte(`{invalid}`))
 
-	require.NoError(t, handler.HandleUpdateCredentialsFull(ctx))
-	require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateCredentialsFull(ctx))
 }
 
 func TestAccountsFull_Round12_GetAccountStatuses_ServiceError(t *testing.T) {
@@ -456,10 +448,9 @@ func TestAccountsFull_Round12_GetAccountStatuses_ServiceError(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/statuses", headers, map[string]string{"limit": "bad", "only_media": boolTrue}, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "alice")
+	ctx.Params["id"] = "alice"
 
-	require.NoError(t, handler.HandleGetAccountStatusesFull(ctx))
-	require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleGetAccountStatusesFull(ctx))
 }
 
 func TestAccountsFull_Round12_VerifyCredentials_ServiceError(t *testing.T) {
@@ -479,8 +470,7 @@ func TestAccountsFull_Round12_VerifyCredentials_ServiceError(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", headers, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, handler.HandleVerifyCredentialsFull(ctx))
-	require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleVerifyCredentialsFull(ctx))
 }
 
 func TestAccountsFull_Round12_UpdateCredentials_ServiceError(t *testing.T) {
@@ -500,8 +490,7 @@ func TestAccountsFull_Round12_UpdateCredentials_ServiceError(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodPatch, "/api/v1/accounts/update_credentials", headers, nil, apiModels.UpdateCredentialsRequest{DisplayName: "Alice"})
 	require.NoError(t, err)
 
-	require.NoError(t, handler.HandleUpdateCredentialsFull(ctx))
-	require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateCredentialsFull(ctx))
 }
 
 func TestAccountsFull_Round12_HasUserMutedStatus_IsMutedError(t *testing.T) {
@@ -618,7 +607,6 @@ func TestAccountsFull_Round12_AccountStatusesFallback_NoNextCursor(t *testing.T)
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/statuses", nil, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, handler.handleAccountStatusesFallback(ctx, "alice", 20, "", ""))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-	require.Empty(t, ctx.Response.Headers["Link"])
+	resp := requireStatus(t, http.StatusOK)(handler.handleAccountStatusesFallback(ctx, "alice", 20, "", ""))
+	require.Empty(t, resp.Headers["link"])
 }

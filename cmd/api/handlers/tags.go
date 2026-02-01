@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -44,7 +44,7 @@ type FeaturedTag struct {
 }
 
 // HandleGetTagLift retrieves information about a specific hashtag
-func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	tagName := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", tagName); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -56,7 +56,7 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	}
 
 	// Get actual tag statistics from storage
-	tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName)
+	tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context(), tagName)
 	var tagStats *storage.HashtagStats
 	if err != nil || tagStatsRaw == nil {
 		h.logger.Error("failed to get hashtag stats", zap.Error(err))
@@ -109,14 +109,14 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Check if following
-				following, _ := h.repos.Hashtag().IsFollowingHashtag(ctx.Context, claims.Username, tagName)
+				following, _ := h.repos.Hashtag().IsFollowingHashtag(ctx.Context(), claims.Username, tagName)
 				tag.Following = &following
-				return ctx.JSON(tag)
+				return okJSON(tag)
 			}
 		}
 	}
 
-	return ctx.JSON(tag)
+	return okJSON(tag)
 }
 
 // tagFollowAction represents the type of tag follow action
@@ -128,7 +128,7 @@ const (
 )
 
 // authenticateTagRequest handles authentication for tag operations
-func (h *Handler) authenticateTagRequest(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateTagRequest(ctx *apptheory.Context) (string, error) {
 	// Extract token from Authorization header
 	authHeader := h.getAuthorizationHeader(ctx)
 
@@ -148,7 +148,7 @@ func (h *Handler) authenticateTagRequest(ctx *lift.Context) (string, error) {
 }
 
 // buildTagResponseWithHistory builds a tag response including history
-func (h *Handler) buildTagResponseWithHistory(ctx *lift.Context, tagName string, following bool) map[string]any {
+func (h *Handler) buildTagResponseWithHistory(ctx *apptheory.Context, tagName string, following bool) map[string]any {
 	return map[string]any{
 		"name": tagName,
 		"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
@@ -158,7 +158,7 @@ func (h *Handler) buildTagResponseWithHistory(ctx *lift.Context, tagName string,
 			Accounts string `json:"accounts"`
 		} {
 			// Get real hashtag statistics
-			if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName); err == nil && tagStatsRaw != nil {
+			if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context(), tagName); err == nil && tagStatsRaw != nil {
 				if tagStats, ok := tagStatsRaw.(*storage.HashtagStats); ok {
 					history := make([]struct {
 						Day      string `json:"day"`
@@ -191,7 +191,7 @@ func (h *Handler) buildTagResponseWithHistory(ctx *lift.Context, tagName string,
 }
 
 // handleTagFollowAction handles both follow and unfollow operations for tags
-func (h *Handler) handleTagFollowAction(ctx *lift.Context, action tagFollowAction) error {
+func (h *Handler) handleTagFollowAction(ctx *apptheory.Context, action tagFollowAction) (*apptheory.Response, error) {
 	tagName := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", tagName); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -216,11 +216,11 @@ func (h *Handler) handleTagFollowAction(ctx *lift.Context, action tagFollowActio
 	var logAction string
 	switch action {
 	case tagFollow:
-		err = h.repos.Hashtag().FollowHashtag(ctx.Context, username, tagName)
+		err = h.repos.Hashtag().FollowHashtag(ctx.Context(), username, tagName)
 		following = true
 		logAction = "follow"
 	case tagUnfollow:
-		err = h.repos.Hashtag().UnfollowHashtag(ctx.Context, username, tagName)
+		err = h.repos.Hashtag().UnfollowHashtag(ctx.Context(), username, tagName)
 		following = false
 		logAction = "unfollow"
 	}
@@ -234,21 +234,21 @@ func (h *Handler) handleTagFollowAction(ctx *lift.Context, action tagFollowActio
 	}
 
 	response := h.buildTagResponseWithHistory(ctx, tagName, following)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleFollowTagLift follows a hashtag
-func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
+func (h *Handler) HandleFollowTagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleTagFollowAction(ctx, tagFollow)
 }
 
 // HandleUnfollowTagLift unfollows a hashtag
-func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
+func (h *Handler) HandleUnfollowTagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleTagFollowAction(ctx, tagUnfollow)
 }
 
 // HandleGetFollowedTagsLift retrieves the list of hashtags the user is following
-func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFollowedTagsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract username using authentication
 	username, err := h.extractUsernameFromContextForTags(ctx)
 	if err != nil {
@@ -259,25 +259,27 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
 	paginationParams := h.extractPaginationParams(ctx)
 
 	// Get followed hashtags
-	hashtags, nextCursor, err := h.repos.Hashtag().GetFollowedHashtags(ctx.Context, username, paginationParams.limit, paginationParams.cursor)
+	hashtags, nextCursor, err := h.repos.Hashtag().GetFollowedHashtags(ctx.Context(), username, paginationParams.limit, paginationParams.cursor)
 	if err != nil {
 		h.logger.Error("failed to get followed hashtags", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to tag models with following set to true
-	tags := h.buildTagModels(ctx.Context, hashtags)
+	tags := h.buildTagModels(ctx.Context(), hashtags)
 
-	// Set Link header for pagination if there's a cursor
-	if nextCursor != "" {
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s/api/v1/followed_tags?max_id=%s>; rel="next"`, h.cfg.BaseURL(), nextCursor))
+	resp, err := okJSON(tags)
+	if err != nil {
+		return nil, err
 	}
-
-	return ctx.JSON(tags)
+	if nextCursor != "" {
+		setHeader(resp, "link", fmt.Sprintf(`<%s/api/v1/followed_tags?max_id=%s>; rel="next"`, h.cfg.BaseURL(), nextCursor))
+	}
+	return resp, nil
 }
 
 // extractUsernameFromContextForTags extracts username from OAuth token
-func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, error) {
+func (h *Handler) extractUsernameFromContextForTags(ctx *apptheory.Context) (string, error) {
 	// Extract and validate OAuth token
 	authHeader := h.getAuthorizationHeader(ctx)
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -296,18 +298,10 @@ func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, 
 }
 
 // getAuthorizationHeader extracts Authorization header with case variations
-func (h *Handler) getAuthorizationHeader(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
+func (h *Handler) getAuthorizationHeader(ctx *apptheory.Context) string {
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	return authHeader
@@ -320,19 +314,19 @@ type paginationParams struct {
 }
 
 // extractPaginationParams extracts and validates pagination parameters
-func (h *Handler) extractPaginationParams(ctx *lift.Context) paginationParams {
-	limitStr := ctx.Query("limit")
-	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
+func (h *Handler) extractPaginationParams(ctx *apptheory.Context) paginationParams {
+	limitStr := queryValue(ctx, "limit")
+	if common.ValidateRequiredParam("limitStr", limitStr) != nil {
+		limitStr = ""
 	}
 	limit, err := common.ParseHashtagLimit(limitStr)
 	if err != nil {
 		limit = 100
 	}
 
-	cursor := ctx.Query("max_id")
-	if common.ValidateRequiredParam(cursor, "cursor") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		cursor = ctx.Request.Request.QueryParams["max_id"]
+	cursor := queryValue(ctx, "max_id")
+	if common.ValidateRequiredParam("cursor", cursor) != nil {
+		cursor = ""
 	}
 
 	return paginationParams{limit: limit, cursor: cursor}
@@ -389,7 +383,7 @@ func (h *Handler) getHashtagHistory(ctx context.Context, hashtag string) []hasht
 }
 
 // HandleGetFeaturedTagsLift retrieves the user's featured tags
-func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFeaturedTagsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract token from Authorization header
 	authHeader := h.getAuthorizationHeader(ctx)
 
@@ -407,7 +401,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 	username := claims.Username
 
 	// Get featured tags
-	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context, username)
+	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get featured tags", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
@@ -430,11 +424,11 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.JSON(tags)
+	return okJSON(tags)
 }
 
 // HandleCreateFeaturedTagLift features a hashtag on the user's profile
-func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateFeaturedTagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract token from Authorization header
 	authHeader := h.getAuthorizationHeader(ctx)
 
@@ -457,15 +451,8 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 	}
 
 	// Try ctx.ParseRequest first, then fall back to common.ParseRequestBody for test mode
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fall back to manual body parsing for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return common.RespondInvalidRequest(ctx)
-			}
-		} else {
-			return common.RespondInvalidRequest(ctx)
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondInvalidRequest(ctx)
 	}
 
 	if err := common.ValidateRequiredParam("name", req.Name); err != nil {
@@ -485,7 +472,7 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		Name:     tagName,
 		URL:      fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
 	}
-	err = h.repos.FeaturedTag().CreateFeaturedTag(ctx.Context, featuredTag)
+	err = h.repos.FeaturedTag().CreateFeaturedTag(ctx.Context(), featuredTag)
 	if err != nil {
 		// Check if it's a duplicate
 		if stdErrors.Is(err, storage.ErrAlreadyExists) {
@@ -513,11 +500,11 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		}(),
 	}
 
-	return ctx.JSON(tag)
+	return okJSON(tag)
 }
 
 // HandleDeleteFeaturedTagLift removes a featured tag from the user's profile
-func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteFeaturedTagLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	tagID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", tagID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -545,7 +532,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 	username := claims.Username
 
 	// Delete the featured tag
-	err = h.repos.FeaturedTag().DeleteFeaturedTag(ctx.Context, username, tagID)
+	err = h.repos.FeaturedTag().DeleteFeaturedTag(ctx.Context(), username, tagID)
 	if err != nil {
 		if stdErrors.Is(err, storage.ErrNotFound) {
 			return common.RespondNotFound(ctx, "featured tag")
@@ -555,11 +542,11 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 	}
 
 	// Return empty object on success
-	return ctx.JSON(map[string]any{})
+	return okJSON(map[string]any{})
 }
 
 // HandleGetFeaturedTagSuggestionsLift suggests hashtags to feature based on usage
-func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract token from Authorization header
 	authHeader := h.getAuthorizationHeader(ctx)
 
@@ -577,11 +564,11 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 	username := claims.Username
 
 	// Get tag suggestions based on user's posting history
-	suggestions, err := h.repos.FeaturedTag().GetTagSuggestions(ctx.Context, username, 10)
+	suggestions, err := h.repos.FeaturedTag().GetTagSuggestions(ctx.Context(), username, 10)
 	if err != nil {
 		h.logger.Error("failed to get tag suggestions", zap.Error(err))
 		// Return empty array on error
-		return ctx.JSON([]any{})
+		return okJSON([]any{})
 	}
 
 	// Convert to tag models
@@ -592,7 +579,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 			URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
 			History: func() []models.TagHistory {
 				// Get real hashtag statistics
-				if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName); err == nil && tagStatsRaw != nil {
+				if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context(), tagName); err == nil && tagStatsRaw != nil {
 					if tagStats, ok := tagStatsRaw.(*storage.HashtagStats); ok {
 						history := make([]models.TagHistory, len(tagStats.History))
 						for i, entry := range tagStats.History {
@@ -611,22 +598,22 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.JSON(tags)
+	return okJSON(tags)
 }
 
 // HandleGetAccountFeaturedTagsLift retrieves featured tags for a specific account
-func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Get featured tags for the account
-	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context, accountID)
+	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context(), accountID)
 	if err != nil {
 		h.logger.Error("failed to get account featured tags", zap.Error(err))
 		// Return empty array on error
-		return ctx.JSON([]any{})
+		return okJSON([]any{})
 	}
 
 	// Convert to API models
@@ -646,5 +633,5 @@ func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.JSON(tags)
+	return okJSON(tags)
 }

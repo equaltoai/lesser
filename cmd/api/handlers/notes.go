@@ -1,59 +1,42 @@
-package lift
+package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/reputation"
 	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // authenticateNotesUser handles authentication for notes endpoints with userID formatting
-func (h *Handler) authenticateNotesUser(ctx *lift.Context) (string, bool, error) {
-	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
+func (h *Handler) authenticateNotesUser(ctx *apptheory.Context) (string, *apptheory.Response, error) {
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return "", resp, respErr
 	}
 
-	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		_ = common.RespondUnauthorized(ctx)
-		return "", true, nil
-	}
-
-	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		_ = common.RespondUnauthorized(ctx)
-		return "", true, nil
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return "", resp, respErr
 	}
 
-	return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username), false, nil
+	return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username), nil, nil
 }
 
 // HandleCreateNoteLift handles POST /api/v1/notes
-func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
-	userID, handled, err := h.authenticateNotesUser(ctx)
-	if err != nil || handled {
-		return err
+func (h *Handler) HandleCreateNoteLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	userID, resp, err := h.authenticateNotesUser(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Initialize services
@@ -64,22 +47,15 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	}
 
 	// Check user's reputation
-	rep, err := repService.GetReputation(ctx.Context, userID)
+	rep, err := repService.GetReputation(ctx.Context(), userID)
 	if err != nil || rep.TotalScore < notes.MinReputationToCreateNotes {
 		return common.RespondForbidden(ctx, "insufficient reputation to create notes")
 	}
 
 	// Parse request with fallback pattern
 	var req apimodels.CreateCommunityNoteRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				return common.RespondBadRequest(ctx, "invalid request body")
-			}
-		} else {
-			return common.RespondBadRequest(ctx, "invalid request body")
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate sources
@@ -92,7 +68,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 
 	// Use the notes service to check rate limiting
 	notesService := notes.NewService(h.repos, h.logger)
-	canCreate, remaining := notesService.CheckRateLimit(ctx.Context, userID, float64(rep.TotalScore))
+	canCreate, remaining := notesService.CheckRateLimit(ctx.Context(), userID, float64(rep.TotalScore))
 
 	if !canCreate {
 		return common.RespondRateLimited(ctx)
@@ -122,7 +98,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	}
 
 	// Store note using Notes service
-	if _, err := h.registry.Notes().CreateCommunityNote(ctx.Context, &servicenotes.CreateCommunityNoteCommand{
+	if _, err := h.registry.Notes().CreateCommunityNote(ctx.Context(), &servicenotes.CreateCommunityNoteCommand{
 		Note: note,
 	}); err != nil {
 		h.logger.Error("Failed to store note", zap.Error(err))
@@ -139,49 +115,33 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 		},
 	}
 
-	// Add cost tracking headers and return
-	ctx.Response.Headers = map[string]string{
-		"X-Cost-Micros":  "2000",
-		"X-Cost-Details": "DynamoDB: 2 writes",
+	resp, err = createdJSON(response)
+	if err != nil {
+		return nil, err
 	}
-	return ctx.Status(201).JSON(response)
+	setHeader(resp, "X-Cost-Micros", "2000")
+	setHeader(resp, "X-Cost-Details", "DynamoDB: 2 writes")
+	return resp, nil
 }
 
 // HandleGetNotesLift handles GET /api/v1/notes/:object_id
-func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetNotesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	objectID := ctx.Param("object_id")
 	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Optional auth - for personalized scoring
-	var userID string
-	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	if authHeader != "" {
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-			claims, err := oauthSvc.ValidateAccessToken(token)
-			if err == nil {
-				userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
-			}
+	userID := ""
+	if token := h.getBearerTokenLift(ctx); token != "" {
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
+			userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
 		}
 	}
 
 	// Get visible notes for the object using Notes service
-	result, err := h.registry.Notes().GetVisibleCommunityNotes(ctx.Context, &servicenotes.GetVisibleCommunityNotesQuery{
+	result, err := h.registry.Notes().GetVisibleCommunityNotes(ctx.Context(), &servicenotes.GetVisibleCommunityNotesQuery{
 		ObjectID: objectID,
 	})
 	if err != nil {
@@ -283,37 +243,31 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 		Stats: calculateNotesStats(rankedNotes),
 	}
 
-	// Add cost tracking and return
-	ctx.Response.Headers = map[string]string{
-		"X-Cost-Micros":  fmt.Sprintf("%d", 100*len(rankedNotes)),
-		"X-Cost-Details": fmt.Sprintf("DynamoDB: %d reads", len(rankedNotes)),
+	resp, err := okJSON(response)
+	if err != nil {
+		return nil, err
 	}
-	return ctx.Status(200).JSON(response)
+	setHeader(resp, "X-Cost-Micros", fmt.Sprintf("%d", 100*len(rankedNotes)))
+	setHeader(resp, "X-Cost-Details", fmt.Sprintf("DynamoDB: %d reads", len(rankedNotes)))
+	return resp, nil
 }
 
 // HandleVoteNoteLift handles POST /api/v1/notes/:id/vote
-func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
+func (h *Handler) HandleVoteNoteLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	noteID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", noteID); err != nil {
 		return common.RespondBadRequest(ctx, "note ID required")
 	}
 
-	userID, handled, err := h.authenticateNotesUser(ctx)
-	if err != nil || handled {
-		return err
+	userID, resp, err := h.authenticateNotesUser(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Parse vote with fallback pattern
 	var req apimodels.VoteCommunityNoteRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				return common.RespondBadRequest(ctx, "invalid request body")
-			}
-		} else {
-			return common.RespondBadRequest(ctx, "invalid request body")
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Initialize services
@@ -324,13 +278,13 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	}
 
 	// Get user's reputation
-	rep, err := repService.GetReputation(ctx.Context, userID)
+	rep, err := repService.GetReputation(ctx.Context(), userID)
 	if err != nil || rep.TotalScore < notes.MinReputationToVote {
 		return common.RespondForbidden(ctx, "insufficient reputation to vote")
 	}
 
 	// Check if note exists using Notes service
-	noteResult, err := h.registry.Notes().GetCommunityNote(ctx.Context, &servicenotes.GetCommunityNoteQuery{
+	noteResult, err := h.registry.Notes().GetCommunityNote(ctx.Context(), &servicenotes.GetCommunityNoteQuery{
 		NoteID: noteID,
 	})
 	if err != nil {
@@ -355,7 +309,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	}
 
 	// Store vote using Notes service
-	if _, err := h.registry.Notes().CreateCommunityNoteVote(ctx.Context, &servicenotes.CreateCommunityNoteVoteCommand{
+	if _, err := h.registry.Notes().CreateCommunityNoteVote(ctx.Context(), &servicenotes.CreateCommunityNoteVoteCommand{
 		Vote: vote,
 	}); err != nil {
 		h.logger.Error("Failed to store vote", zap.Error(err))
@@ -367,16 +321,17 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		NoteID: noteID,
 	}
 
-	// Add cost tracking and return
-	ctx.Response.Headers = map[string]string{
-		"X-Cost-Micros":  "300",
-		"X-Cost-Details": "DynamoDB: 2 reads, 1 write",
+	resp, err = okJSON(response)
+	if err != nil {
+		return nil, err
 	}
-	return ctx.Status(200).JSON(response)
+	setHeader(resp, "X-Cost-Micros", "300")
+	setHeader(resp, "X-Cost-Details", "DynamoDB: 2 reads, 1 write")
+	return resp, nil
 }
 
 // HandleGetUserNotesLift handles GET /api/v1/accounts/:id/notes
-func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetUserNotesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	username := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", username); err != nil {
 		return common.RespondBadRequest(ctx, "username required")
@@ -387,10 +342,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 
 	// Parse limit with fallback
 	limit := 20
-	limitStr := ctx.Query("limit")
-	if common.ValidateRequiredParam("limitStr", limitStr) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
+	limitStr := queryValue(ctx, "limit")
 	if limitStr != "" {
 		parsed, err := common.ParseAdminLimit(limitStr)
 		if err != nil {
@@ -400,7 +352,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	}
 
 	// Get notes from storage using Notes service
-	result, err := h.registry.Notes().GetCommunityNotesByAuthor(ctx.Context, &servicenotes.GetCommunityNotesByAuthorQuery{
+	result, err := h.registry.Notes().GetCommunityNotesByAuthor(ctx.Context(), &servicenotes.GetCommunityNotesByAuthorQuery{
 		AuthorID: authorID,
 		Limit:    limit,
 		Cursor:   "",
@@ -445,11 +397,13 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 
 	// Return as an array of statuses (Mastodon format)
 	// Add cost tracking and return
-	ctx.Response.Headers = map[string]string{
-		"X-Cost-Micros":  fmt.Sprintf("%d", 100*len(userNotes)),
-		"X-Cost-Details": fmt.Sprintf("DynamoDB: %d reads", len(userNotes)),
+	resp, err := okJSON(statuses)
+	if err != nil {
+		return nil, err
 	}
-	return ctx.Status(200).JSON(statuses)
+	setHeader(resp, "X-Cost-Micros", fmt.Sprintf("%d", 100*len(userNotes)))
+	setHeader(resp, "X-Cost-Details", fmt.Sprintf("DynamoDB: %d reads", len(userNotes)))
+	return resp, nil
 }
 
 // Helper functions

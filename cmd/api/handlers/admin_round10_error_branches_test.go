@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -38,8 +38,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts", headers, map[string]string{"limit": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetAccountsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetAccountsLift(ctx))
 	})
 
 	t.Run("reports list returns 500 on storage error", func(t *testing.T) {
@@ -64,8 +63,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports", headers, map[string]string{"limit": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetReportsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetReportsLift(ctx))
 	})
 
 	t.Run("statuses list returns 500 on scan error", func(t *testing.T) {
@@ -90,8 +88,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/statuses", headers, map[string]string{"limit": "1", "local": "true"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetStatusesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetStatusesLift(ctx))
 	})
 
 	t.Run("override moderation event returns 500 on read error", func(t *testing.T) {
@@ -119,8 +116,7 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 		body := apimodels.AdminModerationEventOverrideRequest{Decision: "reject", Reason: "bad"}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/events/evt1/override", headers, nil, body)
 		require.NoError(t, err)
-		ctx.SetParam("id", "evt1")
-		require.NoError(t, h.HandleAdminOverrideModerationEventLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "evt1"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminOverrideModerationEventLift(ctx))
 	})
 }

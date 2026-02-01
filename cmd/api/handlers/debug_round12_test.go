@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -21,11 +21,9 @@ func TestDebugAuthRound12(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + adminToken}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", "a1")
+		ctx.Params["activity_id"] = "a1"
 
-		err = h.HandleDebugFederationTraceLift(ctx)
-		require.Error(t, err)
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleDebugFederationTraceLift(ctx))
 	})
 
 	t.Run("missing token", func(t *testing.T) {
@@ -35,11 +33,9 @@ func TestDebugAuthRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", "a1")
+		ctx.Params["activity_id"] = "a1"
 
-		err = h.HandleDebugFederationTraceLift(ctx)
-		require.Error(t, err)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleDebugFederationTraceLift(ctx))
 	})
 
 	t.Run("invalid token", func(t *testing.T) {
@@ -50,11 +46,9 @@ func TestDebugAuthRound12(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer bad-token"}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", "a1")
+		ctx.Params["activity_id"] = "a1"
 
-		err = h.HandleDebugFederationTraceLift(ctx)
-		require.Error(t, err)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleDebugFederationTraceLift(ctx))
 	})
 
 	t.Run("insufficient scope", func(t *testing.T) {
@@ -66,11 +60,9 @@ func TestDebugAuthRound12(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + readToken}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", "a1")
+		ctx.Params["activity_id"] = "a1"
 
-		err = h.HandleDebugFederationTraceLift(ctx)
-		require.Error(t, err)
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleDebugFederationTraceLift(ctx))
 	})
 }
 
@@ -135,81 +127,71 @@ func TestDebugHandlersRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace", headers, nil, nil)
 		require.NoError(t, err)
 
-		err = h.HandleDebugFederationTraceLift(ctx)
-		require.Error(t, err)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleDebugFederationTraceLift(ctx))
 	})
 
 	t.Run("federation trace activity not found", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", "missing")
+		ctx.Params["activity_id"] = "missing"
 
-		require.NoError(t, h.HandleDebugFederationTraceLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(h.HandleDebugFederationTraceLift(ctx))
 	})
 
 	t.Run("federation trace local activity", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace/"+localActivityID, headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", localActivityID)
+		ctx.Params["activity_id"] = localActivityID
 
-		require.NoError(t, h.HandleDebugFederationTraceLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleDebugFederationTraceLift(ctx))
 	})
 
 	t.Run("federation trace remote activity", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/trace/"+remoteActivityID, headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", remoteActivityID)
+		ctx.Params["activity_id"] = remoteActivityID
 
-		require.NoError(t, h.HandleDebugFederationTraceLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleDebugFederationTraceLift(ctx))
 	})
 
 	t.Run("replay remote activity rejected", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/debug/replay/"+remoteActivityID, headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", remoteActivityID)
+		ctx.Params["activity_id"] = remoteActivityID
 
-		require.NoError(t, h.HandleDebugReplayLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleDebugReplayLift(ctx))
 	})
 
 	t.Run("replay local deliverable activity", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/debug/replay/"+localActivityID, headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("activity_id", localActivityID)
+		ctx.Params["activity_id"] = localActivityID
 
-		require.NoError(t, h.HandleDebugReplayLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleDebugReplayLift(ctx))
 	})
 
 	t.Run("object debug", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/object/obj-1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "obj-1")
+		ctx.Params["object_id"] = "obj-1"
 
-		require.NoError(t, h.HandleDebugObjectLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleDebugObjectLift(ctx))
 	})
 
 	t.Run("object explain debug", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/object/obj-1/explain", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "obj-1")
+		ctx.Params["object_id"] = "obj-1"
 
-		require.NoError(t, h.HandleDebugObjectExplainLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleDebugObjectExplainLift(ctx))
 	})
 
 	t.Run("federation domain debug", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/debug/federation/domain/example.net", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("domain", "example.net")
+		ctx.Params["domain"] = "example.net"
 
-		require.NoError(t, h.HandleDebugFederationDomainLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleDebugFederationDomainLift(ctx))
 	})
 }
 
@@ -230,8 +212,7 @@ func TestDebugObjectNotFoundRound12(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/debug/object/missing", headers, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("object_id", "missing")
+	ctx.Params["object_id"] = "missing"
 
-	require.NoError(t, h.HandleDebugObjectLift(ctx))
-	require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusNotFound)(h.HandleDebugObjectLift(ctx))
 }

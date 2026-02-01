@@ -2,7 +2,7 @@ package auth
 
 import (
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -30,19 +30,19 @@ func (a *OAuthServiceAdapter) ValidateAccessToken(token string) (common.Claims, 
 }
 
 // CreateAPIAuthMiddlewareFromAuthService creates API auth middleware from AuthService
-func CreateAPIAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) lift.Middleware {
+func CreateAPIAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
 	adapter := NewOAuthServiceAdapter(authService)
 	return CreateAPIAuthMiddleware(adapter, logger)
 }
 
 // CreateGraphQLAuthMiddlewareFromAuthService creates GraphQL auth middleware from AuthService
-func CreateGraphQLAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) lift.Middleware {
+func CreateGraphQLAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
 	adapter := NewOAuthServiceAdapter(authService)
 	return CreateGraphQLAuthMiddleware(adapter, logger)
 }
 
 // CreateFederationAuthMiddlewareFromAuthService creates federation auth middleware from AuthService
-func CreateFederationAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) lift.Middleware {
+func CreateFederationAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) apptheory.Middleware {
 	adapter := NewOAuthServiceAdapter(authService)
 	return CreateFederationAuthMiddleware(adapter, logger)
 }

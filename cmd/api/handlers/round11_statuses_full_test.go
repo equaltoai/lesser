@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -52,37 +52,32 @@ func TestStatusesFullHandlers(t *testing.T) {
 
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, apimodels.CreateStatusRequest{Status: "hello", Poll: &apimodels.Poll{Options: []string{"a", "b"}, ExpiresIn: 60}})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateStatusFull(ctxCreate))
-	require.Equal(t, http.StatusUnprocessableEntity, ctxCreate.Response.StatusCode)
+	requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleCreateStatusFull(ctxCreate))
 
 	ctxCreateOK, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, apimodels.CreateStatusRequest{Status: "hello"})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateStatusFull(ctxCreateOK))
-	require.Equal(t, http.StatusCreated, ctxCreateOK.Response.StatusCode)
+	requireStatus(t, http.StatusCreated)(handler.HandleCreateStatusFull(ctxCreateOK))
 
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1", headers, nil, nil)
 	require.NoError(t, err)
-	ctxGet.SetParam("id", "s1")
-	require.NoError(t, handler.HandleGetStatusFull(ctxGet))
-	require.Equal(t, http.StatusOK, ctxGet.Response.StatusCode)
+	ctxGet.Params["id"] = "s1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetStatusFull(ctxGet))
 
 	notesStub.DeleteNoteFunc = func(_ context.Context, _ *notes.DeleteNoteCommand) error {
 		return errors.New("not found")
 	}
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1", headers, nil, nil)
 	require.NoError(t, err)
-	ctxDelete.SetParam("id", "s1")
-	require.NoError(t, handler.HandleDeleteStatusFull(ctxDelete))
-	require.Equal(t, http.StatusNotFound, ctxDelete.Response.StatusCode)
+	ctxDelete.Params["id"] = "s1"
+	requireStatus(t, http.StatusNotFound)(handler.HandleDeleteStatusFull(ctxDelete))
 
 	notesStub.DeleteNoteFunc = func(_ context.Context, _ *notes.DeleteNoteCommand) error {
 		return nil
 	}
 	ctxDeleteOK, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1", headers, nil, nil)
 	require.NoError(t, err)
-	ctxDeleteOK.SetParam("id", "s1")
-	require.NoError(t, handler.HandleDeleteStatusFull(ctxDeleteOK))
-	require.Equal(t, http.StatusOK, ctxDeleteOK.Response.StatusCode)
+	ctxDeleteOK.Params["id"] = "s1"
+	requireStatus(t, http.StatusOK)(handler.HandleDeleteStatusFull(ctxDeleteOK))
 }
 
 func TestStatusesFullPermissions(t *testing.T) {

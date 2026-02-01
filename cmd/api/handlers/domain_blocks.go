@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/json"
@@ -9,15 +9,18 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetDomainBlocksLift handles GET /api/v1/domain_blocks
-func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetDomainBlocksLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read:blocks scope or general read scope
 	username, err := h.authenticateUser(ctx, []string{"read:blocks", auth.ScopeRead})
 	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondInsufficientScope(ctx)
+		}
 		return h.respondUnauthorized(ctx)
 	}
 
@@ -31,7 +34,7 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Use Relationships service
-	result, err := h.registry.Relationships().GetDomainBlocks(ctx.Context, &relationshipsvc.GetDomainBlocksQuery{
+	result, err := h.registry.Relationships().GetDomainBlocks(ctx.Context(), &relationshipsvc.GetDomainBlocksQuery{
 		UserID: username,
 		Limit:  params.Limit,
 		Cursor: params.MaxID,
@@ -42,28 +45,36 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Set pagination headers
+	resp, err := okJSON(result.Domains)
+	if err != nil {
+		return nil, err
+	}
+
 	if result.NextCursor != "" && len(result.Domains) > 0 {
 		params.MaxID = result.NextCursor
-		h.withPaginationHeaders(ctx, fmt.Sprintf("%s/api/v1/domain_blocks", h.cfg.BaseURL()),
+		h.withPaginationHeaders(resp, fmt.Sprintf("%s/api/v1/domain_blocks", h.cfg.BaseURL()),
 			params, true, false)
 	}
 
-	return ctx.JSON(result.Domains)
+	return resp, nil
 }
 
 // HandleCreateDomainBlockLift handles POST /api/v1/domain_blocks
-func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with write:blocks scope or general write scope
 	username, err := h.authenticateUser(ctx, []string{"write:blocks", auth.ScopeWrite})
 	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondInsufficientScope(ctx)
+		}
 		return h.respondUnauthorized(ctx)
 	}
 
 	// Parse request body
 	var req apimodels.CreateDomainBlockRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		// Fallback for test environment - try parsing directly from request body
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+		if len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
 				h.logger.Debug("invalid domain block request",
 					zap.Error(err),
@@ -95,7 +106,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Use Relationships service
-	if err = h.registry.Relationships().AddDomainBlock(ctx.Context, &relationshipsvc.AddDomainBlockCommand{
+	if err = h.registry.Relationships().AddDomainBlock(ctx.Context(), &relationshipsvc.AddDomainBlockCommand{
 		UserID: username,
 		Domain: req.Domain,
 	}); err != nil {
@@ -107,58 +118,29 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Return empty response (Mastodon returns empty object)
-	return ctx.JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // HandleDeleteDomainBlockLift handles DELETE /api/v1/domain_blocks
-func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
-	var username string
-
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
+func (h *Handler) HandleDeleteDomainBlockLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	// Authenticate user with write:blocks scope or general write scope
+	username, err := h.authenticateUser(ctx, []string{"write:blocks", auth.ScopeWrite})
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondInsufficientScope(ctx)
 		}
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Check write scope for blocks
-	if !claims.HasScope(auth.ScopeWrite) && !claims.HasScope("write:blocks") {
-		return common.RespondInsufficientScope(ctx)
-	}
-
-	username = claims.Username
 
 	// Get domain from query parameter
-	domain := ctx.Query("domain")
-	if err := common.ValidateRequiredParam("domain", domain); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		domain = ctx.Request.Request.QueryParams["domain"]
-	}
+	domain := queryValue(ctx, "domain")
 
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		return common.RespondBadRequest(ctx, "domain parameter is required")
 	}
 
 	// Use Relationships service
-	err = h.registry.Relationships().RemoveDomainBlock(ctx.Context, &relationshipsvc.RemoveDomainBlockCommand{
+	err = h.registry.Relationships().RemoveDomainBlock(ctx.Context(), &relationshipsvc.RemoveDomainBlockCommand{
 		UserID: username,
 		Domain: domain,
 	})
@@ -171,5 +153,5 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Return empty response (Mastodon returns empty object)
-	return ctx.JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }

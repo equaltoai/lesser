@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -26,9 +26,8 @@ func TestStatusInteractions_Round12(t *testing.T) {
 		handler.registry = &RegistryStub{NotesSvc: &NotesServiceStub{}}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/%/favourited_by", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "%")
-		require.NoError(t, handler.HandleGetStatusFavouritedByLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "%"
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetStatusFavouritedByLift(ctx))
 	})
 
 	t.Run("invalid limit defaults and sets pagination header", func(t *testing.T) {
@@ -47,10 +46,9 @@ func TestStatusInteractions_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", nil, map[string]string{"limit": "nope"}, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "1")
-		require.NoError(t, handler.HandleGetStatusFavouritedByLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers["Link"], "limit=20")
+		ctx.Params["id"] = "1"
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetStatusFavouritedByLift(ctx))
+		require.Contains(t, firstStringValue(resp.Headers, "link"), "limit=20")
 	})
 
 	t.Run("not found from service returns 404", func(t *testing.T) {
@@ -64,9 +62,8 @@ func TestStatusInteractions_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/reblogged_by", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "1")
-		require.NoError(t, handler.HandleGetStatusRebloggedByLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetStatusRebloggedByLift(ctx))
 	})
 
 	t.Run("generic service error returns 500", func(t *testing.T) {
@@ -80,8 +77,7 @@ func TestStatusInteractions_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "1")
-		require.NoError(t, handler.HandleGetStatusFavouritedByLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetStatusFavouritedByLift(ctx))
 	})
 }

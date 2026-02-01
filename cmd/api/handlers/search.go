@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -13,49 +13,46 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleAccountSearchLift handles GET /api/v1/accounts/search
 // Search for accounts by username, display name, or domain
-func (h *Handler) HandleAccountSearchLift(ctx *lift.Context) error {
+func (h *Handler) HandleAccountSearchLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse search parameters
-	params, err := h.parseAccountSearchParams(ctx)
-	if err != nil {
-		return err
-	}
-	if ctx.Response.IsWritten() || params == nil {
-		return nil
+	params, resp, err := h.parseAccountSearchParams(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Authenticate user if needed
-	authenticatedUser, err := h.authenticateAccountSearch(ctx, params.followingOnly)
-	if err != nil {
-		return err
-	}
-	if ctx.Response.IsWritten() {
-		return nil
+	authenticatedUser, resp, err := h.authenticateAccountSearch(ctx, params.followingOnly)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Perform the search with privacy enforcement
-	actors, err := h.performAccountSearch(ctx.Context, params, authenticatedUser)
+	actors, err := h.performAccountSearch(ctx.Context(), params, authenticatedUser)
 	if err != nil {
-		return err
+		return common.RespondInternalServerError(ctx, "search failed")
 	}
 
 	// Add remote results if resolve is enabled
 	if params.resolve {
-		h.addRemoteSearchResults(ctx.Context, &actors, params.query, params.limit)
+		h.addRemoteSearchResults(ctx.Context(), &actors, params.query, params.limit)
 	}
 
 	// Convert results to API format
 	accounts := h.convertSearchResultsToAccounts(actors)
 
-	// Record privacy-safe analytics and set response headers
-	h.finalizeAccountSearchResponse(ctx, params, accounts, authenticatedUser)
+	resp, err = okJSON(accounts)
+	if err != nil {
+		return nil, err
+	}
+	h.finalizeAccountSearchResponse(ctx, resp, params, accounts, authenticatedUser)
 
-	return ctx.JSON(accounts)
+	return resp, nil
 }
 
 // accountSearchParams holds parsed search parameters
@@ -68,7 +65,7 @@ type accountSearchParams struct {
 }
 
 // parseAccountSearchParams parses and validates search parameters
-func (h *Handler) parseAccountSearchParams(ctx *lift.Context) (*accountSearchParams, error) {
+func (h *Handler) parseAccountSearchParams(ctx *apptheory.Context) (*accountSearchParams, *apptheory.Response, error) {
 	params := &accountSearchParams{
 		limit:  40,
 		offset: 0,
@@ -77,17 +74,15 @@ func (h *Handler) parseAccountSearchParams(ctx *lift.Context) (*accountSearchPar
 	// Extract query
 	params.query = h.extractSearchQuery(ctx)
 	if err := common.ValidateSearchQuery(params.query); err != nil {
-		return nil, common.RespondValidationError(ctx, err)
+		resp, respErr := common.RespondValidationError(ctx, err)
+		return nil, resp, respErr
 	}
 
 	// Parse limit
 	params.limit = h.parseSearchLimit(ctx)
 
 	// Parse offset
-	offsetStr := ctx.Query("offset")
-	if err := common.ValidateRequiredParam("offset_str", offsetStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		offsetStr = ctx.Request.Request.QueryParams["offset"]
-	}
+	offsetStr := queryValue(ctx, "offset")
 	if offset, err := common.ParseSearchOffset(offsetStr); err == nil {
 		// Additional validation to ensure offset is non-negative
 		if err := common.ValidateOffset(offset); err != nil {
@@ -104,25 +99,18 @@ func (h *Handler) parseAccountSearchParams(ctx *lift.Context) (*accountSearchPar
 	// Parse resolve option
 	params.resolve = h.parseSearchResolve(ctx)
 
-	return params, nil
+	return params, nil, nil
 }
 
 // extractSearchQuery extracts the search query parameter
-func (h *Handler) extractSearchQuery(ctx *lift.Context) string {
-	query := ctx.Query("q")
-	if err := common.ValidateRequiredParam("query", query); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		query = ctx.Request.Request.QueryParams["q"]
-	}
-	return query
+func (h *Handler) extractSearchQuery(ctx *apptheory.Context) string {
+	return queryValue(ctx, "q")
 }
 
 // parseSearchLimit parses and validates the limit parameter
-func (h *Handler) parseSearchLimit(ctx *lift.Context) int {
+func (h *Handler) parseSearchLimit(ctx *apptheory.Context) int {
 	// Extract limit string from query parameters
-	limitStr := ctx.Query("limit")
-	if err := common.ValidateRequiredParam("limit_str", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
+	limitStr := queryValue(ctx, "limit")
 
 	// Use centralized search limit parsing
 	limit, err := common.ParseSearchLimit(limitStr)
@@ -134,32 +122,33 @@ func (h *Handler) parseSearchLimit(ctx *lift.Context) int {
 }
 
 // parseSearchFollowing parses the following filter parameter
-func (h *Handler) parseSearchFollowing(ctx *lift.Context) bool {
+func (h *Handler) parseSearchFollowing(ctx *apptheory.Context) bool {
 	return h.parseBoolParam(ctx, "following")
 }
 
 // parseSearchResolve parses the resolve parameter
-func (h *Handler) parseSearchResolve(ctx *lift.Context) bool {
+func (h *Handler) parseSearchResolve(ctx *apptheory.Context) bool {
 	return h.parseBoolParam(ctx, "resolve")
 }
 
 // authenticateAccountSearch handles authentication for account search
-func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly bool) (string, error) {
+func (h *Handler) authenticateAccountSearch(ctx *apptheory.Context, followingOnly bool) (string, *apptheory.Response, error) {
 	// Try to authenticate from header
 	authenticatedUser := h.authenticateFromSearchHeader(ctx, followingOnly)
 
 	// If following filter is requested but no auth, return error
 	if followingOnly {
 		if err := common.ValidateRequiredParam("authenticated_user", authenticatedUser); err != nil {
-			return "", common.RespondUnauthorized(ctx, "authentication required for following filter")
+			resp, respErr := common.RespondUnauthorized(ctx, "authentication required for following filter")
+			return "", resp, respErr
 		}
 	}
 
-	return authenticatedUser, nil
+	return authenticatedUser, nil, nil
 }
 
 // authenticateFromSearchHeader authenticates from Authorization header
-func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, _ bool) string {
+func (h *Handler) authenticateFromSearchHeader(ctx *apptheory.Context, _ bool) string {
 	// Try to authenticate without requiring it (optional auth)
 	username, err := h.authenticateUser(ctx, []string{})
 	if err != nil {
@@ -252,9 +241,9 @@ func (h *Handler) convertSearchResultsToAccounts(actors []*activitypub.Actor) []
 }
 
 // finalizeAccountSearchResponse sets headers and logs privacy-safe analytics
-func (h *Handler) finalizeAccountSearchResponse(ctx *lift.Context, params *accountSearchParams, accounts []models.Account, authenticatedUser string) {
+func (h *Handler) finalizeAccountSearchResponse(ctx *apptheory.Context, resp *apptheory.Response, params *accountSearchParams, accounts []models.Account, authenticatedUser string) {
 	// Add search metadata to response headers
-	ctx.Response.Header("X-Total-Count", fmt.Sprintf("%d", len(accounts)))
+	setHeader(resp, "x-total-count", fmt.Sprintf("%d", len(accounts)))
 
 	// Record privacy-safe search analytics
 	var userID *string
@@ -267,7 +256,7 @@ func (h *Handler) finalizeAccountSearchResponse(ctx *lift.Context, params *accou
 	// Record search analytics
 	if searchRepo != nil {
 		// We don't have search time here, so we'll use 0
-		err := searchRepo.RecordSearchWithPrivacy(ctx.Context, params.query, "accounts", len(accounts), 0, userID)
+		err := searchRepo.RecordSearchWithPrivacy(ctx.Context(), params.query, "accounts", len(accounts), 0, userID)
 		if err != nil {
 			h.logger.Warn("failed to record search analytics",
 				zap.String("search_type", "accounts"),
@@ -287,19 +276,16 @@ func (h *Handler) finalizeAccountSearchResponse(ctx *lift.Context, params *accou
 
 // HandleGetSearchSuggestionsLift handles GET /api/v1/accounts/search/suggestions
 // Returns search suggestions for autocomplete
-func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetSearchSuggestionsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract query prefix
-	prefix := ctx.Query("q")
-	if err := common.ValidateRequiredParam("prefix", prefix); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		prefix = ctx.Request.Request.QueryParams["q"]
-	}
+	prefix := queryValue(ctx, "q")
 	if err := common.ValidateStringLength("prefix", prefix, 2, 500); err != nil {
 		// Return empty array for short prefixes
-		return ctx.JSON([]models.SearchSuggestion{})
+		return okJSON([]models.SearchSuggestion{})
 	}
 
 	// Get suggestions from Notes service
-	result, err := h.registry.Notes().GetSearchSuggestions(ctx.Context, &notes.GetSearchSuggestionsQuery{
+	result, err := h.registry.Notes().GetSearchSuggestions(ctx.Context(), &notes.GetSearchSuggestionsQuery{
 		Prefix: prefix,
 		Limit:  10,
 	})
@@ -325,43 +311,40 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 		zap.String("prefix", prefix),
 		zap.Int("count", len(response)))
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleStatusSearchLift handles POST/GET /api/v1/search/statuses
 // Search for statuses with privacy enforcement
-func (h *Handler) HandleStatusSearchLift(ctx *lift.Context) error {
+func (h *Handler) HandleStatusSearchLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse search parameters
-	params, err := h.parseStatusSearchParams(ctx)
-	if err != nil {
-		return err
-	}
-	if ctx.Response.IsWritten() || params == nil {
-		return nil
+	params, resp, err := h.parseStatusSearchParams(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Authenticate user - status search requires authentication for privacy
-	authenticatedUser, err := h.authenticateStatusSearch(ctx)
-	if err != nil {
-		return err
-	}
-	if ctx.Response.IsWritten() {
-		return nil
+	authenticatedUser, resp, err := h.authenticateStatusSearch(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Perform the status search with privacy enforcement
-	statuses, err := h.performStatusSearch(ctx.Context, params, authenticatedUser)
+	statuses, err := h.performStatusSearch(ctx.Context(), params, authenticatedUser)
 	if err != nil {
-		return err
+		return common.RespondInternalServerError(ctx, "search failed")
 	}
 
 	// Convert results to API format
 	results := h.convertStatusSearchResults(statuses)
 
-	// Set response headers and log analytics
-	h.finalizeStatusSearchResponse(ctx, params, results, authenticatedUser)
+	resp, err = okJSON(results)
+	if err != nil {
+		return nil, err
+	}
+	h.finalizeStatusSearchResponse(ctx, resp, params, results, authenticatedUser)
 
-	return ctx.JSON(results)
+	return resp, nil
 }
 
 // statusSearchParams holds parsed status search parameters
@@ -375,7 +358,7 @@ type statusSearchParams struct {
 }
 
 // parseStatusSearchParams parses and validates status search parameters
-func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParams, error) {
+func (h *Handler) parseStatusSearchParams(ctx *apptheory.Context) (*statusSearchParams, *apptheory.Response, error) {
 	params := &statusSearchParams{
 		limit: 20,
 	}
@@ -383,7 +366,8 @@ func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParam
 	// Extract query
 	params.query = h.extractSearchQuery(ctx)
 	if err := common.ValidateSearchQuery(params.query); err != nil {
-		return nil, common.RespondValidationError(ctx, err)
+		resp, respErr := common.RespondValidationError(ctx, err)
+		return nil, resp, respErr
 	}
 
 	// Parse limit
@@ -393,47 +377,35 @@ func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParam
 	}
 
 	// Parse pagination parameters
-	if maxID := ctx.Query("max_id"); maxID != "" {
+	if maxID := queryValue(ctx, "max_id"); maxID != "" {
 		params.maxID = &maxID
 	}
-	if minID := ctx.Query("min_id"); minID != "" {
+	if minID := queryValue(ctx, "min_id"); minID != "" {
 		params.minID = &minID
 	}
 
 	// Parse account filter
-	params.accountID = ctx.Query("account_id")
+	params.accountID = queryValue(ctx, "account_id")
 
 	// Parse local only filter
-	params.localOnly = ctx.Query("local") == "true"
+	params.localOnly = queryValue(ctx, "local") == "true"
 
-	return params, nil
+	return params, nil, nil
 }
 
 // authenticateStatusSearch handles authentication for status search
-func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
-	// Status search requires authentication for privacy
-	authHeader := ctx.Header("Authorization")
-	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
-		return "", common.RespondUnauthorized(ctx, "authentication required for status search")
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
+func (h *Handler) authenticateStatusSearch(ctx *apptheory.Context) (string, *apptheory.Response, error) {
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx, "invalid authorization header")
+		if isInsufficientScopeError(err) {
+			resp, respErr := common.RespondForbidden(ctx, err.Error())
+			return "", resp, respErr
+		}
+		resp, respErr := common.RespondUnauthorized(ctx, "authentication required for status search")
+		return "", resp, respErr
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx, "invalid access token")
-	}
-
-	// Check read scope
-	if !claims.HasScope(auth.ScopeRead) {
-		return "", common.RespondInsufficientScope(ctx)
-	}
-
-	return claims.Username, nil
+	return claims.Username, nil, nil
 }
 
 // performStatusSearch performs the actual status search with privacy enforcement
@@ -500,9 +472,9 @@ func (h *Handler) convertStatusSearchResults(statuses []storage.StatusSearchResu
 }
 
 // finalizeStatusSearchResponse sets headers and logs privacy-safe analytics
-func (h *Handler) finalizeStatusSearchResponse(ctx *lift.Context, params *statusSearchParams, results []models.StatusSearchResult, authenticatedUser string) {
+func (h *Handler) finalizeStatusSearchResponse(ctx *apptheory.Context, resp *apptheory.Response, params *statusSearchParams, results []models.StatusSearchResult, authenticatedUser string) {
 	// Add search metadata to response headers
-	ctx.Response.Header("X-Total-Count", fmt.Sprintf("%d", len(results)))
+	setHeader(resp, "x-total-count", fmt.Sprintf("%d", len(results)))
 
 	// Record privacy-safe search analytics
 	var userID *string
@@ -513,7 +485,7 @@ func (h *Handler) finalizeStatusSearchResponse(ctx *lift.Context, params *status
 	// Record the search event for analytics
 	searchRepo := h.repos.Search()
 	if searchRepo != nil {
-		err := searchRepo.RecordSearchWithPrivacy(ctx.Context, params.query, "statuses", len(results), 0, userID)
+		err := searchRepo.RecordSearchWithPrivacy(ctx.Context(), params.query, "statuses", len(results), 0, userID)
 		if err != nil {
 			h.logger.Warn("failed to record status search analytics",
 				zap.String("search_type", "statuses"),

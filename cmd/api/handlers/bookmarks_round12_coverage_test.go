@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -42,10 +42,9 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/bookmark", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
+		ctx.Params["id"] = "s1"
 
-		require.NoError(t, h.HandleBookmarkLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleBookmarkLift(ctx))
 	})
 
 	t.Run("unbookmark validation error", func(t *testing.T) {
@@ -58,10 +57,9 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/bad id/unbookmark", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "bad id")
+		ctx.Params["id"] = "bad id"
 
-		require.NoError(t, h.HandleUnbookmarkLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUnbookmarkLift(ctx))
 	})
 
 	t.Run("unbookmark forbidden when scope missing", func(t *testing.T) {
@@ -77,10 +75,9 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unbookmark", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
+		ctx.Params["id"] = "s1"
 
-		require.NoError(t, h.HandleUnbookmarkLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleUnbookmarkLift(ctx))
 	})
 
 	t.Run("unbookmark unauthorized when missing token", func(t *testing.T) {
@@ -93,10 +90,9 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unbookmark", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
+		ctx.Params["id"] = "s1"
 
-		require.NoError(t, h.HandleUnbookmarkLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUnbookmarkLift(ctx))
 	})
 
 	t.Run("unbookmark status not found", func(t *testing.T) {
@@ -112,10 +108,9 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unbookmark", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
+		ctx.Params["id"] = "s1"
 
-		require.NoError(t, h.HandleUnbookmarkLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(h.HandleUnbookmarkLift(ctx))
 	})
 
 	t.Run("unbookmark internal error", func(t *testing.T) {
@@ -131,10 +126,9 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unbookmark", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
+		ctx.Params["id"] = "s1"
 
-		require.NoError(t, h.HandleUnbookmarkLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleUnbookmarkLift(ctx))
 	})
 
 	t.Run("get bookmarks unauthorized and forbidden", func(t *testing.T) {
@@ -152,16 +146,14 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctxUnauthed, err := round10NewLiftContext(http.MethodGet, "/api/v1/bookmarks", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetBookmarksLift(ctxUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthed.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetBookmarksLift(ctxUnauthed))
 
 		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
 		headers := map[string]string{"Authorization": "Bearer " + token}
 
 		ctxForbidden, err := round10NewLiftContext(http.MethodGet, "/api/v1/bookmarks", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetBookmarksLift(ctxForbidden))
-		require.Equal(t, http.StatusForbidden, ctxForbidden.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleGetBookmarksLift(ctxForbidden))
 	})
 
 	t.Run("get bookmarks internal error", func(t *testing.T) {
@@ -177,8 +169,6 @@ func TestBookmarksRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/bookmarks", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetBookmarksLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetBookmarksLift(ctx))
 	})
 }
-

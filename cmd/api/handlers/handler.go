@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -16,22 +16,21 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
-// Handler contains dependencies for Lift handlers
+// Handler contains dependencies for API handlers.
 type Handler struct {
-	cfg            *config.Config
-	repos          core.RepositoryStorage
-	logger         *zap.Logger
-	authMiddleware lift.Middleware
-	converter      mastodon.Converter
-	businessLogic  services.BusinessLogicService
-	authService    services.AuthenticationService
-	registry       ServiceRegistry
-	streamQueue    streaming.StreamQueueService
-	remoteSearch   remoteSearchServiceFactory
+	cfg           *config.Config
+	repos         core.RepositoryStorage
+	logger        *zap.Logger
+	converter     mastodon.Converter
+	businessLogic services.BusinessLogicService
+	authService   services.AuthenticationService
+	registry      ServiceRegistry
+	streamQueue   streaming.StreamQueueService
+	remoteSearch  remoteSearchServiceFactory
 
 	// DataLoader instances for batched data loading to prevent N+1 queries
 	loaders *graph.Loaders
@@ -61,7 +60,7 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 }
 
 // NewHandler creates a new handler with dependencies
-func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware lift.Middleware, streamQueue streaming.StreamQueueService) *Handler {
+func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, streamQueue streaming.StreamQueueService) *Handler {
 	// Create emoji repository
 	emojiRepo := repositories.NewEmojiRepository(repos.GetDB(), cfg.DynamoTableName, logger, nil)
 
@@ -128,7 +127,6 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		cfg:                 cfg,
 		repos:               repos,
 		logger:              logger,
-		authMiddleware:      authMiddleware,
 		converter:           converter,
 		businessLogic:       businessLogic,
 		authService:         authService,
@@ -143,11 +141,8 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 }
 
 // getBearerTokenLift extracts Bearer token from Authorization header
-func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
+func (h *Handler) getBearerTokenLift(ctx *apptheory.Context) string {
+	authHeader := common.ExtractAuthHeader(ctx)
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
@@ -158,7 +153,7 @@ func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
 }
 
 // authenticateWithScope handles authentication and scope validation
-func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string) (*auth.Claims, error) {
+func (h *Handler) authenticateWithScope(ctx *apptheory.Context, requiredScope string) (*auth.Claims, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return nil, apperrors.Unauthorized("authentication required")
@@ -190,7 +185,7 @@ func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string)
 
 // getOptionalAuthenticatedUser extracts user context if authentication is provided and valid
 // Returns empty string if not authenticated or token is invalid (for public content access)
-func (h *Handler) getOptionalAuthenticatedUser(ctx *lift.Context) string {
+func (h *Handler) getOptionalAuthenticatedUser(ctx *apptheory.Context) string {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return ""

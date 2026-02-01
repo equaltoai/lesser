@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"strings"
@@ -7,18 +7,18 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleAdminCreateUserLift handles the creation of a new user by an admin.
-func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminCreateUserLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if _, err := h.requireAdminLift(ctx); err != nil {
 		return h.respondUnauthorized(ctx)
 	}
 
 	var req models.AdminCreateUserRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		h.logger.Error("failed to parse user from request", zap.Error(err))
 		return h.respondUnprocessableEntity(ctx, "invalid user data")
 	}
@@ -55,12 +55,12 @@ func (h *Handler) HandleAdminCreateUserLift(ctx *lift.Context) error {
 		CreatedAt:    time.Now(),
 	}
 
-	if err := h.repos.User().CreateUser(ctx.Context, user); err != nil {
+	if err := h.repos.User().CreateUser(ctx.Context(), user); err != nil {
 		h.logger.Error("failed to create user", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
 	user.Email = ""
 	user.PasswordHash = ""
-	return ctx.Status(201).JSON(user)
+	return apptheory.JSON(201, user)
 }

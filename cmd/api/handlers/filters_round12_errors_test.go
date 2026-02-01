@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"errors"
@@ -40,21 +40,18 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 
 		ctxUnauthorized, err := round10NewLiftContext(http.MethodPut, "/api/v2/filters/filter-1", nil, nil, map[string]any{"title": "x"})
 		require.NoError(t, err)
-		ctxUnauthorized.SetParam("id", "filter-1")
-		require.NoError(t, handler.HandleUpdateFilterLift(ctxUnauthorized))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthorized.Response.StatusCode)
+		ctxUnauthorized.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleUpdateFilterLift(ctxUnauthorized))
 
 		ctxInsufficient, err := round10NewLiftContext(http.MethodPut, "/api/v2/filters/filter-1", insufficientHeaders, nil, map[string]any{"title": "x"})
 		require.NoError(t, err)
-		ctxInsufficient.SetParam("id", "filter-1")
-		require.NoError(t, handler.HandleUpdateFilterLift(ctxInsufficient))
-		require.Equal(t, http.StatusForbidden, ctxInsufficient.Response.StatusCode)
+		ctxInsufficient.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusForbidden)(handler.HandleUpdateFilterLift(ctxInsufficient))
 
 		ctxNotFound, err := round10NewLiftContext(http.MethodPut, "/api/v2/filters/filter-1", writeHeaders, nil, map[string]any{"title": "x"})
 		require.NoError(t, err)
-		ctxNotFound.SetParam("id", "filter-1")
-		require.NoError(t, handler.HandleUpdateFilterLift(ctxNotFound))
-		require.Equal(t, http.StatusNotFound, ctxNotFound.Response.StatusCode)
+		ctxNotFound.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleUpdateFilterLift(ctxNotFound))
 	})
 
 	t.Run("update filter repository errors return 500", func(t *testing.T) {
@@ -62,9 +59,8 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 		handlerGetErr, _, _ := round11NewHandler(t, cfg, stateGetErr)
 		ctxGetErr, err := round10NewLiftContext(http.MethodPut, "/api/v2/filters/filter-1", writeHeaders, nil, map[string]any{"title": "x"})
 		require.NoError(t, err)
-		ctxGetErr.SetParam("id", "filter-1")
-		require.NoError(t, handlerGetErr.HandleUpdateFilterLift(ctxGetErr))
-		require.Equal(t, http.StatusInternalServerError, ctxGetErr.Response.StatusCode)
+		ctxGetErr.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerGetErr.HandleUpdateFilterLift(ctxGetErr))
 
 		stateUpdateErr := &round10QueryState{
 			updateErrorOnce: errors.New("boom"),
@@ -75,9 +71,8 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 		handlerUpdateErr, _, _ := round11NewHandler(t, cfg, stateUpdateErr)
 		ctxUpdateErr, err := round10NewLiftContext(http.MethodPut, "/api/v2/filters/filter-1", writeHeaders, nil, map[string]any{"title": "x"})
 		require.NoError(t, err)
-		ctxUpdateErr.SetParam("id", "filter-1")
-		require.NoError(t, handlerUpdateErr.HandleUpdateFilterLift(ctxUpdateErr))
-		require.Equal(t, http.StatusInternalServerError, ctxUpdateErr.Response.StatusCode)
+		ctxUpdateErr.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerUpdateErr.HandleUpdateFilterLift(ctxUpdateErr))
 	})
 
 	t.Run("delete filter validation and delete error", func(t *testing.T) {
@@ -90,14 +85,12 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 
 		ctxBad, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteFilterLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteFilterLift(ctxBad))
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "filter-1")
-		require.NoError(t, handler.HandleDeleteFilterLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDeleteFilterLift(ctx))
 	})
 
 	t.Run("get filter keywords/statuses handle invalid id, ownership, and repo error", func(t *testing.T) {
@@ -110,14 +103,12 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 
 		ctxBad, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters//keywords", readHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetFilterKeywordsLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetFilterKeywordsLift(ctxBad))
 
 		ctxNotFound, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1/keywords", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxNotFound.SetParam("filter_id", "filter-1")
-		require.NoError(t, handler.HandleGetFilterKeywordsLift(ctxNotFound))
-		require.Equal(t, http.StatusNotFound, ctxNotFound.Response.StatusCode)
+		ctxNotFound.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetFilterKeywordsLift(ctxNotFound))
 
 		// Force keyword list query to error.
 		typeName := reflect.TypeOf(&[]storagemodels.FilterKeyword{}).String()
@@ -130,9 +121,8 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 		handlerKWErr, _, _ := round11NewHandler(t, cfg, stateKWErr)
 		ctxKWErr, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1/keywords", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxKWErr.SetParam("filter_id", "filter-1")
-		require.NoError(t, handlerKWErr.HandleGetFilterKeywordsLift(ctxKWErr))
-		require.Equal(t, http.StatusInternalServerError, ctxKWErr.Response.StatusCode)
+		ctxKWErr.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerKWErr.HandleGetFilterKeywordsLift(ctxKWErr))
 
 		// Force status list query to error.
 		typeStatusName := reflect.TypeOf(&[]storagemodels.FilterStatus{}).String()
@@ -145,9 +135,8 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 		handlerStatusErr, _, _ := round11NewHandler(t, cfg, stateStatusErr)
 		ctxStatusErr, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1/statuses", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxStatusErr.SetParam("filter_id", "filter-1")
-		require.NoError(t, handlerStatusErr.HandleGetFilterStatusesLift(ctxStatusErr))
-		require.Equal(t, http.StatusInternalServerError, ctxStatusErr.Response.StatusCode)
+		ctxStatusErr.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerStatusErr.HandleGetFilterStatusesLift(ctxStatusErr))
 	})
 
 	t.Run("add keyword/status parse and repo errors", func(t *testing.T) {
@@ -159,14 +148,12 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 		handlerParse, _, _ := round11NewHandler(t, cfg, stateParse)
 
 		ctxKWBad := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v2/filters/filter-1/keywords", writeHeadersJSON, nil, []byte("{"))
-		ctxKWBad.SetParam("filter_id", "filter-1")
-		_ = handlerParse.HandleAddFilterKeywordLift(ctxKWBad)
-		require.Equal(t, http.StatusBadRequest, ctxKWBad.Response.StatusCode)
+		ctxKWBad.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusBadRequest)(handlerParse.HandleAddFilterKeywordLift(ctxKWBad))
 
 		ctxStatusBad := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v2/filters/filter-1/statuses", writeHeadersJSON, nil, []byte("{"))
-		ctxStatusBad.SetParam("filter_id", "filter-1")
-		_ = handlerParse.HandleAddFilterStatusLift(ctxStatusBad)
-		require.Equal(t, http.StatusBadRequest, ctxStatusBad.Response.StatusCode)
+		ctxStatusBad.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusBadRequest)(handlerParse.HandleAddFilterStatusLift(ctxStatusBad))
 
 		stateCreateErr := &round10QueryState{
 			createErrorOnce: errors.New("boom"),
@@ -177,9 +164,8 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 		handlerCreateErr, _, _ := round11NewHandler(t, cfg, stateCreateErr)
 		ctxKW, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters/filter-1/keywords", writeHeaders, nil, apimodels.AddFilterKeywordRequest{Keyword: "spam"})
 		require.NoError(t, err)
-		ctxKW.SetParam("filter_id", "filter-1")
-		_ = handlerCreateErr.HandleAddFilterKeywordLift(ctxKW)
-		require.Equal(t, http.StatusInternalServerError, ctxKW.Response.StatusCode)
+		ctxKW.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerCreateErr.HandleAddFilterKeywordLift(ctxKW))
 	})
 
 	t.Run("delete keyword/status validation and delete error", func(t *testing.T) {
@@ -193,22 +179,19 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 
 		ctxBad, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1/keywords", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxBad.SetParam("filter_id", "filter-1")
-		require.NoError(t, handler.HandleDeleteFilterKeywordLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		ctxBad.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteFilterKeywordLift(ctxBad))
 
 		ctxDel, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1/keywords/kw-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxDel.SetParam("filter_id", "filter-1")
-		ctxDel.SetParam("keyword_id", "kw-1")
-		require.NoError(t, handler.HandleDeleteFilterKeywordLift(ctxDel))
-		require.Equal(t, http.StatusInternalServerError, ctxDel.Response.StatusCode)
+		ctxDel.Params["filter_id"] = "filter-1"
+		ctxDel.Params["keyword_id"] = "kw-1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDeleteFilterKeywordLift(ctxDel))
 
 		ctxStatusBad, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters//statuses/fs-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxStatusBad.SetParam("status_id", "fs-1")
-		require.NoError(t, handler.HandleDeleteFilterStatusLift(ctxStatusBad))
-		require.Equal(t, http.StatusBadRequest, ctxStatusBad.Response.StatusCode)
+		ctxStatusBad.Params["status_id"] = "fs-1"
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteFilterStatusLift(ctxStatusBad))
 	})
 
 	t.Run("test filter auth and repository error", func(t *testing.T) {
@@ -216,17 +199,14 @@ func TestFiltersHandlers_Errors_Round12(t *testing.T) {
 
 		ctxUnauthed, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters/test", nil, nil, apimodels.TestFilterRequest{Content: "hi"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleTestFilterLift(ctxUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthed.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleTestFilterLift(ctxUnauthed))
 
 		ctxInsufficient, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters/test", insufficientHeaders, nil, apimodels.TestFilterRequest{Content: "hi"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleTestFilterLift(ctxInsufficient))
-		require.Equal(t, http.StatusForbidden, ctxInsufficient.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleTestFilterLift(ctxInsufficient))
 
 		ctxErr, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters/test", readHeaders, nil, apimodels.TestFilterRequest{Content: "hi"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleTestFilterLift(ctxErr))
-		require.Equal(t, http.StatusInternalServerError, ctxErr.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleTestFilterLift(ctxErr))
 	})
 }

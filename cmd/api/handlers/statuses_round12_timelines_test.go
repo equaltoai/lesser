@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -26,12 +26,12 @@ func TestStatusesGetAndTimelines_Round12(t *testing.T) {
 				SK:         "TOMBSTONE",
 				ID:         cfg.BaseURL() + "/objects/gone",
 				Type:       "Tombstone",
-				FormerType:  activitypub.NoteType,
-				Deleted:     now.Add(-1 * time.Hour),
-				DeletedBy:   "alice",
-				Summary:     "test",
-				CreatedAt:   now.Add(-2 * time.Hour),
-				TTL:         now.Add(24 * time.Hour).Unix(),
+				FormerType: activitypub.NoteType,
+				Deleted:    now.Add(-1 * time.Hour),
+				DeletedBy:  "alice",
+				Summary:    "test",
+				CreatedAt:  now.Add(-2 * time.Hour),
+				TTL:        now.Add(24 * time.Hour).Unix(),
 			},
 		},
 	}
@@ -91,48 +91,43 @@ func TestStatusesGetAndTimelines_Round12(t *testing.T) {
 	t.Run("get_status_invalid_id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/%", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "%")
-		require.NoError(t, handler.HandleGetStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "%"
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetStatusLift(ctx))
 	})
 
 	t.Run("get_status_not_found", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/missing", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
-		require.NoError(t, handler.HandleGetStatusLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetStatusLift(ctx))
 	})
 
 	t.Run("get_status_notes_error", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/err", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "err")
-		require.NoError(t, handler.HandleGetStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "err"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetStatusLift(ctx))
 	})
 
 	t.Run("get_status_account_error", func(t *testing.T) {
 		notesByID["status-2"] = &storagemodels.Status{StatusID: "status-2", AuthorUsername: "err", AuthorID: cfg.ActorURL("err"), Content: "hi"}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/status-2", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "status-2")
-		require.NoError(t, handler.HandleGetStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "status-2"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetStatusLift(ctx))
 	})
 
 	t.Run("get_status_success_with_viewer", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/status-1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "status-1")
-		require.NoError(t, handler.HandleGetStatusLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "status-1"
+		requireStatus(t, http.StatusOK)(handler.HandleGetStatusLift(ctx))
 	})
 
 	t.Run("home_timeline_auth_error", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/timelines/home", nil, nil, nil)
 		require.NoError(t, err)
-		require.Error(t, handler.HandleGetHomeTimelineLift(ctx))
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetHomeTimelineLift(ctx))
 	})
 
 	t.Run("home_timeline_list_error", func(t *testing.T) {
@@ -148,22 +143,19 @@ func TestStatusesGetAndTimelines_Round12(t *testing.T) {
 		}
 		t.Cleanup(func() { notesSvc.ListNotesFunc = orig })
 
-		require.NoError(t, handler.HandleGetHomeTimelineLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetHomeTimelineLift(ctx))
 	})
 
 	t.Run("public_timeline_local_and_invalid_token", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/timelines/public", map[string]string{"Authorization": "Bearer bad"}, map[string]string{"local": "true"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetPublicTimelineLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetPublicTimelineLift(ctx))
 	})
 
 	t.Run("status_context_tombstoned", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/gone/context", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "gone")
-		require.NoError(t, handler.HandleGetStatusContextLift(ctx))
-		require.Equal(t, http.StatusGone, ctx.Response.StatusCode)
+		ctx.Params["id"] = "gone"
+		requireStatus(t, http.StatusGone)(handler.HandleGetStatusContextLift(ctx))
 	})
 }

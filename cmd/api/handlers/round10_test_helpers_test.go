@@ -1,9 +1,9 @@
-package lift
+package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,9 +15,8 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
-	liftframework "github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -149,7 +148,7 @@ func (s *round10QueryState) whereString(field string) (string, bool) {
 	return str, ok
 }
 
-func round10NewLiftContext(method, path string, headers, query map[string]string, body any) (*liftframework.Context, error) {
+func round10NewLiftContext(method, path string, headers, query map[string]string, body any) (*apptheory.Context, error) {
 	var bodyBytes []byte
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -159,26 +158,63 @@ func round10NewLiftContext(method, path string, headers, query map[string]string
 		bodyBytes = b
 	}
 
-	req := liftframework.NewRequest(&adapters.Request{
-		Method:      method,
-		Path:        path,
-		Headers:     headers,
-		QueryParams: query,
-		Body:        bodyBytes,
-	})
-
-	return liftframework.NewContext(context.Background(), req), nil
+	return round10NewLiftContextWithBodyBytes(method, path, headers, query, bodyBytes), nil
 }
 
-func round10NewLiftContextWithBodyBytes(method, path string, headers, query map[string]string, body []byte) *liftframework.Context {
-	req := liftframework.NewRequest(&adapters.Request{
-		Method:      method,
-		Path:        path,
-		Headers:     headers,
-		QueryParams: query,
-		Body:        body,
-	})
-	return liftframework.NewContext(context.Background(), req)
+func round10NewLiftContextWithBodyBytes(method, path string, headers, query map[string]string, body []byte) *apptheory.Context {
+	parsedPath := path
+	queryValues := url.Values{}
+	if idx := strings.Index(path, "?"); idx >= 0 {
+		parsedPath = path[:idx]
+		if parsed, err := url.ParseQuery(path[idx+1:]); err == nil {
+			queryValues = parsed
+		}
+	}
+
+	hdr := map[string][]string{}
+	for k, v := range headers {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		hdr[strings.ToLower(strings.TrimSpace(k))] = []string{v}
+	}
+	if len(body) > 0 {
+		if _, ok := hdr["content-type"]; !ok {
+			hdr["content-type"] = []string{"application/json; charset=utf-8"}
+		}
+	}
+
+	q := map[string][]string{}
+	for k, values := range queryValues {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		if len(values) == 0 {
+			continue
+		}
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			out = append(out, value)
+		}
+		q[k] = out
+	}
+	for k, v := range query {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		q[k] = []string{v}
+	}
+
+	return &apptheory.Context{
+		Request: apptheory.Request{
+			Method:  method,
+			Path:    parsedPath,
+			Headers: hdr,
+			Query:   q,
+			Body:    body,
+		},
+		Params: map[string]string{},
+	}
 }
 
 type round10DynamoHarness struct {
@@ -1225,9 +1261,13 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			*d = items
 		case *[]storagemodels.FilterKeyword:
 			if len(state.filterKeywords) == 0 {
+				keywordID := "kw-1"
+				if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "KEYWORD#") {
+					keywordID = strings.TrimPrefix(sk, "KEYWORD#")
+				}
 				*d = []storagemodels.FilterKeyword{
 					{
-						ID:        "kw-1",
+						ID:        keywordID,
 						FilterID:  "filter-1",
 						Keyword:   "spam",
 						WholeWord: true,
@@ -1236,31 +1276,73 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 				return
 			}
-			filterID, _ := state.whereString("PK")
-			filterID = strings.TrimPrefix(filterID, "FILTER#")
-			if keywords, ok := state.filterKeywords[filterID]; ok {
-				*d = keywords
+
+			if pk, ok := state.whereString("PK"); ok && strings.TrimSpace(pk) != "" {
+				filterID := strings.TrimPrefix(pk, "FILTER#")
+				if keywords, ok := state.filterKeywords[filterID]; ok {
+					*d = keywords
+					return
+				}
+				*d = []storagemodels.FilterKeyword{}
 				return
 			}
+
+			if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "KEYWORD#") {
+				keywordID := strings.TrimPrefix(sk, "KEYWORD#")
+				matches := make([]storagemodels.FilterKeyword, 0, 1)
+				for _, keywords := range state.filterKeywords {
+					for _, keyword := range keywords {
+						if keyword.ID == keywordID {
+							matches = append(matches, keyword)
+						}
+					}
+				}
+				*d = matches
+				return
+			}
+
 			*d = []storagemodels.FilterKeyword{}
 		case *[]storagemodels.FilterStatus:
 			if len(state.filterStatuses) == 0 {
+				statusID := "status-1"
+				if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "STATUS#") {
+					statusID = strings.TrimPrefix(sk, "STATUS#")
+				}
 				*d = []storagemodels.FilterStatus{
 					{
 						ID:        "fs-1",
 						FilterID:  "filter-1",
-						StatusID:  "status-1",
+						StatusID:  statusID,
 						CreatedAt: time.Now().Add(-1 * time.Hour),
 					},
 				}
 				return
 			}
-			filterID, _ := state.whereString("PK")
-			filterID = strings.TrimPrefix(filterID, "FILTER#")
-			if statuses, ok := state.filterStatuses[filterID]; ok {
-				*d = statuses
+
+			if pk, ok := state.whereString("PK"); ok && strings.TrimSpace(pk) != "" {
+				filterID := strings.TrimPrefix(pk, "FILTER#")
+				if statuses, ok := state.filterStatuses[filterID]; ok {
+					*d = statuses
+					return
+				}
+				*d = []storagemodels.FilterStatus{}
 				return
 			}
+
+			if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, "STATUS#") {
+				statusID := strings.TrimPrefix(sk, "STATUS#")
+				matches := make([]storagemodels.FilterStatus, 0, 1)
+				for _, statuses := range state.filterStatuses {
+					for _, status := range statuses {
+						if status.StatusID == statusID {
+							matches = append(matches, status)
+						}
+					}
+				}
+				*d = matches
+				return
+			}
+
 			*d = []storagemodels.FilterStatus{}
 		case *[]storagemodels.Import:
 			if len(state.importsByUser) == 0 {

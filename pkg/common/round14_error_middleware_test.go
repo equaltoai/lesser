@@ -5,10 +5,9 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/errors"
-	liftTesting "github.com/equaltoai/lesser/pkg/testing/lift"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -33,18 +32,18 @@ func TestErrorHandlingMiddleware_PanicRecovery(t *testing.T) {
 	}
 
 	mw := ErrorHandlingMiddleware(cfg)
-	h := mw(lift.HandlerFunc(func(_ *lift.Context) error {
+	h := mw(func(_ *apptheory.Context) (*apptheory.Response, error) {
 		panic("boom")
-	}))
+	})
 
-	ctx := liftTesting.MockLiftContext("GET", "/panic")
-	err := h.Handle(ctx)
+	ctx := newTestContext("GET", "/panic")
+	resp, err := h(ctx)
 	require.NoError(t, err)
 
-	status, resp := parseResponse(t, ctx)
+	status, parsed := parseResponse(t, resp)
 	assert.Equal(t, 500, status)
-	assert.NotEmpty(t, resp.Error)
-	assert.Equal(t, string(errors.CodeInternal), resp.Code)
+	assert.NotEmpty(t, parsed.Error)
+	assert.Equal(t, string(errors.CodeInternal), parsed.Code)
 }
 
 func TestErrorHandlingMiddleware_ConvertsReturnedErrors(t *testing.T) {
@@ -116,17 +115,15 @@ func TestErrorHandlingMiddleware_ConvertsReturnedErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mw := ErrorHandlingMiddleware(cfg)
-			h := mw(lift.HandlerFunc(func(_ *lift.Context) error {
-				return tt.err
-			}))
+			h := mw(func(_ *apptheory.Context) (*apptheory.Response, error) { return nil, tt.err })
 
-			ctx := liftTesting.MockLiftContext("GET", "/test")
-			err := h.Handle(ctx)
+			ctx := newTestContext("GET", "/test")
+			resp, err := h(ctx)
 			require.NoError(t, err)
 
-			status, resp := parseResponse(t, ctx)
+			status, parsed := parseResponse(t, resp)
 			assert.Equal(t, tt.wantStatusCode, status)
-			assert.Equal(t, string(tt.wantCode), resp.Code)
+			assert.Equal(t, string(tt.wantCode), parsed.Code)
 		})
 	}
 }

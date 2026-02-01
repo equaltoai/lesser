@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -29,55 +29,58 @@ const (
 )
 
 // HandleCreateImportLift handles POST /api/v1/imports
-func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateImportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request
-	username, err := h.authenticateImportRequest(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse and validate request
-	req, err := h.parseImportRequest(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	req, resp, err := h.parseImportRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Validate import parameters
 	if err := h.validateImportParams(req); err != nil {
-		return common.RespondBadRequest(ctx, err.Error())
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Process file data
-	fileData, err := h.processImportFileData(ctx, req.Data)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	fileData, resp, err := h.processImportFileData(ctx, req.Data)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check for existing imports
-	if err := h.checkExistingImports(ctx, username, req.Type); err != nil || ctx.Response.IsWritten() {
-		return err
+	if resp, err := h.checkExistingImports(ctx, username, req.Type); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check rate limits
-	if err := h.checkImportRateLimit(ctx, username, req.Type); err != nil || ctx.Response.IsWritten() {
-		return err
+	if resp, err := h.checkImportRateLimit(ctx, username, req.Type); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check budget limits before creating import
-	if err := h.checkImportBudgetLimits(ctx, username, req, len(fileData)); err != nil || ctx.Response.IsWritten() {
-		return err
+	if resp, err := h.checkImportBudgetLimits(ctx, username, req, len(fileData)); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Create and store import
 	importID := uuid.New().String()
-	s3Key, err := h.storeImportFile(ctx, username, importID, req.Type, fileData)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	s3Key, resp, err := h.storeImportFile(ctx, username, importID, req.Type, fileData)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Create import record and queue job
-	if err := h.createImportRecord(ctx, importID, username, req, s3Key); err != nil || ctx.Response.IsWritten() {
-		return err
+	if resp, err := h.createImportRecord(ctx, importID, username, req, s3Key); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Return job status
@@ -88,18 +91,18 @@ func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 		CreatedAt: time.Now().Format(time.RFC3339),
 	}
 
-	return ctx.Status(http.StatusAccepted).JSON(job)
+	return apptheory.JSON(http.StatusAccepted, job)
 }
 
 // authenticateImportRequest handles authentication for import requests
-func (h *Handler) authenticateImportRequest(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateImportRequest(ctx *apptheory.Context) (string, error) {
 	// Extract auth header
 	authHeader := h.extractImportAuthHeader(ctx)
 
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", helperUnauthorized()
 	}
 
 	// Validate token and check scope
@@ -107,53 +110,35 @@ func (h *Handler) authenticateImportRequest(ctx *lift.Context) (string, error) {
 }
 
 // extractImportAuthHeader extracts authorization header
-func (h *Handler) extractImportAuthHeader(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	return authHeader
+func (h *Handler) extractImportAuthHeader(ctx *apptheory.Context) string {
+	return common.ExtractAuthHeader(ctx)
 }
 
 // validateImportToken validates the token and checks scope using centralized validation
-func (h *Handler) validateImportToken(ctx *lift.Context, token string) (string, error) {
+func (h *Handler) validateImportToken(ctx *apptheory.Context, token string) (string, error) {
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", helperUnauthorized()
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", helperUnauthorized()
 	}
 
 	if !claims.HasScope(auth.ScopeWrite) {
-		return "", common.RespondInsufficientScope(ctx)
+		return "", helperInsufficientScope()
 	}
 
 	return claims.Username, nil
 }
 
 // parseImportRequest parses the import request body
-func (h *Handler) parseImportRequest(ctx *lift.Context) (*apimodels.ImportRequest, error) {
+func (h *Handler) parseImportRequest(ctx *apptheory.Context) (*apimodels.ImportRequest, *apptheory.Response, error) {
 	var req apimodels.ImportRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return nil, common.RespondBadRequest(ctx, "invalid request body")
-			}
-		} else {
-			return nil, common.RespondBadRequest(ctx, "invalid request body")
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return nil, resp, respErr
 	}
 
 	// Set defaults
@@ -161,7 +146,7 @@ func (h *Handler) parseImportRequest(ctx *lift.Context) (*apimodels.ImportReques
 		req.Mode = "merge"
 	}
 
-	return &req, nil
+	return &req, nil, nil
 }
 
 // validateImportParams validates import type and mode using centralized validation
@@ -199,37 +184,40 @@ func (h *Handler) validateImportParams(req *apimodels.ImportRequest) error {
 }
 
 // processImportFileData decodes and validates the file data using centralized validation
-func (h *Handler) processImportFileData(ctx *lift.Context, data string) ([]byte, error) {
+func (h *Handler) processImportFileData(ctx *apptheory.Context, data string) ([]byte, *apptheory.Response, error) {
 	// Validate required data parameter
 	if err := common.ValidateRequiredParam("data", data); err != nil {
-		return nil, common.RespondBadRequest(ctx, err.Error())
+		resp, respErr := common.RespondBadRequest(ctx, err.Error())
+		return nil, resp, respErr
 	}
 
 	// Decode file data
 	fileData, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
-		return nil, common.RespondBadRequest(ctx, "invalid base64 data")
+		resp, respErr := common.RespondBadRequest(ctx, "invalid base64 data")
+		return nil, resp, respErr
 	}
 
 	// Validate file size (max 10MB)
 	if err := common.ValidateIntRange("file_size", len(fileData), 1, 10*1024*1024); err != nil {
-		return nil, common.RespondBadRequest(ctx, "file too large (max 10MB)")
+		resp, respErr := common.RespondBadRequest(ctx, "file too large (max 10MB)")
+		return nil, resp, respErr
 	}
 
 	// Perform comprehensive file validation
-	if err := h.validateImportFile(ctx, fileData, "unknown"); err != nil {
-		return nil, err
+	if resp, err := h.validateImportFile(ctx, fileData, "unknown"); resp != nil || err != nil {
+		return nil, resp, err
 	}
 
-	return fileData, nil
+	return fileData, nil, nil
 }
 
 // checkExistingImports checks for existing pending/processing imports
-func (h *Handler) checkExistingImports(ctx *lift.Context, username, importType string) error {
-	existingJobs, err := h.repos.Import().GetUserImportsByStatus(ctx.Context, username, []string{"pending", "processing"})
+func (h *Handler) checkExistingImports(ctx *apptheory.Context, username, importType string) (*apptheory.Response, error) {
+	existingJobs, err := h.repos.Import().GetUserImportsByStatus(ctx.Context(), username, []string{"pending", "processing"})
 	if err != nil {
 		h.logger.Error("failed to check existing jobs", zap.Error(err))
-		return nil // Don't fail on check error
+		return nil, nil // Don't fail on check error
 	}
 
 	for _, job := range existingJobs {
@@ -238,25 +226,27 @@ func (h *Handler) checkExistingImports(ctx *lift.Context, username, importType s
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // storeImportFile uploads the import file to S3
-func (h *Handler) storeImportFile(ctx *lift.Context, username, importID, importType string, fileData []byte) (string, error) {
+func (h *Handler) storeImportFile(ctx *apptheory.Context, username, importID, importType string, fileData []byte) (string, *apptheory.Response, error) {
 	s3Key := fmt.Sprintf("imports/%s/%s/%s.data", username, importID, importType)
 
 	// Initialize S3 client
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx.Context)
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx.Context())
 	if err != nil {
 		h.logger.Error("failed to load AWS config", zap.Error(err))
-		return "", common.RespondInternalServerError(ctx, "failed to initialize S3 client")
+		resp, respErr := common.RespondInternalServerError(ctx, "failed to initialize S3 client")
+		return "", resp, respErr
 	}
 	s3Client := s3.NewFromConfig(awsCfg)
 
 	// Validate bucket configuration
 	bucketName := h.cfg.S3BucketName
 	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
-		return "", common.RespondInternalServerError(ctx, "S3 bucket not configured")
+		resp, respErr := common.RespondInternalServerError(ctx, "S3 bucket not configured")
+		return "", resp, respErr
 	}
 
 	// Upload to S3
@@ -266,20 +256,21 @@ func (h *Handler) storeImportFile(ctx *lift.Context, username, importID, importT
 		Body:   bytes.NewReader(fileData),
 	}
 
-	_, err = s3Client.PutObject(ctx.Context, putInput)
+	_, err = s3Client.PutObject(ctx.Context(), putInput)
 	if err != nil {
 		h.logger.Error("failed to upload import file to S3",
 			zap.String("bucket", bucketName),
 			zap.String("key", s3Key),
 			zap.Error(err))
-		return "", common.RespondInternalServerError(ctx, "failed to store import file")
+		resp, respErr := common.RespondInternalServerError(ctx, "failed to store import file")
+		return "", resp, respErr
 	}
 
-	return s3Key, nil
+	return s3Key, nil, nil
 }
 
 // createImportRecord creates the import record and queues processing
-func (h *Handler) createImportRecord(ctx *lift.Context, importID, username string, req *apimodels.ImportRequest, s3Key string) error {
+func (h *Handler) createImportRecord(ctx *apptheory.Context, importID, username string, req *apimodels.ImportRequest, s3Key string) (*apptheory.Response, error) {
 	now := time.Now()
 
 	// Create import record
@@ -294,7 +285,7 @@ func (h *Handler) createImportRecord(ctx *lift.Context, importID, username strin
 		CreatedAt: now,
 	}
 
-	if err := h.repos.Import().CreateImport(ctx.Context, importRecord); err != nil {
+	if err := h.repos.Import().CreateImport(ctx.Context(), importRecord); err != nil {
 		h.logger.Error("failed to create import job", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to create import job")
 	}
@@ -305,11 +296,11 @@ func (h *Handler) createImportRecord(ctx *lift.Context, importID, username strin
 		// Don't fail the request, job can be retried later or processed manually
 	}
 
-	return nil
+	return nil, nil
 }
 
 // queueImportJobSQS queues the import job using SQS
-func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string, req *apimodels.ImportRequest, s3Key string) error {
+func (h *Handler) queueImportJobSQS(ctx *apptheory.Context, importID, username string, req *apimodels.ImportRequest, s3Key string) error {
 	// Create job queue service with config
 	jobQueue, err := services.NewJobQueueService(h.cfg, h.logger)
 	if err != nil {
@@ -332,15 +323,15 @@ func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string
 	}
 
 	// Queue the job
-	return jobQueue.QueueImportJob(ctx.Context, msg)
+	return jobQueue.QueueImportJob(ctx.Context(), msg)
 }
 
 // HandleGetImportStatusLift handles GET /api/v1/imports/:id
-func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetImportStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request using consolidated pattern
-	username, err := h.authenticateImportStatusRequest(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	username, err := h.authenticateUser(ctx, nil)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get import ID from path parameter
@@ -350,7 +341,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get import job
-	importRec, err := h.repos.Import().GetImport(ctx.Context, importID)
+	importRec, err := h.repos.Import().GetImport(ctx.Context(), importID)
 	if err != nil {
 		return common.RespondNotFound(ctx, fmt.Sprintf("import not found: %s", importID))
 	}
@@ -388,19 +379,19 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.JSON(job)
+	return okJSON(job)
 }
 
 // HandleListImportsLift handles GET /api/v1/imports
-func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
+func (h *Handler) HandleListImportsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request using consolidated pattern
-	username, err := h.authenticateImportStatusRequest(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	username, err := h.authenticateUser(ctx, nil)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get all user's import jobs (no status filter)
-	importRecords, err := h.repos.Import().GetUserImportsByStatus(ctx.Context, username, nil)
+	importRecords, err := h.repos.Import().GetUserImportsByStatus(ctx.Context(), username, nil)
 	if err != nil {
 		h.logger.Error("failed to get import jobs", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to retrieve imports")
@@ -439,16 +430,17 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 		imports = append(imports, job)
 	}
 
-	return ctx.JSON(imports)
+	return okJSON(imports)
 }
 
 // HandleCancelImportLift handles DELETE /api/v1/imports/:id
-func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
-	// Test mode support
-	// Authenticate user with write scope requirement
-	username, err := h.authenticateUserWithWriteScope(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+func (h *Handler) HandleCancelImportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get import ID from path parameter
@@ -458,7 +450,7 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 	}
 
 	// Get import job
-	importRec, err := h.repos.Import().GetImport(ctx.Context, importID)
+	importRec, err := h.repos.Import().GetImport(ctx.Context(), importID)
 	if err != nil {
 		return common.RespondNotFound(ctx, fmt.Sprintf("import not found: %s", importID))
 	}
@@ -482,7 +474,7 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 	}
 
 	// Update import status to cancelled
-	if err := h.repos.Import().UpdateImportStatus(ctx.Context, importID, "cancelled", nil, "cancelled by user"); err != nil {
+	if err := h.repos.Import().UpdateImportStatus(ctx.Context(), importID, "cancelled", nil, "cancelled by user"); err != nil {
 		h.logger.Error("failed to cancel import", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to cancel import")
 	}
@@ -505,7 +497,7 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 		job.Total = &importRec.Total
 	}
 
-	return ctx.JSON(job)
+	return okJSON(job)
 }
 
 // Helper methods
@@ -545,12 +537,12 @@ func (h *Handler) isValidImportFormat(contentType string) bool {
 }
 
 // checkImportRateLimit validates rate limits for import operations
-func (h *Handler) checkImportRateLimit(ctx *lift.Context, username string, importType string) error {
+func (h *Handler) checkImportRateLimit(ctx *apptheory.Context, username string, importType string) (*apptheory.Response, error) {
 	// Basic rate limiting - check for existing pending imports
-	existingJobs, err := h.repos.Import().GetUserImportsByStatus(ctx.Context, username, []string{"pending", "processing"})
+	existingJobs, err := h.repos.Import().GetUserImportsByStatus(ctx.Context(), username, []string{"pending", "processing"})
 	if err != nil {
 		h.logger.Warn("failed to check existing jobs for rate limiting", zap.Error(err))
-		return nil // Don't block on check error
+		return nil, nil // Don't block on check error
 	}
 
 	// Count imports of the same type in the last day
@@ -564,7 +556,7 @@ func (h *Handler) checkImportRateLimit(ctx *lift.Context, username string, impor
 
 	// Allow 1 import per day per type for regular users (more restrictive than exports)
 	if recentCount >= 1 {
-		return ctx.Status(http.StatusTooManyRequests).JSON(map[string]any{
+		return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
 			"error":          "rate limit exceeded",
 			"limit":          1,
 			"window_seconds": 86400, // 24 hours
@@ -572,11 +564,11 @@ func (h *Handler) checkImportRateLimit(ctx *lift.Context, username string, impor
 		})
 	}
 
-	return nil
+	return nil, nil
 }
 
 // checkImportBudgetLimits validates that the user has not exceeded their import budget limits
-func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, req *apimodels.ImportRequest, fileSize int) error {
+func (h *Handler) checkImportBudgetLimits(ctx *apptheory.Context, username string, req *apimodels.ImportRequest, fileSize int) (*apptheory.Response, error) {
 	// Get import repository to access budget methods
 	importRepo := h.repos.Import()
 
@@ -584,10 +576,10 @@ func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, re
 	estimatedCost := h.estimateImportCost(req, fileSize)
 
 	// Check budget limits (export cost = 0 for imports)
-	budget, withinLimits, err := importRepo.CheckBudgetLimits(ctx.Context, username, estimatedCost, 0)
+	budget, withinLimits, err := importRepo.CheckBudgetLimits(ctx.Context(), username, estimatedCost, 0)
 	if err != nil {
 		h.logger.Warn("failed to check budget limits, allowing import", zap.Error(err))
-		return nil // Don't block on budget check errors
+		return nil, nil // Don't block on budget check errors
 	}
 
 	if !withinLimits {
@@ -602,7 +594,7 @@ func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, re
 			remaining = budget.GetRemainingCombinedBudget()
 		}
 
-		return ctx.Status(http.StatusPaymentRequired).JSON(map[string]any{
+		return apptheory.JSON(http.StatusPaymentRequired, map[string]any{
 			"error":            fmt.Sprintf("%s budget limit exceeded", limitType),
 			"estimated_cost":   float64(estimatedCost) / 1_000_000.0, // Convert to dollars
 			"remaining_budget": float64(remaining) / 1_000_000.0,     // Convert to dollars
@@ -611,7 +603,7 @@ func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, re
 		})
 	}
 
-	return nil
+	return nil, nil
 }
 
 // estimateImportCost provides a rough cost estimate for an import operation
@@ -644,13 +636,16 @@ func (h *Handler) estimateImportCost(req *apimodels.ImportRequest, fileSize int)
 }
 
 // validateImportFile performs comprehensive file validation
-func (h *Handler) validateImportFile(ctx *lift.Context, data []byte, importType string) error {
+func (h *Handler) validateImportFile(ctx *apptheory.Context, data []byte, importType string) (*apptheory.Response, error) {
 	// Create file validation service
 	fileValidator, err := services.NewFileValidationService(h.logger)
 	if err != nil {
 		h.logger.Warn("failed to create file validator, skipping advanced validation", zap.Error(err))
 		// Fall back to basic validation
-		return h.basicFileValidation(data)
+		if err := h.basicFileValidation(data); err != nil {
+			return common.RespondValidationError(ctx, err)
+		}
+		return nil, nil
 	}
 
 	// Configure validation based on import type
@@ -667,7 +662,7 @@ func (h *Handler) validateImportFile(ctx *lift.Context, data []byte, importType 
 	}
 
 	// Perform validation
-	result, err := fileValidator.ValidateFile(ctx.Context, data, config)
+	result, err := fileValidator.ValidateFile(ctx.Context(), data, config)
 	if err != nil {
 		h.logger.Error("file validation failed", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "file validation failed")
@@ -675,7 +670,7 @@ func (h *Handler) validateImportFile(ctx *lift.Context, data []byte, importType 
 
 	// Check validation result
 	if !result.Valid {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{
+		return apptheory.JSON(http.StatusBadRequest, map[string]any{
 			"error":    "file validation failed",
 			"details":  result.Errors,
 			"warnings": result.Warnings,
@@ -697,7 +692,7 @@ func (h *Handler) validateImportFile(ctx *lift.Context, data []byte, importType 
 		zap.Int64("file_size", result.FileSize),
 		zap.String("md5_hash", result.MD5Hash))
 
-	return nil
+	return nil, nil
 }
 
 // basicFileValidation performs basic validation as fallback
@@ -715,21 +710,21 @@ func (h *Handler) basicFileValidation(data []byte) error {
 
 // authenticateImportStatusRequest handles authentication for import status/list requests
 // This consolidates the duplicate authentication logic from HandleGetImportStatusLift and HandleListImportsLift
-func (h *Handler) authenticateImportStatusRequest(ctx *lift.Context) (string, error) {
+func (h *Handler) authenticateImportStatusRequest(ctx *apptheory.Context) (string, error) {
 	// Extract auth header
 	authHeader := h.extractImportAuthHeader(ctx)
 
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", helperUnauthorized()
 	}
 
 	// Validate token (no scope check needed for read operations)
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		return "", helperUnauthorized()
 	}
 
 	return claims.Username, nil

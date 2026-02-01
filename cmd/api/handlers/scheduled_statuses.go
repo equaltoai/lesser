@@ -1,7 +1,6 @@
-package lift
+package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -14,19 +13,21 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetScheduledStatusesLift handles GET /api/v1/scheduled_statuses
-func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetScheduledStatusesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "read")
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
-	username := account.Username
+	username := claims.Username
 
 	// Parse pagination parameters
 	limit, cursor := h.parseScheduledStatusPagination(ctx)
@@ -39,7 +40,7 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Get scheduled statuses using service
-	result, err := scheduledService.ListScheduledStatuses(ctx.Context, &scheduled.ListScheduledStatusesQuery{
+	result, err := scheduledService.ListScheduledStatuses(ctx.Context(), &scheduled.ListScheduledStatusesQuery{
 		Username: username,
 		Pagination: interfaces.PaginationOptions{
 			Limit:  limit,
@@ -61,13 +62,16 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 	if result.Pagination != nil {
 		nextCursor = result.Pagination.NextCursor
 	}
-	h.setScheduledStatusPaginationHeader(ctx, nextCursor, limit)
-
-	return ctx.JSON(apiStatuses)
+	resp, err := okJSON(apiStatuses)
+	if err != nil {
+		return nil, err
+	}
+	h.setScheduledStatusPaginationHeader(resp, nextCursor, limit)
+	return resp, nil
 }
 
 // HandleGetScheduledStatusLift handles GET /api/v1/scheduled_statuses/:id
-func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetScheduledStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get ID from path parameter
 	id := ctx.Param("id")
 	if common.ValidateRequiredParam("id", id) != nil {
@@ -75,12 +79,14 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate request
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "read")
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
-	username := account.Username
+	username := claims.Username
 
 	// Get scheduled service
 	scheduledService := h.registry.Scheduled()
@@ -90,7 +96,7 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get scheduled status using service
-	result, err := scheduledService.GetScheduledStatus(ctx.Context, &scheduled.GetScheduledStatusQuery{
+	result, err := scheduledService.GetScheduledStatus(ctx.Context(), &scheduled.GetScheduledStatusQuery{
 		ID:       id,
 		Username: username, // For ownership verification
 	})
@@ -104,11 +110,11 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	// Convert to API format with media attachments
 	apiStatus := h.convertScheduledStatusToAPIWithMedia(ctx, result.ScheduledStatus, result.MediaAttachments)
 
-	return ctx.JSON(apiStatus)
+	return okJSON(apiStatus)
 }
 
 // HandleUpdateScheduledStatusLift handles PUT /api/v1/scheduled_statuses/:id
-func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateScheduledStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get ID from path parameter
 	id := ctx.Param("id")
 	if common.ValidateRequiredParam("id", id) != nil {
@@ -116,12 +122,14 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate request
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "write")
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
-	username := account.Username
+	username := claims.Username
 
 	// Parse request body
 	var req apimodels.ScheduledStatusUpdateRequest
@@ -150,7 +158,7 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Update scheduled status using service
-	result, err := scheduledService.UpdateScheduledStatus(ctx.Context, &scheduled.UpdateScheduledStatusCommand{
+	result, err := scheduledService.UpdateScheduledStatus(ctx.Context(), &scheduled.UpdateScheduledStatusCommand{
 		ID:          id,
 		Username:    username,
 		ScheduledAt: scheduledAt,
@@ -175,11 +183,11 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	// Convert to API format with media attachments
 	apiStatus := h.convertScheduledStatusToAPIWithMedia(ctx, result.ScheduledStatus, result.MediaAttachments)
 
-	return ctx.JSON(apiStatus)
+	return okJSON(apiStatus)
 }
 
 // HandleDeleteScheduledStatusLift handles DELETE /api/v1/scheduled_statuses/:id
-func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteScheduledStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get ID from path parameter
 	id := ctx.Param("id")
 	if common.ValidateRequiredParam("id", id) != nil {
@@ -187,12 +195,14 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate request
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "write")
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
-	username := account.Username
+	username := claims.Username
 
 	// Get scheduled service
 	scheduledService := h.registry.Scheduled()
@@ -202,7 +212,7 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Delete scheduled status using service
-	err = scheduledService.DeleteScheduledStatus(ctx.Context, &scheduled.DeleteScheduledStatusCommand{
+	err = scheduledService.DeleteScheduledStatus(ctx.Context(), &scheduled.DeleteScheduledStatusCommand{
 		ID:       id,
 		Username: username,
 	})
@@ -221,28 +231,34 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Return empty object
-	return ctx.JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // HandleCreateScheduledStatusLift handles POST /api/v1/statuses (with scheduled_at)
-func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *apimodels.CreateStatusRequest) (*apimodels.ScheduledStatus, error) {
+func (h *Handler) HandleCreateScheduledStatusLift(ctx *apptheory.Context, statusReq *apimodels.CreateStatusRequest) (*apimodels.ScheduledStatus, *apptheory.Response, error) {
 	// This is called from the main status creation handler when scheduled_at is present
 	// Authenticate request and extract client ID for application tracking
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "write")
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return nil, err
+		if isInsufficientScopeError(err) {
+			resp, respErr := common.RespondForbidden(ctx, err.Error())
+			return nil, resp, respErr
+		}
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return nil, resp, respErr
 	}
-	username := account.Username
-	clientID := account.Claims.ClientID
+	username := claims.Username
+	clientID := claims.ClientID
 
 	// Parse scheduled time
 	if statusReq.ScheduledAt == nil || common.ValidateRequiredParam("scheduledAt", *statusReq.ScheduledAt) != nil {
-		return nil, common.RespondUnprocessableEntity(ctx, "scheduled_at is required")
+		resp, respErr := common.RespondUnprocessableEntity(ctx, "scheduled_at is required")
+		return nil, resp, respErr
 	}
 	// Validate scheduled time format and constraints
 	if err := common.ValidateScheduledTime(*statusReq.ScheduledAt); err != nil {
-		return nil, common.RespondUnprocessableEntity(ctx, fmt.Sprintf("invalid scheduled_at: %s", err.Error()))
+		resp, respErr := common.RespondUnprocessableEntity(ctx, fmt.Sprintf("invalid scheduled_at: %s", err.Error()))
+		return nil, resp, respErr
 	}
 	scheduledAt, _ := time.Parse(time.RFC3339, *statusReq.ScheduledAt) // ValidateScheduledTime already validated this
 
@@ -250,7 +266,8 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 	scheduledService := h.registry.Scheduled()
 	if scheduledService == nil {
 		h.logger.Error("scheduled service not available")
-		return nil, common.RespondServiceUnavailable(ctx, "scheduled service")
+		resp, respErr := common.RespondServiceUnavailable(ctx, "scheduled service")
+		return nil, resp, respErr
 	}
 
 	// Parse poll if provided
@@ -260,12 +277,13 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 
 		// Validate poll parameters using centralized validation
 		if err := common.ValidatePollParams(poll); err != nil {
-			return nil, common.RespondUnprocessableEntity(ctx, fmt.Sprintf("invalid poll parameters: %v", err))
+			resp, respErr := common.RespondUnprocessableEntity(ctx, fmt.Sprintf("invalid poll parameters: %v", err))
+			return nil, resp, respErr
 		}
 	}
 
 	// Create scheduled status using service
-	result, err := scheduledService.CreateScheduledStatus(ctx.Context, &scheduled.CreateScheduledStatusCommand{
+	result, err := scheduledService.CreateScheduledStatus(ctx.Context(), &scheduled.CreateScheduledStatusCommand{
 		Username:      username,
 		Status:        statusReq.Status,
 		MediaIDs:      statusReq.MediaIDs,
@@ -284,21 +302,23 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 			zap.Error(err))
 		// Check error type
 		if strings.Contains(err.Error(), "must be at least") {
-			return nil, common.RespondUnprocessableEntity(ctx, err.Error())
+			resp, respErr := common.RespondUnprocessableEntity(ctx, err.Error())
+			return nil, resp, respErr
 		}
-		return nil, common.RespondInternalServerError(ctx, "failed to create scheduled status")
+		resp, respErr := common.RespondInternalServerError(ctx, "failed to create scheduled status")
+		return nil, resp, respErr
 	}
 
 	// Convert to API format with media attachments
 	apiStatus := h.convertScheduledStatusToAPIWithMedia(ctx, result.ScheduledStatus, result.MediaAttachments)
 
-	return &apiStatus, nil
+	return &apiStatus, nil, nil
 }
 
 // Helper methods
 
 // parseScheduledStatusPagination parses pagination parameters
-func (h *Handler) parseScheduledStatusPagination(ctx *lift.Context) (int, string) {
+func (h *Handler) parseScheduledStatusPagination(ctx *apptheory.Context) (int, string) {
 	// Parse limit
 	limit := h.parseScheduledStatusLimit(ctx)
 
@@ -309,13 +329,8 @@ func (h *Handler) parseScheduledStatusPagination(ctx *lift.Context) (int, string
 }
 
 // parseScheduledStatusLimit parses the limit parameter
-func (h *Handler) parseScheduledStatusLimit(ctx *lift.Context) int {
-	limitStr := ctx.Query("limit")
-
-	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if common.ValidateRequiredParam("limitStr", limitStr) != nil {
-		limitStr = h.extractScheduledQueryParam(ctx, "limit")
-	}
+func (h *Handler) parseScheduledStatusLimit(ctx *apptheory.Context) int {
+	limitStr := queryValue(ctx, "limit")
 
 	limit, err := common.ParseTimelineLimit(limitStr)
 	if err != nil {
@@ -326,15 +341,9 @@ func (h *Handler) parseScheduledStatusLimit(ctx *lift.Context) int {
 }
 
 // parseScheduledStatusCursor parses pagination cursor from max_id/min_id
-func (h *Handler) parseScheduledStatusCursor(ctx *lift.Context) string {
-	maxID := ctx.Query("max_id")
-	minID := ctx.Query("min_id")
-
-	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if common.ValidateRequiredParam("maxID", maxID) != nil && common.ValidateRequiredParam("minID", minID) != nil {
-		maxID = h.extractScheduledQueryParam(ctx, "max_id")
-		minID = h.extractScheduledQueryParam(ctx, "min_id")
-	}
+func (h *Handler) parseScheduledStatusCursor(ctx *apptheory.Context) string {
+	maxID := queryValue(ctx, "max_id")
+	minID := queryValue(ctx, "min_id")
 
 	// Use max_id as cursor (for backward pagination)
 	if maxID != "" {
@@ -345,50 +354,22 @@ func (h *Handler) parseScheduledStatusCursor(ctx *lift.Context) string {
 	return minID
 }
 
-// extractScheduledQueryParam extracts query parameter with fallback for test mode
-func (h *Handler) extractScheduledQueryParam(ctx *lift.Context, param string) string {
-	if ctx.Request == nil || ctx.Request.Request == nil {
-		return ""
-	}
-
-	// Try to get from Path if available
-	if ctx.Request.Request.Path != "" && strings.Contains(ctx.Request.Request.Path, "?") {
-		// Extract query string from path
-		parts := strings.Split(ctx.Request.Request.Path, "?")
-		if len(parts) > 1 {
-			if values, err := url.ParseQuery(parts[1]); err == nil {
-				return values.Get(param)
-			}
-		}
-	}
-
-	// Try query params from request
-	if ctx.Request.QueryParams != nil {
-		if val, ok := ctx.Request.QueryParams[param]; ok {
-			return val
-		}
-	}
-
-	return ""
-}
-
 // setScheduledStatusPaginationHeader sets the Link header for pagination
-func (h *Handler) setScheduledStatusPaginationHeader(ctx *lift.Context, nextCursor string, limit int) {
+func (h *Handler) setScheduledStatusPaginationHeader(resp *apptheory.Response, nextCursor string, limit int) {
 	if common.ValidateRequiredParam("nextCursor", nextCursor) != nil {
 		return
 	}
 
 	// Build next page URL
-	nextURL := fmt.Sprintf("/api/v1/scheduled_statuses?max_id=%s&limit=%d", nextCursor, limit)
+	nextURL := fmt.Sprintf("/api/v1/scheduled_statuses?max_id=%s&limit=%d", url.QueryEscape(nextCursor), limit)
 	linkHeader := fmt.Sprintf(`<%s>; rel="next"`, nextURL)
 
 	// Set the Link header
-	ctx.Header("Link")
-	ctx.Set("Link", linkHeader)
+	setHeader(resp, "link", linkHeader)
 }
 
 // convertScheduledStatusesToAPI converts scheduled statuses to API format
-func (h *Handler) convertScheduledStatusesToAPI(ctx *lift.Context, statuses []*storage.ScheduledStatus) []apimodels.ScheduledStatus {
+func (h *Handler) convertScheduledStatusesToAPI(ctx *apptheory.Context, statuses []*storage.ScheduledStatus) []apimodels.ScheduledStatus {
 	apiStatuses := make([]apimodels.ScheduledStatus, 0, len(statuses))
 
 	for _, status := range statuses {
@@ -397,7 +378,7 @@ func (h *Handler) convertScheduledStatusesToAPI(ctx *lift.Context, statuses []*s
 		if len(status.MediaIDs) > 0 {
 			// Get scheduled service to fetch media
 			if scheduledService := h.registry.Scheduled(); scheduledService != nil {
-				mediaAttachments, _ = scheduledService.GetScheduledMediaAttachments(ctx.Context, status.ID)
+				mediaAttachments, _ = scheduledService.GetScheduledMediaAttachments(ctx.Context(), status.ID)
 			}
 		}
 
@@ -409,7 +390,7 @@ func (h *Handler) convertScheduledStatusesToAPI(ctx *lift.Context, statuses []*s
 }
 
 // convertScheduledStatusToAPIWithMedia converts a scheduled status to API format with media
-func (h *Handler) convertScheduledStatusToAPIWithMedia(_ *lift.Context, status *storage.ScheduledStatus, mediaItems []*models.Media) apimodels.ScheduledStatus {
+func (h *Handler) convertScheduledStatusToAPIWithMedia(_ *apptheory.Context, status *storage.ScheduledStatus, mediaItems []*models.Media) apimodels.ScheduledStatus {
 	// Convert media attachments to []any
 	mediaAttachments := make([]any, 0, len(mediaItems))
 	for _, media := range mediaItems {
@@ -537,19 +518,6 @@ func (h *Handler) convertAPIPollToMap(poll *apimodels.Poll) map[string]any {
 }
 
 // parseScheduledStatusRequest parses scheduled status request with fallback for test environments
-func (h *Handler) parseScheduledStatusRequest(ctx *lift.Context, req interface{}) error {
-	if err := ctx.ParseRequest(req); err != nil {
-		// Fallback for test environment - try parsing directly from request body
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if jsonErr := json.Unmarshal(ctx.Request.Body, req); jsonErr != nil {
-				h.logger.Debug("invalid scheduled status request",
-					zap.Error(err),
-					zap.Error(jsonErr))
-				return jsonErr
-			}
-			return nil
-		}
-		return err
-	}
-	return nil
+func (h *Handler) parseScheduledStatusRequest(ctx *apptheory.Context, req interface{}) error {
+	return common.ParseRequestWithFallback(ctx, req)
 }

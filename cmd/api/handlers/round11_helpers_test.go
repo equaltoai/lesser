@@ -1,8 +1,9 @@
-package lift
+package handlers
 
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -95,26 +96,21 @@ func TestHelperErrorsAndAuthService(t *testing.T) {
 	ctx, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 	require.NoError(t, err)
 
-	_ = handler.respondBadRequest(ctx, "bad")
-	require.Equal(t, 400, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusBadRequest)(handler.respondBadRequest(ctx, "bad"))
 
 	ctxForbidden, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 	require.NoError(t, err)
-	_ = handler.respondForbidden(ctxForbidden, "")
-	require.Equal(t, 403, ctxForbidden.Response.StatusCode)
+	requireStatus(t, http.StatusForbidden)(handler.respondForbidden(ctxForbidden, ""))
 
 	ctxAuthErr, err := round10NewLiftContext("GET", "/test", nil, nil, nil)
 	require.NoError(t, err)
-	err = handler.handleAuthServiceError(ctxAuthErr, auth.ErrUserSuspended, "login")
-	require.NoError(t, err)
-	require.Equal(t, 403, ctxAuthErr.Response.StatusCode)
+	requireStatus(t, http.StatusForbidden)(handler.handleAuthServiceError(ctxAuthErr, auth.ErrUserSuspended, "login"))
 
 	body := []byte(`{invalid}`)
 	ctxBody := round10NewLiftContextWithBodyBytes("POST", "/parse", nil, nil, body)
 	var payload map[string]string
 	err = handler.parseRequestBody(ctxBody, &payload)
-	require.NoError(t, err)
-	require.Equal(t, 400, ctxBody.Response.StatusCode)
+	require.Error(t, err)
 
 	ctxLimit, err := round10NewLiftContext("GET", "/limit", nil, map[string]string{"limit": "bad"}, nil)
 	require.NoError(t, err)
@@ -267,13 +263,15 @@ func TestHelperResolveAccountAndAction(t *testing.T) {
 	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
 	ctx, err := round10NewLiftContext("POST", "/status", map[string]string{"Authorization": "Bearer " + token}, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "1")
+	ctx.Params["id"] = "1"
 
-	err = handler.statusActionHandler(ctx, auth.ScopeRead, func(_, _ string) (*apimodels.Status, error) {
+	resp := requireStatus(t, http.StatusOK)(handler.statusActionHandler(ctx, auth.ScopeRead, func(_, _ string) (*apimodels.Status, error) {
 		return &apimodels.Status{ID: "1"}, nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, "1", ctx.Response.Body.(*apimodels.Status).ID)
+	}))
+
+	var body apimodels.Status
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "1", body.ID)
 }
 
 func TestHelperResponseHelpers(t *testing.T) {
@@ -283,26 +281,21 @@ func TestHelperResponseHelpers(t *testing.T) {
 	ctx, err := round10NewLiftContext("GET", "/resp", nil, nil, nil)
 	require.NoError(t, err)
 
-	_ = handler.respondUnauthorized(ctx)
-	require.Equal(t, 401, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusUnauthorized)(handler.respondUnauthorized(ctx))
 
 	ctxInternal, err := round10NewLiftContext("GET", "/resp", nil, nil, nil)
 	require.NoError(t, err)
-	_ = handler.respondInternalError(ctxInternal, "")
-	require.Equal(t, 500, ctxInternal.Response.StatusCode)
+	requireStatus(t, http.StatusInternalServerError)(handler.respondInternalError(ctxInternal, ""))
 
 	ctxUnprocessable, err := round10NewLiftContext("GET", "/resp", nil, nil, nil)
 	require.NoError(t, err)
-	_ = handler.respondUnprocessableEntity(ctxUnprocessable, "")
-	require.Equal(t, 422, ctxUnprocessable.Response.StatusCode)
+	requireStatus(t, http.StatusUnprocessableEntity)(handler.respondUnprocessableEntity(ctxUnprocessable, ""))
 
 	ctxNotFound, err := round10NewLiftContext("GET", "/resp", nil, nil, nil)
 	require.NoError(t, err)
-	_ = handler.respondNotFound(ctxNotFound, "thing")
-	require.Equal(t, 404, ctxNotFound.Response.StatusCode)
+	requireStatus(t, http.StatusNotFound)(handler.respondNotFound(ctxNotFound, "thing"))
 
 	ctxOK, err := round10NewLiftContext("GET", "/resp", nil, nil, nil)
 	require.NoError(t, err)
-	err = handler.respondOK(ctxOK, storage.Account{User: &storage.User{Username: "alice"}})
-	require.NoError(t, err)
+	requireStatus(t, http.StatusOK)(handler.respondOK(ctxOK, storage.Account{User: &storage.User{Username: "alice"}}))
 }

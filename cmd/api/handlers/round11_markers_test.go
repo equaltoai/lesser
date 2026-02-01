@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -32,14 +32,15 @@ func TestMarkersHandlers(t *testing.T) {
 	h.registry = &RegistryStub{AccountsSvc: accountsSvc}
 
 	readToken := round11SignToken(t, h.cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-1")
+	writeToken := round11SignToken(t, h.cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-1")
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/markers", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetMarkersLift(ctxGet))
+	requireStatus(t, http.StatusOK)(h.HandleGetMarkersLift(ctxGet))
 
 	body := map[string]map[string]string{
 		"home":          {"last_read_id": "10"},
 		"notifications": {"last_read_id": "20"},
 	}
-	ctxSave := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/markers", nil, nil, round11JSONBody(t, body))
-	require.NoError(t, h.HandleSaveMarkersLift(ctxSave))
+	ctxSave := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/markers", map[string]string{"Authorization": "Bearer " + writeToken}, nil, round11JSONBody(t, body))
+	requireStatus(t, http.StatusOK)(h.HandleSaveMarkersLift(ctxSave))
 }

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"crypto/rand"
@@ -14,25 +14,29 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleUnifiedBoostLift handles both traditional boosts and quote boosts
-func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
+func (h *Handler) HandleUnifiedBoostLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", statusID); err != nil {
 		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
 	// Authenticate user with write scope requirement
-	username, err := h.authenticateUserWithWriteScope(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
+	username := claims.Username
 
 	// Get the user's actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
@@ -40,14 +44,8 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 
 	// Parse request body if present
 	var req models.ReblogRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Try fallback parsing for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				// Treat as traditional boost if can't parse
-				req = models.ReblogRequest{}
-			}
-		}
+	if len(ctx.Request.Body) > 0 {
+		_ = common.ParseRequestWithFallback(ctx, &req)
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -68,7 +66,7 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 }
 
 // createPureBoostLift creates a traditional ActivityPub Announce
-func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID string, actor *activitypub.Actor) error {
+func (h *Handler) createPureBoostLift(ctx *apptheory.Context, statusID, objectID string, actor *activitypub.Actor) (*apptheory.Response, error) {
 	// Create an Announce activity
 	announceActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
@@ -94,13 +92,13 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 		Published: *announceActivity.Published,
 	}
 
-	if err := h.repos.Social().CreateAnnounce(ctx.Context, announce); err != nil {
+	if err := h.repos.Social().CreateAnnounce(ctx.Context(), announce); err != nil {
 		h.logger.Error("failed to create announce", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.repos.Activity().CreateActivity(ctx.Context, announceActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context(), announceActivity); err != nil {
 		h.logger.Error("failed to create announce activity", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
@@ -110,7 +108,7 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 		Shares:      1,
 		UniqueUsers: 1,
 	}
-	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "boost", objectID, time.Now().Format(common.DateFormat), engagementData); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context(), "boost", objectID, time.Now().Format(common.DateFormat), engagementData); err != nil {
 		h.logger.Warn("failed to record status engagement",
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
@@ -118,7 +116,7 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 	}
 
 	// Get announce count for the object
-	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context(), objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
@@ -133,7 +131,7 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 		Language:     "en",
 	}
 
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // extractActorIDFromObject extracts actor ID from an object
@@ -163,10 +161,10 @@ func (h *Handler) extractContentFromObject(obj any) string {
 }
 
 // createQuoteBoostLift creates a new status with a quote relationship
-func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, comment, visibility string, actor *activitypub.Actor) error {
+func (h *Handler) createQuoteBoostLift(ctx *apptheory.Context, statusID, objectID, comment, visibility string, actor *activitypub.Actor) (*apptheory.Response, error) {
 	// Validate and default visibility if not specified
 	if err := common.ValidateVisibility(visibility); err != nil {
-		return err
+		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 	if visibility == "" {
 		visibility = storageModels.VisibilityPublic
@@ -207,7 +205,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 	}
 
 	// Create the Note object
-	if err := h.repos.Object().CreateObject(ctx.Context, note); err != nil {
+	if err := h.repos.Object().CreateObject(ctx.Context(), note); err != nil {
 		h.logger.Error("failed to create quote note object", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
@@ -221,13 +219,13 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		Timestamp:    now,
 	}
 
-	if err := h.repos.Object().CreateQuoteRelationship(ctx.Context, quoteRelationship); err != nil {
+	if err := h.repos.Object().CreateQuoteRelationship(ctx.Context(), quoteRelationship); err != nil {
 		h.logger.Error("failed to create quote relationship", zap.Error(err))
 		// Don't fail the request - the note is already created
 	}
 
 	// Increment reblog count on the quoted status (unified counting)
-	if err := h.repos.Like().IncrementReblogCount(ctx.Context, objectID); err != nil {
+	if err := h.repos.Like().IncrementReblogCount(ctx.Context(), objectID); err != nil {
 		h.logger.Warn("failed to increment reblog count for quote",
 			zap.String("quoted_status_id", objectID),
 			zap.Error(err))
@@ -248,13 +246,13 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.repos.Activity().CreateActivity(ctx.Context, createActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context(), createActivity); err != nil {
 		h.logger.Error("failed to create activity", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
 	// Fan out the post to timelines
-	if err := h.repos.User().FanOutPost(ctx.Context, createActivity); err != nil {
+	if err := h.repos.User().FanOutPost(ctx.Context(), createActivity); err != nil {
 		h.logger.Error("failed to fan out quote boost to timelines", zap.Error(err))
 	}
 
@@ -263,7 +261,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		Shares:      1,
 		UniqueUsers: 1,
 	}
-	if err := h.repos.Analytics().RecordEngagement(ctx.Context, "quote", objectID, time.Now().Format(common.DateFormat), engagementData); err != nil {
+	if err := h.repos.Analytics().RecordEngagement(ctx.Context(), "quote", objectID, time.Now().Format(common.DateFormat), engagementData); err != nil {
 		h.logger.Warn("failed to record quote engagement",
 			zap.String("quoted_status_id", objectID),
 			zap.Error(err))
@@ -271,9 +269,9 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 
 	// Get the quoted status to include in response
 	var quotedStatus *models.Status
-	if quotedObj, getErr := h.repos.Object().GetObject(ctx.Context, objectID); getErr == nil {
+	if quotedObj, getErr := h.repos.Object().GetObject(ctx.Context(), objectID); getErr == nil {
 		// Properly convert quotedObj to models.Status
-		quotedActor, err := h.repos.Actor().GetActor(ctx.Context, h.extractActorIDFromObject(quotedObj))
+		quotedActor, err := h.repos.Actor().GetActor(ctx.Context(), h.extractActorIDFromObject(quotedObj))
 		if err == nil {
 			status := transformations.ObjectToStatusAny(quotedObj, quotedActor, h.cfg.BaseURL())
 			quotedStatus = &status
@@ -336,24 +334,24 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		resp.Account.HeaderStatic = actor.Image.URL
 	}
 
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleUndoUnifiedBoostLift handles undoing both traditional boosts and quote boosts
-func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
+func (h *Handler) HandleUndoUnifiedBoostLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", statusID); err != nil {
 		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
 	// Authenticate user
-	username, err := h.authenticateUndoBoostRequest(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	username, resp, err := h.authenticateUndoBoostRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get the user's actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
@@ -380,44 +378,25 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 }
 
 // authenticateUndoBoostRequest handles authentication for undo boost requests
-func (h *Handler) authenticateUndoBoostRequest(ctx *lift.Context) (string, error) {
-	// Extract auth header
-	authHeader := h.extractAuthHeaderForBoost(ctx)
-
-	// Extract and validate token
-	token, err := auth.ExtractBearerToken(authHeader)
+func (h *Handler) authenticateUndoBoostRequest(ctx *apptheory.Context) (string, *apptheory.Response, error) {
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		if isInsufficientScopeError(err) {
+			resp, respErr := common.RespondForbidden(ctx, err.Error())
+			return "", resp, respErr
+		}
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return "", resp, respErr
 	}
 
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	// Check write scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		return "", common.RespondInsufficientScope(ctx)
-	}
-
-	return claims.Username, nil
+	return claims.Username, nil, nil
 }
 
 // extractAuthHeaderForBoost extracts authorization header from various sources
-func (h *Handler) extractAuthHeaderForBoost(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
+func (h *Handler) extractAuthHeaderForBoost(ctx *apptheory.Context) string {
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	return authHeader
@@ -432,8 +411,8 @@ func (h *Handler) normalizeBoostObjectID(statusID string) string {
 }
 
 // undoTraditionalBoost finds and undoes a traditional announce/boost
-func (h *Handler) undoTraditionalBoost(ctx *lift.Context, actor *activitypub.Actor, objectID string) bool {
-	announce, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, objectID)
+func (h *Handler) undoTraditionalBoost(ctx *apptheory.Context, actor *activitypub.Actor, objectID string) bool {
+	announce, err := h.repos.Social().GetAnnounce(ctx.Context(), actor.ID, objectID)
 	if err != nil {
 		return false
 	}
@@ -442,13 +421,13 @@ func (h *Handler) undoTraditionalBoost(ctx *lift.Context, actor *activitypub.Act
 	undoActivity := h.createUndoAnnounceActivity(actor, objectID)
 
 	// Delete the Announce record
-	if err := h.repos.Social().DeleteAnnounce(ctx.Context, actor.ID, objectID); err != nil {
+	if err := h.repos.Social().DeleteAnnounce(ctx.Context(), actor.ID, objectID); err != nil {
 		h.logger.Error("failed to delete announce", zap.Error(err))
 		return false
 	}
 
 	// Store the activity in the outbox
-	if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context(), undoActivity); err != nil {
 		h.logger.Error("failed to create undo announce activity", zap.Error(err))
 		return false
 	}
@@ -482,8 +461,8 @@ func (h *Handler) createUndoAnnounceActivity(actor *activitypub.Actor, objectID 
 }
 
 // undoQuoteBoost finds and undoes quote boosts for a status
-func (h *Handler) undoQuoteBoost(ctx *lift.Context, actor *activitypub.Actor, objectID string) bool {
-	quoteRelationships, _, err := h.repos.Object().GetQuotesForNote(ctx.Context, objectID, 100, "")
+func (h *Handler) undoQuoteBoost(ctx *apptheory.Context, actor *activitypub.Actor, objectID string) bool {
+	quoteRelationships, _, err := h.repos.Object().GetQuotesForNote(ctx.Context(), objectID, 100, "")
 	if err != nil {
 		return false
 	}
@@ -504,21 +483,21 @@ func (h *Handler) isMatchingQuoteBoost(quote *storage.QuoteRelationship, actorID
 }
 
 // processQuoteBoostUndo handles the undo operations for a quote boost
-func (h *Handler) processQuoteBoostUndo(ctx *lift.Context, actor *activitypub.Actor, quote *storage.QuoteRelationship) {
+func (h *Handler) processQuoteBoostUndo(ctx *apptheory.Context, actor *activitypub.Actor, quote *storage.QuoteRelationship) {
 	// Withdraw the quote
-	if err := h.repos.Object().WithdrawQuote(ctx.Context, quote.QuoterNoteID); err != nil {
+	if err := h.repos.Object().WithdrawQuote(ctx.Context(), quote.QuoterNoteID); err != nil {
 		h.logger.Error("failed to withdraw quote", zap.Error(err))
 	}
 
 	// Create and store Undo activity
 	undoActivity := h.createUndoQuoteActivity(actor, quote.QuoterNoteID)
-	if err := h.repos.Activity().CreateActivity(ctx.Context, undoActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context(), undoActivity); err != nil {
 		h.logger.Error("failed to create undo quote activity", zap.Error(err))
 	}
 
 	// Delete the quote note object
 	noteURL := fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), quote.QuoterNoteID)
-	if err := h.repos.Object().DeleteObject(ctx.Context, noteURL); err != nil {
+	if err := h.repos.Object().DeleteObject(ctx.Context(), noteURL); err != nil {
 		h.logger.Warn("failed to delete quote note object",
 			zap.String("note_id", quote.QuoterNoteID),
 			zap.Error(err))
@@ -551,9 +530,9 @@ func (h *Handler) createUndoQuoteActivity(actor *activitypub.Actor, quoterNoteID
 }
 
 // buildUndoBoostResponse builds the response for an undo boost operation
-func (h *Handler) buildUndoBoostResponse(ctx *lift.Context, statusID, objectID string) error {
+func (h *Handler) buildUndoBoostResponse(ctx *apptheory.Context, statusID, objectID string) (*apptheory.Response, error) {
 	// Get announce count for the object
-	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context(), objectID)
 
 	// Return a simplified status response
 	resp := models.FavouriteResponse{
@@ -568,7 +547,7 @@ func (h *Handler) buildUndoBoostResponse(ctx *lift.Context, statusID, objectID s
 		Language:     "en",
 	}
 
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // generateRandomStringForBoost generates a random string of 8 characters for boost operations

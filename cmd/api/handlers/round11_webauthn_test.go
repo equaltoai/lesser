@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -27,10 +27,10 @@ func TestWebAuthnBeginHandlers(t *testing.T) {
 
 	ctxBegin, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/register/begin", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleBeginWebAuthnRegistrationLift(ctxBegin))
+	requireStatus(t, http.StatusOK)(h.HandleBeginWebAuthnRegistrationLift(ctxBegin))
 
 	ctxBeginLogin := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/auth/webauthn/login/begin", headers, nil, round11JSONBody(t, models.WebAuthnBeginLoginRequest{Username: "alice"}))
-	require.NoError(t, h.HandleBeginWebAuthnLoginLift(ctxBeginLogin))
+	requireStatus(t, http.StatusOK)(h.HandleBeginWebAuthnLoginLift(ctxBeginLogin))
 }
 
 func TestWebAuthnFinishAndManageHandlers(t *testing.T) {
@@ -40,9 +40,13 @@ func TestWebAuthnFinishAndManageHandlers(t *testing.T) {
 		},
 		webAuthnCredentialByID: map[string]storagemodels.WebAuthnCredential{
 			"Y3JlZA==": {ID: "Y3JlZA==", UserID: "alice", PublicKey: []byte{0x01, 0x02}, CreatedAt: time.Now()},
+			"Y3JlZDI=": {ID: "Y3JlZDI=", UserID: "alice", PublicKey: []byte{0x03, 0x04}, CreatedAt: time.Now()},
 		},
 		webAuthnCredentialsByUser: map[string][]storagemodels.WebAuthnCredential{
-			"alice": {{ID: "Y3JlZA==", UserID: "alice", PublicKey: []byte{0x01, 0x02}, CreatedAt: time.Now()}},
+			"alice": {
+				{ID: "Y3JlZA==", UserID: "alice", PublicKey: []byte{0x01, 0x02}, CreatedAt: time.Now()},
+				{ID: "Y3JlZDI=", UserID: "alice", PublicKey: []byte{0x03, 0x04}, CreatedAt: time.Now()},
+			},
 		},
 		notFoundPKs: map[string]bool{
 			"CHALLENGE#missing": true,
@@ -56,23 +60,23 @@ func TestWebAuthnFinishAndManageHandlers(t *testing.T) {
 
 	finishReq := models.WebAuthnFinishRegistrationRequest{Challenge: "missing", Response: map[string]any{"foo": "bar"}}
 	ctxFinish := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/auth/webauthn/register/finish", headers, nil, round11JSONBody(t, finishReq))
-	require.NoError(t, h.HandleFinishWebAuthnRegistrationLift(ctxFinish))
+	requireStatus(t, http.StatusBadRequest)(h.HandleFinishWebAuthnRegistrationLift(ctxFinish))
 
 	finishLoginReq := models.WebAuthnFinishLoginRequest{Username: "alice", Challenge: "missing", Response: map[string]any{"foo": "bar"}}
 	ctxFinishLogin := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/auth/webauthn/login/finish", headers, nil, round11JSONBody(t, finishLoginReq))
-	require.NoError(t, h.HandleFinishWebAuthnLoginLift(ctxFinishLogin))
+	requireStatus(t, http.StatusBadRequest)(h.HandleFinishWebAuthnLoginLift(ctxFinishLogin))
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/auth/webauthn/credentials", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleListWebAuthnCredentialsLift(ctxList))
+	requireStatus(t, http.StatusOK)(h.HandleListWebAuthnCredentialsLift(ctxList))
 
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/auth/webauthn/credentials/Y3JlZA==", headers, nil, nil)
 	require.NoError(t, err)
-	ctxDelete.SetParam("credentialId", "Y3JlZA==")
-	require.NoError(t, h.HandleDeleteWebAuthnCredentialLift(ctxDelete))
+	ctxDelete.Params["credentialId"] = "Y3JlZA=="
+	requireStatus(t, http.StatusOK)(h.HandleDeleteWebAuthnCredentialLift(ctxDelete))
 
 	updateReq := models.WebAuthnUpdateCredentialRequest{Name: "Updated"}
 	ctxUpdate := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/auth/webauthn/credentials/Y3JlZA==", headers, nil, round11JSONBody(t, updateReq))
-	ctxUpdate.SetParam("credentialId", "Y3JlZA==")
-	require.NoError(t, h.HandleUpdateWebAuthnCredentialNameLift(ctxUpdate))
+	ctxUpdate.Params["credentialId"] = "Y3JlZA=="
+	requireStatus(t, http.StatusOK)(h.HandleUpdateWebAuthnCredentialNameLift(ctxUpdate))
 }

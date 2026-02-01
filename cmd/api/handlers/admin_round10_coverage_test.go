@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -12,7 +12,6 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
-	liftframework "github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
 )
 
@@ -246,241 +245,203 @@ func TestAdminLift_Round10Coverage(t *testing.T) {
 	t.Run("accounts list + detail", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts", headers, map[string]string{"limit": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetAccountsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetAccountsLift(ctx))
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts/user-alice", headers, nil, nil)
 		require.NoError(t, err)
-		ctx2.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminGetAccountLift(ctx2))
-		require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+		ctx2.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetAccountLift(ctx2))
 	})
 
 	t.Run("account actions", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, apimodels.AdminAccountActionRequest{Type: "sensitive"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminAccountActionLift(ctx))
-		require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+		ctx.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminAccountActionLift(ctx))
 
 		// Exercise additional action switch branches (and cancelUserFollowRelationships)
 		for _, actionType := range []string{"suspend", "unsuspend", "silence", "unsilence", "disable", "enable", "approve", "unsensitive"} {
 			actCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, apimodels.AdminAccountActionRequest{Type: actionType})
 			require.NoError(t, err)
-			actCtx.SetParam("id", "user-alice")
-			require.NoError(t, h.HandleAdminAccountActionLift(actCtx))
-			require.Equal(t, http.StatusNoContent, actCtx.Response.StatusCode)
+			actCtx.Params["id"] = "user-alice"
+			requireStatus(t, http.StatusNoContent)(h.HandleAdminAccountActionLift(actCtx))
 		}
 
 		badCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", headers, nil, apimodels.AdminAccountActionRequest{Type: "not-a-real-action"})
 		require.NoError(t, err)
-		badCtx.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminAccountActionLift(badCtx))
-		require.Equal(t, http.StatusBadRequest, badCtx.Response.StatusCode)
+		badCtx.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminAccountActionLift(badCtx))
 
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/approve", headers, nil, nil)
 		require.NoError(t, err)
-		ctx2.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminApproveAccountLift(ctx2))
-		require.Equal(t, http.StatusNoContent, ctx2.Response.StatusCode)
+		ctx2.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminApproveAccountLift(ctx2))
 
 		ctx3, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/reject", headers, nil, nil)
 		require.NoError(t, err)
-		ctx3.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminRejectAccountLift(ctx3))
-		require.Equal(t, http.StatusNoContent, ctx3.Response.StatusCode)
+		ctx3.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminRejectAccountLift(ctx3))
 
 		ctx4, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/enable", headers, nil, nil)
 		require.NoError(t, err)
-		ctx4.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminEnableAccountLift(ctx4))
-		require.Equal(t, http.StatusNoContent, ctx4.Response.StatusCode)
+		ctx4.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminEnableAccountLift(ctx4))
 
 		ctx5, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/unsuspend", headers, nil, nil)
 		require.NoError(t, err)
-		ctx5.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminUnsuspendAccountLift(ctx5))
-		require.Equal(t, http.StatusNoContent, ctx5.Response.StatusCode)
+		ctx5.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminUnsuspendAccountLift(ctx5))
 
 		ctx6, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/unsilence", headers, nil, nil)
 		require.NoError(t, err)
-		ctx6.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminUnsilenceAccountLift(ctx6))
-		require.Equal(t, http.StatusNoContent, ctx6.Response.StatusCode)
+		ctx6.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminUnsilenceAccountLift(ctx6))
 
 		ctx7, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/unsensitive", headers, nil, nil)
 		require.NoError(t, err)
-		ctx7.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminUnsensitiveAccountLift(ctx7))
-		require.Equal(t, http.StatusNoContent, ctx7.Response.StatusCode)
+		ctx7.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminUnsensitiveAccountLift(ctx7))
 	})
 
 	t.Run("reports and moderation", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports", headers, map[string]string{"limit": "1", "status": "resolved"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetReportsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers, "Link")
+		resp := requireStatus(t, http.StatusOK)(h.HandleAdminGetReportsLift(ctx))
+		require.Contains(t, resp.Headers, "link")
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports/r1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx2.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminGetReportLift(ctx2))
-		require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+		ctx2.Params["id"] = "r1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetReportLift(ctx2))
 
 		ctxNotFound, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctxNotFound.SetParam("id", "missing")
-		require.NoError(t, h.HandleAdminGetReportLift(ctxNotFound))
-		require.Equal(t, http.StatusNotFound, ctxNotFound.Response.StatusCode)
+		ctxNotFound.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminGetReportLift(ctxNotFound))
 
 		ctx3, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/resolve", headers, nil, nil)
 		require.NoError(t, err)
-		ctx3.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminResolveReportLift(ctx3))
-		require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
+		ctx3.Params["id"] = "r1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminResolveReportLift(ctx3))
 
 		ctx3b, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/not-there/resolve", headers, nil, nil)
 		require.NoError(t, err)
-		ctx3b.SetParam("id", "not-there")
-		require.NoError(t, h.HandleAdminResolveReportLift(ctx3b))
-		require.Equal(t, http.StatusNotFound, ctx3b.Response.StatusCode)
+		ctx3b.Params["id"] = "not-there"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminResolveReportLift(ctx3b))
 
 		ctx4, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/reopen", headers, nil, nil)
 		require.NoError(t, err)
-		ctx4.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminReopenReportLift(ctx4))
-		require.Equal(t, http.StatusOK, ctx4.Response.StatusCode)
+		ctx4.Params["id"] = "r1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminReopenReportLift(ctx4))
 
 		ctx4b, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/not-there/reopen", headers, nil, nil)
 		require.NoError(t, err)
-		ctx4b.SetParam("id", "not-there")
-		require.NoError(t, h.HandleAdminReopenReportLift(ctx4b))
-		require.Equal(t, http.StatusNotFound, ctx4b.Response.StatusCode)
+		ctx4b.Params["id"] = "not-there"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminReopenReportLift(ctx4b))
 
 		ctx5, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/assign_to_self", headers, nil, nil)
 		require.NoError(t, err)
-		ctx5.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminAssignReportLift(ctx5))
-		require.Equal(t, http.StatusOK, ctx5.Response.StatusCode)
+		ctx5.Params["id"] = "r1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminAssignReportLift(ctx5))
 
 		ctx5b, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/not-there/assign_to_self", headers, nil, nil)
 		require.NoError(t, err)
-		ctx5b.SetParam("id", "not-there")
-		require.NoError(t, h.HandleAdminAssignReportLift(ctx5b))
-		require.Equal(t, http.StatusNotFound, ctx5b.Response.StatusCode)
+		ctx5b.Params["id"] = "not-there"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminAssignReportLift(ctx5b))
 
 		ctx6, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/unassign", headers, nil, nil)
 		require.NoError(t, err)
-		ctx6.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminUnassignReportLift(ctx6))
-		require.Equal(t, http.StatusOK, ctx6.Response.StatusCode)
+		ctx6.Params["id"] = "r1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminUnassignReportLift(ctx6))
 
 		ctx6b, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/not-there/unassign", headers, nil, nil)
 		require.NoError(t, err)
-		ctx6b.SetParam("id", "not-there")
-		require.NoError(t, h.HandleAdminUnassignReportLift(ctx6b))
-		require.Equal(t, http.StatusNotFound, ctx6b.Response.StatusCode)
+		ctx6b.Params["id"] = "not-there"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminUnassignReportLift(ctx6b))
 
 		ctx7, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/overview", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminModerationOverviewLift(ctx7))
-		require.Equal(t, http.StatusOK, ctx7.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminModerationOverviewLift(ctx7))
 	})
 
 	t.Run("moderation events override", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/events", headers, map[string]string{"limit": "1", "min_severity": "2"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetModerationEventsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers, "Link")
+		resp := requireStatus(t, http.StatusOK)(h.HandleAdminGetModerationEventsLift(ctx))
+		require.Contains(t, resp.Headers, "link")
 
 		overrideReq := apimodels.AdminModerationEventOverrideRequest{Decision: "reject", Reason: "bad"}
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/events/evt1/override", headers, nil, overrideReq)
 		require.NoError(t, err)
-		ctx2.SetParam("id", "evt1")
-		require.NoError(t, h.HandleAdminOverrideModerationEventLift(ctx2))
-		require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+		ctx2.Params["id"] = "evt1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminOverrideModerationEventLift(ctx2))
 
 		ctx3, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/events/evt1/override", headers, nil, apimodels.AdminModerationEventOverrideRequest{Decision: "approve"})
 		require.NoError(t, err)
-		ctx3.SetParam("id", "evt1")
-		require.NoError(t, h.HandleAdminOverrideModerationEventLift(ctx3))
-		require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
+		ctx3.Params["id"] = "evt1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminOverrideModerationEventLift(ctx3))
 
 		ctx4, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/events/evt1/override", headers, nil, apimodels.AdminModerationEventOverrideRequest{Decision: "maybe"})
 		require.NoError(t, err)
-		ctx4.SetParam("id", "evt1")
-		require.NoError(t, h.HandleAdminOverrideModerationEventLift(ctx4))
-		require.Equal(t, http.StatusBadRequest, ctx4.Response.StatusCode)
+		ctx4.Params["id"] = "evt1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminOverrideModerationEventLift(ctx4))
 
 		ctx5 := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/moderation/events/evt1/override", headers, nil, []byte("{"))
-		ctx5.SetParam("id", "evt1")
-		require.NoError(t, h.HandleAdminOverrideModerationEventLift(ctx5))
-		require.Equal(t, http.StatusBadRequest, ctx5.Response.StatusCode)
+		ctx5.Params["id"] = "evt1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminOverrideModerationEventLift(ctx5))
 
 		ctx6, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/events/missing/override", headers, nil, apimodels.AdminModerationEventOverrideRequest{Decision: "reject"})
 		require.NoError(t, err)
-		ctx6.SetParam("id", "missing")
-		require.NoError(t, h.HandleAdminOverrideModerationEventLift(ctx6))
-		require.Equal(t, http.StatusNotFound, ctx6.Response.StatusCode)
+		ctx6.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminOverrideModerationEventLift(ctx6))
 	})
 
 	t.Run("trust and reviewers", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/trust/graph", headers, map[string]string{"limit": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetTrustGraphLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetTrustGraphLift(ctx))
 
 		ctxDefaultLimit, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/trust/graph", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetTrustGraphLift(ctxDefaultLimit))
-		require.Equal(t, http.StatusOK, ctxDefaultLimit.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetTrustGraphLift(ctxDefaultLimit))
 
 		updateReq := apimodels.AdminUpdateTrustRequest{Trust: 0.2, Category: "general", Reason: "test"}
 		ctx2, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/moderation/trust/a/b", headers, nil, updateReq)
 		require.NoError(t, err)
-		ctx2.SetParam("from", "https://example.com/users/admin")
-		ctx2.SetParam("to", "https://example.com/users/alice")
-		require.NoError(t, h.HandleAdminUpdateTrustLift(ctx2))
-		require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+		ctx2.Params["from"] = "https://example.com/users/admin"
+		ctx2.Params["to"] = "https://example.com/users/alice"
+		requireStatus(t, http.StatusOK)(h.HandleAdminUpdateTrustLift(ctx2))
 
 		badTrustReq := apimodels.AdminUpdateTrustRequest{Trust: 2.0}
 		ctx2b, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/moderation/trust/a/b", headers, nil, badTrustReq)
 		require.NoError(t, err)
-		ctx2b.SetParam("from", "https://example.com/users/admin")
-		ctx2b.SetParam("to", "https://example.com/users/alice")
-		require.NoError(t, h.HandleAdminUpdateTrustLift(ctx2b))
-		require.Equal(t, http.StatusBadRequest, ctx2b.Response.StatusCode)
+		ctx2b.Params["from"] = "https://example.com/users/admin"
+		ctx2b.Params["to"] = "https://example.com/users/alice"
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminUpdateTrustLift(ctx2b))
 
 		ctx2c := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/admin/moderation/trust/a/b", headers, nil, []byte("{"))
-		ctx2c.SetParam("from", "https://example.com/users/admin")
-		ctx2c.SetParam("to", "https://example.com/users/alice")
-		require.NoError(t, h.HandleAdminUpdateTrustLift(ctx2c))
-		require.Equal(t, http.StatusBadRequest, ctx2c.Response.StatusCode)
+		ctx2c.Params["from"] = "https://example.com/users/admin"
+		ctx2c.Params["to"] = "https://example.com/users/alice"
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminUpdateTrustLift(ctx2c))
 
 		ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/reviewers", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetReviewersLift(ctx3))
-		require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetReviewersLift(ctx3))
 
 		ctx4, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-alice/promote", headers, nil, nil)
 		require.NoError(t, err)
-		ctx4.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminPromoteModeratorLift(ctx4))
-		require.Equal(t, http.StatusOK, ctx4.Response.StatusCode)
+		ctx4.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusOK)(h.HandleAdminPromoteModeratorLift(ctx4))
 
 		ctx5, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-mod/demote", headers, nil, nil)
 		require.NoError(t, err)
-		ctx5.SetParam("id", "user-mod")
-		require.NoError(t, h.HandleAdminDemoteModeratorLift(ctx5))
-		require.Equal(t, http.StatusOK, ctx5.Response.StatusCode)
+		ctx5.Params["id"] = "user-mod"
+		requireStatus(t, http.StatusOK)(h.HandleAdminDemoteModeratorLift(ctx5))
 
 		ctx6, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-missing/demote", headers, nil, nil)
 		require.NoError(t, err)
-		ctx6.SetParam("id", "user-missing")
-		require.NoError(t, h.HandleAdminDemoteModeratorLift(ctx6))
-		require.Equal(t, http.StatusNotFound, ctx6.Response.StatusCode)
+		ctx6.Params["id"] = "user-missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminDemoteModeratorLift(ctx6))
 	})
 
 	t.Run("status admin endpoints", func(t *testing.T) {
@@ -491,202 +452,187 @@ func TestAdminLift_Round10Coverage(t *testing.T) {
 			"min_date":      now.Add(-24 * time.Hour).Format(time.RFC3339),
 		}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleAdminGetStatusesLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers, "X-Total-Count")
-		require.Contains(t, ctx.Response.Headers, "Link")
+		resp := requireStatus(t, http.StatusOK)(h.HandleAdminGetStatusesLift(ctx))
+		require.Contains(t, resp.Headers, "x-total-count")
+		require.Contains(t, resp.Headers, "link")
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx2.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminGetStatusLift(ctx2))
-		require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+		ctx2.Params["id"] = "s1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminGetStatusLift(ctx2))
 
 		ctx2b, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/statuses/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx2b.SetParam("id", "missing")
-		require.NoError(t, h.HandleAdminGetStatusLift(ctx2b))
-		require.Equal(t, http.StatusNotFound, ctx2b.Response.StatusCode)
+		ctx2b.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminGetStatusLift(ctx2b))
 
 		ctx3, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx3.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminDeleteStatusLift(ctx3))
-		require.Equal(t, http.StatusNoContent, ctx3.Response.StatusCode)
+		ctx3.Params["id"] = "s1"
+		requireStatus(t, http.StatusNoContent)(h.HandleAdminDeleteStatusLift(ctx3))
 
 		ctx3b, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/statuses/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx3b.SetParam("id", "missing")
-		require.NoError(t, h.HandleAdminDeleteStatusLift(ctx3b))
-		require.Equal(t, http.StatusNotFound, ctx3b.Response.StatusCode)
+		ctx3b.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminDeleteStatusLift(ctx3b))
 
 		ctx4, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/s1/sensitive", headers, nil, nil)
 		require.NoError(t, err)
-		ctx4.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminMarkStatusSensitiveLift(ctx4))
-		require.Equal(t, http.StatusOK, ctx4.Response.StatusCode)
+		ctx4.Params["id"] = "s1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminMarkStatusSensitiveLift(ctx4))
 
 		ctx4b, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/missing/sensitive", headers, nil, nil)
 		require.NoError(t, err)
-		ctx4b.SetParam("id", "missing")
-		require.NoError(t, h.HandleAdminMarkStatusSensitiveLift(ctx4b))
-		require.Equal(t, http.StatusNotFound, ctx4b.Response.StatusCode)
+		ctx4b.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminMarkStatusSensitiveLift(ctx4b))
 
 		ctx5, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/s1/unsensitive", headers, nil, nil)
 		require.NoError(t, err)
-		ctx5.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminUnmarkStatusSensitiveLift(ctx5))
-		require.Equal(t, http.StatusOK, ctx5.Response.StatusCode)
+		ctx5.Params["id"] = "s1"
+		requireStatus(t, http.StatusOK)(h.HandleAdminUnmarkStatusSensitiveLift(ctx5))
 
 		ctx5b, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/missing/unsensitive", headers, nil, nil)
 		require.NoError(t, err)
-		ctx5b.SetParam("id", "missing")
-		require.NoError(t, h.HandleAdminUnmarkStatusSensitiveLift(ctx5b))
-		require.Equal(t, http.StatusNotFound, ctx5b.Response.StatusCode)
+		ctx5b.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminUnmarkStatusSensitiveLift(ctx5b))
 	})
 
 	t.Run("forbidden when missing auth", func(t *testing.T) {
 		noAuthHeaders := map[string]string{}
 
-		checkForbidden := func(ctx *liftframework.Context, err error) {
-			t.Helper()
-			require.NoError(t, err)
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
-		}
-
 		ctx0, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts", noAuthHeaders, nil, nil)
-		require.NoError(t, h.HandleAdminGetAccountsLift(ctx0))
-		checkForbidden(ctx0, err)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetAccountsLift(ctx0))
 
 		ctx1, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/accounts/user-alice", noAuthHeaders, nil, nil)
-		ctx1.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminGetAccountLift(ctx1))
-		checkForbidden(ctx1, err)
+		require.NoError(t, err)
+		ctx1.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetAccountLift(ctx1))
 
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/action", noAuthHeaders, nil, nil)
-		ctx2.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminAccountActionLift(ctx2))
-		checkForbidden(ctx2, err)
+		require.NoError(t, err)
+		ctx2.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminAccountActionLift(ctx2))
 
 		ctx3, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/approve", noAuthHeaders, nil, nil)
-		ctx3.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminApproveAccountLift(ctx3))
-		checkForbidden(ctx3, err)
+		require.NoError(t, err)
+		ctx3.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminApproveAccountLift(ctx3))
 
 		ctx4, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/reject", noAuthHeaders, nil, nil)
-		ctx4.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminRejectAccountLift(ctx4))
-		checkForbidden(ctx4, err)
+		require.NoError(t, err)
+		ctx4.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminRejectAccountLift(ctx4))
 
 		ctx5, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/enable", noAuthHeaders, nil, nil)
-		ctx5.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminEnableAccountLift(ctx5))
-		checkForbidden(ctx5, err)
+		require.NoError(t, err)
+		ctx5.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminEnableAccountLift(ctx5))
 
 		ctx6, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/unsilence", noAuthHeaders, nil, nil)
-		ctx6.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminUnsilenceAccountLift(ctx6))
-		checkForbidden(ctx6, err)
+		require.NoError(t, err)
+		ctx6.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminUnsilenceAccountLift(ctx6))
 
 		ctx7, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/unsuspend", noAuthHeaders, nil, nil)
-		ctx7.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminUnsuspendAccountLift(ctx7))
-		checkForbidden(ctx7, err)
+		require.NoError(t, err)
+		ctx7.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminUnsuspendAccountLift(ctx7))
 
 		ctx8, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/accounts/user-alice/unsensitive", noAuthHeaders, nil, nil)
-		ctx8.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminUnsensitiveAccountLift(ctx8))
-		checkForbidden(ctx8, err)
+		require.NoError(t, err)
+		ctx8.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminUnsensitiveAccountLift(ctx8))
 
 		ctx9, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports", noAuthHeaders, nil, nil)
-		require.NoError(t, h.HandleAdminGetReportsLift(ctx9))
-		checkForbidden(ctx9, err)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetReportsLift(ctx9))
 
 		ctx10, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/reports/r1", noAuthHeaders, nil, nil)
-		ctx10.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminGetReportLift(ctx10))
-		checkForbidden(ctx10, err)
+		require.NoError(t, err)
+		ctx10.Params["id"] = "r1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetReportLift(ctx10))
 
 		ctx11, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/resolve", noAuthHeaders, nil, nil)
-		ctx11.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminResolveReportLift(ctx11))
-		checkForbidden(ctx11, err)
+		require.NoError(t, err)
+		ctx11.Params["id"] = "r1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminResolveReportLift(ctx11))
 
 		ctx12, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/reopen", noAuthHeaders, nil, nil)
-		ctx12.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminReopenReportLift(ctx12))
-		checkForbidden(ctx12, err)
+		require.NoError(t, err)
+		ctx12.Params["id"] = "r1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminReopenReportLift(ctx12))
 
 		ctx13, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/assign_to_self", noAuthHeaders, nil, nil)
-		ctx13.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminAssignReportLift(ctx13))
-		checkForbidden(ctx13, err)
+		require.NoError(t, err)
+		ctx13.Params["id"] = "r1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminAssignReportLift(ctx13))
 
 		ctx14, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/reports/r1/unassign", noAuthHeaders, nil, nil)
-		ctx14.SetParam("id", "r1")
-		require.NoError(t, h.HandleAdminUnassignReportLift(ctx14))
-		checkForbidden(ctx14, err)
+		require.NoError(t, err)
+		ctx14.Params["id"] = "r1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminUnassignReportLift(ctx14))
 
 		ctx15, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/overview", noAuthHeaders, nil, nil)
-		require.NoError(t, h.HandleAdminModerationOverviewLift(ctx15))
-		checkForbidden(ctx15, err)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminModerationOverviewLift(ctx15))
 
 		ctx16, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/events", noAuthHeaders, nil, nil)
-		require.NoError(t, h.HandleAdminGetModerationEventsLift(ctx16))
-		checkForbidden(ctx16, err)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetModerationEventsLift(ctx16))
 
 		ctx17, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/events/evt1/override", noAuthHeaders, nil, nil)
-		ctx17.SetParam("id", "evt1")
-		require.NoError(t, h.HandleAdminOverrideModerationEventLift(ctx17))
-		checkForbidden(ctx17, err)
+		require.NoError(t, err)
+		ctx17.Params["id"] = "evt1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminOverrideModerationEventLift(ctx17))
 
 		ctx18, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/trust/graph", noAuthHeaders, nil, nil)
-		require.NoError(t, h.HandleAdminGetTrustGraphLift(ctx18))
-		checkForbidden(ctx18, err)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetTrustGraphLift(ctx18))
 
 		ctx19, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/moderation/trust/a/b", noAuthHeaders, nil, nil)
-		ctx19.SetParam("from", "a")
-		ctx19.SetParam("to", "b")
-		require.NoError(t, h.HandleAdminUpdateTrustLift(ctx19))
-		checkForbidden(ctx19, err)
+		require.NoError(t, err)
+		ctx19.Params["from"] = "a"
+		ctx19.Params["to"] = "b"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminUpdateTrustLift(ctx19))
 
 		ctx20, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/moderation/reviewers", noAuthHeaders, nil, nil)
-		require.NoError(t, h.HandleAdminGetReviewersLift(ctx20))
-		checkForbidden(ctx20, err)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetReviewersLift(ctx20))
 
 		ctx21, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-alice/promote", noAuthHeaders, nil, nil)
-		ctx21.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminPromoteModeratorLift(ctx21))
-		checkForbidden(ctx21, err)
+		require.NoError(t, err)
+		ctx21.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminPromoteModeratorLift(ctx21))
 
 		ctx22, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/moderation/reviewers/user-alice/demote", noAuthHeaders, nil, nil)
-		ctx22.SetParam("id", "user-alice")
-		require.NoError(t, h.HandleAdminDemoteModeratorLift(ctx22))
-		checkForbidden(ctx22, err)
+		require.NoError(t, err)
+		ctx22.Params["id"] = "user-alice"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminDemoteModeratorLift(ctx22))
 
 		ctx23, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/statuses", noAuthHeaders, nil, nil)
-		require.NoError(t, h.HandleAdminGetStatusesLift(ctx23))
-		checkForbidden(ctx23, err)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetStatusesLift(ctx23))
 
 		ctx24, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/statuses/s1", noAuthHeaders, nil, nil)
-		ctx24.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminGetStatusLift(ctx24))
-		checkForbidden(ctx24, err)
+		require.NoError(t, err)
+		ctx24.Params["id"] = "s1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminGetStatusLift(ctx24))
 
 		ctx25, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/statuses/s1", noAuthHeaders, nil, nil)
-		ctx25.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminDeleteStatusLift(ctx25))
-		checkForbidden(ctx25, err)
+		require.NoError(t, err)
+		ctx25.Params["id"] = "s1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminDeleteStatusLift(ctx25))
 
 		ctx26, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/s1/sensitive", noAuthHeaders, nil, nil)
-		ctx26.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminMarkStatusSensitiveLift(ctx26))
-		checkForbidden(ctx26, err)
+		require.NoError(t, err)
+		ctx26.Params["id"] = "s1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminMarkStatusSensitiveLift(ctx26))
 
 		ctx27, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/statuses/s1/unsensitive", noAuthHeaders, nil, nil)
-		ctx27.SetParam("id", "s1")
-		require.NoError(t, h.HandleAdminUnmarkStatusSensitiveLift(ctx27))
-		checkForbidden(ctx27, err)
+		require.NoError(t, err)
+		ctx27.Params["id"] = "s1"
+		requireStatus(t, http.StatusForbidden)(h.HandleAdminUnmarkStatusSensitiveLift(ctx27))
 	})
 }
 

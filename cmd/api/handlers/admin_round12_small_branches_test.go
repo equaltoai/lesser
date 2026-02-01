@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -37,8 +37,7 @@ func TestHandleAdminGetAccountLiftRound12_Returns500OnRepositoryError(t *testing
 		"Authorization": "Bearer " + adminToken,
 	}, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "user-target")
+	ctx.Params["id"] = "user-target"
 
-	require.NoError(t, h.HandleAdminGetAccountLift(ctx))
-	require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetAccountLift(ctx))
 }

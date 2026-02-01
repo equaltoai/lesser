@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"errors"
@@ -12,8 +12,8 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestStatusPinsRound12_Coverage(t *testing.T) {
@@ -40,13 +40,11 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 		ctxPin, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/pin", headers, nil, nil)
 		require.NoError(t, err)
 		// Do not set ctx.Param("id") to exercise test-mode path extraction.
-		handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxPin)
-		require.Equal(t, http.StatusOK, ctxPin.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandlePinStatusLift(ctxPin))
 
 		ctxUnpin, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unpin", headers, nil, nil)
 		require.NoError(t, err)
-		handleWithAPIMiddleware(t, handler.HandleUnpinStatusLift, ctxUnpin)
-		require.Equal(t, http.StatusOK, ctxUnpin.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleUnpinStatusLift(ctxUnpin))
 	})
 
 	t.Run("pin: actor lookup error", func(t *testing.T) {
@@ -63,9 +61,8 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/pin", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctx)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandlePinStatusLift(ctx))
 	})
 
 	t.Run("unpin: delete error + object not found", func(t *testing.T) {
@@ -80,9 +77,8 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 		handlerDel, _, _ := round11NewHandler(t, cfg, delErrState)
 		ctxDel, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unpin", headers, nil, nil)
 		require.NoError(t, err)
-		ctxDel.SetParam("id", "s1")
-		handleWithAPIMiddleware(t, handlerDel.HandleUnpinStatusLift, ctxDel)
-		require.Equal(t, http.StatusInternalServerError, ctxDel.Response.StatusCode)
+		ctxDel.Params["id"] = "s1"
+		requireStatus(t, http.StatusInternalServerError)(handlerDel.HandleUnpinStatusLift(ctxDel))
 
 		notFoundState := &round10QueryState{
 			notFoundPKs: map[string]bool{
@@ -92,19 +88,15 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 		handlerNF, _, _ := round11NewHandler(t, cfg, notFoundState)
 		ctxNF, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unpin", headers, nil, nil)
 		require.NoError(t, err)
-		ctxNF.SetParam("id", "s1")
-		handleWithAPIMiddleware(t, handlerNF.HandleUnpinStatusLift, ctxNF)
-		require.Equal(t, http.StatusNotFound, ctxNF.Response.StatusCode)
+		ctxNF.Params["id"] = "s1"
+		requireStatus(t, http.StatusNotFound)(handlerNF.HandleUnpinStatusLift(ctxNF))
 	})
 
 	t.Run("mute helpers + retry branches", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		// extractStatusIDFromPath edge cases
-		ctxNilReq, err := round10NewLiftContext(http.MethodPost, "/x", nil, nil, nil)
-		require.NoError(t, err)
-		ctxNilReq.Request = nil
-		require.Equal(t, "", handler.extractStatusIDFromPath(ctxNilReq, "mute"))
+		require.Equal(t, "", handler.extractStatusIDFromPath(&apptheory.Context{}, "mute"))
 
 		ctxBadPath, err := round10NewLiftContext(http.MethodPost, "/x", nil, nil, nil)
 		require.NoError(t, err)
@@ -158,10 +150,7 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/x", nil, nil, nil)
 		require.NoError(t, err)
 
-		handleWithAPIMiddleware(t, func(c *lift.Context) error {
-			return handler.buildMutedStatusResponse(c, objectID, "alice")
-		}, ctx)
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.buildMutedStatusResponse(ctx, objectID, "alice"))
 	})
 
 	t.Run("unmute conversation delete error + fallback path extraction", func(t *testing.T) {
@@ -178,8 +167,7 @@ func TestStatusPinsRound12_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		// No ctx.Param("id") to force fallback extraction.
 		ctx.Request.Path = strings.ReplaceAll(ctx.Request.Path, "//", "/")
-		handleWithAPIMiddleware(t, handler.HandleUnmuteConversationLift, ctx)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUnmuteConversationLift(ctx))
 	})
 
 	t.Run("extractMuteStatusID error path", func(t *testing.T) {

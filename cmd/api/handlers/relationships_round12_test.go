@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -25,8 +26,7 @@ func TestRelationshipsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetRelationshipsLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetRelationshipsLift(ctx))
 	})
 
 	t.Run("relationship service error returns 500", func(t *testing.T) {
@@ -46,8 +46,7 @@ func TestRelationshipsRound12(t *testing.T) {
 		}, map[string]string{"id[0]": "bob"}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetRelationshipsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetRelationshipsLift(ctx))
 	})
 
 	t.Run("success skips invalid and missing accounts", func(t *testing.T) {
@@ -83,12 +82,12 @@ func TestRelationshipsRound12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetRelationshipsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetRelationshipsLift(ctx))
 
-		resp := ctx.Response.Body.([]apimodels.Relationship)
-		require.Len(t, resp, 1)
-		require.Equal(t, "bob", resp[0].ID)
-		require.True(t, resp[0].Following)
+		var body []apimodels.Relationship
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Len(t, body, 1)
+		require.Equal(t, "bob", body[0].ID)
+		require.True(t, body[0].Following)
 	})
 }

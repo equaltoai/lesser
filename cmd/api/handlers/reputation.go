@@ -1,21 +1,19 @@
-package lift
+package handlers
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/reputation"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetReputationLift handles GET /api/v1/reputation/:actor_id
-func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetReputationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get actorID from path parameter
 	actorID := ctx.Param("actor_id")
 	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
@@ -23,9 +21,9 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 	}
 
 	// Authentication required - extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -54,7 +52,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 	}
 
 	// Get reputation
-	rep, err := repService.GetReputation(ctx.Context, actorID)
+	rep, err := repService.GetReputation(ctx.Context(), actorID)
 	if err != nil {
 		h.logger.Error("Failed to get reputation", zap.Error(err), zap.String("actor", actorID))
 
@@ -84,18 +82,18 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 		},
 	}
 
-	return ctx.Status(http.StatusOK).JSON(response)
+	return okJSON(response)
 }
 
 // HandleExportReputationLift handles POST /api/v1/reputation/export
-func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
+func (h *Handler) HandleExportReputationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	var username string
 	var claims *auth.Claims
 
 	// Authentication required - extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -123,28 +121,26 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 	}
 
 	// Export reputation
-	portableRep, err := repService.ExportReputation(ctx.Context, actorID)
+	portableRep, err := repService.ExportReputation(ctx.Context(), actorID)
 	if err != nil {
 		h.logger.Error("Failed to export reputation", zap.Error(err), zap.String("actor", actorID))
 		return common.RespondInternalServerError(ctx)
 	}
 
-	ctx.Status(http.StatusOK)
-	if err := ctx.JSON(portableRep); err != nil {
-		return err
+	resp, err := okJSON(portableRep)
+	if err != nil {
+		return nil, err
 	}
-
-	// Set JSON-LD content type (Lift's JSON helper defaults to application/json).
-	ctx.Response.Header("Content-Type", "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"")
-	return nil
+	setHeader(resp, "content-type", "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"")
+	return resp, nil
 }
 
 // HandleImportReputationLift handles POST /api/v1/reputation/import
-func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
+func (h *Handler) HandleImportReputationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authentication required - extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -161,15 +157,8 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 
 	// Parse request body
 	var importReq apimodels.ReputationDocumentRequest
-	if err := ctx.ParseRequest(&importReq); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &importReq); err != nil {
-				return common.RespondBadRequest(ctx, "invalid request body")
-			}
-		} else {
-			return common.RespondBadRequest(ctx, "invalid request body")
-		}
+	if err := common.ParseRequestWithFallback(ctx, &importReq); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Initialize reputation service
@@ -180,24 +169,24 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 	}
 
 	// Import reputation
-	result, err := repService.ImportReputation(ctx.Context, importReq.Document)
+	result, err := repService.ImportReputation(ctx.Context(), importReq.Document)
 	if err != nil {
 		h.logger.Error("Failed to import reputation", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(result)
+	return okJSON(result)
 }
 
 // HandleCreateVouchLift handles POST /api/v1/vouches
-func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateVouchLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	var username string
 	var claims *auth.Claims
 
 	// Authentication required - extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -216,15 +205,8 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 
 	// Parse request body
 	var vouchReq apimodels.CreateVouchRequest
-	if err := ctx.ParseRequest(&vouchReq); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &vouchReq); err != nil {
-				return common.RespondBadRequest(ctx, "invalid request body")
-			}
-		} else {
-			return common.RespondBadRequest(ctx, "invalid request body")
-		}
+	if err := common.ParseRequestWithFallback(ctx, &vouchReq); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate input
@@ -246,7 +228,7 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	}
 
 	// Create vouch
-	vouch, err := repService.CreateVouch(ctx.Context, fromActorID, vouchReq.To, vouchReq.Confidence, vouchReq.Context)
+	vouch, err := repService.CreateVouch(ctx.Context(), fromActorID, vouchReq.To, vouchReq.Confidence, vouchReq.Context)
 	if err != nil {
 		h.logger.Error("Failed to create vouch", zap.Error(err))
 		if errorChainContains(err, "insufficient reputation") {
@@ -272,11 +254,11 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 		RevokedAt:         vouch.RevokedAt,
 	}
 
-	return ctx.Status(http.StatusCreated).JSON(response)
+	return createdJSON(response)
 }
 
 // HandleGetVouchesLift handles GET /api/v1/vouches/:actor_id
-func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetVouchesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get actorID from path parameter
 	actorID := ctx.Param("actor_id")
 	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
@@ -284,9 +266,9 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 	}
 
 	// Authentication required - extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -315,7 +297,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 	}
 
 	// Get vouches
-	vouches, err := repService.GetVouches(ctx.Context, actorID)
+	vouches, err := repService.GetVouches(ctx.Context(), actorID)
 	if err != nil {
 		h.logger.Error("Failed to get vouches", zap.Error(err), zap.String("actor", actorID))
 
@@ -345,11 +327,11 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.Status(http.StatusOK).JSON(apiVouches)
+	return okJSON(apiVouches)
 }
 
 // HandleRevokeVouchLift handles DELETE /api/v1/vouches/:vouch_id
-func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
+func (h *Handler) HandleRevokeVouchLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get vouchID from path parameter
 	vouchID := ctx.Param("vouch_id")
 	if err := common.ValidateRequiredParam("vouchID", vouchID); err != nil {
@@ -360,9 +342,9 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	var claims *auth.Claims
 
 	// Authentication required - extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -390,7 +372,7 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	}
 
 	// Revoke vouch
-	err = repService.RevokeVouch(ctx.Context, vouchID, actorID)
+	err = repService.RevokeVouch(ctx.Context(), vouchID, actorID)
 	if err != nil {
 		h.logger.Error("Failed to revoke vouch", zap.Error(err))
 		if errorChainContains(err, "only the voucher can revoke") {
@@ -399,23 +381,15 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return noContent(), nil
 }
 
 // HandleVerifyReputationLift handles POST /api/v1/reputation/verify
-func (h *Handler) HandleVerifyReputationLift(ctx *lift.Context) error {
+func (h *Handler) HandleVerifyReputationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request body
 	var verifyReq apimodels.ReputationDocumentRequest
-	if err := ctx.ParseRequest(&verifyReq); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &verifyReq); err != nil {
-				return common.RespondBadRequest(ctx, "invalid request body")
-			}
-		} else {
-			return common.RespondBadRequest(ctx, "invalid request body")
-		}
+	if err := common.ParseRequestWithFallback(ctx, &verifyReq); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Initialize reputation service
@@ -426,17 +400,17 @@ func (h *Handler) HandleVerifyReputationLift(ctx *lift.Context) error {
 	}
 
 	// Verify reputation
-	result, err := repService.VerifyReputation(ctx.Context, verifyReq.Document)
+	result, err := repService.VerifyReputation(ctx.Context(), verifyReq.Document)
 	if err != nil {
 		h.logger.Error("Failed to verify reputation", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.Status(http.StatusOK).JSON(result)
+	return okJSON(result)
 }
 
 // HandleGetReputationKeysLift handles GET /.well-known/reputation-keys
-func (h *Handler) HandleGetReputationKeysLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetReputationKeysLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Initialize reputation service
 	repService, err := h.getReputationService()
 	if err != nil {
@@ -446,7 +420,7 @@ func (h *Handler) HandleGetReputationKeysLift(ctx *lift.Context) error {
 	// Get public key
 	publicKey := repService.GetPublicKey()
 
-	return ctx.Status(http.StatusOK).JSON(apimodels.ReputationKeysResponse{PublicKey: publicKey})
+	return okJSON(apimodels.ReputationKeysResponse{PublicKey: publicKey})
 }
 
 // Helper functions

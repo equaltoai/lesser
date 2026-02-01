@@ -1,6 +1,7 @@
-package lift
+package handlers
 
 import (
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"testing"
@@ -56,10 +57,10 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + makeToken(auth.ScopeRead)}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/featured_tags", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetFeaturedTagsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetFeaturedTagsLift(ctx))
 
-		out := ctx.Response.Body.([]FeaturedTag)
+		var out []FeaturedTag
+		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.Len(t, out, 2)
 		require.NotEmpty(t, out[0].LastStatusAt)
 		require.Empty(t, out[1].LastStatusAt)
@@ -83,10 +84,10 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/featured_tags", headers, nil, map[string]string{"name": "#Go"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateFeaturedTagLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleCreateFeaturedTagLift(ctx))
 
-		created := ctx.Response.Body.(FeaturedTag)
+		var created FeaturedTag
+		require.NoError(t, json.Unmarshal(resp.Body, &created))
 		require.NotEmpty(t, created.ID)
 		require.Equal(t, "go", created.Name)
 		require.Equal(t, 1, created.StatusesCount)
@@ -101,8 +102,7 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 		hDup, _, _ := round11NewHandler(t, cfg, dupState)
 		ctxDup, err := round10NewLiftContext(http.MethodPost, "/api/v1/featured_tags", headers, nil, map[string]string{"name": "#Go"})
 		require.NoError(t, err)
-		require.NoError(t, hDup.HandleCreateFeaturedTagLift(ctxDup))
-		require.Equal(t, http.StatusConflict, ctxDup.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(hDup.HandleCreateFeaturedTagLift(ctxDup))
 	})
 
 	t.Run("create featured tag validation and error branches", func(t *testing.T) {
@@ -111,24 +111,21 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 		t.Run("invalid request body returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/featured_tags", headers, nil, []byte("{bad"))
-			require.NoError(t, h.HandleCreateFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleCreateFeaturedTagLift(ctx))
 		})
 
 		t.Run("missing name returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/featured_tags", headers, nil, map[string]string{"name": ""})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleCreateFeaturedTagLift(ctx))
 		})
 
 		t.Run("invalid hashtag returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/featured_tags", headers, nil, map[string]string{"name": "#bad!"})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleCreateFeaturedTagLift(ctx))
 		})
 
 		t.Run("limit reached maps to 422", func(t *testing.T) {
@@ -136,16 +133,14 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{createErrorOnce: limitErr})
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/featured_tags", headers, nil, map[string]string{"name": "#Go"})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleCreateFeaturedTagLift(ctx))
 		})
 
 		t.Run("unknown create failure returns 500", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{createErrorOnce: stdErrors.New("boom")})
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/featured_tags", headers, nil, map[string]string{"name": "#Go"})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleCreateFeaturedTagLift(ctx))
 		})
 	})
 
@@ -161,20 +156,19 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/featured_tags/go", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "go")
-			require.NoError(t, h.HandleDeleteFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			_, ok := ctx.Response.Body.(map[string]any)
-			require.True(t, ok)
+			ctx.Params["id"] = "go"
+			resp := requireStatus(t, http.StatusOK)(h.HandleDeleteFeaturedTagLift(ctx))
+			var out map[string]any
+			require.NoError(t, json.Unmarshal(resp.Body, &out))
+			require.Len(t, out, 0)
 		})
 
 		t.Run("not found returns 404", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/featured_tags/go", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "go")
-			require.NoError(t, h.HandleDeleteFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["id"] = "go"
+			requireStatus(t, http.StatusNotFound)(h.HandleDeleteFeaturedTagLift(ctx))
 		})
 
 		t.Run("delete error returns 500", func(t *testing.T) {
@@ -187,9 +181,8 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/featured_tags/go", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "go")
-			require.NoError(t, h.HandleDeleteFeaturedTagLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "go"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleDeleteFeaturedTagLift(ctx))
 		})
 	})
 
@@ -221,10 +214,10 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/featured_tags/suggestions", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetFeaturedTagSuggestionsLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetFeaturedTagSuggestionsLift(ctx))
 
-			out := ctx.Response.Body.([]apimodels.Tag)
+			var out []apimodels.Tag
+			require.NoError(t, json.Unmarshal(resp.Body, &out))
 			require.NotEmpty(t, out)
 			require.Equal(t, "go", out[0].Name)
 			require.NotEmpty(t, out[0].History)
@@ -240,11 +233,11 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/featured_tags/suggestions", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetFeaturedTagSuggestionsLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetFeaturedTagSuggestionsLift(ctx))
 
 			// The handler intentionally returns an empty JSON array on error.
-			out := ctx.Response.Body.([]any)
+			var out []any
+			require.NoError(t, json.Unmarshal(resp.Body, &out))
 			require.Len(t, out, 0)
 		})
 	})
@@ -259,11 +252,11 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/bob/featured_tags", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "bob")
+		ctx.Params["id"] = "bob"
 
-		require.NoError(t, h.HandleGetAccountFeaturedTagsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		out := ctx.Response.Body.([]FeaturedTag)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetAccountFeaturedTagsLift(ctx))
+		var out []FeaturedTag
+		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.Len(t, out, 1)
 		require.Equal(t, "go", out[0].Name)
 	})

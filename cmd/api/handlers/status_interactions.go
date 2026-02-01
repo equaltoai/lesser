@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 // statusInteractionType represents the type of status interaction
@@ -45,19 +45,19 @@ func getStatusInteractionConfig(interactionType statusInteractionType) statusInt
 }
 
 // handleStatusInteractions handles both favourited_by and reblogged_by endpoints
-func (h *Handler) handleStatusInteractions(ctx *lift.Context, interactionType statusInteractionType) error {
+func (h *Handler) handleStatusInteractions(ctx *apptheory.Context, interactionType statusInteractionType) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusID(statusID); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Parse pagination parameters
-	limitStr := ctx.Query("limit")
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseFollowLimit(limitStr)
 	if err != nil {
 		limit = 20
 	}
-	cursor := ctx.Query("max_id")
+	cursor := queryValue(ctx, "max_id")
 
 	config := getStatusInteractionConfig(interactionType)
 
@@ -67,7 +67,7 @@ func (h *Handler) handleStatusInteractions(ctx *lift.Context, interactionType st
 
 	switch interactionType {
 	case statusFavourites:
-		result, err := h.registry.Notes().GetLikers(ctx.Context, &notes.GetLikersQuery{
+		result, err := h.registry.Notes().GetLikers(ctx.Context(), &notes.GetLikersQuery{
 			StatusID: statusID,
 			Pagination: interfaces.PaginationOptions{
 				Limit:  limit,
@@ -92,7 +92,7 @@ func (h *Handler) handleStatusInteractions(ctx *lift.Context, interactionType st
 		nextCursor = result.Pagination.NextCursor
 
 	case statusReblogs:
-		result, err := h.registry.Notes().GetRebloggers(ctx.Context, &notes.GetRebloggersQuery{
+		result, err := h.registry.Notes().GetRebloggers(ctx.Context(), &notes.GetRebloggersQuery{
 			StatusID: statusID,
 			Pagination: interfaces.PaginationOptions{
 				Limit:  limit,
@@ -121,18 +121,23 @@ func (h *Handler) handleStatusInteractions(ctx *lift.Context, interactionType st
 	if nextCursor != "" && len(accounts) > 0 {
 		linkHeader := fmt.Sprintf(`<%s/api/v1/statuses/%s/%s?max_id=%s&limit=%d>; rel="next"`,
 			h.cfg.BaseURL(), statusID, config.endpoint, nextCursor, limit)
-		ctx.Response.Header("Link", linkHeader)
+		resp, err := okJSON(accounts)
+		if err != nil {
+			return nil, err
+		}
+		setHeader(resp, "link", linkHeader)
+		return resp, nil
 	}
 
-	return ctx.JSON(accounts)
+	return okJSON(accounts)
 }
 
 // HandleGetStatusFavouritedByLift handles GET /api/v1/statuses/:id/favourited_by
-func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetStatusFavouritedByLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleStatusInteractions(ctx, statusFavourites)
 }
 
 // HandleGetStatusRebloggedByLift handles GET /api/v1/statuses/:id/reblogged_by
-func (h *Handler) HandleGetStatusRebloggedByLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetStatusRebloggedByLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleStatusInteractions(ctx, statusReblogs)
 }

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	stdErrors "errors"

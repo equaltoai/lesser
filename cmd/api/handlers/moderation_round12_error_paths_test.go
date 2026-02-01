@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -77,23 +78,20 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/moderation/flag", nil, nil, models.FlagRequest{})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationFlagLift(ctx))
 		})
 
 		t.Run("invalid token returns 401", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/moderation/flag", map[string]string{"Authorization": "Bearer invalid"}, nil, models.FlagRequest{})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationFlagLift(ctx))
 		})
 
 		t.Run("bad body returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/moderation/flag", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, nil, []byte("{bad"))
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleModerationFlagLift(ctx))
 		})
 
 		t.Run("missing object_id returns 400", func(t *testing.T) {
@@ -103,8 +101,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Reason:     "spam",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleModerationFlagLift(ctx))
 		})
 
 		t.Run("missing reason returns 400", func(t *testing.T) {
@@ -114,8 +111,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				ObjectType: "status",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleModerationFlagLift(ctx))
 		})
 
 		t.Run("defaults for category/severity/confidence apply", func(t *testing.T) {
@@ -129,13 +125,13 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				ConfidenceScore: 2,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+			resp := requireStatus(t, http.StatusCreated)(h.HandleModerationFlagLift(ctx))
 
-			resp := ctx.Response.Body.(models.ModerationEventResponse)
-			require.Equal(t, "other", resp.Category)
-			require.Equal(t, 2, resp.Severity)
-			require.Equal(t, 0.5, resp.ConfidenceScore)
+			var event models.ModerationEventResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &event))
+			require.Equal(t, "other", event.Category)
+			require.Equal(t, 2, event.Severity)
+			require.Equal(t, 0.5, event.ConfidenceScore)
 		})
 
 		t.Run("actor lookup error returns 500", func(t *testing.T) {
@@ -148,8 +144,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Reason:     "spam",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleModerationFlagLift(ctx))
 		})
 
 		t.Run("create moderation event error returns 500", func(t *testing.T) {
@@ -162,8 +157,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Reason:     "spam",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationFlagLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleModerationFlagLift(ctx))
 		})
 	})
 
@@ -172,33 +166,29 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/queue", nil, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationQueueLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationQueueLift(ctx))
 		})
 
 		t.Run("invalid token returns 401", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/queue", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationQueueLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationQueueLift(ctx))
 		})
 
 		t.Run("forbidden role returns 403", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/queue", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationQueueLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusForbidden)(h.HandleModerationQueueLift(ctx))
 		})
 
 		t.Run("pagination header set when next cursor exists", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/queue", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, map[string]string{"limit": "1"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationQueueLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			require.NotEmpty(t, ctx.Response.Headers["X-Next-Cursor"])
+			resp := requireStatus(t, http.StatusOK)(h.HandleModerationQueueLift(ctx))
+			require.NotEmpty(t, resp.Headers["x-next-cursor"])
 		})
 
 		t.Run("repo error returns 500", func(t *testing.T) {
@@ -207,8 +197,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/queue", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationQueueLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleModerationQueueLift(ctx))
 		})
 	})
 
@@ -217,31 +206,27 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/moderation/review", nil, nil, models.ReviewRequest{})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationReviewLift(ctx))
 		})
 
 		t.Run("invalid token returns 401", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/moderation/review", map[string]string{"Authorization": "Bearer invalid"}, nil, models.ReviewRequest{})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationReviewLift(ctx))
 		})
 
 		t.Run("forbidden role returns 403", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/moderation/review", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, nil, models.ReviewRequest{})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusForbidden)(h.HandleModerationReviewLift(ctx))
 		})
 
 		t.Run("bad body returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/moderation/review", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, []byte("{bad"))
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleModerationReviewLift(ctx))
 		})
 
 		t.Run("missing event_id returns 400", func(t *testing.T) {
@@ -251,8 +236,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Confidence: 0.7,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleModerationReviewLift(ctx))
 		})
 
 		t.Run("invalid confidence returns 400", func(t *testing.T) {
@@ -263,8 +247,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Confidence: 2,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleModerationReviewLift(ctx))
 		})
 
 		t.Run("actor lookup error returns 500", func(t *testing.T) {
@@ -277,8 +260,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Confidence: 0.7,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleModerationReviewLift(ctx))
 		})
 
 		t.Run("repo error returns 500", func(t *testing.T) {
@@ -291,8 +273,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Confidence: 0.7,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationReviewLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleModerationReviewLift(ctx))
 		})
 	})
 
@@ -301,49 +282,45 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/history/status-1", nil, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("object_id", "status-1")
-			require.NoError(t, h.HandleModerationHistoryLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			ctx.Params["object_id"] = "status-1"
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationHistoryLift(ctx))
 		})
 
 		t.Run("invalid token returns 401", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/history/status-1", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("object_id", "status-1")
-			require.NoError(t, h.HandleModerationHistoryLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			ctx.Params["object_id"] = "status-1"
+			requireStatus(t, http.StatusUnauthorized)(h.HandleModerationHistoryLift(ctx))
 		})
 
 		t.Run("missing object_id returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/history/", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleModerationHistoryLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleModerationHistoryLift(ctx))
 		})
 
 		t.Run("forbidden role returns 403", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/history/status-1", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("object_id", "status-1")
-			require.NoError(t, h.HandleModerationHistoryLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			ctx.Params["object_id"] = "status-1"
+			requireStatus(t, http.StatusForbidden)(h.HandleModerationHistoryLift(ctx))
 		})
 
 		t.Run("success includes decisions and timeline entries", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/history/status-1", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("object_id", "status-1")
-			require.NoError(t, h.HandleModerationHistoryLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			ctx.Params["object_id"] = "status-1"
+			resp := requireStatus(t, http.StatusOK)(h.HandleModerationHistoryLift(ctx))
 
-			resp := ctx.Response.Body.(models.ModerationHistoryResponse)
-			require.NotEmpty(t, resp.Events)
-			require.NotEmpty(t, resp.Decisions)
-			require.Len(t, resp.Timeline, len(resp.Events)+len(resp.Decisions))
+			var history models.ModerationHistoryResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &history))
+			require.NotEmpty(t, history.Events)
+			require.NotEmpty(t, history.Decisions)
+			require.Len(t, history.Timeline, len(history.Events)+len(history.Decisions))
 		})
 
 		t.Run("repo error returns 500", func(t *testing.T) {
@@ -352,9 +329,8 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/history/status-1", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("object_id", "status-1")
-			require.NoError(t, h.HandleModerationHistoryLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["object_id"] = "status-1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleModerationHistoryLift(ctx))
 		})
 	})
 
@@ -363,9 +339,8 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/consensus/evt1", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("event_id", "evt1")
-			require.NoError(t, h.HandleGetConsensusLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			ctx.Params["event_id"] = "evt1"
+			requireStatus(t, http.StatusForbidden)(h.HandleGetConsensusLift(ctx))
 		})
 
 		t.Run("reviews query error returns 500", func(t *testing.T) {
@@ -374,29 +349,27 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/consensus/evt1", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("event_id", "evt1")
-			require.NoError(t, h.HandleGetConsensusLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["event_id"] = "evt1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetConsensusLift(ctx))
 		})
 
 		t.Run("success returns visualization with reviews", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/consensus/evt1", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("event_id", "evt1")
-			require.NoError(t, h.HandleGetConsensusLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			ctx.Params["event_id"] = "evt1"
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetConsensusLift(ctx))
 
-			resp := ctx.Response.Body.(models.ConsensusVisualization)
-			require.NotEmpty(t, resp.Reviews)
+			var viz models.ConsensusVisualization
+			require.NoError(t, json.Unmarshal(resp.Body, &viz))
+			require.NotEmpty(t, viz.Reviews)
 		})
 
 		t.Run("missing event_id returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/consensus/", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetConsensusLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleGetConsensusLift(ctx))
 		})
 
 		t.Run("event not found returns 404", func(t *testing.T) {
@@ -405,9 +378,8 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/consensus/missing", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("event_id", "missing")
-			require.NoError(t, h.HandleGetConsensusLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["event_id"] = "missing"
+			requireStatus(t, http.StatusNotFound)(h.HandleGetConsensusLift(ctx))
 		})
 	})
 
@@ -416,24 +388,21 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, map[string]string{"direction": "sideways"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetTrustRelationshipsLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleGetTrustRelationshipsLift(ctx))
 		})
 
 		t.Run("missing token returns 401", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust", nil, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetTrustRelationshipsLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleGetTrustRelationshipsLift(ctx))
 		})
 
 		t.Run("incoming branch returns 200", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, map[string]string{"direction": "incoming"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetTrustRelationshipsLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(h.HandleGetTrustRelationshipsLift(ctx))
 		})
 
 		t.Run("repo error returns 500", func(t *testing.T) {
@@ -442,8 +411,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, map[string]string{"direction": "outgoing"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetTrustRelationshipsLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetTrustRelationshipsLift(ctx))
 		})
 	})
 
@@ -453,8 +421,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 		t.Run("bad body returns 400", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/moderation/trust", headers, nil, []byte("{bad"))
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("missing trustee_id returns 400", func(t *testing.T) {
@@ -464,8 +431,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Confidence: 0.6,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("invalid score returns 400", func(t *testing.T) {
@@ -476,8 +442,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Confidence: 0.6,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("invalid confidence returns 400", func(t *testing.T) {
@@ -488,8 +453,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Confidence: 2,
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("actor lookup error returns 500", func(t *testing.T) {
@@ -503,8 +467,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Category:   "general",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("create branch create error returns 500", func(t *testing.T) {
@@ -521,8 +484,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Category:   "general",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("create branch when relationship not found", func(t *testing.T) {
@@ -539,8 +501,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Category:   "general",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("update branch success returns 200", func(t *testing.T) {
@@ -552,8 +513,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Category:   "general",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(h.HandleUpdateTrustLift(ctx))
 		})
 
 		t.Run("update branch error returns 500", func(t *testing.T) {
@@ -567,8 +527,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 				Category:   "general",
 			})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateTrustLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateTrustLift(ctx))
 		})
 	})
 
@@ -576,22 +535,19 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, baseState())
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust//score", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetTrustScoreLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetTrustScoreLift(ctx))
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust/alice/score", map[string]string{"Authorization": "Bearer " + makeToken("admin")}, nil, nil)
 		require.NoError(t, err)
-		ctx2.SetParam("actor_id", "@alice@example.com")
-		require.NoError(t, h.HandleGetTrustScoreLift(ctx2))
-		require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+		ctx2.Params["actor_id"] = "@alice@example.com"
+		requireStatus(t, http.StatusOK)(h.HandleGetTrustScoreLift(ctx2))
 
 		t.Run("forbidden role returns 403", func(t *testing.T) {
 			h, _, _ := round11NewHandler(t, cfg, baseState())
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust/alice/score", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("actor_id", "alice")
-			require.NoError(t, h.HandleGetTrustScoreLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			ctx.Params["actor_id"] = "alice"
+			requireStatus(t, http.StatusForbidden)(h.HandleGetTrustScoreLift(ctx))
 		})
 
 		// Note: forcing GetTrustedByRelationships to error deterministically in this handler

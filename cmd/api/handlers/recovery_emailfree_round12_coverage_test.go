@@ -1,7 +1,7 @@
-package lift
+package handlers
 
 import (
-	"context"
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"reflect"
@@ -25,8 +25,7 @@ func TestRecoveryEmailFree_Round12_GetRecoveryOptions_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/auth/recovery/options", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetRecoveryOptionsLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetRecoveryOptionsLift(ctx))
 	})
 
 	t.Run("user_not_found_returns_generic_ok", func(t *testing.T) {
@@ -43,8 +42,7 @@ func TestRecoveryEmailFree_Round12_GetRecoveryOptions_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/auth/recovery/options", nil, map[string]string{"username": "missing"}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetRecoveryOptionsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetRecoveryOptionsLift(ctx))
 	})
 
 	t.Run("development_env_forces_all_options", func(t *testing.T) {
@@ -66,22 +64,13 @@ func TestRecoveryEmailFree_Round12_GetRecoveryOptions_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/auth/recovery/options", nil, map[string]string{"username": "alice"}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetRecoveryOptionsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetRecoveryOptionsLift(ctx))
 
-		body, ok := ctx.Response.Body.(map[string]any)
-		require.True(t, ok)
-		opts, ok := body["options"].([]string)
-		if !ok {
-			// Lift JSON encoder may decode as []interface{} in tests depending on adapter.
-			raw, ok := body["options"].([]any)
-			require.True(t, ok)
-			for _, v := range raw {
-				if s, ok := v.(string); ok {
-					opts = append(opts, s)
-				}
-			}
+		var body struct {
+			Options []string `json:"options"`
 		}
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		opts := body.Options
 		require.ElementsMatch(t, []string{"passkey", "wallet", "oauth_github", "social", "recovery_code"}, opts)
 	})
 }
@@ -98,8 +87,7 @@ func TestRecoveryEmailFree_Round12_SocialRecoveryInitiateAndConfirm_Coverage(t *
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/auth/recovery/social/initiate", nil, nil, []byte(`{invalid}`))
 
-		require.NoError(t, handler.HandleInitiateSocialRecoveryLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleInitiateSocialRecoveryLift(ctx))
 	})
 
 	t.Run("initiate_insufficient_trustees_returns_generic_ok", func(t *testing.T) {
@@ -120,8 +108,7 @@ func TestRecoveryEmailFree_Round12_SocialRecoveryInitiateAndConfirm_Coverage(t *
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/social/initiate", nil, nil, map[string]string{"username": "alice"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleInitiateSocialRecoveryLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleInitiateSocialRecoveryLift(ctx))
 	})
 
 	t.Run("initiate_development_returns_details_with_fallback_parser", func(t *testing.T) {
@@ -148,13 +135,13 @@ func TestRecoveryEmailFree_Round12_SocialRecoveryInitiateAndConfirm_Coverage(t *
 		headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/auth/recovery/social/initiate", headers, nil, []byte(`{"username":"alice"}`))
 
-		require.NoError(t, handler.HandleInitiateSocialRecoveryLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleInitiateSocialRecoveryLift(ctx))
 
-		body, ok := ctx.Response.Body.(map[string]any)
-		require.True(t, ok)
-		_, ok = body["request_id"].(string)
-		require.True(t, ok)
+		var body struct {
+			RequestID string `json:"request_id"`
+		}
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.RequestID)
 	})
 
 	t.Run("confirm_invalid_body", func(t *testing.T) {
@@ -165,8 +152,7 @@ func TestRecoveryEmailFree_Round12_SocialRecoveryInitiateAndConfirm_Coverage(t *
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/auth/recovery/social/confirm", nil, nil, []byte(`{invalid}`))
 
-		require.NoError(t, handler.HandleConfirmSocialRecoveryLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleConfirmSocialRecoveryLift(ctx))
 	})
 
 	t.Run("confirm_missing_request", func(t *testing.T) {
@@ -182,8 +168,7 @@ func TestRecoveryEmailFree_Round12_SocialRecoveryInitiateAndConfirm_Coverage(t *
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/social/confirm", nil, nil, map[string]string{"request_id": "missing", "trustee_id": "@trustee@example.com"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleConfirmSocialRecoveryLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleConfirmSocialRecoveryLift(ctx))
 	})
 }
 
@@ -200,8 +185,7 @@ func TestRecoveryEmailFree_Round12_RecoveryCodes_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/codes/generate", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGenerateRecoveryCodesLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGenerateRecoveryCodesLift(ctx))
 	})
 
 	t.Run("generate_internal_error", func(t *testing.T) {
@@ -218,10 +202,9 @@ func TestRecoveryEmailFree_Round12_RecoveryCodes_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/codes/generate", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.Context = context.WithValue(ctx.Context, "jwt_claims", map[string]any{"sub": "alice"})
+		ctx.Set("jwt_claims", map[string]any{"sub": "alice"})
 
-		require.NoError(t, handler.HandleGenerateRecoveryCodesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGenerateRecoveryCodesLift(ctx))
 	})
 
 	t.Run("use_invalid_body", func(t *testing.T) {
@@ -232,8 +215,7 @@ func TestRecoveryEmailFree_Round12_RecoveryCodes_Coverage(t *testing.T) {
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/auth/recovery/codes/use", nil, nil, []byte(`{invalid}`))
 
-		require.NoError(t, handler.HandleUseRecoveryCodeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUseRecoveryCodeLift(ctx))
 	})
 
 	t.Run("use_invalid_code", func(t *testing.T) {
@@ -259,8 +241,7 @@ func TestRecoveryEmailFree_Round12_RecoveryCodes_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/codes/use", nil, nil, map[string]string{"username": "alice", "code": "WRONG-CODE-0000"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleUseRecoveryCodeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUseRecoveryCodeLift(ctx))
 	})
 
 	t.Run("use_validate_error_and_token_generation_error", func(t *testing.T) {
@@ -277,8 +258,7 @@ func TestRecoveryEmailFree_Round12_RecoveryCodes_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/codes/use", nil, nil, map[string]string{"username": "alice", "code": "ABCD"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleUseRecoveryCodeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUseRecoveryCodeLift(ctx))
 
 		// Now force recovery token storage to fail after a valid code.
 		code := "ABCD-EFGH-IJKL-MNOP"
@@ -298,8 +278,7 @@ func TestRecoveryEmailFree_Round12_RecoveryCodes_Coverage(t *testing.T) {
 
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/codes/use", nil, nil, map[string]string{"username": "alice", "code": code})
 		require.NoError(t, err)
-		require.NoError(t, handler2.HandleUseRecoveryCodeLift(ctx2))
-		require.Equal(t, http.StatusInternalServerError, ctx2.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler2.HandleUseRecoveryCodeLift(ctx2))
 	})
 }
 
@@ -315,15 +294,13 @@ func TestRecoveryEmailFree_Round12_TrusteesAndDeviceRecovery_Coverage(t *testing
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/trustees/add", nil, nil, map[string]string{"trustee_actor_id": "@bob@example.com"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAddTrusteeLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleAddTrusteeLift(ctx))
 
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/trustees/add", nil, nil, map[string]string{"trustee_actor_id": "no-at"})
 		require.NoError(t, err)
-		ctx2.Context = context.WithValue(ctx2.Context, "jwt_claims", map[string]any{"sub": "alice"})
+		ctx2.Set("jwt_claims", map[string]any{"sub": "alice"})
 
-		require.NoError(t, handler.HandleAddTrusteeLift(ctx2))
-		require.Equal(t, http.StatusBadRequest, ctx2.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleAddTrusteeLift(ctx2))
 	})
 
 	t.Run("add_trustee_invalid_body_and_storage_error", func(t *testing.T) {
@@ -334,16 +311,14 @@ func TestRecoveryEmailFree_Round12_TrusteesAndDeviceRecovery_Coverage(t *testing
 		handler := NewEmailFreeRecoveryHandler(authService)
 
 		ctxBad := round10NewLiftContextWithBodyBytes(http.MethodPost, "/auth/recovery/trustees/add", nil, nil, []byte(`{invalid}`))
-		ctxBad.Context = context.WithValue(ctxBad.Context, "jwt_claims", map[string]any{"sub": "alice"})
-		require.NoError(t, handler.HandleAddTrusteeLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		ctxBad.Set("jwt_claims", map[string]any{"sub": "alice"})
+		requireStatus(t, http.StatusBadRequest)(handler.HandleAddTrusteeLift(ctxBad))
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/trustees/add", nil, nil, map[string]string{"trustee_actor_id": "@bob@example.com"})
 		require.NoError(t, err)
-		ctx.Context = context.WithValue(ctx.Context, "jwt_claims", map[string]any{"sub": "alice"})
+		ctx.Set("jwt_claims", map[string]any{"sub": "alice"})
 
-		require.NoError(t, handler.HandleAddTrusteeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleAddTrusteeLift(ctx))
 	})
 
 	t.Run("list_trustees_unauthorized_and_internal_error", func(t *testing.T) {
@@ -359,14 +334,12 @@ func TestRecoveryEmailFree_Round12_TrusteesAndDeviceRecovery_Coverage(t *testing
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/auth/recovery/trustees", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleListTrusteesLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleListTrusteesLift(ctx))
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/auth/recovery/trustees", nil, nil, nil)
 		require.NoError(t, err)
-		ctx2.Context = context.WithValue(ctx2.Context, "jwt_claims", map[string]any{"sub": "alice"})
-		require.NoError(t, handler.HandleListTrusteesLift(ctx2))
-		require.Equal(t, http.StatusInternalServerError, ctx2.Response.StatusCode)
+		ctx2.Set("jwt_claims", map[string]any{"sub": "alice"})
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleListTrusteesLift(ctx2))
 	})
 
 	t.Run("remove_trustee_errors", func(t *testing.T) {
@@ -378,18 +351,16 @@ func TestRecoveryEmailFree_Round12_TrusteesAndDeviceRecovery_Coverage(t *testing
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/recovery/trustees/", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.Context = context.WithValue(ctx.Context, "jwt_claims", map[string]any{"sub": "alice"})
+		ctx.Set("jwt_claims", map[string]any{"sub": "alice"})
 
-		require.NoError(t, handler.HandleRemoveTrusteeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleRemoveTrusteeLift(ctx))
 
 		ctx2, err := round10NewLiftContext(http.MethodDelete, "/auth/recovery/trustees/trustee-1", nil, nil, nil)
 		require.NoError(t, err)
-		ctx2.Context = context.WithValue(ctx2.Context, "jwt_claims", map[string]any{"sub": "alice"})
-		ctx2.SetParam("trustee_id", "@bob@example.com")
+		ctx2.Set("jwt_claims", map[string]any{"sub": "alice"})
+		ctx2.Params["trustee_id"] = "@bob@example.com"
 
-		require.NoError(t, handler.HandleRemoveTrusteeLift(ctx2))
-		require.Equal(t, http.StatusBadRequest, ctx2.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleRemoveTrusteeLift(ctx2))
 	})
 
 	t.Run("device_recovery_invalid_body_and_not_trusted", func(t *testing.T) {
@@ -405,13 +376,11 @@ func TestRecoveryEmailFree_Round12_TrusteesAndDeviceRecovery_Coverage(t *testing
 		handler := NewEmailFreeRecoveryHandler(authService)
 
 		ctxBad := round10NewLiftContextWithBodyBytes(http.MethodPost, "/auth/recovery/device", nil, nil, []byte(`{invalid}`))
-		require.NoError(t, handler.HandleDeviceRecoveryLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeviceRecoveryLift(ctxBad))
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/device", nil, nil, map[string]string{"username": "alice", "device_id": "device-1"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeviceRecoveryLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeviceRecoveryLift(ctx))
 	})
 
 	t.Run("device_recovery_token_storage_error", func(t *testing.T) {
@@ -428,7 +397,6 @@ func TestRecoveryEmailFree_Round12_TrusteesAndDeviceRecovery_Coverage(t *testing
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/recovery/device", nil, nil, map[string]string{"username": "alice", "device_id": "device-1"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeviceRecoveryLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDeviceRecoveryLift(ctx))
 	})
 }

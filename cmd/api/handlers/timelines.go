@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -86,7 +86,7 @@ type TagTimelineUser struct {
 }
 
 // HandleGetTagTimelineLift handles GET /api/v1/timelines/tag/:hashtag
-func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTagTimelineLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	hashtag := ctx.Param("hashtag")
 	if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -122,7 +122,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		OnlyMedia: params.OnlyMedia,
 	}
 
-	result, err := h.registry.Notes().ListNotes(ctx.Context, query)
+	result, err := h.registry.Notes().ListNotes(ctx.Context(), query)
 	if err != nil {
 		h.logger.Error("failed to get hashtag timeline",
 			zap.String("hashtag", hashtag),
@@ -150,24 +150,27 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Add pagination header using centralized helper
+	resp, err := h.respondOK(ctx, statuses)
+	if err != nil {
+		return nil, err
+	}
+
 	if result.Pagination != nil && result.Pagination.NextCursor != "" {
-		// Use common pagination helper for consistent header format
 		baseURL := fmt.Sprintf("/api/v1/timelines/tag/%s", hashtag)
 		paginationParams := common.PaginationParams{
 			Limit: params.Limit,
 			MaxID: params.MaxID,
 		}
-		common.SetPaginationHeaders(ctx, baseURL, paginationParams, true, false, result.Pagination.NextCursor, "")
+		common.SetPaginationHeaders(resp, baseURL, paginationParams, true, false, result.Pagination.NextCursor, "")
 	}
 
-	// Return statuses using common JSON response helper
-	return h.respondOK(ctx, statuses)
+	return resp, nil
 }
 
 // getTagTimelineUser extracts and authenticates user from request
 
 // parseTagTimelineParams extracts query parameters using centralized pagination helper
-func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*TagTimelineParams, error) {
+func (h *Handler) parseTagTimelineParams(ctx *apptheory.Context, hashtag string) (*TagTimelineParams, error) {
 	// Use centralized timeline pagination helper
 	timelineParams := common.GetTimelinePaginationParams(ctx)
 
@@ -207,16 +210,19 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*Ta
 // addTagTimelinePaginationHeader adds Link header for pagination
 
 // HandleGetListTimelineLift handles GET /api/v1/timelines/list/:list_id
-func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetListTimelineLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	listID := ctx.Param("list_id")
 	if err := common.ValidateRequiredParam("list_id", listID); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate and get username
-	claims, err := h.authenticateWithScope(ctx, "read")
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 	username := claims.Username
 
@@ -233,7 +239,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get list timeline through the service
-	timelineResult, err := listService.GetListTimeline(ctx.Context, &lists.GetListTimelineQuery{
+	timelineResult, err := listService.GetListTimeline(ctx.Context(), &lists.GetListTimelineQuery{
 		ListID:   listID,
 		ViewerID: username,
 		Pagination: interfaces.PaginationOptions{
@@ -277,7 +283,12 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 			Limit: limit,
 			MaxID: cursor,
 		}
-		common.SetPaginationHeaders(ctx, baseURL, paginationParams, true, false, timelineResult.Pagination.NextCursor, "")
+		resp, err := h.respondOK(ctx, apiStatuses)
+		if err != nil {
+			return nil, err
+		}
+		common.SetPaginationHeaders(resp, baseURL, paginationParams, true, false, timelineResult.Pagination.NextCursor, "")
+		return resp, nil
 	}
 
 	return h.respondOK(ctx, apiStatuses)
@@ -286,7 +297,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 // Helper functions for HandleGetListTimelineLift
 
 // parseTimelineParams parses limit and cursor from query parameters using centralized helper
-func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string, error) {
+func (h *Handler) parseTimelineParams(ctx *apptheory.Context) (int, string, error) {
 	// Use centralized pagination parameter extraction
 	paginationParams := common.GetPaginationParams(ctx)
 
@@ -306,11 +317,11 @@ func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string, error) {
 }
 
 // HandleGetDirectTimelineLift handles GET /api/v1/timelines/direct
-func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetDirectTimelineLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
-	username, err := h.authenticateDirectTimeline(ctx)
-	if err != nil {
-		return err
+	username, resp, err := h.authenticateDirectTimeline(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Parse query parameters
@@ -326,7 +337,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 		},
 	}
 
-	result, err := h.registry.Notes().ListNotes(ctx.Context, query)
+	result, err := h.registry.Notes().ListNotes(ctx.Context(), query)
 	if err != nil {
 		h.logger.Error("failed to get direct timeline",
 			zap.String("username", username),
@@ -354,7 +365,12 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 			Limit: params.limit,
 			MaxID: params.maxID,
 		}
-		common.SetPaginationHeaders(ctx, baseURL, paginationParams, true, false, result.Pagination.NextCursor, "")
+		resp, err := h.respondOK(ctx, apiStatuses)
+		if err != nil {
+			return nil, err
+		}
+		common.SetPaginationHeaders(resp, baseURL, paginationParams, true, false, result.Pagination.NextCursor, "")
+		return resp, nil
 	}
 
 	return h.respondOK(ctx, apiStatuses)
@@ -367,42 +383,25 @@ type directTimelineParams struct {
 }
 
 // authenticateDirectTimeline authenticates the user for direct timeline access
-func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) {
-	// Extract and validate token
-	authHeader := h.extractDirectTimelineAuthHeader(ctx)
-	token, err := auth.ExtractBearerToken(authHeader)
+func (h *Handler) authenticateDirectTimeline(ctx *apptheory.Context) (string, *apptheory.Response, error) {
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
+		if isInsufficientScopeError(err) {
+			resp, respErr := common.RespondForbidden(ctx, err.Error())
+			return "", resp, respErr
+		}
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return "", resp, respErr
 	}
 
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	// Check read scope
-	if !claims.HasScope(auth.ScopeRead) {
-		return "", common.RespondInsufficientScope(ctx)
-	}
-
-	return claims.Username, nil
+	return claims.Username, nil, nil
 }
 
 // extractDirectTimelineAuthHeader extracts authorization header from request
-func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
+func (h *Handler) extractDirectTimelineAuthHeader(ctx *apptheory.Context) string {
+	authHeader := headerValue(ctx, "Authorization")
 	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	return authHeader
@@ -411,7 +410,7 @@ func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
 // getUserActorForDirectTimeline gets the user's actor for direct timeline operations
 
 // parseDirectTimelineParams parses query parameters for direct timeline using centralized helper
-func (h *Handler) parseDirectTimelineParams(ctx *lift.Context) directTimelineParams {
+func (h *Handler) parseDirectTimelineParams(ctx *apptheory.Context) directTimelineParams {
 	// Use centralized pagination parameter extraction
 	paginationParams := common.GetPaginationParams(ctx)
 

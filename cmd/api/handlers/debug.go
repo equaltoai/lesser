@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -73,23 +73,23 @@ type DebugObjectExplanation struct {
 }
 
 // HandleDebugFederationTraceLift traces the processing of a specific activity
-func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
+func (h *Handler) HandleDebugFederationTraceLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	startTime := time.Now()
 
 	// Authenticate request
-	claims, err := h.authenticateDebugRequest(ctx, "federation_trace")
-	if err != nil {
-		return err
+	claims, resp, err := h.authenticateDebugRequest(ctx, "federation_trace")
+	if resp != nil || err != nil {
+		return resp, err
 	}
 	_ = claims // claims may be nil in test mode
 
 	activityID := ctx.Param("activity_id")
-	if err := h.validateRequiredParam(ctx, "activity_id", activityID, "activity id required"); err != nil {
-		return err
+	if resp, err := h.validateRequiredParam(ctx, "activity_id", activityID, "activity id required"); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get the activity
-	activity, err := h.repos.Activity().GetActivity(ctx.Context, activityID)
+	activity, err := h.repos.Activity().GetActivity(ctx.Context(), activityID)
 	if err != nil {
 		h.logger.Info("activity not found", zap.String("activity_id", activityID), zap.Error(err))
 		return h.respondNotFound(ctx, "activity")
@@ -161,26 +161,25 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 	// Headers would be set differently in Lift - this is a placeholder
 	_ = response.ProcessingTime // Use the variable to avoid unused warnings
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleDebugObjectLift provides detailed information about a stored object
-func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
+func (h *Handler) HandleDebugObjectLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request
-	claims, err := h.authenticateDebugRequest(ctx, "object")
-	if err != nil {
-		return err
+	claims, resp, err := h.authenticateDebugRequest(ctx, "object")
+	if resp != nil || err != nil {
+		return resp, err
 	}
 	_ = claims // claims may be nil in test mode
 
 	objectID := ctx.Param("object_id")
-	if err := h.validateRequiredParam(ctx, "object_id", objectID, "object id required"); err != nil {
-		return err
+	if resp, err := h.validateRequiredParam(ctx, "object_id", objectID, "object id required"); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get the object
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context(), objectID)
 	if err != nil {
 		return h.respondNotFound(ctx, "object")
 	}
@@ -208,7 +207,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 			parts := strings.Split(actorStr, "/")
 			if len(parts) > 0 {
 				username := parts[len(parts)-1]
-				if actor, err := h.repos.Actor().GetActor(ctx.Context, username); err == nil {
+				if actor, err := h.repos.Actor().GetActor(ctx.Context(), username); err == nil {
 					response.Actor = map[string]any{
 						"id":       actor.ID,
 						"username": actor.PreferredUsername,
@@ -221,8 +220,8 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 	}
 
 	// Check relationships
-	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
-	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context(), objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context(), objectID)
 
 	response.Relationships["likes"] = map[string]any{
 		"count": likeCount,
@@ -233,34 +232,32 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 		"url":   fmt.Sprintf("%s/shares", objectID),
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleDebugReplayLift replays an activity for testing
-func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
+func (h *Handler) HandleDebugReplayLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request
-	claims, err := h.authenticateDebugRequest(ctx, "replay")
-	if err != nil {
-		return err
+	claims, resp, err := h.authenticateDebugRequest(ctx, "replay")
+	if resp != nil || err != nil {
+		return resp, err
 	}
 	_ = claims // claims may be nil in test mode
 
 	activityID := ctx.Param("activity_id")
-	if err := h.validateRequiredParam(ctx, "activity_id", activityID, "activity id required"); err != nil {
-		return err
+	if resp, err := h.validateRequiredParam(ctx, "activity_id", activityID, "activity id required"); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get the activity
-	activity, err := h.repos.Activity().GetActivity(ctx.Context, activityID)
+	activity, err := h.repos.Activity().GetActivity(ctx.Context(), activityID)
 	if err != nil {
 		return h.respondNotFound(ctx, "activity")
 	}
 
 	// Check if it's a local activity
 	if !strings.Contains(activity.Actor, h.cfg.BaseURL()) {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "can only replay local activities"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "can only replay local activities"})
 	}
 
 	// Re-process the activity through the federation pipeline
@@ -290,22 +287,21 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 		result["delivery_status"] = "simulated"
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(result)
+	return okJSON(result)
 }
 
 // HandleDebugFederationDomainLift provides debug info for a specific federated domain
-func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
+func (h *Handler) HandleDebugFederationDomainLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request
-	claims, err := h.authenticateDebugRequest(ctx, "federation_domain")
-	if err != nil {
-		return err
+	claims, resp, err := h.authenticateDebugRequest(ctx, "federation_domain")
+	if resp != nil || err != nil {
+		return resp, err
 	}
 	_ = claims // claims may be nil in test mode
 
 	domain := ctx.Param("domain")
-	if err := h.validateRequiredParam(ctx, "domain", domain, "domain required"); err != nil {
-		return err
+	if resp, err := h.validateRequiredParam(ctx, "domain", domain, "domain required"); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Build response with domain info
@@ -337,26 +333,25 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 	// Add shared inbox if known
 	response.SharedInbox = fmt.Sprintf("https://%s/inbox", domain)
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleDebugObjectExplainLift provides detailed explanation of object storage and cost
-func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
+func (h *Handler) HandleDebugObjectExplainLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request
-	claims, err := h.authenticateDebugRequest(ctx, "object_explain")
-	if err != nil {
-		return err
+	claims, resp, err := h.authenticateDebugRequest(ctx, "object_explain")
+	if resp != nil || err != nil {
+		return resp, err
 	}
 	_ = claims // claims may be nil in test mode
 
 	objectID := ctx.Param("object_id")
-	if err := h.validateRequiredParam(ctx, "object_id", objectID, "object id required"); err != nil {
-		return err
+	if resp, err := h.validateRequiredParam(ctx, "object_id", objectID, "object id required"); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get the object
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	obj, err := h.repos.Object().GetObject(ctx.Context(), objectID)
 	if err != nil {
 		return h.respondNotFound(ctx, "object")
 	}
@@ -388,13 +383,13 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 	}
 
 	// Add references
-	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
-	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, objectID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context(), objectID)
+	announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context(), objectID)
 
 	response.References = map[string]any{
 		"likes":     likeCount,
 		"announces": announceCount,
-		"replies":   h.countStatusRepliesLift(ctx.Context, objectID),
+		"replies":   h.countStatusRepliesLift(ctx.Context(), objectID),
 	}
 
 	// Add cost breakdown
@@ -411,8 +406,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 	}
 
 	// Note: X-Cost-Micros header would be set differently in Lift
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // Helper method to count status replies
@@ -436,47 +430,44 @@ func (h *Handler) countStatusRepliesLift(ctx context.Context, statusID string) i
 // Note: HandleDebugQueueLift removed - was an unused placeholder
 
 // authenticateDebugRequest handles common authentication logic for debug endpoints
-func (h *Handler) authenticateDebugRequest(ctx *lift.Context, _ string) (*auth.Claims, error) {
+func (h *Handler) authenticateDebugRequest(ctx *apptheory.Context, _ string) (*auth.Claims, *apptheory.Response, error) {
 	// For now, debug requests are only allowed in local/test environments
 	if h.cfg.Stage != "local" && h.cfg.Stage != "test" {
-		ctx.Status(http.StatusForbidden)
-		_ = ctx.JSON(map[string]string{"error": "debug endpoints are only available in local or test environments"})
-		return nil, fmt.Errorf("debug endpoints are only available in local or test environments")
+		resp, err := apptheory.JSON(http.StatusForbidden, map[string]string{"error": "debug endpoints are only available in local or test environments"})
+		return nil, resp, err
 	}
 
 	// Extract and validate JWT token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		_ = ctx.JSON(map[string]string{"error": "unauthorized"})
-		return nil, fmt.Errorf("missing token")
+		resp, err := apptheory.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return nil, resp, err
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		_ = ctx.JSON(map[string]string{"error": "unauthorized"})
-		return nil, fmt.Errorf("invalid token: %w", err)
+		resp, respErr := apptheory.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		if respErr != nil {
+			return nil, nil, respErr
+		}
+		return nil, resp, nil
 	}
 
 	// Check admin scope
 	if !claims.HasScope("admin") && !claims.HasScope("debug") {
-		ctx.Status(http.StatusForbidden)
-		_ = ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		return nil, fmt.Errorf("insufficient permissions")
+		resp, err := apptheory.JSON(http.StatusForbidden, map[string]string{"error": "admin or debug scope required"})
+		return nil, resp, err
 	}
 
-	return claims, nil
+	return claims, nil, nil
 }
 
 // validateRequiredParam validates a required parameter and returns a 400 error response if missing/empty
-func (h *Handler) validateRequiredParam(ctx *lift.Context, paramName, paramValue, errorMessage string) error {
+func (h *Handler) validateRequiredParam(ctx *apptheory.Context, paramName, paramValue, errorMessage string) (*apptheory.Response, error) {
 	if err := common.ValidateRequiredParam(paramName, paramValue); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		_ = ctx.JSON(map[string]string{"error": errorMessage})
-		return fmt.Errorf("missing required param %s", paramName)
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": errorMessage})
 	}
-	return nil
+	return nil, nil
 }

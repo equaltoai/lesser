@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func TestHandleGetRelationshipsLift(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/relationships", map[string]string{"Authorization": "Bearer " + token}, map[string]string{"id": "bob,carol"}, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleGetRelationshipsLift(ctx))
+	requireStatus(t, http.StatusOK)(h.HandleGetRelationshipsLift(ctx))
 }
 
 func TestRelationshipsFullHandlers(t *testing.T) {
@@ -70,35 +70,35 @@ func TestRelationshipsFullHandlers(t *testing.T) {
 
 	ctxFollow, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/follow", headers, nil, nil)
 	require.NoError(t, err)
-	ctxFollow.SetParam("id", "bob")
-	require.NoError(t, h.HandleFollowAccountFull(ctxFollow))
+	ctxFollow.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleFollowAccountFull(ctxFollow))
 
 	ctxUnfollow, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unfollow", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnfollow.SetParam("id", "bob")
-	require.NoError(t, h.HandleUnfollowAccountFull(ctxUnfollow))
+	ctxUnfollow.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleUnfollowAccountFull(ctxUnfollow))
 
 	ctxBlock, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/block", headers, nil, nil)
 	require.NoError(t, err)
-	ctxBlock.SetParam("id", "bob")
-	require.NoError(t, h.HandleBlockAccountFull(ctxBlock))
+	ctxBlock.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleBlockAccountFull(ctxBlock))
 
 	ctxUnblock, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unblock", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnblock.SetParam("id", "bob")
-	require.NoError(t, h.HandleUnblockAccountFull(ctxUnblock))
+	ctxUnblock.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleUnblockAccountFull(ctxUnblock))
 
 	ctxMute, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/mute", headers, nil, nil)
 	require.NoError(t, err)
-	ctxMute.SetParam("id", "bob")
-	require.NoError(t, h.HandleMuteAccountFull(ctxMute))
+	ctxMute.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleMuteAccountFull(ctxMute))
 
 	ctxUnmute, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unmute", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnmute.SetParam("id", "bob")
-	require.NoError(t, h.HandleUnmuteAccountFull(ctxUnmute))
+	ctxUnmute.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleUnmuteAccountFull(ctxUnmute))
 
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/relationships", headers, map[string]string{"id": "bob"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetRelationshipsFull(ctxGet))
+	requireStatus(t, http.StatusOK)(h.HandleGetRelationshipsFull(ctxGet))
 }

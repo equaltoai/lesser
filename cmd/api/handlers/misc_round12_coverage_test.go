@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -56,12 +57,11 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleSearchLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleSearchLift(ctx))
 
-		resp, ok := ctx.Response.Body.(models.SearchResult)
-		require.True(t, ok)
-		require.Len(t, resp.Statuses, 1)
+		var result models.SearchResult
+		require.NoError(t, json.Unmarshal(resp.Body, &result))
+		require.Len(t, result.Statuses, 1)
 	})
 
 	t.Run("parseSearchParams handles bad limit and invalid query", func(t *testing.T) {
@@ -71,8 +71,9 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		params, err := handler.parseSearchParams(ctxBadLimit)
+		params, resp, err := handler.parseSearchParams(ctxBadLimit)
 		require.NoError(t, err)
+		require.Nil(t, resp)
 		require.Equal(t, 20, params.Limit)
 
 		ctxInvalidQuery, err := round10NewLiftContext(http.MethodGet, "/api/v1/search", nil, map[string]string{
@@ -80,8 +81,10 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		_, err = handler.parseSearchParams(ctxInvalidQuery)
-		require.Error(t, err)
+		_, resp, err = handler.parseSearchParams(ctxInvalidQuery)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("HandleSearchLift returns validation error", func(t *testing.T) {
@@ -90,8 +93,7 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.Error(t, handler.HandleSearchLift(ctxInvalidQuery))
-		require.Equal(t, http.StatusBadRequest, ctxInvalidQuery.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleSearchLift(ctxInvalidQuery))
 	})
 }
 
@@ -105,13 +107,12 @@ func TestMisc_Search_HashtagPlaceholder_And_TagHistory_Round12(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, handler.HandleSearchLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	resp := requireStatus(t, http.StatusOK)(handler.HandleSearchLift(ctx))
 
-	resp, ok := ctx.Response.Body.(models.SearchResult)
-	require.True(t, ok)
-	require.Len(t, resp.Hashtags, 1)
-	require.Equal(t, "golang", resp.Hashtags[0].Name)
+	var result models.SearchResult
+	require.NoError(t, json.Unmarshal(resp.Body, &result))
+	require.Len(t, result.Hashtags, 1)
+	require.Equal(t, "golang", result.Hashtags[0].Name)
 
 	tag := handler.convertHashtagToTag(ctx, storage.Hashtag{
 		Name: "golang",
@@ -121,9 +122,9 @@ func TestMisc_Search_HashtagPlaceholder_And_TagHistory_Round12(t *testing.T) {
 	require.Len(t, tag.History, 7)
 
 	// addPlaceholderHashtag should not add when results already present.
-	result := &models.SearchResult{Hashtags: []models.Tag{{Name: "existing"}}}
-	handler.addPlaceholderHashtag("#GoLang", result)
-	require.Len(t, result.Hashtags, 1)
+	placeholderResult := &models.SearchResult{Hashtags: []models.Tag{{Name: "existing"}}}
+	handler.addPlaceholderHashtag("#GoLang", placeholderResult)
+	require.Len(t, placeholderResult.Hashtags, 1)
 }
 
 func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
@@ -266,8 +267,7 @@ func TestMisc_Instance_V2_VAPIDBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/instance", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetInstanceV2Lift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetInstanceV2Lift(ctx))
 	})
 
 	t.Run("production requires VAPID keys", func(t *testing.T) {
@@ -280,8 +280,7 @@ func TestMisc_Instance_V2_VAPIDBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/instance", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetInstanceV2Lift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetInstanceV2Lift(ctx))
 	})
 
 	t.Run("generateAndStoreVAPIDKeys uses localhost when domain missing", func(t *testing.T) {
@@ -304,11 +303,10 @@ func TestMisc_Instance_V2_VAPIDBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/configuration", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetInstanceConfigurationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetInstanceConfigurationLift(ctx))
 
-		body, ok := ctx.Response.Body.(map[string]any)
-		require.True(t, ok)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "public", body["vapid_key"])
 	})
 
@@ -342,16 +340,14 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications", readHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetNotificationsLift(ctxList))
-		require.Equal(t, http.StatusServiceUnavailable, ctxList.Response.StatusCode)
+		requireStatus(t, http.StatusServiceUnavailable)(handler.HandleGetNotificationsLift(ctxList))
 
 		writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write:notifications", auth.ScopeWrite})
 		writeHeaders := map[string]string{"Authorization": "Bearer " + writeToken}
 
 		ctxClear, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/clear", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleClearNotificationsLift(ctxClear))
-		require.Equal(t, http.StatusServiceUnavailable, ctxClear.Response.StatusCode)
+		requireStatus(t, http.StatusServiceUnavailable)(handler.HandleClearNotificationsLift(ctxClear))
 	})
 
 	t.Run("dismiss handles not found vs internal error", func(t *testing.T) {
@@ -371,9 +367,8 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctxNotFound, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/n1/dismiss", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxNotFound.SetParam("id", "n1")
-		require.NoError(t, handler.HandleDismissNotificationLift(ctxNotFound))
-		require.Equal(t, http.StatusNotFound, ctxNotFound.Response.StatusCode)
+		ctxNotFound.Params["id"] = "n1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleDismissNotificationLift(ctxNotFound))
 
 		handler.registry = &RegistryStub{
 			NotificationsSvc: &NotificationsServiceStub{
@@ -385,9 +380,8 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctxErr, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/n1/dismiss", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxErr.SetParam("id", "n1")
-		require.NoError(t, handler.HandleDismissNotificationLift(ctxErr))
-		require.Equal(t, http.StatusInternalServerError, ctxErr.Response.StatusCode)
+		ctxErr.Params["id"] = "n1"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDismissNotificationLift(ctxErr))
 
 		// Also cover HandleGetNotificationLift status attach path.
 		handler.registry = &RegistryStub{
@@ -447,12 +441,11 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/notif-1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxGet.SetParam("id", "notif-1")
-		require.NoError(t, handlerWithNotif.HandleGetNotificationLift(ctxGet))
-		require.Equal(t, http.StatusOK, ctxGet.Response.StatusCode)
+		ctxGet.Params["id"] = "notif-1"
+		respGet := requireStatus(t, http.StatusOK)(handlerWithNotif.HandleGetNotificationLift(ctxGet))
 
-		apiNotif, ok := ctxGet.Response.Body.(*models.Notification)
-		require.True(t, ok)
+		var apiNotif models.Notification
+		require.NoError(t, json.Unmarshal(respGet.Body, &apiNotif))
 		require.NotNil(t, apiNotif.Status)
 	})
 
@@ -472,10 +465,9 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v2/notifications/groups/g1/read", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("group_id", "g1")
+		ctx.Params["group_id"] = "g1"
 
-		require.NoError(t, handler.HandleMarkGroupAsReadLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleMarkGroupAsReadLift(ctx))
 	})
 }
 
@@ -504,8 +496,7 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetNotificationsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetNotificationsLift(ctx))
 	})
 
 	t.Run("types and exclude_types", func(t *testing.T) {
@@ -526,8 +517,7 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetNotificationsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetNotificationsLift(ctx))
 	})
 
 	t.Run("parseGroupingOptions updates defaults", func(t *testing.T) {
@@ -558,11 +548,10 @@ func TestMisc_NotificationFiltersAndGroupingOptions_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/costs", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetInstanceCostsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetInstanceCostsLift(ctx))
 
-		body, ok := ctx.Response.Body.(map[string]any)
-		require.True(t, ok)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "Cost tracking not configured", body["error"])
 	})
 
@@ -612,8 +601,7 @@ func TestMisc_NotificationHandlers_MoreBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications", readHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetNotificationsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetNotificationsLift(ctx))
 	})
 
 	t.Run("clear notifications service error", func(t *testing.T) {
@@ -629,8 +617,7 @@ func TestMisc_NotificationHandlers_MoreBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/clear", writeHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleClearNotificationsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleClearNotificationsLift(ctx))
 	})
 
 	t.Run("grouped notifications list error", func(t *testing.T) {
@@ -646,8 +633,7 @@ func TestMisc_NotificationHandlers_MoreBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v2/notifications/grouped", readHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetGroupedNotificationsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetGroupedNotificationsLift(ctx))
 	})
 
 	t.Run("mark group missing group_id", func(t *testing.T) {
@@ -657,8 +643,7 @@ func TestMisc_NotificationHandlers_MoreBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v2/notifications/groups//read", writeHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleMarkGroupAsReadLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleMarkGroupAsReadLift(ctx))
 	})
 
 	t.Run("extractStatusAuthor ignores missing attributed_to", func(t *testing.T) {
@@ -687,8 +672,7 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/", readHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetNotificationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetNotificationLift(ctx))
 	})
 
 	t.Run("insufficient scope", func(t *testing.T) {
@@ -700,10 +684,9 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/n1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "n1")
+		ctx.Params["id"] = "n1"
 
-		require.NoError(t, handler.HandleGetNotificationLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleGetNotificationLift(ctx))
 	})
 
 	t.Run("notification not found", func(t *testing.T) {
@@ -717,10 +700,9 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/missing", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
+		ctx.Params["id"] = "missing"
 
-		require.NoError(t, handler.HandleGetNotificationLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetNotificationLift(ctx))
 	})
 
 	t.Run("ownership mismatch", func(t *testing.T) {
@@ -740,10 +722,9 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/n1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "n1")
+		ctx.Params["id"] = "n1"
 
-		require.NoError(t, handler.HandleGetNotificationLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetNotificationLift(ctx))
 	})
 
 	t.Run("actor lookup error", func(t *testing.T) {
@@ -766,10 +747,9 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications/n1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "n1")
+		ctx.Params["id"] = "n1"
 
-		require.NoError(t, handler.HandleGetNotificationLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetNotificationLift(ctx))
 	})
 
 	t.Run("dismiss missing id and insufficient scope", func(t *testing.T) {
@@ -778,14 +758,12 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 
 		ctxMissing, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications//dismiss", readHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDismissNotificationLift(ctxMissing))
-		require.Equal(t, http.StatusBadRequest, ctxMissing.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDismissNotificationLift(ctxMissing))
 
 		ctxScope, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/n1/dismiss", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxScope.SetParam("id", "n1")
-		require.NoError(t, handler.HandleDismissNotificationLift(ctxScope))
-		require.Equal(t, http.StatusForbidden, ctxScope.Response.StatusCode)
+		ctxScope.Params["id"] = "n1"
+		requireStatus(t, http.StatusForbidden)(handler.HandleDismissNotificationLift(ctxScope))
 	})
 
 	t.Run("clear notifications insufficient scope", func(t *testing.T) {
@@ -794,8 +772,7 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/clear", readHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleClearNotificationsLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleClearNotificationsLift(ctx))
 	})
 }
 
@@ -809,11 +786,10 @@ func TestMisc_InstanceCosts_MonthlyAggregateError_Round12(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/costs", nil, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, handler.HandleGetInstanceCostsLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	resp := requireStatus(t, http.StatusOK)(handler.HandleGetInstanceCostsLift(ctx))
 
-	body, ok := ctx.Response.Body.(map[string]any)
-	require.True(t, ok)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
 
 	monthData, ok := body["current_month"].(map[string]any)
 	require.True(t, ok)
@@ -830,8 +806,7 @@ func TestMisc_DismissNotification_ServiceUnavailable_Round12(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notifications/n1/dismiss", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "n1")
+	ctx.Params["id"] = "n1"
 
-	require.NoError(t, handler.HandleDismissNotificationLift(ctx))
-	require.Equal(t, http.StatusServiceUnavailable, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusServiceUnavailable)(handler.HandleDismissNotificationLift(ctx))
 }

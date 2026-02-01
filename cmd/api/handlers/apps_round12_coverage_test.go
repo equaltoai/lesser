@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/base64"
@@ -105,15 +105,13 @@ func TestApps_Round12_FallbackAndValidationHelpers_Coverage(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = handler.parseAndValidateRedirectURIs(ctx, "")
-		require.NoError(t, err)
-		require.Equal(t, 422, ctx.Response.StatusCode)
+		require.Error(t, err)
 
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
 		require.NoError(t, err)
 
 		_, err = handler.parseAndValidateRedirectURIs(ctx2, "example.com/callback")
-		require.NoError(t, err)
-		require.Equal(t, 422, ctx2.Response.StatusCode)
+		require.Error(t, err)
 	})
 
 	t.Run("parse_and_validate_redirect_uris_ok", func(t *testing.T) {
@@ -128,13 +126,11 @@ func TestApps_Round12_FallbackAndValidationHelpers_Coverage(t *testing.T) {
 	t.Run("validate_required_app_params_sets_422", func(t *testing.T) {
 		ctxMissingName, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.validateRequiredAppParams(ctxMissingName, &apimodels.AppRegistrationRequest{RedirectURIs: "https://example.com/callback"}))
-		require.Equal(t, 422, ctxMissingName.Response.StatusCode)
+		require.Error(t, handler.validateRequiredAppParams(ctxMissingName, &apimodels.AppRegistrationRequest{RedirectURIs: "https://example.com/callback"}))
 
 		ctxMissingRedirect, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.validateRequiredAppParams(ctxMissingRedirect, &apimodels.AppRegistrationRequest{ClientName: "Test App"}))
-		require.Equal(t, 422, ctxMissingRedirect.Response.StatusCode)
+		require.Error(t, handler.validateRequiredAppParams(ctxMissingRedirect, &apimodels.AppRegistrationRequest{ClientName: "Test App"}))
 	})
 
 	t.Run("validate_single_redirect_uri_variants", func(t *testing.T) {
@@ -147,8 +143,7 @@ func TestApps_Round12_FallbackAndValidationHelpers_Coverage(t *testing.T) {
 
 		ctxBad, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.validateSingleRedirectURI(ctxBad, "example.com/callback"))
-		require.Equal(t, 422, ctxBad.Response.StatusCode)
+		require.Error(t, handler.validateSingleRedirectURI(ctxBad, "example.com/callback"))
 	})
 
 	t.Run("parse_scopes_default_and_explicit", func(t *testing.T) {
@@ -172,8 +167,7 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 			Scopes:       "",
 			Website:      "https://example.com",
 		}
-		require.NoError(t, handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 	})
 
 	t.Run("create_oauth_client_repo_error", func(t *testing.T) {
@@ -188,8 +182,7 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 			RedirectURIs: "https://example.com/callback",
 			Scopes:       "read",
 		}
-		require.NoError(t, handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 	})
 
 	t.Run("get_vapid_key_error_returns_empty", func(t *testing.T) {
@@ -220,16 +213,14 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("invalid_bearer_token_not_base64", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"Authorization": "Bearer not_base64!!"}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("base64_decodes_without_colon", func(t *testing.T) {
@@ -237,8 +228,7 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"Authorization": "Bearer " + token}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("base64_secret_mismatch", func(t *testing.T) {
@@ -246,8 +236,7 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"Authorization": "Bearer " + token}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("base64_client_not_found", func(t *testing.T) {
@@ -260,8 +249,7 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"Authorization": "Bearer " + token}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("access_token_ok", func(t *testing.T) {
@@ -269,8 +257,7 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"authorization": "Bearer " + oauthToken}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("access_token_client_lookup_fails", func(t *testing.T) {
@@ -281,8 +268,7 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"Authorization": "Bearer " + oauthToken}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("vapid_keys_not_found_returns_empty", func(t *testing.T) {
@@ -298,7 +284,6 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"Authorization": "Bearer " + oauthToken}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleAppVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleAppVerifyCredentialsLift(ctx))
 	})
 }

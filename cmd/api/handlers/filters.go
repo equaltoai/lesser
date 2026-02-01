@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"time"
@@ -9,12 +9,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetFiltersLift handles GET /api/v2/filters
-func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFiltersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read:filters scope
 	username, err := h.authenticateUser(ctx, []string{"read:filters"})
 	if err != nil {
@@ -25,7 +25,7 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 	}
 
 	// Get all filters for the user
-	filters, err := h.repos.Moderation().GetFiltersForUser(ctx.Context, username)
+	filters, err := h.repos.Moderation().GetFiltersForUser(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get filters", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -35,13 +35,13 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 	result := make([]*mastodon.Filter, 0, len(filters))
 	for _, filter := range filters {
 		// Get keywords and statuses for each filter
-		keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filter.ID)
+		keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context(), filter.ID)
 		if err != nil {
 			h.logger.Error("failed to get filter keywords", zap.String("filter_id", filter.ID), zap.Error(err))
 			continue
 		}
 
-		statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filter.ID)
+		statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context(), filter.ID)
 		if err != nil {
 			h.logger.Error("failed to get filter statuses", zap.String("filter_id", filter.ID), zap.Error(err))
 			continue
@@ -51,11 +51,11 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 		result = append(result, mastodonFilter)
 	}
 
-	return ctx.Status(200).JSON(result)
+	return okJSON(result)
 }
 
 // HandleGetFilterLift handles GET /api/v2/filters/:id
-func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFilterLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
@@ -71,7 +71,7 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -82,24 +82,24 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get keywords and statuses
-	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filter.ID)
+	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context(), filter.ID)
 	if err != nil {
 		h.logger.Error("failed to get filter keywords", zap.String("filter_id", filter.ID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
-	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filter.ID)
+	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context(), filter.ID)
 	if err != nil {
 		h.logger.Error("failed to get filter statuses", zap.String("filter_id", filter.ID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	mastodonFilter := h.converter.ConvertFilterToMastodon(filter, keywords, statuses)
-	return ctx.Status(200).JSON(mastodonFilter)
+	return okJSON(mastodonFilter)
 }
 
 // HandleCreateFilterLift handles POST /api/v2/filters
-func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateFilterLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
@@ -111,7 +111,7 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 
 	// Parse request
 	var params apimodels.CreateFilterRequest
-	if err := ctx.ParseRequest(&params); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &params); err != nil {
 		return common.RespondInvalidRequest(ctx)
 	}
 
@@ -146,7 +146,8 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 
 	// Save filter to storage
 	if err := h.saveFilter(ctx, filter); err != nil {
-		return err
+		h.logger.Error("failed to create filter", zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	// Add keywords if provided
@@ -154,7 +155,7 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 
 	// Convert to Mastodon API format
 	mastodonFilter := h.converter.ConvertFilterToMastodon(filter, keywords, []*storage.FilterStatus{})
-	return ctx.Status(200).JSON(mastodonFilter)
+	return okJSON(mastodonFilter)
 }
 
 // buildFilterFromParams builds a Filter object from request parameters
@@ -199,16 +200,12 @@ func (h *Handler) validateMatchMode(matchMode string) string {
 }
 
 // saveFilter saves the filter to storage
-func (h *Handler) saveFilter(ctx *lift.Context, filter *storage.Filter) error {
-	if err := h.repos.Moderation().CreateFilter(ctx.Context, filter); err != nil {
-		h.logger.Error("failed to create filter", zap.Error(err))
-		return h.respondInternalError(ctx, "internal server error")
-	}
-	return nil
+func (h *Handler) saveFilter(ctx *apptheory.Context, filter *storage.Filter) error {
+	return h.repos.Moderation().CreateFilter(ctx.Context(), filter)
 }
 
 // addFilterKeywords adds keywords to a filter
-func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywordsAttributes []apimodels.FilterKeywordAttribute) []*storage.FilterKeyword {
+func (h *Handler) addFilterKeywords(ctx *apptheory.Context, filterID string, keywordsAttributes []apimodels.FilterKeywordAttribute) []*storage.FilterKeyword {
 	keywords := make([]*storage.FilterKeyword, 0)
 
 	if err := common.ValidateSliceNotEmpty("keywordsAttributes", keywordsAttributes); err != nil {
@@ -221,7 +218,7 @@ func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywords
 			continue
 		}
 
-		if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, kw); err != nil {
+		if err := h.repos.Moderation().AddFilterKeyword(ctx.Context(), filterID, kw); err != nil {
 			h.logger.Error("failed to add filter keyword", zap.Error(err))
 			// Continue with other keywords
 		} else {
@@ -263,7 +260,7 @@ func (h *Handler) extractFilterKeyword(kwAttr apimodels.FilterKeywordAttribute) 
 }
 
 // HandleUpdateFilterLift handles PUT /api/v2/filters/:id
-func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateFilterLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
@@ -279,7 +276,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -292,14 +289,14 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	// Parse request parameters
 	params, err := h.parseFilterUpdateParams(ctx)
 	if err != nil {
-		return err
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Build filter updates
 	updates := h.buildFilterUpdates(params)
 
 	// Update the filter
-	if err := h.repos.Moderation().UpdateFilter(ctx.Context, filterID, updates); err != nil {
+	if err := h.repos.Moderation().UpdateFilter(ctx.Context(), filterID, updates); err != nil {
 		h.logger.Error("failed to update filter", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
@@ -314,17 +311,12 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 // Helper functions for HandleUpdateFilterLift
 
 // parseFilterUpdateParams parses request parameters for filter updates
-func (h *Handler) parseFilterUpdateParams(ctx *lift.Context) (map[string]any, error) {
+func (h *Handler) parseFilterUpdateParams(ctx *apptheory.Context) (map[string]any, error) {
 	var params map[string]any
 
-	if err := ctx.ParseRequest(&params); err != nil {
-		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := ctx.Request.Body
-		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return nil, common.RespondValidationError(ctx, err)
+	if err := common.ParseRequestWithFallback(ctx, &params); err != nil {
+		if err2 := common.ParseRequestBody(ctx.Request.Body, &params); err2 != nil {
+			return nil, err
 		}
 	}
 
@@ -362,7 +354,7 @@ func (h *Handler) buildFilterUpdates(params map[string]any) map[string]any {
 }
 
 // handleKeywordUpdates handles keyword updates for a filter
-func (h *Handler) handleKeywordUpdates(ctx *lift.Context, filterID string, params map[string]any) {
+func (h *Handler) handleKeywordUpdates(ctx *apptheory.Context, filterID string, params map[string]any) {
 	keywordsAttrs, ok := params["keywords_attributes"].([]any)
 	if !ok {
 		return
@@ -379,7 +371,7 @@ func (h *Handler) handleKeywordUpdates(ctx *lift.Context, filterID string, param
 }
 
 // processKeywordUpdate processes a single keyword update
-func (h *Handler) processKeywordUpdate(ctx *lift.Context, filterID string, kwMap map[string]any) {
+func (h *Handler) processKeywordUpdate(ctx *apptheory.Context, filterID string, kwMap map[string]any) {
 	if id, hasID := kwMap["id"].(string); hasID {
 		// Update or delete existing keyword
 		if destroy, ok := kwMap["_destroy"].(bool); ok && destroy {
@@ -394,14 +386,14 @@ func (h *Handler) processKeywordUpdate(ctx *lift.Context, filterID string, kwMap
 }
 
 // deleteFilterKeyword deletes a filter keyword
-func (h *Handler) deleteFilterKeyword(ctx *lift.Context, keywordID string) {
-	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context, keywordID); err != nil {
+func (h *Handler) deleteFilterKeyword(ctx *apptheory.Context, keywordID string) {
+	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), keywordID); err != nil {
 		h.logger.Error("failed to delete filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
 	}
 }
 
 // updateFilterKeyword updates a filter keyword
-func (h *Handler) updateFilterKeyword(ctx *lift.Context, keywordID string, kwMap map[string]any) {
+func (h *Handler) updateFilterKeyword(ctx *apptheory.Context, keywordID string, kwMap map[string]any) {
 	kwUpdates := make(map[string]any)
 	if keyword, ok := kwMap["keyword"].(string); ok {
 		kwUpdates["keyword"] = keyword
@@ -409,13 +401,13 @@ func (h *Handler) updateFilterKeyword(ctx *lift.Context, keywordID string, kwMap
 	if wholeWord, ok := kwMap["whole_word"].(bool); ok {
 		kwUpdates["whole_word"] = wholeWord
 	}
-	if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context, keywordID, kwUpdates); err != nil {
+	if err := h.repos.Moderation().UpdateFilterKeyword(ctx.Context(), keywordID, kwUpdates); err != nil {
 		h.logger.Error("failed to update filter keyword", zap.String("keyword_id", keywordID), zap.Error(err))
 	}
 }
 
 // createFilterKeyword creates a new filter keyword
-func (h *Handler) createFilterKeyword(ctx *lift.Context, filterID string, kwMap map[string]any) {
+func (h *Handler) createFilterKeyword(ctx *apptheory.Context, filterID string, kwMap map[string]any) {
 	keyword, ok := kwMap["keyword"].(string)
 	if !ok || common.ValidateFilterKeyword(keyword) != nil {
 		return
@@ -431,23 +423,23 @@ func (h *Handler) createFilterKeyword(ctx *lift.Context, filterID string, kwMap 
 		WholeWord: wholeWord,
 	}
 
-	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, kw); err != nil {
+	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context(), filterID, kw); err != nil {
 		h.logger.Error("failed to add filter keyword", zap.Error(err))
 	}
 }
 
 // returnUpdatedFilter returns the updated filter with keywords and statuses
-func (h *Handler) returnUpdatedFilter(ctx *lift.Context, filterID string) error {
-	updatedFilter, _ := h.repos.Moderation().GetFilter(ctx.Context, filterID)
-	keywords, _ := h.repos.Moderation().GetFilterKeywords(ctx.Context, filterID)
-	statuses, _ := h.repos.Moderation().GetFilterStatuses(ctx.Context, filterID)
+func (h *Handler) returnUpdatedFilter(ctx *apptheory.Context, filterID string) (*apptheory.Response, error) {
+	updatedFilter, _ := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
+	keywords, _ := h.repos.Moderation().GetFilterKeywords(ctx.Context(), filterID)
+	statuses, _ := h.repos.Moderation().GetFilterStatuses(ctx.Context(), filterID)
 
 	mastodonFilter := h.converter.ConvertFilterToMastodon(updatedFilter, keywords, statuses)
-	return ctx.Status(200).JSON(mastodonFilter)
+	return okJSON(mastodonFilter)
 }
 
 // HandleDeleteFilterLift handles DELETE /api/v2/filters/:id
-func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteFilterLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
@@ -463,7 +455,7 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -474,16 +466,16 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 	}
 
 	// Delete the filter (this should cascade delete keywords and statuses)
-	if err := h.repos.Moderation().DeleteFilter(ctx.Context, filterID); err != nil {
+	if err := h.repos.Moderation().DeleteFilter(ctx.Context(), filterID); err != nil {
 		h.logger.Error("failed to delete filter", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
-	return ctx.Status(200).JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // HandleGetFilterKeywordsLift handles GET /api/v2/filters/:filter_id/keywords
-func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFilterKeywordsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("filter_id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
@@ -499,7 +491,7 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -510,7 +502,7 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 	}
 
 	// Get keywords
-	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filterID)
+	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter keywords", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -526,11 +518,11 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.Status(200).JSON(result)
+	return okJSON(result)
 }
 
 // HandleGetFilterStatusesLift handles GET /api/v2/filters/:filter_id/statuses
-func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFilterStatusesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("filter_id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
@@ -546,7 +538,7 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -557,7 +549,7 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Get statuses
-	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filterID)
+	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter statuses", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -572,11 +564,11 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.Status(200).JSON(result)
+	return okJSON(result)
 }
 
 // HandleAddFilterKeywordLift handles POST /api/v2/filters/:filter_id/keywords
-func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
+func (h *Handler) HandleAddFilterKeywordLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("filter_id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
@@ -592,7 +584,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	}
 
 	// Get the filter to verify ownership
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -605,13 +597,8 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	// Parse request body
 	var params apimodels.AddFilterKeywordRequest
 
-	if err := ctx.ParseRequest(&params); err != nil {
-		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := ctx.Request.Body
-		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
+	if err := common.ParseRequestWithFallback(ctx, &params); err != nil {
+		if err2 := common.ParseRequestBody(ctx.Request.Body, &params); err2 != nil {
 			return common.RespondValidationError(ctx, err)
 		}
 	}
@@ -626,7 +613,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 		WholeWord: params.WholeWord,
 	}
 
-	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, keyword); err != nil {
+	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context(), filterID, keyword); err != nil {
 		h.logger.Error("failed to add filter keyword", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
@@ -638,11 +625,11 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 		WholeWord: keyword.WholeWord,
 	}
 
-	return ctx.Status(200).JSON(result)
+	return okJSON(result)
 }
 
 // HandleDeleteFilterKeywordLift handles DELETE /api/v2/filters/:filter_id/keywords/:keyword_id
-func (h *Handler) HandleDeleteFilterKeywordLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteFilterKeywordLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("filter_id")
 	keywordID := ctx.Param("keyword_id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
@@ -662,7 +649,7 @@ func (h *Handler) HandleDeleteFilterKeywordLift(ctx *lift.Context) error {
 	}
 
 	// Verify the filter belongs to the user
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -673,16 +660,16 @@ func (h *Handler) HandleDeleteFilterKeywordLift(ctx *lift.Context) error {
 	}
 
 	// Delete the keyword
-	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context, keywordID); err != nil {
+	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context(), keywordID); err != nil {
 		h.logger.Error("failed to delete filter keyword", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
-	return ctx.Status(200).JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // HandleAddFilterStatusLift handles POST /api/v2/filters/:filter_id/statuses
-func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleAddFilterStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("filter_id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
@@ -698,7 +685,7 @@ func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
 	}
 
 	// Verify the filter belongs to the user
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -711,13 +698,8 @@ func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
 	// Parse request body
 	var params apimodels.AddFilterStatusRequest
 
-	if err := ctx.ParseRequest(&params); err != nil {
-		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := ctx.Request.Body
-		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
+	if err := common.ParseRequestWithFallback(ctx, &params); err != nil {
+		if err2 := common.ParseRequestBody(ctx.Request.Body, &params); err2 != nil {
 			return common.RespondValidationError(ctx, err)
 		}
 	}
@@ -731,7 +713,7 @@ func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
 		StatusID: params.StatusID,
 	}
 
-	if err := h.repos.Moderation().AddFilterStatus(ctx.Context, filterID, filterStatus); err != nil {
+	if err := h.repos.Moderation().AddFilterStatus(ctx.Context(), filterID, filterStatus); err != nil {
 		h.logger.Error("failed to add filter status", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
@@ -742,11 +724,11 @@ func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
 		StatusID: filterStatus.StatusID,
 	}
 
-	return ctx.Status(200).JSON(result)
+	return okJSON(result)
 }
 
 // HandleDeleteFilterStatusLift handles DELETE /api/v2/filters/:filter_id/statuses/:status_id
-func (h *Handler) HandleDeleteFilterStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteFilterStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	filterID := ctx.Param("filter_id")
 	statusID := ctx.Param("status_id")
 	if err := common.ValidateRequiredParam("filterID", filterID); err != nil {
@@ -766,7 +748,7 @@ func (h *Handler) HandleDeleteFilterStatusLift(ctx *lift.Context) error {
 	}
 
 	// Verify the filter belongs to the user
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context(), filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -777,17 +759,17 @@ func (h *Handler) HandleDeleteFilterStatusLift(ctx *lift.Context) error {
 	}
 
 	// Delete the filter status
-	if err := h.repos.Moderation().DeleteFilterStatus(ctx.Context, statusID); err != nil {
+	if err := h.repos.Moderation().DeleteFilterStatus(ctx.Context(), statusID); err != nil {
 		h.logger.Error("failed to delete filter status", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
-	return ctx.Status(200).JSON(apimodels.EmptyObject{})
+	return okJSON(apimodels.EmptyObject{})
 }
 
 // HandleTestFilterLift handles POST /api/v2/filters/test
 // Tests filter rules against provided content
-func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
+func (h *Handler) HandleTestFilterLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read:filters scope
 	username, err := h.authenticateUser(ctx, []string{"read:filters"})
 	if err != nil {
@@ -800,13 +782,8 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 	// Parse request body
 	var params apimodels.TestFilterRequest
 
-	if err := ctx.ParseRequest(&params); err != nil {
-		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := ctx.Request.Body
-		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
+	if err := common.ParseRequestWithFallback(ctx, &params); err != nil {
+		if err2 := common.ParseRequestBody(ctx.Request.Body, &params); err2 != nil {
 			return common.RespondValidationError(ctx, err)
 		}
 	}
@@ -816,7 +793,7 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 	}
 
 	// Get user's filters
-	storageFilters, err := h.repos.Moderation().GetFiltersForUser(ctx.Context, username)
+	storageFilters, err := h.repos.Moderation().GetFiltersForUser(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get user filters", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
@@ -852,14 +829,14 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 		Visibility: "public",
 	}
 
-	results, err := filterEngine.EvaluateContent(ctx.Context, params.Content, modelFilters, contentCtx)
+	results, err := filterEngine.EvaluateContent(ctx.Context(), params.Content, modelFilters, contentCtx)
 	if err != nil {
 		h.logger.Error("failed to evaluate content", zap.Error(err))
 		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	// Return filter test results
-	return ctx.Status(200).JSON(apimodels.FilterTestResponse{
+	return okJSON(apimodels.FilterTestResponse{
 		Content:      params.Content,
 		TotalFilters: len(storageFilters),
 		MatchedCount: len(results),

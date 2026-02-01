@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -99,13 +99,12 @@ func processUserSessions(sessions []*storage.Session) (lastIP *string, ipHistory
 	return lastIP, ipHistory
 }
 
-// adminAccountAction performs a generic admin account action with logging and validation
-func (h *Handler) adminAccountAction(ctx *lift.Context, action string, actionFn func(username string) error) error {
+// adminAccountAction performs a generic admin account action with logging and validation.
+func (h *Handler) adminAccountAction(ctx *apptheory.Context, action string, actionFn func(username string) error) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	accountID := ctx.Param("id")
@@ -120,21 +119,18 @@ func (h *Handler) adminAccountAction(ctx *lift.Context, action string, actionFn 
 	// Execute the action
 	if err := actionFn(username); err != nil {
 		h.logger.Error("failed to "+action+" account", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return noContent(), nil
 }
 
-// adminAction performs a generic admin action with logging and validation
-func (h *Handler) adminAction(ctx *lift.Context, action string, updatesFn func(username string) (map[string]any, error)) error {
+// adminAction performs a generic admin action with logging and validation.
+func (h *Handler) adminAction(ctx *apptheory.Context, action string, updatesFn func(username string) (map[string]any, error)) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	accountID := ctx.Param("id")
@@ -150,41 +146,36 @@ func (h *Handler) adminAction(ctx *lift.Context, action string, updatesFn func(u
 	updates, err := updatesFn(username)
 	if err != nil {
 		h.logger.Error("failed to execute "+action, zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Update user if we have updates
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
-		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
+		if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 			h.logger.Error("failed to "+action+" user", zap.Error(err))
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{"error": err.Error()})
+			return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 	}
 
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return noContent(), nil
 }
 
 // HandleAdminGetAccountsLift handles GET /api/v1/admin/accounts
-func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetAccountsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse query parameters
-	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+	limit, err := common.ParseAdminLimit(queryValue(ctx, "limit"))
 	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	cursor := ctx.Query("cursor")
+	cursor := queryValue(ctx, "cursor")
 
 	// Get users from storage
 	// Safely convert limit to int32, capping at max int32 if needed
@@ -196,18 +187,17 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 	} else {
 		safeLimit32 = int32(limit)
 	}
-	users, nextCursor, err := h.repos.User().ListUsers(ctx.Context, safeLimit32, cursor)
+	users, nextCursor, err := h.repos.User().ListUsers(ctx.Context(), safeLimit32, cursor)
 	if err != nil {
 		h.logger.Error("failed to list users", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Convert to admin account format
 	accounts := make([]models.AdminAccount, 0, len(users))
 	for _, user := range users {
 		// Get actor info
-		actor, err := h.repos.Actor().GetActor(ctx.Context, user.Username)
+		actor, err := h.repos.Actor().GetActor(ctx.Context(), user.Username)
 		if err != nil {
 			h.logger.Warn("failed to get actor for user",
 				zap.String("username", user.Username),
@@ -216,7 +206,7 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 		}
 
 		// Get IP history from sessions
-		sessions, err := h.repos.Account().GetUserSessions(ctx.Context, user.Username)
+		sessions, err := h.repos.Account().GetUserSessions(ctx.Context(), user.Username)
 		var lastIP *string
 		var ipHistory []models.AdminIP
 		if err == nil {
@@ -241,13 +231,17 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 			Silenced:  user.Silenced,
 			Disabled:  !user.Approved,
 			Approved:  user.Approved,
-			Account:   h.convertActorToAccountWithCounts(ctx.Context, actor),
+			Account:   h.convertActorToAccountWithCounts(ctx.Context(), actor),
 		}
 
 		accounts = append(accounts, account)
 	}
 
-	// Add Link header for pagination if there's more data
+	resp, err := okJSON(accounts)
+	if err != nil {
+		return nil, err
+	}
+
 	if nextCursor != "" {
 		// Build next page URL
 		nextURL := url.URL{
@@ -257,20 +251,18 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 				"cursor": []string{nextCursor},
 			}.Encode(),
 		}
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL.String()))
+		setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL.String()))
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(accounts)
+	return resp, nil
 }
 
 // HandleAdminGetAccountLift handles GET /api/v1/admin/accounts/:id
-func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	accountID := ctx.Param("id")
@@ -279,34 +271,31 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 	username := strings.TrimPrefix(accountID, "user-")
 
 	// Get user from storage
-	user, err := h.repos.Account().GetUser(ctx.Context, username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), username)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "account not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "account not found"})
 		}
 		h.logger.Error("failed to get user", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Get actor info
-	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Get report stats
-	reportStats, err := h.repos.Moderation().GetReportStats(ctx.Context, username)
+	reportStats, err := h.repos.Moderation().GetReportStats(ctx.Context(), username)
 	if err != nil {
 		h.logger.Warn("failed to get report stats", zap.Error(err))
 		reportStats = &storage.ReportStats{} // Use empty stats
 	}
 
 	// Get IP history from sessions
-	sessions, err := h.repos.Account().GetUserSessions(ctx.Context, username)
+	sessions, err := h.repos.Account().GetUserSessions(ctx.Context(), username)
 	var lastIP *string
 	var ipHistory []models.AdminIP
 	if err == nil {
@@ -331,32 +320,29 @@ func (h *Handler) HandleAdminGetAccountLift(ctx *lift.Context) error {
 		Silenced:  user.Silenced,
 		Disabled:  !user.Approved,
 		Approved:  user.Approved,
-		Account:   h.convertActorToAccountWithCounts(ctx.Context, actor),
+		Account:   h.convertActorToAccountWithCounts(ctx.Context(), actor),
 		// Add report stats to account info
 		ReportsCount:         reportStats.TotalReports,
 		ResolvedReportsCount: reportStats.ResolvedReports,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(account)
+	return okJSON(account)
 }
 
 // HandleAdminAccountActionLift handles POST /api/v1/admin/accounts/:id/action
-func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminAccountActionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	accountID := ctx.Param("id")
 
 	// Parse request body
 	var req models.AdminAccountActionRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	// Extract username from account ID
@@ -376,8 +362,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 	}
 
 	if !validActions[req.Type] {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": fmt.Sprintf("invalid action type: %s", req.Type)})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid action type: %s", req.Type)})
 	}
 
 	// Log admin action for audit trail
@@ -394,7 +379,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 	case actionSuspend:
 		updates[common.AccountStatusSuspended] = true
 		// Cancel all follow relationships when suspending
-		if err := h.cancelUserFollowRelationships(ctx.Context, username); err != nil {
+		if err := h.cancelUserFollowRelationships(ctx.Context(), username); err != nil {
 			h.logger.Error("failed to cancel follow relationships", zap.Error(err))
 		}
 	case "unsuspend":
@@ -409,13 +394,13 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 		updates["silenced"] = false
 	case "sensitive":
 		// Mark all media as sensitive
-		if err := h.markAllUserMediaAsSensitive(ctx.Context, username); err != nil {
+		if err := h.markAllUserMediaAsSensitive(ctx.Context(), username); err != nil {
 			h.logger.Error("failed to mark media as sensitive", zap.Error(err))
 		}
 		updates["sensitive_media"] = true
 	case "unsensitive":
 		// Unmark media as sensitive
-		if err := h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context, username); err != nil {
+		if err := h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context(), username); err != nil {
 			h.logger.Error("failed to unmark media as sensitive", zap.Error(err))
 		}
 		updates["sensitive_media"] = false
@@ -424,42 +409,39 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 	// Update user in storage
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
-		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
+		if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 			h.logger.Error("failed to update user", zap.Error(err))
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{"error": err.Error()})
+			return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 	}
 
 	// Lesser does not support email functionality
 
 	// Return empty response
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return noContent(), nil
 }
 
 // HandleAdminApproveAccountLift handles POST /api/v1/admin/accounts/:id/approve
-func (h *Handler) HandleAdminApproveAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminApproveAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminAction(ctx, actionApprove, func(_ string) (map[string]any, error) {
 		return map[string]any{"approved": true}, nil
 	})
 }
 
 // HandleAdminRejectAccountLift handles POST /api/v1/admin/accounts/:id/reject
-func (h *Handler) HandleAdminRejectAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminRejectAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminAccountAction(ctx, "reject", func(username string) error {
 		// Delete the user and associated data
-		return h.repos.Account().DeleteAccount(ctx.Context, username)
+		return h.repos.Account().DeleteAccount(ctx.Context(), username)
 	})
 }
 
 // HandleAdminEnableAccountLift handles POST /api/v1/admin/accounts/:id/enable
-func (h *Handler) HandleAdminEnableAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminEnableAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	accountID := ctx.Param("id")
@@ -479,58 +461,54 @@ func (h *Handler) HandleAdminEnableAccountLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 		h.logger.Error("failed to enable user", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return noContent(), nil
 }
 
 // HandleAdminUnsilenceAccountLift handles POST /api/v1/admin/accounts/:id/unsilence
-func (h *Handler) HandleAdminUnsilenceAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminUnsilenceAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminAction(ctx, "unsilence", func(_ string) (map[string]any, error) {
 		return map[string]any{"silenced": false}, nil
 	})
 }
 
 // HandleAdminUnsuspendAccountLift handles POST /api/v1/admin/accounts/:id/unsuspend
-func (h *Handler) HandleAdminUnsuspendAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminUnsuspendAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminAction(ctx, "unsuspend", func(_ string) (map[string]any, error) {
 		return map[string]any{"suspended": false}, nil
 	})
 }
 
 // HandleAdminUnsensitiveAccountLift handles POST /api/v1/admin/accounts/:id/unsensitive
-func (h *Handler) HandleAdminUnsensitiveAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminUnsensitiveAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminAccountAction(ctx, "unsensitive", func(username string) error {
 		// Remove sensitive flag from all media
-		return h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context, username)
+		return h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context(), username)
 	})
 }
 
 // HandleAdminGetReportsLift handles GET /api/v1/admin/reports
-func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetReportsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse query parameters
-	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+	limit, err := common.ParseAdminLimit(queryValue(ctx, "limit"))
 	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	cursor := ctx.Query("cursor")
+	cursor := queryValue(ctx, "cursor")
 	status := storage.ReportStatusOpen // Default to open reports
 
-	if s := ctx.Query("status"); s != "" {
+	if s := queryValue(ctx, "status"); s != "" {
 		switch s {
 		case "resolved":
 			status = storage.ReportStatusResolved
@@ -540,18 +518,17 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 	}
 
 	// Get reports from storage
-	reports, nextCursor, err := h.repos.Moderation().GetReportsByStatus(ctx.Context, status, limit, cursor)
+	reports, nextCursor, err := h.repos.Moderation().GetReportsByStatus(ctx.Context(), status, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get reports", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Convert to API format
 	apiReports := make([]models.AdminReport, 0, len(reports))
 	for _, report := range reports {
 		// Get reporter account info
-		reporterActor, err := h.repos.Actor().GetActor(ctx.Context, report.ReporterID)
+		reporterActor, err := h.repos.Actor().GetActor(ctx.Context(), report.ReporterID)
 		if err != nil {
 			h.logger.Warn("failed to get reporter actor",
 				zap.String("reporter", report.ReporterID),
@@ -560,7 +537,7 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 		}
 
 		// Get target account info
-		targetActor, err := h.repos.Actor().GetActor(ctx.Context, report.TargetAccountID)
+		targetActor, err := h.repos.Actor().GetActor(ctx.Context(), report.TargetAccountID)
 		if err != nil {
 			h.logger.Warn("failed to get target actor",
 				zap.String("target", report.TargetAccountID),
@@ -571,9 +548,9 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 		// Get assigned account if any
 		var assignedAccount *models.Account
 		if report.AssignedTo != "" {
-			assignedActor, err := h.repos.Actor().GetActor(ctx.Context, report.AssignedTo)
+			assignedActor, err := h.repos.Actor().GetActor(ctx.Context(), report.AssignedTo)
 			if err == nil {
-				acc := h.convertActorToAccountWithCounts(ctx.Context, assignedActor)
+				acc := h.convertActorToAccountWithCounts(ctx.Context(), assignedActor)
 				assignedAccount = &acc
 			}
 		}
@@ -581,9 +558,9 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 		// Get moderator account if action was taken
 		var actionTakenByAccount *models.Account
 		if report.ModeratorID != "" {
-			moderatorActor, err := h.repos.Actor().GetActor(ctx.Context, report.ModeratorID)
+			moderatorActor, err := h.repos.Actor().GetActor(ctx.Context(), report.ModeratorID)
 			if err == nil {
-				acc := h.convertActorToAccountWithCounts(ctx.Context, moderatorActor)
+				acc := h.convertActorToAccountWithCounts(ctx.Context(), moderatorActor)
 				actionTakenByAccount = &acc
 			}
 		}
@@ -597,18 +574,22 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 			Forwarded:            report.Forwarded,
 			CreatedAt:            report.CreatedAt,
 			UpdatedAt:            report.UpdatedAt,
-			Account:              h.convertActorToAccountWithCounts(ctx.Context, reporterActor),
-			TargetAccount:        h.convertActorToAccountWithCounts(ctx.Context, targetActor),
+			Account:              h.convertActorToAccountWithCounts(ctx.Context(), reporterActor),
+			TargetAccount:        h.convertActorToAccountWithCounts(ctx.Context(), targetActor),
 			AssignedAccount:      assignedAccount,
 			ActionTakenByAccount: actionTakenByAccount,
-			Statuses:             h.loadReportedStatuses(ctx.Context, report.ID),
-			Rules:                h.loadViolatedRules(ctx.Context, report.Category),
+			Statuses:             h.loadReportedStatuses(ctx.Context(), report.ID),
+			Rules:                h.loadViolatedRules(ctx.Context(), report.Category),
 		}
 
 		apiReports = append(apiReports, apiReport)
 	}
 
-	// Add Link header for pagination if there's more data
+	resp, err := okJSON(apiReports)
+	if err != nil {
+		return nil, err
+	}
+
 	if nextCursor != "" {
 		// Build next page URL
 		nextURL := url.URL{
@@ -619,11 +600,10 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 				"status": []string{string(status)},
 			}.Encode(),
 		}
-		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
+		setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL.String()))
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apiReports)
+	return resp, nil
 }
 
 func (h *Handler) buildAdminReport(ctx context.Context, reportID string) (models.AdminReport, error) {
@@ -687,60 +667,52 @@ func (h *Handler) buildAdminReport(ctx context.Context, reportID string) (models
 }
 
 // HandleAdminGetReportLift handles GET /api/v1/admin/reports/:id
-func (h *Handler) HandleAdminGetReportLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetReportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	reportID := ctx.Param("id")
 
-	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
+	apiReport, err := h.buildAdminReport(ctx.Context(), reportID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to build admin report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get report"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get report"})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apiReport)
+	return okJSON(apiReport)
 }
 
 // HandleAdminResolveReportLift handles POST /api/v1/admin/reports/:id/resolve
-func (h *Handler) HandleAdminResolveReportLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminResolveReportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	reportID := ctx.Param("id")
 
 	// Update report status
-	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusResolved, "Resolved by admin", adminClaims.Username)
+	err = h.repos.Moderation().UpdateReportStatus(ctx.Context(), reportID, storage.ReportStatusResolved, "Resolved by admin", adminClaims.Username)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to resolve report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Get updated report
-	report, err := h.repos.Moderation().GetReport(ctx.Context, reportID)
+	report, err := h.repos.Moderation().GetReport(ctx.Context(), reportID)
 	if err != nil {
 		h.logger.Error("failed to get updated report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Convert to API format (simplified for now)
@@ -751,31 +723,27 @@ func (h *Handler) HandleAdminResolveReportLift(ctx *lift.Context) error {
 		UpdatedAt:     report.UpdatedAt,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apiReport)
+	return okJSON(apiReport)
 }
 
 // HandleAdminReopenReportLift handles POST /api/v1/admin/reports/:id/reopen
-func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminReopenReportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	reportID := ctx.Param("id")
 
 	// Update report status
-	err = h.repos.Moderation().UpdateReportStatus(ctx.Context, reportID, storage.ReportStatusOpen, "Reopened by admin", adminClaims.Username)
+	err = h.repos.Moderation().UpdateReportStatus(ctx.Context(), reportID, storage.ReportStatusOpen, "Reopened by admin", adminClaims.Username)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to reopen report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Log admin action
@@ -783,49 +751,42 @@ func (h *Handler) HandleAdminReopenReportLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
-	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
+	apiReport, err := h.buildAdminReport(ctx.Context(), reportID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to build admin report after reopen", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get report"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get report"})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apiReport)
+	return okJSON(apiReport)
 }
 
 // HandleAdminAssignReportLift handles POST /api/v1/admin/reports/:id/assign_to_self
-func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminAssignReportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	reportID := ctx.Param("id")
 
 	// Verify report exists
-	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
+	_, err = h.repos.Moderation().GetReport(ctx.Context(), reportID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to get report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Assign report to the admin
-	if err := h.repos.Moderation().AssignReport(ctx.Context, reportID, adminClaims.Username); err != nil {
+	if err := h.repos.Moderation().AssignReport(ctx.Context(), reportID, adminClaims.Username); err != nil {
 		h.logger.Error("failed to assign report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Log admin action
@@ -833,49 +794,42 @@ func (h *Handler) HandleAdminAssignReportLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
-	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
+	apiReport, err := h.buildAdminReport(ctx.Context(), reportID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to build admin report after assignment", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get report"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get report"})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apiReport)
+	return okJSON(apiReport)
 }
 
 // HandleAdminUnassignReportLift handles POST /api/v1/admin/reports/:id/unassign
-func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminUnassignReportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	reportID := ctx.Param("id")
 
 	// Verify report exists
-	_, err = h.repos.Moderation().GetReport(ctx.Context, reportID)
+	_, err = h.repos.Moderation().GetReport(ctx.Context(), reportID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to get report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Unassign the report
-	if err := h.repos.Moderation().UnassignReport(ctx.Context, reportID); err != nil {
+	if err := h.repos.Moderation().UnassignReport(ctx.Context(), reportID); err != nil {
 		h.logger.Error("failed to unassign report", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Log admin action
@@ -883,36 +837,32 @@ func (h *Handler) HandleAdminUnassignReportLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("report_id", reportID))
 
-	apiReport, err := h.buildAdminReport(ctx.Context, reportID)
+	apiReport, err := h.buildAdminReport(ctx.Context(), reportID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "report not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "report not found"})
 		}
 		h.logger.Error("failed to build admin report after unassignment", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get report"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get report"})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apiReport)
+	return okJSON(apiReport)
 }
 
 // HandleAdminModerationOverviewLift handles GET /api/v1/admin/moderation/overview
-func (h *Handler) HandleAdminModerationOverviewLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminModerationOverviewLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get moderation queue count
-	queueItems, err := h.repos.Moderation().GetModerationQueue(ctx.Context, &storage.ModerationFilter{Limit: 1})
+	queueItems, err := h.repos.Moderation().GetModerationQueue(ctx.Context(), &storage.ModerationFilter{Limit: 1})
 	queueCount := 0
 	if err == nil && len(queueItems) > 0 {
 		// Get actual total count from moderation queue
-		queueCount, err = h.repos.Moderation().GetModerationQueueCount(ctx.Context)
+		queueCount, err = h.repos.Moderation().GetModerationQueueCount(ctx.Context())
 		if err != nil {
 			h.logger.Warn("failed to get queue count", zap.Error(err))
 			queueCount = 0
@@ -920,11 +870,11 @@ func (h *Handler) HandleAdminModerationOverviewLift(ctx *lift.Context) error {
 	}
 
 	// Count open reports
-	openReports, _, err := h.repos.Moderation().GetReportsByStatus(ctx.Context, storage.ReportStatusOpen, 1, "")
+	openReports, _, err := h.repos.Moderation().GetReportsByStatus(ctx.Context(), storage.ReportStatusOpen, 1, "")
 	openReportCount := 0
 	if err == nil && len(openReports) > 0 {
 		// Get actual total count of open reports
-		openReportCount, err = h.repos.Moderation().GetOpenReportsCount(ctx.Context)
+		openReportCount, err = h.repos.Moderation().GetOpenReportsCount(ctx.Context())
 		if err != nil {
 			h.logger.Warn("failed to get open reports count", zap.Error(err))
 			openReportCount = 0
@@ -934,62 +884,58 @@ func (h *Handler) HandleAdminModerationOverviewLift(ctx *lift.Context) error {
 	overview := models.AdminModerationOverviewResponse{
 		PendingReviews:   queueCount,
 		OpenReports:      openReportCount,
-		ActiveModerators: h.getActiveModeratorsCount(ctx.Context),
-		RecentDecisions:  h.getRecentConsensusDecisions(ctx.Context),
-		TrustGraphHealth: h.getTrustGraphHealth(ctx.Context),
+		ActiveModerators: h.getActiveModeratorsCount(ctx.Context()),
+		RecentDecisions:  h.getRecentConsensusDecisions(ctx.Context()),
+		TrustGraphHealth: h.getTrustGraphHealth(ctx.Context()),
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(overview)
+	return okJSON(overview)
 }
 
 // HandleAdminGetModerationEventsLift handles GET /api/v1/admin/moderation/events
-func (h *Handler) HandleAdminGetModerationEventsLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetModerationEventsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Parse query parameters
-	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+	limit, err := common.ParseAdminLimit(queryValue(ctx, "limit"))
 	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	if limit == 20 { // Default from ParseAdminLimit, override for this endpoint
 		limit = 50
 	}
 
-	cursor := ctx.Query("cursor")
+	cursor := queryValue(ctx, "cursor")
 
 	// Build filter from query parameters
 	filter := &storage.ModerationEventFilter{}
 
-	if eventType := ctx.Query("event_type"); eventType != "" {
+	if eventType := queryValue(ctx, "event_type"); eventType != "" {
 		filter.EventType = eventType
 	}
 
-	if category := ctx.Query("category"); category != "" {
+	if category := queryValue(ctx, "category"); category != "" {
 		filter.Category = category
 	}
 
-	if severity := ctx.Query("min_severity"); severity != "" {
+	if severity := queryValue(ctx, "min_severity"); severity != "" {
 		if sev, err := common.ParseAndValidateIntWithBounds("min_severity", severity, 0, 5, 0); err == nil {
 			filter.MinSeverity = &sev
 		}
 	}
 
-	filter.ActorID = ctx.Query("actor_id")
-	filter.ObjectID = ctx.Query("object_id")
+	filter.ActorID = queryValue(ctx, "actor_id")
+	filter.ObjectID = queryValue(ctx, "object_id")
 
 	// Get moderation events
-	events, nextCursor, err := h.repos.Moderation().GetModerationEvents(ctx.Context, filter, limit, cursor)
+	events, nextCursor, err := h.repos.Moderation().GetModerationEvents(ctx.Context(), filter, limit, cursor)
 	if err != nil {
 		h.logger.Error("failed to get moderation events", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Convert to response format
@@ -1010,50 +956,48 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Add Link header for pagination if there's more data
-	if nextCursor != "" {
-		nextURL := fmt.Sprintf("/api/v1/admin/moderation/events?limit=%d&cursor=%s", limit, nextCursor)
-		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL)
+	resp, err := okJSON(response)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
+	if nextCursor != "" {
+		nextURL := fmt.Sprintf("/api/v1/admin/moderation/events?limit=%d&cursor=%s", limit, nextCursor)
+		setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+	}
+
+	return resp, nil
 }
 
 // HandleAdminOverrideModerationEventLift handles POST /api/v1/admin/moderation/events/:id/override
-func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	eventID := ctx.Param("id")
 
 	// Parse request body
 	var req models.AdminModerationEventOverrideRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	// Validate decision
 	if req.Decision != actionApprove && req.Decision != actionReject {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "invalid decision: must be 'approve' or 'reject'"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "invalid decision: must be 'approve' or 'reject'"})
 	}
 
 	// Get the moderation event
-	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context, eventID)
+	event, err := h.repos.Moderation().GetModerationEvent(ctx.Context(), eventID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "moderation event not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "moderation event not found"})
 		}
 		h.logger.Error("failed to get moderation event", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Map decision to action type
@@ -1074,11 +1018,10 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 	}
 
 	// Create admin review with override
-	err = h.repos.Moderation().CreateAdminReview(ctx.Context, eventID, adminClaims.Username, action, req.Reason)
+	err = h.repos.Moderation().CreateAdminReview(ctx.Context(), eventID, adminClaims.Username, action, req.Reason)
 	if err != nil {
 		h.logger.Error("failed to create admin review", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Log admin action
@@ -1089,9 +1032,7 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 		zap.String("action", string(action)),
 		zap.String("reason", req.Reason))
 
-	// Return success
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(models.AdminModerationEventOverrideResponse{
+	return okJSON(models.AdminModerationEventOverrideResponse{
 		EventID:  eventID,
 		Decision: req.Decision,
 		Action:   string(action),
@@ -1102,30 +1043,27 @@ func (h *Handler) HandleAdminOverrideModerationEventLift(ctx *lift.Context) erro
 }
 
 // HandleAdminGetTrustGraphLift handles GET /api/v1/admin/moderation/trust/graph
-func (h *Handler) HandleAdminGetTrustGraphLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetTrustGraphLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get query parameters
-	limit, err := common.ParseFederationLimit(ctx.Query("limit"))
+	limit, err := common.ParseFederationLimit(queryValue(ctx, "limit"))
 	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	if limit == 20 { // Default from ParseFederationLimit, override for this endpoint
 		limit = 100
 	}
 
 	// Get all trust relationships
-	trustRelationships, err := h.repos.Trust().GetAllTrustRelationships(ctx.Context, limit)
+	trustRelationships, err := h.repos.Trust().GetAllTrustRelationships(ctx.Context(), limit)
 	if err != nil {
 		h.logger.Error("failed to get trust relationships", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Build graph structure
@@ -1163,9 +1101,7 @@ func (h *Handler) HandleAdminGetTrustGraphLift(ctx *lift.Context) error {
 		nodeArray = append(nodeArray, node)
 	}
 
-	// Return graph data
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(models.AdminTrustGraphResponse{
+	return okJSON(models.AdminTrustGraphResponse{
 		Nodes: nodeArray,
 		Edges: edges,
 		Stats: models.AdminTrustGraphStats{
@@ -1176,12 +1112,11 @@ func (h *Handler) HandleAdminGetTrustGraphLift(ctx *lift.Context) error {
 }
 
 // HandleAdminUpdateTrustLift handles PUT /api/v1/admin/moderation/trust/:from/:to
-func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminUpdateTrustLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	fromActorID := ctx.Param("from")
@@ -1189,15 +1124,13 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 
 	// Parse request body
 	var req models.AdminUpdateTrustRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	// Validate trust value
 	if err := common.ValidateFloatRange("trust", req.Trust, -1.0, 1.0); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	// Default category if not specified
@@ -1217,10 +1150,9 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 		Updated:    updatedAt,
 	}
 
-	if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context, trustRel); err != nil {
+	if err := h.repos.Trust().UpdateTrustRelationship(ctx.Context(), trustRel); err != nil {
 		h.logger.Error("failed to update trust relationship", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Log admin action
@@ -1233,8 +1165,7 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 		zap.String("reason", req.Reason))
 
 	// Return updated relationship
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(models.AdminUpdateTrustResponse{
+	return okJSON(models.AdminUpdateTrustResponse{
 		FromActorID: fromActorID,
 		ToActorID:   toActorID,
 		Trust:       req.Trust,
@@ -1246,28 +1177,25 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 }
 
 // HandleAdminGetReviewersLift handles GET /api/v1/admin/moderation/reviewers
-func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetReviewersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	// Get users with moderator role
-	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx.Context, roleModerator)
+	moderatorUsers, err := h.repos.User().ListUsersByRole(ctx.Context(), roleModerator)
 	if err != nil {
 		h.logger.Error("failed to list moderator users", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Get users with admin role
-	adminUsers, err := h.repos.User().ListUsersByRole(ctx.Context, roleAdmin)
+	adminUsers, err := h.repos.User().ListUsersByRole(ctx.Context(), roleAdmin)
 	if err != nil {
 		h.logger.Error("failed to list admin users", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Combine both lists
@@ -1277,7 +1205,7 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 	for _, user := range users {
 		if user.Role == roleModerator || user.Role == roleAdmin {
 			// Get review stats for this user
-			stats, err := h.repos.Moderation().GetReviewerStats(ctx.Context, user.Username)
+			stats, err := h.repos.Moderation().GetReviewerStats(ctx.Context(), user.Username)
 			if err != nil {
 				h.logger.Warn("failed to get reviewer stats",
 					zap.String("username", user.Username),
@@ -1297,20 +1225,18 @@ func (h *Handler) HandleAdminGetReviewersLift(ctx *lift.Context) error {
 		}
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(models.AdminModerationReviewersResponse{
+	return okJSON(models.AdminModerationReviewersResponse{
 		Reviewers: reviewers,
 		Total:     len(reviewers),
 	})
 }
 
 // HandleAdminPromoteModeratorLift handles POST /api/v1/admin/moderation/reviewers/:id/promote
-func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminPromoteModeratorLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	userID := ctx.Param("id")
@@ -1324,10 +1250,9 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 		h.logger.Error("failed to promote user to moderator", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Log admin action
@@ -1335,8 +1260,7 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username))
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(models.AdminPromoteModeratorResponse{
+	return okJSON(models.AdminPromoteModeratorResponse{
 		UserID:     userID,
 		Username:   username,
 		NewRole:    roleModerator,
@@ -1345,12 +1269,11 @@ func (h *Handler) HandleAdminPromoteModeratorLift(ctx *lift.Context) error {
 }
 
 // HandleAdminDemoteModeratorLift handles POST /api/v1/admin/moderation/reviewers/:id/demote
-func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminDemoteModeratorLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	userID := ctx.Param("id")
@@ -1359,20 +1282,17 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 	username := strings.TrimPrefix(userID, "user-")
 
 	// Don't allow demoting admins
-	user, err := h.repos.Account().GetUser(ctx.Context, username)
+	user, err := h.repos.Account().GetUser(ctx.Context(), username)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "user not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
 		}
 		h.logger.Error("failed to get user", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	if user.Role == roleAdmin {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "cannot demote admin users"})
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": "cannot demote admin users"})
 	}
 
 	// Update user role to regular user
@@ -1381,10 +1301,9 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 		"updated_at": time.Now(),
 	}
 
-	if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
+	if err := h.repos.Account().UpdateUser(ctx.Context(), username, updates); err != nil {
 		h.logger.Error("failed to demote moderator", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Log admin action
@@ -1392,8 +1311,7 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 		zap.String(roleAdmin, adminClaims.Username),
 		zap.String("target", username))
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(models.AdminDemoteModeratorResponse{
+	return okJSON(models.AdminDemoteModeratorResponse{
 		UserID:    userID,
 		Username:  username,
 		NewRole:   "user",
@@ -1717,34 +1635,35 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 // Admin Status Moderation Endpoints
 
 // HandleAdminGetStatusesLift handles GET /api/v1/admin/statuses
-func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetStatusesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	pagination := h.parseAdminStatusPagination(ctx)
 	filter := h.parseAdminStatusFilter(ctx)
 
 	// Get statuses using the filtering method
-	storageStatuses, nextCursor, err := h.repos.Status().ListStatusesForAdmin(ctx.Context, filter, pagination.Limit, pagination.Cursor)
+	storageStatuses, nextCursor, err := h.repos.Status().ListStatusesForAdmin(ctx.Context(), filter, pagination.Limit, pagination.Cursor)
 	if err != nil {
 		h.logger.Error("failed to get admin statuses", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get statuses"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get statuses"})
 	}
 
-	// Convert to []any for JSON response
+	resp, err := okJSON(storageStatuses)
+	if err != nil {
+		return nil, err
+	}
+
 	// Add optional count header
-	h.addCountHeaderIfRequested(ctx, filter)
+	h.addCountHeaderIfRequested(ctx, resp, filter)
 
 	// Add pagination header
-	h.addPaginationHeader(ctx, nextCursor, pagination)
+	h.addPaginationHeader(ctx, resp, nextCursor, pagination)
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(storageStatuses)
+	return resp, nil
 }
 
 // AdminStatusPagination holds pagination parameters for admin status queries
@@ -1754,8 +1673,8 @@ type AdminStatusPagination struct {
 }
 
 // parseAdminStatusPagination parses pagination parameters from request
-func (h *Handler) parseAdminStatusPagination(ctx *lift.Context) AdminStatusPagination {
-	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+func (h *Handler) parseAdminStatusPagination(ctx *apptheory.Context) AdminStatusPagination {
+	limit, err := common.ParseAdminLimit(queryValue(ctx, "limit"))
 	if err != nil {
 		// Log warning but use default instead of failing
 		limit = 20
@@ -1763,24 +1682,24 @@ func (h *Handler) parseAdminStatusPagination(ctx *lift.Context) AdminStatusPagin
 
 	return AdminStatusPagination{
 		Limit:  limit,
-		Cursor: ctx.Query("cursor"),
+		Cursor: queryValue(ctx, "cursor"),
 	}
 }
 
 // parseAdminStatusFilter parses filter parameters from request
-func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *interfaces.StatusFilter {
-	local := ctx.Query("local") == boolTrue
-	remote := ctx.Query("remote") == boolTrue
-	flagged := ctx.Query("flagged") == boolTrue
-	reported := ctx.Query("reported") == boolTrue
-	withMedia := ctx.Query("media") == boolTrue
-	sensitive := ctx.Query("sensitive") == boolTrue
+func (h *Handler) parseAdminStatusFilter(ctx *apptheory.Context) *interfaces.StatusFilter {
+	local := queryValue(ctx, "local") == boolTrue
+	remote := queryValue(ctx, "remote") == boolTrue
+	flagged := queryValue(ctx, "flagged") == boolTrue
+	reported := queryValue(ctx, "reported") == boolTrue
+	withMedia := queryValue(ctx, "media") == boolTrue
+	sensitive := queryValue(ctx, "sensitive") == boolTrue
 
 	filter := &interfaces.StatusFilter{
-		ByDomain:   ctx.Query("by_domain"),
-		Visibility: ctx.Query("visibility"),
-		MinDate:    h.parseDate(ctx.Query("min_date")),
-		MaxDate:    h.parseDate(ctx.Query("max_date")),
+		ByDomain:   queryValue(ctx, "by_domain"),
+		Visibility: queryValue(ctx, "visibility"),
+		MinDate:    h.parseDate(queryValue(ctx, "min_date")),
+		MaxDate:    h.parseDate(queryValue(ctx, "max_date")),
 	}
 
 	// Set boolean filters only if explicitly requested
@@ -1790,16 +1709,16 @@ func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *interfaces.StatusFi
 	if remote {
 		filter.Remote = &remote
 	}
-	if ctx.Query("flagged") != "" {
+	if queryValue(ctx, "flagged") != "" {
 		filter.Flagged = &flagged
 	}
-	if ctx.Query("reported") != "" {
+	if queryValue(ctx, "reported") != "" {
 		filter.Reported = &reported
 	}
-	if ctx.Query("media") != "" {
+	if queryValue(ctx, "media") != "" {
 		filter.WithMedia = &withMedia
 	}
-	if ctx.Query("sensitive") != "" {
+	if queryValue(ctx, "sensitive") != "" {
 		filter.Sensitive = &sensitive
 	}
 
@@ -1818,20 +1737,20 @@ func (h *Handler) parseDate(dateStr string) *time.Time {
 }
 
 // addCountHeaderIfRequested adds total count header if requested
-func (h *Handler) addCountHeaderIfRequested(ctx *lift.Context, filter *interfaces.StatusFilter) {
-	if ctx.Query("include_count") == boolTrue {
+func (h *Handler) addCountHeaderIfRequested(ctx *apptheory.Context, resp *apptheory.Response, filter *interfaces.StatusFilter) {
+	if queryValue(ctx, "include_count") == boolTrue {
 		if statusRepo, ok := h.repos.Status().(interface {
 			CountStatusesForAdmin(context.Context, *interfaces.StatusFilter) (int64, error)
 		}); ok {
-			if totalCount, countErr := statusRepo.CountStatusesForAdmin(ctx.Context, filter); countErr == nil {
-				ctx.Response.Headers["X-Total-Count"] = strconv.FormatInt(totalCount, 10)
+			if totalCount, countErr := statusRepo.CountStatusesForAdmin(ctx.Context(), filter); countErr == nil {
+				setHeader(resp, "X-Total-Count", strconv.FormatInt(totalCount, 10))
 			}
 		}
 	}
 }
 
 // addPaginationHeader adds Link header for pagination if there's more data
-func (h *Handler) addPaginationHeader(ctx *lift.Context, nextCursor string, pagination AdminStatusPagination) {
+func (h *Handler) addPaginationHeader(ctx *apptheory.Context, resp *apptheory.Response, nextCursor string, pagination AdminStatusPagination) {
 	if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 		return
 	}
@@ -1841,11 +1760,11 @@ func (h *Handler) addPaginationHeader(ctx *lift.Context, nextCursor string, pagi
 		Path:     "/api/v1/admin/statuses",
 		RawQuery: params.Encode(),
 	}
-	ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
+	setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL.String()))
 }
 
 // buildPaginationParams builds URL parameters for pagination maintaining filter state
-func (h *Handler) buildPaginationParams(ctx *lift.Context, limit int, nextCursor string) url.Values {
+func (h *Handler) buildPaginationParams(ctx *apptheory.Context, limit int, nextCursor string) url.Values {
 	params := url.Values{
 		"limit":  []string{strconv.Itoa(limit)},
 		"cursor": []string{nextCursor},
@@ -1858,7 +1777,7 @@ func (h *Handler) buildPaginationParams(ctx *lift.Context, limit int, nextCursor
 	}
 
 	for _, param := range filterParams {
-		if value := ctx.Query(param); value != "" {
+		if value := queryValue(ctx, param); value != "" {
 			params.Add(param, value)
 		}
 	}
@@ -1867,53 +1786,46 @@ func (h *Handler) buildPaginationParams(ctx *lift.Context, limit int, nextCursor
 }
 
 // HandleAdminGetStatusLift handles GET /api/v1/admin/statuses/:id
-func (h *Handler) HandleAdminGetStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminGetStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	statusID := ctx.Param("id")
 
 	// Get status
-	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	status, err := h.repos.Status().GetStatus(ctx.Context(), statusID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "status not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "status not found"})
 		}
 		h.logger.Error("failed to get status", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get status"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get status"})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(status)
+	return okJSON(status)
 }
 
 // HandleAdminDeleteStatusLift handles DELETE /api/v1/admin/statuses/:id
-func (h *Handler) HandleAdminDeleteStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminDeleteStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	statusID := ctx.Param("id")
 
 	// Get the status first to validate it exists
-	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	status, err := h.repos.Status().GetStatus(ctx.Context(), statusID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "status not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "status not found"})
 		}
 		h.logger.Error("failed to get status for deletion", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get status"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get status"})
 	}
 
 	// Log admin action
@@ -1923,73 +1835,66 @@ func (h *Handler) HandleAdminDeleteStatusLift(ctx *lift.Context) error {
 		zap.Any("status", status))
 
 	// Delete the status
-	err = h.repos.Status().DeleteStatus(ctx.Context, statusID)
+	err = h.repos.Status().DeleteStatus(ctx.Context(), statusID)
 	if err != nil {
 		h.logger.Error("failed to delete status", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to delete status"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete status"})
 	}
 
 	// Create audit log entry
-	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, "delete_status", "status", statusID, "Admin deleted status", nil); err != nil {
+	if err := h.createAuditLogEntry(ctx.Context(), adminClaims.Username, "delete_status", "status", statusID, "Admin deleted status", nil); err != nil {
 		h.logger.Warn("failed to create audit log entry", zap.Error(err))
 		// Don't fail the request due to audit log issues
 	}
 
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return noContent(), nil
 }
 
 // HandleAdminMarkStatusSensitiveLift handles POST /api/v1/admin/statuses/:id/sensitive
-func (h *Handler) HandleAdminMarkStatusSensitiveLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminMarkStatusSensitiveLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminStatusSensitiveAction(ctx, true, "mark_sensitive", "Admin marked status as sensitive")
 }
 
 // HandleAdminUnmarkStatusSensitiveLift handles POST /api/v1/admin/statuses/:id/unsensitive
-func (h *Handler) HandleAdminUnmarkStatusSensitiveLift(ctx *lift.Context) error {
+func (h *Handler) HandleAdminUnmarkStatusSensitiveLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.adminStatusSensitiveAction(ctx, false, "unmark_sensitive", "Admin unmarked status as sensitive")
 }
 
 // adminStatusSensitiveAction consolidates status sensitive/unsensitive operations
-func (h *Handler) adminStatusSensitiveAction(ctx *lift.Context, sensitive bool, action, reason string) error {
+func (h *Handler) adminStatusSensitiveAction(ctx *apptheory.Context, sensitive bool, action, reason string) (*apptheory.Response, error) {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
+		return apptheory.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 	}
 
 	statusID := ctx.Param("id")
 
 	// Get the existing status first
-	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	status, err := h.repos.Status().GetStatus(ctx.Context(), statusID)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "status not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "status not found"})
 		}
 		h.logger.Error("failed to get status for update", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get status"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get status"})
 	}
 
 	// Update the status fields
 	status.Sensitive = sensitive
 	status.UpdatedAt = time.Now()
 
-	err = h.repos.Status().UpdateStatus(ctx.Context, status)
+	err = h.repos.Status().UpdateStatus(ctx.Context(), status)
 	if err != nil {
 		if isNotFoundError(err) {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "status not found"})
+			return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "status not found"})
 		}
 		logMessage := "failed to mark status as sensitive"
 		if !sensitive {
 			logMessage = "failed to unmark status as sensitive"
 		}
 		h.logger.Error(logMessage, zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to update status"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update status"})
 	}
 
 	// Log admin action
@@ -2002,20 +1907,18 @@ func (h *Handler) adminStatusSensitiveAction(ctx *lift.Context, sensitive bool, 
 		zap.String("status_id", statusID))
 
 	// Create audit log entry
-	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, action, "status", statusID, reason, nil); err != nil {
+	if err := h.createAuditLogEntry(ctx.Context(), adminClaims.Username, action, "status", statusID, reason, nil); err != nil {
 		h.logger.Warn("failed to create audit log entry", zap.Error(err))
 	}
 
 	// Get updated status
-	updatedStatus, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	updatedStatus, err := h.repos.Status().GetStatus(ctx.Context(), statusID)
 	if err != nil {
 		h.logger.Error("failed to get updated status", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get updated status"})
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get updated status"})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(updatedStatus)
+	return okJSON(updatedStatus)
 }
 
 // Helper function to create audit log entries

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -134,39 +134,35 @@ func TestStatusHandlersLift(t *testing.T) {
 
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, apimodels.CreateStatusRequest{Status: "hello", Visibility: "public"})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateStatusLift(ctxCreate))
-	require.Equal(t, http.StatusCreated, ctxCreate.Response.StatusCode)
+	requireStatus(t, http.StatusCreated)(handler.HandleCreateStatusLift(ctxCreate))
 
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1", headers, nil, nil)
 	require.NoError(t, err)
-	ctxDelete.SetParam("id", "s1")
-	require.NoError(t, handler.HandleDeleteStatusLift(ctxDelete))
-	require.Equal(t, http.StatusOK, ctxDelete.Response.StatusCode)
+	ctxDelete.Params["id"] = "s1"
+	requireStatus(t, http.StatusOK)(handler.HandleDeleteStatusLift(ctxDelete))
 
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1", headers, nil, nil)
 	require.NoError(t, err)
-	ctxGet.SetParam("id", "s1")
-	require.NoError(t, handler.HandleGetStatusLift(ctxGet))
-	require.Equal(t, http.StatusOK, ctxGet.Response.StatusCode)
+	ctxGet.Params["id"] = "s1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetStatusLift(ctxGet))
 
 	ctxHome, err := round10NewLiftContext(http.MethodGet, "/api/v1/timelines/home", headers, map[string]string{"limit": "5"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetHomeTimelineLift(ctxHome))
+	requireStatus(t, http.StatusOK)(handler.HandleGetHomeTimelineLift(ctxHome))
 
 	ctxPublic, err := round10NewLiftContext(http.MethodGet, "/api/v1/timelines/public", nil, map[string]string{"local": "true"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetPublicTimelineLift(ctxPublic))
+	requireStatus(t, http.StatusOK)(handler.HandleGetPublicTimelineLift(ctxPublic))
 
 	ctxAccount, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/statuses", nil, map[string]string{"only_media": "true"}, nil)
 	require.NoError(t, err)
-	ctxAccount.SetParam("id", "alice")
-	require.NoError(t, handler.HandleGetAccountStatusesLift(ctxAccount))
-	require.Equal(t, http.StatusOK, ctxAccount.Response.StatusCode)
+	ctxAccount.Params["id"] = "alice"
+	requireStatus(t, http.StatusOK)(handler.HandleGetAccountStatusesLift(ctxAccount))
 
 	ctxContext, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1/context", nil, nil, nil)
 	require.NoError(t, err)
-	ctxContext.SetParam("id", "s1")
-	require.NoError(t, handler.HandleGetStatusContextLift(ctxContext))
+	ctxContext.Params["id"] = "s1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetStatusContextLift(ctxContext))
 }
 
 func TestStatusHelpers(t *testing.T) {
@@ -188,15 +184,17 @@ func TestStatusHelpers(t *testing.T) {
 	require.Equal(t, "warn", note.Summary)
 	require.True(t, note.Sensitive)
 
-	owned, err := handler.convertObjectToNoteWithOwnershipCheck(ctx, note, "https://example.com/users/alice")
+	owned, resp, err := handler.convertObjectToNoteWithOwnershipCheck(ctx, note, "https://example.com/users/alice")
 	require.NoError(t, err)
+	require.Nil(t, resp)
 	require.Equal(t, "updated", owned.Content)
 
 	ctxForbidden, err := round10NewLiftContext(http.MethodGet, "/status", nil, nil, nil)
 	require.NoError(t, err)
-	_, err = handler.convertObjectToNoteWithOwnershipCheck(ctxForbidden, note, "https://example.com/users/bob")
+	_, respForbidden, err := handler.convertObjectToNoteWithOwnershipCheck(ctxForbidden, note, "https://example.com/users/bob")
 	require.NoError(t, err)
-	require.Equal(t, http.StatusForbidden, ctxForbidden.Response.StatusCode)
+	require.NotNil(t, respForbidden)
+	require.Equal(t, http.StatusForbidden, respForbidden.Status)
 
 	require.True(t, handler.objectHasMedia(note))
 	require.False(t, handler.objectIsReply(note))

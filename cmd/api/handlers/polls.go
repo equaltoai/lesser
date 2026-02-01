@@ -1,8 +1,7 @@
-package lift
+package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -14,24 +13,23 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetPollLift retrieves a poll by ID
 //
 //nolint:gocognit // Complex poll handling with vote counting and user permissions
-func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetPollLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	pollID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("poll_id", pollID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]any{"error": "poll ID required"})
+		return common.RespondBadRequest(ctx, "poll ID required")
 	}
 
 	// Extract token from Authorization header (optional for public polls)
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	// Test mode support
@@ -43,7 +41,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Get the user's actor to get their ID
-				account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+				account, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
 				if err == nil && account.Actor != nil {
 					userID = account.Actor.ID
 				}
@@ -52,11 +50,10 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	}
 
 	// Get the poll
-	poll, err := h.repos.Poll().GetPoll(ctx.Context, pollID)
+	poll, err := h.repos.Poll().GetPoll(ctx.Context(), pollID)
 	if err != nil {
 		h.logger.Error("failed to get poll", zap.String("poll_id", pollID), zap.Error(err))
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]any{"error": "poll not found"})
+		return common.RespondNotFound(ctx, "poll not found")
 	}
 
 	// Use the pre-calculated vote counts from the poll
@@ -73,7 +70,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	var ownVotes []int
 	if userID != "" {
 		// Get user's votes from PollVote repository
-		hasVoted, userVotes, err := h.repos.Poll().HasUserVoted(ctx, poll.ID, userID)
+		hasVoted, userVotes, err := h.repos.Poll().HasUserVoted(ctx.Context(), poll.ID, userID)
 		if err != nil {
 			// Log error but don't fail - just assume no votes
 			h.logger.Warn("failed to get user poll votes",
@@ -98,9 +95,13 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	}
 
 	// Build response
+	expiresAt := ""
+	if poll.ExpiresAt != nil && !poll.ExpiresAt.IsZero() {
+		expiresAt = poll.ExpiresAt.Format(time.RFC3339)
+	}
 	resp := models.Poll{
 		ID:          poll.ID,
-		ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
+		ExpiresAt:   expiresAt,
 		Expired:     expired,
 		Multiple:    poll.Multiple,
 		VotesCount:  poll.VotersCount, // Total votes, not per-option
@@ -108,7 +109,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 		Voted:       voted,
 		OwnVotes:    ownVotes,
 		OptionsData: optionsData,
-		Emojis:      h.extractCustomEmojisLift(ctx.Context, poll.Options),
+		Emojis:      h.extractCustomEmojisLift(ctx.Context(), poll.Options),
 	}
 
 	// Hide totals if requested and poll hasn't expired
@@ -121,102 +122,75 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 		resp.VotersCount = 0
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleVoteOnPollLift submits a vote on a poll
-func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
+func (h *Handler) HandleVoteOnPollLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Validate poll ID
 	pollID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("poll_id", pollID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]any{"error": "poll ID required"})
+		return common.RespondBadRequest(ctx, "poll ID required")
 	}
 
 	// Authenticate and get actor
-	claims, actor, handled, err := h.authenticatePollVoter(ctx)
-	if err != nil || handled {
-		return err
-	}
-
-	// Check write scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]any{"error": "insufficient scope"})
+	_, actor, resp, err := h.authenticatePollVoter(ctx, auth.ScopeWrite)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Parse and validate vote request
-	req, handled, err := h.parsePollVoteRequest(ctx)
-	if err != nil || handled {
-		return err
+	req, resp, err := h.parsePollVoteRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Submit vote
-	handled, err = h.submitPollVote(ctx, pollID, actor.ID, req.Choices)
-	if err != nil || handled {
-		return err
+	if resp, err := h.submitPollVote(ctx, pollID, actor.ID, req.Choices); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get updated poll and build response
-	resp, handled, err := h.buildPollVoteResponse(ctx, pollID, req.Choices)
-	if err != nil || handled {
-		return err
+	respData, resp, err := h.buildPollVoteResponse(ctx, pollID, req.Choices)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Create notification if needed
-	h.createPollVoteNotification(ctx, pollID, actor.ID, resp.poll)
+	h.createPollVoteNotification(ctx, pollID, actor.ID, respData.poll)
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp.response)
+	return okJSON(respData.response)
 }
 
 // authenticatePollVoter handles authentication for poll voting
-func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *storage.ActorRecord, bool, error) {
-	// Extract auth header
-	authHeader := h.getPollAuthHeader(ctx)
-
-	// Extract token
-	token, err := auth.ExtractBearerToken(authHeader)
+func (h *Handler) authenticatePollVoter(ctx *apptheory.Context, requiredScope string) (*auth.Claims, *storage.ActorRecord, *apptheory.Response, error) {
+	claims, err := h.authenticateWithScope(ctx, requiredScope)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		if err := ctx.JSON(map[string]any{"error": "unauthorized"}); err != nil {
-			return nil, nil, false, err
+		if isInsufficientScopeError(err) {
+			resp, respErr := common.RespondForbidden(ctx, err.Error())
+			return nil, nil, resp, respErr
 		}
-		return nil, nil, true, nil
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		if err := ctx.JSON(map[string]any{"error": "unauthorized"}); err != nil {
-			return nil, nil, false, err
-		}
-		return nil, nil, true, nil
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return nil, nil, resp, respErr
 	}
 
 	// Get actor
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
 	if err != nil || account.Actor == nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		if err := ctx.JSON(map[string]any{"error": "internal server error"}); err != nil {
-			return nil, nil, false, err
-		}
-		return nil, nil, true, nil
+		resp, respErr := common.RespondInternalServerError(ctx, "internal server error")
+		return nil, nil, resp, respErr
 	}
 
 	actor := h.convertToActorRecord(account.Actor)
-	return claims, actor, false, nil
+	return claims, actor, nil, nil
 }
 
 // getPollAuthHeader extracts authorization header
-func (h *Handler) getPollAuthHeader(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
+func (h *Handler) getPollAuthHeader(ctx *apptheory.Context) string {
+	authHeader := headerValue(ctx, "Authorization")
 	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 	return authHeader
 }
@@ -236,64 +210,40 @@ func (h *Handler) convertToActorRecord(actorData *activitypub.Actor) *storage.Ac
 }
 
 // parsePollVoteRequest parses the poll vote request
-func (h *Handler) parsePollVoteRequest(ctx *lift.Context) (*models.PollVoteRequest, bool, error) {
+func (h *Handler) parsePollVoteRequest(ctx *apptheory.Context) (*models.PollVoteRequest, *apptheory.Response, error) {
 	var req models.PollVoteRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-				ctx.Status(http.StatusBadRequest)
-				if err := ctx.JSON(map[string]any{"error": "invalid request body"}); err != nil {
-					return nil, false, err
-				}
-				return nil, true, nil
-			}
-		} else {
-			ctx.Status(http.StatusBadRequest)
-			if err := ctx.JSON(map[string]any{"error": "invalid request body"}); err != nil {
-				return nil, false, err
-			}
-			return nil, true, nil
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return nil, resp, respErr
 	}
 
 	// Validate request
 	if err := common.ValidateSliceNotEmpty("req.Choices", req.Choices); err != nil {
-		ctx.Status(http.StatusUnprocessableEntity)
-		if err := ctx.JSON(map[string]any{"error": "no choices provided"}); err != nil {
-			return nil, false, err
-		}
-		return nil, true, nil
+		resp, respErr := apptheory.JSON(http.StatusUnprocessableEntity, map[string]any{"error": "no choices provided"})
+		return nil, resp, respErr
 	}
 
 	// Validate poll vote choices
 	for i, choice := range req.Choices {
 		if choice < 0 {
-			ctx.Status(http.StatusUnprocessableEntity)
-			if err := ctx.JSON(map[string]any{"error": fmt.Sprintf("invalid choice index %d at position %d", choice, i)}); err != nil {
-				return nil, false, err
-			}
-			return nil, true, nil
+			resp, respErr := apptheory.JSON(http.StatusUnprocessableEntity, map[string]any{"error": fmt.Sprintf("invalid choice index %d at position %d", choice, i)})
+			return nil, resp, respErr
 		}
 	}
 
-	return &req, false, nil
+	return &req, nil, nil
 }
 
 // submitPollVote submits the vote to the poll
-func (h *Handler) submitPollVote(ctx *lift.Context, pollID, voterID string, choices []int) (bool, error) {
-	if err := h.repos.Poll().VoteOnPoll(ctx.Context, pollID, voterID, choices); err != nil {
+func (h *Handler) submitPollVote(ctx *apptheory.Context, pollID, voterID string, choices []int) (*apptheory.Response, error) {
+	if err := h.repos.Poll().VoteOnPoll(ctx.Context(), pollID, voterID, choices); err != nil {
 		h.logger.Error("failed to vote on poll",
 			zap.String("poll_id", pollID),
 			zap.String("voter_id", voterID),
 			zap.Error(err))
-		ctx.Status(http.StatusUnprocessableEntity)
-		if err := ctx.JSON(map[string]any{"error": err.Error()}); err != nil {
-			return false, err
-		}
-		return true, nil
+		return apptheory.JSON(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 	}
-	return false, nil
+	return nil, nil
 }
 
 // pollVoteResponseData holds poll response data
@@ -303,16 +253,13 @@ type pollVoteResponseData struct {
 }
 
 // buildPollVoteResponse builds the response after voting
-func (h *Handler) buildPollVoteResponse(ctx *lift.Context, pollID string, choices []int) (*pollVoteResponseData, bool, error) {
+func (h *Handler) buildPollVoteResponse(ctx *apptheory.Context, pollID string, choices []int) (*pollVoteResponseData, *apptheory.Response, error) {
 	// Get updated poll data
-	poll, err := h.repos.Poll().GetPoll(ctx.Context, pollID)
+	poll, err := h.repos.Poll().GetPoll(ctx.Context(), pollID)
 	if err != nil {
 		h.logger.Error("failed to get poll after voting", zap.String("poll_id", pollID), zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		if err := ctx.JSON(map[string]any{"error": "internal server error"}); err != nil {
-			return nil, false, err
-		}
-		return nil, true, nil
+		resp, respErr := common.RespondInternalServerError(ctx, "internal server error")
+		return nil, resp, respErr
 	}
 
 	// Prepare vote counts
@@ -325,9 +272,13 @@ func (h *Handler) buildPollVoteResponse(ctx *lift.Context, pollID string, choice
 	optionsData := h.buildPollOptionsData(poll, optionVotes)
 
 	// Build response
+	expiresAt := ""
+	if poll.ExpiresAt != nil && !poll.ExpiresAt.IsZero() {
+		expiresAt = poll.ExpiresAt.Format(time.RFC3339)
+	}
 	resp := models.Poll{
 		ID:          poll.ID,
-		ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
+		ExpiresAt:   expiresAt,
 		Expired:     expired,
 		Multiple:    poll.Multiple,
 		VotesCount:  poll.VotersCount,
@@ -335,13 +286,13 @@ func (h *Handler) buildPollVoteResponse(ctx *lift.Context, pollID string, choice
 		Voted:       true,
 		OwnVotes:    choices,
 		OptionsData: optionsData,
-		Emojis:      h.extractCustomEmojisLift(ctx.Context, poll.Options),
+		Emojis:      h.extractCustomEmojisLift(ctx.Context(), poll.Options),
 	}
 
 	// Hide totals if requested
 	h.hidePollTotalsIfNeeded(poll, &resp, expired)
 
-	return &pollVoteResponseData{response: resp, poll: poll}, false, nil
+	return &pollVoteResponseData{response: resp, poll: poll}, nil, nil
 }
 
 // preparePollVoteCounts prepares vote counts for the poll
@@ -381,7 +332,7 @@ func (h *Handler) hidePollTotalsIfNeeded(poll *storage.Poll, resp *models.Poll, 
 }
 
 // createPollVoteNotification creates a notification for the poll creator
-func (h *Handler) createPollVoteNotification(ctx *lift.Context, pollID, voterID string, poll *storage.Poll) {
+func (h *Handler) createPollVoteNotification(ctx *apptheory.Context, pollID, voterID string, poll *storage.Poll) {
 	if poll.CreatedBy == voterID {
 		return // Don't notify self
 	}
@@ -396,7 +347,7 @@ func (h *Handler) createPollVoteNotification(ctx *lift.Context, pollID, voterID 
 			TargetID: poll.StatusID,
 		}
 
-		if _, err := notificationService.CreateNotification(ctx.Context, cmd); err != nil {
+		if _, err := notificationService.CreateNotification(ctx.Context(), cmd); err != nil {
 			h.logger.Warn("failed to create poll notification",
 				zap.String("poll_id", pollID),
 				zap.Error(err))

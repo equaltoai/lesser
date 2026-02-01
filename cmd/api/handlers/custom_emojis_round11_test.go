@@ -1,19 +1,36 @@
-package lift
+package handlers
 
 import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCustomEmojisHandlers_Round11(t *testing.T) {
 	cfg := round10TestConfig()
-	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	now := time.Now()
+	adminUser := storagemodels.User{
+		Username:  "admin",
+		Role:      roleAdmin,
+		Approved:  true,
+		Version:   1,
+		CreatedAt: now.Add(-24 * time.Hour),
+		UpdatedAt: now.Add(-24 * time.Hour),
+	}
+	require.NoError(t, adminUser.UpdateKeys())
+
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"admin": adminUser,
+		},
+	})
 
 	adminToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{"read", "write"})
 	adminHeaders := map[string]string{"Authorization": "Bearer " + adminToken}
@@ -73,14 +90,12 @@ func TestCustomEmojisHandlers_Round11(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/custom_emojis", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetCustomEmojisLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetCustomEmojisLift(ctx))
 
 	createReq := models.CreateCustomEmojiRequest{Shortcode: "wave", URL: "https://example.com/wave.png", Category: "misc"}
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/custom_emojis", adminHeaders, nil, createReq)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateCustomEmojiLift(ctxCreate))
-	require.Equal(t, http.StatusOK, ctxCreate.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleCreateCustomEmojiLift(ctxCreate))
 
 	category := "updated"
 	visible := true
@@ -88,13 +103,11 @@ func TestCustomEmojisHandlers_Round11(t *testing.T) {
 	updateReq := models.UpdateCustomEmojiRequest{Category: &category, VisibleInPicker: &visible, Disabled: &disabled}
 	ctxUpdate, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/custom_emojis/wave", adminHeaders, nil, updateReq)
 	require.NoError(t, err)
-	ctxUpdate.SetParam("shortcode", "wave")
-	require.NoError(t, handler.HandleUpdateCustomEmojiLift(ctxUpdate))
-	require.Equal(t, http.StatusOK, ctxUpdate.Response.StatusCode)
+	ctxUpdate.Params["shortcode"] = "wave"
+	requireStatus(t, http.StatusOK)(handler.HandleUpdateCustomEmojiLift(ctxUpdate))
 
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/custom_emojis/wave", adminHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxDelete.SetParam("shortcode", "wave")
-	require.NoError(t, handler.HandleDeleteCustomEmojiLift(ctxDelete))
-	require.Equal(t, http.StatusOK, ctxDelete.Response.StatusCode)
+	ctxDelete.Params["shortcode"] = "wave"
+	requireStatus(t, http.StatusOK)(handler.HandleDeleteCustomEmojiLift(ctxDelete))
 }

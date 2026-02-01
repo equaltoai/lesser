@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -64,9 +64,7 @@ func TestStatusesContextAncestors_Round12(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer " + token}
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/child/context", headers, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "child")
+	ctx.Params["id"] = "child"
 
-	require.NoError(t, handler.HandleGetStatusContextLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetStatusContextLift(ctx))
 }
-

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -33,19 +33,17 @@ func TestAI_Round12_GetAIAnalysis_Coverage(t *testing.T) {
 	t.Run("missing_token", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/analysis/abc", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "abc")
+		ctx.Params["object_id"] = "abc"
 
-		require.NoError(t, handler.HandleGetAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetAIAnalysisLift(ctx))
 	})
 
 	t.Run("invalid_token", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/analysis/abc", map[string]string{"Authorization": "Bearer bad"}, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "abc")
+		ctx.Params["object_id"] = "abc"
 
-		require.NoError(t, handler.HandleGetAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetAIAnalysisLift(ctx))
 	})
 
 	t.Run("extracts_object_id_from_path_when_param_missing", func(t *testing.T) {
@@ -53,28 +51,25 @@ func TestAI_Round12_GetAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/analysis/test-object-123", headers, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetAIAnalysisLift(ctx))
 	})
 
 	t.Run("not_found", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + readToken}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/analysis/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "missing")
+		ctx.Params["object_id"] = "missing"
 
-		require.NoError(t, handler.HandleGetAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetAIAnalysisLift(ctx))
 	})
 
 	t.Run("ok", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + readToken}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/analysis/abc", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "abc")
+		ctx.Params["object_id"] = "abc"
 
-		require.NoError(t, handler.HandleGetAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetAIAnalysisLift(ctx))
 	})
 }
 
@@ -107,16 +102,14 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", nil, nil, map[string]any{"object_id": "abc"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("invalid_token", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer bad"}, nil, map[string]any{"object_id": "abc"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("missing_moderation_scope", func(t *testing.T) {
@@ -124,16 +117,14 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer " + readToken}, nil, map[string]any{"object_id": "abc"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("invalid_body", func(t *testing.T) {
 		modToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"moderation"})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer " + modToken}, nil, []byte(`{invalid}`))
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("parse_fallback_success_for_mismatched_content_type", func(t *testing.T) {
@@ -144,8 +135,7 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/ai/analyze", headers, nil, []byte(`{"object_id":"abc","object_type":"status","force":true}`))
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusAccepted, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusAccepted)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("missing_object_id", func(t *testing.T) {
@@ -153,8 +143,7 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer " + modToken}, nil, map[string]any{"object_id": ""})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("queue_error", func(t *testing.T) {
@@ -162,8 +151,7 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer " + modToken}, nil, map[string]any{"object_id": "queue-error"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("already_exists_returns_existing_analysis", func(t *testing.T) {
@@ -171,8 +159,7 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer " + modToken}, nil, map[string]any{"object_id": "already"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 
 	t.Run("ok_queued", func(t *testing.T) {
@@ -180,8 +167,7 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer " + modToken}, nil, map[string]any{"object_id": "abc"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleRequestAIAnalysisLift(ctx))
-		require.Equal(t, http.StatusAccepted, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusAccepted)(handler.HandleRequestAIAnalysisLift(ctx))
 	})
 }
 
@@ -205,31 +191,27 @@ func TestAI_Round12_GetAIStatsAndSummary_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/stats", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetAIStatsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetAIStatsLift(ctx))
 	})
 
 	t.Run("extracts_period_from_path_querystring", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/stats?period=week", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetAIStatsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetAIStatsLift(ctx))
 	})
 
 	t.Run("service_error", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/stats?period=boom", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetAIStatsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetAIStatsLift(ctx))
 	})
 
 	t.Run("summary_ok", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/capabilities", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetAISummaryLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleGetAISummaryLift(ctx))
 	})
 }

@@ -1,7 +1,7 @@
 // accounts_full.go - Complete service-based implementation of account endpoints
 // This implements Phase 3 with full functionality and federation support
 
-package lift
+package handlers
 
 import (
 	"context"
@@ -17,19 +17,19 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetAccountFull retrieves account information by ID
-func (h *Handler) HandleGetAccountFull(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Get the actor
-	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
+	actor, err := h.resolveAccountIDFull(ctx.Context(), accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "account not found")
@@ -39,44 +39,50 @@ func (h *Handler) HandleGetAccountFull(ctx *lift.Context) error {
 	}
 
 	// Build account response
-	account := h.buildAccountResponseFull(ctx.Context, actor)
-	return ctx.JSON(account)
+	account := h.buildAccountResponseFull(ctx.Context(), actor)
+	return okJSON(account)
 }
 
 // HandleVerifyCredentialsFull returns the authenticated user's account using Accounts service
-func (h *Handler) HandleVerifyCredentialsFull(ctx *lift.Context) error {
+func (h *Handler) HandleVerifyCredentialsFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Call Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get account", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
-	return ctx.JSON(account)
+	return okJSON(account)
 }
 
 // HandleUpdateCredentialsFull updates the authenticated user's profile using Accounts service
-func (h *Handler) HandleUpdateCredentialsFull(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateCredentialsFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request
 	var req models.UpdateCredentialsRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondBadRequest(ctx, "invalid request format")
 	}
 
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Call Accounts service
-	result, err := h.registry.Accounts().UpdateProfile(ctx.Context, &accounts.UpdateProfileCommand{
+	result, err := h.registry.Accounts().UpdateProfile(ctx.Context(), &accounts.UpdateProfileCommand{
 		Username:     claims.Username,
 		DisplayName:  req.DisplayName,
 		Bio:          req.Note,
@@ -90,30 +96,30 @@ func (h *Handler) HandleUpdateCredentialsFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to update profile")
 	}
 
-	return ctx.JSON(result.Account)
+	return okJSON(result.Account)
 }
 
 // HandleGetAccountStatusesFull retrieves statuses for an account using Notes service
-func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountStatusesFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Parse query parameters
-	limitParam := ctx.Query("limit")
+	limitParam := queryValue(ctx, "limit")
 	limit, err := common.ParseAccountStatusesLimit(limitParam)
 	if err != nil {
 		limit = 20
 	}
 
 	// Parse other query parameters
-	maxID := ctx.Query("max_id")
-	onlyMedia := ctx.Query("only_media") == boolTrue
-	excludeReplies := ctx.Query("exclude_replies") == boolTrue
-	excludeReblogs := ctx.Query("exclude_reblogs") == boolTrue
-	pinnedOnly := ctx.Query("pinned") == boolTrue
-	tagged := ctx.Query("tagged")
+	maxID := queryValue(ctx, "max_id")
+	onlyMedia := queryValue(ctx, "only_media") == boolTrue
+	excludeReplies := queryValue(ctx, "exclude_replies") == boolTrue
+	excludeReblogs := queryValue(ctx, "exclude_reblogs") == boolTrue
+	pinnedOnly := queryValue(ctx, "pinned") == boolTrue
+	tagged := queryValue(ctx, "tagged")
 
 	// Optional viewer authentication for private posts
 	var viewerID string
@@ -133,7 +139,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 	}
 
 	// Call Notes service to get user timeline
-	result, err := notesService.ListNotes(ctx.Context, &notes.ListNotesQuery{
+	result, err := notesService.ListNotes(ctx.Context(), &notes.ListNotesQuery{
 		TimelineType:   "user",
 		AuthorID:       accountID,
 		ViewerID:       viewerID,
@@ -158,34 +164,38 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 		response[i] = h.convertStatusToMastodonAPI(note, viewerID)
 	}
 
-	// Set Link header for pagination if needed
+	resp, err := okJSON(response)
+	if err != nil {
+		return nil, err
+	}
+
 	if result.Pagination != nil && result.Pagination.NextCursor != "" {
 		linkHeader := fmt.Sprintf("<%s/api/v1/accounts/%s/statuses?max_id=%s>; rel=\"next\"",
 			h.cfg.BaseURL(), accountID, result.Pagination.NextCursor)
-		ctx.Response.Header("Link", linkHeader)
+		setHeader(resp, "Link", linkHeader)
 	}
 
-	return ctx.JSON(response)
+	return resp, nil
 }
 
 // HandleGetAccountFollowersFull retrieves followers for an account
-func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountFollowersFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Parse pagination parameters
-	limitParam := ctx.Query("limit")
+	limitParam := queryValue(ctx, "limit")
 	limit, err := common.ParseFollowLimit(limitParam)
 	if err != nil {
 		limit = 40
 	}
 
-	maxID := ctx.Query("max_id")
+	maxID := queryValue(ctx, "max_id")
 
 	// Get the account
-	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
+	actor, err := h.resolveAccountIDFull(ctx.Context(), accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "account not found")
@@ -195,7 +205,7 @@ func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 	}
 
 	// Get followers
-	followersResult, nextCursor, err := h.registry.Relationships().GetFollowers(ctx.Context, actor.PreferredUsername, limit, maxID)
+	followersResult, nextCursor, err := h.registry.Relationships().GetFollowers(ctx.Context(), actor.PreferredUsername, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get followers", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
@@ -209,38 +219,43 @@ func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 		if followerAccount == nil || followerAccount.Actor == nil {
 			continue
 		}
-		account := h.buildAccountResponseFull(ctx.Context, followerAccount.Actor)
+		account := h.buildAccountResponseFull(ctx.Context(), followerAccount.Actor)
 		accounts = append(accounts, account)
 	}
 
 	// Set Link header for pagination
+	resp, err := okJSON(accounts)
+	if err != nil {
+		return nil, err
+	}
+
 	if nextMaxID != "" {
 		linkHeader := fmt.Sprintf("<%s/api/v1/accounts/%s/followers?max_id=%s>; rel=\"next\"",
 			h.cfg.BaseURL(), accountID, nextMaxID)
-		ctx.Response.Header("Link", linkHeader)
+		setHeader(resp, "Link", linkHeader)
 	}
 
-	return ctx.JSON(accounts)
+	return resp, nil
 }
 
 // HandleGetAccountFollowingFull retrieves accounts that this account follows
-func (h *Handler) HandleGetAccountFollowingFull(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountFollowingFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Parse pagination parameters
-	limitParam := ctx.Query("limit")
+	limitParam := queryValue(ctx, "limit")
 	limit, err := common.ParseFollowLimit(limitParam)
 	if err != nil {
 		limit = 40
 	}
 
-	maxID := ctx.Query("max_id")
+	maxID := queryValue(ctx, "max_id")
 
 	// Get the account
-	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
+	actor, err := h.resolveAccountIDFull(ctx.Context(), accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "account not found")
@@ -250,7 +265,7 @@ func (h *Handler) HandleGetAccountFollowingFull(ctx *lift.Context) error {
 	}
 
 	// Get following
-	followingIDs, nextMaxID, err := h.registry.Relationships().GetFollowing(ctx.Context, actor.PreferredUsername, limit, maxID)
+	followingIDs, nextMaxID, err := h.registry.Relationships().GetFollowing(ctx.Context(), actor.PreferredUsername, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get following", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
@@ -262,18 +277,23 @@ func (h *Handler) HandleGetAccountFollowingFull(ctx *lift.Context) error {
 		if followingAccount == nil || followingAccount.Actor == nil {
 			continue
 		}
-		account := h.buildAccountResponseFull(ctx.Context, followingAccount.Actor)
+		account := h.buildAccountResponseFull(ctx.Context(), followingAccount.Actor)
 		accounts = append(accounts, account)
 	}
 
 	// Set Link header for pagination
+	resp, err := okJSON(accounts)
+	if err != nil {
+		return nil, err
+	}
+
 	if nextMaxID != "" {
 		linkHeader := fmt.Sprintf("<%s/api/v1/accounts/%s/following?max_id=%s>; rel=\"next\"",
 			h.cfg.BaseURL(), accountID, nextMaxID)
-		ctx.Response.Header("Link", linkHeader)
+		setHeader(resp, "Link", linkHeader)
 	}
 
-	return ctx.JSON(accounts)
+	return resp, nil
 }
 
 // Helper methods
@@ -373,9 +393,9 @@ func (h *Handler) buildAccountResponseFull(ctx context.Context, actor *activityp
 }
 
 // handleAccountStatusesFallback provides fallback implementation when Notes service unavailable
-func (h *Handler) handleAccountStatusesFallback(ctx *lift.Context, accountID string, limit int, maxID string, viewerID string) error {
+func (h *Handler) handleAccountStatusesFallback(ctx *apptheory.Context, accountID string, limit int, maxID string, viewerID string) (*apptheory.Response, error) {
 	// Get the account
-	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
+	actor, err := h.resolveAccountIDFull(ctx.Context(), accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "account not found")
@@ -386,7 +406,7 @@ func (h *Handler) handleAccountStatusesFallback(ctx *lift.Context, accountID str
 
 	// Get statuses using GetUserTimeline
 	opts := interfaces.PaginationOptions{Limit: limit, Cursor: maxID}
-	result, err := h.registry.Notes().GetUserTimeline(ctx.Context, actor.ID, opts)
+	result, err := h.registry.Notes().GetUserTimeline(ctx.Context(), actor.ID, opts)
 	if err != nil {
 		h.logger.Error("failed to get account statuses", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
@@ -400,14 +420,18 @@ func (h *Handler) handleAccountStatusesFallback(ctx *lift.Context, accountID str
 		response[i] = h.convertStatusToMastodonAPI(statusModel, viewerID)
 	}
 
-	// Set Link header for pagination if needed
+	resp, err := okJSON(response)
+	if err != nil {
+		return nil, err
+	}
+
 	if nextCursor != "" {
 		linkHeader := fmt.Sprintf("<%s/api/v1/accounts/%s/statuses?max_id=%s>; rel=\"next\"",
 			h.cfg.BaseURL(), accountID, nextCursor)
-		ctx.Response.Header("Link", linkHeader)
+		setHeader(resp, "Link", linkHeader)
 	}
 
-	return ctx.JSON(response)
+	return resp, nil
 }
 
 // convertStatusToMastodonAPI converts a Status model to Mastodon API format

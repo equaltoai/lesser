@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -49,14 +49,14 @@ type SearchParams struct {
 }
 
 // HandleSearchLift performs a search across accounts, statuses, and hashtags
-func (h *Handler) HandleSearchLift(ctx *lift.Context) error {
+func (h *Handler) HandleSearchLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Optional authentication for search
 	h.logSearchAuthentication(ctx)
 
 	// Parse and validate parameters
-	params, err := h.parseSearchParams(ctx)
-	if err != nil {
-		return err
+	params, resp, err := h.parseSearchParams(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Initialize results structure
@@ -71,11 +71,11 @@ func (h *Handler) HandleSearchLift(ctx *lift.Context) error {
 	h.executeStatusSearch(ctx, params, &result)
 	h.executeHashtagSearch(ctx, params, &result)
 
-	return ctx.JSON(result)
+	return okJSON(result)
 }
 
 // logSearchAuthentication handles optional authentication logging
-func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
+func (h *Handler) logSearchAuthentication(ctx *apptheory.Context) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return
@@ -88,17 +88,15 @@ func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
 }
 
 // parseSearchParams extracts and validates search parameters
-func (h *Handler) parseSearchParams(ctx *lift.Context) (*SearchParams, error) {
-	query := ctx.Query("q")
+func (h *Handler) parseSearchParams(ctx *apptheory.Context) (*SearchParams, *apptheory.Response, error) {
+	query := queryValue(ctx, "q")
 	if err := common.ValidateSearchQuery(query); err != nil {
-		if err := common.RespondValidationError(ctx, err); err != nil {
-			h.logger.Error("failed to send error response", zap.Error(err))
-		}
-		return nil, err
+		resp, respErr := common.RespondValidationError(ctx, err)
+		return nil, resp, respErr
 	}
 
 	// Parse limit
-	limitStr := ctx.Query("limit")
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseTimelineLimit(limitStr)
 	if err != nil {
 		limit = 20 // Use default on error
@@ -106,19 +104,19 @@ func (h *Handler) parseSearchParams(ctx *lift.Context) (*SearchParams, error) {
 
 	return &SearchParams{
 		Query:     query,
-		Type:      ctx.Query("type"),
-		AccountID: ctx.Query("account_id"),
+		Type:      queryValue(ctx, "type"),
+		AccountID: queryValue(ctx, "account_id"),
 		Limit:     limit,
-	}, nil
+	}, nil, nil
 }
 
 // executeAccountSearch performs account search if requested
-func (h *Handler) executeAccountSearch(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+func (h *Handler) executeAccountSearch(ctx *apptheory.Context, params *SearchParams, result *models.SearchResult) {
 	if params.Type != "" && params.Type != "accounts" {
 		return
 	}
 
-	actors, err := h.repos.Search().SearchAccounts(ctx.Context, params.Query, params.Limit, false, 0)
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context(), params.Query, params.Limit, false, 0)
 	if err != nil {
 		h.logger.Error("account search failed",
 			zap.String("query", params.Query),
@@ -134,7 +132,7 @@ func (h *Handler) executeAccountSearch(ctx *lift.Context, params *SearchParams, 
 }
 
 // executeStatusSearch performs status search if requested
-func (h *Handler) executeStatusSearch(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+func (h *Handler) executeStatusSearch(ctx *apptheory.Context, params *SearchParams, result *models.SearchResult) {
 	if params.Type != "" && params.Type != searchTypeStatuses {
 		return
 	}
@@ -147,12 +145,12 @@ func (h *Handler) executeStatusSearch(ctx *lift.Context, params *SearchParams, r
 }
 
 // executeHashtagSearch performs hashtag search if requested
-func (h *Handler) executeHashtagSearch(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+func (h *Handler) executeHashtagSearch(ctx *apptheory.Context, params *SearchParams, result *models.SearchResult) {
 	if params.Type != "" && params.Type != "hashtags" {
 		return
 	}
 
-	hashtags, err := h.repos.Search().SearchHashtags(ctx.Context, params.Query, params.Limit)
+	hashtags, err := h.repos.Search().SearchHashtags(ctx.Context(), params.Query, params.Limit)
 	if err != nil {
 		h.logger.Warn("hashtag search failed", zap.Error(err))
 		return
@@ -180,8 +178,8 @@ func (h *Handler) convertActorToAccount(actor *activitypub.Actor) models.Account
 }
 
 // searchStatusByURL searches for a status by direct URL
-func (h *Handler) searchStatusByURL(ctx *lift.Context, url string, result *models.SearchResult) {
-	obj, err := h.repos.Object().GetObject(ctx.Context, url)
+func (h *Handler) searchStatusByURL(ctx *apptheory.Context, url string, result *models.SearchResult) {
+	obj, err := h.repos.Object().GetObject(ctx.Context(), url)
 	if err != nil || obj == nil {
 		return
 	}
@@ -196,13 +194,13 @@ func (h *Handler) searchStatusByURL(ctx *lift.Context, url string, result *model
 }
 
 // searchStatusByContent searches for statuses by content
-func (h *Handler) searchStatusByContent(ctx *lift.Context, params *SearchParams, result *models.SearchResult) {
+func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchParams, result *models.SearchResult) {
 	searchOptions := storage.StatusSearchOptions{
 		Limit:     params.Limit,
 		AccountID: params.AccountID,
 	}
 
-	statusResults, err := h.repos.Search().SearchStatusesWithOptions(ctx.Context, params.Query, searchOptions)
+	statusResults, err := h.repos.Search().SearchStatusesWithOptions(ctx.Context(), params.Query, searchOptions)
 	if err != nil {
 		h.logger.Warn("status search failed", zap.Error(err))
 		return
@@ -261,7 +259,7 @@ func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSe
 }
 
 // convertStatusResultToAPI converts status result to API format
-func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.StatusSearchResult) models.Status {
+func (h *Handler) convertStatusResultToAPI(ctx *apptheory.Context, sr *storage.StatusSearchResult) models.Status {
 	// Convert search result to object map for transformation framework
 	statusMap := map[string]interface{}{
 		"id":        sr.StatusID,
@@ -272,7 +270,7 @@ func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.Status
 
 	// Use centralized transformation framework - ELIMINATES 8+ LINES OF DUPLICATE CODE
 	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-	transformCtx := context.WithValue(ctx.Context, baseURLContextKey, h.cfg.BaseURL())
+	transformCtx := context.WithValue(ctx.Context(), baseURLContextKey, h.cfg.BaseURL())
 
 	status, err := transformer.Transform(transformCtx, statusMap)
 	if err != nil || status.ID == "" {
@@ -297,21 +295,21 @@ func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.Status
 }
 
 // getActorFromAuthorID extracts actor from author ID
-func (h *Handler) getActorFromAuthorID(ctx *lift.Context, authorID string) *activitypub.Actor {
+func (h *Handler) getActorFromAuthorID(ctx *apptheory.Context, authorID string) *activitypub.Actor {
 	parts := strings.Split(authorID, "/")
 	if err := common.ValidateSliceNotEmpty("author_id_parts", parts); err != nil {
 		return nil
 	}
 
 	username := parts[len(parts)-1]
-	actor, _ := h.repos.Actor().GetActor(ctx.Context, username)
+	actor, _ := h.repos.Actor().GetActor(ctx.Context(), username)
 	return actor
 }
 
 // convertHashtagToTag converts hashtag with history to API tag
-func (h *Handler) convertHashtagToTag(ctx *lift.Context, hashtag storage.Hashtag) models.Tag {
+func (h *Handler) convertHashtagToTag(ctx *apptheory.Context, hashtag storage.Hashtag) models.Tag {
 	// Get usage history for the last 7 days
-	history, _ := h.repos.Hashtag().GetHashtagUsageHistory(ctx.Context, hashtag.Name, 7)
+	history, _ := h.repos.Hashtag().GetHashtagUsageHistory(ctx.Context(), hashtag.Name, 7)
 
 	// Convert history to API format
 	apiHistory := make([]models.TagHistory, 0, min(len(history), 7))
@@ -353,7 +351,7 @@ func (h *Handler) addPlaceholderHashtag(query string, result *models.SearchResul
 }
 
 // HandleSearchV2Lift handles GET /api/v2/search requests - returns same format as v1
-func (h *Handler) HandleSearchV2Lift(ctx *lift.Context) error {
+func (h *Handler) HandleSearchV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// V2 search has the same implementation as V1 in Lesser
 	// The main difference in Mastodon is that v2 groups results by type,
 	// but our v1 already returns grouped results
@@ -361,7 +359,7 @@ func (h *Handler) HandleSearchV2Lift(ctx *lift.Context) error {
 }
 
 // HandleGetNotificationsLift retrieves notifications for the authenticated user
-func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
@@ -383,7 +381,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
-	listResult, err := notificationService.ListNotifications(ctx.Context, &notifications.ListNotificationsQuery{
+	listResult, err := notificationService.ListNotifications(ctx.Context(), &notifications.ListNotificationsQuery{
 		UserID:       username,
 		Types:        notificationFilter.Types,
 		ExcludeTypes: notificationFilter.ExcludeTypes,
@@ -429,11 +427,11 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 		h.setNotificationPaginationHeader(ctx, cursor, notificationFilter.Limit)
 	}
 
-	return ctx.JSON(apiNotifications)
+	return okJSON(apiNotifications)
 }
 
 // buildNotificationFilter builds a notification filter from query parameters
-func (h *Handler) buildNotificationFilter(ctx *lift.Context) *storage.NotificationFilter {
+func (h *Handler) buildNotificationFilter(ctx *apptheory.Context) *storage.NotificationFilter {
 	filter := &storage.NotificationFilter{
 		Limit: 20, // Default limit
 	}
@@ -448,21 +446,21 @@ func (h *Handler) buildNotificationFilter(ctx *lift.Context) *storage.Notificati
 	h.parseNotificationExcludeTypes(ctx, filter)
 
 	// Parse account_id filter
-	if accountID := ctx.Query("account_id"); accountID != "" {
+	if accountID := queryValue(ctx, "account_id"); accountID != "" {
 		filter.AccountID = accountID
 	}
 
 	// Parse pagination parameters
-	filter.MaxID = ctx.Query("max_id")
-	filter.MinID = ctx.Query("min_id")
-	filter.SinceID = ctx.Query("since_id")
+	filter.MaxID = queryValue(ctx, "max_id")
+	filter.MinID = queryValue(ctx, "min_id")
+	filter.SinceID = queryValue(ctx, "since_id")
 
 	return filter
 }
 
 // parseNotificationLimit parses and validates the limit parameter
-func (h *Handler) parseNotificationLimit(ctx *lift.Context, filter *storage.NotificationFilter) {
-	if limitStr := ctx.Query("limit"); limitStr != "" {
+func (h *Handler) parseNotificationLimit(ctx *apptheory.Context, filter *storage.NotificationFilter) {
+	if limitStr := queryValue(ctx, "limit"); limitStr != "" {
 		if limit, err := common.ParseAndValidateAPILimit(limitStr, 40); err == nil {
 			filter.Limit = limit
 		}
@@ -470,25 +468,25 @@ func (h *Handler) parseNotificationLimit(ctx *lift.Context, filter *storage.Noti
 }
 
 // parseNotificationTypes parses the types filter parameter
-func (h *Handler) parseNotificationTypes(ctx *lift.Context, filter *storage.NotificationFilter) {
-	if types := ctx.Query("types[]"); types != "" {
+func (h *Handler) parseNotificationTypes(ctx *apptheory.Context, filter *storage.NotificationFilter) {
+	if types := queryValue(ctx, "types[]"); types != "" {
 		filter.Types = []string{types}
-	} else if typesStr := ctx.Query("types"); typesStr != "" {
+	} else if typesStr := queryValue(ctx, "types"); typesStr != "" {
 		filter.Types = strings.Split(typesStr, ",")
 	}
 }
 
 // parseNotificationExcludeTypes parses the exclude_types filter parameter
-func (h *Handler) parseNotificationExcludeTypes(ctx *lift.Context, filter *storage.NotificationFilter) {
-	if excludeTypes := ctx.Query("exclude_types[]"); excludeTypes != "" {
+func (h *Handler) parseNotificationExcludeTypes(ctx *apptheory.Context, filter *storage.NotificationFilter) {
+	if excludeTypes := queryValue(ctx, "exclude_types[]"); excludeTypes != "" {
 		filter.ExcludeTypes = []string{excludeTypes}
-	} else if excludeTypesStr := ctx.Query("exclude_types"); excludeTypesStr != "" {
+	} else if excludeTypesStr := queryValue(ctx, "exclude_types"); excludeTypesStr != "" {
 		filter.ExcludeTypes = strings.Split(excludeTypesStr, ",")
 	}
 }
 
 // convertNotificationsToAPI converts storage notifications to API format
-func (h *Handler) convertNotificationsToAPI(ctx *lift.Context, notifications []*storage.Notification) []*models.Notification {
+func (h *Handler) convertNotificationsToAPI(ctx *apptheory.Context, notifications []*storage.Notification) []*models.Notification {
 	apiNotifications := make([]*models.Notification, 0, len(notifications))
 
 	for _, notif := range notifications {
@@ -502,9 +500,9 @@ func (h *Handler) convertNotificationsToAPI(ctx *lift.Context, notifications []*
 }
 
 // convertSingleNotification converts a single notification to API format
-func (h *Handler) convertSingleNotification(ctx *lift.Context, notif *storage.Notification) *models.Notification {
+func (h *Handler) convertSingleNotification(ctx *apptheory.Context, notif *storage.Notification) *models.Notification {
 	// Get the account that triggered the notification
-	actor, err := h.repos.Actor().GetActor(ctx.Context, notif.AccountID)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), notif.AccountID)
 	if err != nil {
 		h.logger.Warn("failed to get actor for notification",
 			zap.String("notification_id", notif.ID),
@@ -540,9 +538,9 @@ func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
 }
 
 // attachStatusToNotification attaches status information to a notification
-func (h *Handler) attachStatusToNotification(ctx *lift.Context, notif *storage.Notification, apiNotif *models.Notification) {
+func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, notif *storage.Notification, apiNotif *models.Notification) {
 	// Get the status
-	obj, err := h.repos.Object().GetObject(ctx.Context, notif.StatusID)
+	obj, err := h.repos.Object().GetObject(ctx.Context(), notif.StatusID)
 	if err != nil {
 		h.logger.Warn("failed to get status for notification",
 			zap.String("notification_id", notif.ID),
@@ -566,7 +564,7 @@ func (h *Handler) attachStatusToNotification(ctx *lift.Context, notif *storage.N
 }
 
 // extractStatusAuthor extracts the author actor from a status object
-func (h *Handler) extractStatusAuthor(ctx *lift.Context, obj any) *activitypub.Actor {
+func (h *Handler) extractStatusAuthor(ctx *apptheory.Context, obj any) *activitypub.Actor {
 	note, ok := obj.(*activitypub.Note)
 	if !ok {
 		return nil
@@ -581,15 +579,15 @@ func (h *Handler) extractStatusAuthor(ctx *lift.Context, obj any) *activitypub.A
 	}
 
 	username := parts[len(parts)-1]
-	statusActor, _ := h.repos.Actor().GetActor(ctx.Context, username)
+	statusActor, _ := h.repos.Actor().GetActor(ctx.Context(), username)
 	return statusActor
 }
 
 // setNotificationPaginationHeader sets the pagination Link header for notifications
-func (h *Handler) setNotificationPaginationHeader(ctx *lift.Context, cursor string, limit int) {
-	host := ctx.Header("host")
+func (h *Handler) setNotificationPaginationHeader(ctx *apptheory.Context, cursor string, limit int) {
+	host := headerValue(ctx, "host")
 	if err := common.ValidateRequiredParam("host", host); err != nil {
-		host = ctx.Header("Host")
+		host = headerValue(ctx, "Host")
 	}
 
 	baseURL := fmt.Sprintf("https://%s%s", host, "/api/v1/notifications")
@@ -601,10 +599,10 @@ func (h *Handler) setNotificationPaginationHeader(ctx *lift.Context, cursor stri
 }
 
 // HandleGetInstanceV2Lift returns instance information in v2 format
-func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
-	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context)
+	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context())
 	locked := stateErr != nil || state.Locked
 
 	// Log configuration values
@@ -616,7 +614,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 	)
 
 	// Get rules from storage
-	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context)
+	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get instance rules", zap.Error(err))
 		rules = []storage.InstanceRule{}
@@ -624,7 +622,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 
 	// Get VAPID public key
 	var vapidPublicKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
 	if err != nil {
 		// Check if we're in production mode
 		env := h.cfg.Stage
@@ -636,7 +634,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 
 		// In non-production, auto-generate VAPID keys if they don't exist
 		h.logger.Info("VAPID keys not found in non-production environment, generating new keys")
-		vapidKeys, err = h.generateAndStoreVAPIDKeys(ctx.Context)
+		vapidKeys, err = h.generateAndStoreVAPIDKeys(ctx.Context())
 		if err != nil {
 			h.logger.Error("failed to generate VAPID keys", zap.Error(err))
 			// Return empty vapid key to disable push notifications
@@ -740,11 +738,11 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 		zap.String("version", resp.Version),
 	)
 
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleGetNotificationLift handles GET /api/v1/notifications/:id
-func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	notificationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("notification_id", notificationID); err != nil {
 		return common.RespondMissingParameter(ctx, "notification ID")
@@ -760,7 +758,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	}
 
 	// Get notification
-	notification, err := h.repos.Notification().GetNotification(ctx.Context, notificationID)
+	notification, err := h.repos.Notification().GetNotification(ctx.Context(), notificationID)
 	if err != nil {
 		return common.RespondNotFound(ctx, "notification")
 	}
@@ -771,7 +769,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	}
 
 	// Get the account that triggered the notification
-	actor, err := h.repos.Actor().GetActor(ctx.Context, notification.ActorID)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), notification.ActorID)
 	if err != nil {
 		h.logger.Error("failed to get actor for notification",
 			zap.String("notification_id", notification.ID),
@@ -792,12 +790,12 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	if notification.TargetID != "" && notification.TargetType == "status" && (notification.Type == models.NotificationTypeMention ||
 		notification.Type == models.NotificationTypeFavourite ||
 		notification.Type == models.NotificationTypeReblog) {
-		statusModel, err := h.registry.Notes().GetNote(ctx.Context, notification.TargetID)
+		statusModel, err := h.registry.Notes().GetNote(ctx.Context(), notification.TargetID)
 		if err == nil && statusModel != nil && statusModel.Note != nil {
 			// Convert note to status format
 			var statusActor *activitypub.Actor
 			if statusModel.AuthorUsername != "" {
-				account, _ := h.registry.Accounts().GetAccount(ctx.Context, statusModel.AuthorUsername)
+				account, _ := h.registry.Accounts().GetAccount(ctx.Context(), statusModel.AuthorUsername)
 				if account != nil {
 					statusActor = account.Actor
 				}
@@ -808,11 +806,11 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 		}
 	}
 
-	return ctx.JSON(apiNotif)
+	return okJSON(apiNotif)
 }
 
 // HandleClearNotificationsLift handles POST /api/v1/notifications/clear
-func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
+func (h *Handler) HandleClearNotificationsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
@@ -828,7 +826,7 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
-	clearResult, err := notificationService.ClearNotifications(ctx.Context, &notifications.ClearCommand{
+	clearResult, err := notificationService.ClearNotifications(ctx.Context(), &notifications.ClearCommand{
 		UserID:   username,
 		ClearAll: true,
 	})
@@ -841,12 +839,11 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 
 	h.logger.Info("cleared notifications", zap.String("username", username), zap.Int64("deleted", clearResult.ClearedCount))
 
-	ctx.Status(204)
-	return nil
+	return noContent(), nil
 }
 
 // HandleDismissNotificationLift handles POST /api/v1/notifications/:id/dismiss
-func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
+func (h *Handler) HandleDismissNotificationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	notificationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("notification_id", notificationID); err != nil {
 		return common.RespondMissingParameter(ctx, "notification ID")
@@ -868,7 +865,7 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 	}
 
 	// Mark notification as read (which is effectively dismissing it in Mastodon API)
-	_, err = notificationService.MarkAsRead(ctx.Context, &notifications.MarkAsReadCommand{
+	_, err = notificationService.MarkAsRead(ctx.Context(), &notifications.MarkAsReadCommand{
 		NotificationID: notificationID,
 		UserID:         username,
 	})
@@ -883,12 +880,11 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to dismiss notification")
 	}
 
-	ctx.Status(204)
-	return nil
+	return noContent(), nil
 }
 
 // HandleGetInstanceCostsLift returns cost analytics for the instance
-func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceCostsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("HandleGetInstanceCostsLift called")
 
 	// Initialize cost storage if not already done
@@ -898,12 +894,12 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 		response := map[string]any{
 			"error": "Cost tracking not configured",
 		}
-		return ctx.JSON(response)
+		return okJSON(response)
 	}
 
 	// Get current month data
 	now := time.Now()
-	currentMonth, err := h.repos.Cost().GetMonthlyAggregate(ctx.Context, now.Year(), int(now.Month()))
+	currentMonth, err := h.repos.Cost().GetMonthlyAggregate(ctx.Context(), now.Year(), int(now.Month()))
 	if err != nil {
 		h.logger.Error("failed to get monthly cost", zap.Error(err))
 	}
@@ -911,7 +907,7 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 	// Get daily costs for the last 7 days
 	endDate := now
 	startDate := now.AddDate(0, 0, -6) // 7 days including today
-	dailyCosts, err := h.repos.Cost().GetDailyAggregates(ctx.Context, startDate, endDate)
+	dailyCosts, err := h.repos.Cost().GetDailyAggregates(ctx.Context(), startDate, endDate)
 	if err != nil {
 		h.logger.Error("failed to get daily costs", zap.Error(err))
 	}
@@ -990,11 +986,11 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 		},
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetInstanceConfigurationLift returns configuration details
-func (h *Handler) HandleGetInstanceConfigurationLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetInstanceConfigurationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Build configuration response
 	config := map[string]any{
 		"urls": map[string]any{
@@ -1063,13 +1059,13 @@ func (h *Handler) HandleGetInstanceConfigurationLift(ctx *lift.Context) error {
 		config["vapid_key"] = vapidKey
 	}
 
-	return ctx.JSON(config)
+	return okJSON(config)
 }
 
 // Helper functions
 
 // getUniqueAccountsForDay returns unique account count for a specific day
-func (h *Handler) getUniqueAccountsForDay(ctx *lift.Context, day string) string {
+func (h *Handler) getUniqueAccountsForDay(ctx *apptheory.Context, day string) string {
 	// Parse the day string to get the date (validation only)
 	_, err := time.Parse(common.DateFormat, day)
 	if err != nil {
@@ -1078,7 +1074,7 @@ func (h *Handler) getUniqueAccountsForDay(ctx *lift.Context, day string) string 
 	}
 
 	// Get unique active users for that specific day
-	count, err := h.repos.Instance().GetDailyActiveUserCount(ctx.Context)
+	count, err := h.repos.Instance().GetDailyActiveUserCount(ctx.Context())
 	if err != nil {
 		h.logger.Error("failed to get daily active user count",
 			zap.String("day", day), zap.Error(err))
@@ -1089,9 +1085,9 @@ func (h *Handler) getUniqueAccountsForDay(ctx *lift.Context, day string) string 
 }
 
 // getActiveMonthlyUsers returns the count of active users in the current month
-func (h *Handler) getActiveMonthlyUsers(ctx *lift.Context) int {
+func (h *Handler) getActiveMonthlyUsers(ctx *apptheory.Context) int {
 	// Get count of users who have been active in the last 30 days
-	count, err := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30)
+	count, err := h.repos.Analytics().GetActiveUserCount(ctx.Context(), 30)
 	if err != nil {
 		h.logger.Error("failed to get active monthly users", zap.Error(err))
 		return 1 // Default fallback
@@ -1100,7 +1096,7 @@ func (h *Handler) getActiveMonthlyUsers(ctx *lift.Context) int {
 }
 
 // getAdminAccount returns the admin account for the instance
-func (h *Handler) getAdminAccount(ctx *lift.Context) any {
+func (h *Handler) getAdminAccount(ctx *apptheory.Context) any {
 	// Get admin username from config
 	adminUsername := h.cfg.AdminUsername
 	if err := common.ValidateRequiredParam("ADMIN_USERNAME", adminUsername); err != nil {
@@ -1108,16 +1104,16 @@ func (h *Handler) getAdminAccount(ctx *lift.Context) any {
 	}
 
 	// Get admin actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, adminUsername)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), adminUsername)
 	if err != nil {
 		h.logger.Error("failed to get admin account", zap.String("username", adminUsername), zap.Error(err))
 		return nil
 	}
 
 	// Get counts
-	followerCount, _ := h.repos.Relationship().CountFollowers(ctx.Context, actor.ID)
-	followingCount, _ := h.repos.Relationship().CountFollowing(ctx.Context, actor.ID)
-	statusesCount, _ := h.repos.Status().CountStatusesByAuthor(ctx.Context, actor.ID)
+	followerCount, _ := h.repos.Relationship().CountFollowers(ctx.Context(), actor.ID)
+	followingCount, _ := h.repos.Relationship().CountFollowing(ctx.Context(), actor.ID)
+	statusesCount, _ := h.repos.Status().CountStatusesByAuthor(ctx.Context(), actor.ID)
 
 	// Return admin account in API format
 	return map[string]any{
@@ -1217,7 +1213,7 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 
 // HandleGetGroupedNotificationsLift handles GET /api/v2/notifications/grouped
 // Returns notifications grouped by type and target with enhanced metadata
-func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetGroupedNotificationsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
@@ -1239,7 +1235,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
-	listResult, err := notificationService.ListNotifications(ctx.Context, &notifications.ListNotificationsQuery{
+	listResult, err := notificationService.ListNotifications(ctx.Context(), &notifications.ListNotificationsQuery{
 		UserID:       username,
 		Types:        notificationFilter.Types,
 		ExcludeTypes: notificationFilter.ExcludeTypes,
@@ -1259,7 +1255,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 	// Group notifications using the grouping service
 	groupingService := notifications.NewGroupedNotificationsService(h.logger)
 	groupedNotifications, err := groupingService.GroupNotifications(
-		ctx.Context,
+		ctx.Context(),
 		listResult.Notifications, // Use storage notifications directly
 		groupingOptions,
 	)
@@ -1276,49 +1272,49 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 		h.setNotificationPaginationHeader(ctx, listResult.Pagination.NextCursor, notificationFilter.Limit)
 	}
 
-	return ctx.JSON(apiResponse)
+	return okJSON(apiResponse)
 }
 
 // parseGroupingOptions parses grouping options from query parameters
-func (h *Handler) parseGroupingOptions(ctx *lift.Context) *notifications.GroupingStrategy {
+func (h *Handler) parseGroupingOptions(ctx *apptheory.Context) *notifications.GroupingStrategy {
 	strategy := notifications.DefaultGroupingStrategy()
 
 	// Parse time window (in hours)
-	if timeWindowStr := ctx.Query("time_window"); timeWindowStr != "" {
+	if timeWindowStr := queryValue(ctx, "time_window"); timeWindowStr != "" {
 		if hours, err := common.ParseAndValidateIntWithBounds("time_window", timeWindowStr, 0, 168, 0); err == nil { // Max 1 week
 			strategy.TimeWindow = time.Duration(hours) * time.Hour
 		}
 	}
 
 	// Parse max group size
-	if maxSizeStr := ctx.Query("max_group_size"); maxSizeStr != "" {
+	if maxSizeStr := queryValue(ctx, "max_group_size"); maxSizeStr != "" {
 		if maxSize, err := common.ParseAndValidateIntWithBounds("max_group_size", maxSizeStr, 0, 100, 0); err == nil {
 			strategy.MaxGroupSize = maxSize
 		}
 	}
 
 	// Parse min group size
-	if minSizeStr := ctx.Query("min_group_size"); minSizeStr != "" {
+	if minSizeStr := queryValue(ctx, "min_group_size"); minSizeStr != "" {
 		if minSize, err := common.ParseAndValidateIntWithBounds("min_group_size", minSizeStr, 0, 10, 0); err == nil && minSize >= 1 {
 			strategy.MinGroupSize = minSize
 		}
 	}
 
 	// Parse sample size
-	if sampleSizeStr := ctx.Query("sample_size"); sampleSizeStr != "" {
+	if sampleSizeStr := queryValue(ctx, "sample_size"); sampleSizeStr != "" {
 		if sampleSize, err := common.ParseAndValidateIntWithBounds("sample_size", sampleSizeStr, 0, 10, 0); err == nil {
 			strategy.SampleSize = sampleSize
 		}
 	}
 
 	// Parse grouping flags
-	if groupByType := ctx.Query("group_by_type"); groupByType != "" {
+	if groupByType := queryValue(ctx, "group_by_type"); groupByType != "" {
 		if result, _ := common.ParseAndValidateBoolean(groupByType); !result {
 			strategy.GroupByType = false
 		}
 	}
 
-	if groupByTarget := ctx.Query("group_by_target"); groupByTarget != "" {
+	if groupByTarget := queryValue(ctx, "group_by_target"); groupByTarget != "" {
 		if result, _ := common.ParseAndValidateBoolean(groupByTarget); !result {
 			strategy.GroupByTarget = false
 		}
@@ -1329,7 +1325,7 @@ func (h *Handler) parseGroupingOptions(ctx *lift.Context) *notifications.Groupin
 
 // convertGroupedNotificationsToAPI converts grouped notifications to API format
 func (h *Handler) convertGroupedNotificationsToAPI(
-	ctx *lift.Context,
+	ctx *apptheory.Context,
 	groupedNotifications []*notifications.GroupedNotification,
 ) []models.GroupedNotificationGroup {
 	apiResponse := make([]models.GroupedNotificationGroup, 0, len(groupedNotifications))
@@ -1368,7 +1364,10 @@ func (h *Handler) convertGroupedNotificationsToAPI(
 		}
 
 		// Optionally include all notifications if requested
-		if func() bool { result, _ := common.ParseAndValidateBoolean(ctx.Query("include_all")); return result }() && len(group.AllNotifications) > 0 {
+		if func() bool {
+			result, _ := common.ParseAndValidateBoolean(queryValue(ctx, "include_all"))
+			return result
+		}() && len(group.AllNotifications) > 0 {
 			allNotifs := make([]models.GroupedNotificationEntry, 0, len(group.AllNotifications))
 			for _, notif := range group.AllNotifications {
 				allNotifs = append(allNotifs, models.GroupedNotificationEntry{
@@ -1417,7 +1416,7 @@ func (h *Handler) generateGroupSummary(group *notifications.GroupedNotification)
 
 // HandleMarkGroupAsReadLift handles POST /api/v2/notifications/groups/:group_id/read
 // Marks all notifications in a group as read
-func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
+func (h *Handler) HandleMarkGroupAsReadLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	groupID := ctx.Param("group_id")
 	if err := common.ValidateRequiredParam("group_id", groupID); err != nil {
 		return common.RespondMissingParameter(ctx, "group ID")
@@ -1445,7 +1444,7 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 	// 2. Find all notifications matching that criteria
 	// 3. Mark them all as read
 
-	_, err = notificationService.MarkAsRead(ctx.Context, &notifications.MarkAsReadCommand{
+	_, err = notificationService.MarkAsRead(ctx.Context(), &notifications.MarkAsReadCommand{
 		NotificationID: groupID,
 		UserID:         username,
 	})
@@ -1457,5 +1456,5 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to mark group as read")
 	}
 
-	return ctx.Status(200).JSON(models.MessageResponse{Message: "group marked as read"})
+	return okJSON(models.MessageResponse{Message: "group marked as read"})
 }

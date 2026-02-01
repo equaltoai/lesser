@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/emoji"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // extractUsernameFromContext extracts the username from auth header
-func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
+func (h *Handler) extractUsernameFromContext(ctx *apptheory.Context) string {
 	var username string
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
@@ -37,12 +37,12 @@ func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
 }
 
 // HandleGetAnnouncementsLift handles GET /api/v1/announcements
-func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAnnouncementsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract token (optional for public announcements)
 	username := h.extractUsernameFromContext(ctx)
 
 	// Get active announcements
-	announcements, err := h.repos.Announcement().GetAnnouncements(ctx.Context, true) // Only active announcements
+	announcements, err := h.repos.Announcement().GetAnnouncements(ctx.Context(), true) // Only active announcements
 	if err != nil {
 		h.logger.Error("failed to get announcements", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
@@ -51,7 +51,7 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 	// Get dismissed announcements for authenticated user
 	dismissedIDs := make(map[string]bool)
 	if username != "" {
-		dismissed, err := h.repos.Announcement().GetDismissedAnnouncements(ctx.Context, username)
+		dismissed, err := h.repos.Announcement().GetDismissedAnnouncements(ctx.Context(), username)
 		if err != nil {
 			h.logger.Warn("failed to get dismissed announcements",
 				zap.String("username", username),
@@ -78,10 +78,10 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 		announcement.Reactions = h.mergeReactions(announcement.Reactions, apiReactions)
 
 		// Extract content elements from the announcement
-		mentions := h.extractAnnouncementMentions(ctx.Context, announcement.Content)
+		mentions := h.extractAnnouncementMentions(ctx.Context(), announcement.Content)
 		tags := h.extractAnnouncementTags(announcement.Content)
-		emojis := h.extractAnnouncementEmojis(ctx.Context, announcement.Content)
-		statuses := h.extractAnnouncementStatuses(ctx.Context, announcement.Content)
+		emojis := h.extractAnnouncementEmojis(ctx.Context(), announcement.Content)
+		statuses := h.extractAnnouncementStatuses(ctx.Context(), announcement.Content)
 
 		apiAnnouncement := models.Announcement{
 			ID:          announcement.ID,
@@ -111,12 +111,12 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 		apiAnnouncements = append(apiAnnouncements, apiAnnouncement)
 	}
 
-	return ctx.JSON(apiAnnouncements)
+	return okJSON(apiAnnouncements)
 }
 
 // buildAnnouncementReactions builds the reactions for an announcement
-func (h *Handler) buildAnnouncementReactions(ctx *lift.Context, announcementID string, username string) []models.AnnouncementReaction {
-	reactions, err := h.repos.Announcement().GetAnnouncementReactions(ctx.Context, announcementID)
+func (h *Handler) buildAnnouncementReactions(ctx *apptheory.Context, announcementID string, username string) []models.AnnouncementReaction {
+	reactions, err := h.repos.Announcement().GetAnnouncementReactions(ctx.Context(), announcementID)
 	if err != nil {
 		h.logger.Warn("failed to get announcement reactions",
 			zap.String("announcement_id", announcementID),
@@ -150,7 +150,7 @@ func (h *Handler) buildAnnouncementReactions(ctx *lift.Context, announcementID s
 			shortcode := strings.TrimPrefix(strings.TrimSuffix(emojiName, ":"), ":")
 
 			// Look up custom emoji
-			emoji, err := h.repos.Emoji().GetCustomEmoji(ctx.Context, shortcode)
+			emoji, err := h.repos.Emoji().GetCustomEmoji(ctx.Context(), shortcode)
 			if err == nil && emoji != nil && !emoji.Disabled {
 				reaction.URL = emoji.URL
 				reaction.StaticURL = emoji.StaticURL
@@ -193,14 +193,14 @@ func (h *Handler) mergeReactions(availableReactions []storage.Reaction, actualRe
 }
 
 // HandleDismissAnnouncementLift handles POST /api/v1/announcements/:id/dismiss
-func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
+func (h *Handler) HandleDismissAnnouncementLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	announcementID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("announcement_id", announcementID); err != nil {
 		return common.RespondBadRequest(ctx, "Announcement ID is required")
 	}
 
 	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
@@ -214,13 +214,13 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Check if announcement exists
-	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
+	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context(), announcementID)
 	if err != nil || announcement == nil {
 		return common.RespondNotFound(ctx, "Announcement not found")
 	}
 
 	// Dismiss the announcement
-	err = h.repos.Announcement().DismissAnnouncement(ctx.Context, claims.Username, announcementID)
+	err = h.repos.Announcement().DismissAnnouncement(ctx.Context(), claims.Username, announcementID)
 	if err != nil {
 		h.logger.Error("failed to dismiss announcement",
 			zap.String("announcement_id", announcementID),
@@ -229,21 +229,21 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
-	return ctx.JSON(models.EmptyObject{})
+	return okJSON(models.EmptyObject{})
 }
 
 // HandleAddAnnouncementReactionLift handles PUT /api/v1/announcements/:id/reactions/:name
-func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
+func (h *Handler) HandleAddAnnouncementReactionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleAnnouncementReaction(ctx, "add")
 }
 
 // HandleRemoveAnnouncementReactionLift handles DELETE /api/v1/announcements/:id/reactions/:name
-func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error {
+func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleAnnouncementReaction(ctx, "remove")
 }
 
 // handleAnnouncementReaction consolidates the common logic for adding/removing announcement reactions
-func (h *Handler) handleAnnouncementReaction(ctx *lift.Context, action string) error {
+func (h *Handler) handleAnnouncementReaction(ctx *apptheory.Context, action string) (*apptheory.Response, error) {
 	announcementID := ctx.Param("id")
 	reactionName := ctx.Param("name")
 
@@ -255,7 +255,7 @@ func (h *Handler) handleAnnouncementReaction(ctx *lift.Context, action string) e
 	}
 
 	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
@@ -269,16 +269,16 @@ func (h *Handler) handleAnnouncementReaction(ctx *lift.Context, action string) e
 	}
 
 	// Check if announcement exists
-	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
+	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context(), announcementID)
 	if err != nil || announcement == nil {
 		return common.RespondNotFound(ctx, "Announcement not found")
 	}
 
 	// Perform the appropriate action
 	if action == "add" {
-		err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
+		err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context(), claims.Username, announcementID, reactionName)
 	} else {
-		err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, claims.Username, announcementID, reactionName)
+		err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context(), claims.Username, announcementID, reactionName)
 	}
 
 	if err != nil {
@@ -295,7 +295,7 @@ func (h *Handler) handleAnnouncementReaction(ctx *lift.Context, action string) e
 }
 
 // HandleCreateAnnouncementLift handles POST /api/v1/admin/announcements
-func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateAnnouncementLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request
 	var req models.CreateAnnouncementRequest
 	body := ctx.Request.Body
@@ -341,13 +341,13 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Store announcement
-	if err := h.repos.Announcement().CreateAnnouncement(ctx.Context, announcement); err != nil {
+	if err := h.repos.Announcement().CreateAnnouncement(ctx.Context(), announcement); err != nil {
 		h.logger.Error("failed to create announcement", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Failed to create announcement")
 	}
 
 	// Return created announcement
-	return ctx.Status(201).JSON(announcement)
+	return apptheory.JSON(201, announcement)
 }
 
 // convertReactionsToAPILift converts storage reactions to API format

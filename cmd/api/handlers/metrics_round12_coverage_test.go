@@ -1,8 +1,9 @@
-package lift
+package handlers
 
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -240,7 +241,7 @@ func TestMetricsHelpers_Round12Coverage(t *testing.T) {
 		h, _, _ := round11NewHandlerSliceC(t, nil)
 		ctx, err := round10NewLiftContext("GET", "/api/v1/metrics/daily", nil, map[string]string{"days": "nope"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetDailyAggregatesLift(ctx))
+		requireStatus(t, http.StatusOK)(h.HandleGetDailyAggregatesLift(ctx))
 	})
 
 	t.Run("HandleGetInstanceMetricsLift continues on active-user error", func(t *testing.T) {
@@ -251,6 +252,6 @@ func TestMetricsHelpers_Round12Coverage(t *testing.T) {
 		})
 		ctx, err := round10NewLiftContext("GET", "/api/v1/metrics", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetInstanceMetricsLift(ctx))
+		requireStatus(t, http.StatusOK)(h.HandleGetInstanceMetricsLift(ctx))
 	})
 }

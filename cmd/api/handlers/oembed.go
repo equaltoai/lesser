@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -9,27 +9,25 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleOEmbedLift handles GET /api/oembed using Lift framework
-func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
+func (h *Handler) HandleOEmbedLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("oembed request",
-		zap.String("user_agent", ctx.Header("User-Agent")))
+		zap.String("user_agent", headerValue(ctx, "User-Agent")))
 
 	// Extract and validate URL parameter
-	requestedURL, err := h.extractOEmbedURL(ctx)
-	if err != nil || requestedURL == "" {
-		// extractOEmbedURL writes the response on failure.
-		return nil
+	requestedURL, resp, err := h.extractOEmbedURL(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Parse and validate the URL
-	parsedURL, err := h.validateOEmbedURL(ctx, requestedURL)
-	if err != nil || parsedURL == nil {
-		// validateOEmbedURL writes the response on failure.
-		return nil
+	parsedURL, resp, err := h.validateOEmbedURL(ctx, requestedURL)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Extract status ID from path
@@ -45,10 +43,9 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 
 	// Fetch and process the status
 	objectID := h.normalizeStatusID(statusID)
-	note, err := h.fetchAndConvertNote(ctx, objectID)
-	if err != nil || note == nil {
-		// fetchAndConvertNote writes the response on failure.
-		return nil
+	note, resp, err := h.fetchAndConvertNote(ctx, objectID)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check if status is embeddable
@@ -68,28 +65,25 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 }
 
 // extractOEmbedURL extracts the URL parameter from the request
-func (h *Handler) extractOEmbedURL(ctx *lift.Context) (string, error) {
-	requestedURL := ctx.Query("url")
-
-	// Fallback to direct query param access if ctx.Query doesn't work
-	if err := common.ValidateRequiredParam("requestedURL", requestedURL); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		requestedURL = ctx.Request.Request.QueryParams["url"]
-	}
+func (h *Handler) extractOEmbedURL(ctx *apptheory.Context) (string, *apptheory.Response, error) {
+	requestedURL := queryValue(ctx, "url")
 
 	if err := common.ValidateRequiredParam("requestedURL", requestedURL); err != nil {
 		h.logger.Warn("missing required parameter: url")
-		return "", common.RespondBadRequest(ctx, "missing required parameter: url")
+		resp, respErr := common.RespondBadRequest(ctx, "missing required parameter: url")
+		return "", resp, respErr
 	}
 
-	return requestedURL, nil
+	return requestedURL, nil, nil
 }
 
 // validateOEmbedURL parses and validates the requested URL
-func (h *Handler) validateOEmbedURL(ctx *lift.Context, requestedURL string) (*url.URL, error) {
+func (h *Handler) validateOEmbedURL(ctx *apptheory.Context, requestedURL string) (*url.URL, *apptheory.Response, error) {
 	parsedURL, err := url.Parse(requestedURL)
 	if err != nil {
 		h.logger.Warn("invalid URL", zap.String("url", requestedURL), zap.Error(err))
-		return nil, common.RespondBadRequest(ctx, "invalid URL")
+		resp, respErr := common.RespondBadRequest(ctx, "invalid URL")
+		return nil, resp, respErr
 	}
 
 	// Check if it's from our instance
@@ -98,10 +92,11 @@ func (h *Handler) validateOEmbedURL(ctx *lift.Context, requestedURL string) (*ur
 		h.logger.Warn("URL does not belong to this instance",
 			zap.String("requested_host", parsedURL.Host),
 			zap.String("expected_host", expectedHost))
-		return nil, common.RespondNotFound(ctx, "URL does not belong to this instance")
+		resp, respErr := common.RespondNotFound(ctx, "URL does not belong to this instance")
+		return nil, resp, respErr
 	}
 
-	return parsedURL, nil
+	return parsedURL, nil, nil
 }
 
 // getExpectedHost extracts the hostname from the base URL
@@ -111,11 +106,8 @@ func (h *Handler) getExpectedHost() string {
 }
 
 // getOEmbedFormat extracts the format parameter (defaults to "json")
-func (h *Handler) getOEmbedFormat(ctx *lift.Context) string {
-	format := ctx.Query("format")
-	if err := common.ValidateRequiredParam("format", format); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		format = ctx.Request.Request.QueryParams["format"]
-	}
+func (h *Handler) getOEmbedFormat(ctx *apptheory.Context) string {
+	format := queryValue(ctx, "format")
 	if err := common.ValidateRequiredParam("format", format); err != nil {
 		format = "json"
 	}
@@ -123,11 +115,8 @@ func (h *Handler) getOEmbedFormat(ctx *lift.Context) string {
 }
 
 // getOEmbedMaxWidth extracts the maxwidth parameter (defaults to 650)
-func (h *Handler) getOEmbedMaxWidth(ctx *lift.Context) int {
-	mw := ctx.Query("maxwidth")
-	if err := common.ValidateRequiredParam("mw", mw); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		mw = ctx.Request.Request.QueryParams["maxwidth"]
-	}
+func (h *Handler) getOEmbedMaxWidth(ctx *apptheory.Context) int {
+	mw := queryValue(ctx, "maxwidth")
 
 	// Use validation function with reasonable bounds for embed width
 	if maxWidth, err := common.ParseAndValidateIntWithBounds("maxwidth", mw, 0, 2000, 650); err == nil {
@@ -148,35 +137,35 @@ func (h *Handler) normalizeStatusID(statusID string) string {
 }
 
 // fetchAndConvertNote fetches an object and converts it to a Note
-func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*activitypub.Note, error) {
+func (h *Handler) fetchAndConvertNote(ctx *apptheory.Context, objectID string) (*activitypub.Note, *apptheory.Response, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
 
 	// Fetch the status using Notes service
-	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	result, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
 	if err != nil {
 		h.logger.Error("failed to get note", zap.String("status_id", statusID), zap.Error(err))
-		_ = common.RespondStatusNotFound(ctx)
-		return nil, err
+		resp, respErr := common.RespondStatusNotFound(ctx)
+		return nil, resp, respErr
 	}
 
 	// Return the Note directly (unwrap from NoteField)
 	if result.Note == nil {
-		_ = common.RespondStatusNotFound(ctx)
-		return nil, err
+		resp, respErr := common.RespondStatusNotFound(ctx)
+		return nil, resp, respErr
 	}
 	note := result.Note.Get()
 	if note == nil {
-		_ = common.RespondStatusNotFound(ctx)
-		return nil, err
+		resp, respErr := common.RespondStatusNotFound(ctx)
+		return nil, resp, respErr
 	}
-	return note, nil
+	return note, nil, nil
 }
 
 // convertToNote converts an object to an ActivityPub Note
 
 // getOEmbedAuthorActor retrieves the author actor for the note
-func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note) *activitypub.Actor {
+func (h *Handler) getOEmbedAuthorActor(ctx *apptheory.Context, note *activitypub.Note) *activitypub.Actor {
 	if err := common.ValidateRequiredParam("attributedTo", note.AttributedTo); err != nil {
 		return nil
 	}
@@ -188,7 +177,7 @@ func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note
 	}
 
 	username := parts[len(parts)-1]
-	result, err := h.registry.Accounts().GetAccount(ctx.Context, username)
+	result, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
 	if err != nil {
 		h.logger.Warn("failed to get author account", zap.String("username", username), zap.Error(err))
 		// Create a minimal actor
@@ -207,10 +196,10 @@ func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note
 }
 
 // sendOEmbedResponse sends the oEmbed response in the requested format
-func (h *Handler) sendOEmbedResponse(ctx *lift.Context, oembed *apimodels.OEmbedResponse, format string) error {
+func (h *Handler) sendOEmbedResponse(ctx *apptheory.Context, oembed *apimodels.OEmbedResponse, format string) (*apptheory.Response, error) {
 	switch format {
 	case "json":
-		return ctx.JSON(oembed)
+		return okJSON(oembed)
 	case "xml":
 		return h.sendXMLResponseLift(ctx, oembed)
 	default:
@@ -330,7 +319,7 @@ func (h *Handler) generateOEmbedHTML(note *activitypub.Note, maxWidth int) strin
 }
 
 // sendXMLResponseLift sends the oEmbed response in XML format using Lift context
-func (h *Handler) sendXMLResponseLift(ctx *lift.Context, oembed *apimodels.OEmbedResponse) error {
+func (h *Handler) sendXMLResponseLift(_ *apptheory.Context, oembed *apimodels.OEmbedResponse) (*apptheory.Response, error) {
 	// Simple XML generation
 	var xml strings.Builder
 	xml.WriteString(`<?xml version="1.0" encoding="utf-8"?>`)
@@ -365,39 +354,32 @@ func (h *Handler) sendXMLResponseLift(ctx *lift.Context, oembed *apimodels.OEmbe
 
 	xml.WriteString("\n</oembed>")
 
-	// Set status and send XML response
-	ctx.Status(200)
-	ctx.Response.Header("Content-Type", "text/xml; charset=utf-8")
-	ctx.Response.Body = xml.String()
-	return nil
+	return &apptheory.Response{
+		Status: 200,
+		Headers: map[string][]string{
+			"content-type": {"text/xml; charset=utf-8"},
+		},
+		Body: []byte(xml.String()),
+	}, nil
 }
 
 // HandleEmbedPageLift handles GET /embed/:id using Lift framework
-func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
+func (h *Handler) HandleEmbedPageLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract and validate status ID
-	statusID, err := h.extractEmbedStatusID(ctx)
-	if err != nil || statusID == "" {
-		// extractEmbedStatusID writes the response on failure.
-		return nil
+	statusID, resp, err := h.extractEmbedStatusID(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	h.logger.Info("embed page request",
 		zap.String("status_id", statusID),
-		zap.String("user_agent", ctx.Header("User-Agent")))
+		zap.String("user_agent", headerValue(ctx, "User-Agent")))
 
 	// Normalize and fetch the status
 	objectID := h.normalizeEmbedObjectID(statusID)
-	obj, err := h.fetchEmbedObject(ctx, objectID)
-	if err != nil || obj == nil {
-		// fetchEmbedObject writes the response on failure.
-		return nil
-	}
-
-	// Cast object to Note (we now get a Note directly from the service)
-	note, ok := obj.(*activitypub.Note)
-	if !ok || note == nil {
-		h.logger.Error("object is not a Note", zap.String("object_id", objectID))
-		return common.RespondInternalServerError(ctx, "invalid status type")
+	note, resp, err := h.fetchEmbedNote(ctx, objectID)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Check if status is embeddable (public/unlisted)
@@ -416,10 +398,15 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
 	htmlContent := h.generateEmbedHTML(note, authorInfo, timestamp)
 
 	// Set HTML content type and additional headers
-	ctx.Response.Header("Content-Type", "text/html; charset=utf-8")
-	ctx.Response.Header("X-Frame-Options", "ALLOWALL") // Allow embedding
-	ctx.Status(200)
-	return ctx.HTML(htmlContent)
+	resp = &apptheory.Response{
+		Status: 200,
+		Headers: map[string][]string{
+			"content-type":    {"text/html; charset=utf-8"},
+			"x-frame-options": {"ALLOWALL"},
+		},
+		Body: []byte(htmlContent),
+	}
+	return resp, nil
 }
 
 // embedAuthorInfo holds author information for embeds
@@ -430,15 +417,12 @@ type embedAuthorInfo struct {
 }
 
 // extractEmbedStatusID extracts the status ID from the request
-func (h *Handler) extractEmbedStatusID(ctx *lift.Context) (string, error) {
+func (h *Handler) extractEmbedStatusID(ctx *apptheory.Context) (string, *apptheory.Response, error) {
 	statusID := ctx.Param("id")
 
 	// Fallback: extract from path if param not available (for testing)
 	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
-		path := ""
-		if ctx.Request != nil && ctx.Request.Request != nil {
-			path = ctx.Request.Request.Path
-		}
+		path := ctx.Request.Path
 		if strings.HasPrefix(path, "/embed/") {
 			statusID = strings.TrimPrefix(path, "/embed/")
 		}
@@ -446,10 +430,11 @@ func (h *Handler) extractEmbedStatusID(ctx *lift.Context) (string, error) {
 
 	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
 		h.logger.Warn("missing status ID in embed page request")
-		return "", common.RespondBadRequest(ctx, "missing status ID")
+		resp, respErr := common.RespondBadRequest(ctx, "missing status ID")
+		return "", resp, respErr
 	}
 
-	return statusID, nil
+	return statusID, nil, nil
 }
 
 // normalizeEmbedObjectID normalizes the status ID to a full URL
@@ -461,29 +446,29 @@ func (h *Handler) normalizeEmbedObjectID(statusID string) string {
 	return statusID
 }
 
-// fetchEmbedObject fetches the object for embedding
-func (h *Handler) fetchEmbedObject(ctx *lift.Context, objectID string) (any, error) {
+// fetchEmbedNote fetches the note for embedding
+func (h *Handler) fetchEmbedNote(ctx *apptheory.Context, objectID string) (*activitypub.Note, *apptheory.Response, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
 
 	// Fetch the status using Notes service
-	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	result, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
 	if err != nil {
 		h.logger.Error("failed to get note for embed", zap.String("status_id", statusID), zap.Error(err))
-		_ = common.RespondStatusNotFound(ctx)
-		return nil, err
+		resp, respErr := common.RespondStatusNotFound(ctx)
+		return nil, resp, respErr
 	}
 	// Return the Note directly (unwrap from NoteField)
 	if result.Note == nil {
-		_ = common.RespondStatusNotFound(ctx)
-		return nil, err
+		resp, respErr := common.RespondStatusNotFound(ctx)
+		return nil, resp, respErr
 	}
 	note := result.Note.Get()
 	if note == nil {
-		_ = common.RespondStatusNotFound(ctx)
-		return nil, err
+		resp, respErr := common.RespondStatusNotFound(ctx)
+		return nil, resp, respErr
 	}
-	return note, nil
+	return note, nil, nil
 }
 
 // convertObjectToNote converts an object to an ActivityPub Note
@@ -508,7 +493,7 @@ func (h *Handler) isStatusEmbeddable(note *activitypub.Note) bool {
 }
 
 // getEmbedAuthorInfo retrieves author information for embedding
-func (h *Handler) getEmbedAuthorInfo(ctx *lift.Context, note *activitypub.Note) embedAuthorInfo {
+func (h *Handler) getEmbedAuthorInfo(ctx *apptheory.Context, note *activitypub.Note) embedAuthorInfo {
 	info := embedAuthorInfo{
 		name:     "Unknown",
 		username: "unknown",
@@ -524,7 +509,7 @@ func (h *Handler) getEmbedAuthorInfo(ctx *lift.Context, note *activitypub.Note) 
 		username := parts[len(parts)-1]
 		info.username = username
 
-		result, err := h.registry.Accounts().GetAccount(ctx.Context, username)
+		result, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
 		if err == nil && result != nil && result.Actor != nil {
 			info.actor = result.Actor
 			info.name = result.Actor.Name

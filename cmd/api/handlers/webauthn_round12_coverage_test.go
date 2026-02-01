@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/base64"
@@ -10,9 +10,9 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	authpkg "github.com/equaltoai/lesser/pkg/auth"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/go-webauthn/webauthn/protocol"
 	libwebauthn "github.com/go-webauthn/webauthn/webauthn"
-	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,8 +68,7 @@ func TestWebAuthn_Round12_RegistrationBeginAndFinish_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/register/begin", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleBeginWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleBeginWebAuthnRegistrationLift(ctx))
 	})
 
 	t.Run("begin_registration_success", func(t *testing.T) {
@@ -77,26 +76,12 @@ func TestWebAuthn_Round12_RegistrationBeginAndFinish_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/register/begin", authHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleBeginWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleBeginWebAuthnRegistrationLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.WebAuthnBeginResponse)
-		require.True(t, ok)
-		require.NotEmpty(t, resp.Challenge)
-		require.NotEmpty(t, resp.PublicKey)
-	})
-
-	t.Run("begin_registration_exits_if_response_already_written", func(t *testing.T) {
-		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
-
-		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/register/begin", authHeaders, nil, nil)
-		require.NoError(t, err)
-
-		ctx.Status(http.StatusTeapot)
-		require.NoError(t, ctx.JSON(map[string]string{"error": "already written"}))
-
-		require.NoError(t, handler.HandleBeginWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusTeapot, ctx.Response.StatusCode)
+		var body apimodels.WebAuthnBeginResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.Challenge)
+		require.NotEmpty(t, body.PublicKey)
 	})
 
 	t.Run("begin_registration_storage_error_maps_to_500", func(t *testing.T) {
@@ -107,8 +92,7 @@ func TestWebAuthn_Round12_RegistrationBeginAndFinish_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/register/begin", authHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleBeginWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleBeginWebAuthnRegistrationLift(ctx))
 	})
 
 	t.Run("finish_registration_requires_auth", func(t *testing.T) {
@@ -119,16 +103,14 @@ func TestWebAuthn_Round12_RegistrationBeginAndFinish_Coverage(t *testing.T) {
 			Response:  map[string]any{},
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleFinishWebAuthnRegistrationLift(ctx))
 	})
 
 	t.Run("finish_registration_parse_error_returns_400", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/auth/webauthn/register/finish", authHeaders, nil, []byte("{"))
-		require.NoError(t, handler.HandleFinishWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleFinishWebAuthnRegistrationLift(ctx))
 	})
 
 	t.Run("finish_registration_missing_challenge_returns_400", func(t *testing.T) {
@@ -139,8 +121,7 @@ func TestWebAuthn_Round12_RegistrationBeginAndFinish_Coverage(t *testing.T) {
 			Response:  map[string]any{},
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleFinishWebAuthnRegistrationLift(ctx))
 	})
 
 	t.Run("finish_registration_missing_or_expired_challenge_returns_400", func(t *testing.T) {
@@ -154,8 +135,7 @@ func TestWebAuthn_Round12_RegistrationBeginAndFinish_Coverage(t *testing.T) {
 			Response:  map[string]any{},
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleFinishWebAuthnRegistrationLift(ctx))
 	})
 }
 
@@ -169,16 +149,14 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/login/begin", nil, nil, apimodels.WebAuthnBeginLoginRequest{Username: "alice"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleBeginWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleBeginWebAuthnLoginLift(ctx))
 	})
 
 	t.Run("begin_login_parse_error_returns_400", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/auth/webauthn/login/begin", nil, nil, []byte("{"))
-		require.NoError(t, handler.HandleBeginWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleBeginWebAuthnLoginLift(ctx))
 	})
 
 	t.Run("begin_login_username_required", func(t *testing.T) {
@@ -186,8 +164,7 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/login/begin", nil, nil, apimodels.WebAuthnBeginLoginRequest{Username: ""})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleBeginWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleBeginWebAuthnLoginLift(ctx))
 	})
 
 	t.Run("begin_login_no_credentials_returns_400", func(t *testing.T) {
@@ -200,8 +177,7 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/login/begin", nil, nil, apimodels.WebAuthnBeginLoginRequest{Username: "alice"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleBeginWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleBeginWebAuthnLoginLift(ctx))
 	})
 
 	t.Run("begin_login_success", func(t *testing.T) {
@@ -209,21 +185,19 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/login/begin", nil, nil, apimodels.WebAuthnBeginLoginRequest{Username: "alice"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleBeginWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleBeginWebAuthnLoginLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.WebAuthnBeginResponse)
-		require.True(t, ok)
-		require.NotEmpty(t, resp.Challenge)
-		require.NotEmpty(t, resp.PublicKey)
+		var body apimodels.WebAuthnBeginResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.Challenge)
+		require.NotEmpty(t, body.PublicKey)
 	})
 
 	t.Run("finish_login_parse_error_returns_400", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/auth/webauthn/login/finish", nil, nil, []byte("{"))
-		require.NoError(t, handler.HandleFinishWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleFinishWebAuthnLoginLift(ctx))
 	})
 
 	t.Run("finish_login_auth_service_init_failure_returns_500", func(t *testing.T) {
@@ -238,8 +212,7 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 			DeviceName: "",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleFinishWebAuthnLoginLift(ctx))
 	})
 
 	t.Run("finish_login_required_fields", func(t *testing.T) {
@@ -251,8 +224,7 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 			Response:  map[string]any{},
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnLoginLift(ctxMissingUser))
-		require.Equal(t, http.StatusBadRequest, ctxMissingUser.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleFinishWebAuthnLoginLift(ctxMissingUser))
 
 		ctxMissingChallenge, err := round10NewLiftContext(http.MethodPost, "/api/v1/auth/webauthn/login/finish", nil, nil, apimodels.WebAuthnFinishLoginRequest{
 			Username:  "alice",
@@ -260,8 +232,7 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 			Response:  map[string]any{},
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnLoginLift(ctxMissingChallenge))
-		require.Equal(t, http.StatusBadRequest, ctxMissingChallenge.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleFinishWebAuthnLoginLift(ctxMissingChallenge))
 	})
 
 	t.Run("finish_login_missing_or_expired_challenge_returns_400_and_defaults_device_name", func(t *testing.T) {
@@ -277,8 +248,7 @@ func TestWebAuthn_Round12_LoginBeginAndFinish_Coverage(t *testing.T) {
 			DeviceName: "",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleFinishWebAuthnLoginLift(ctx))
 	})
 }
 
@@ -292,8 +262,7 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/auth/webauthn/credentials", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleListWebAuthnCredentialsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleListWebAuthnCredentialsLift(ctx))
 	})
 
 	t.Run("list_credentials_query_error_returns_500", func(t *testing.T) {
@@ -306,8 +275,7 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/auth/webauthn/credentials", authHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleListWebAuthnCredentialsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleListWebAuthnCredentialsLift(ctx))
 	})
 
 	t.Run("list_credentials_success", func(t *testing.T) {
@@ -335,12 +303,11 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/auth/webauthn/credentials", authHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleListWebAuthnCredentialsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleListWebAuthnCredentialsLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.WebAuthnCredentialsResponse)
-		require.True(t, ok)
-		require.Len(t, resp.Credentials, 2)
+		var body apimodels.WebAuthnCredentialsResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Len(t, body.Credentials, 2)
 	})
 
 	t.Run("delete_credential_requires_auth_and_param", func(t *testing.T) {
@@ -348,13 +315,11 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctxUnauthed, err := round10NewLiftContext(http.MethodDelete, "/api/v1/auth/webauthn/credentials/cred", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteWebAuthnCredentialLift(ctxUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthed.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleDeleteWebAuthnCredentialLift(ctxUnauthed))
 
 		ctxMissingParam, err := round10NewLiftContext(http.MethodDelete, "/api/v1/auth/webauthn/credentials/", authHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteWebAuthnCredentialLift(ctxMissingParam))
-		require.Equal(t, http.StatusBadRequest, ctxMissingParam.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteWebAuthnCredentialLift(ctxMissingParam))
 	})
 
 	t.Run("delete_credential_not_found_returns_404", func(t *testing.T) {
@@ -367,9 +332,8 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleDeleteWebAuthnCredentialLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteWebAuthnCredentialLift(ctx))
 	})
 
 	t.Run("delete_credential_last_auth_method_returns_400", func(t *testing.T) {
@@ -382,9 +346,8 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleDeleteWebAuthnCredentialLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteWebAuthnCredentialLift(ctx))
 	})
 
 	t.Run("delete_credential_delete_error_returns_500", func(t *testing.T) {
@@ -404,9 +367,8 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleDeleteWebAuthnCredentialLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDeleteWebAuthnCredentialLift(ctx))
 	})
 
 	t.Run("delete_credential_success", func(t *testing.T) {
@@ -425,9 +387,8 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleDeleteWebAuthnCredentialLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusOK)(handler.HandleDeleteWebAuthnCredentialLift(ctx))
 	})
 
 	t.Run("update_credential_requires_auth_param_and_name", func(t *testing.T) {
@@ -435,24 +396,20 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctxUnauthed, err := round10NewLiftContext(http.MethodPut, "/api/v1/auth/webauthn/credentials/cred", nil, nil, apimodels.WebAuthnUpdateCredentialRequest{Name: "n"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleUpdateWebAuthnCredentialNameLift(ctxUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthed.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleUpdateWebAuthnCredentialNameLift(ctxUnauthed))
 
 		ctxMissingParam, err := round10NewLiftContext(http.MethodPut, "/api/v1/auth/webauthn/credentials/", authHeaders, nil, apimodels.WebAuthnUpdateCredentialRequest{Name: "n"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleUpdateWebAuthnCredentialNameLift(ctxMissingParam))
-		require.Equal(t, http.StatusBadRequest, ctxMissingParam.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateWebAuthnCredentialNameLift(ctxMissingParam))
 
 		ctxBadBody := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, []byte("{"))
-		ctxBadBody.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleUpdateWebAuthnCredentialNameLift(ctxBadBody))
-		require.Equal(t, http.StatusBadRequest, ctxBadBody.Response.StatusCode)
+		ctxBadBody.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateWebAuthnCredentialNameLift(ctxBadBody))
 
 		ctxMissingName, err := round10NewLiftContext(http.MethodPut, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, apimodels.WebAuthnUpdateCredentialRequest{Name: ""})
 		require.NoError(t, err)
-		ctxMissingName.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleUpdateWebAuthnCredentialNameLift(ctxMissingName))
-		require.Equal(t, http.StatusBadRequest, ctxMissingName.Response.StatusCode)
+		ctxMissingName.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateWebAuthnCredentialNameLift(ctxMissingName))
 	})
 
 	t.Run("update_credential_not_found_returns_404", func(t *testing.T) {
@@ -465,9 +422,8 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, apimodels.WebAuthnUpdateCredentialRequest{Name: "new name"})
 		require.NoError(t, err)
-		ctx.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleUpdateWebAuthnCredentialNameLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusNotFound)(handler.HandleUpdateWebAuthnCredentialNameLift(ctx))
 	})
 
 	t.Run("update_credential_update_error_returns_500", func(t *testing.T) {
@@ -481,9 +437,8 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, apimodels.WebAuthnUpdateCredentialRequest{Name: "new name"})
 		require.NoError(t, err)
-		ctx.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleUpdateWebAuthnCredentialNameLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUpdateWebAuthnCredentialNameLift(ctx))
 	})
 
 	t.Run("update_credential_success", func(t *testing.T) {
@@ -496,9 +451,8 @@ func TestWebAuthn_Round12_CredentialsCRUD_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/auth/webauthn/credentials/Y3JlZA==", authHeaders, nil, apimodels.WebAuthnUpdateCredentialRequest{Name: "new name"})
 		require.NoError(t, err)
-		ctx.SetParam("credentialId", "Y3JlZA==")
-		require.NoError(t, handler.HandleUpdateWebAuthnCredentialNameLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["credentialId"] = "Y3JlZA=="
+		requireStatus(t, http.StatusOK)(handler.HandleUpdateWebAuthnCredentialNameLift(ctx))
 	})
 }
 
@@ -544,11 +498,11 @@ func TestWebAuthn_Round12_FinishHandlers_Success_Fixtures(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 
 		sessionDataBytes, err := json.Marshal(libwebauthn.SessionData{
-			Challenge:      registrationChallenge,
-			RelyingPartyID: cfg.Domain,
-			UserID:         []byte("alice"),
-			CredParams:     libwebauthn.CredentialParametersDefault(),
-			Expires:        time.Now().Add(5 * time.Minute),
+			Challenge:        registrationChallenge,
+			RelyingPartyID:   cfg.Domain,
+			UserID:           []byte("alice"),
+			CredParams:       libwebauthn.CredentialParametersDefault(),
+			Expires:          time.Now().Add(5 * time.Minute),
 			UserVerification: protocol.VerificationPreferred,
 		})
 		require.NoError(t, err)
@@ -584,8 +538,7 @@ func TestWebAuthn_Round12_FinishHandlers_Success_Fixtures(t *testing.T) {
 			CredentialName: "Fixture Key",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnRegistrationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleFinishWebAuthnRegistrationLift(ctx))
 	})
 
 	t.Run("finish_login_success", func(t *testing.T) {
@@ -635,14 +588,13 @@ func TestWebAuthn_Round12_FinishHandlers_Success_Fixtures(t *testing.T) {
 			DeviceName: "Fixture Device",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleFinishWebAuthnLoginLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleFinishWebAuthnLoginLift(ctx))
 
-		resp, ok := ctx.Response.Body.(*authpkg.AuthResponse)
-		require.True(t, ok)
-		require.Equal(t, "alice", resp.Me)
-		require.Equal(t, credentialID, resp.CredentialID)
-		require.NotEmpty(t, resp.AccessToken)
-		require.NotEmpty(t, resp.RefreshToken)
+		var body authpkg.AuthResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "alice", body.Me)
+		require.Equal(t, credentialID, body.CredentialID)
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
 	})
 }

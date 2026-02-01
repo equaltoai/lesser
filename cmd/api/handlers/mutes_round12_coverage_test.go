@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -24,20 +24,17 @@ func TestMutesRound12_Coverage(t *testing.T) {
 
 		ctxBad, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts//mute", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleMuteAccountLift(ctxBad))
-		require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleMuteAccountLift(ctxBad))
 
 		ctxNoSvc, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/mute", headers, nil, apimodels.MuteRequest{})
 		require.NoError(t, err)
-		ctxNoSvc.SetParam("id", "bob")
-		require.NoError(t, handler.HandleMuteAccountLift(ctxNoSvc))
-		require.Equal(t, http.StatusInternalServerError, ctxNoSvc.Response.StatusCode)
+		ctxNoSvc.Params["id"] = "bob"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleMuteAccountLift(ctxNoSvc))
 
 		ctxUnmuteNoSvc, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unmute", headers, nil, nil)
 		require.NoError(t, err)
-		ctxUnmuteNoSvc.SetParam("id", "bob")
-		require.NoError(t, handler.HandleUnmuteAccountLift(ctxUnmuteNoSvc))
-		require.Equal(t, http.StatusInternalServerError, ctxUnmuteNoSvc.Response.StatusCode)
+		ctxUnmuteNoSvc.Params["id"] = "bob"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUnmuteAccountLift(ctxUnmuteNoSvc))
 	})
 
 	t.Run("mute parse fallback + service error", func(t *testing.T) {
@@ -53,9 +50,8 @@ func TestMutesRound12_Coverage(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/accounts/bob/mute", headers, nil, []byte(`{invalid}`))
-		ctx.SetParam("id", "bob")
-		require.NoError(t, handler.HandleMuteAccountLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "bob"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleMuteAccountLift(ctx))
 		require.False(t, sawNotifications)
 	})
 
@@ -80,15 +76,13 @@ func TestMutesRound12_Coverage(t *testing.T) {
 		notifications := true
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/mute", headers, nil, apimodels.MuteRequest{Notifications: &notifications})
 		require.NoError(t, err)
-		ctx.SetParam("id", "bob")
-		require.NoError(t, handler.HandleMuteAccountLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "bob"
+		requireStatus(t, http.StatusOK)(handler.HandleMuteAccountLift(ctx))
 
 		ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unmute", headers, nil, nil)
 		require.NoError(t, err)
-		ctx2.SetParam("id", "bob")
-		require.NoError(t, handler.HandleUnmuteAccountLift(ctx2))
-		require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+		ctx2.Params["id"] = "bob"
+		requireStatus(t, http.StatusOK)(handler.HandleUnmuteAccountLift(ctx2))
 	})
 
 	t.Run("unmute service error", func(t *testing.T) {
@@ -103,10 +97,9 @@ func TestMutesRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unmute", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "bob")
+		ctx.Params["id"] = "bob"
 
-		require.NoError(t, handler.HandleUnmuteAccountLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUnmuteAccountLift(ctx))
 	})
 
 	t.Run("get muted accounts: limit parsing + service error + actor nil", func(t *testing.T) {
@@ -121,8 +114,7 @@ func TestMutesRound12_Coverage(t *testing.T) {
 
 		ctxErr, err := round10NewLiftContext(http.MethodGet, "/api/v1/mutes", headers, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetMutedAccountsLift(ctxErr))
-		require.Equal(t, http.StatusInternalServerError, ctxErr.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetMutedAccountsLift(ctxErr))
 
 		relationshipsOK := &RelationshipsServiceStub{
 			GetMutedUsersFunc: func(_ context.Context, _ *relationshipsvc.GetMutedUsersQuery) (*relationshipsvc.MutedUsersResult, error) {
@@ -139,8 +131,7 @@ func TestMutesRound12_Coverage(t *testing.T) {
 
 		ctxOK, err := round10NewLiftContext(http.MethodGet, "/api/v1/mutes", headers, map[string]string{"limit": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, handlerOK.HandleGetMutedAccountsLift(ctxOK))
-		require.Equal(t, http.StatusOK, ctxOK.Response.StatusCode)
-		require.Contains(t, ctxOK.Response.Headers["Link"], "max_id=")
+		respOK := requireStatus(t, http.StatusOK)(handlerOK.HandleGetMutedAccountsLift(ctxOK))
+		require.Contains(t, firstStringValue(respOK.Headers, "link"), "max_id=")
 	})
 }

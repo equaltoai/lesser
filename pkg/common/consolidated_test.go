@@ -1,14 +1,12 @@
 package common
 
 import (
-	"encoding/json"
 	"fmt"
 	"testing"
 
-	liftTesting "github.com/equaltoai/lesser/pkg/testing/lift"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 // TestErrorResponseConsolidation validates the consolidated error response functions
@@ -104,159 +102,169 @@ func TestErrorResponseConsolidation(t *testing.T) {
 
 // Helper functions for testing each error response function
 func testRespondBadRequest(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondBadRequest(ctx)
+		resp, err = RespondBadRequest(ctx)
 	} else {
-		err = RespondBadRequest(ctx, message)
+		resp, err = RespondBadRequest(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondUnauthorized(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondUnauthorized(ctx)
+		resp, err = RespondUnauthorized(ctx)
 	} else {
-		err = RespondUnauthorized(ctx, message)
+		resp, err = RespondUnauthorized(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondForbidden(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondForbidden(ctx)
+		resp, err = RespondForbidden(ctx)
 	} else {
-		err = RespondForbidden(ctx, message)
+		resp, err = RespondForbidden(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondNotFound(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondNotFound(ctx)
+		resp, err = RespondNotFound(ctx)
 	} else {
-		err = RespondNotFound(ctx, message)
+		resp, err = RespondNotFound(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondConflict(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondConflict(ctx)
+		resp, err = RespondConflict(ctx)
 	} else {
-		err = RespondConflict(ctx, message)
+		resp, err = RespondConflict(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondGone(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondGone(ctx)
+		resp, err = RespondGone(ctx)
 	} else {
-		err = RespondGone(ctx, message)
+		resp, err = RespondGone(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondUnprocessableEntity(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondUnprocessableEntity(ctx)
+		resp, err = RespondUnprocessableEntity(ctx)
 	} else {
-		err = RespondUnprocessableEntity(ctx, message)
+		resp, err = RespondUnprocessableEntity(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondInternalServerError(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondInternalServerError(ctx)
+		resp, err = RespondInternalServerError(ctx)
 	} else {
-		err = RespondInternalServerError(ctx, message)
+		resp, err = RespondInternalServerError(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
+	return parseResponse(t, resp)
 }
 
 func testRespondServiceUnavailable(t *testing.T, message string) (int, StandardErrorResponse) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	var err error
+	ctx := newTestContext("GET", "/test")
+	var (
+		resp *apptheory.Response
+		err  error
+	)
 	if message == "" {
-		err = RespondServiceUnavailable(ctx)
+		resp, err = RespondServiceUnavailable(ctx)
 	} else {
-		err = RespondServiceUnavailable(ctx, message)
+		resp, err = RespondServiceUnavailable(ctx, message)
 	}
 	require.NoError(t, err)
-	return parseResponse(t, ctx)
-}
-
-// parseResponse extracts and parses the response from a Lift context
-func parseResponse(t *testing.T, ctx *lift.Context) (int, StandardErrorResponse) {
-	// Check if response is already a StandardErrorResponse struct
-	if response, ok := ctx.Response.Body.(StandardErrorResponse); ok {
-		return ctx.Response.StatusCode, response
-	}
-
-	// Otherwise, try to parse as JSON bytes (following Lift testing pattern)
-	var response StandardErrorResponse
-	bodyBytes, ok := ctx.Response.Body.([]byte)
-	if !ok {
-		bodyBytes = []byte(fmt.Sprintf("%v", ctx.Response.Body))
-	}
-
-	err := json.Unmarshal(bodyBytes, &response)
-	require.NoError(t, err, "Response should be valid JSON")
-
-	return ctx.Response.StatusCode, response
+	return parseResponse(t, resp)
 }
 
 // TestErrorResponseJSONStructure validates that all error responses produce valid JSON
 func TestErrorResponseJSONStructure(t *testing.T) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-
 	// Test that each response function produces valid JSON
-	errorFunctions := []func() error{
-		func() error { return RespondBadRequest(ctx, "test") },
-		func() error { return RespondUnauthorized(ctx, "test") },
-		func() error { return RespondForbidden(ctx, "test") },
-		func() error { return RespondNotFound(ctx, "test") },
-		func() error { return RespondConflict(ctx, "test") },
-		func() error { return RespondGone(ctx, "test") },
-		func() error { return RespondUnprocessableEntity(ctx, "test") },
-		func() error { return RespondInternalServerError(ctx, "test") },
-		func() error { return RespondServiceUnavailable(ctx, "test") },
+	errorFunctions := []func(*apptheory.Context) (*apptheory.Response, error){
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondBadRequest(ctx, "test") },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondUnauthorized(ctx, "test") },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondForbidden(ctx, "test") },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondNotFound(ctx, "test") },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondConflict(ctx, "test") },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondGone(ctx, "test") },
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return RespondUnprocessableEntity(ctx, "test")
+		},
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return RespondInternalServerError(ctx, "test")
+		},
+		func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			return RespondServiceUnavailable(ctx, "test")
+		},
 	}
 
 	for i, fn := range errorFunctions {
 		t.Run(t.Name()+"_"+string(rune('A'+i)), func(t *testing.T) {
-			ctx = liftTesting.MockLiftContext("GET", "/test") // Reset context
-
-			err := fn()
+			ctx := newTestContext("GET", "/test")
+			resp, err := fn(ctx)
 			require.NoError(t, err)
 
 			// Validate structure using our parseResponse helper
-			statusCode, response := parseResponse(t, ctx)
+			statusCode, response := parseResponse(t, resp)
 			require.NotZero(t, statusCode, "Status code should be set")
 			require.NotEmpty(t, response.Error, "Error field should not be empty")
 		})
@@ -287,12 +295,11 @@ func TestValidationErrorResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := liftTesting.MockLiftContext("GET", "/test")
-
-			err := RespondValidationError(ctx, tt.err)
+			ctx := newTestContext("GET", "/test")
+			resp, err := RespondValidationError(ctx, tt.err)
 			require.NoError(t, err)
 
-			statusCode, response := parseResponse(t, ctx)
+			statusCode, response := parseResponse(t, resp)
 			assert.Equal(t, tt.expectedStatus, statusCode)
 			assert.Equal(t, tt.expectedError, response.Error)
 		})
@@ -345,27 +352,23 @@ func TestAuthHelperFunctions(t *testing.T) {
 
 	t.Run("ExtractAuthHeader", func(t *testing.T) {
 		// Test with Authorization header
-		ctx := liftTesting.MockLiftContext("GET", "/test",
-			liftTesting.WithHeaders(map[string]string{
-				"Authorization": "Bearer token123",
-			}),
-		)
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
+			"Authorization": "Bearer token123",
+		}))
 
 		authHeader := ExtractAuthHeader(ctx)
 		assert.Equal(t, "Bearer token123", authHeader)
 
 		// Test with lowercase authorization header
-		ctx = liftTesting.MockLiftContext("GET", "/test",
-			liftTesting.WithHeaders(map[string]string{
-				"authorization": "Bearer token456",
-			}),
-		)
+		ctx = newTestContext("GET", "/test", withHeaders(map[string]string{
+			"authorization": "Bearer token456",
+		}))
 
 		authHeader = ExtractAuthHeader(ctx)
 		assert.Equal(t, "Bearer token456", authHeader)
 
 		// Test without auth header
-		ctx = liftTesting.MockLiftContext("GET", "/test")
+		ctx = newTestContext("GET", "/test")
 		authHeader = ExtractAuthHeader(ctx)
 		assert.Empty(t, authHeader)
 	})
@@ -409,29 +412,34 @@ func TestEndToEndErrorConsolidation(t *testing.T) {
 	t.Run("consistent error format", func(t *testing.T) {
 		// Test that all error responses have consistent structure
 		errorFunctions := map[string]struct {
-			fn            func(*lift.Context) error
+			fn            func(*apptheory.Context) (*apptheory.Response, error)
 			expectedError string
 		}{
-			"400": {func(ctx *lift.Context) error { return RespondBadRequest(ctx, "test") }, "test"},
-			"401": {func(ctx *lift.Context) error { return RespondUnauthorized(ctx, "test") }, "test"},
-			"403": {func(ctx *lift.Context) error { return RespondForbidden(ctx, "test") }, "test"},
-			"404": {func(ctx *lift.Context) error { return RespondNotFound(ctx, "test") }, "test not found"},
-			"409": {func(ctx *lift.Context) error { return RespondConflict(ctx, "test") }, "test"},
-			"410": {func(ctx *lift.Context) error { return RespondGone(ctx, "test") }, "test"},
-			"422": {func(ctx *lift.Context) error { return RespondUnprocessableEntity(ctx, "test") }, "test"},
-			"500": {func(ctx *lift.Context) error { return RespondInternalServerError(ctx, "test") }, "test"},
-			"503": {func(ctx *lift.Context) error { return RespondServiceUnavailable(ctx, "test") }, "test service unavailable"},
+			"400": {func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondBadRequest(ctx, "test") }, "test"},
+			"401": {func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondUnauthorized(ctx, "test") }, "test"},
+			"403": {func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondForbidden(ctx, "test") }, "test"},
+			"404": {func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondNotFound(ctx, "test") }, "test not found"},
+			"409": {func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondConflict(ctx, "test") }, "test"},
+			"410": {func(ctx *apptheory.Context) (*apptheory.Response, error) { return RespondGone(ctx, "test") }, "test"},
+			"422": {func(ctx *apptheory.Context) (*apptheory.Response, error) {
+				return RespondUnprocessableEntity(ctx, "test")
+			}, "test"},
+			"500": {func(ctx *apptheory.Context) (*apptheory.Response, error) {
+				return RespondInternalServerError(ctx, "test")
+			}, "test"},
+			"503": {func(ctx *apptheory.Context) (*apptheory.Response, error) {
+				return RespondServiceUnavailable(ctx, "test")
+			}, "test service unavailable"},
 		}
 
 		for name, testCase := range errorFunctions {
 			t.Run("status_"+name, func(t *testing.T) {
-				ctx := liftTesting.MockLiftContext("GET", "/test")
-
-				err := testCase.fn(ctx)
+				ctx := newTestContext("GET", "/test")
+				resp, err := testCase.fn(ctx)
 				require.NoError(t, err)
 
 				// All responses should have the same JSON structure
-				statusCode, response := parseResponse(t, ctx)
+				statusCode, response := parseResponse(t, resp)
 				require.NotZero(t, statusCode, "Status code should be set")
 				require.Equal(t, testCase.expectedError, response.Error)
 			})

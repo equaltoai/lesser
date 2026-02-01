@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageMods "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -32,10 +32,10 @@ const (
 )
 
 // HandleCreateStatusLift creates a new status using the Notes service
-func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request
 	var req models.CreateStatusRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondBadRequest(ctx, "invalid request format")
 	}
 
@@ -77,7 +77,10 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	// Authenticate with write scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Default visibility
@@ -86,7 +89,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Call Notes service
-	result, err := h.registry.Notes().CreateNote(ctx.Context, &notes.CreateNoteCommand{
+	result, err := h.registry.Notes().CreateNote(ctx.Context(), &notes.CreateNoteCommand{
 		AuthorID:    claims.Username,
 		Content:     req.Status,
 		Visibility:  req.Visibility,
@@ -112,11 +115,11 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		zap.String("id", result.Note.StatusID),
 		zap.String("content", req.Status))
 
-	return ctx.Status(http.StatusCreated).JSON(apiStatus)
+	return createdJSON(apiStatus)
 }
 
 // HandleDeleteStatusLift deletes a status using the Notes service
-func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -125,11 +128,14 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	// Authenticate with write scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get the status first to return it (Mastodon API returns deleted status)
-	status, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	status, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "status not found")
@@ -139,7 +145,7 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	}
 
 	// Delete using Notes service
-	err = h.registry.Notes().DeleteNote(ctx.Context, &notes.DeleteNoteCommand{
+	err = h.registry.Notes().DeleteNote(ctx.Context(), &notes.DeleteNoteCommand{
 		StatusID:  statusID,
 		DeleterID: claims.Username,
 	})
@@ -163,11 +169,11 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 
 	h.logger.Info("deleted status", zap.String("id", statusID))
 
-	return ctx.JSON(mastodonStatus)
+	return okJSON(mastodonStatus)
 }
 
 // HandleUpdateStatusLift updates an existing status
-func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Validate status ID
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
@@ -175,41 +181,43 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate and authorize user
-	_, actor, err := h.authenticateStatusUpdate(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	_, actor, resp, err := h.authenticateStatusUpdate(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get and verify object ownership
 	objectID := h.normalizeStatusIDForUpdate(statusID)
-	object, err := h.getAndVerifyStatusOwnership(ctx, objectID, actor.ID)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	object, resp, err := h.getAndVerifyStatusOwnership(ctx, objectID, actor.ID)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Parse update request
-	req, err := h.parseUpdateStatusRequest(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	req, resp, err := h.parseUpdateStatusRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Convert object to Note and verify ownership
-	note, err := h.convertObjectToNoteWithOwnershipCheck(ctx, object, actor.ID)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	note, resp, err := h.convertObjectToNoteWithOwnershipCheck(ctx, object, actor.ID)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Apply updates to note
 	h.applyStatusUpdates(note, req)
 
 	// Save updated note
-	if err := h.saveUpdatedStatus(ctx, note); err != nil || ctx.Response.IsWritten() {
-		return err
+	resp, err = h.saveUpdatedStatus(ctx, note)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Create and deliver update activity
-	if err := h.createStatusUpdateActivity(ctx, note, actor); err != nil || ctx.Response.IsWritten() {
-		return err
+	resp, err = h.createStatusUpdateActivity(ctx, note, actor)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Build and return response
@@ -217,33 +225,37 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 }
 
 // authenticateStatusUpdate handles authentication for status updates
-func (h *Handler) authenticateStatusUpdate(ctx *lift.Context) (*auth.Claims, *activitypub.Actor, error) {
+func (h *Handler) authenticateStatusUpdate(ctx *apptheory.Context) (*auth.Claims, *activitypub.Actor, *apptheory.Response, error) {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, nil, common.RespondUnauthorized(ctx, "missing token")
+		resp, respErr := common.RespondUnauthorized(ctx, "missing token")
+		return nil, nil, resp, respErr
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return nil, nil, common.RespondUnauthorized(ctx, err.Error())
+		resp, respErr := common.RespondUnauthorized(ctx, err.Error())
+		return nil, nil, resp, respErr
 	}
 
 	// Check write scope
 	if !claims.HasScope(auth.ScopeWrite) {
-		return nil, nil, common.RespondInsufficientScope(ctx)
+		resp, respErr := common.RespondInsufficientScope(ctx)
+		return nil, nil, resp, respErr
 	}
 
 	// Get the user's actor
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return nil, nil, common.RespondInternalServerError(ctx, "Internal server error")
+		resp, respErr := common.RespondInternalServerError(ctx, "Internal server error")
+		return nil, nil, resp, respErr
 	}
 	actor := account.Actor
 
-	return claims, actor, nil
+	return claims, actor, nil, nil
 }
 
 // normalizeStatusIDForUpdate normalizes a status ID to a full URL
@@ -256,70 +268,80 @@ func (h *Handler) normalizeStatusIDForUpdate(statusID string) string {
 }
 
 // getAndVerifyStatusOwnership retrieves the object and initial ownership check
-func (h *Handler) getAndVerifyStatusOwnership(ctx *lift.Context, objectID, _ string) (any, error) {
-	object, err := h.registry.Notes().GetNote(ctx.Context, objectID)
+func (h *Handler) getAndVerifyStatusOwnership(ctx *apptheory.Context, objectID, _ string) (any, *apptheory.Response, error) {
+	object, err := h.registry.Notes().GetNote(ctx.Context(), objectID)
 	if err != nil {
 		// Check if this is a tombstoned object (should return 410 Gone)
-		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context, objectID); tombErr == nil && isTombstoned {
+		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context(), objectID); tombErr == nil && isTombstoned {
 			// Get tombstone details for better error message
-			if tombstone, tErr := h.repos.Object().GetTombstone(ctx.Context, objectID); tErr == nil {
-				return nil, ctx.Status(http.StatusGone).JSON(map[string]interface{}{
+			if tombstone, tErr := h.repos.Object().GetTombstone(ctx.Context(), objectID); tErr == nil {
+				resp, respErr := apptheory.JSON(http.StatusGone, map[string]interface{}{
 					"error":             "status deleted",
 					"error_description": "This status has been deleted",
 					"deleted_at":        tombstone.Deleted.Format(time.RFC3339),
 					"former_type":       tombstone.FormerType,
 				})
+				return nil, resp, respErr
 			}
 			// Fallback if we can't get tombstone details
-			return nil, ctx.Status(http.StatusGone).JSON(map[string]string{
+			resp, respErr := apptheory.JSON(http.StatusGone, map[string]string{
 				"error":             "status deleted",
 				"error_description": "This status has been deleted",
 			})
+			return nil, resp, respErr
 		}
 		// Regular 404 for genuinely missing objects
-		return nil, common.RespondNotFound(ctx, "status not found")
+		resp, respErr := common.RespondNotFound(ctx, "status not found")
+		return nil, resp, respErr
 	}
-	return object, nil
+	return object, nil, nil
 }
 
 // parseUpdateStatusRequest parses the update status request
-func (h *Handler) parseUpdateStatusRequest(ctx *lift.Context) (*models.UpdateStatusRequest, error) {
+func (h *Handler) parseUpdateStatusRequest(ctx *apptheory.Context) (*models.UpdateStatusRequest, *apptheory.Response, error) {
 	var req models.UpdateStatusRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		return nil, common.RespondBadRequest(ctx, "invalid request format")
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request format")
+		return nil, resp, respErr
 	}
-	return &req, nil
+	return &req, nil, nil
 }
 
 // convertObjectToNoteWithOwnershipCheck converts object to Note and verifies ownership
-func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *lift.Context, object any, actorID string) (*activitypub.Note, error) {
+func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *apptheory.Context, object any, actorID string) (*activitypub.Note, *apptheory.Response, error) {
 	switch obj := object.(type) {
 	case *activitypub.Note:
 		if obj.AttributedTo != actorID {
-			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
+			return nil, resp, respErr
 		}
-		return obj, nil
+		return obj, nil, nil
 
 	case *storageMods.Status:
 		if obj.AuthorID != "" && obj.AuthorID != actorID {
-			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
+			return nil, resp, respErr
 		}
 		if obj.AuthorID == "" && obj.AuthorUsername != "" && transformations.ExtractUsernameFromActorID(actorID) != obj.AuthorUsername {
-			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
+			return nil, resp, respErr
 		}
 		if obj.Note == nil || obj.Note.Get() == nil {
 			h.logger.Error("status missing ActivityPub note", zap.String("status_id", obj.StatusID))
-			return nil, common.RespondInternalServerError(ctx, "failed to load status")
+			resp, respErr := common.RespondInternalServerError(ctx, "failed to load status")
+			return nil, resp, respErr
 		}
 		note := obj.Note.Get()
 		if note.AttributedTo != "" && note.AttributedTo != actorID {
-			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
+			return nil, resp, respErr
 		}
-		return note, nil
+		return note, nil, nil
 
 	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok && attr != actorID {
-			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
+			return nil, resp, respErr
 		}
 		return h.convertMapToNote(ctx, obj)
 
@@ -329,24 +351,26 @@ func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *lift.Context, objec
 }
 
 // convertMapToNote converts a map to a Note
-func (h *Handler) convertMapToNote(ctx *lift.Context, obj map[string]any) (*activitypub.Note, error) {
+func (h *Handler) convertMapToNote(ctx *apptheory.Context, obj map[string]any) (*activitypub.Note, *apptheory.Response, error) {
 	noteBytes, err := json.Marshal(obj)
 	if err != nil {
 		h.logger.Error("failed to marshal object to JSON", zap.Error(err))
-		return nil, common.RespondInternalServerError(ctx, "Internal server error")
+		resp, respErr := common.RespondInternalServerError(ctx, "Internal server error")
+		return nil, resp, respErr
 	}
 
 	note := &activitypub.Note{}
 	if err := json.Unmarshal(noteBytes, note); err != nil {
 		h.logger.Error("failed to unmarshal JSON to Note", zap.Error(err))
-		return nil, common.RespondInternalServerError(ctx, "Internal server error")
+		resp, respErr := common.RespondInternalServerError(ctx, "Internal server error")
+		return nil, resp, respErr
 	}
 
-	return note, nil
+	return note, nil, nil
 }
 
 // convertUnknownObjectToNote handles conversion of unknown object types to Note
-func (h *Handler) convertUnknownObjectToNote(ctx *lift.Context, object any, actorID string) (*activitypub.Note, error) {
+func (h *Handler) convertUnknownObjectToNote(ctx *apptheory.Context, object any, actorID string) (*activitypub.Note, *apptheory.Response, error) {
 	// Try to handle any object with AttributedTo field using reflection
 	v := reflect.ValueOf(object)
 	if v.Kind() == reflect.Ptr {
@@ -365,21 +389,24 @@ func (h *Handler) convertUnknownObjectToNote(ctx *lift.Context, object any, acto
 		h.logger.Error("unexpected object type or missing AttributedTo",
 			zap.String("type", fmt.Sprintf("%T", object)),
 			zap.Any("object", object))
-		return nil, common.RespondInternalServerError(ctx, "unexpected object type")
+		resp, respErr := common.RespondInternalServerError(ctx, "unexpected object type")
+		return nil, resp, respErr
 	}
 
 	if attributedTo != actorID {
-		return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
+		resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
+		return nil, resp, respErr
 	}
 
 	// Convert to Note via JSON marshaling
 	noteBytes, _ := json.Marshal(object)
 	note := &activitypub.Note{}
 	if err := json.Unmarshal(noteBytes, note); err != nil {
-		return nil, common.RespondInternalServerError(ctx, "failed to convert object to Note")
+		resp, respErr := common.RespondInternalServerError(ctx, "failed to convert object to Note")
+		return nil, resp, respErr
 	}
 
-	return note, nil
+	return note, nil, nil
 }
 
 // applyStatusUpdates applies the requested updates to the note
@@ -398,7 +425,7 @@ func (h *Handler) applyStatusUpdates(note *activitypub.Note, req *models.UpdateS
 }
 
 // saveUpdatedStatus saves the updated status to storage with edit history
-func (h *Handler) saveUpdatedStatus(ctx *lift.Context, note *activitypub.Note) error {
+func (h *Handler) saveUpdatedStatus(ctx *apptheory.Context, note *activitypub.Note) (*apptheory.Response, error) {
 	// Extract the username from the authentication token
 	username := h.extractUsernameFromToken(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
@@ -409,15 +436,15 @@ func (h *Handler) saveUpdatedStatus(ctx *lift.Context, note *activitypub.Note) e
 	actorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), username)
 
 	// Update object with history tracking using the new method
-	if err := h.repos.Object().UpdateObjectWithHistory(ctx.Context, note, actorID); err != nil {
+	if err := h.repos.Object().UpdateObjectWithHistory(ctx.Context(), note, actorID); err != nil {
 		h.logger.Error("failed to update object with history", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
-	return nil
+	return nil, nil
 }
 
 // createStatusUpdateActivity creates and stores the update activity
-func (h *Handler) createStatusUpdateActivity(ctx *lift.Context, note *activitypub.Note, actor *activitypub.Actor) error {
+func (h *Handler) createStatusUpdateActivity(ctx *apptheory.Context, note *activitypub.Note, actor *activitypub.Actor) (*apptheory.Response, error) {
 	now := time.Now()
 	updateActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
@@ -433,7 +460,7 @@ func (h *Handler) createStatusUpdateActivity(ctx *lift.Context, note *activitypu
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.repos.Activity().CreateActivity(ctx.Context, updateActivity); err != nil {
+	if err := h.repos.Activity().CreateActivity(ctx.Context(), updateActivity); err != nil {
 		h.logger.Error("failed to create update activity", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
@@ -452,11 +479,11 @@ func (h *Handler) createStatusUpdateActivity(ctx *lift.Context, note *activitypu
 		zap.String("note_id", note.ID),
 		zap.String("actor", actor.ID))
 
-	return nil
+	return nil, nil
 }
 
 // buildUpdateStatusResponse builds the response for the updated status
-func (h *Handler) buildUpdateStatusResponse(ctx *lift.Context, note *activitypub.Note, actor *activitypub.Actor, req *models.UpdateStatusRequest) error {
+func (h *Handler) buildUpdateStatusResponse(ctx *apptheory.Context, note *activitypub.Note, actor *activitypub.Actor, req *models.UpdateStatusRequest) (*apptheory.Response, error) {
 	resp := transformations.ObjectToStatusAny(note, actor, h.cfg.BaseURL())
 	if req.Visibility != "" {
 		resp.Visibility = req.Visibility
@@ -465,12 +492,11 @@ func (h *Handler) buildUpdateStatusResponse(ctx *lift.Context, note *activitypub
 		resp.Language = req.Language
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleGetStatusLift retrieves a status by ID using the Notes service
-func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -487,7 +513,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get status using Notes service
-	status, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	status, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "status not found")
@@ -497,7 +523,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the author actor for proper conversion
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), transformations.ExtractUsernameFromActorID(status.AuthorID))
 	if err != nil {
 		h.logger.Error("failed to get author account", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to retrieve status")
@@ -508,41 +534,44 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	if viewerUsername != "" {
 		// Check if the viewer has liked/favorited this status
 		if likeRepo := h.repos.Like(); likeRepo != nil {
-			favorited, _ = likeRepo.HasLiked(ctx.Context, viewerUsername, statusID)
+			favorited, _ = likeRepo.HasLiked(ctx.Context(), viewerUsername, statusID)
 		}
 
 		// Check if the viewer has reblogged this status
 		if likeRepo := h.repos.Like(); likeRepo != nil {
-			reblogged, _ = likeRepo.HasReblogged(ctx.Context, viewerUsername, statusID)
+			reblogged, _ = likeRepo.HasReblogged(ctx.Context(), viewerUsername, statusID)
 		}
 
 		// Check if the viewer has bookmarked this status
 		if userRepo := h.repos.User(); userRepo != nil {
-			bookmarked, _ = userRepo.IsBookmarked(ctx.Context, viewerUsername, statusID)
+			bookmarked, _ = userRepo.IsBookmarked(ctx.Context(), viewerUsername, statusID)
 		}
 	}
 
 	// Convert to Mastodon API format using correct converter with user context
-	mastodonStatus := transformations.ObjectToStatusWithContextAndCounts(ctx.Context, status, account.Actor, 0, 0, favorited, reblogged, bookmarked, h.cfg.BaseURL())
+	mastodonStatus := transformations.ObjectToStatusWithContextAndCounts(ctx.Context(), status, account.Actor, 0, 0, favorited, reblogged, bookmarked, h.cfg.BaseURL())
 
-	return ctx.JSON(mastodonStatus)
+	return okJSON(mastodonStatus)
 }
 
 // HandleGetHomeTimelineLift returns the home timeline using the Notes service
-func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetHomeTimelineLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate with read scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse pagination parameters
-	limit, _ := common.ParseStatusTimelineLimit(ctx.QueryParam("limit"))
+	limit, _ := common.ParseStatusTimelineLimit(queryValue(ctx, "limit"))
 
-	cursor := ctx.QueryParam("max_id")
+	cursor := queryValue(ctx, "max_id")
 
 	// Get home timeline using Notes service
-	result, err := h.registry.Notes().ListNotes(ctx.Context, &notes.ListNotesQuery{
+	result, err := h.registry.Notes().ListNotes(ctx.Context(), &notes.ListNotesQuery{
 		ViewerID:     claims.Username,
 		TimelineType: "home",
 		Pagination: interfaces.PaginationOptions{
@@ -552,9 +581,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get home timeline", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
-			"error": "failed to retrieve timeline",
-		})
+		return common.RespondInternalServerError(ctx, "failed to retrieve timeline")
 	}
 
 	// Convert to Mastodon API format
@@ -570,11 +597,11 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 		timeline = append(timeline, apiStatus)
 	}
 
-	return ctx.JSON(timeline)
+	return okJSON(timeline)
 }
 
 // HandleGetPublicTimelineLift returns the public timeline using the Notes service
-func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetPublicTimelineLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Optional authentication (public timeline can be viewed without auth)
 	var viewerUsername string
 	token := h.getBearerTokenLift(ctx)
@@ -586,10 +613,10 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Parse pagination parameters
-	limit, _ := common.ParseStatusTimelineLimit(ctx.QueryParam("limit"))
+	limit, _ := common.ParseStatusTimelineLimit(queryValue(ctx, "limit"))
 
-	cursor := ctx.QueryParam("max_id")
-	local := ctx.QueryParam("local") == "true"
+	cursor := queryValue(ctx, "max_id")
+	local := queryValue(ctx, "local") == "true"
 
 	timelineType := VisibilityPublic
 	if local {
@@ -597,7 +624,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get public timeline using Notes service
-	result, err := h.registry.Notes().ListNotes(ctx.Context, &notes.ListNotesQuery{
+	result, err := h.registry.Notes().ListNotes(ctx.Context(), &notes.ListNotesQuery{
 		ViewerID:     viewerUsername,
 		TimelineType: timelineType,
 		Pagination: interfaces.PaginationOptions{
@@ -607,9 +634,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get public timeline", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
-			"error": "failed to retrieve timeline",
-		})
+		return common.RespondInternalServerError(ctx, "failed to retrieve timeline")
 	}
 
 	// Convert to Mastodon API format
@@ -625,36 +650,36 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 		timeline = append(timeline, apiStatus)
 	}
 
-	return ctx.JSON(timeline)
+	return okJSON(timeline)
 }
 
 // HandleGetStatusContextLift retrieves the context (ancestors and descendants) of a status
-func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetStatusContextLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Validate and normalize status ID
-	objectID, err := h.validateStatusIDForContext(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	objectID, resp, err := h.validateStatusIDForContext(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get ancestors and descendants
-	ancestors := h.getStatusAncestors(ctx.Context, objectID)
-	descendants := h.getStatusDescendants(ctx.Context, objectID)
+	ancestors := h.getStatusAncestors(ctx.Context(), objectID)
+	descendants := h.getStatusDescendants(ctx.Context(), objectID)
 
 	// Return context response
-	resp := models.StatusContext{
+	payload := models.StatusContext{
 		Ancestors:   ancestors,
 		Descendants: descendants,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(payload)
 }
 
 // validateStatusIDForContext validates the status ID and checks it exists
-func (h *Handler) validateStatusIDForContext(ctx *lift.Context) (string, error) {
+func (h *Handler) validateStatusIDForContext(ctx *apptheory.Context) (string, *apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return "", common.RespondBadRequest(ctx, err.Error())
+		resp, respErr := common.RespondBadRequest(ctx, err.Error())
+		return "", resp, respErr
 	}
 
 	// Normalize and validate the status ID
@@ -664,30 +689,33 @@ func (h *Handler) validateStatusIDForContext(ctx *lift.Context) (string, error) 
 	}
 
 	// Get the object to check it exists
-	_, err := h.registry.Notes().GetNote(ctx.Context, objectID)
+	_, err := h.registry.Notes().GetNote(ctx.Context(), objectID)
 	if err != nil {
 		// Check if this is a tombstoned object (should return 410 Gone)
-		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context, objectID); tombErr == nil && isTombstoned {
+		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context(), objectID); tombErr == nil && isTombstoned {
 			// Get tombstone details for better error message
-			if tombstone, tErr := h.repos.Object().GetTombstone(ctx.Context, objectID); tErr == nil {
-				return "", ctx.Status(http.StatusGone).JSON(map[string]interface{}{
+			if tombstone, tErr := h.repos.Object().GetTombstone(ctx.Context(), objectID); tErr == nil {
+				resp, respErr := apptheory.JSON(http.StatusGone, map[string]interface{}{
 					"error":             "status deleted",
 					"error_description": "This status has been deleted and its context is no longer available",
 					"deleted_at":        tombstone.Deleted.Format(time.RFC3339),
 					"former_type":       tombstone.FormerType,
 				})
+				return "", resp, respErr
 			}
 			// Fallback if we can't get tombstone details
-			return "", ctx.Status(http.StatusGone).JSON(map[string]string{
+			resp, respErr := apptheory.JSON(http.StatusGone, map[string]string{
 				"error":             "status deleted",
 				"error_description": "This status has been deleted and its context is no longer available",
 			})
+			return "", resp, respErr
 		}
 		// Regular 404 for genuinely missing objects
-		return "", common.RespondNotFound(ctx, "status not found")
+		resp, respErr := common.RespondNotFound(ctx, "status not found")
+		return "", resp, respErr
 	}
 
-	return objectID, nil
+	return objectID, nil, nil
 }
 
 // getStatusAncestors retrieves the ancestors (parent statuses) of a status
@@ -860,7 +888,7 @@ type accountStatusesParams struct {
 }
 
 // HandleGetAccountStatusesLift handles requests to get an account's statuses
-func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountStatusesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Validate and get account ID
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
@@ -868,7 +896,7 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	}
 
 	// Resolve account ID to actor
-	actor, err := h.resolveAccountID(ctx.Context, accountID)
+	actor, err := h.resolveAccountID(ctx.Context(), accountID)
 	if err != nil {
 		return common.RespondNotFound(ctx, "account not found")
 	}
@@ -877,7 +905,7 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	params := h.parseAccountStatusesParams(ctx)
 
 	// Get objects by this actor
-	userTimeline, err := h.registry.Notes().GetUserTimeline(ctx.Context, actor.ID, interfaces.PaginationOptions{
+	userTimeline, err := h.registry.Notes().GetUserTimeline(ctx.Context(), actor.ID, interfaces.PaginationOptions{
 		Limit:  params.limit,
 		Cursor: params.maxID,
 	})
@@ -897,34 +925,35 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	// Convert and filter objects to statuses
 	statuses := h.convertAndFilterObjects(ctx, objects, actor, params)
 
-	// Set pagination header if needed
-	if cursor != "" {
-		h.setPaginationHeader(ctx, accountID, cursor, params)
+	resp, err := okJSON(statuses)
+	if err != nil {
+		return nil, err
 	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(statuses)
+	if cursor != "" {
+		h.setPaginationHeader(resp, accountID, cursor, params)
+	}
+	return resp, nil
 }
 
 // parseAccountStatusesParams parses query parameters for account statuses
-func (h *Handler) parseAccountStatusesParams(ctx *lift.Context) accountStatusesParams {
+func (h *Handler) parseAccountStatusesParams(ctx *apptheory.Context) accountStatusesParams {
 	// Parse limit parameter
-	limit, _ := common.ParseAccountStatusesLimit(ctx.Query("limit"))
+	limit, _ := common.ParseAccountStatusesLimit(queryValue(ctx, "limit"))
 
 	params := accountStatusesParams{
 		limit:          limit,
-		maxID:          ctx.Query("max_id"),
-		onlyMedia:      ctx.Query("only_media") == boolTrue,
-		excludeReplies: ctx.Query("exclude_replies") == boolTrue,
-		excludeReblogs: ctx.Query("exclude_reblogs") == boolTrue,
-		tagged:         ctx.Query("tagged"),
+		maxID:          queryValue(ctx, "max_id"),
+		onlyMedia:      queryValue(ctx, "only_media") == boolTrue,
+		excludeReplies: queryValue(ctx, "exclude_replies") == boolTrue,
+		excludeReblogs: queryValue(ctx, "exclude_reblogs") == boolTrue,
+		tagged:         queryValue(ctx, "tagged"),
 	}
 
 	return params
 }
 
 // convertAndFilterObjects converts objects to statuses with filtering
-func (h *Handler) convertAndFilterObjects(_ *lift.Context, objects []any, actor *activitypub.Actor, params accountStatusesParams) []models.Status {
+func (h *Handler) convertAndFilterObjects(_ *apptheory.Context, objects []any, actor *activitypub.Actor, params accountStatusesParams) []models.Status {
 	statuses := []models.Status{}
 
 	h.logger.Debug("converting objects to statuses",
@@ -1157,9 +1186,9 @@ func (h *Handler) logStatusConversion(status models.Status, obj any) {
 }
 
 // setPaginationHeader sets the Link header for pagination
-func (h *Handler) setPaginationHeader(ctx *lift.Context, accountID, cursor string, params accountStatusesParams) {
+func (h *Handler) setPaginationHeader(resp *apptheory.Response, accountID, cursor string, params accountStatusesParams) {
 	nextURL := h.buildPaginationURL(accountID, cursor, params)
-	ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL)
+	setHeader(resp, "link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
 }
 
 // buildPaginationURL builds the next page URL
@@ -1212,11 +1241,11 @@ func getStringFromMap(m map[string]any, key, defaultValue string) string {
 // enrichStatusWithPoll adds poll data to a status if it exists
 
 // extractUsernameFromToken extracts the username from authentication token
-func (h *Handler) extractUsernameFromToken(ctx *lift.Context) string {
+func (h *Handler) extractUsernameFromToken(ctx *apptheory.Context) string {
 	// Get authorization header
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	if authHeader != "" {

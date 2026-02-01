@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -105,94 +105,83 @@ func TestPollHandlersRound12(t *testing.T) {
 	t.Run("get poll requires id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/polls/", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetPollLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetPollLift(ctx))
 	})
 
 	t.Run("get poll public (hide totals)", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/polls/"+pollID, nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleGetPollLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusOK)(h.HandleGetPollLift(ctx))
 	})
 
 	t.Run("get poll with auth shows voted", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + readToken}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/polls/"+pollID, headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleGetPollLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusOK)(h.HandleGetPollLift(ctx))
 	})
 
 	t.Run("vote requires auth header", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusUnauthorized)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote requires request body", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + writeToken}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, nil)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusBadRequest)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote requires choices", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + writeToken}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, map[string]any{"choices": []int{}})
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote requires write scope", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + readToken}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, map[string]any{"choices": []int{0}})
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusForbidden)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote invalid json", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + writeToken}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, []byte("{"))
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusBadRequest)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote choice negative", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + writeToken}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, map[string]any{"choices": []int{-1}})
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote already voted", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + writeToken}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, map[string]any{"choices": []int{0}})
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote success creates notification", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + writeToken}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+poll2ID+"/votes", headers, nil, map[string]any{"choices": []int{0}})
 		require.NoError(t, err)
-		ctx.SetParam("id", poll2ID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = poll2ID
+		requireStatus(t, http.StatusOK)(h.HandleVoteOnPollLift(ctx))
 		require.GreaterOrEqual(t, notificationCalls, 1)
 	})
 }
@@ -233,9 +222,8 @@ func TestPollEdgeCasesRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/polls/missing", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
-		require.NoError(t, h.HandleGetPollLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleGetPollLift(ctx))
 	})
 
 	t.Run("get poll expired does not hide totals", func(t *testing.T) {
@@ -264,9 +252,8 @@ func TestPollEdgeCasesRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/polls/"+pollID, nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleGetPollLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusOK)(h.HandleGetPollLift(ctx))
 	})
 
 	t.Run("vote invalid token", func(t *testing.T) {
@@ -300,9 +287,8 @@ func TestPollEdgeCasesRound12(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer bad-token"}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, map[string]any{"choices": []int{0}})
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusUnauthorized)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("vote actor missing", func(t *testing.T) {
@@ -339,9 +325,8 @@ func TestPollEdgeCasesRound12(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/"+pollID+"/votes", headers, nil, map[string]any{"choices": []int{0}})
 		require.NoError(t, err)
-		ctx.SetParam("id", pollID)
-		require.NoError(t, h.HandleVoteOnPollLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = pollID
+		requireStatus(t, http.StatusInternalServerError)(h.HandleVoteOnPollLift(ctx))
 	})
 
 	t.Run("buildPollVoteResponse poll missing", func(t *testing.T) {
@@ -354,10 +339,10 @@ func TestPollEdgeCasesRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/polls/missing/votes", nil, nil, nil)
 		require.NoError(t, err)
-		_, handled, err := h.buildPollVoteResponse(ctx, "missing", []int{0})
+		_, resp, err := h.buildPollVoteResponse(ctx, "missing", []int{0})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 
 	t.Run("createPollVoteNotification does not notify self", func(t *testing.T) {

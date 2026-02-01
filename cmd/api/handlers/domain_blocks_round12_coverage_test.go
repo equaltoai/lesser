@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -25,8 +25,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/domain_blocks", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetDomainBlocksLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetDomainBlocksLift(ctx))
 	})
 
 	t.Run("get_service_error_returns_500", func(t *testing.T) {
@@ -39,8 +38,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetDomainBlocksLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetDomainBlocksLift(ctx))
 	})
 
 	t.Run("create_parse_error_returns_400", func(t *testing.T) {
@@ -50,8 +48,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{RelationshipsSvc: relStub})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + writeToken}, nil, []byte("{"))
-		require.NoError(t, handler.HandleCreateDomainBlockLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateDomainBlockLift(ctx))
 	})
 
 	t.Run("create_unauthorized", func(t *testing.T) {
@@ -62,8 +59,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/domain_blocks", nil, nil, apimodels.CreateDomainBlockRequest{Domain: "example.com"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateDomainBlockLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleCreateDomainBlockLift(ctx))
 	})
 
 	t.Run("create_requires_domain", func(t *testing.T) {
@@ -74,8 +70,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.CreateDomainBlockRequest{Domain: ""})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateDomainBlockLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateDomainBlockLift(ctx))
 	})
 
 	t.Run("create_invalid_domain_double_dot", func(t *testing.T) {
@@ -86,8 +81,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.CreateDomainBlockRequest{Domain: "bad..domain"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateDomainBlockLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateDomainBlockLift(ctx))
 	})
 
 	t.Run("create_invalid_domain_prefix_dot", func(t *testing.T) {
@@ -98,8 +92,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.CreateDomainBlockRequest{Domain: ".bad"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateDomainBlockLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateDomainBlockLift(ctx))
 	})
 
 	t.Run("create_invalid_domain_suffix_dot", func(t *testing.T) {
@@ -110,8 +103,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.CreateDomainBlockRequest{Domain: "bad."})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateDomainBlockLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateDomainBlockLift(ctx))
 	})
 
 	t.Run("create_service_error_returns_500", func(t *testing.T) {
@@ -122,8 +114,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + writeToken}, nil, apimodels.CreateDomainBlockRequest{Domain: "example.com"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateDomainBlockLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateDomainBlockLift(ctx))
 	})
 
 	t.Run("get_clamps_limit_to_200", func(t *testing.T) {
@@ -138,10 +129,9 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + readToken}, map[string]string{"limit": "500"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetDomainBlocksLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetDomainBlocksLift(ctx))
 		require.Equal(t, 100, gotLimit)
-		require.Empty(t, ctx.Response.Headers["Link"])
+		require.Empty(t, resp.Headers["Link"])
 	})
 
 	t.Run("delete_missing_auth_returns_401", func(t *testing.T) {
@@ -152,8 +142,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/domain_blocks", nil, map[string]string{"domain": "example.com"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteDomainBlockLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleDeleteDomainBlockLift(ctx))
 	})
 
 	t.Run("delete_invalid_token_returns_401", func(t *testing.T) {
@@ -164,8 +153,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer not-a-real-jwt"}, map[string]string{"domain": "example.com"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteDomainBlockLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleDeleteDomainBlockLift(ctx))
 	})
 
 	t.Run("delete_insufficient_scope_returns_403", func(t *testing.T) {
@@ -176,8 +164,7 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/domain_blocks", map[string]string{"authorization": "Bearer " + readToken}, map[string]string{"domain": "example.com"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteDomainBlockLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleDeleteDomainBlockLift(ctx))
 	})
 
 	t.Run("delete_requires_domain_param", func(t *testing.T) {
@@ -188,7 +175,6 @@ func TestDomainBlocks_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/domain_blocks", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteDomainBlockLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteDomainBlockLift(ctx))
 	})
 }

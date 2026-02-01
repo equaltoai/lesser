@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -18,7 +18,7 @@ func TestTrendsHandlers(t *testing.T) {
 		trendingHashtags: []storagemodels.HashtagTrend{
 			{Name: "go", URL: cfg.BaseURL() + "/tags/go", UsageCount: 10, UniqueUsers: 5, FirstSeen: now.Add(-24 * time.Hour), LastUsed: now},
 		},
-	trendingStatuses: []storagemodels.StatusTrend{
+		trendingStatuses: []storagemodels.StatusTrend{
 			{ID: "s1", URL: cfg.BaseURL() + "/statuses/s1", AuthorID: cfg.ActorURL("alice"), Content: "status", PublishedAt: now.Add(-1 * time.Hour)},
 		},
 		trendingLinks: []storagemodels.LinkTrend{
@@ -33,39 +33,39 @@ func TestTrendsHandlers(t *testing.T) {
 
 	ctxTrends, err := round10NewLiftContext(http.MethodGet, "/api/v1/trends", nil, map[string]string{"limit": "5"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendsLift(ctxTrends))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendsLift(ctxTrends))
 
 	ctxStatuses, err := round10NewLiftContext(http.MethodGet, "/api/v1/trends/statuses", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendingStatusesLift(ctxStatuses))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendingStatusesLift(ctxStatuses))
 
 	ctxTags, err := round10NewLiftContext(http.MethodGet, "/api/v1/trends/tags", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendingTagsLift(ctxTags))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendingTagsLift(ctxTags))
 
 	ctxLinks, err := round10NewLiftContext(http.MethodGet, "/api/v1/trends/links", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendingLinksLift(ctxLinks))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendingLinksLift(ctxLinks))
 
 	ctxLinkTimeline, err := round10NewLiftContext(http.MethodGet, "/api/v1/timelines/link", nil, map[string]string{"url": linkURL}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetLinkTimelineLift(ctxLinkTimeline))
+	requireStatus(t, http.StatusOK)(handler.HandleGetLinkTimelineLift(ctxLinkTimeline))
 
 	ctxTrendsV2, err := round10NewLiftContext(http.MethodGet, "/api/v2/trends", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendsV2Lift(ctxTrendsV2))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendsV2Lift(ctxTrendsV2))
 
 	ctxTagsV2, err := round10NewLiftContext(http.MethodGet, "/api/v2/trends/tags", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendingTagsV2Lift(ctxTagsV2))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendingTagsV2Lift(ctxTagsV2))
 
 	ctxStatusesV2, err := round10NewLiftContext(http.MethodGet, "/api/v2/trends/statuses", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendingStatusesV2Lift(ctxStatusesV2))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendingStatusesV2Lift(ctxStatusesV2))
 
 	ctxLinksV2, err := round10NewLiftContext(http.MethodGet, "/api/v2/trends/links", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrendingLinksV2Lift(ctxLinksV2))
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrendingLinksV2Lift(ctxLinksV2))
 
 	require.Equal(t, "example.com", handler.extractProviderNameLift(linkURL))
 	require.Equal(t, "https://example.com", handler.extractProviderURLLift(linkURL))

@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -25,8 +26,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/markers", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetMarkersLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetMarkersLift(ctx))
 	})
 
 	t.Run("get markers insufficient scope", func(t *testing.T) {
@@ -37,8 +37,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetMarkersLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleGetMarkersLift(ctx))
 	})
 
 	t.Run("get markers service error", func(t *testing.T) {
@@ -53,8 +52,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetMarkersLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetMarkersLift(ctx))
 	})
 
 	t.Run("get markers success", func(t *testing.T) {
@@ -75,12 +73,12 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		}, map[string]string{"timeline[]": "home,notifications"}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetMarkersLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetMarkersLift(ctx))
 
-		resp := ctx.Response.Body.(apimodels.MarkersResponse)
-		require.NotNil(t, resp.Home)
-		require.NotNil(t, resp.Notifications)
+		var markers apimodels.MarkersResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &markers))
+		require.NotNil(t, markers.Home)
+		require.NotNil(t, markers.Notifications)
 	})
 
 	t.Run("save markers unauthorized", func(t *testing.T) {
@@ -90,8 +88,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleSaveMarkersLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleSaveMarkersLift(ctx))
 	})
 
 	t.Run("save markers invalid JSON body", func(t *testing.T) {
@@ -100,8 +97,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 			"Authorization": "Bearer " + writeToken,
 		}, nil, []byte("{"))
 
-		require.NoError(t, h.HandleSaveMarkersLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleSaveMarkersLift(ctx))
 	})
 
 	t.Run("save markers empty body returns bad request", func(t *testing.T) {
@@ -111,8 +107,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleSaveMarkersLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleSaveMarkersLift(ctx))
 	})
 
 	t.Run("save markers validation error for empty request", func(t *testing.T) {
@@ -122,8 +117,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		}, nil, map[string]any{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleSaveMarkersLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleSaveMarkersLift(ctx))
 	})
 
 	t.Run("save markers validation error for invalid timeline", func(t *testing.T) {
@@ -135,8 +129,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleSaveMarkersLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleSaveMarkersLift(ctx))
 	})
 
 	t.Run("save markers returns 500 when updated markers fetch fails", func(t *testing.T) {
@@ -161,8 +154,7 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleSaveMarkersLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleSaveMarkersLift(ctx))
 	})
 
 	t.Run("save markers success saves and returns updated markers", func(t *testing.T) {
@@ -203,13 +195,13 @@ func TestMarkersHandlersRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleSaveMarkersLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleSaveMarkersLift(ctx))
 		require.Equal(t, 4, savedVersions["home"])
 		require.Equal(t, 1, savedVersions["notifications"])
 
-		resp := ctx.Response.Body.(apimodels.MarkersResponse)
-		require.NotNil(t, resp.Home)
-		require.NotNil(t, resp.Notifications)
+		var markers apimodels.MarkersResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &markers))
+		require.NotNil(t, markers.Home)
+		require.NotNil(t, markers.Notifications)
 	})
 }

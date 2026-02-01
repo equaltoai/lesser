@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/base64"
@@ -23,7 +23,7 @@ func TestHandleAppRegistrationLift(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/json"}, nil, body)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleAppRegistrationLift(ctx))
+	requireStatus(t, http.StatusOK)(h.HandleAppRegistrationLift(ctx))
 }
 
 func TestHandleAppVerifyCredentialsLift(t *testing.T) {
@@ -38,10 +38,10 @@ func TestHandleAppVerifyCredentialsLift(t *testing.T) {
 	claimsHeader := map[string]string{"Authorization": "Bearer " + oauthToken}
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", claimsHeader, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleAppVerifyCredentialsLift(ctx))
+	requireStatus(t, http.StatusOK)(h.HandleAppVerifyCredentialsLift(ctx))
 
 	basic := base64.StdEncoding.EncodeToString([]byte("client-1:secret"))
 	ctxBasic, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{"Authorization": "Bearer " + basic}, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleAppVerifyCredentialsLift(ctxBasic))
+	requireStatus(t, http.StatusOK)(h.HandleAppVerifyCredentialsLift(ctxBasic))
 }

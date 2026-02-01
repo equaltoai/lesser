@@ -1,7 +1,7 @@
 // relationships_full.go - Complete service-based implementation of relationship endpoints
 // This implements Phase 4 with service layer integration
 
-package lift
+package handlers
 
 import (
 	"strings"
@@ -10,25 +10,28 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 // HandleFollowAccountFull follows an account using Relationships service
-func (h *Handler) HandleFollowAccountFull(ctx *lift.Context) error {
+func (h *Handler) HandleFollowAccountFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	var req models.FollowRequest
-	_ = ctx.ParseRequest(&req)
+	_ = common.ParseRequestWithFallback(ctx, &req)
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
-	result, err := h.registry.Relationships().Follow(ctx.Context, &relationships.FollowCommand{
+	result, err := h.registry.Relationships().Follow(ctx.Context(), &relationships.FollowCommand{
 		FollowerID:  claims.Username,
 		FollowingID: accountID,
 		ShowReblogs: req.Reblogs == nil || *req.Reblogs,
@@ -38,11 +41,11 @@ func (h *Handler) HandleFollowAccountFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleUnfollowAccountFull unfollows an account using Relationships service
-func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
+func (h *Handler) HandleUnfollowAccountFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -50,10 +53,13 @@ func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
-	result, err := h.registry.Relationships().Unfollow(ctx.Context, &relationships.UnfollowCommand{
+	result, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
 		FollowerID:  claims.Username,
 		FollowingID: accountID,
 	})
@@ -61,11 +67,11 @@ func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleBlockAccountFull blocks an account using Relationships service
-func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
+func (h *Handler) HandleBlockAccountFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -73,10 +79,13 @@ func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
-	result, err := h.registry.Relationships().Block(ctx.Context, &relationships.BlockCommand{
+	result, err := h.registry.Relationships().Block(ctx.Context(), &relationships.BlockCommand{
 		BlockerID: claims.Username,
 		BlockedID: accountID,
 	})
@@ -84,11 +93,11 @@ func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleUnblockAccountFull unblocks an account using Relationships service
-func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
+func (h *Handler) HandleUnblockAccountFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -96,10 +105,13 @@ func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
-	result, err := h.registry.Relationships().Unblock(ctx.Context, &relationships.UnblockCommand{
+	result, err := h.registry.Relationships().Unblock(ctx.Context(), &relationships.UnblockCommand{
 		BlockerID: claims.Username,
 		BlockedID: accountID,
 	})
@@ -107,25 +119,28 @@ func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleMuteAccountFull mutes an account using Relationships service
-func (h *Handler) HandleMuteAccountFull(ctx *lift.Context) error {
+func (h *Handler) HandleMuteAccountFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	var req models.MuteRequest
-	_ = ctx.ParseRequest(&req)
+	_ = common.ParseRequestWithFallback(ctx, &req)
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
-	result, err := h.registry.Relationships().Mute(ctx.Context, &relationships.MuteCommand{
+	result, err := h.registry.Relationships().Mute(ctx.Context(), &relationships.MuteCommand{
 		MuterID:           claims.Username,
 		MutedID:           accountID,
 		MuteNotifications: req.Notifications != nil && *req.Notifications,
@@ -134,11 +149,11 @@ func (h *Handler) HandleMuteAccountFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleUnmuteAccountFull unmutes an account using Relationships service
-func (h *Handler) HandleUnmuteAccountFull(ctx *lift.Context) error {
+func (h *Handler) HandleUnmuteAccountFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -146,10 +161,13 @@ func (h *Handler) HandleUnmuteAccountFull(ctx *lift.Context) error {
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
-	result, err := h.registry.Relationships().Unmute(ctx.Context, &relationships.UnmuteCommand{
+	result, err := h.registry.Relationships().Unmute(ctx.Context(), &relationships.UnmuteCommand{
 		MuterID: claims.Username,
 		MutedID: accountID,
 	})
@@ -157,17 +175,20 @@ func (h *Handler) HandleUnmuteAccountFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleGetRelationshipsFull gets relationships with multiple accounts using Relationships service
-func (h *Handler) HandleGetRelationshipsFull(ctx *lift.Context) error {
+func (h *Handler) HandleGetRelationshipsFull(ctx *apptheory.Context) (*apptheory.Response, error) {
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
-	accountIDsParam := ctx.Query("id")
+	accountIDsParam := queryValue(ctx, "id")
 	if err := common.ValidateRequiredParam("account_ids", accountIDsParam); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
@@ -177,7 +198,7 @@ func (h *Handler) HandleGetRelationshipsFull(ctx *lift.Context) error {
 		return common.RespondBadRequest(ctx, "invalid account ids")
 	}
 
-	result, err := h.registry.Relationships().GetRelationships(ctx.Context, &relationships.GetRelationshipsQuery{
+	result, err := h.registry.Relationships().GetRelationships(ctx.Context(), &relationships.GetRelationshipsQuery{
 		RequesterID: claims.Username,
 		TargetIDs:   accountIDs,
 	})
@@ -185,5 +206,5 @@ func (h *Handler) HandleGetRelationshipsFull(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
-	return ctx.JSON(result.Relationships)
+	return okJSON(result.Relationships)
 }

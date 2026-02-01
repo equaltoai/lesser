@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"errors"
@@ -30,11 +30,10 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 		require.Equal(t, "mapped", h.extractContentFromObject(map[string]any{"content": "mapped"}))
 		require.Equal(t, "", h.extractContentFromObject(map[string]any{"content": 123}))
 
-		// extractAuthHeaderForBoost fallback (Request.Headers nil but Request.Request.Headers populated)
+		// extractAuthHeaderForBoost: case-insensitive header lookup
 		ctx, err := round10NewLiftContext(http.MethodGet, "/x", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.Request.Headers = nil
-		ctx.Request.Request.Headers = map[string]string{"authorization": "Bearer token"}
+		ctx.Request.Headers = map[string][]string{"authorization": {"Bearer token"}}
 		require.Equal(t, "Bearer token", h.extractAuthHeaderForBoost(ctx))
 	})
 
@@ -44,14 +43,12 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 
 		ctxMissingID, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses//reblog", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleUnifiedBoostLift(ctxMissingID))
-		require.Equal(t, http.StatusBadRequest, ctxMissingID.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUnifiedBoostLift(ctxMissingID))
 
 		ctxUnauthed, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/reblog", nil, nil, nil)
 		require.NoError(t, err)
-		ctxUnauthed.SetParam("id", "123")
-		require.NoError(t, h.HandleUnifiedBoostLift(ctxUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthed.Response.StatusCode)
+		ctxUnauthed.Params["id"] = "123"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUnifiedBoostLift(ctxUnauthed))
 	})
 
 	t.Run("handle unified boost: parse fallback -> pure boost", func(t *testing.T) {
@@ -65,10 +62,9 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses/123/reblog", headers, nil, []byte(`{invalid}`))
-		ctx.SetParam("id", "123")
+		ctx.Params["id"] = "123"
 
-		require.NoError(t, h.HandleUnifiedBoostLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleUnifiedBoostLift(ctx))
 	})
 
 	t.Run("pure boost: create announce error", func(t *testing.T) {
@@ -84,10 +80,9 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/reblog", headers, nil, models.ReblogRequest{})
 		require.NoError(t, err)
-		ctx.SetParam("id", "123")
+		ctx.Params["id"] = "123"
 
-		require.NoError(t, h.HandleUnifiedBoostLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleUnifiedBoostLift(ctx))
 	})
 
 	t.Run("quote boost: unlisted/private/direct + quoted actor lookup fallback", func(t *testing.T) {
@@ -122,17 +117,15 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 		for _, vis := range []string{"unlisted", "private", "direct"} {
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{Comment: &comment, Visibility: vis})
 			require.NoError(t, err)
-			ctx.SetParam("id", "status-1")
-			require.NoError(t, h.HandleUnifiedBoostLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			ctx.Params["id"] = "status-1"
+			requireStatus(t, http.StatusOK)(h.HandleUnifiedBoostLift(ctx))
 		}
 
 		empty := ""
 		ctxEmpty, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{Comment: &empty})
 		require.NoError(t, err)
-		ctxEmpty.SetParam("id", "status-1")
-		require.NoError(t, h.HandleUnifiedBoostLift(ctxEmpty))
-		require.Equal(t, http.StatusOK, ctxEmpty.Response.StatusCode)
+		ctxEmpty.Params["id"] = "status-1"
+		requireStatus(t, http.StatusOK)(h.HandleUnifiedBoostLift(ctxEmpty))
 	})
 
 	t.Run("undo handler: missing id + auth errors", func(t *testing.T) {
@@ -140,28 +133,24 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 
 		ctxMissingID, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses//unreblog", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleUndoUnifiedBoostLift(ctxMissingID))
-		require.Equal(t, http.StatusBadRequest, ctxMissingID.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUndoUnifiedBoostLift(ctxMissingID))
 
 		ctxMissingAuth, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/unreblog", nil, nil, nil)
 		require.NoError(t, err)
-		ctxMissingAuth.SetParam("id", "123")
-		require.NoError(t, h.HandleUndoUnifiedBoostLift(ctxMissingAuth))
-		require.Equal(t, http.StatusUnauthorized, ctxMissingAuth.Response.StatusCode)
+		ctxMissingAuth.Params["id"] = "123"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUndoUnifiedBoostLift(ctxMissingAuth))
 
 		ctxInvalidAuth, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/unreblog", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 		require.NoError(t, err)
-		ctxInvalidAuth.SetParam("id", "123")
-		require.NoError(t, h.HandleUndoUnifiedBoostLift(ctxInvalidAuth))
-		require.Equal(t, http.StatusUnauthorized, ctxInvalidAuth.Response.StatusCode)
+		ctxInvalidAuth.Params["id"] = "123"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUndoUnifiedBoostLift(ctxInvalidAuth))
 
 		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctxScope, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/123/unreblog", headers, nil, nil)
 		require.NoError(t, err)
-		ctxScope.SetParam("id", "123")
-		require.NoError(t, h.HandleUndoUnifiedBoostLift(ctxScope))
-		require.Equal(t, http.StatusForbidden, ctxScope.Response.StatusCode)
+		ctxScope.Params["id"] = "123"
+		requireStatus(t, http.StatusForbidden)(h.HandleUndoUnifiedBoostLift(ctxScope))
 	})
 
 	t.Run("undo handler: idempotent when nothing to undo", func(t *testing.T) {
@@ -180,10 +169,9 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/unreblog", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "status-1")
+		ctx.Params["id"] = "status-1"
 
-		require.NoError(t, h.HandleUndoUnifiedBoostLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleUndoUnifiedBoostLift(ctx))
 	})
 
 	t.Run("undo: traditional delete + create activity errors", func(t *testing.T) {

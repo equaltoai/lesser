@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -17,9 +17,9 @@ func TestStatusFilteringHelpers_Round12(t *testing.T) {
 	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, makeRegistry(&NotesServiceStub{}, &AccountsServiceStub{}))
 
 	actor := &activitypub.Actor{
-		BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
-		PreferredUsername:  "alice",
-		Name:               "alice",
+		BaseObject:                activitypub.BaseObject{ID: cfg.ActorURL("alice"), Type: "Person"},
+		PreferredUsername:         "alice",
+		Name:                      "alice",
 		ManuallyApprovesFollowers: false,
 	}
 

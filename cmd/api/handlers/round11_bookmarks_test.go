@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -49,18 +49,16 @@ func TestBookmarksHandlers(t *testing.T) {
 
 	ctxBookmark, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/bookmark", headers, nil, nil)
 	require.NoError(t, err)
-	ctxBookmark.SetParam("id", "s1")
-	require.NoError(t, handler.HandleBookmarkLift(ctxBookmark))
-	require.Equal(t, http.StatusOK, ctxBookmark.Response.StatusCode)
+	ctxBookmark.Params["id"] = "s1"
+	requireStatus(t, http.StatusOK)(handler.HandleBookmarkLift(ctxBookmark))
 
 	ctxUnbookmark, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unbookmark", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnbookmark.SetParam("id", "s1")
-	require.NoError(t, handler.HandleUnbookmarkLift(ctxUnbookmark))
-	require.Equal(t, http.StatusOK, ctxUnbookmark.Response.StatusCode)
+	ctxUnbookmark.Params["id"] = "s1"
+	requireStatus(t, http.StatusOK)(handler.HandleUnbookmarkLift(ctxUnbookmark))
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/bookmarks", headers, map[string]string{"limit": "1"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetBookmarksLift(ctxList))
-	require.Contains(t, ctxList.Response.Headers["Link"], "max_id=")
+	respList := requireStatus(t, http.StatusOK)(handler.HandleGetBookmarksLift(ctxList))
+	require.Contains(t, firstStringValue(respList.Headers, "link"), "max_id=")
 }

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/json"
@@ -97,33 +97,29 @@ func TestReputationHandlersRound12(t *testing.T) {
 	t.Run("get reputation requires actor id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetReputationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetReputationLift(ctx))
 	})
 
 	t.Run("get reputation unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/alice", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", "alice")
-		require.NoError(t, h.HandleGetReputationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = "alice"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetReputationLift(ctx))
 	})
 
 	t.Run("get reputation success (username normalized)", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/alice", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", "alice")
-		require.NoError(t, h.HandleGetReputationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = "alice"
+		requireStatus(t, http.StatusOK)(h.HandleGetReputationLift(ctx))
 	})
 
 	t.Run("get reputation invalid token", func(t *testing.T) {
 		badHeaders := map[string]string{"Authorization": "Bearer bad-token"}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/alice", badHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", aliceActorID)
-		require.NoError(t, h.HandleGetReputationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = aliceActorID
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetReputationLift(ctx))
 	})
 
 	t.Run("get reputation returns 500 when signer misconfigured", func(t *testing.T) {
@@ -133,9 +129,8 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/alice", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", aliceActorID)
-		require.NoError(t, badHandler.HandleGetReputationLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = aliceActorID
+		requireStatus(t, http.StatusInternalServerError)(badHandler.HandleGetReputationLift(ctx))
 	})
 
 	t.Run("get reputation internal error returns 500", func(t *testing.T) {
@@ -146,9 +141,8 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/alice", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", aliceActorID)
-		require.NoError(t, errHandler.HandleGetReputationLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = aliceActorID
+		requireStatus(t, http.StatusInternalServerError)(errHandler.HandleGetReputationLift(ctx))
 	})
 
 	t.Run("get reputation actor not found returns 404", func(t *testing.T) {
@@ -159,25 +153,22 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/reputation/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", "missing")
-		require.NoError(t, notFoundHandler.HandleGetReputationLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(notFoundHandler.HandleGetReputationLift(ctx))
 	})
 
 	t.Run("export reputation sets content type", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/export", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleExportReputationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers["Content-Type"], "application/ld+json")
+		resp := requireStatus(t, http.StatusOK)(h.HandleExportReputationLift(ctx))
+		require.Contains(t, firstStringValue(resp.Headers, "content-type"), "application/ld+json")
 	})
 
 	t.Run("export reputation accepts lowercase authorization header", func(t *testing.T) {
 		lowerHeaders := map[string]string{"authorization": "Bearer " + userToken}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/export", lowerHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleExportReputationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleExportReputationLift(ctx))
 	})
 
 	t.Run("export reputation returns 500 on storage failure", func(t *testing.T) {
@@ -186,85 +177,73 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/export", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, failHandler.HandleExportReputationLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(failHandler.HandleExportReputationLift(ctx))
 	})
 
 	t.Run("export reputation unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/export", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleExportReputationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleExportReputationLift(ctx))
 	})
 
 	t.Run("export reputation invalid token", func(t *testing.T) {
 		badHeaders := map[string]string{"Authorization": "Bearer bad-token"}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/export", badHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleExportReputationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleExportReputationLift(ctx))
 	})
 
 	t.Run("import reputation invalid request body", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/reputation/import", headers, nil, []byte("{"))
-		require.NoError(t, h.HandleImportReputationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleImportReputationLift(ctx))
 	})
 
 	t.Run("import reputation missing body returns bad request", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/import", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleImportReputationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleImportReputationLift(ctx))
 	})
 
 	t.Run("import reputation unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/import", nil, nil, apimodels.ReputationDocumentRequest{Document: "{}"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleImportReputationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleImportReputationLift(ctx))
 	})
 
 	t.Run("import reputation invalid token", func(t *testing.T) {
 		badHeaders := map[string]string{"Authorization": "Bearer bad-token"}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/import", badHeaders, nil, apimodels.ReputationDocumentRequest{Document: "{}"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleImportReputationLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleImportReputationLift(ctx))
 	})
 
 	t.Run("import reputation invalid document returns result", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/import", headers, nil, apimodels.ReputationDocumentRequest{Document: "{"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleImportReputationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleImportReputationLift(ctx))
 	})
 
 	t.Run("create vouch rejects missing to", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/vouches", headers, nil, apimodels.CreateVouchRequest{Confidence: 0.5})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("create vouch rejects invalid confidence", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/vouches", headers, nil, apimodels.CreateVouchRequest{To: "https://example.com/users/bob", Confidence: 2})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("create vouch unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/vouches", nil, nil, apimodels.CreateVouchRequest{To: "https://example.com/users/bob", Confidence: 0.5})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("create vouch invalid request body", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/vouches", headers, nil, []byte("{"))
-		require.NoError(t, h.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("create vouch monthly limit reached", func(t *testing.T) {
@@ -286,8 +265,7 @@ func TestReputationHandlersRound12(t *testing.T) {
 		limitHandler, _, _ := round11NewHandler(t, cfg, limitState)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/vouches", headers, nil, apimodels.CreateVouchRequest{To: "https://example.com/users/bob", Confidence: 0.5})
 		require.NoError(t, err)
-		require.NoError(t, limitHandler.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(limitHandler.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("create vouch insufficient reputation", func(t *testing.T) {
@@ -301,15 +279,13 @@ func TestReputationHandlersRound12(t *testing.T) {
 		lowHandler, _, _ := round11NewHandler(t, cfg, lowState)
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/vouches", headers, nil, apimodels.CreateVouchRequest{To: "https://example.com/users/bob", Confidence: 0.5})
 		require.NoError(t, err)
-		require.NoError(t, lowHandler.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(lowHandler.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("create vouch success", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/vouches", headers, nil, apimodels.CreateVouchRequest{To: "https://example.com/users/bob", Confidence: 0.5})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusCreated)(h.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("create vouch storage failure returns 500", func(t *testing.T) {
@@ -323,31 +299,27 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/vouches", headers, nil, apimodels.CreateVouchRequest{To: "https://example.com/users/bob", Confidence: 0.5})
 		require.NoError(t, err)
-		require.NoError(t, failHandler.HandleCreateVouchLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(failHandler.HandleCreateVouchLift(ctx))
 	})
 
 	t.Run("get vouches requires actor id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/vouches/", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetVouchesLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetVouchesLift(ctx))
 	})
 
 	t.Run("get vouches unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/vouches/alice", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", "alice")
-		require.NoError(t, h.HandleGetVouchesLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = "alice"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetVouchesLift(ctx))
 	})
 
 	t.Run("get vouches lists items", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/vouches/alice", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", "alice")
-		require.NoError(t, h.HandleGetVouchesLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = "alice"
+		requireStatus(t, http.StatusOK)(h.HandleGetVouchesLift(ctx))
 	})
 
 	t.Run("get vouches scan failure returns 500", func(t *testing.T) {
@@ -358,17 +330,15 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/vouches/alice", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("actor_id", "alice")
-		require.NoError(t, failHandler.HandleGetVouchesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["actor_id"] = "alice"
+		requireStatus(t, http.StatusInternalServerError)(failHandler.HandleGetVouchesLift(ctx))
 	})
 
 	t.Run("revoke vouch forbids non-voucher", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/vouches/"+vouch.ID, headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("vouch_id", vouch.ID)
-		require.NoError(t, h.HandleRevokeVouchLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		ctx.Params["vouch_id"] = vouch.ID
+		requireStatus(t, http.StatusForbidden)(h.HandleRevokeVouchLift(ctx))
 	})
 
 	t.Run("revoke vouch success", func(t *testing.T) {
@@ -376,24 +346,21 @@ func TestReputationHandlersRound12(t *testing.T) {
 		bobHeaders := map[string]string{"Authorization": "Bearer " + bobToken}
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/vouches/"+vouch.ID, bobHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("vouch_id", vouch.ID)
-		require.NoError(t, h.HandleRevokeVouchLift(ctx))
-		require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+		ctx.Params["vouch_id"] = vouch.ID
+		requireStatus(t, http.StatusNoContent)(h.HandleRevokeVouchLift(ctx))
 	})
 
 	t.Run("revoke vouch requires vouch id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/vouches/", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleRevokeVouchLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleRevokeVouchLift(ctx))
 	})
 
 	t.Run("revoke vouch unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/vouches/"+vouch.ID, nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("vouch_id", vouch.ID)
-		require.NoError(t, h.HandleRevokeVouchLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["vouch_id"] = vouch.ID
+		requireStatus(t, http.StatusUnauthorized)(h.HandleRevokeVouchLift(ctx))
 	})
 
 	t.Run("revoke vouch missing returns 500", func(t *testing.T) {
@@ -401,29 +368,25 @@ func TestReputationHandlersRound12(t *testing.T) {
 		bobHeaders := map[string]string{"Authorization": "Bearer " + bobToken}
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/vouches/missing", bobHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("vouch_id", "missing")
-		require.NoError(t, h.HandleRevokeVouchLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["vouch_id"] = "missing"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleRevokeVouchLift(ctx))
 	})
 
 	t.Run("verify reputation invalid body", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/reputation/verify", headers, nil, []byte("{"))
-		require.NoError(t, h.HandleVerifyReputationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleVerifyReputationLift(ctx))
 	})
 
 	t.Run("verify reputation missing body returns bad request", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/verify", headers, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleVerifyReputationLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleVerifyReputationLift(ctx))
 	})
 
 	t.Run("verify reputation invalid document returns result", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/verify", headers, nil, apimodels.ReputationDocumentRequest{Document: "{"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleVerifyReputationLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleVerifyReputationLift(ctx))
 	})
 
 	t.Run("verify reputation returns 500 when signer misconfigured", func(t *testing.T) {
@@ -433,15 +396,13 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/reputation/verify", nil, nil, apimodels.ReputationDocumentRequest{Document: "{"})
 		require.NoError(t, err)
-		require.NoError(t, badHandler.HandleVerifyReputationLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(badHandler.HandleVerifyReputationLift(ctx))
 	})
 
 	t.Run("get reputation keys", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/.well-known/reputation-keys", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetReputationKeysLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleGetReputationKeysLift(ctx))
 	})
 
 	t.Run("get reputation keys returns 500 when signer misconfigured", func(t *testing.T) {
@@ -451,8 +412,7 @@ func TestReputationHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/.well-known/reputation-keys", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, badHandler.HandleGetReputationKeysLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(badHandler.HandleGetReputationKeysLift(ctx))
 	})
 }
 

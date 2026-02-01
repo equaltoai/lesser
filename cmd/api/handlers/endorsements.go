@@ -1,25 +1,28 @@
-package lift
+package handlers
 
 import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetEndorsementsLift handles GET /api/v1/endorsements
 // Returns accounts that the user has endorsed (pinned to their profile)
-func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetEndorsementsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
 	username, err := h.authenticateUser(ctx, []string{"read:accounts", auth.ScopeRead})
 	if err != nil {
-		return err // Error response already set by authenticateUser
+		if isInsufficientScopeError(err) {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Get pinned accounts using Accounts service
-	result, err := h.registry.Accounts().GetAccountPins(ctx.Context, &accounts.GetAccountPinsQuery{
+	result, err := h.registry.Accounts().GetAccountPins(ctx.Context(), &accounts.GetAccountPinsQuery{
 		Username: username,
 	})
 	if err != nil {
@@ -38,5 +41,5 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 		apiAccounts = append(apiAccounts, apiAccount)
 	}
 
-	return ctx.JSON(apiAccounts)
+	return okJSON(apiAccounts)
 }

@@ -1,62 +1,47 @@
-package lift
+package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetPushSubscriptionLift handles GET /api/v1/push/subscription
-func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
-	// Extract token
+func (h *Handler) HandleGetPushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check push scope
 	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeRead) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "insufficient scope",
-		})
+		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 
 	// Get user's push subscriptions
-	subscriptions, err := h.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context, claims.Username)
+	subscriptions, err := h.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get push subscriptions",
 			zap.String("username", claims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to get push subscription",
-		})
+		return common.RespondInternalServerError(ctx, "failed to get push subscription")
 	}
 
 	// If no subscriptions, return empty response
 	if err := common.ValidateSliceNotEmpty("subscriptions", subscriptions); err != nil {
-		ctx.Status(http.StatusOK)
-		return ctx.JSON(map[string]any{
+		return okJSON(map[string]any{
 			"id":       "",
 			"endpoint": "",
 			"alerts": map[string]bool{
@@ -78,7 +63,7 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 
 	// Get VAPID public key
 	var serverKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		serverKey = ""
@@ -110,80 +95,47 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 		ServerKey: serverKey,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleCreatePushSubscriptionLift handles POST /api/v1/push/subscription
-func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
-	// Extract token
+func (h *Handler) HandleCreatePushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check push scope
 	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "insufficient scope",
-		})
+		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 
 	// Parse request
 	var req models.PushSubscriptionRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-				ctx.Status(http.StatusBadRequest)
-				return ctx.JSON(map[string]string{
-					"error": "invalid request body",
-				})
-			}
-		} else {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid request body",
-			})
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate request using centralized validation
 	if err := common.ValidateRequiredParam("endpoint", req.Subscription.Endpoint); err != nil {
-		ctx.Status(http.StatusUnprocessableEntity)
-		return ctx.JSON(map[string]string{
-			"error": "endpoint is required",
-		})
+		return apptheory.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "endpoint is required"})
 	}
 	if err := common.ValidateRequiredParam("p256dh", req.Subscription.Keys.P256dh); err != nil {
-		ctx.Status(http.StatusUnprocessableEntity)
-		return ctx.JSON(map[string]string{
-			"error": "keys.p256dh is required",
-		})
+		return apptheory.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "keys.p256dh is required"})
 	}
 	if err := common.ValidateRequiredParam("auth", req.Subscription.Keys.Auth); err != nil {
-		ctx.Status(http.StatusUnprocessableEntity)
-		return ctx.JSON(map[string]string{
-			"error": "keys.auth is required",
-		})
+		return apptheory.JSON(http.StatusUnprocessableEntity, map[string]string{"error": "keys.auth is required"})
 	}
 
 	// Delete any existing subscriptions for this user
-	if err := h.repos.PushSubscription().DeleteAllPushSubscriptions(ctx.Context, claims.Username); err != nil {
+	if err := h.repos.PushSubscription().DeleteAllPushSubscriptions(ctx.Context(), claims.Username); err != nil {
 		h.logger.Warn("failed to delete existing push subscriptions",
 			zap.String("username", claims.Username),
 			zap.Error(err))
@@ -210,19 +162,16 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 		Policy: "all", // Default policy
 	}
 
-	if err := h.repos.PushSubscription().CreatePushSubscription(ctx.Context, claims.Username, subscription); err != nil {
+	if err := h.repos.PushSubscription().CreatePushSubscription(ctx.Context(), claims.Username, subscription); err != nil {
 		h.logger.Error("failed to create push subscription",
 			zap.String("username", claims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to create push subscription",
-		})
+		return common.RespondInternalServerError(ctx, "failed to create push subscription")
 	}
 
 	// Get VAPID public key
 	var serverKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		serverKey = ""
@@ -243,65 +192,38 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 		ServerKey: serverKey,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleUpdatePushSubscriptionLift handles PUT /api/v1/push/subscription
-func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
-	// Extract token
+func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check push scope
 	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "insufficient scope",
-		})
+		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 
 	// Parse request (only data field for updates)
 	var req models.PushSubscriptionRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-				ctx.Status(http.StatusBadRequest)
-				return ctx.JSON(map[string]string{
-					"error": "invalid request body",
-				})
-			}
-		} else {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid request body",
-			})
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Get existing subscription
-	subscriptions, err := h.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context, claims.Username)
+	subscriptions, err := h.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context(), claims.Username)
 	if err != nil || len(subscriptions) == 0 {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{
-			"error": "push subscription not found",
-		})
+		return apptheory.JSON(http.StatusNotFound, map[string]string{"error": "push subscription not found"})
 	}
 
 	sub := subscriptions[0]
@@ -320,20 +242,17 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 		AdminReport:   req.Data.AdminReport,
 	}
 
-	if err := h.repos.PushSubscription().UpdatePushSubscription(ctx.Context, claims.Username, sub.ID, alerts); err != nil {
+	if err := h.repos.PushSubscription().UpdatePushSubscription(ctx.Context(), claims.Username, sub.ID, alerts); err != nil {
 		h.logger.Error("failed to update push subscription",
 			zap.String("username", claims.Username),
 			zap.String("subscription_id", sub.ID),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to update push subscription",
-		})
+		return common.RespondInternalServerError(ctx, "failed to update push subscription")
 	}
 
 	// Get VAPID public key
 	var serverKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		serverKey = ""
@@ -354,50 +273,35 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 		ServerKey: serverKey,
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // HandleDeletePushSubscriptionLift handles DELETE /api/v1/push/subscription
-func (h *Handler) HandleDeletePushSubscriptionLift(ctx *lift.Context) error {
-	// Extract token
+func (h *Handler) HandleDeletePushSubscriptionLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondUnauthorized(ctx, "invalid token")
 	}
 
 	// Check push scope
 	if !claims.HasScope("push") && !claims.HasScope(auth.ScopeWrite) {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{
-			"error": "insufficient scope",
-		})
+		return common.RespondForbidden(ctx, "insufficient scope")
 	}
 
 	// Delete all push subscriptions for this user
-	if err := h.repos.PushSubscription().DeleteAllPushSubscriptions(ctx.Context, claims.Username); err != nil {
+	if err := h.repos.PushSubscription().DeleteAllPushSubscriptions(ctx.Context(), claims.Username); err != nil {
 		h.logger.Error("failed to delete push subscriptions",
 			zap.String("username", claims.Username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to delete push subscription",
-		})
+		return common.RespondInternalServerError(ctx, "failed to delete push subscription")
 	}
 
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return noContent(), nil
 }

@@ -1,9 +1,7 @@
-package lift
+package handlers
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -13,22 +11,25 @@ import (
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandlePinStatusLift handles POST /api/v1/statuses/:id/pin
-func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandlePinStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get status ID from path
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
-	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request.Path != "" {
 		// Extract id from path like /api/v1/statuses/test-status-123/pin
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[3] == pathComponentStatuses && parts[5] == "pin" {
@@ -37,14 +38,14 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateMastodonStatusID(statusID); err != nil {
-		return err
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Get the user's actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
+	actor, err := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return apperrors.InternalWithCause(err, "internal server error")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -55,12 +56,12 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the object to verify ownership
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context(), objectID)
 	if err != nil {
 		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
-			return apperrors.NotFound("status").WithInternalError(err)
+			return common.RespondNotFound(ctx, "status")
 		}
-		return apperrors.InternalWithCause(err, "internal server error")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Check if the user owns this object
@@ -75,7 +76,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	if attributedTo != actor.ID {
-		return apperrors.Forbidden("you can only pin your own statuses")
+		return common.RespondForbidden(ctx, "you can only pin your own statuses")
 	}
 
 	// Create pin
@@ -86,30 +87,36 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Store the pin
-	if err := h.repos.Social().CreateStatusPin(ctx.Context, pin); err != nil {
-		return err
+	if err := h.repos.Social().CreateStatusPin(ctx.Context(), pin); err != nil {
+		if apperrors.HasCode(err, apperrors.CodeAlreadyExists) || apperrors.HasCode(err, apperrors.CodeConflict) {
+			return nil, err
+		}
+		h.logger.Error("failed to pin status", zap.Error(err))
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return the status with pinned flag set to true
 	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Pinned = true
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(status)
+	return okJSON(status)
 }
 
 // HandleUnpinStatusLift handles POST /api/v1/statuses/:id/unpin
-func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleUnpinStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get status ID from path
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
-	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request.Path != "" {
 		// Extract id from path like /api/v1/statuses/test-status-123/unpin
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[3] == pathComponentStatuses && parts[5] == "unpin" {
@@ -118,7 +125,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateMastodonStatusID(statusID); err != nil {
-		return err
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -129,43 +136,45 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Delete the pin
-	if err := h.repos.Social().DeleteStatusPin(ctx.Context, claims.Username, objectID); err != nil {
+	if err := h.repos.Social().DeleteStatusPin(ctx.Context(), claims.Username, objectID); err != nil {
 		h.logger.Error("failed to unpin status", zap.Error(err))
-		return apperrors.InternalWithCause(err, "internal server error")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get the object to return status information
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context(), objectID)
 	if err != nil {
 		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
-			return apperrors.NotFound("status").WithInternalError(err)
+			return common.RespondNotFound(ctx, "status")
 		}
-		return apperrors.InternalWithCause(err, "internal server error")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get actor
-	actor, _ := h.repos.Actor().GetActor(ctx.Context, claims.Username)
+	actor, _ := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
 
 	// Return the status with pinned flag set to false
 	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Pinned = false
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(status)
+	return okJSON(status)
 }
 
 // HandleMuteConversationLift handles POST /api/v1/statuses/:id/mute
-func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
+func (h *Handler) HandleMuteConversationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
 	claims, err := h.authenticateMuteRequest(ctx)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get and validate status ID
 	statusID, err := h.extractMuteStatusID(ctx)
 	if err != nil {
-		return err
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Normalize status ID to object ID
@@ -177,7 +186,8 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 
 	// Create and store conversation mute
 	if err := h.createConversationMute(ctx, claims.Username, conversationID, duration); err != nil {
-		return err
+		h.logger.Error("failed to mute conversation", zap.Error(err))
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Build and return muted status response
@@ -185,12 +195,12 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 }
 
 // authenticateMuteRequest authenticates the mute request
-func (h *Handler) authenticateMuteRequest(ctx *lift.Context) (*auth.Claims, error) {
+func (h *Handler) authenticateMuteRequest(ctx *apptheory.Context) (*auth.Claims, error) {
 	return h.authenticateWithScope(ctx, auth.ScopeWrite)
 }
 
 // extractMuteStatusID extracts the status ID from the request
-func (h *Handler) extractMuteStatusID(ctx *lift.Context) (string, error) {
+func (h *Handler) extractMuteStatusID(ctx *apptheory.Context) (string, error) {
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
@@ -206,10 +216,7 @@ func (h *Handler) extractMuteStatusID(ctx *lift.Context) (string, error) {
 }
 
 // extractStatusIDFromPath extracts status ID from the request path
-func (h *Handler) extractStatusIDFromPath(ctx *lift.Context, action string) string {
-	if ctx.Request == nil {
-		return ""
-	}
+func (h *Handler) extractStatusIDFromPath(ctx *apptheory.Context, action string) string {
 	if err := common.ValidateRequiredParam("request_path", ctx.Request.Path); err != nil {
 		return ""
 	}
@@ -231,30 +238,18 @@ func (h *Handler) normalizeMuteObjectID(statusID string) string {
 }
 
 // parseMuteDuration parses the mute duration from request body
-func (h *Handler) parseMuteDuration(ctx *lift.Context) int {
-	if ctx.Request == nil || ctx.Request.Body == nil {
-		return 0
-	}
-	if err := common.ValidateSliceNotEmpty("requestBody", ctx.Request.Body); err != nil {
-		return 0
-	}
-
+func (h *Handler) parseMuteDuration(ctx *apptheory.Context) int {
 	var params struct {
 		Duration int `json:"duration"` // Duration in seconds (0 = indefinite)
 	}
 
-	if err := ctx.ParseRequest(&params); err != nil {
-		// Fallback for test environments
-		if err := json.Unmarshal(ctx.Request.Body, &params); err != nil {
-			h.logger.Warn("failed to parse request body for mute duration", zap.Error(err))
-		}
-	}
+	_ = common.ParseRequestWithFallback(ctx, &params)
 
 	return params.Duration
 }
 
 // createConversationMute creates and stores the conversation mute
-func (h *Handler) createConversationMute(ctx *lift.Context, username, conversationID string, duration int) error {
+func (h *Handler) createConversationMute(ctx *apptheory.Context, username, conversationID string, duration int) error {
 	mute := &storage.ConversationMute{
 		Username:       username,
 		ConversationID: conversationID,
@@ -275,8 +270,8 @@ func (h *Handler) createConversationMute(ctx *lift.Context, username, conversati
 }
 
 // storeMuteWithRetry stores the mute with retry for existing mutes
-func (h *Handler) storeMuteWithRetry(ctx *lift.Context, username, conversationID string, mute *storage.ConversationMute) error {
-	err := h.repos.Conversation().CreateConversationMute(ctx.Context, mute)
+func (h *Handler) storeMuteWithRetry(ctx *apptheory.Context, username, conversationID string, mute *storage.ConversationMute) error {
+	err := h.repos.Conversation().CreateConversationMute(ctx.Context(), mute)
 	if err == nil {
 		return nil
 	}
@@ -291,14 +286,14 @@ func (h *Handler) storeMuteWithRetry(ctx *lift.Context, username, conversationID
 }
 
 // replaceMute replaces an existing mute
-func (h *Handler) replaceMute(ctx *lift.Context, username, conversationID string, mute *storage.ConversationMute) error {
+func (h *Handler) replaceMute(ctx *apptheory.Context, username, conversationID string, mute *storage.ConversationMute) error {
 	// Delete existing mute
-	if err := h.repos.Conversation().DeleteConversationMute(ctx.Context, username, conversationID); err != nil {
+	if err := h.repos.Conversation().DeleteConversationMute(ctx.Context(), username, conversationID); err != nil {
 		h.logger.Warn("failed to delete existing conversation mute", zap.Error(err))
 	}
 
 	// Create new mute
-	if err := h.repos.Conversation().CreateConversationMute(ctx.Context, mute); err != nil {
+	if err := h.repos.Conversation().CreateConversationMute(ctx.Context(), mute); err != nil {
 		h.logger.Error("failed to recreate conversation mute", zap.Error(err))
 		return apperrors.InternalWithCause(err, "internal server error")
 	}
@@ -307,39 +302,41 @@ func (h *Handler) replaceMute(ctx *lift.Context, username, conversationID string
 }
 
 // buildMutedStatusResponse builds the response for the muted status
-func (h *Handler) buildMutedStatusResponse(ctx *lift.Context, objectID, username string) error {
+func (h *Handler) buildMutedStatusResponse(ctx *apptheory.Context, objectID, username string) (*apptheory.Response, error) {
 	// Get the object
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context(), objectID)
 	if err != nil {
 		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
-			return apperrors.NotFound("status").WithInternalError(err)
+			return common.RespondNotFound(ctx, "status")
 		}
-		return apperrors.InternalWithCause(err, "internal server error")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get actor
-	actor, _ := h.repos.Actor().GetActor(ctx.Context, username)
+	actor, _ := h.repos.Actor().GetActor(ctx.Context(), username)
 
 	// Return the status with muted flag set to true
 	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Muted = true
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(status)
+	return okJSON(status)
 }
 
 // HandleUnmuteConversationLift handles POST /api/v1/statuses/:id/unmute
-func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
+func (h *Handler) HandleUnmuteConversationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get status ID from path
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
-	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request.Path != "" {
 		// Extract id from path like /api/v1/statuses/test-status-123/unmute
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[3] == pathComponentStatuses && parts[5] == "unmute" {
@@ -348,7 +345,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateMastodonStatusID(statusID); err != nil {
-		return err
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Normalize the status ID to a full URL if it's not already
@@ -362,27 +359,26 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	conversationID := objectID
 
 	// Delete the mute
-	if err := h.repos.Conversation().DeleteConversationMute(ctx.Context, claims.Username, conversationID); err != nil {
+	if err := h.repos.Conversation().DeleteConversationMute(ctx.Context(), claims.Username, conversationID); err != nil {
 		h.logger.Error("failed to unmute conversation", zap.Error(err))
-		return apperrors.InternalWithCause(err, "internal server error")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get the object to return status information
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	object, err := h.repos.Object().GetObject(ctx.Context(), objectID)
 	if err != nil {
 		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeActorNotFound) {
-			return apperrors.NotFound("status").WithInternalError(err)
+			return common.RespondNotFound(ctx, "status")
 		}
-		return apperrors.InternalWithCause(err, "internal server error")
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get actor
-	actor, _ := h.repos.Actor().GetActor(ctx.Context, claims.Username)
+	actor, _ := h.repos.Actor().GetActor(ctx.Context(), claims.Username)
 
 	// Return the status with muted flag set to false
 	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Muted = false
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(status)
+	return okJSON(status)
 }

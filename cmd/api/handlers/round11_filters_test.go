@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -30,12 +30,12 @@ func TestFiltersHandlers(t *testing.T) {
 
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetFiltersLift(ctxGet))
+	requireStatus(t, http.StatusOK)(h.HandleGetFiltersLift(ctxGet))
 
 	ctxGetOne, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
 	require.NoError(t, err)
-	ctxGetOne.SetParam("id", "filter-1")
-	require.NoError(t, h.HandleGetFilterLift(ctxGetOne))
+	ctxGetOne.Params["id"] = "filter-1"
+	requireStatus(t, http.StatusOK)(h.HandleGetFilterLift(ctxGetOne))
 
 	createBody := models.CreateFilterRequest{
 		Title:              "My Filter",
@@ -45,7 +45,7 @@ func TestFiltersHandlers(t *testing.T) {
 	}
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters", map[string]string{"Authorization": "Bearer " + writeToken}, nil, createBody)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleCreateFilterLift(ctxCreate))
+	requireStatus(t, http.StatusOK)(h.HandleCreateFilterLift(ctxCreate))
 
 	updateBody := map[string]any{
 		"title":         "Updated",
@@ -58,46 +58,46 @@ func TestFiltersHandlers(t *testing.T) {
 		},
 	}
 	ctxUpdate := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v2/filters/filter-1", map[string]string{"Authorization": "Bearer " + writeToken}, nil, round11JSONBody(t, updateBody))
-	ctxUpdate.SetParam("id", "filter-1")
-	require.NoError(t, h.HandleUpdateFilterLift(ctxUpdate))
+	ctxUpdate.Params["id"] = "filter-1"
+	requireStatus(t, http.StatusOK)(h.HandleUpdateFilterLift(ctxUpdate))
 
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 	require.NoError(t, err)
-	ctxDelete.SetParam("id", "filter-1")
-	require.NoError(t, h.HandleDeleteFilterLift(ctxDelete))
+	ctxDelete.Params["id"] = "filter-1"
+	requireStatus(t, http.StatusOK)(h.HandleDeleteFilterLift(ctxDelete))
 
 	ctxKeywords, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1/keywords", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
 	require.NoError(t, err)
-	ctxKeywords.SetParam("filter_id", "filter-1")
-	require.NoError(t, h.HandleGetFilterKeywordsLift(ctxKeywords))
+	ctxKeywords.Params["filter_id"] = "filter-1"
+	requireStatus(t, http.StatusOK)(h.HandleGetFilterKeywordsLift(ctxKeywords))
 
 	ctxStatuses, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1/statuses", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
 	require.NoError(t, err)
-	ctxStatuses.SetParam("filter_id", "filter-1")
-	require.NoError(t, h.HandleGetFilterStatusesLift(ctxStatuses))
+	ctxStatuses.Params["filter_id"] = "filter-1"
+	requireStatus(t, http.StatusOK)(h.HandleGetFilterStatusesLift(ctxStatuses))
 
 	ctxAddKeyword := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v2/filters/filter-1/keywords", map[string]string{"Authorization": "Bearer " + writeToken}, nil, round11JSONBody(t, models.AddFilterKeywordRequest{Keyword: "spam", WholeWord: true}))
-	ctxAddKeyword.SetParam("filter_id", "filter-1")
-	require.NoError(t, h.HandleAddFilterKeywordLift(ctxAddKeyword))
+	ctxAddKeyword.Params["filter_id"] = "filter-1"
+	requireStatus(t, http.StatusOK)(h.HandleAddFilterKeywordLift(ctxAddKeyword))
 
 	ctxDelKeyword, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1/keywords/kw-1", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 	require.NoError(t, err)
-	ctxDelKeyword.SetParam("filter_id", "filter-1")
-	ctxDelKeyword.SetParam("keyword_id", "kw-1")
-	require.NoError(t, h.HandleDeleteFilterKeywordLift(ctxDelKeyword))
+	ctxDelKeyword.Params["filter_id"] = "filter-1"
+	ctxDelKeyword.Params["keyword_id"] = "kw-1"
+	requireStatus(t, http.StatusOK)(h.HandleDeleteFilterKeywordLift(ctxDelKeyword))
 
 	ctxAddStatus := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v2/filters/filter-1/statuses", map[string]string{"Authorization": "Bearer " + writeToken}, nil, round11JSONBody(t, models.AddFilterStatusRequest{StatusID: "status-1"}))
-	ctxAddStatus.SetParam("filter_id", "filter-1")
-	require.NoError(t, h.HandleAddFilterStatusLift(ctxAddStatus))
+	ctxAddStatus.Params["filter_id"] = "filter-1"
+	requireStatus(t, http.StatusOK)(h.HandleAddFilterStatusLift(ctxAddStatus))
 
 	ctxDelStatus, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1/statuses/status-1", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 	require.NoError(t, err)
-	ctxDelStatus.SetParam("filter_id", "filter-1")
-	ctxDelStatus.SetParam("status_id", "status-1")
-	require.NoError(t, h.HandleDeleteFilterStatusLift(ctxDelStatus))
+	ctxDelStatus.Params["filter_id"] = "filter-1"
+	ctxDelStatus.Params["status_id"] = "status-1"
+	requireStatus(t, http.StatusOK)(h.HandleDeleteFilterStatusLift(ctxDelStatus))
 
 	ctxTest := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v2/filters/test", map[string]string{"Authorization": "Bearer " + readToken}, nil, round11JSONBody(t, models.TestFilterRequest{Content: "hello"}))
-	require.NoError(t, h.HandleTestFilterLift(ctxTest))
+	requireStatus(t, http.StatusOK)(h.HandleTestFilterLift(ctxTest))
 }
 
 func TestFilterHelpers(t *testing.T) {

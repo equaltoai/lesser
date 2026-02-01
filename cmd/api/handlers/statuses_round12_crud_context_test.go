@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -104,21 +104,19 @@ func TestStatusesCRUDAndContext_Round12(t *testing.T) {
 
 	t.Run("create_invalid_json", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, []byte("{"))
-		require.NoError(t, handler.HandleCreateStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateStatusLift(ctx))
 	})
 
 	t.Run("create_invalid_params", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, &models.CreateStatusRequest{Status: ""})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateStatusLift(ctx))
 	})
 
 	t.Run("create_missing_token", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", nil, nil, &models.CreateStatusRequest{Status: "hi"})
 		require.NoError(t, err)
-		require.Error(t, handler.HandleCreateStatusLift(ctx))
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleCreateStatusLift(ctx))
 	})
 
 	t.Run("create_notes_error", func(t *testing.T) {
@@ -130,72 +128,64 @@ func TestStatusesCRUDAndContext_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, &models.CreateStatusRequest{Status: "hi"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateStatusLift(ctx))
 	})
 
 	t.Run("create_success", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, &models.CreateStatusRequest{Status: "hi"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateStatusLift(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusCreated)(handler.HandleCreateStatusLift(ctx))
 	})
 
 	t.Run("delete_invalid_id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteStatusLift(ctx))
 	})
 
 	t.Run("delete_missing_token", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.Error(t, handler.HandleDeleteStatusLift(ctx))
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleDeleteStatusLift(ctx))
 	})
 
 	t.Run("delete_get_not_found", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/missing", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
-		require.NoError(t, handler.HandleDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteStatusLift(ctx))
 	})
 
 	t.Run("delete_delete_not_found", func(t *testing.T) {
 		notesByID["missing"] = &storagemodels.Status{StatusID: "missing", AuthorUsername: "alice", AuthorID: cfg.ActorURL("alice"), Content: "hi"}
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/missing", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
-		require.NoError(t, handler.HandleDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteStatusLift(ctx))
 	})
 
 	t.Run("delete_forbidden", func(t *testing.T) {
 		notesByID["forbidden"] = &storagemodels.Status{StatusID: "forbidden", AuthorUsername: "alice", AuthorID: cfg.ActorURL("alice"), Content: "hi"}
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/forbidden", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "forbidden")
-		require.NoError(t, handler.HandleDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		ctx.Params["id"] = "forbidden"
+		requireStatus(t, http.StatusForbidden)(handler.HandleDeleteStatusLift(ctx))
 	})
 
 	t.Run("delete_internal_error", func(t *testing.T) {
 		notesByID["boom"] = &storagemodels.Status{StatusID: "boom", AuthorUsername: "alice", AuthorID: cfg.ActorURL("alice"), Content: "hi"}
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/boom", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "boom")
-		require.NoError(t, handler.HandleDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "boom"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleDeleteStatusLift(ctx))
 	})
 
 	t.Run("delete_success", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/statuses/s1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "s1")
-		require.NoError(t, handler.HandleDeleteStatusLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "s1"
+		requireStatus(t, http.StatusOK)(handler.HandleDeleteStatusLift(ctx))
 	})
 
 	t.Run("context_descendants_and_helpers", func(t *testing.T) {
@@ -207,13 +197,11 @@ func TestStatusesCRUDAndContext_Round12(t *testing.T) {
 		}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/parent/context", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "parent")
-		require.NoError(t, handler.HandleGetStatusContextLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "parent"
+		requireStatus(t, http.StatusOK)(handler.HandleGetStatusContextLift(ctx))
 
 		require.NotNil(t, handler.loadStatusWithActor(context.Background(), "s1"))
 	})
 }
 
 func ptrString(s string) *string { return &s }
-

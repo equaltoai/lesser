@@ -1,5 +1,5 @@
 // Package lift implements error handlers for the API Lambda function.
-package lift
+package handlers
 
 import (
 	stdErrors "errors"

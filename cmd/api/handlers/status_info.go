@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -12,12 +12,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetStatusSourceLift handles GET /api/v1/statuses/:id/source
-func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetStatusSourceLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract status ID from URL parameter
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
@@ -35,7 +35,7 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 	statusID = strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
 
 	// Get the note using Notes service
-	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	result, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
 	if err != nil {
 		return common.RespondNotFound(ctx, "status not found")
 	}
@@ -62,11 +62,11 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 		SpoilerText: spoilerText,
 	}
 
-	return ctx.JSON(source)
+	return okJSON(source)
 }
 
 // HandleGetStatusHistoryLift handles GET /api/v1/statuses/:id/history
-func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetStatusHistoryLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract and validate status ID
 	statusID, err := h.extractStatusIDForHistory(ctx)
 	if err != nil {
@@ -92,11 +92,11 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 	// Build history response
 	edits := h.buildHistoryResponse(currentObject, actor, histories)
 
-	return ctx.JSON(edits)
+	return okJSON(edits)
 }
 
 // extractStatusIDForHistory extracts and validates the status ID parameter
-func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
+func (h *Handler) extractStatusIDForHistory(ctx *apptheory.Context) (string, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return "", err
@@ -105,7 +105,7 @@ func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
 }
 
 // performOptionalHistoryAuth performs authentication for history endpoints if required
-func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, _ string) {
+func (h *Handler) performOptionalHistoryAuth(ctx *apptheory.Context, _ string) {
 	// If public history is allowed, no auth is needed
 	if h.cfg.AllowPublicStatusHistory {
 		return
@@ -123,10 +123,10 @@ func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, _ string) {
 }
 
 // extractHistoryAuthHeader extracts the authorization header
-func (h *Handler) extractHistoryAuthHeader(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
+func (h *Handler) extractHistoryAuthHeader(ctx *apptheory.Context) string {
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 	return authHeader
 }
@@ -141,12 +141,12 @@ func (h *Handler) normalizeStatusIDForHistory(statusID string) string {
 }
 
 // fetchObjectForHistory fetches the current object
-func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any, error) {
+func (h *Handler) fetchObjectForHistory(ctx *apptheory.Context, objectID string) (any, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
 
 	// Get the note using Notes service
-	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	result, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any
 }
 
 // getHistoryAuthorActor gets the author actor for the status
-func (h *Handler) getHistoryAuthorActor(ctx *lift.Context, currentObject any) *activitypub.Actor {
+func (h *Handler) getHistoryAuthorActor(ctx *apptheory.Context, currentObject any) *activitypub.Actor {
 	attributedTo := h.extractAttributedTo(currentObject)
 	if err := common.ValidateRequiredParam("attributedTo", attributedTo); err != nil {
 		return nil
@@ -164,7 +164,7 @@ func (h *Handler) getHistoryAuthorActor(ctx *lift.Context, currentObject any) *a
 	parts := strings.Split(attributedTo, "/")
 	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		username := parts[len(parts)-1]
-		result, _ := h.registry.Accounts().GetAccount(ctx.Context, username)
+		result, _ := h.registry.Accounts().GetAccount(ctx.Context(), username)
 		if result != nil {
 			return result.Actor
 		}
@@ -186,12 +186,12 @@ func (h *Handler) extractAttributedTo(obj any) string {
 }
 
 // fetchEditHistory fetches the edit history for an object
-func (h *Handler) fetchEditHistory(ctx *lift.Context, objectID string) []*storage.UpdateHistory {
+func (h *Handler) fetchEditHistory(ctx *apptheory.Context, objectID string) []*storage.UpdateHistory {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
 
 	// Get update history using Notes service
-	result, err := h.registry.Notes().GetUpdateHistory(ctx.Context, &notes.GetUpdateHistoryQuery{
+	result, err := h.registry.Notes().GetUpdateHistory(ctx.Context(), &notes.GetUpdateHistoryQuery{
 		StatusID: statusID,
 		Limit:    100,
 	})

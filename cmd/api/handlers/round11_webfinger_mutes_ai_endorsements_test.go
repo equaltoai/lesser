@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -40,13 +41,12 @@ func TestWebFingerLift_SuccessAndParse(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleWebFingerLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	resp := requireStatus(t, http.StatusOK)(h.HandleWebFingerLift(ctx))
 
-	resp, ok := ctx.Response.Body.(WebFingerResponse)
-	require.True(t, ok)
-	require.Equal(t, "acct:alice@example.com", resp.Subject)
-	require.NotEmpty(t, resp.Links)
+	var body WebFingerResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "acct:alice@example.com", body.Subject)
+	require.NotEmpty(t, body.Links)
 
 	username, domain, parseErr := h.parseWebFingerResourceLift("acct:alice@example.com")
 	require.NoError(t, parseErr)
@@ -62,8 +62,7 @@ func TestWebFingerLift_MissingResource(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/.well-known/webfinger", nil, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleWebFingerLift(ctx))
-	require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusBadRequest)(h.HandleWebFingerLift(ctx))
 }
 
 func TestMutesLift_Flow(t *testing.T) {
@@ -107,21 +106,18 @@ func TestMutesLift_Flow(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/mute", headers, nil, apimodels.MuteRequest{})
 	require.NoError(t, err)
-	ctx.SetParam("id", "bob")
-	require.NoError(t, h.HandleMuteAccountLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	ctx.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleMuteAccountLift(ctx))
 
 	ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unmute", headers, nil, nil)
 	require.NoError(t, err)
-	ctx2.SetParam("id", "bob")
-	require.NoError(t, h.HandleUnmuteAccountLift(ctx2))
-	require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+	ctx2.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(h.HandleUnmuteAccountLift(ctx2))
 
 	ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/mutes", headers, map[string]string{"limit": "10"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetMutedAccountsLift(ctx3))
-	require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
-	require.Contains(t, ctx3.Response.Headers["Link"], "next-cursor")
+	resp3 := requireStatus(t, http.StatusOK)(h.HandleGetMutedAccountsLift(ctx3))
+	require.Contains(t, firstStringValue(resp3.Headers, "link"), "next-cursor")
 }
 
 func TestEndorsementsLift_Success(t *testing.T) {
@@ -147,8 +143,7 @@ func TestEndorsementsLift_Success(t *testing.T) {
 	}, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleGetEndorsementsLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleGetEndorsementsLift(ctx))
 }
 
 func TestAILift_Flows(t *testing.T) {
@@ -182,27 +177,23 @@ func TestAILift_Flows(t *testing.T) {
 		"Authorization": "Bearer " + token,
 	}, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("object_id", "obj-123")
-	require.NoError(t, h.HandleGetAIAnalysisLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	ctx.Params["object_id"] = "obj-123"
+	requireStatus(t, http.StatusOK)(h.HandleGetAIAnalysisLift(ctx))
 
 	moderationToken := round11SignAccessToken(t, cfg.JWTSecret, "mod", []string{"moderation"})
 	ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{
 		"Authorization": "Bearer " + moderationToken,
 	}, nil, map[string]any{"object_id": "obj-123", "object_type": "status"})
 	require.NoError(t, err)
-	require.NoError(t, h.HandleRequestAIAnalysisLift(ctx2))
-	require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleRequestAIAnalysisLift(ctx2))
 
 	ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/stats", nil, map[string]string{
 		"period": "day",
 	}, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetAIStatsLift(ctx3))
-	require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleGetAIStatsLift(ctx3))
 
 	ctx4, err := round10NewLiftContext(http.MethodGet, "/api/v1/ai/capabilities", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetAISummaryLift(ctx4))
-	require.Equal(t, http.StatusOK, ctx4.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleGetAISummaryLift(ctx4))
 }

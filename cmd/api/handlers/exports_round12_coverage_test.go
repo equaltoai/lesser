@@ -1,6 +1,7 @@
-package lift
+package handlers
 
 import (
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"os"
@@ -53,11 +54,10 @@ func TestExports_Round12_ListExports_TokenAuth(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", headers, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleListExportsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleListExportsLift(ctx))
 
-		jobs, ok := ctx.Response.Body.([]apimodels.ExportJob)
-		require.True(t, ok)
+		var jobs []apimodels.ExportJob
+		require.NoError(t, json.Unmarshal(resp.Body, &jobs))
 		require.Len(t, jobs, 2)
 		var sawFailed bool
 		var sawCompleted bool
@@ -73,22 +73,22 @@ func TestExports_Round12_ListExports_TokenAuth(t *testing.T) {
 		require.True(t, sawCompleted)
 	})
 
-	t.Run("ok_direct_header_fallback", func(t *testing.T) {
+	t.Run("ok_case_insensitive_header_key", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", headers, nil, nil)
 		require.NoError(t, err)
 
-		ctx.Request.Headers = nil
+		ctx.Request.Headers = map[string][]string{
+			"AUTHORIZATION": {"Bearer " + token},
+		}
 
-		require.NoError(t, handler.HandleListExportsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleListExportsLift(ctx))
 	})
 
 	t.Run("missing_header_unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleListExportsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleListExportsLift(ctx))
 	})
 }
 
@@ -106,16 +106,14 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", headers, nil, apimodels.ExportRequest{Type: ExportTypeFollowers, Format: "csv"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("invalid_body", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/exports", readHeaders, nil, []byte(`{invalid}`))
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("invalid_type", func(t *testing.T) {
@@ -124,8 +122,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, apimodels.ExportRequest{Type: "wat", Format: "csv"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("invalid_format", func(t *testing.T) {
@@ -134,8 +131,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, apimodels.ExportRequest{Type: ExportTypeFollowers, Format: "xml"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("csv_archive_not_allowed", func(t *testing.T) {
@@ -144,8 +140,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, apimodels.ExportRequest{Type: ExportTypeArchive, Format: "csv"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("invalid_date_range", func(t *testing.T) {
@@ -161,8 +156,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("conflict_existing_export", func(t *testing.T) {
@@ -183,8 +177,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, apimodels.ExportRequest{Type: ExportTypeFollowers, Format: "csv"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("rate_limit_after_existing_check_errors", func(t *testing.T) {
@@ -209,8 +202,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, apimodels.ExportRequest{Type: ExportTypeFollowers, Format: "csv"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusTooManyRequests, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusTooManyRequests)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("budget_limit_exceeded", func(t *testing.T) {
@@ -244,8 +236,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, apimodels.ExportRequest{Type: ExportTypeArchive, Format: "activitypub"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusPaymentRequired, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusPaymentRequired)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("create_export_fails", func(t *testing.T) {
@@ -257,8 +248,7 @@ func TestExports_Round12_CreateExport_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", readHeaders, nil, apimodels.ExportRequest{Type: ExportTypeFollowers, Format: "csv"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateExportLift(ctx))
 	})
 }
 
@@ -335,117 +325,105 @@ func TestExports_Round12_StatusAndDownload_Branches(t *testing.T) {
 	t.Run("status_unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-failed", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-failed")
+		ctx.Params["id"] = "exp-failed"
 
-		require.NoError(t, handler.HandleGetExportStatusLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetExportStatusLift(ctx))
 	})
 
 	t.Run("status_missing_id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/", headers, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetExportStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetExportStatusLift(ctx))
 	})
 
 	t.Run("status_not_found", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
+		ctx.Params["id"] = "missing"
 
-		require.NoError(t, handler.HandleGetExportStatusLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetExportStatusLift(ctx))
 	})
 
 	t.Run("status_forbidden", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-otheruser", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-otheruser")
+		ctx.Params["id"] = "exp-otheruser"
 
-		require.NoError(t, handler.HandleGetExportStatusLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleGetExportStatusLift(ctx))
 	})
 
 	t.Run("status_failed_includes_error", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-failed", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-failed")
+		ctx.Params["id"] = "exp-failed"
 
-		require.NoError(t, handler.HandleGetExportStatusLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetExportStatusLift(ctx))
 
-		job, ok := ctx.Response.Body.(apimodels.ExportJob)
-		require.True(t, ok)
+		var job apimodels.ExportJob
+		require.NoError(t, json.Unmarshal(resp.Body, &job))
 		require.NotNil(t, job.Error)
 	})
 
 	t.Run("download_not_ready", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-processing/download", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-processing")
+		ctx.Params["id"] = "exp-processing"
 
-		require.NoError(t, handler.HandleDownloadExportLift(ctx))
-		require.Equal(t, http.StatusConflict, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusConflict)(handler.HandleDownloadExportLift(ctx))
 	})
 
 	t.Run("download_missing_id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports//download", headers, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleDownloadExportLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDownloadExportLift(ctx))
 	})
 
 	t.Run("download_not_found", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/missing/download", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
+		ctx.Params["id"] = "missing"
 
-		require.NoError(t, handler.HandleDownloadExportLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleDownloadExportLift(ctx))
 	})
 
 	t.Run("download_forbidden", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-otheruser/download", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-otheruser")
+		ctx.Params["id"] = "exp-otheruser"
 
-		require.NoError(t, handler.HandleDownloadExportLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleDownloadExportLift(ctx))
 	})
 
 	t.Run("download_gone_missing_url", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-nourl/download", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-nourl")
+		ctx.Params["id"] = "exp-nourl"
 
-		require.NoError(t, handler.HandleDownloadExportLift(ctx))
-		require.Equal(t, http.StatusGone, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusGone)(handler.HandleDownloadExportLift(ctx))
 	})
 
 	t.Run("download_gone_expired", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-expired/download", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-expired")
+		ctx.Params["id"] = "exp-expired"
 
-		require.NoError(t, handler.HandleDownloadExportLift(ctx))
-		require.Equal(t, http.StatusGone, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusGone)(handler.HandleDownloadExportLift(ctx))
 	})
 
 	t.Run("download_success_no_expires_at", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports/exp-ready/download", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "exp-ready")
+		ctx.Params["id"] = "exp-ready"
 
-		require.NoError(t, handler.HandleDownloadExportLift(ctx))
-		require.Equal(t, http.StatusFound, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusFound)(handler.HandleDownloadExportLift(ctx))
 
-		resp, ok := ctx.Response.Body.(apimodels.ExportDownloadResponse)
-		require.True(t, ok)
-		require.Equal(t, "https://example.com/download2", resp.DownloadURL)
-		require.Nil(t, resp.ExpiresAt)
-		require.Equal(t, "https://example.com/download2", ctx.Get("Location"))
+		var download apimodels.ExportDownloadResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &download))
+		require.Equal(t, "https://example.com/download2", download.DownloadURL)
+		require.Nil(t, download.ExpiresAt)
+		require.Equal(t, []string{"https://example.com/download2"}, resp.Headers["location"])
 	})
 }
 
@@ -455,11 +433,13 @@ func TestExports_Round12_HelperBranches(t *testing.T) {
 
 	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
 
-	t.Run("extract_export_auth_header_direct_fallback", func(t *testing.T) {
+	t.Run("extract_export_auth_header_case_insensitive", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", map[string]string{"authorization": "Bearer " + token}, nil, nil)
 		require.NoError(t, err)
 
-		ctx.Request.Headers = nil
+		ctx.Request.Headers = map[string][]string{
+			"AUTHORIZATION": {"Bearer " + token},
+		}
 
 		require.Equal(t, "Bearer "+token, handler.extractExportAuthHeader(ctx))
 	})
@@ -468,41 +448,41 @@ func TestExports_Round12_HelperBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", nil, nil, nil)
 		require.NoError(t, err)
 
-		_, handled, err := handler.validateExportToken(ctx, "")
+		_, resp, err := handler.validateExportToken(ctx, "")
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 
 	t.Run("validate_export_params_missing_fields", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", nil, nil, nil)
 		require.NoError(t, err)
 
-		handled, err := handler.validateExportParams(ctx, &apimodels.ExportRequest{})
+		resp, err := handler.validateExportParams(ctx, &apimodels.ExportRequest{})
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("parse_export_request_missing_body", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", nil, nil, nil)
 		require.NoError(t, err)
 
-		ctx.Request = nil
+		ctx.Request.Body = nil
 
-		_, handled, err := handler.parseExportRequest(ctx)
+		_, resp, err := handler.parseExportRequest(ctx)
 		require.NoError(t, err)
-		require.True(t, handled)
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
 	t.Run("process_export_date_range_partial_blank", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", nil, nil, nil)
 		require.NoError(t, err)
 
-		dateRange, handled, err := handler.processExportDateRange(ctx, &apimodels.ExportDateRange{Start: "2025-01-01", End: ""})
+		dateRange, resp, err := handler.processExportDateRange(ctx, &apimodels.ExportDateRange{Start: "2025-01-01", End: ""})
 		require.NoError(t, err)
-		require.False(t, handled)
+		require.Nil(t, resp)
 		require.Nil(t, dateRange)
 	})
 
@@ -510,16 +490,14 @@ func TestExports_Round12_HelperBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/exports", map[string]string{"Authorization": "Bearer not-a-jwt"}, nil, apimodels.ExportRequest{Type: ExportTypeFollowers, Format: "csv"})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleCreateExportLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleCreateExportLift(ctx))
 	})
 
 	t.Run("list_exports_invalid_token", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", map[string]string{"Authorization": "Bearer not-a-jwt"}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleListExportsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleListExportsLift(ctx))
 	})
 }
 
@@ -539,8 +517,7 @@ func TestExports_Round12_ListExports_RepoError(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/exports", map[string]string{"Authorization": "Bearer " + token}, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, handler.HandleListExportsLift(ctx))
-	require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleListExportsLift(ctx))
 }
 
 func TestExports_Round12_QueueSQS_DateParseBranches(t *testing.T) {

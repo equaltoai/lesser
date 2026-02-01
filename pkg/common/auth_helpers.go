@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +45,7 @@ type AuthenticationResult struct {
 //   - Extract bearer token
 //   - Validate JWT token
 //   - Check required scopes
-func ExtractAndValidateAuth(ctx *lift.Context, requiredScope string, oauthService OAuthServiceInterface) *AuthenticationResult {
+func ExtractAndValidateAuth(ctx *apptheory.Context, requiredScope string, oauthService OAuthServiceInterface) *AuthenticationResult {
 
 	// Extract Authorization header with multiple fallback patterns
 	authHeader := ExtractAuthHeader(ctx)
@@ -92,7 +92,7 @@ func ExtractAndValidateAuth(ctx *lift.Context, requiredScope string, oauthServic
 
 // ExtractAndValidateAuthWithMultipleScopes validates authentication with multiple allowed scopes
 // This handles the pattern where either of several scopes is acceptable
-func ExtractAndValidateAuthWithMultipleScopes(ctx *lift.Context, allowedScopes []string, oauthService OAuthServiceInterface) *AuthenticationResult {
+func ExtractAndValidateAuthWithMultipleScopes(ctx *apptheory.Context, allowedScopes []string, oauthService OAuthServiceInterface) *AuthenticationResult {
 
 	// Extract Authorization header
 	authHeader := ExtractAuthHeader(ctx)
@@ -149,7 +149,7 @@ func ExtractAndValidateAuthWithMultipleScopes(ctx *lift.Context, allowedScopes [
 
 // ExtractOptionalAuth performs optional authentication (for public endpoints that benefit from auth)
 // This consolidates the pattern where auth is optional but used if present
-func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) *AuthenticationResult {
+func ExtractOptionalAuth(ctx *apptheory.Context, oauthService OAuthServiceInterface) *AuthenticationResult {
 
 	// Extract Authorization header
 	authHeader := ExtractAuthHeader(ctx)
@@ -207,33 +207,33 @@ func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) 
 
 // ExtractAuthHeader extracts Authorization header with multiple fallback patterns
 // This consolidates the various patterns found across the codebase
-func ExtractAuthHeader(ctx *lift.Context) string {
-	// Try primary method
-	authHeader := ctx.Header("Authorization")
-	if authHeader != "" {
-		return authHeader
+func ExtractAuthHeader(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
 	}
-
-	// Try lowercase variant
-	authHeader = ctx.Header("authorization")
-	if authHeader != "" {
-		return authHeader
+	if ctx.Request.Headers == nil {
+		return ""
 	}
-
-	// Try direct request access (fallback pattern)
-	if ctx.Request != nil && ctx.Request.Request != nil {
-		if headers := ctx.Request.Request.Headers; headers != nil {
-			authHeader = headers["Authorization"]
-			if authHeader != "" {
-				return authHeader
-			}
-			authHeader = headers["authorization"]
-			if authHeader != "" {
-				return authHeader
+	if values := ctx.Request.Headers["authorization"]; len(values) > 0 {
+		for _, value := range values {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				return value
 			}
 		}
 	}
 
+	for key, values := range ctx.Request.Headers {
+		if !strings.EqualFold(strings.TrimSpace(key), "authorization") {
+			continue
+		}
+		for _, value := range values {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				return value
+			}
+		}
+	}
 	return ""
 }
 

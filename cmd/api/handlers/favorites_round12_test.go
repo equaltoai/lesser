@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -24,8 +25,7 @@ func TestFavoritesRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/favourites", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetFavouritesLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetFavouritesLift(ctx))
 	})
 
 	t.Run("returns 500 when notes service missing", func(t *testing.T) {
@@ -35,8 +35,7 @@ func TestFavoritesRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetFavouritesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetFavouritesLift(ctx))
 	})
 
 	t.Run("returns 500 when service errors", func(t *testing.T) {
@@ -51,8 +50,7 @@ func TestFavoritesRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetFavouritesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetFavouritesLift(ctx))
 	})
 
 	t.Run("success caps limit and sets pagination headers", func(t *testing.T) {
@@ -82,10 +80,11 @@ func TestFavoritesRound12(t *testing.T) {
 		}, map[string]string{"limit": "100"}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetFavouritesLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Contains(t, ctx.Response.Headers["Link"], "max_id=next")
-		resp := ctx.Response.Body.([]*apimodels.Status)
-		require.Len(t, resp, 1)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetFavouritesLift(ctx))
+		require.Contains(t, resp.Headers["link"][0], "max_id=next")
+
+		var statuses []*apimodels.Status
+		require.NoError(t, json.Unmarshal(resp.Body, &statuses))
+		require.Len(t, statuses, 1)
 	})
 }

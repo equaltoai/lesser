@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -10,22 +10,23 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleAppRegistrationLift handles OAuth app registration requests
-func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
+func (h *Handler) HandleAppRegistrationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse and validate request
 	req, err := h.parseAppRegistrationRequest(ctx)
 	if err != nil {
-		return err
+		h.logger.Error("failed to parse app registration request", zap.Error(err))
+		return h.respondUnprocessableEntity(ctx, "invalid request body")
 	}
 
 	// Validate application parameters
 	redirectURIs, err := h.validateAppRegistrationParams(ctx, &req)
 	if err != nil {
-		return err
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
 
 	// Create OAuth client and return response
@@ -33,11 +34,11 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 }
 
 // HandleAppVerifyCredentialsLift verifies OAuth app credentials
-func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
+func (h *Handler) HandleAppVerifyCredentialsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
+		authHeader = headerValue(ctx, "authorization")
 	}
 
 	// This endpoint expects a Bearer token with app credentials
@@ -55,7 +56,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err == nil && claims.ClientID != "" {
 		// Valid access token, get the client
-		client, err := h.repos.Account().GetOAuthClient(ctx.Context, claims.ClientID)
+		client, err := h.repos.Account().GetOAuthClient(ctx.Context(), claims.ClientID)
 		if err != nil {
 			h.logger.Error("failed to get OAuth client", zap.Error(err))
 			return h.respondUnauthorized(ctx)
@@ -63,7 +64,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 
 		// Get VAPID public key
 		var vapidKey string
-		vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+		vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
 		if err != nil {
 			h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 			vapidKey = ""
@@ -80,7 +81,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 			VapidKey:    vapidKey,
 		}
 
-		return ctx.JSON(resp)
+		return okJSON(resp)
 	}
 
 	// Try to parse as basic auth (client_id:client_secret)
@@ -98,18 +99,18 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	clientSecret := parts[1]
 
 	// Verify client credentials
-	if err := oauthSvc.ValidateClient(ctx.Context, clientID, clientSecret); err != nil {
+	if err := oauthSvc.ValidateClient(ctx.Context(), clientID, clientSecret); err != nil {
 		return common.RespondUnauthorized(ctx, "invalid credentials")
 	}
 
-	client, err := h.repos.Account().GetOAuthClient(ctx.Context, clientID)
+	client, err := h.repos.Account().GetOAuthClient(ctx.Context(), clientID)
 	if err != nil {
 		return common.RespondUnauthorized(ctx, "invalid credentials")
 	}
 
 	// Get VAPID public key
 	var vapidKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
 	if err != nil {
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		vapidKey = ""
@@ -126,18 +127,18 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 		VapidKey:    vapidKey,
 	}
 
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // Helper functions for Lift implementation
 
 // parseAppRegistrationRequest parses the incoming request based on content type
-func (h *Handler) parseAppRegistrationRequest(ctx *lift.Context) (models.AppRegistrationRequest, error) {
+func (h *Handler) parseAppRegistrationRequest(ctx *apptheory.Context) (models.AppRegistrationRequest, error) {
 
 	// Get and normalize content type
-	contentType := ctx.Header("Content-Type")
+	contentType := headerValue(ctx, "Content-Type")
 	if contentType == "" {
-		contentType = ctx.Header("content-type")
+		contentType = headerValue(ctx, "content-type")
 	}
 	contentTypeLower := strings.ToLower(contentType)
 
@@ -154,7 +155,7 @@ func (h *Handler) parseAppRegistrationRequest(ctx *lift.Context) (models.AppRegi
 	if strings.Contains(contentTypeLower, "application/json") {
 		// Parse as JSON
 		var req models.AppRegistrationRequest
-		if err := ctx.ParseRequest(&req); err != nil {
+		if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 			h.logger.Error("failed to parse JSON request", zap.Error(err), zap.String("body", body))
 			return models.AppRegistrationRequest{}, err
 		}
@@ -198,7 +199,7 @@ func (h *Handler) parseFormURLEncodedRequest(body string) (models.AppRegistratio
 }
 
 // parseFallbackRequest attempts to parse request as form data or JSON
-func (h *Handler) parseFallbackRequest(ctx *lift.Context, body string) (models.AppRegistrationRequest, error) {
+func (h *Handler) parseFallbackRequest(ctx *apptheory.Context, body string) (models.AppRegistrationRequest, error) {
 	// First, try to parse as form data
 	params, formErr := common.ParseFormURLEncoded(body)
 	if formErr == nil && (params["client_name"] != "" || len(params) > 0) {
@@ -210,7 +211,7 @@ func (h *Handler) parseFallbackRequest(ctx *lift.Context, body string) (models.A
 
 	// Try JSON as last resort
 	var req models.AppRegistrationRequest
-	if jsonErr := ctx.ParseRequest(&req); jsonErr == nil && req.ClientName != "" {
+	if jsonErr := common.ParseRequestWithFallback(ctx, &req); jsonErr == nil && req.ClientName != "" {
 		h.logger.Info("parsed as JSON (fallback)",
 			zap.String("detected_content_type", "application/json"))
 		return req, nil
@@ -243,7 +244,7 @@ func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRe
 }
 
 // validateAppRegistrationParams validates the parsed request parameters
-func (h *Handler) validateAppRegistrationParams(ctx *lift.Context, req *models.AppRegistrationRequest) ([]string, error) {
+func (h *Handler) validateAppRegistrationParams(ctx *apptheory.Context, req *models.AppRegistrationRequest) ([]string, error) {
 	// Log the parsed request for debugging
 	h.logger.Info("app registration request",
 		zap.String("client_name", req.ClientName),
@@ -260,7 +261,7 @@ func (h *Handler) validateAppRegistrationParams(ctx *lift.Context, req *models.A
 	}
 	if err := common.ValidateApplicationParams(params); err != nil {
 		h.logger.Info("application validation failed", zap.Error(err))
-		return nil, h.respondUnprocessableEntity(ctx, err.Error())
+		return nil, err
 	}
 
 	// Validate required parameters
@@ -273,27 +274,27 @@ func (h *Handler) validateAppRegistrationParams(ctx *lift.Context, req *models.A
 }
 
 // validateRequiredAppParams validates required application parameters
-func (h *Handler) validateRequiredAppParams(ctx *lift.Context, req *models.AppRegistrationRequest) error {
+func (h *Handler) validateRequiredAppParams(_ *apptheory.Context, req *models.AppRegistrationRequest) error {
 	if err := common.ValidateRequiredParam("client_name", req.ClientName); err != nil {
 		h.logger.Info("validation failed: client_name is required")
-		return h.respondUnprocessableEntity(ctx, err.Error())
+		return err
 	}
 
 	if err := common.ValidateRequiredParam("redirect_uris", req.RedirectURIs); err != nil {
 		h.logger.Info("validation failed: redirect_uris is required")
-		return h.respondUnprocessableEntity(ctx, err.Error())
+		return err
 	}
 
 	return nil
 }
 
 // parseAndValidateRedirectURIs parses and validates redirect URIs
-func (h *Handler) parseAndValidateRedirectURIs(ctx *lift.Context, redirectURIString string) ([]string, error) {
+func (h *Handler) parseAndValidateRedirectURIs(_ *apptheory.Context, redirectURIString string) ([]string, error) {
 	// Parse redirect URIs (can be space or newline separated)
 	redirectURIs := strings.Fields(redirectURIString)
 	if err := common.ValidateSliceNotEmpty("redirect_uris", redirectURIs); err != nil {
 		h.logger.Info("validation failed: at least one redirect_uri is required")
-		return nil, h.respondUnprocessableEntity(ctx, "at least one redirect_uri is required")
+		return nil, errors.New("at least one redirect_uri is required")
 	}
 
 	h.logger.Info("parsed redirect URIs",
@@ -302,7 +303,7 @@ func (h *Handler) parseAndValidateRedirectURIs(ctx *lift.Context, redirectURIStr
 
 	// Validate each redirect URI
 	for _, uri := range redirectURIs {
-		if err := h.validateSingleRedirectURI(ctx, uri); err != nil {
+		if err := h.validateSingleRedirectURI(nil, uri); err != nil {
 			return nil, err
 		}
 	}
@@ -311,7 +312,7 @@ func (h *Handler) parseAndValidateRedirectURIs(ctx *lift.Context, redirectURIStr
 }
 
 // validateSingleRedirectURI validates a single redirect URI
-func (h *Handler) validateSingleRedirectURI(ctx *lift.Context, uri string) error {
+func (h *Handler) validateSingleRedirectURI(_ *apptheory.Context, uri string) error {
 	if err := common.ValidateRequiredParam("uri", uri); err != nil {
 		return nil // Skip empty URIs
 	}
@@ -325,14 +326,14 @@ func (h *Handler) validateSingleRedirectURI(ctx *lift.Context, uri string) error
 	if !strings.Contains(uri, ":") {
 		h.logger.Info("validation failed: invalid redirect_uri format",
 			zap.String("uri", uri))
-		return h.respondUnprocessableEntity(ctx, invalidRedirectURIFormat().Error())
+		return invalidRedirectURIFormat()
 	}
 
 	return nil
 }
 
 // createOAuthClientAndRespond creates OAuth client and returns response
-func (h *Handler) createOAuthClientAndRespond(ctx *lift.Context, req *models.AppRegistrationRequest, redirectURIs []string) error {
+func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *models.AppRegistrationRequest, redirectURIs []string) (*apptheory.Response, error) {
 	// Parse scopes
 	scopes := h.parseScopes(req.Scopes)
 
@@ -355,7 +356,7 @@ func (h *Handler) createOAuthClientAndRespond(ctx *lift.Context, req *models.App
 		zap.Strings("scopes", client.Scopes),
 		zap.String("owner_id", ownerID))
 
-	if err := h.repos.Account().CreateOAuthClient(ctx.Context, client); err != nil {
+	if err := h.repos.Account().CreateOAuthClient(ctx.Context(), client); err != nil {
 		h.logger.Error("failed to create OAuth client", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
@@ -377,7 +378,7 @@ func (h *Handler) createOAuthClientAndRespond(ctx *lift.Context, req *models.App
 	h.logger.Info("returning app registration response",
 		zap.String("client_id", resp.ClientID))
 
-	return ctx.JSON(resp)
+	return okJSON(resp)
 }
 
 // parseScopes parses the scopes string into a slice

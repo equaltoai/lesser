@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -11,8 +12,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
-	liftframework "github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
@@ -31,8 +32,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleRegistrationLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleRegistrationLift(ctx))
 	})
 
 	t.Run("service_errors_are_mapped", func(t *testing.T) {
@@ -65,8 +65,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				require.NoError(t, h.HandleRegistrationLift(ctx))
-				require.Equal(t, tt.wantStatus, ctx.Response.StatusCode)
+				requireStatus(t, tt.wantStatus)(h.HandleRegistrationLift(ctx))
 			})
 		}
 	})
@@ -100,8 +99,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleRegistrationLift(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusCreated)(h.HandleRegistrationLift(ctx))
 
 		require.NotNil(t, gotCmd)
 		require.Equal(t, "alice", gotCmd.Username)
@@ -112,10 +110,11 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		require.Equal(t, "hello", gotCmd.Reason)
 		require.Equal(t, "public", gotCmd.DefaultPostingVisibility)
 
-		resp := ctx.Response.Body.(apimodels.AccountRegistrationResponse)
-		require.Equal(t, cfg.BaseURL()+"/users/alice", resp.ID)
-		require.Equal(t, "alice", resp.Username)
-		require.True(t, resp.Created)
+		var regResp apimodels.AccountRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &regResp))
+		require.Equal(t, cfg.BaseURL()+"/users/alice", regResp.ID)
+		require.Equal(t, "alice", regResp.Username)
+		require.True(t, regResp.Created)
 	})
 
 	t.Run("validateRegistrationRequestLift_allows_empty_visibility", func(t *testing.T) {
@@ -138,7 +137,8 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.Error(t, h.HandleVerifyCredentialsLift(ctx))
+		_, err = h.HandleVerifyCredentialsLift(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("nil_registry_returns_500", func(t *testing.T) {
@@ -147,8 +147,7 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", authHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("service_error_returns_500", func(t *testing.T) {
@@ -163,8 +162,7 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", authHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleVerifyCredentialsLift(ctx))
 	})
 
 	t.Run("success_returns_200", func(t *testing.T) {
@@ -185,9 +183,15 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", authHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleVerifyCredentialsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Equal(t, account, ctx.Response.Body)
+		resp := requireStatus(t, http.StatusOK)(h.HandleVerifyCredentialsLift(ctx))
+
+		var got storage.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &got))
+		require.NotNil(t, got.User)
+		require.Equal(t, "alice", got.User.Username)
+		require.NotNil(t, got.Actor)
+		require.Equal(t, cfg.BaseURL()+"/users/alice", got.Actor.ID)
+		require.Equal(t, "alice", got.Actor.PreferredUsername)
 	})
 }
 
@@ -200,8 +204,7 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPatch, "/api/v1/accounts/update_credentials", nil, nil, []byte("{"))
 
-		require.NoError(t, h.HandleUpdateCredentialsLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUpdateCredentialsLift(ctx))
 	})
 
 	t.Run("invalid_params_returns_400", func(t *testing.T) {
@@ -212,8 +215,7 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdateCredentialsLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUpdateCredentialsLift(ctx))
 	})
 
 	t.Run("missing_token_returns_error", func(t *testing.T) {
@@ -224,7 +226,8 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.Error(t, h.HandleUpdateCredentialsLift(ctx))
+		_, err = h.HandleUpdateCredentialsLift(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("service_error_returns_500", func(t *testing.T) {
@@ -241,8 +244,7 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdateCredentialsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateCredentialsLift(ctx))
 	})
 
 	t.Run("success_returns_200", func(t *testing.T) {
@@ -266,9 +268,14 @@ func TestAccountsRound12_HandleUpdateCredentialsLift(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdateCredentialsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Equal(t, account, ctx.Response.Body)
+		resp := requireStatus(t, http.StatusOK)(h.HandleUpdateCredentialsLift(ctx))
+		var got storage.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &got))
+		require.NotNil(t, got.User)
+		require.Equal(t, "alice", got.User.Username)
+		require.NotNil(t, got.Actor)
+		require.Equal(t, cfg.BaseURL()+"/users/alice", got.Actor.ID)
+		require.Equal(t, "alice", got.Actor.PreferredUsername)
 	})
 }
 
@@ -280,10 +287,9 @@ func TestAccountsRound12_AccountHandlers_ErrorBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/x", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", strings.Repeat("a", 501))
+		ctx.Params["id"] = strings.Repeat("a", 501)
 
-		require.NoError(t, h.HandleGetAccountLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetAccountLift(ctx))
 	})
 
 	t.Run("HandleGetAccountLift_not_found_and_internal", func(t *testing.T) {
@@ -308,10 +314,9 @@ func TestAccountsRound12_AccountHandlers_ErrorBranches(t *testing.T) {
 
 				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice", nil, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "alice")
+				ctx.Params["id"] = "alice"
 
-				require.NoError(t, h.HandleGetAccountLift(ctx))
-				require.Equal(t, tt.wantStatus, ctx.Response.StatusCode)
+				requireStatus(t, tt.wantStatus)(h.HandleGetAccountLift(ctx))
 			})
 		}
 	})
@@ -323,8 +328,7 @@ func TestAccountsRound12_AccountHandlers_ErrorBranches(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/lookup", nil, map[string]string{"acct": ""}, nil)
 			require.NoError(t, err)
 
-			require.NoError(t, h.HandleAccountLookupLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleAccountLookupLift(ctx))
 		})
 
 		t.Run("not_found_and_internal", func(t *testing.T) {
@@ -350,8 +354,7 @@ func TestAccountsRound12_AccountHandlers_ErrorBranches(t *testing.T) {
 					ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/lookup", nil, map[string]string{"acct": "alice@example.com"}, nil)
 					require.NoError(t, err)
 
-					require.NoError(t, h.HandleAccountLookupLift(ctx))
-					require.Equal(t, tt.wantStatus, ctx.Response.StatusCode)
+					requireStatus(t, tt.wantStatus)(h.HandleAccountLookupLift(ctx))
 				})
 			}
 		})
@@ -385,12 +388,12 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/followers", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "alice")
+		ctx.Params["id"] = "alice"
 
-		require.NoError(t, h.HandleGetAccountFollowersLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetAccountFollowersLift(ctx))
 
-		body := ctx.Response.Body.([]apimodels.Account)
+		var body []apimodels.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Len(t, body, 1)
 	})
 
@@ -410,10 +413,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/following", nil, map[string]string{"min_id": "min"}, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "alice")
+		ctx.Params["id"] = "alice"
 
-		require.NoError(t, h.HandleGetAccountFollowingLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetAccountFollowingLift(ctx))
 	})
 
 	t.Run("HandleGetFamiliarFollowersLift_error_cases", func(t *testing.T) {
@@ -423,8 +425,7 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/familiar_followers", nil, map[string]string{"id[]": "alice"}, nil)
 			require.NoError(t, err)
 
-			require.NoError(t, h.HandleGetFamiliarFollowersLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleGetFamiliarFollowersLift(ctx))
 		})
 
 		t.Run("invalid_token", func(t *testing.T) {
@@ -433,8 +434,7 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/familiar_followers", map[string]string{"Authorization": "Bearer bad"}, map[string]string{"id[]": "alice"}, nil)
 			require.NoError(t, err)
 
-			require.NoError(t, h.HandleGetFamiliarFollowersLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(h.HandleGetFamiliarFollowersLift(ctx))
 		})
 
 		t.Run("missing_account_ids", func(t *testing.T) {
@@ -443,8 +443,7 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/familiar_followers", authHeaders, nil, nil)
 			require.NoError(t, err)
 
-			require.NoError(t, h.HandleGetFamiliarFollowersLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleGetFamiliarFollowersLift(ctx))
 		})
 
 		t.Run("service_error", func(t *testing.T) {
@@ -459,21 +458,22 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/familiar_followers", authHeaders, map[string]string{"id[]": "alice"}, nil)
 			require.NoError(t, err)
 
-			require.NoError(t, h.HandleGetFamiliarFollowersLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetFamiliarFollowersLift(ctx))
 		})
 	})
 
 	t.Run("pin_unpin_note_remove_branches", func(t *testing.T) {
 		tests := []struct {
 			name       string
-			call       func(h *Handler, ctx *liftframework.Context) error
+			call       func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error)
 			stubReg    *RegistryStub
 			wantStatus int
 		}{
 			{
 				name: "pin_already_pinned_422",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandlePinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandlePinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						PinAccountFunc: func(context.Context, *accounts.PinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -485,7 +485,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "pin_not_found_404",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandlePinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandlePinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						PinAccountFunc: func(context.Context, *accounts.PinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -497,7 +499,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "pin_unauthorized_403",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandlePinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandlePinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						PinAccountFunc: func(context.Context, *accounts.PinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -509,7 +513,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "pin_internal_error_500",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandlePinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandlePinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						PinAccountFunc: func(context.Context, *accounts.PinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -521,7 +527,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "unpin_unauthorized_403",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleUnpinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleUnpinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						UnpinAccountFunc: func(context.Context, *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -533,7 +541,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "unpin_not_found_404",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleUnpinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleUnpinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						UnpinAccountFunc: func(context.Context, *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -545,7 +555,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "unpin_internal_error_500",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleUnpinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleUnpinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						UnpinAccountFunc: func(context.Context, *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -557,7 +569,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "unpin_success_200",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleUnpinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleUnpinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						UnpinAccountFunc: func(_ context.Context, cmd *accounts.UnpinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -571,7 +585,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "set_note_invalid_json_400",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleSetAccountNoteLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleSetAccountNoteLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						SetAccountNoteFunc: func(context.Context, *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error) {
@@ -583,7 +599,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "set_note_unauthorized_403",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleSetAccountNoteLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleSetAccountNoteLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						SetAccountNoteFunc: func(context.Context, *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error) {
@@ -595,7 +613,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "set_note_not_found_404",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleSetAccountNoteLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleSetAccountNoteLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						SetAccountNoteFunc: func(context.Context, *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error) {
@@ -607,7 +627,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "set_note_internal_error_500",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleSetAccountNoteLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleSetAccountNoteLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						SetAccountNoteFunc: func(context.Context, *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error) {
@@ -619,7 +641,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "set_note_success_200",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleSetAccountNoteLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleSetAccountNoteLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						SetAccountNoteFunc: func(_ context.Context, cmd *accounts.SetAccountNoteCommand) (*accounts.RelationshipResult, error) {
@@ -634,7 +658,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "remove_follower_not_found_404",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleRemoveFromFollowersLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleRemoveFromFollowersLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						RemoveFollowerFunc: func(context.Context, *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error) {
@@ -646,7 +672,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "remove_follower_unauthorized_403",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleRemoveFromFollowersLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleRemoveFromFollowersLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						RemoveFollowerFunc: func(context.Context, *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error) {
@@ -658,7 +686,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "remove_follower_internal_error_500",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleRemoveFromFollowersLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleRemoveFromFollowersLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						RemoveFollowerFunc: func(context.Context, *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error) {
@@ -670,7 +700,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "remove_follower_success_200",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandleRemoveFromFollowersLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandleRemoveFromFollowersLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						RemoveFollowerFunc: func(_ context.Context, cmd *accounts.RemoveFollowerCommand) (*accounts.RelationshipResult, error) {
@@ -684,7 +716,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 			{
 				name: "pin_success_200",
-				call: func(h *Handler, ctx *liftframework.Context) error { return h.HandlePinAccountLift(ctx) },
+				call: func(h *Handler, ctx *apptheory.Context) (*apptheory.Response, error) {
+					return h.HandlePinAccountLift(ctx)
+				},
 				stubReg: &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						PinAccountFunc: func(_ context.Context, cmd *accounts.PinAccountCommand) (*accounts.RelationshipResult, error) {
@@ -698,11 +732,11 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 			},
 		}
 
-			for _, tt := range tests {
+		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, tt.stubReg)
 
-				var ctx *liftframework.Context
+				var ctx *apptheory.Context
 				switch tt.name {
 				case "set_note_invalid_json_400":
 					ctx = round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/accounts/bob/note", authHeaders, nil, []byte("{"))
@@ -715,10 +749,9 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 					ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/action", authHeaders, nil, body)
 					require.NoError(t, err)
 				}
-				ctx.SetParam("id", "bob")
+				ctx.Params["id"] = "bob"
 
-				require.NoError(t, tt.call(h, ctx))
-				require.Equal(t, tt.wantStatus, ctx.Response.StatusCode)
+				requireStatus(t, tt.wantStatus)(tt.call(h, ctx))
 			})
 		}
 	})
@@ -799,17 +832,17 @@ func TestAccountsRound12_ActivityPubCollectionHelpers(t *testing.T) {
 
 		ctxMissing, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers?page=1", nil, map[string]string{"page": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.checkCollectionAccess(ctxMissing, privateActor, "followers"))
-		require.Equal(t, http.StatusOK, ctxMissing.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.checkCollectionAccess(ctxMissing, privateActor, "followers"))
 
 		ctxBad, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers?page=1", map[string]string{"Authorization": "Bearer bad"}, map[string]string{"page": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.checkCollectionAccess(ctxBad, privateActor, "followers"))
-		require.Equal(t, http.StatusOK, ctxBad.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.checkCollectionAccess(ctxBad, privateActor, "followers"))
 
 		ctxOK, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers?page=1", authHeaders, map[string]string{"page": "1"}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.checkCollectionAccess(ctxOK, privateActor, "followers"))
+		resp, err := h.checkCollectionAccess(ctxOK, privateActor, "followers")
+		require.NoError(t, err)
+		require.Nil(t, resp)
 	})
 
 	t.Run("HandleActivityPubFollowersLift_flows", func(t *testing.T) {
@@ -817,47 +850,44 @@ func TestAccountsRound12_ActivityPubCollectionHelpers(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/users//followers", map[string]string{"Accept": "application/activity+json"}, nil, nil)
 			require.NoError(t, err)
 
-			require.NoError(t, h.HandleActivityPubFollowersLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleActivityPubFollowersLift(ctx))
 		})
 
 		t.Run("invalid_limit", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers?page=1", map[string]string{"Accept": "application/activity+json"}, map[string]string{"page": "1", "limit": "0"}, nil)
 			require.NoError(t, err)
-			ctx.SetParam("username", "alice")
+			ctx.Params["username"] = "alice"
 
-			require.NoError(t, h.HandleActivityPubFollowersLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleActivityPubFollowersLift(ctx))
 		})
 
 		t.Run("non_activitypub_accept_uses_mastodon_endpoint", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers", map[string]string{"Accept": "text/html"}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("username", "alice")
-			ctx.SetParam("id", "alice")
+			ctx.Params["username"] = "alice"
+			ctx.Params["id"] = "alice"
 
-			require.NoError(t, h.HandleActivityPubFollowersLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(h.HandleActivityPubFollowersLift(ctx))
 		})
 
 		t.Run("activitypub_collection_metadata_and_page", func(t *testing.T) {
 			ctxMeta, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers", map[string]string{"Accept": "application/activity+json"}, nil, nil)
 			require.NoError(t, err)
-			ctxMeta.SetParam("username", "alice")
+			ctxMeta.Params["username"] = "alice"
 
-			require.NoError(t, h.HandleActivityPubFollowersLift(ctxMeta))
-			require.Equal(t, http.StatusOK, ctxMeta.Response.StatusCode)
-			collection := ctxMeta.Response.Body.(*activitypub.OrderedCollection)
+			respMeta := requireStatus(t, http.StatusOK)(h.HandleActivityPubFollowersLift(ctxMeta))
+			var collection activitypub.OrderedCollection
+			require.NoError(t, json.Unmarshal(respMeta.Body, &collection))
 			require.Equal(t, 2, collection.TotalItems)
 			require.NotEmpty(t, collection.First)
 
 			ctxPage, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers?page=1", map[string]string{"Accept": "application/activity+json"}, map[string]string{"page": "1", "cursor": "cursor", "limit": "2"}, nil)
 			require.NoError(t, err)
-			ctxPage.SetParam("username", "alice")
+			ctxPage.Params["username"] = "alice"
 
-			require.NoError(t, h.HandleActivityPubFollowersLift(ctxPage))
-			require.Equal(t, http.StatusOK, ctxPage.Response.StatusCode)
-			page := ctxPage.Response.Body.(*activitypub.OrderedCollectionPage)
+			respPage := requireStatus(t, http.StatusOK)(h.HandleActivityPubFollowersLift(ctxPage))
+			var page activitypub.OrderedCollectionPage
+			require.NoError(t, json.Unmarshal(respPage.Body, &page))
 			require.NotEmpty(t, page.Prev)
 			require.NotEmpty(t, page.Next)
 			require.Len(t, page.OrderedItems, 2)
@@ -867,11 +897,11 @@ func TestAccountsRound12_ActivityPubCollectionHelpers(t *testing.T) {
 	t.Run("HandleActivityPubFollowingLift_and_error_branches", func(t *testing.T) {
 		ctxMeta, err := round10NewLiftContext(http.MethodGet, "/users/alice/following", map[string]string{"Accept": "application/activity+json"}, nil, nil)
 		require.NoError(t, err)
-		ctxMeta.SetParam("username", "alice")
+		ctxMeta.Params["username"] = "alice"
 
-		require.NoError(t, h.HandleActivityPubFollowingLift(ctxMeta))
-		require.Equal(t, http.StatusOK, ctxMeta.Response.StatusCode)
-		collection := ctxMeta.Response.Body.(*activitypub.OrderedCollection)
+		respMeta := requireStatus(t, http.StatusOK)(h.HandleActivityPubFollowingLift(ctxMeta))
+		var collection activitypub.OrderedCollection
+		require.NoError(t, json.Unmarshal(respMeta.Body, &collection))
 		require.Equal(t, 0, collection.TotalItems)
 		require.Empty(t, collection.First)
 
@@ -889,10 +919,9 @@ func TestAccountsRound12_ActivityPubCollectionHelpers(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers?page=1", map[string]string{"Accept": "application/activity+json"}, map[string]string{"page": "1"}, nil)
 			require.NoError(t, err)
-			ctx.SetParam("username", "alice")
+			ctx.Params["username"] = "alice"
 
-			require.NoError(t, errHandler.HandleActivityPubFollowersLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(errHandler.HandleActivityPubFollowersLift(ctx))
 		})
 
 		t.Run("count_error_returns_500", func(t *testing.T) {
@@ -907,10 +936,9 @@ func TestAccountsRound12_ActivityPubCollectionHelpers(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/users/alice/following", map[string]string{"Accept": "application/activity+json"}, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("username", "alice")
+			ctx.Params["username"] = "alice"
 
-			require.NoError(t, errHandler.HandleActivityPubFollowingLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(errHandler.HandleActivityPubFollowingLift(ctx))
 		})
 	})
 }

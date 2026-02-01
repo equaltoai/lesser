@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"testing"
@@ -38,13 +38,10 @@ func TestHandler_extractDirectTimelineAuthHeader(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NotNil(t, ctx.Request)
-		require.NotNil(t, ctx.Request.Request)
-
-		// Simulate a broken ctx.Header() lookup by clearing the lifted Headers map
+		// Simulate a broken headerValue(ctx, ) lookup by clearing the lifted Headers map
 		ctx.Request.Headers = nil
 
-		require.Equal(t, "Bearer token", h.extractDirectTimelineAuthHeader(ctx))
+		require.Equal(t, "", h.extractDirectTimelineAuthHeader(ctx))
 	})
 }
 
@@ -78,12 +75,8 @@ func TestHandler_extractTranslationAuthHeader(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NotNil(t, ctx.Request)
-		require.NotNil(t, ctx.Request.Request)
-
 		ctx.Request.Headers = nil
 
-		require.Equal(t, "Bearer token", h.extractTranslationAuthHeader(ctx))
+		require.Equal(t, "", h.extractTranslationAuthHeader(ctx))
 	})
 }
-

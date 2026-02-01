@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"bytes"
@@ -59,16 +59,14 @@ func TestMediaHandlers(t *testing.T) {
 
 	t.Run("upload unauthorized", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", nil, nil, nil)
-		handleWithAPIMiddleware(t, h.HandleUploadMediaLift, ctx)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload insufficient scope", func(t *testing.T) {
 		readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
 		headers := map[string]string{"Authorization": "Bearer " + readToken}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, nil)
-		handleWithAPIMiddleware(t, h.HandleUploadMediaLift, ctx)
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload success", func(t *testing.T) {
@@ -93,8 +91,7 @@ func TestMediaHandlers(t *testing.T) {
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, body.Bytes())
 
-		require.NoError(t, h.HandleUploadMediaLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload parse error", func(t *testing.T) {
@@ -103,8 +100,7 @@ func TestMediaHandlers(t *testing.T) {
 			"Content-Type":  "multipart/form-data; boundary=----WebKitFormBoundaryTestBoundary",
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, nil)
-		require.NoError(t, h.HandleUploadMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload base64 decoding error", func(t *testing.T) {
@@ -113,8 +109,7 @@ func TestMediaHandlers(t *testing.T) {
 			"Content-Type":  "multipart/form-data; boundary=----WebKitFormBoundaryTestBoundary",
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, []byte("not-multipart"))
-		require.NoError(t, h.HandleUploadMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload missing boundary", func(t *testing.T) {
@@ -130,8 +125,7 @@ func TestMediaHandlers(t *testing.T) {
 			"Content-Type":  "multipart/form-data",
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, body.Bytes())
-		require.NoError(t, h.HandleUploadMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload no file data", func(t *testing.T) {
@@ -146,8 +140,7 @@ func TestMediaHandlers(t *testing.T) {
 			"Content-Type":  writer.FormDataContentType(),
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, body.Bytes())
-		require.NoError(t, h.HandleUploadMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload invalid focus validation", func(t *testing.T) {
@@ -167,8 +160,7 @@ func TestMediaHandlers(t *testing.T) {
 			"Content-Type":  writer.FormDataContentType(),
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, body.Bytes())
-		require.NoError(t, h.HandleUploadMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("upload service failure returns 500", func(t *testing.T) {
@@ -193,25 +185,22 @@ func TestMediaHandlers(t *testing.T) {
 			"Content-Type":  writer.FormDataContentType(),
 		}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/media", headers, nil, body.Bytes())
-		require.NoError(t, hFail.HandleUploadMediaLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(hFail.HandleUploadMediaLift(ctx))
 	})
 
 	t.Run("get success", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/media/m1", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "m1")
-		require.NoError(t, h.HandleGetMediaLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusOK)(h.HandleGetMediaLift(ctx))
 	})
 
 	t.Run("get unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/media/m1", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "m1")
-		handleWithAPIMiddleware(t, h.HandleGetMediaLift, ctx)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetMediaLift(ctx))
 	})
 
 	t.Run("get invalid id", func(t *testing.T) {
@@ -219,9 +208,8 @@ func TestMediaHandlers(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/media/"+invalidID, headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", invalidID)
-		require.NoError(t, h.HandleGetMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = invalidID
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetMediaLift(ctx))
 	})
 
 	t.Run("get not found", func(t *testing.T) {
@@ -235,16 +223,14 @@ func TestMediaHandlers(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/media/missing", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
-		require.NoError(t, h2.HandleGetMediaLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h2.HandleGetMediaLift(ctx))
 	})
 
 	t.Run("update unauthorized", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/media/m1", nil, nil, []byte("{}"))
-		ctx.SetParam("id", "m1")
-		handleWithAPIMiddleware(t, h.HandleUpdateMediaLift, ctx)
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUpdateMediaLift(ctx))
 	})
 
 	t.Run("update invalid id", func(t *testing.T) {
@@ -252,44 +238,39 @@ func TestMediaHandlers(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/media/"+invalidID, headers, nil, apimodels.UpdateMediaRequest{Description: "ok"})
 		require.NoError(t, err)
-		ctx.SetParam("id", invalidID)
-		require.NoError(t, h.HandleUpdateMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = invalidID
+		requireStatus(t, http.StatusBadRequest)(h.HandleUpdateMediaLift(ctx))
 	})
 
 	t.Run("update invalid json", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/media/m1", headers, nil, []byte("{"))
-		ctx.SetParam("id", "m1")
-		require.NoError(t, h.HandleUpdateMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleUpdateMediaLift(ctx))
 	})
 
 	t.Run("update invalid focus", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/media/m1", headers, nil, apimodels.UpdateMediaRequest{Focus: "bad"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "m1")
-		require.NoError(t, h.HandleUpdateMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleUpdateMediaLift(ctx))
 	})
 
 	t.Run("update invalid description", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/media/m1", headers, nil, apimodels.UpdateMediaRequest{Description: strings.Repeat("x", 2001)})
 		require.NoError(t, err)
-		ctx.SetParam("id", "m1")
-		require.NoError(t, h.HandleUpdateMediaLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleUpdateMediaLift(ctx))
 	})
 
 	t.Run("update success", func(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/media/m1", headers, nil, apimodels.UpdateMediaRequest{Description: "ok"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "m1")
-		require.NoError(t, h.HandleUpdateMediaLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusOK)(h.HandleUpdateMediaLift(ctx))
 	})
 
 	t.Run("update service failure returns 500", func(t *testing.T) {
@@ -303,8 +284,7 @@ func TestMediaHandlers(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/media/m1", headers, nil, apimodels.UpdateMediaRequest{Description: "ok"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "m1")
-		require.NoError(t, hFail.HandleUpdateMediaLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "m1"
+		requireStatus(t, http.StatusInternalServerError)(hFail.HandleUpdateMediaLift(ctx))
 	})
 }

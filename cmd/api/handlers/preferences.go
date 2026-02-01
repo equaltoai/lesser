@@ -1,53 +1,34 @@
-package lift
+package handlers
 
 import (
-	"encoding/json"
-
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetPreferencesLift handles GET /api/v1/preferences
 // Returns user preferences in Mastodon format
-func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
+func (h *Handler) HandleGetPreferencesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
 	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
 		return common.RespondUnauthorized(ctx)
 	}
-
-	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return common.RespondUnauthorized(ctx)
-	}
-
-	// Check read scope
-	if !claims.HasScope(auth.ScopeRead) {
-		return common.RespondInsufficientScope(ctx)
-	}
-
-	username := claims.Username
 
 	// Get user preferences using Accounts service
-	result, err := h.registry.Accounts().GetPreferences(ctx.Context, &accounts.GetPreferencesQuery{
+	result, err := h.registry.Accounts().GetPreferences(ctx.Context(), &accounts.GetPreferencesQuery{
 		Username: username,
 	})
 	if err != nil {
 		h.logger.Error("failed to get user preferences", zap.Error(err))
 		// Return defaults if preferences don't exist
-		return ctx.JSON(models.Preferences{
+		return okJSON(models.Preferences{
 			PostingDefaultVisibility: "public",
 			PostingDefaultSensitive:  false,
 			PostingDefaultLanguage:   "en",
@@ -68,22 +49,25 @@ func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
 		ReadingAutoplayGifs:      h.getBoolPreference(prefs, "auto_play_gif", true),
 	}
 
-	return ctx.JSON(preferences)
+	return okJSON(preferences)
 }
 
 // HandleUpdatePreferencesLift handles PATCH /api/v1/preferences
 // Updates user preferences and returns the updated preferences
-func (h *Handler) HandleUpdatePreferencesLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdatePreferencesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
-	username, err := h.authenticatePreferencesRequest(ctx, auth.ScopeWrite)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse update request
-	updateReq, err := h.parsePreferencesUpdateRequest(ctx)
-	if err != nil || ctx.Response.IsWritten() {
-		return err
+	updateReq, resp, err := h.parsePreferencesUpdateRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get or create user preferences
@@ -93,53 +77,28 @@ func (h *Handler) HandleUpdatePreferencesLift(ctx *lift.Context) error {
 	h.applyPreferenceUpdates(prefs, updateReq)
 
 	// Save updated preferences
-	if err := h.saveUserPreferences(ctx, username, prefs); err != nil || ctx.Response.IsWritten() {
-		return err
+	if resp, err := h.saveUserPreferences(ctx, username, prefs); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Return updated preferences in Mastodon format
 	return h.returnUpdatedPreferences(ctx, prefs)
 }
 
-// authenticatePreferencesRequest authenticates and authorizes the preferences request
-func (h *Handler) authenticatePreferencesRequest(ctx *lift.Context, requiredScope string) (string, error) {
-	// Normal authentication flow
-	claims, err := h.authenticateWithScope(ctx, requiredScope)
-	if err != nil {
-		return "", err
-	}
-	return claims.Username, nil
-}
-
 // parsePreferencesUpdateRequest parses the preferences update request
-func (h *Handler) parsePreferencesUpdateRequest(ctx *lift.Context) (map[string]interface{}, error) {
+func (h *Handler) parsePreferencesUpdateRequest(ctx *apptheory.Context) (map[string]interface{}, *apptheory.Response, error) {
 	var updateReq map[string]interface{}
-	if err := ctx.ParseRequest(&updateReq); err != nil {
-		// Fallback for test environment
-		return h.parsePreferencesRequestFallback(ctx, err)
+	if err := common.ParseRequestWithFallback(ctx, &updateReq); err != nil {
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return nil, resp, respErr
 	}
-	return updateReq, nil
-}
-
-// parsePreferencesRequestFallback handles fallback parsing for test environments
-func (h *Handler) parsePreferencesRequestFallback(ctx *lift.Context, originalErr error) (map[string]interface{}, error) {
-	if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-		var updateReq map[string]interface{}
-		if jsonErr := json.Unmarshal(ctx.Request.Body, &updateReq); jsonErr != nil {
-			h.logger.Debug("invalid preferences request",
-				zap.Error(originalErr),
-				zap.Error(jsonErr))
-			return nil, common.RespondBadRequest(ctx, "invalid request body")
-		}
-		return updateReq, nil
-	}
-	return nil, common.RespondBadRequest(ctx, "invalid request body")
+	return updateReq, nil, nil
 }
 
 // getOrCreateUserPreferences gets existing preferences or creates defaults
-func (h *Handler) getOrCreateUserPreferences(ctx *lift.Context, username string) *storage.UserPreferences {
+func (h *Handler) getOrCreateUserPreferences(ctx *apptheory.Context, username string) *storage.UserPreferences {
 	// Use Accounts service to get preferences
-	result, err := h.registry.Accounts().GetPreferences(ctx.Context, &accounts.GetPreferencesQuery{
+	result, err := h.registry.Accounts().GetPreferences(ctx.Context(), &accounts.GetPreferencesQuery{
 		Username: username,
 	})
 	if err != nil {
@@ -219,9 +178,9 @@ func (h *Handler) updateBoolPreference(field *bool, updateReq map[string]interfa
 }
 
 // saveUserPreferences saves the updated preferences to storage
-func (h *Handler) saveUserPreferences(ctx *lift.Context, username string, prefs *storage.UserPreferences) error {
+func (h *Handler) saveUserPreferences(ctx *apptheory.Context, username string, prefs *storage.UserPreferences) (*apptheory.Response, error) {
 	// Use Accounts service to update preferences
-	_, err := h.registry.Accounts().UpdatePreferences(ctx.Context, &accounts.UpdatePreferencesCommand{
+	_, err := h.registry.Accounts().UpdatePreferences(ctx.Context(), &accounts.UpdatePreferencesCommand{
 		Username:                  username,
 		Language:                  prefs.Language,
 		DefaultPostingVisibility:  prefs.DefaultPostingVisibility,
@@ -239,11 +198,11 @@ func (h *Handler) saveUserPreferences(ctx *lift.Context, username string, prefs 
 		h.logger.Error("failed to update user preferences", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
 	}
-	return nil
+	return nil, nil
 }
 
 // returnUpdatedPreferences returns the updated preferences in Mastodon format
-func (h *Handler) returnUpdatedPreferences(ctx *lift.Context, prefs *storage.UserPreferences) error {
+func (h *Handler) returnUpdatedPreferences(ctx *apptheory.Context, prefs *storage.UserPreferences) (*apptheory.Response, error) {
 	preferences := models.Preferences{
 		PostingDefaultVisibility: prefs.DefaultPostingVisibility,
 		PostingDefaultSensitive:  prefs.DefaultMediaSensitive,
@@ -252,7 +211,7 @@ func (h *Handler) returnUpdatedPreferences(ctx *lift.Context, prefs *storage.Use
 		ReadingExpandSpoilers:    prefs.ExpandSpoilers,
 		ReadingAutoplayGifs:      prefs.AutoplayGifs,
 	}
-	return ctx.JSON(preferences)
+	return okJSON(preferences)
 }
 
 // mapExpandMediaPreference maps internal expand media preference to Mastodon format

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -76,60 +76,50 @@ func TestDiscoveryAndInstanceHandlers_Round11(t *testing.T) {
 
 	ctxDir, err := round10NewLiftContext(http.MethodGet, "/api/v1/directory", nil, map[string]string{"order": "active", "limit": "1"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetDirectoryLift(ctxDir))
-	require.Equal(t, http.StatusOK, ctxDir.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetDirectoryLift(ctxDir))
 
 	readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
 	readHeaders := map[string]string{"Authorization": "Bearer " + readToken}
 
 	ctxSugg1, err := round10NewLiftContext(http.MethodGet, "/api/v1/suggestions", readHeaders, map[string]string{"limit": "1"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetSuggestionsV1Lift(ctxSugg1))
-	require.Equal(t, http.StatusOK, ctxSugg1.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetSuggestionsV1Lift(ctxSugg1))
 
 	ctxSugg2, err := round10NewLiftContext(http.MethodGet, "/api/v2/suggestions", readHeaders, map[string]string{"limit": "1"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetSuggestionsV2Lift(ctxSugg2))
-	require.Equal(t, http.StatusOK, ctxSugg2.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetSuggestionsV2Lift(ctxSugg2))
 
 	ctxRemove, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxRemove.SetParam("account_id", "bob")
-	require.NoError(t, handler.HandleRemoveSuggestionLift(ctxRemove))
-	require.Equal(t, http.StatusOK, ctxRemove.Response.StatusCode)
+	ctxRemove.Params["account_id"] = "bob"
+	requireStatus(t, http.StatusOK)(handler.HandleRemoveSuggestionLift(ctxRemove))
 
 	require.True(t, handler.isLocalLift("https://example.com/users/alice"))
 	require.Equal(t, "alice@remote.example", handler.getAccountAcctLift(&activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://remote.example/users/alice"}, PreferredUsername: "alice"}))
 
 	ctxInstance, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstanceV1Lift(ctxInstance))
-	require.Equal(t, http.StatusOK, ctxInstance.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstanceV1Lift(ctxInstance))
 
 	ctxPeers, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/peers", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstancePeersLift(ctxPeers))
-	require.Equal(t, http.StatusOK, ctxPeers.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstancePeersLift(ctxPeers))
 
 	ctxActivity, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/activity", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstanceActivityLift(ctxActivity))
-	require.Equal(t, http.StatusOK, ctxActivity.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstanceActivityLift(ctxActivity))
 
 	ctxBlocks, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/domain_blocks", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstanceDomainBlocksLift(ctxBlocks))
-	require.Equal(t, http.StatusOK, ctxBlocks.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstanceDomainBlocksLift(ctxBlocks))
 
 	ctxPrivacy, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/privacy_policy", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstancePrivacyPolicyLift(ctxPrivacy))
-	require.Equal(t, http.StatusOK, ctxPrivacy.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstancePrivacyPolicyLift(ctxPrivacy))
 
 	ctxTerms, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/terms", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetInstanceTermsOfServiceLift(ctxTerms))
-	require.Equal(t, http.StatusOK, ctxTerms.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetInstanceTermsOfServiceLift(ctxTerms))
 
 	html := handler.markdownToHTMLLift("# Title\n\nParagraph")
 	require.Contains(t, html, "<h1>Title</h1>")

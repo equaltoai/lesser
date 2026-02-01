@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -6,16 +6,16 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleCreateChallengeLift handles POST /auth/wallet/challenge
-func (h *Handler) HandleCreateChallengeLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateChallengeLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	var req apimodels.WalletChallengeRequest
 
 	if err := h.parseRequestBody(ctx, &req); err != nil {
-		return err // Error response already set by parseRequestBody
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate inputs
@@ -30,26 +30,25 @@ func (h *Handler) HandleCreateChallengeLift(ctx *lift.Context) error {
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Create challenge
-	challenge, err := authService.CreateWalletChallenge(ctx.Context, req.Address, req.ChainID, req.Username)
+	challenge, err := authService.CreateWalletChallenge(ctx.Context(), req.Address, req.ChainID, req.Username)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "create challenge")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(challenge)
+	return okJSON(challenge)
 }
 
 // HandleVerifySignatureLift handles POST /auth/wallet/verify (for registration)
-func (h *Handler) HandleVerifySignatureLift(ctx *lift.Context) error {
+func (h *Handler) HandleVerifySignatureLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	var req auth.WalletVerifyRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
-		return err // Error response already set by parseRequestBody
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate inputs
@@ -67,29 +66,28 @@ func (h *Handler) HandleVerifySignatureLift(ctx *lift.Context) error {
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Verify signature only (for registration flow)
-	err = authService.VerifyWalletSignature(ctx.Context, &req)
+	err = authService.VerifyWalletSignature(ctx.Context(), &req)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "verify signature")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.WalletVerifyResponse{
+	return okJSON(apimodels.WalletVerifyResponse{
 		Verified: true,
 		Message:  "signature verified successfully",
 	})
 }
 
 // HandleLoginWalletLift handles POST /auth/wallet/login (for login)
-func (h *Handler) HandleLoginWalletLift(ctx *lift.Context) error {
+func (h *Handler) HandleLoginWalletLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	var req auth.WalletVerifyRequest
 	if err := h.parseRequestBody(ctx, &req); err != nil {
-		return err // Error response already set by parseRequestBody
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate inputs
@@ -114,23 +112,22 @@ func (h *Handler) HandleLoginWalletLift(ctx *lift.Context) error {
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Login with wallet (wallet must be linked)
-	authResponse, err := authService.LoginWithWallet(ctx.Context, &req, deviceName, userAgent, ipAddress)
+	authResponse, err := authService.LoginWithWallet(ctx.Context(), &req, deviceName, userAgent, ipAddress)
 	if err != nil {
 		return h.handleAuthServiceError(ctx, err, "login with wallet")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(authResponse)
+	return okJSON(authResponse)
 }
 
 // HandleLinkWalletLift handles POST /auth/wallet/link
-func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
+func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Try to get authenticated user (for existing users)
 	// But allow linking during registration if signature is valid
 	username := h.getAuthenticatedUserLift(ctx)
@@ -138,7 +135,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 	var req apimodels.WalletLinkRequest
 
 	if err := h.parseRequestBody(ctx, &req); err != nil {
-		return err // Error response already set by parseRequestBody
+		return h.respondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate inputs
@@ -160,31 +157,25 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 		if req.Username != "" {
 			username = req.Username
 		} else {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required or username must be provided",
-			})
+			return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required or username must be provided")
 		}
 	}
 
 	// Get auth service
-	authService, err := h.requireAuthService(ctx)
-	if err != nil {
-		return err // Error response already set
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// If signature provided, verify it (for registration flow or manual verification)
 	if req.ChallengeID != "" && req.Signature != "" && req.Message != "" {
 		// Get the challenge to verify username binding
-		challenge, err := authService.GetWalletChallenge(ctx.Context, req.ChallengeID)
+		challenge, err := authService.GetWalletChallenge(ctx.Context(), req.ChallengeID)
 		if err != nil {
 			h.logger.Error("failed to get challenge for verification",
 				zap.String("challengeId", req.ChallengeID),
 				zap.Error(err))
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid or expired challenge",
-			})
+			return h.respondWithError(ctx, http.StatusUnauthorized, "invalid or expired challenge")
 		}
 
 		// CRITICAL: Verify the challenge username matches the requested username
@@ -194,52 +185,40 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 				zap.String("challenge_username", challenge.Username),
 				zap.String("requested_username", username),
 				zap.String("address", req.Address))
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "signature was created for a different username - replay attack prevented",
-			})
+			return h.respondWithError(ctx, http.StatusUnauthorized, "signature was created for a different username - replay attack prevented")
 		}
 
 		// Check if challenge is already spent
 		if challenge.Spent {
 			h.logger.Error("challenge already spent",
 				zap.String("challengeId", req.ChallengeID))
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "challenge already used",
-			})
+			return h.respondWithError(ctx, http.StatusUnauthorized, "challenge already used")
 		}
 
 		// Verify the signature directly (single verification)
 		// The challenge was already verified once in /auth/wallet/verify
 		// We just need to verify the signature matches
-		if err := authService.VerifySignatureOnly(ctx.Context, challenge, req.Signature); err != nil {
+		if err := authService.VerifySignatureOnly(ctx.Context(), challenge, req.Signature); err != nil {
 			h.logger.Error("signature verification failed for wallet link",
 				zap.String("address", req.Address),
 				zap.Error(err))
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "signature verification failed",
-			})
+			return h.respondWithError(ctx, http.StatusUnauthorized, "signature verification failed")
 		}
 
 		// Mark challenge as spent (second and final use)
-		if err := authService.MarkWalletChallengeSpent(ctx.Context, req.ChallengeID); err != nil {
+		if err := authService.MarkWalletChallengeSpent(ctx.Context(), req.ChallengeID); err != nil {
 			h.logger.Warn("failed to mark challenge as spent", zap.Error(err))
 			// Non-fatal - continue
 		}
 	}
 
 	// Link the wallet
-	if err := authService.LinkWallet(ctx.Context, username, req.Address, req.ChainID, req.WalletType); err != nil {
+	if err := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType); err != nil {
 		h.logger.Error("failed to link wallet",
 			zap.String("username", username),
 			zap.String("address", req.Address),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to link wallet",
-		})
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to link wallet")
 	}
 
 	// If this is a registration flow (signature provided but no auth token), create session
@@ -255,22 +234,18 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 
 		// Create session (signature already verified, no re-verification needed)
 		// This session will be used by /oauth/authorize to generate authorization code
-		authResponse, err := authService.LoginWithWalletAfterLinking(ctx.Context, username, deviceName, userAgent, ipAddress)
+		authResponse, err := authService.LoginWithWalletAfterLinking(ctx.Context(), username, deviceName, userAgent, ipAddress)
 		if err != nil {
 			h.logger.Error("failed to create session after wallet linking",
 				zap.String("username", username),
 				zap.String("address", req.Address),
 				zap.Error(err))
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{
-				"error": "failed to create session",
-			})
+			return h.respondWithError(ctx, http.StatusInternalServerError, "failed to create session")
 		}
 
 		// Return success with JWT for stateless OAuth flow
 		// Client will use this JWT to authenticate with /oauth/authorize
-		ctx.Status(http.StatusOK)
-		return ctx.JSON(apimodels.WalletLinkResponse{
+		return okJSON(apimodels.WalletLinkResponse{
 			Success:     true,
 			Message:     "wallet linked successfully",
 			Address:     req.Address,
@@ -280,8 +255,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 		})
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.WalletLinkResponse{
+	return okJSON(apimodels.WalletLinkResponse{
 		Success: true,
 		Message: "wallet linked successfully",
 		Address: req.Address,
@@ -289,49 +263,35 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 }
 
 // HandleUnlinkWalletLift handles DELETE /auth/wallet/unlink/{address}
-func (h *Handler) HandleUnlinkWalletLift(ctx *lift.Context) error {
+func (h *Handler) HandleUnlinkWalletLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check for test mode first
 	username := h.getAuthenticatedUserLift(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required")
 	}
 
 	// Get address from path
 	address := ctx.Param("address")
 	if err := common.ValidateRequiredParam("address", address); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "address is required",
-		})
+		return h.respondBadRequest(ctx, "address is required")
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.cfg, h.repos)
-	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Unlink the wallet
-	if err := authService.UnlinkWallet(ctx.Context, username, address); err != nil {
+	if err := authService.UnlinkWallet(ctx.Context(), username, address); err != nil {
 		h.logger.Error("failed to unlink wallet",
 			zap.String("username", username),
 			zap.String("address", address),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to unlink wallet",
-		})
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to unlink wallet")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.WalletUnlinkResponse{
+	return okJSON(apimodels.WalletUnlinkResponse{
 		Success: true,
 		Message: "wallet unlinked successfully",
 		Address: address,
@@ -339,47 +299,36 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *lift.Context) error {
 }
 
 // HandleGetWalletsLift handles GET /auth/wallet/list
-func (h *Handler) HandleGetWalletsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetWalletsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check for test mode first
 	username := h.getAuthenticatedUserLift(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+		return h.respondWithError(ctx, http.StatusUnauthorized, "authentication required")
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.cfg, h.repos)
-	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+	authService, resp, err := h.requireAuthService(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Get user's wallets
-	wallets, err := authService.GetUserWallets(ctx.Context, username)
+	wallets, err := authService.GetUserWallets(ctx.Context(), username)
 	if err != nil {
 		h.logger.Error("failed to get user wallets",
 			zap.String("username", username),
 			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to get wallets",
-		})
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to get wallets")
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(apimodels.WalletListResponse{
+	return okJSON(apimodels.WalletListResponse{
 		Wallets: wallets,
 		Count:   len(wallets),
 	})
 }
 
 // getAuthenticatedUserLift gets the authenticated user from the context
-func (h *Handler) getAuthenticatedUserLift(ctx *lift.Context) string {
+func (h *Handler) getAuthenticatedUserLift(ctx *apptheory.Context) string {
 	// Get bearer token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {

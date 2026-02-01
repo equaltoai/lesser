@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -31,13 +31,11 @@ func TestNodeInfoHandlers_Round11(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/.well-known/nodeinfo", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleNodeInfoWellKnownLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleNodeInfoWellKnownLift(ctx))
 
 	ctx2, err := round10NewLiftContext(http.MethodGet, "/nodeinfo/2.0", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleNodeInfoLift(ctx2))
-	require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleNodeInfoLift(ctx2))
 
 	handler.registry = &RegistryStub{
 		AccountsSvc: &AccountsServiceStub{
@@ -49,6 +47,5 @@ func TestNodeInfoHandlers_Round11(t *testing.T) {
 
 	ctx3, err := round10NewLiftContext(http.MethodGet, "/nodeinfo/2.0", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleNodeInfoLift(ctx3))
-	require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleNodeInfoLift(ctx3))
 }

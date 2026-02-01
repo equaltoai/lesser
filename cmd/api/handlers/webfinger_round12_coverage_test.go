@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 		}
 	}
 
-	t.Run("fallback query param access", func(t *testing.T) {
+	t.Run("case-insensitive query param access", func(t *testing.T) {
 		h := newHandler(&AccountsServiceStub{
 			GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
 				return &storage.Account{
@@ -37,11 +37,9 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/.well-known/webfinger", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.Request.QueryParams = nil
-		ctx.Request.Request.QueryParams = map[string]string{"resource": "acct:alice@example.com"}
+		ctx.Request.Query = map[string][]string{"Resource": []string{"acct:alice@example.com"}}
 
-		require.NoError(t, h.HandleWebFingerLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(h.HandleWebFingerLift(ctx))
 	})
 
 	t.Run("invalid resource format", func(t *testing.T) {
@@ -51,8 +49,7 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleWebFingerLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleWebFingerLift(ctx))
 	})
 
 	t.Run("parse error when resource is URL", func(t *testing.T) {
@@ -62,8 +59,7 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 		}, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleWebFingerLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleWebFingerLift(ctx))
 	})
 
 	t.Run("wrong domain + not found paths", func(t *testing.T) {
@@ -77,15 +73,13 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 			"resource": "acct:alice@other.example",
 		}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleWebFingerLift(ctxWrongDomain))
-		require.Equal(t, http.StatusNotFound, ctxWrongDomain.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(h.HandleWebFingerLift(ctxWrongDomain))
 
 		ctxNotFound, err := round10NewLiftContext(http.MethodGet, "/.well-known/webfinger", nil, map[string]string{
 			"resource": "acct:alice@example.com",
 		}, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleWebFingerLift(ctxNotFound))
-		require.Equal(t, http.StatusNotFound, ctxNotFound.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(h.HandleWebFingerLift(ctxNotFound))
 	})
 
 	t.Run("actor missing + no avatar link", func(t *testing.T) {
@@ -98,8 +92,7 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 			"resource": "acct:alice@example.com",
 		}, nil)
 		require.NoError(t, err)
-		require.NoError(t, hNilActor.HandleWebFingerLift(ctxNilActor))
-		require.Equal(t, http.StatusNotFound, ctxNilActor.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(hNilActor.HandleWebFingerLift(ctxNilActor))
 
 		hNoAvatar := newHandler(&AccountsServiceStub{
 			GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
@@ -116,8 +109,6 @@ func TestWebFingerRound12_Coverage(t *testing.T) {
 			"resource": "acct:alice@example.com",
 		}, nil)
 		require.NoError(t, err)
-		require.NoError(t, hNoAvatar.HandleWebFingerLift(ctxNoAvatar))
-		require.Equal(t, http.StatusOK, ctxNoAvatar.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(hNoAvatar.HandleWebFingerLift(ctxNoAvatar))
 	})
 }
-

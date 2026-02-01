@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -32,7 +32,7 @@ func (h *Handler) relationshipFromService(relationship *relationshipsvc.Relation
 }
 
 // HandleMuteAccountLift handles POST /api/v1/accounts/:id/mute
-func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleMuteAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -40,7 +40,10 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 
 	claims, err := h.authenticateWithScope(ctx, "write")
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 	username := claims.Username
 
@@ -51,13 +54,13 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 	var params models.MuteRequest
 
 	// Try parsing as JSON first
-	if err := ctx.ParseRequest(&params); err == nil {
+	if err := common.ParseRequestWithFallback(ctx, &params); err == nil {
 		if params.Notifications != nil {
 			hideNotifications = *params.Notifications
 		}
 	} else {
 		// Fallback to raw body parsing if ParseRequest fails
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+		if len(ctx.Request.Body) > 0 {
 			var fallbackParams map[string]interface{}
 			if parseErr := json.Unmarshal(ctx.Request.Body, &fallbackParams); parseErr == nil {
 				if notifications, ok := fallbackParams["notifications"].(bool); ok {
@@ -69,7 +72,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 
 	// Use Relationships service if available
 	if h.registry != nil && h.registry.Relationships() != nil {
-		result, err := h.registry.Relationships().Mute(ctx.Context, &relationshipsvc.MuteCommand{
+		result, err := h.registry.Relationships().Mute(ctx.Context(), &relationshipsvc.MuteCommand{
 			MuterID:           username,
 			MutedID:           accountID,
 			MuteNotifications: hideNotifications,
@@ -79,7 +82,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 			return common.RespondInternalServerError(ctx)
 		}
 
-		return ctx.JSON(h.relationshipFromService(result.Relationship))
+		return okJSON(h.relationshipFromService(result.Relationship))
 	}
 
 	// If we reach here, service is not available - return error
@@ -87,7 +90,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 }
 
 // HandleUnmuteAccountLift handles POST /api/v1/accounts/:id/unmute
-func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleUnmuteAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -95,13 +98,16 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 
 	claims, err := h.authenticateWithScope(ctx, "write")
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 	username := claims.Username
 
 	// Use Relationships service if available
 	if h.registry != nil && h.registry.Relationships() != nil {
-		result, err := h.registry.Relationships().Unmute(ctx.Context, &relationshipsvc.UnmuteCommand{
+		result, err := h.registry.Relationships().Unmute(ctx.Context(), &relationshipsvc.UnmuteCommand{
 			MuterID: username,
 			MutedID: accountID,
 		})
@@ -110,7 +116,7 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 			return common.RespondInternalServerError(ctx)
 		}
 
-		return ctx.JSON(h.relationshipFromService(result.Relationship))
+		return okJSON(h.relationshipFromService(result.Relationship))
 	}
 
 	// If we reach here, service is not available - return error
@@ -118,26 +124,29 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 }
 
 // HandleGetMutedAccountsLift handles GET /api/v1/mutes
-func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetMutedAccountsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	claims, err := h.authenticateWithScope(ctx, "read")
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 	username := claims.Username
 
 	// Parse pagination parameters
 	limit := 40
-	if limitStr := ctx.Query("limit"); limitStr != "" {
+	if limitStr := queryValue(ctx, "limit"); limitStr != "" {
 		if parsed, err := common.ParseFollowLimit(limitStr); err == nil {
 			limit = parsed
 		}
 	}
 
-	cursor := ctx.Query("max_id")
+	cursor := queryValue(ctx, "max_id")
 
 	// Use Relationships service if available
 	if h.registry != nil && h.registry.Relationships() != nil {
-		result, err := h.registry.Relationships().GetMutedUsers(ctx.Context, &relationshipsvc.GetMutedUsersQuery{
+		result, err := h.registry.Relationships().GetMutedUsers(ctx.Context(), &relationshipsvc.GetMutedUsersQuery{
 			UserID: username,
 			Limit:  limit,
 			Cursor: cursor,
@@ -157,11 +166,15 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 			}
 
 			// Set Link header for pagination if there's a next cursor
+			resp, err := okJSON(accounts)
+			if err != nil {
+				return nil, err
+			}
 			if result.NextCursor != "" {
-				ctx.Response.Header("Link", fmt.Sprintf("<%s/api/v1/mutes?max_id=%s>; rel=\"next\"", h.cfg.BaseURL(), result.NextCursor))
+				setHeader(resp, "Link", fmt.Sprintf("<%s/api/v1/mutes?max_id=%s>; rel=\"next\"", h.cfg.BaseURL(), result.NextCursor))
 			}
 
-			return ctx.JSON(accounts)
+			return resp, nil
 		}
 	}
 

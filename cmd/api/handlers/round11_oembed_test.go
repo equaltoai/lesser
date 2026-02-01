@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -55,8 +55,8 @@ func TestHandleOEmbedLift(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleOEmbedLift(ctx))
-	require.Contains(t, ctx.Response.Body, "<oembed>")
+	resp := requireStatus(t, http.StatusOK)(h.HandleOEmbedLift(ctx))
+	require.Contains(t, string(resp.Body), "<oembed>")
 }
 
 func TestOEmbedHelpers(t *testing.T) {

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -13,43 +13,35 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
-
-type round12AlwaysInvalidValidator struct{}
-
-func (round12AlwaysInvalidValidator) Validate(any) error {
-	return stdErrors.New("invalid")
-}
 
 func TestScheduledStatuses_Round12_ExtractQueryParamAndPagination(t *testing.T) {
 	cfg := round11TestConfig()
 	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
-	t.Run("extract_nil_request", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", nil, nil, nil)
-		require.NoError(t, err)
-		ctx.Request = nil
-
-		require.Equal(t, "", handler.extractScheduledQueryParam(ctx, "limit"))
+	t.Run("limit_defaults_when_context_nil", func(t *testing.T) {
+		require.Equal(t, 20, handler.parseScheduledStatusLimit(nil))
 	})
 
-	t.Run("extract_from_path_query_string", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses?limit=5&max_id=mx&min_id=mn", nil, nil, nil)
+	t.Run("limit_from_query_params", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", nil, map[string]string{"limit": "5"}, nil)
 		require.NoError(t, err)
 
-		require.Equal(t, "5", handler.extractScheduledQueryParam(ctx, "limit"))
-		require.Equal(t, "mx", handler.extractScheduledQueryParam(ctx, "max_id"))
-		require.Equal(t, "mn", handler.extractScheduledQueryParam(ctx, "min_id"))
-
 		require.Equal(t, 5, handler.parseScheduledStatusLimit(ctx))
+	})
+
+	t.Run("cursor_prefers_max_id", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", nil, map[string]string{"max_id": "mx", "min_id": "mn"}, nil)
+		require.NoError(t, err)
+
 		require.Equal(t, "mx", handler.parseScheduledStatusCursor(ctx))
 	})
 
-	t.Run("extract_from_query_params_map", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", nil, map[string]string{"limit": "7", "min_id": "mn"}, nil)
+	t.Run("cursor_falls_back_to_min_id", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", nil, map[string]string{"min_id": "mn"}, nil)
 		require.NoError(t, err)
 
-		require.Equal(t, "7", handler.extractScheduledQueryParam(ctx, "limit"))
 		require.Equal(t, "mn", handler.parseScheduledStatusCursor(ctx))
 	})
 
@@ -61,19 +53,15 @@ func TestScheduledStatuses_Round12_ExtractQueryParamAndPagination(t *testing.T) 
 	})
 
 	t.Run("pagination_header_next_cursor_empty", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", nil, nil, nil)
-		require.NoError(t, err)
-
-		handler.setScheduledStatusPaginationHeader(ctx, "", 10)
-		require.Nil(t, ctx.Get("Link"))
+		resp := &apptheory.Response{}
+		handler.setScheduledStatusPaginationHeader(resp, "", 10)
+		require.Equal(t, "", firstStringValue(resp.Headers, "link"))
 	})
 
 	t.Run("pagination_header_sets_link_value", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", nil, nil, nil)
-		require.NoError(t, err)
-
-		handler.setScheduledStatusPaginationHeader(ctx, "next", 10)
-		require.Equal(t, `</api/v1/scheduled_statuses?max_id=next&limit=10>; rel="next"`, ctx.Get("Link"))
+		resp := &apptheory.Response{}
+		handler.setScheduledStatusPaginationHeader(resp, "next", 10)
+		require.Equal(t, `</api/v1/scheduled_statuses?max_id=next&limit=10>; rel="next"`, firstStringValue(resp.Headers, "link"))
 	})
 }
 
@@ -142,17 +130,6 @@ func TestScheduledStatuses_Round12_ParseScheduledStatusRequest(t *testing.T) {
 		require.Equal(t, body.ScheduledAt, req.ScheduledAt)
 	})
 
-	t.Run("parse_request_fallback_on_validation_error", func(t *testing.T) {
-		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/scheduled_statuses/sched-1", nil, nil, body)
-		require.NoError(t, err)
-
-		ctx.SetValidator(round12AlwaysInvalidValidator{})
-
-		var req apimodels.ScheduledStatusUpdateRequest
-		require.NoError(t, handler.parseScheduledStatusRequest(ctx, &req))
-		require.Equal(t, body.ScheduledAt, req.ScheduledAt)
-	})
-
 	t.Run("parse_request_fallback_json_error", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/scheduled_statuses/sched-1", nil, nil, []byte(`{invalid}`))
 		var req apimodels.ScheduledStatusUpdateRequest
@@ -185,8 +162,7 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", readHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetScheduledStatusesLift(ctx))
-		require.Equal(t, http.StatusServiceUnavailable, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusServiceUnavailable)(handler.HandleGetScheduledStatusesLift(ctx))
 	})
 
 	t.Run("list_service_error", func(t *testing.T) {
@@ -202,8 +178,7 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", readHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetScheduledStatusesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetScheduledStatusesLift(ctx))
 	})
 
 	t.Run("list_no_pagination_cursor", func(t *testing.T) {
@@ -228,9 +203,8 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses", readHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetScheduledStatusesLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		require.Nil(t, ctx.Get("Link"))
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetScheduledStatusesLift(ctx))
+		require.Equal(t, "", firstStringValue(resp.Headers, "link"))
 	})
 
 	t.Run("get_missing_id", func(t *testing.T) {
@@ -240,8 +214,7 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses/", readHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleGetScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetScheduledStatusLift(ctx))
 	})
 
 	t.Run("get_service_unavailable", func(t *testing.T) {
@@ -250,10 +223,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses/sched-1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "sched-1")
+		ctx.Params["id"] = "sched-1"
 
-		require.NoError(t, handler.HandleGetScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusServiceUnavailable, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusServiceUnavailable)(handler.HandleGetScheduledStatusLift(ctx))
 	})
 
 	t.Run("get_not_found", func(t *testing.T) {
@@ -268,10 +240,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/scheduled_statuses/sched-1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "sched-1")
+		ctx.Params["id"] = "sched-1"
 
-		require.NoError(t, handler.HandleGetScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetScheduledStatusLift(ctx))
 	})
 
 	t.Run("update_missing_id", func(t *testing.T) {
@@ -281,8 +252,7 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/scheduled_statuses/", writeHeaders, nil, apimodels.ScheduledStatusUpdateRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleUpdateScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateScheduledStatusLift(ctx))
 	})
 
 	t.Run("update_invalid_body", func(t *testing.T) {
@@ -290,10 +260,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		handler.registry = &RegistryStub{ScheduledSvc: &ScheduledServiceStub{}}
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, []byte(`{invalid}`))
-		ctx.SetParam("id", "sched-1")
+		ctx.Params["id"] = "sched-1"
 
-		require.NoError(t, handler.HandleUpdateScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUpdateScheduledStatusLift(ctx))
 	})
 
 	t.Run("update_scheduled_at_invalid", func(t *testing.T) {
@@ -303,10 +272,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		past := time.Now().Add(-1 * time.Hour).UTC()
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, apimodels.ScheduledStatusUpdateRequest{ScheduledAt: past.Format(time.RFC3339)})
 		require.NoError(t, err)
-		ctx.SetParam("id", "sched-1")
+		ctx.Params["id"] = "sched-1"
 
-		require.NoError(t, handler.HandleUpdateScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnprocessableEntity)(handler.HandleUpdateScheduledStatusLift(ctx))
 	})
 
 	t.Run("update_service_unavailable", func(t *testing.T) {
@@ -315,10 +283,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, apimodels.ScheduledStatusUpdateRequest{})
 		require.NoError(t, err)
-		ctx.SetParam("id", "sched-1")
+		ctx.Params["id"] = "sched-1"
 
-		require.NoError(t, handler.HandleUpdateScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusServiceUnavailable, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusServiceUnavailable)(handler.HandleUpdateScheduledStatusLift(ctx))
 	})
 
 	for name, updateErr := range map[string]struct {
@@ -344,10 +311,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, apimodels.ScheduledStatusUpdateRequest{})
 			require.NoError(t, err)
-			ctx.SetParam("id", "sched-1")
+			ctx.Params["id"] = "sched-1"
 
-			require.NoError(t, handler.HandleUpdateScheduledStatusLift(ctx))
-			require.Equal(t, updateErr.status, ctx.Response.StatusCode)
+			requireStatus(t, updateErr.status)(handler.HandleUpdateScheduledStatusLift(ctx))
 		})
 	}
 
@@ -358,8 +324,7 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/scheduled_statuses/", writeHeaders, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.HandleDeleteScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleDeleteScheduledStatusLift(ctx))
 	})
 
 	t.Run("delete_service_unavailable", func(t *testing.T) {
@@ -368,10 +333,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "sched-1")
+		ctx.Params["id"] = "sched-1"
 
-		require.NoError(t, handler.HandleDeleteScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusServiceUnavailable, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusServiceUnavailable)(handler.HandleDeleteScheduledStatusLift(ctx))
 	})
 
 	for name, deleteErr := range map[string]struct {
@@ -396,10 +360,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "sched-1")
+			ctx.Params["id"] = "sched-1"
 
-			require.NoError(t, handler.HandleDeleteScheduledStatusLift(ctx))
-			require.Equal(t, deleteErr.status, ctx.Response.StatusCode)
+			requireStatus(t, deleteErr.status)(handler.HandleDeleteScheduledStatusLift(ctx))
 		})
 	}
 
@@ -415,10 +378,9 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/scheduled_statuses/sched-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "sched-1")
+		ctx.Params["id"] = "sched-1"
 
-		require.NoError(t, handler.HandleDeleteScheduledStatusLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleDeleteScheduledStatusLift(ctx))
 	})
 
 	t.Run("create_scheduled_status_missing_scheduled_at", func(t *testing.T) {
@@ -429,10 +391,11 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, statusReq)
 		require.NoError(t, err)
 
-		created, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
+		created, resp, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
 		require.NoError(t, err)
 		require.Nil(t, created)
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
 	})
 
 	t.Run("create_scheduled_status_invalid_scheduled_at", func(t *testing.T) {
@@ -444,10 +407,11 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, statusReq)
 		require.NoError(t, err)
 
-		created, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
+		created, resp, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
 		require.NoError(t, err)
 		require.Nil(t, created)
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
 	})
 
 	t.Run("create_scheduled_status_service_unavailable", func(t *testing.T) {
@@ -459,10 +423,11 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, statusReq)
 		require.NoError(t, err)
 
-		created, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
+		created, resp, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
 		require.NoError(t, err)
 		require.Nil(t, created)
-		require.Equal(t, http.StatusServiceUnavailable, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusServiceUnavailable, resp.Status)
 	})
 
 	t.Run("create_scheduled_status_service_error_must_be_at_least", func(t *testing.T) {
@@ -480,10 +445,11 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, statusReq)
 		require.NoError(t, err)
 
-		created, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
+		created, resp, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
 		require.NoError(t, err)
 		require.Nil(t, created)
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
 	})
 
 	t.Run("create_scheduled_status_service_error_internal", func(t *testing.T) {
@@ -501,10 +467,11 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, statusReq)
 		require.NoError(t, err)
 
-		created, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
+		created, resp, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
 		require.NoError(t, err)
 		require.Nil(t, created)
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 
 	t.Run("create_scheduled_status_success", func(t *testing.T) {
@@ -531,9 +498,10 @@ func TestScheduledStatuses_Round12_HandlerBranches(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", writeHeaders, nil, statusReq)
 		require.NoError(t, err)
 
-		created, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
+		created, resp, err := handler.HandleCreateScheduledStatusLift(ctx, &statusReq)
 		require.NoError(t, err)
 		require.NotNil(t, created)
+		require.Nil(t, resp)
 		require.Equal(t, "sched-new", created.ID)
 	})
 }

@@ -1,6 +1,7 @@
-package lift
+package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -29,8 +30,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			ChainID:  1,
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateChallengeLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateChallengeLift(ctx))
 	})
 
 	t.Run("create_challenge_defaults_chain_id_to_1", func(t *testing.T) {
@@ -42,11 +42,10 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			ChainID:  0,
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateChallengeLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleCreateChallengeLift(ctx))
 
-		challenge, ok := ctx.Response.Body.(*storage.WalletChallenge)
-		require.True(t, ok)
+		var challenge storage.WalletChallenge
+		require.NoError(t, json.Unmarshal(resp.Body, &challenge))
 		require.Equal(t, 1, challenge.ChainID)
 	})
 
@@ -60,8 +59,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			ChainID:  1,
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateChallengeLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleCreateChallengeLift(ctx))
 	})
 
 	t.Run("verify_signature_required_fields", func(t *testing.T) {
@@ -74,8 +72,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleVerifySignatureLift(ctxMissingAddress))
-		require.Equal(t, http.StatusBadRequest, ctxMissingAddress.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleVerifySignatureLift(ctxMissingAddress))
 
 		ctxMissingSignature, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/verify", nil, nil, auth.WalletVerifyRequest{
 			ChallengeID: "c1",
@@ -84,8 +81,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleVerifySignatureLift(ctxMissingSignature))
-		require.Equal(t, http.StatusBadRequest, ctxMissingSignature.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleVerifySignatureLift(ctxMissingSignature))
 
 		ctxMissingMessage, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/verify", nil, nil, auth.WalletVerifyRequest{
 			ChallengeID: "c1",
@@ -94,8 +90,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleVerifySignatureLift(ctxMissingMessage))
-		require.Equal(t, http.StatusBadRequest, ctxMissingMessage.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleVerifySignatureLift(ctxMissingMessage))
 	})
 
 	t.Run("verify_signature_error_paths_call_handleAuthServiceError", func(t *testing.T) {
@@ -122,8 +117,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleVerifySignatureLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleVerifySignatureLift(ctx))
 	})
 
 	t.Run("login_wallet_missing_challenge_id_returns_400", func(t *testing.T) {
@@ -136,8 +130,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLoginWalletLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleLoginWalletLift(ctx))
 	})
 
 	t.Run("login_wallet_missing_address_returns_400", func(t *testing.T) {
@@ -150,8 +143,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLoginWalletLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleLoginWalletLift(ctx))
 	})
 
 	t.Run("login_wallet_error_calls_handleAuthServiceError", func(t *testing.T) {
@@ -167,21 +159,19 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLoginWalletLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleLoginWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_address_required", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{
-			Address:   "",
-			Username:  "alice",
+			Address:    "",
+			Username:   "alice",
 			WalletType: "ethereum",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_get_challenge_error_returns_401", func(t *testing.T) {
@@ -202,8 +192,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_username_mismatch_returns_401", func(t *testing.T) {
@@ -226,8 +215,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_challenge_spent_returns_401", func(t *testing.T) {
@@ -250,8 +238,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_signature_verification_failed_returns_401", func(t *testing.T) {
@@ -274,8 +261,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     "msg",
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_mark_challenge_spent_failure_is_non_fatal", func(t *testing.T) {
@@ -303,8 +289,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     message,
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_link_wallet_error_returns_500", func(t *testing.T) {
@@ -332,8 +317,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     message,
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("link_wallet_session_creation_error_returns_500", func(t *testing.T) {
@@ -360,8 +344,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     message,
 		})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleLinkWalletLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
 	})
 
 	t.Run("unlink_wallet_unauthorized_returns_401", func(t *testing.T) {
@@ -369,9 +352,8 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/0xabc", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("address", "0xabc")
-		require.NoError(t, handler.HandleUnlinkWalletLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["address"] = "0xabc"
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleUnlinkWalletLift(ctx))
 	})
 
 	t.Run("unlink_wallet_missing_address_param_returns_400", func(t *testing.T) {
@@ -379,8 +361,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleUnlinkWalletLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleUnlinkWalletLift(ctx))
 	})
 
 	t.Run("unlink_wallet_delete_error_returns_500", func(t *testing.T) {
@@ -389,9 +370,8 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/0xabc", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("address", "0xabc")
-		require.NoError(t, handler.HandleUnlinkWalletLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["address"] = "0xabc"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleUnlinkWalletLift(ctx))
 	})
 
 	t.Run("get_wallets_unauthorized_returns_401", func(t *testing.T) {
@@ -399,8 +379,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/auth/wallet/list", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetWalletsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetWalletsLift(ctx))
 	})
 
 	t.Run("get_wallets_error_returns_500", func(t *testing.T) {
@@ -413,8 +392,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/auth/wallet/list", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetWalletsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetWalletsLift(ctx))
 	})
 
 	t.Run("getAuthenticatedUserLift_invalid_token_returns_empty", func(t *testing.T) {

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -119,10 +119,9 @@ func TestHandleTranslateStatusLift(t *testing.T) {
 		"Authorization": "Bearer " + token,
 	}, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "1")
+	ctx.Params["id"] = "1"
 
-	require.NoError(t, h.HandleTranslateStatusLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleTranslateStatusLift(ctx))
 }
 
 func TestHandleGetTranslationLanguagesLift(t *testing.T) {
@@ -147,8 +146,7 @@ func TestHandleGetTranslationLanguagesLift(t *testing.T) {
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/instance/translation_languages", nil, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.HandleGetTranslationLanguagesLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleGetTranslationLanguagesLift(ctx))
 }
 
 func TestTranslateSpoilerTextFallback(t *testing.T) {

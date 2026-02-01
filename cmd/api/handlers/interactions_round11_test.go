@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -80,67 +80,56 @@ func TestInteractionsHandlers_Round11(t *testing.T) {
 
 	ctxFollow, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/follow", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxFollow.SetParam("id", "bob")
-	require.NoError(t, handler.HandleFollowLift(ctxFollow))
-	require.Equal(t, http.StatusOK, ctxFollow.Response.StatusCode)
+	ctxFollow.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(handler.HandleFollowLift(ctxFollow))
 
 	ctxUnfollow, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unfollow", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxUnfollow.SetParam("id", "bob")
-	require.NoError(t, handler.HandleUnfollowLift(ctxUnfollow))
-	require.Equal(t, http.StatusOK, ctxUnfollow.Response.StatusCode)
+	ctxUnfollow.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(handler.HandleUnfollowLift(ctxUnfollow))
 
 	ctxBlock, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/block", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxBlock.SetParam("id", "bob")
-	require.NoError(t, handler.HandleBlockLift(ctxBlock))
-	require.Equal(t, http.StatusOK, ctxBlock.Response.StatusCode)
+	ctxBlock.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(handler.HandleBlockLift(ctxBlock))
 
 	ctxUnblock, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/bob/unblock", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxUnblock.SetParam("id", "bob")
-	require.NoError(t, handler.HandleUnblockLift(ctxUnblock))
-	require.Equal(t, http.StatusOK, ctxUnblock.Response.StatusCode)
+	ctxUnblock.Params["id"] = "bob"
+	requireStatus(t, http.StatusOK)(handler.HandleUnblockLift(ctxUnblock))
 
 	ctxBlocks, err := round10NewLiftContext(http.MethodGet, "/api/v1/blocks", readHeaders, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetBlocksLift(ctxBlocks))
-	require.Equal(t, http.StatusOK, ctxBlocks.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetBlocksLift(ctxBlocks))
 
 	ctxFav, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/1/favourite", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxFav.SetParam("id", "1")
-	require.NoError(t, handler.HandleFavoriteLift(ctxFav))
-	require.Equal(t, http.StatusOK, ctxFav.Response.StatusCode)
+	ctxFav.Params["id"] = "1"
+	requireStatus(t, http.StatusOK)(handler.HandleFavoriteLift(ctxFav))
 
 	ctxUnfav, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/1/unfavourite", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxUnfav.SetParam("id", "1")
-	require.NoError(t, handler.HandleUnfavoriteLift(ctxUnfav))
-	require.Equal(t, http.StatusOK, ctxUnfav.Response.StatusCode)
+	ctxUnfav.Params["id"] = "1"
+	requireStatus(t, http.StatusOK)(handler.HandleUnfavoriteLift(ctxUnfav))
 
 	ctxReblog, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/1/reblog", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxReblog.SetParam("id", "1")
-	require.NoError(t, handler.HandleReblogLift(ctxReblog))
-	require.Equal(t, http.StatusOK, ctxReblog.Response.StatusCode)
+	ctxReblog.Params["id"] = "1"
+	requireStatus(t, http.StatusOK)(handler.HandleReblogLift(ctxReblog))
 
 	ctxUnreblog, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/1/unreblog", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxUnreblog.SetParam("id", "1")
-	require.NoError(t, handler.HandleUnreblogLift(ctxUnreblog))
-	require.Equal(t, http.StatusOK, ctxUnreblog.Response.StatusCode)
+	ctxUnreblog.Params["id"] = "1"
+	requireStatus(t, http.StatusOK)(handler.HandleUnreblogLift(ctxUnreblog))
 
 	ctxFavBy, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/favourited_by", nil, map[string]string{"limit": "2"}, nil)
 	require.NoError(t, err)
-	ctxFavBy.SetParam("id", "1")
-	require.NoError(t, handler.HandleGetStatusFavouritedByLift(ctxFavBy))
-	require.Equal(t, http.StatusOK, ctxFavBy.Response.StatusCode)
+	ctxFavBy.Params["id"] = "1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetStatusFavouritedByLift(ctxFavBy))
 
 	ctxReblogBy, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/1/reblogged_by", nil, map[string]string{"limit": "2"}, nil)
 	require.NoError(t, err)
-	ctxReblogBy.SetParam("id", "1")
-	require.NoError(t, handler.HandleGetStatusRebloggedByLift(ctxReblogBy))
-	require.Equal(t, http.StatusOK, ctxReblogBy.Response.StatusCode)
+	ctxReblogBy.Params["id"] = "1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetStatusRebloggedByLift(ctxReblogBy))
 
 }

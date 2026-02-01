@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -121,22 +122,22 @@ type WebSocketTrendAnalysis struct {
 }
 
 // GetWebSocketCostAnalytics retrieves comprehensive WebSocket cost analytics
-func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCostAnalyticsRequest) (WebSocketCostSummaryResponse, error) {
+func (h *Handler) GetWebSocketCostAnalytics(ctx *apptheory.Context, req WebSocketCostAnalyticsRequest) (WebSocketCostSummaryResponse, error) {
 	startTime, err := time.Parse(common.DateFormat, req.StartDate)
 	if err != nil {
-		return WebSocketCostSummaryResponse{}, lift.ValidationError("invalid start_date format, use YYYY-MM-DD")
+		return WebSocketCostSummaryResponse{}, apperrors.ValidationFailed("start_date", "invalid start_date format, use YYYY-MM-DD")
 	}
 
 	endTime, err := time.Parse(common.DateFormat, req.EndDate)
 	if err != nil {
-		return WebSocketCostSummaryResponse{}, lift.ValidationError("invalid end_date format, use YYYY-MM-DD")
+		return WebSocketCostSummaryResponse{}, apperrors.ValidationFailed("end_date", "invalid end_date format, use YYYY-MM-DD")
 	}
 
 	// Set end time to end of day
 	endTime = endTime.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
 	if endTime.Before(startTime) {
-		return WebSocketCostSummaryResponse{}, lift.ValidationError("end_date must be after start_date")
+		return WebSocketCostSummaryResponse{}, apperrors.ValidationFailed("end_date", "end_date must be after start_date")
 	}
 
 	limit := req.Limit
@@ -154,23 +155,23 @@ func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCost
 	summary, err := h.buildWebSocketOverallSummary(costRepo, startTime, endTime)
 	if err != nil {
 		h.logger.Error("failed to build WebSocket overall summary", zap.Error(err))
-		return WebSocketCostSummaryResponse{}, lift.NewLiftError("SUMMARY_ERROR", "failed to generate cost summary", 500)
+		return WebSocketCostSummaryResponse{}, apperrors.InternalWithCause(err, "failed to generate cost summary")
 	}
 	response.Summary = summary
 
 	// Get top users by cost
-	topUsers, err := costRepo.GetTopCostlyUsers(ctx.Request.Context(), startTime, endTime, limit)
+	topUsers, err := costRepo.GetTopCostlyUsers(ctx.Context(), startTime, endTime, limit)
 	if err != nil {
 		h.logger.Error("failed to get top costly users", zap.Error(err))
-		return WebSocketCostSummaryResponse{}, lift.NewLiftError("USERS_ERROR", "failed to get top users", 500)
+		return WebSocketCostSummaryResponse{}, apperrors.InternalWithCause(err, "failed to get top users")
 	}
 	response.TopUsers = topUsers
 
 	// Get high cost operations
-	highCostOps, err := costRepo.GetHighCostOperations(ctx.Request.Context(), 0.01, startTime, endTime, limit) // $0.01 threshold
+	highCostOps, err := costRepo.GetHighCostOperations(ctx.Context(), 0.01, startTime, endTime, limit) // $0.01 threshold
 	if err != nil {
 		h.logger.Error("failed to get high cost operations", zap.Error(err))
-		return WebSocketCostSummaryResponse{}, lift.NewLiftError("OPERATIONS_ERROR", "failed to get high cost operations", 500)
+		return WebSocketCostSummaryResponse{}, apperrors.InternalWithCause(err, "failed to get high cost operations")
 	}
 
 	// Convert to response format
@@ -192,13 +193,13 @@ func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCost
 	trends, err := h.buildWebSocketCostTrends(costRepo, startTime, endTime, req.Period)
 	if err != nil {
 		h.logger.Error("failed to build WebSocket cost trends", zap.Error(err))
-		return WebSocketCostSummaryResponse{}, lift.NewLiftError("TRENDS_ERROR", "failed to generate cost trends", 500)
+		return WebSocketCostSummaryResponse{}, apperrors.InternalWithCause(err, "failed to generate cost trends")
 	}
 	response.CostTrends = trends
 
 	// Get user-specific details if requested
 	if req.UserID != "" {
-		userDetails, err := costRepo.GetUserCostSummary(ctx.Request.Context(), req.UserID, startTime, endTime)
+		userDetails, err := costRepo.GetUserCostSummary(ctx.Context(), req.UserID, startTime, endTime)
 		if err != nil {
 			h.logger.Warn("failed to get user cost summary",
 				zap.String("user_id", req.UserID),
@@ -208,7 +209,7 @@ func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCost
 		}
 
 		// Get budget status for the user
-		budgetStatus, err := costRepo.CheckBudgetLimits(ctx.Request.Context(), req.UserID)
+		budgetStatus, err := costRepo.CheckBudgetLimits(ctx.Context(), req.UserID)
 		if err != nil {
 			h.logger.Warn("failed to get budget status",
 				zap.String("user_id", req.UserID),
@@ -601,31 +602,31 @@ func (h *Handler) addStatisticalSignificance(analysis *WebSocketTrendAnalysis, d
 }
 
 // GetUserWebSocketBudget retrieves budget information for a user
-func (h *Handler) GetUserWebSocketBudget(ctx *lift.Context) (interface{}, error) {
+func (h *Handler) GetUserWebSocketBudget(ctx *apptheory.Context) (interface{}, error) {
 	userID := ctx.Param("user_id")
 	if err := common.ValidateRequiredParam("user_id", userID); err != nil {
-		return nil, lift.ValidationError(err.Error())
+		return nil, apperrors.ValidationFailed("user_id", err.Error())
 	}
 
 	// Get WebSocket cost repository from the repository storage
 	costRepo := webSocketCostRepoProvider(h)
 
 	// Get user budgets
-	budgets, err := costRepo.GetUserBudgets(ctx.Request.Context(), userID)
+	budgets, err := costRepo.GetUserBudgets(ctx.Context(), userID)
 	if err != nil {
 		h.logger.Error("failed to get user budgets",
 			zap.String("user_id", userID),
 			zap.Error(err))
-		return nil, lift.NewLiftError("BUDGET_ERROR", "failed to retrieve budget information", 500)
+		return nil, apperrors.InternalWithCause(err, "failed to retrieve budget information")
 	}
 
 	// Get current budget status
-	budgetStatus, err := costRepo.CheckBudgetLimits(ctx.Request.Context(), userID)
+	budgetStatus, err := costRepo.CheckBudgetLimits(ctx.Context(), userID)
 	if err != nil {
 		h.logger.Error("failed to check budget limits",
 			zap.String("user_id", userID),
 			zap.Error(err))
-		return nil, lift.NewLiftError("BUDGET_STATUS_ERROR", "failed to check budget status", 500)
+		return nil, apperrors.InternalWithCause(err, "failed to check budget status")
 	}
 
 	return map[string]interface{}{
@@ -637,10 +638,10 @@ func (h *Handler) GetUserWebSocketBudget(ctx *lift.Context) (interface{}, error)
 }
 
 // CreateUserWebSocketBudget creates or updates a budget for a user
-func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, error) {
+func (h *Handler) CreateUserWebSocketBudget(ctx *apptheory.Context) (interface{}, error) {
 	userID := ctx.Param("user_id")
 	if err := common.ValidateRequiredParam("user_id", userID); err != nil {
-		return nil, lift.ValidationError(err.Error())
+		return nil, apperrors.ValidationFailed("user_id", err.Error())
 	}
 
 	var budgetReq struct {
@@ -652,12 +653,11 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 		MessagesPerMinute int     `json:"messages_per_minute,omitempty"`
 	}
 
-	if err := common.ValidateSliceNotEmpty("requestBody", ctx.Request.Body); err == nil {
-		if err := json.Unmarshal(ctx.Request.Body, &budgetReq); err != nil {
-			return nil, lift.ValidationError("invalid request body")
-		}
-	} else {
-		return nil, lift.ValidationError("request body required")
+	if err := common.ValidateSliceNotEmpty("requestBody", ctx.Request.Body); err != nil {
+		return nil, apperrors.ValidationFailed("request_body", "request body required")
+	}
+	if err := json.Unmarshal(ctx.Request.Body, &budgetReq); err != nil {
+		return nil, apperrors.ValidationFailed("request_body", "invalid request body")
 	}
 
 	// Convert dollars to microcents
@@ -696,7 +696,7 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 	}
 
 	// Get username from user repository
-	if user, err := h.repos.Account().GetUser(ctx.Request.Context(), userID); err == nil && user != nil {
+	if user, err := h.repos.Account().GetUser(ctx.Context(), userID); err == nil && user != nil {
 		budget.Username = user.Username
 	}
 
@@ -704,7 +704,7 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 	costRepo := webSocketCostRepoProvider(h)
 
 	// Check if budget already exists
-	existingBudget, err := costRepo.GetBudget(ctx.Request.Context(), userID, budgetReq.Period)
+	existingBudget, err := costRepo.GetBudget(ctx.Context(), userID, budgetReq.Period)
 	if err == nil && existingBudget != nil {
 		// Update existing budget
 		existingBudget.BudgetMicroCents = budgetMicroCents
@@ -713,11 +713,11 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 		existingBudget.MaxConcurrentConnections = budgetReq.MaxConnections
 		existingBudget.MessagesPerMinute = budgetReq.MessagesPerMinute
 
-		if err := costRepo.UpdateBudget(ctx.Request.Context(), existingBudget); err != nil {
+		if err := costRepo.UpdateBudget(ctx.Context(), existingBudget); err != nil {
 			h.logger.Error("failed to update WebSocket budget",
 				zap.String("user_id", userID),
 				zap.Error(err))
-			return nil, lift.NewLiftError("BUDGET_UPDATE_ERROR", "failed to update budget", 500)
+			return nil, apperrors.InternalWithCause(err, "failed to update budget")
 		}
 
 		return map[string]interface{}{
@@ -728,11 +728,11 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 	}
 
 	// Create new budget
-	if err := costRepo.CreateBudget(ctx.Request.Context(), budget); err != nil {
+	if err := costRepo.CreateBudget(ctx.Context(), budget); err != nil {
 		h.logger.Error("failed to create WebSocket budget",
 			zap.String("user_id", userID),
 			zap.Error(err))
-		return nil, lift.NewLiftError("BUDGET_CREATE_ERROR", "failed to create budget", 500)
+		return nil, apperrors.InternalWithCause(err, "failed to create budget")
 	}
 
 	return map[string]interface{}{

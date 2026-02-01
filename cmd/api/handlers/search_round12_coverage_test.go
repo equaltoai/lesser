@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -110,15 +110,13 @@ func TestSearch_Round12Coverage(t *testing.T) {
 		t.Run("missing query is validation error", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search", nil, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleAccountSearchLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(handler.HandleAccountSearchLift(ctx))
 		})
 
 		t.Run("following filter requires auth", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search", nil, map[string]string{"q": "alice", "following": "true"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleAccountSearchLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(handler.HandleAccountSearchLift(ctx))
 		})
 
 		t.Run("optional auth ignores invalid header", func(t *testing.T) {
@@ -132,15 +130,15 @@ func TestSearch_Round12Coverage(t *testing.T) {
 			headers := map[string]string{"Authorization": "Bearer " + readToken}
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search", headers, map[string]string{"q": "alice", "offset": "-1", "limit": "nope"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleAccountSearchLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(handler.HandleAccountSearchLift(ctx))
 		})
 
 		t.Run("valid offset is applied", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search", nil, map[string]string{"q": "alice", "offset": "5"}, nil)
 			require.NoError(t, err)
-			params, err := handler.parseAccountSearchParams(ctx)
+			params, resp, err := handler.parseAccountSearchParams(ctx)
 			require.NoError(t, err)
+			require.Nil(t, resp)
 			require.NotNil(t, params)
 			require.Equal(t, 5, params.offset)
 		})
@@ -161,8 +159,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 			}
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search", nil, map[string]string{"q": "@user@example.com", "resolve": "true"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleAccountSearchLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(handler.HandleAccountSearchLift(ctx))
 		})
 	})
 
@@ -174,8 +171,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 			handler.registry = &RegistryStub{}
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search/suggestions", nil, map[string]string{"q": "h"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleGetSearchSuggestionsLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(handler.HandleGetSearchSuggestionsLift(ctx))
 		})
 
 		t.Run("service error returns 500", func(t *testing.T) {
@@ -188,8 +184,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 			}
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search/suggestions", nil, map[string]string{"q": "he"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleGetSearchSuggestionsLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(handler.HandleGetSearchSuggestionsLift(ctx))
 		})
 
 		t.Run("success converts results", func(t *testing.T) {
@@ -204,8 +199,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 			}
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/search/suggestions", nil, map[string]string{"q": "he"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleGetSearchSuggestionsLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(handler.HandleGetSearchSuggestionsLift(ctx))
 		})
 	})
 
@@ -216,32 +210,28 @@ func TestSearch_Round12Coverage(t *testing.T) {
 			handler, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/search/statuses", nil, map[string]string{"q": "hello"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleStatusSearchLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(handler.HandleStatusSearchLift(ctx))
 		})
 
 		t.Run("invalid auth header is unauthorized", func(t *testing.T) {
 			handler, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/search/statuses", map[string]string{"Authorization": "nope"}, map[string]string{"q": "hello"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleStatusSearchLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(handler.HandleStatusSearchLift(ctx))
 		})
 
 		t.Run("missing query is validation error before auth", func(t *testing.T) {
 			handler, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/search/statuses", nil, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleStatusSearchLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(handler.HandleStatusSearchLift(ctx))
 		})
 
 		t.Run("invalid token is unauthorized", func(t *testing.T) {
 			handler, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/search/statuses", map[string]string{"Authorization": "Bearer invalid"}, map[string]string{"q": "hello"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleStatusSearchLift(ctx))
-			require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnauthorized)(handler.HandleStatusSearchLift(ctx))
 		})
 
 		t.Run("token without read scope is insufficient scope", func(t *testing.T) {
@@ -249,8 +239,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 			token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/search/statuses", map[string]string{"Authorization": "Bearer " + token}, map[string]string{"q": "hello"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleStatusSearchLift(ctx))
-			require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusForbidden)(handler.HandleStatusSearchLift(ctx))
 		})
 
 		t.Run("success parses params and records analytics", func(t *testing.T) {
@@ -271,8 +260,7 @@ func TestSearch_Round12Coverage(t *testing.T) {
 				"local":      "true",
 			}, nil)
 			require.NoError(t, err)
-			require.NoError(t, handler.HandleStatusSearchLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusOK)(handler.HandleStatusSearchLift(ctx))
 		})
 
 		t.Run("performStatusSearch handles empty queries", func(t *testing.T) {

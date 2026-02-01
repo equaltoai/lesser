@@ -1,14 +1,13 @@
 package auth
 
 import (
-	"context"
 	"errors"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -35,9 +34,7 @@ func TestUnifiedAuthMiddleware_RequiredAuth_SetsContextAndCallsNext(t *testing.T
 		claims: testClaims{username: "alice", scopes: map[string]bool{common.ScopeRead: true}},
 	}
 
-	req := lift.NewRequest(nil)
-	req.Headers = map[string]string{"Authorization": "Bearer token"}
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
 
 	mw := RequiredAuth(MiddlewareConfig{
 		OAuthService:  stub,
@@ -49,22 +46,24 @@ func TestUnifiedAuthMiddleware_RequiredAuth_SetsContextAndCallsNext(t *testing.T
 	})
 
 	called := false
-	handler := mw(lift.HandlerFunc(func(c *lift.Context) error {
+	handler := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
 		called = true
 		assert.Equal(t, "alice", c.Get("username"))
 		assert.NotNil(t, c.Get("claims"))
 		assert.NotNil(t, c.Get("auth_context"))
-		return nil
-	}))
+		return &apptheory.Response{Status: 200}, nil
+	})
 
-	require.NoError(t, handler.Handle(ctx))
+	resp, err := handler(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 200, resp.Status)
 	assert.True(t, called)
 }
 
 func TestUnifiedAuthMiddleware_RequiredAuth_RespondsOnMissingHeader(t *testing.T) {
 	stub := oauthServiceStub{claims: testClaims{username: "alice", scopes: map[string]bool{common.ScopeRead: true}}}
-	req := lift.NewRequest(nil)
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := newTestContext("GET", "/test")
 
 	mw := RequiredAuth(MiddlewareConfig{
 		OAuthService:  stub,
@@ -72,9 +71,16 @@ func TestUnifiedAuthMiddleware_RequiredAuth_RespondsOnMissingHeader(t *testing.T
 		RequiredScope: common.ScopeRead,
 	})
 
-	handler := mw(lift.HandlerFunc(func(*lift.Context) error { return nil }))
-	_ = handler.Handle(ctx)
-	assert.Equal(t, 401, ctx.Response.StatusCode)
+	called := false
+	handler := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+		called = true
+		return &apptheory.Response{Status: 200}, nil
+	})
+	resp, err := handler(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.False(t, called)
+	assert.Equal(t, 401, resp.Status)
 }
 
 func TestUnifiedAuthMiddleware_RequiredAuthWithMultipleScopes(t *testing.T) {
@@ -82,9 +88,7 @@ func TestUnifiedAuthMiddleware_RequiredAuthWithMultipleScopes(t *testing.T) {
 		claims: testClaims{username: "alice", scopes: map[string]bool{common.ScopeWrite: true}},
 	}
 
-	req := lift.NewRequest(nil)
-	req.Headers = map[string]string{"Authorization": "Bearer token"}
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
 
 	mw := RequiredAuthWithMultipleScopes(MiddlewareConfig{
 		OAuthService:  stub,
@@ -95,12 +99,13 @@ func TestUnifiedAuthMiddleware_RequiredAuthWithMultipleScopes(t *testing.T) {
 	})
 
 	called := false
-	handler := mw(lift.HandlerFunc(func(c *lift.Context) error {
+	handler := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
 		called = true
 		assert.Equal(t, "alice", c.Get("username"))
-		return nil
-	}))
-	require.NoError(t, handler.Handle(ctx))
+		return &apptheory.Response{Status: 200}, nil
+	})
+	_, err := handler(ctx)
+	require.NoError(t, err)
 	assert.True(t, called)
 }
 
@@ -108,8 +113,7 @@ func TestUnifiedAuthMiddleware_OptionalAuth_PopulatesContextButAllowsAnonymous(t
 	logger := zaptest.NewLogger(t)
 
 	// No header -> unauthenticated
-	req := lift.NewRequest(nil)
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := newTestContext("GET", "/test")
 
 	mw := OptionalAuth(MiddlewareConfig{
 		OAuthService: oauthServiceStub{claims: nil, err: errors.New("bad token")},
@@ -118,29 +122,28 @@ func TestUnifiedAuthMiddleware_OptionalAuth_PopulatesContextButAllowsAnonymous(t
 	})
 
 	called := false
-	handler := mw(lift.HandlerFunc(func(c *lift.Context) error {
+	handler := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
 		called = true
 		assert.False(t, IsAuthenticated(c))
 		assert.Equal(t, "", GetAuthenticatedUsername(c))
-		return nil
-	}))
-	require.NoError(t, handler.Handle(ctx))
+		return &apptheory.Response{Status: 200}, nil
+	})
+	_, err := handler(ctx)
+	require.NoError(t, err)
 	assert.True(t, called)
 
 	// Header present but validation fails -> still anonymous
-	req = lift.NewRequest(nil)
-	req.Headers = map[string]string{"Authorization": "Bearer token"}
-	ctx = lift.NewContext(context.Background(), req)
-	handler = mw(lift.HandlerFunc(func(c *lift.Context) error {
+	ctx = newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
+	handler = mw(func(c *apptheory.Context) (*apptheory.Response, error) {
 		assert.False(t, IsAuthenticated(c))
-		return nil
-	}))
-	require.NoError(t, handler.Handle(ctx))
+		return &apptheory.Response{Status: 200}, nil
+	})
+	_, err = handler(ctx)
+	require.NoError(t, err)
 }
 
 func TestUnifiedAuthMiddleware_ContextHelpersAndAccessChecks(t *testing.T) {
-	req := lift.NewRequest(nil)
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := &apptheory.Context{}
 
 	assert.Equal(t, "", GetAuthenticatedUsername(ctx))
 	assert.Nil(t, GetJWTClaims(ctx))

@@ -1,6 +1,7 @@
-package lift
+package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -40,8 +41,9 @@ func TestAnnouncements_ListDismissAndReactions(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/announcements", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetAnnouncementsLift(ctx))
-	body := ctx.Response.Body.([]apimodels.Announcement)
+	resp := requireStatus(t, http.StatusOK)(handler.HandleGetAnnouncementsLift(ctx))
+	var body []apimodels.Announcement
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	require.Len(t, body, 1)
 	require.Equal(t, "a1", body[0].ID)
 	require.NotEmpty(t, body[0].Tags)
@@ -51,14 +53,14 @@ func TestAnnouncements_ListDismissAndReactions(t *testing.T) {
 
 	ctxDismiss, err := round10NewLiftContext(http.MethodPost, "/api/v1/announcements/a1/dismiss", headers, nil, nil)
 	require.NoError(t, err)
-	ctxDismiss.SetParam("id", "a1")
-	require.NoError(t, handler.HandleDismissAnnouncementLift(ctxDismiss))
+	ctxDismiss.Params["id"] = "a1"
+	requireStatus(t, http.StatusOK)(handler.HandleDismissAnnouncementLift(ctxDismiss))
 
 	ctxReact, err := round10NewLiftContext(http.MethodPut, "/api/v1/announcements/a1/reactions/party", headers, nil, nil)
 	require.NoError(t, err)
-	ctxReact.SetParam("id", "a1")
-	ctxReact.SetParam("name", ":party:")
-	require.NoError(t, handler.HandleAddAnnouncementReactionLift(ctxReact))
+	ctxReact.Params["id"] = "a1"
+	ctxReact.Params["name"] = ":party:"
+	requireStatus(t, http.StatusOK)(handler.HandleAddAnnouncementReactionLift(ctxReact))
 }
 
 func TestAnnouncements_CreateAnnouncement(t *testing.T) {
@@ -75,12 +77,10 @@ func TestAnnouncements_CreateAnnouncement(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	ctxBad := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/announcements", headers, nil, []byte(`{"text":`))
-	require.NoError(t, handler.HandleCreateAnnouncementLift(ctxBad))
-	require.Equal(t, http.StatusBadRequest, ctxBad.Response.StatusCode)
+	requireStatus(t, http.StatusBadRequest)(handler.HandleCreateAnnouncementLift(ctxBad))
 
 	body := apimodels.CreateAnnouncementRequest{Text: "hello", StartsAt: "2024-01-02T15:04:05Z", EndsAt: "2024-01-03T15:04:05Z", AllDay: true}
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/announcements", headers, nil, body)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateAnnouncementLift(ctx))
-	require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusCreated)(handler.HandleCreateAnnouncementLift(ctx))
 }

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -78,8 +78,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 	t.Run("create note unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", nil, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note returns 500 when reputation signer misconfigured", func(t *testing.T) {
@@ -89,8 +88,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
 		require.NoError(t, err)
-		require.NoError(t, badHandler.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(badHandler.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note forbidden for low reputation", func(t *testing.T) {
@@ -104,14 +102,12 @@ func TestNotesHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
 		require.NoError(t, err)
-		require.NoError(t, lowHandler.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(lowHandler.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note invalid body", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notes", headers, nil, []byte("{"))
-		require.NoError(t, h.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note too many sources", func(t *testing.T) {
@@ -126,8 +122,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 		}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, req)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note rate limited", func(t *testing.T) {
@@ -150,8 +145,7 @@ func TestNotesHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", lowerHeaders, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
 		require.NoError(t, err)
-		require.NoError(t, rateHandler.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusTooManyRequests, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusTooManyRequests)(rateHandler.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note storage failure returns 500", func(t *testing.T) {
@@ -164,23 +158,20 @@ func TestNotesHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", headers, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
 		require.NoError(t, err)
-		require.NoError(t, failHandler.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(failHandler.HandleCreateNoteLift(ctx))
 	})
 
 	t.Run("create note success", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes", lowerHeaders, nil, apimodels.CreateCommunityNoteRequest{ObjectID: "obj1", ObjectType: "Note", Content: "content", Language: "en"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleCreateNoteLift(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
-		require.NotEmpty(t, ctx.Response.Headers["X-Cost-Micros"])
+		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateNoteLift(ctx))
+		require.NotEmpty(t, resp.Headers["x-cost-micros"])
 	})
 
 	t.Run("get notes missing object id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetNotesLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetNotesLift(ctx))
 	})
 
 	t.Run("get notes service failure returns 500", func(t *testing.T) {
@@ -193,47 +184,41 @@ func TestNotesHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/obj1", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "obj1")
-		require.NoError(t, failHandler.HandleGetNotesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["object_id"] = "obj1"
+		requireStatus(t, http.StatusInternalServerError)(failHandler.HandleGetNotesLift(ctx))
 	})
 
 	t.Run("get notes success unauthenticated", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/obj1", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "obj1")
-		require.NoError(t, h.HandleGetNotesLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["object_id"] = "obj1"
+		requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
 	})
 
 	t.Run("get notes success authenticated (lowercase header)", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notes/obj1", lowerHeaders, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("object_id", "obj1")
-		require.NoError(t, h.HandleGetNotesLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["object_id"] = "obj1"
+		requireStatus(t, http.StatusOK)(h.HandleGetNotesLift(ctx))
 	})
 
 	t.Run("vote missing note id", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes//vote", headers, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful"})
 		require.NoError(t, err)
-		require.NoError(t, h.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("vote unauthorized", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes/n1/vote", nil, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "n1")
-		require.NoError(t, h.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		ctx.Params["id"] = "n1"
+		requireStatus(t, http.StatusUnauthorized)(h.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("vote invalid request body", func(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notes/n1/vote", headers, nil, []byte("{"))
-		ctx.SetParam("id", "n1")
-		require.NoError(t, h.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "n1"
+		requireStatus(t, http.StatusBadRequest)(h.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("vote forbidden for low reputation", func(t *testing.T) {
@@ -247,72 +232,63 @@ func TestNotesHandlersRound12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes/n1/vote", headers, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "n1")
-		require.NoError(t, lowHandler.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		ctx.Params["id"] = "n1"
+		requireStatus(t, http.StatusForbidden)(lowHandler.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("vote not found", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes/missing/vote", headers, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
-		require.NoError(t, h.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(h.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("vote forbidden on own note", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes/own/vote", headers, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "own")
-		require.NoError(t, h.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		ctx.Params["id"] = "own"
+		requireStatus(t, http.StatusForbidden)(h.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("vote storage failure returns 500", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes/fail/vote", headers, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "fail")
-		require.NoError(t, h.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "fail"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("vote success", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/notes/n1/vote", lowerHeaders, nil, apimodels.VoteCommunityNoteRequest{VoteType: "helpful"})
 		require.NoError(t, err)
-		ctx.SetParam("id", "n1")
-		require.NoError(t, h.HandleVoteNoteLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "n1"
+		requireStatus(t, http.StatusOK)(h.HandleVoteNoteLift(ctx))
 	})
 
 	t.Run("get user notes missing username", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts//notes", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetUserNotesLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetUserNotesLift(ctx))
 	})
 
 	t.Run("get user notes invalid limit", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/notes", nil, map[string]string{"limit": "bad"}, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "alice")
-		require.NoError(t, h.HandleGetUserNotesLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "alice"
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetUserNotesLift(ctx))
 	})
 
 	t.Run("get user notes service failure returns 500", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/error/notes", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "error")
-		require.NoError(t, h.HandleGetUserNotesLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["id"] = "error"
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetUserNotesLift(ctx))
 	})
 
 	t.Run("get user notes success", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/notes", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "alice")
-		require.NoError(t, h.HandleGetUserNotesLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["id"] = "alice"
+		requireStatus(t, http.StatusOK)(h.HandleGetUserNotesLift(ctx))
 	})
 }
 

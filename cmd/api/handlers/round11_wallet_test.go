@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -78,32 +78,27 @@ func TestWalletHandlers_FullFlow(t *testing.T) {
 
 	ctxVerify, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/verify", nil, nil, verifyReq)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleVerifySignatureLift(ctxVerify))
-	require.Equal(t, http.StatusOK, ctxVerify.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleVerifySignatureLift(ctxVerify))
 
 	ctxLogin, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/login", nil, nil, verifyReq)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleLoginWalletLift(ctxLogin))
-	require.Equal(t, http.StatusOK, ctxLogin.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleLoginWalletLift(ctxLogin))
 
 	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite, auth.ScopeRead})
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	ctxLink, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", headers, nil, apimodels.WalletLinkRequest{Address: address, ChainID: 1, WalletType: "ethereum"})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleLinkWalletLift(ctxLink))
-	require.Equal(t, http.StatusOK, ctxLink.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxLink))
 
 	ctxUnlink, err := round10NewLiftContext(http.MethodDelete, "/auth/wallet/unlink/"+address, headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnlink.SetParam("address", address)
-	require.NoError(t, handler.HandleUnlinkWalletLift(ctxUnlink))
-	require.Equal(t, http.StatusOK, ctxUnlink.Response.StatusCode)
+	ctxUnlink.Params["address"] = address
+	requireStatus(t, http.StatusOK)(handler.HandleUnlinkWalletLift(ctxUnlink))
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/auth/wallet/list", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetWalletsLift(ctxList))
-	require.Equal(t, http.StatusOK, ctxList.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetWalletsLift(ctxList))
 }
 
 func TestWalletHandlers_CreateAndLinkRegistration(t *testing.T) {
@@ -140,12 +135,11 @@ func TestWalletHandlers_CreateAndLinkRegistration(t *testing.T) {
 
 	ctxCreate, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/challenge", nil, nil, apimodels.WalletChallengeRequest{Address: address, Username: "alice", ChainID: 1})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateChallengeLift(ctxCreate))
+	requireStatus(t, http.StatusOK)(handler.HandleCreateChallengeLift(ctxCreate))
 
 	ctxLink, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{Address: address, Username: "alice", ChainID: 1, WalletType: "ethereum", ChallengeID: challenge.ID, Signature: signature, Message: challenge.Message})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleLinkWalletLift(ctxLink))
-	require.Equal(t, http.StatusOK, ctxLink.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxLink))
 }
 
 func TestWalletHandlers_ValidationErrors(t *testing.T) {
@@ -154,16 +148,13 @@ func TestWalletHandlers_ValidationErrors(t *testing.T) {
 
 	ctxMissing, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/challenge", nil, nil, apimodels.WalletChallengeRequest{})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleCreateChallengeLift(ctxMissing))
-	require.Equal(t, http.StatusBadRequest, ctxMissing.Response.StatusCode)
+	requireStatus(t, http.StatusBadRequest)(handler.HandleCreateChallengeLift(ctxMissing))
 
 	ctxLink, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{Address: "0xabc"})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleLinkWalletLift(ctxLink))
-	require.Equal(t, http.StatusUnauthorized, ctxLink.Response.StatusCode)
+	requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctxLink))
 
 	ctxVerify, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/verify", nil, nil, auth.WalletVerifyRequest{})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleVerifySignatureLift(ctxVerify))
-	require.Equal(t, http.StatusBadRequest, ctxVerify.Response.StatusCode)
+	requireStatus(t, http.StatusBadRequest)(handler.HandleVerifySignatureLift(ctxVerify))
 }

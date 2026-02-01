@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -25,9 +26,10 @@ func TestPreferencesGetDefaults(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/preferences", map[string]string{"Authorization": "Bearer " + token}, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetPreferencesLift(ctx))
+	resp := requireStatus(t, http.StatusOK)(handler.HandleGetPreferencesLift(ctx))
 
-	prefs := ctx.Response.Body.(apimodels.Preferences)
+	var prefs apimodels.Preferences
+	require.NoError(t, json.Unmarshal(resp.Body, &prefs))
 	require.Equal(t, "public", prefs.PostingDefaultVisibility)
 	require.Equal(t, "default", prefs.ReadingExpandMedia)
 }
@@ -57,12 +59,13 @@ func TestPreferencesUpdate(t *testing.T) {
 	}
 	ctx, err := round10NewLiftContext(http.MethodPatch, "/api/v1/preferences", headers, nil, update)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleUpdatePreferencesLift(ctx))
+	resp := requireStatus(t, http.StatusOK)(handler.HandleUpdatePreferencesLift(ctx))
 
-	resp := ctx.Response.Body.(apimodels.Preferences)
-	require.Equal(t, "unlisted", resp.PostingDefaultVisibility)
-	require.True(t, resp.PostingDefaultSensitive)
-	require.Equal(t, "hide_all", resp.ReadingExpandMedia)
+	var body apimodels.Preferences
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "unlisted", body.PostingDefaultVisibility)
+	require.True(t, body.PostingDefaultSensitive)
+	require.Equal(t, "hide_all", body.ReadingExpandMedia)
 
 	require.Equal(t, "default", handler.mapExpandMediaPreference("unknown"))
 }

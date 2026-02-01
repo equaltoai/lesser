@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -19,8 +19,9 @@ func TestHandler_handleAuthServiceError_CoversBranches(t *testing.T) {
 	ctx, err := round10NewLiftContext("GET", "/api/v1/auth/error", nil, nil, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.handleAuthServiceError(ctx, nil, "noop"))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	resp, err := h.handleAuthServiceError(ctx, nil, "noop")
+	require.NoError(t, err)
+	require.Nil(t, resp)
 
 	cases := []struct {
 		name       string
@@ -43,8 +44,7 @@ func TestHandler_handleAuthServiceError_CoversBranches(t *testing.T) {
 			ctx, err := round10NewLiftContext("GET", "/api/v1/auth/error", nil, nil, nil)
 			require.NoError(t, err)
 
-			require.NoError(t, h.handleAuthServiceError(ctx, tc.inputErr, "test-operation"))
-			require.Equal(t, tc.wantStatus, ctx.Response.StatusCode)
+			requireStatus(t, tc.wantStatus)(h.handleAuthServiceError(ctx, tc.inputErr, "test-operation"))
 		})
 	}
 }
@@ -52,4 +52,3 @@ func TestHandler_handleAuthServiceError_CoversBranches(t *testing.T) {
 type assertError string
 
 func (e assertError) Error() string { return string(e) }
-

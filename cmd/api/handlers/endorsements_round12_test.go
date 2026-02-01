@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -30,8 +31,7 @@ func TestEndorsementsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetEndorsementsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetEndorsementsLift(ctx))
 	})
 
 	t.Run("success skips nil actors and returns accounts", func(t *testing.T) {
@@ -57,10 +57,10 @@ func TestEndorsementsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetEndorsementsLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.([]apimodels.Account)
-		require.Len(t, resp, 1)
-		require.Equal(t, "carol", resp[0].Username)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetEndorsementsLift(ctx))
+		var accounts []apimodels.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &accounts))
+		require.Len(t, accounts, 1)
+		require.Equal(t, "carol", accounts[0].Username)
 	})
 }

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -62,21 +62,18 @@ func TestUnifiedBoostHandlers_Round11(t *testing.T) {
 	comment := "quote boost"
 	ctxQuote, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{Comment: &comment, Visibility: "public"})
 	require.NoError(t, err)
-	ctxQuote.SetParam("id", "status-1")
-	require.NoError(t, handler.HandleUnifiedBoostLift(ctxQuote))
-	require.Equal(t, http.StatusOK, ctxQuote.Response.StatusCode)
+	ctxQuote.Params["id"] = "status-1"
+	requireStatus(t, http.StatusOK)(handler.HandleUnifiedBoostLift(ctxQuote))
 
 	ctxBoost, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/reblog", headers, nil, models.ReblogRequest{})
 	require.NoError(t, err)
-	ctxBoost.SetParam("id", "status-1")
-	require.NoError(t, handler.HandleUnifiedBoostLift(ctxBoost))
-	require.Equal(t, http.StatusOK, ctxBoost.Response.StatusCode)
+	ctxBoost.Params["id"] = "status-1"
+	requireStatus(t, http.StatusOK)(handler.HandleUnifiedBoostLift(ctxBoost))
 
 	ctxUndo, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/status-1/unreblog", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUndo.SetParam("id", "status-1")
-	require.NoError(t, handler.HandleUndoUnifiedBoostLift(ctxUndo))
-	require.Equal(t, http.StatusOK, ctxUndo.Response.StatusCode)
+	ctxUndo.Params["id"] = "status-1"
+	requireStatus(t, http.StatusOK)(handler.HandleUndoUnifiedBoostLift(ctxUndo))
 
 	require.NotEmpty(t, generateRandomStringForBoost())
 }

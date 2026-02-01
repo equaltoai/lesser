@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	stdErrors "errors"
@@ -19,4 +19,3 @@ func TestIsInsufficientScopeErrorRound12(t *testing.T) {
 
 	require.True(t, isInsufficientScopeError(stdErrors.New(ErrInsufficientScope)))
 }
-

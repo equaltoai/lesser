@@ -1,8 +1,7 @@
-package lift
+package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -15,17 +14,17 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleCreateReportLift handles POST /api/v1/reports
-func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateReportLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	var username string
 	var claims *auth.Claims
 
 	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
 		return h.respondUnauthorized(ctx)
 	}
@@ -75,13 +74,13 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	}
 
 	// Save the report
-	if err := h.repos.Moderation().CreateReport(ctx.Context, report); err != nil {
+	if err := h.repos.Moderation().CreateReport(ctx.Context(), report); err != nil {
 		h.logger.Error("failed to create report", zap.Error(err))
 		return h.respondInternalError(ctx, "failed to create report")
 	}
 
 	// Handle moderation event creation
-	h.handleModerationEvent(ctx.Context, report, username)
+	h.handleModerationEvent(ctx.Context(), report, username)
 
 	// Convert to Mastodon API format
 	response := &models.Report{
@@ -94,27 +93,17 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 		CreatedAt:     report.CreatedAt.Format(time.RFC3339),
 		StatusIDs:     report.StatusIDs,
 		RuleIDs:       convertStringArrayToIntArray(report.RuleIDs),
-		TargetAccount: h.loadTargetAccountLift(ctx.Context, report.TargetAccountID),
+		TargetAccount: h.loadTargetAccountLift(ctx.Context(), report.TargetAccountID),
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
-func (h *Handler) parseReportRequest(ctx *lift.Context) (models.CreateReportRequest, error) {
+func (h *Handler) parseReportRequest(ctx *apptheory.Context) (models.CreateReportRequest, error) {
 	var req models.CreateReportRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environment - try parsing directly from request body
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				h.logger.Debug("invalid report request",
-					zap.Error(err),
-					zap.Error(jsonErr))
-				return req, err
-			}
-		} else {
-			h.logger.Debug("invalid report request", zap.Error(err))
-			return req, err
-		}
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		h.logger.Debug("invalid report request", zap.Error(err))
+		return req, err
 	}
 	return req, nil
 }

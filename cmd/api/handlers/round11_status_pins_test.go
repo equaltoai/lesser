@@ -1,8 +1,7 @@
-package lift
+package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -11,37 +10,27 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
-func handleWithAPIMiddleware(t *testing.T, handlerFunc func(*lift.Context) error, ctx *lift.Context) {
+func handleWithAPIMiddleware(t *testing.T, handlerFunc apptheory.Handler, ctx *apptheory.Context) *apptheory.Response {
 	t.Helper()
 	mw := common.CreateAPIErrorMiddleware(zap.NewNop())
-	require.NoError(t, mw(lift.HandlerFunc(handlerFunc)).Handle(ctx))
+	resp, err := mw(handlerFunc)(ctx)
+	require.NoError(t, err)
+	return resp
 }
 
-func decodeStandardErrorResponse(t *testing.T, ctx *lift.Context) common.StandardErrorResponse {
+func decodeStandardErrorResponse(t *testing.T, resp *apptheory.Response) common.StandardErrorResponse {
 	t.Helper()
 
-	if resp, ok := ctx.Response.Body.(common.StandardErrorResponse); ok {
-		return resp
-	}
+	require.NotNil(t, resp)
 
-	var raw []byte
-	switch v := ctx.Response.Body.(type) {
-	case []byte:
-		raw = v
-	case string:
-		raw = []byte(v)
-	default:
-		raw = []byte(fmt.Sprintf("%v", ctx.Response.Body))
-	}
-
-	var resp common.StandardErrorResponse
-	require.NoError(t, json.Unmarshal(raw, &resp))
-	return resp
+	var decoded common.StandardErrorResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &decoded))
+	return decoded
 }
 
 func TestStatusPins_PinsAndUnpins(t *testing.T) {
@@ -73,16 +62,16 @@ func TestStatusPins_PinsAndUnpins(t *testing.T) {
 
 	ctxMissing, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/pin", nil, nil, nil)
 	require.NoError(t, err)
-	handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxMissing)
-	require.Equal(t, http.StatusUnauthorized, ctxMissing.Response.StatusCode)
-	require.Equal(t, "UNAUTHORIZED", decodeStandardErrorResponse(t, ctxMissing).Code)
+	respMissing := handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxMissing)
+	require.Equal(t, http.StatusUnauthorized, respMissing.Status)
+	require.Equal(t, "UNAUTHORIZED", decodeStandardErrorResponse(t, respMissing).Code)
 
 	ctxInvalid, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/bad id/pin", headers, nil, nil)
 	require.NoError(t, err)
-	ctxInvalid.SetParam("id", "bad id")
-	handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxInvalid)
-	require.Equal(t, http.StatusBadRequest, ctxInvalid.Response.StatusCode)
-	require.Equal(t, "VALIDATION_FAILED", decodeStandardErrorResponse(t, ctxInvalid).Code)
+	ctxInvalid.Params["id"] = "bad id"
+	respInvalid := handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxInvalid)
+	require.Equal(t, http.StatusBadRequest, respInvalid.Status)
+	require.Equal(t, "VALIDATION_FAILED", decodeStandardErrorResponse(t, respInvalid).Code)
 
 	missingObjectID := cfg.BaseURL() + "/objects/missing"
 	notFoundState := &round10QueryState{
@@ -96,18 +85,18 @@ func TestStatusPins_PinsAndUnpins(t *testing.T) {
 
 	ctxNotFound, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/missing/pin", headers, nil, nil)
 	require.NoError(t, err)
-	ctxNotFound.SetParam("id", "missing")
-	handleWithAPIMiddleware(t, notFoundHandler.HandlePinStatusLift, ctxNotFound)
-	require.Equal(t, http.StatusNotFound, ctxNotFound.Response.StatusCode)
-	require.Equal(t, "NOT_FOUND", decodeStandardErrorResponse(t, ctxNotFound).Code)
+	ctxNotFound.Params["id"] = "missing"
+	respNotFound := handleWithAPIMiddleware(t, notFoundHandler.HandlePinStatusLift, ctxNotFound)
+	require.Equal(t, http.StatusNotFound, respNotFound.Status)
+	require.Equal(t, "NOT_FOUND", decodeStandardErrorResponse(t, respNotFound).Code)
 
 	state.objectsByID[objectID] = storagemodels.Object{ID: objectID, Type: activitypub.NoteType, AttributedTo: cfg.ActorURL("bob")}
 	ctxForbidden, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/pin", headers, nil, nil)
 	require.NoError(t, err)
-	ctxForbidden.SetParam("id", "s1")
-	handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxForbidden)
-	require.Equal(t, http.StatusForbidden, ctxForbidden.Response.StatusCode)
-	require.Equal(t, "FORBIDDEN", decodeStandardErrorResponse(t, ctxForbidden).Code)
+	ctxForbidden.Params["id"] = "s1"
+	respForbidden := handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxForbidden)
+	require.Equal(t, http.StatusForbidden, respForbidden.Status)
+	require.Equal(t, "FORBIDDEN", decodeStandardErrorResponse(t, respForbidden).Code)
 
 	state.objectsByID[objectID] = ownedObject
 	errorState := &round10QueryState{
@@ -118,22 +107,22 @@ func TestStatusPins_PinsAndUnpins(t *testing.T) {
 	errorHandler, _, _ := round11NewHandler(t, cfg, errorState)
 	ctxPinned, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/pin", headers, nil, nil)
 	require.NoError(t, err)
-	ctxPinned.SetParam("id", "s1")
-	handleWithAPIMiddleware(t, errorHandler.HandlePinStatusLift, ctxPinned)
-	require.Equal(t, http.StatusConflict, ctxPinned.Response.StatusCode)
-	require.Equal(t, "ALREADY_EXISTS", decodeStandardErrorResponse(t, ctxPinned).Code)
+	ctxPinned.Params["id"] = "s1"
+	respPinned := handleWithAPIMiddleware(t, errorHandler.HandlePinStatusLift, ctxPinned)
+	require.Equal(t, http.StatusConflict, respPinned.Status)
+	require.Equal(t, "ALREADY_EXISTS", decodeStandardErrorResponse(t, respPinned).Code)
 
 	ctxOK, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/pin", headers, nil, nil)
 	require.NoError(t, err)
-	ctxOK.SetParam("id", "s1")
-	handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxOK)
-	require.Equal(t, http.StatusOK, ctxOK.Response.StatusCode)
+	ctxOK.Params["id"] = "s1"
+	respOK := handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxOK)
+	require.Equal(t, http.StatusOK, respOK.Status)
 
 	ctxUnpin, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unpin", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnpin.SetParam("id", "s1")
-	handleWithAPIMiddleware(t, handler.HandleUnpinStatusLift, ctxUnpin)
-	require.Equal(t, http.StatusOK, ctxUnpin.Response.StatusCode)
+	ctxUnpin.Params["id"] = "s1"
+	respUnpin := handleWithAPIMiddleware(t, handler.HandleUnpinStatusLift, ctxUnpin)
+	require.Equal(t, http.StatusOK, respUnpin.Status)
 }
 
 func TestStatusPins_MuteConversation(t *testing.T) {
@@ -163,9 +152,9 @@ func TestStatusPins_MuteConversation(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
 	ctxMute := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses/s1/mute", headers, nil, []byte(`{"duration": 60}`))
-	ctxMute.SetParam("id", "s1")
-	handleWithAPIMiddleware(t, handler.HandleMuteConversationLift, ctxMute)
-	require.Equal(t, http.StatusOK, ctxMute.Response.StatusCode)
+	ctxMute.Params["id"] = "s1"
+	respMute := handleWithAPIMiddleware(t, handler.HandleMuteConversationLift, ctxMute)
+	require.Equal(t, http.StatusOK, respMute.Status)
 
 	retryState := &round10QueryState{
 		actorsByUser:    state.actorsByUser,
@@ -174,15 +163,15 @@ func TestStatusPins_MuteConversation(t *testing.T) {
 	}
 	retryHandler, _, _ := round11NewHandler(t, cfg, retryState)
 	ctxRetry := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/statuses/s1/mute", headers, nil, []byte(`{"duration": 0}`))
-	ctxRetry.SetParam("id", "s1")
-	handleWithAPIMiddleware(t, retryHandler.HandleMuteConversationLift, ctxRetry)
-	require.Equal(t, http.StatusOK, ctxRetry.Response.StatusCode)
+	ctxRetry.Params["id"] = "s1"
+	respRetry := handleWithAPIMiddleware(t, retryHandler.HandleMuteConversationLift, ctxRetry)
+	require.Equal(t, http.StatusOK, respRetry.Status)
 
 	ctxUnmute, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/s1/unmute", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnmute.SetParam("id", "s1")
-	handleWithAPIMiddleware(t, handler.HandleUnmuteConversationLift, ctxUnmute)
-	require.Equal(t, http.StatusOK, ctxUnmute.Response.StatusCode)
+	ctxUnmute.Params["id"] = "s1"
+	respUnmute := handleWithAPIMiddleware(t, handler.HandleUnmuteConversationLift, ctxUnmute)
+	require.Equal(t, http.StatusOK, respUnmute.Status)
 
 	require.Equal(t, objectID, handler.normalizeMuteObjectID("s1"))
 	require.Equal(t, "s1", handler.extractStatusIDFromPath(ctxUnmute, "unmute"))

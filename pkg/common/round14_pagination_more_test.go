@@ -3,19 +3,19 @@ package common
 import (
 	"testing"
 
-	liftTesting "github.com/equaltoai/lesser/pkg/testing/lift"
 	"github.com/stretchr/testify/assert"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestPaginationParamsExtractionAndHelpers(t *testing.T) {
 	t.Run("GetPaginationParams defaults and parsing", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test")
+		ctx := newTestContext("GET", "/test")
 		p := GetPaginationParams(ctx)
 		assert.Equal(t, DefaultPaginationLimit, p.Limit)
 		assert.Equal(t, 0, p.Offset)
 		assert.Equal(t, DefaultPaginationPage, p.Page)
 
-		ctx2 := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithQueryParams(map[string]string{
+		ctx2 := newTestContext("GET", "/test", withQueryParams(map[string]string{
 			"limit":  "200",
 			"page":   "2",
 			"max_id": "m",
@@ -27,7 +27,7 @@ func TestPaginationParamsExtractionAndHelpers(t *testing.T) {
 		assert.Equal(t, "m", p2.MaxID)
 
 		// Explicit offset overrides page-derived offset.
-		ctx3 := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithQueryParams(map[string]string{
+		ctx3 := newTestContext("GET", "/test", withQueryParams(map[string]string{
 			"limit":  "10",
 			"page":   "3",
 			"offset": "7",
@@ -58,14 +58,14 @@ func TestPaginationParamsExtractionAndHelpers(t *testing.T) {
 		assert.Contains(t, link, `rel="prev"`)
 		assert.Contains(t, link, "limit=40")
 
-		ctx := liftTesting.MockLiftContext("GET", "/test")
-		SetPaginationHeaders(ctx, baseURL, params, true, false, "next", "")
-		assert.NotEmpty(t, ctx.Response.Headers["Link"])
-		assert.Equal(t, "40", ctx.Response.Headers["X-Pagination-Limit"])
+		resp := &apptheory.Response{Status: 200}
+		SetPaginationHeaders(resp, baseURL, params, true, false, "next", "")
+		assert.NotEmpty(t, resp.Headers["link"])
+		assert.Equal(t, "40", resp.Headers["x-pagination-limit"][0])
 	})
 
 	t.Run("GetTimelinePaginationParams parses booleans", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithQueryParams(map[string]string{
+		ctx := newTestContext("GET", "/test", withQueryParams(map[string]string{
 			"local":      "true",
 			"only_media": "1",
 			"remote":     "true",
@@ -79,7 +79,7 @@ func TestPaginationParamsExtractionAndHelpers(t *testing.T) {
 	})
 
 	t.Run("GetSearchPaginationParams parses booleans and max_results", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithQueryParams(map[string]string{
+		ctx := newTestContext("GET", "/test", withQueryParams(map[string]string{
 			"type":               "account",
 			"resolve":            "1",
 			"following":          "true",
@@ -95,7 +95,7 @@ func TestPaginationParamsExtractionAndHelpers(t *testing.T) {
 	})
 
 	t.Run("GetAdminPaginationParams parses invited", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithQueryParams(map[string]string{
+		ctx := newTestContext("GET", "/test", withQueryParams(map[string]string{
 			"origin":   "local",
 			"status":   "active",
 			"invited":  "true",

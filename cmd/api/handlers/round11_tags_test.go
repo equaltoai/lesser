@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -16,6 +17,11 @@ import (
 func TestTags_HandleGetTagLift_FallbackAndAuth(t *testing.T) {
 	cfg := round11TestConfig()
 	state := &round10QueryState{
+		hashtagFollowsByUser: map[string][]storagemodels.HashtagFollow{
+			"alice": {
+				{PK: "user#alice", SK: "hashtag#missing", UserID: "alice", Hashtag: "missing", CreatedAt: time.Now()},
+			},
+		},
 		notFoundPKs: map[string]bool{
 			"HASHTAG#missing": true,
 		},
@@ -28,16 +34,15 @@ func TestTags_HandleGetTagLift_FallbackAndAuth(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/tags/missing", headers, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "missing")
-	ctx.Request.Request.Headers = headers
+	ctx.Params["id"] = "missing"
 
-	err = handler.HandleGetTagLift(ctx)
-	require.NoError(t, err)
+	resp := requireStatus(t, http.StatusOK)(handler.HandleGetTagLift(ctx))
 
-	resp := ctx.Response.Body.(apimodels.Tag)
-	require.Equal(t, "missing", resp.Name)
-	require.NotNil(t, resp.Following)
-	require.True(t, *resp.Following)
+	var tag apimodels.Tag
+	require.NoError(t, json.Unmarshal(resp.Body, &tag))
+	require.Equal(t, "missing", tag.Name)
+	require.NotNil(t, tag.Following)
+	require.True(t, *tag.Following)
 }
 
 func TestTags_FollowUnfollowAndFollowedList(t *testing.T) {
@@ -57,26 +62,27 @@ func TestTags_FollowUnfollowAndFollowedList(t *testing.T) {
 
 	ctxFollow, err := round10NewLiftContext(http.MethodPost, "/api/v1/tags/%23Go/follow", headers, nil, nil)
 	require.NoError(t, err)
-	ctxFollow.SetParam("id", "#Go")
-	require.NoError(t, handler.HandleFollowTagLift(ctxFollow))
-	require.Equal(t, http.StatusOK, ctxFollow.Response.StatusCode)
-	respFollow := ctxFollow.Response.Body.(map[string]any)
-	require.Equal(t, true, respFollow["following"])
+	ctxFollow.Params["id"] = "#Go"
+	respFollow := requireStatus(t, http.StatusOK)(handler.HandleFollowTagLift(ctxFollow))
+	var followBody map[string]any
+	require.NoError(t, json.Unmarshal(respFollow.Body, &followBody))
+	require.Equal(t, true, followBody["following"])
 
 	ctxUnfollow, err := round10NewLiftContext(http.MethodPost, "/api/v1/tags/%23Go/unfollow", headers, nil, nil)
 	require.NoError(t, err)
-	ctxUnfollow.SetParam("id", "#Go")
-	require.NoError(t, handler.HandleUnfollowTagLift(ctxUnfollow))
-	require.Equal(t, http.StatusOK, ctxUnfollow.Response.StatusCode)
-	respUnfollow := ctxUnfollow.Response.Body.(map[string]any)
-	require.Equal(t, false, respUnfollow["following"])
+	ctxUnfollow.Params["id"] = "#Go"
+	respUnfollow := requireStatus(t, http.StatusOK)(handler.HandleUnfollowTagLift(ctxUnfollow))
+	var unfollowBody map[string]any
+	require.NoError(t, json.Unmarshal(respUnfollow.Body, &unfollowBody))
+	require.Equal(t, false, unfollowBody["following"])
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/followed_tags", headers, map[string]string{"limit": "1", "max_id": "cursor-1"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetFollowedTagsLift(ctxList))
-	body := ctxList.Response.Body.([]map[string]any)
+	respList := requireStatus(t, http.StatusOK)(handler.HandleGetFollowedTagsLift(ctxList))
+	var body []map[string]any
+	require.NoError(t, json.Unmarshal(respList.Body, &body))
 	require.Len(t, body, 1)
-	require.Contains(t, ctxList.Response.Headers["Link"], "max_id=")
+	require.Contains(t, firstStringValue(respList.Headers, "link"), "max_id=")
 }
 
 func TestTags_Helpers(t *testing.T) {
@@ -86,7 +92,6 @@ func TestTags_Helpers(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer token"}
 	ctx, err := round10NewLiftContext(http.MethodGet, "/tags", headers, map[string]string{"limit": "bad", "max_id": "cursor"}, nil)
 	require.NoError(t, err)
-	ctx.Request.Request.Headers = headers
 
 	authHeader := handler.getAuthorizationHeader(ctx)
 	require.Equal(t, "Bearer token", authHeader)

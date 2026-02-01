@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -127,32 +127,27 @@ func TestAccountsHandlers_SimpleFlows(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice", nil, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("id", "alice")
-	require.NoError(t, h.HandleGetAccountLift(ctx))
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+	ctx.Params["id"] = "alice"
+	requireStatus(t, http.StatusOK)(h.HandleGetAccountLift(ctx))
 
 	ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/lookup", nil, map[string]string{"acct": "alice@example.com"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleAccountLookupLift(ctx2))
-	require.Equal(t, http.StatusOK, ctx2.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleAccountLookupLift(ctx2))
 
 	ctx3, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/followers", nil, map[string]string{"max_id": "1"}, nil)
 	require.NoError(t, err)
-	ctx3.SetParam("id", "alice")
-	require.NoError(t, h.HandleGetAccountFollowersLift(ctx3))
-	require.Equal(t, http.StatusOK, ctx3.Response.StatusCode)
-	require.Contains(t, ctx3.Response.Headers["Link"], "next-cursor")
+	ctx3.Params["id"] = "alice"
+	resp3 := requireStatus(t, http.StatusOK)(h.HandleGetAccountFollowersLift(ctx3))
+	require.Contains(t, firstStringValue(resp3.Headers, "link"), "next-cursor")
 
 	ctx4, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/following", nil, nil, nil)
 	require.NoError(t, err)
-	ctx4.SetParam("id", "alice")
-	require.NoError(t, h.HandleGetAccountFollowingLift(ctx4))
-	require.Equal(t, http.StatusOK, ctx4.Response.StatusCode)
+	ctx4.Params["id"] = "alice"
+	requireStatus(t, http.StatusOK)(h.HandleGetAccountFollowingLift(ctx4))
 
 	ctx5, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/familiar_followers", headers, map[string]string{"id[]": "alice"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetFamiliarFollowersLift(ctx5))
-	require.Equal(t, http.StatusOK, ctx5.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(h.HandleGetFamiliarFollowersLift(ctx5))
 
 	apActor := &activitypub.Actor{
 		BaseObject:                activitypub.BaseObject{ID: "https://example.com/users/alice"},
@@ -161,7 +156,6 @@ func TestAccountsHandlers_SimpleFlows(t *testing.T) {
 	}
 	ctx6, err := round10NewLiftContext(http.MethodGet, "/users/alice/followers", nil, nil, nil)
 	require.NoError(t, err)
-	ctx6.SetParam("username", "alice")
-	require.NoError(t, h.returnActivityPubCollection(ctx6, apActor, "followers"))
-	require.Equal(t, http.StatusOK, ctx6.Response.StatusCode)
+	ctx6.Params["username"] = "alice"
+	requireStatus(t, http.StatusOK)(h.returnActivityPubCollection(ctx6, apActor, "followers"))
 }

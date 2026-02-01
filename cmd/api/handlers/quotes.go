@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -11,43 +11,32 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleCreateQuotePostLift handles POST /api/v1/statuses/:id/quote
 // Creates a quote post of an existing status
-func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
+func (h *Handler) HandleCreateQuotePostLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
-	claims, err := h.authenticateQuoteRequest(ctx)
+	username, err := h.authenticateUser(ctx, []string{"write:statuses", auth.ScopeWrite})
 	if err != nil {
-		return err
-	}
-	if claims == nil {
-		return nil
-	}
-
-	// Check write scope
-	if !claims.HasScope("write:statuses") {
-		return common.RespondInsufficientScope(ctx)
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse request body
 	var params apimodels.CreateQuotePostRequest
 
-	if err := ctx.ParseRequest(&params); err != nil {
-		bodyBytes := ctx.Request.Body
-		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return common.RespondValidationError(ctx, err)
-		}
+	if err := common.ParseRequestWithFallback(ctx, &params); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Validate quote content
@@ -58,7 +47,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 	}
 
 	// Check if original status exists and is quotable
-	originalStatus, err := h.repos.Status().GetStatus(ctx.Context, statusID)
+	originalStatus, err := h.repos.Status().GetStatus(ctx.Context(), statusID)
 	if err != nil {
 		h.logger.Error("failed to get original status", zap.String("status_id", statusID), zap.Error(err))
 		return common.RespondStatusNotFound(ctx)
@@ -69,7 +58,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 	}
 
 	// Check quote permissions
-	canQuote, err := h.checkQuotePermissions(ctx, claims.Username, originalStatus)
+	canQuote, err := h.checkQuotePermissions(ctx, username, originalStatus)
 	if err != nil {
 		h.logger.Error("failed to check quote permissions", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to check permissions")
@@ -80,7 +69,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 	}
 
 	// Create the quote post
-	quotePost, err := h.createQuotePost(ctx, claims.Username, originalStatus, &params)
+	quotePost, err := h.createQuotePost(ctx, username, originalStatus, &params)
 	if err != nil {
 		h.logger.Error("failed to create quote post", zap.Error(err))
 		return common.RespondFailedToCreate(ctx, "quote post")
@@ -89,24 +78,24 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 	// Convert to API format
 	apiStatus := h.convertStatusToAPI(ctx, quotePost)
 
-	return ctx.Status(200).JSON(apiStatus)
+	return okJSON(apiStatus)
 }
 
 // HandleGetQuotesOfStatusLift handles GET /api/v1/statuses/:id/quotes
 // Returns a list of quote posts for a given status
-func (h *Handler) HandleGetQuotesOfStatusLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetQuotesOfStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Parse pagination parameters
-	limit, err := common.ParseFollowLimit(ctx.Query("limit"))
+	limit, err := common.ParseFollowLimit(queryValue(ctx, "limit"))
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	offset, err := common.ParseAndValidateIntWithBounds("offset", ctx.Query("offset"), -1, 10000, 0)
+	offset, err := common.ParseAndValidateIntWithBounds("offset", queryValue(ctx, "offset"), -1, 10000, 0)
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
@@ -125,12 +114,12 @@ func (h *Handler) HandleGetQuotesOfStatusLift(ctx *lift.Context) error {
 		apiQuotes = append(apiQuotes, apiQuote)
 	}
 
-	return ctx.Status(200).JSON(apiQuotes)
+	return okJSON(apiQuotes)
 }
 
 // HandleDeleteQuotePostLift handles DELETE /api/v1/statuses/:id/quote/:quote_id
 // Deletes a quote post (removes the quote relationship)
-func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
+func (h *Handler) HandleDeleteQuotePostLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	quoteID := ctx.Param("quote_id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
@@ -141,17 +130,12 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate user
-	claims, err := h.authenticateQuoteRequest(ctx)
+	username, err := h.authenticateUser(ctx, []string{"write:statuses", auth.ScopeWrite})
 	if err != nil {
-		return err
-	}
-	if claims == nil {
-		return nil
-	}
-
-	// Check write scope
-	if !claims.HasScope("write:statuses") {
-		return common.RespondInsufficientScope(ctx)
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Verify user owns the quote
@@ -165,7 +149,7 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 		return common.RespondNotFound(ctx, "quote")
 	}
 
-	if quote.QuoterID != claims.Username {
+	if quote.QuoterID != username {
 		return common.RespondNotAuthorizedToDelete(ctx, "quote")
 	}
 
@@ -176,12 +160,12 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 		return common.RespondFailedToDelete(ctx, "quote")
 	}
 
-	return ctx.Status(200).JSON(apimodels.MessageResponse{Message: "quote deleted"})
+	return okJSON(apimodels.MessageResponse{Message: "quote deleted"})
 }
 
 // HandleGetQuotePermissionsLift handles GET /api/v1/accounts/:id/quote_permissions
 // Returns quote permissions for a user
-func (h *Handler) HandleGetQuotePermissionsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetQuotePermissionsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -194,7 +178,7 @@ func (h *Handler) HandleGetQuotePermissionsLift(ctx *lift.Context) error {
 		return common.RespondFailedToGet(ctx, "permissions")
 	}
 
-	return ctx.Status(200).JSON(apimodels.QuotePermissionsResponse{
+	return okJSON(apimodels.QuotePermissionsResponse{
 		AllowPublic:    permissions.AllowPublic,
 		AllowFollowers: permissions.AllowFollowers,
 		AllowMentioned: permissions.AllowMentioned,
@@ -204,40 +188,29 @@ func (h *Handler) HandleGetQuotePermissionsLift(ctx *lift.Context) error {
 
 // HandleUpdateQuotePermissionsLift handles PUT /api/v1/accounts/quote_permissions
 // Updates quote permissions for the authenticated user
-func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user
-	claims, err := h.authenticateQuoteRequest(ctx)
+	username, err := h.authenticateUser(ctx, []string{"write:accounts", auth.ScopeWrite})
 	if err != nil {
-		return err
-	}
-	if claims == nil {
-		return nil
-	}
-
-	// Check write scope
-	if !claims.HasScope("write:accounts") {
-		return common.RespondInsufficientScope(ctx)
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse request body
 	var params apimodels.UpdateQuotePermissionsRequest
 
-	if err := ctx.ParseRequest(&params); err != nil {
-		bodyBytes := ctx.Request.Body
-		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return common.RespondValidationError(ctx, err)
-		}
+	if err := common.ParseRequestWithFallback(ctx, &params); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
 	// Get existing permissions or create new ones
-	permissions, err := h.getQuotePermissions(ctx, claims.Username)
+	permissions, err := h.getQuotePermissions(ctx, username)
 	if err != nil {
 		// Create default permissions if none exist
 		permissions = &storageModels.QuotePermissions{
-			Username: claims.Username,
+			Username: username,
 		}
 		permissions.SetDefaults()
 	}
@@ -263,7 +236,7 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 		return common.RespondFailedToUpdate(ctx, "permissions")
 	}
 
-	return ctx.Status(200).JSON(apimodels.QuotePermissionsResponse{
+	return okJSON(apimodels.QuotePermissionsResponse{
 		AllowPublic:    permissions.AllowPublic,
 		AllowFollowers: permissions.AllowFollowers,
 		AllowMentioned: permissions.AllowMentioned,
@@ -273,35 +246,22 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 
 // Helper methods
 
-func (h *Handler) authenticateQuoteRequest(ctx *lift.Context) (*auth.Claims, error) {
-	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
-	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return nil, common.RespondUnauthorized(ctx)
+func (h *Handler) authenticateQuoteRequest(ctx *apptheory.Context) (*auth.Claims, error) {
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		return nil, helperUnauthorized()
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return nil, common.RespondUnauthorized(ctx)
+		return nil, helperUnauthorized()
 	}
 
 	return claims, nil
 }
 
-func (h *Handler) checkQuotePermissions(_ *lift.Context, _ string, _ interface{}) (bool, error) {
+func (h *Handler) checkQuotePermissions(_ *apptheory.Context, _ string, _ interface{}) (bool, error) {
 	// For now, return a simple implementation
 	// In a full implementation, this would:
 	// 1. Get the original status author
@@ -310,7 +270,7 @@ func (h *Handler) checkQuotePermissions(_ *lift.Context, _ string, _ interface{}
 	return true, nil
 }
 
-func (h *Handler) createQuotePost(_ *lift.Context, username string, _ interface{}, _ interface{}) (interface{}, error) {
+func (h *Handler) createQuotePost(_ *apptheory.Context, username string, _ interface{}, _ interface{}) (interface{}, error) {
 	// Placeholder implementation
 	// In a full implementation, this would:
 	// 1. Create the new status with quote content
@@ -333,12 +293,12 @@ func (h *Handler) createQuotePost(_ *lift.Context, username string, _ interface{
 	return quotePost, nil
 }
 
-func (h *Handler) getQuotesForStatus(ctx *lift.Context, statusID string, limit int, _ int) ([]interface{}, error) {
+func (h *Handler) getQuotesForStatus(ctx *apptheory.Context, statusID string, limit int, _ int) ([]interface{}, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	result, err := h.repos.Quote().GetQuotesForStatus(ctx.Context, statusID, interfaces.PaginationOptions{Limit: limit})
+	result, err := h.repos.Quote().GetQuotesForStatus(ctx.Context(), statusID, interfaces.PaginationOptions{Limit: limit})
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +311,7 @@ func (h *Handler) getQuotesForStatus(ctx *lift.Context, statusID string, limit i
 	return out, nil
 }
 
-func (h *Handler) convertQuoteToAPI(_ *lift.Context, _ interface{}) apimodels.QuoteStatusSummary {
+func (h *Handler) convertQuoteToAPI(_ *apptheory.Context, _ interface{}) apimodels.QuoteStatusSummary {
 	// Placeholder implementation
 	return apimodels.QuoteStatusSummary{
 		ID:        "quote_id",
@@ -361,7 +321,7 @@ func (h *Handler) convertQuoteToAPI(_ *lift.Context, _ interface{}) apimodels.Qu
 	}
 }
 
-func (h *Handler) convertStatusToAPI(_ *lift.Context, _ interface{}) apimodels.QuoteStatusSummary {
+func (h *Handler) convertStatusToAPI(_ *apptheory.Context, _ interface{}) apimodels.QuoteStatusSummary {
 	// Placeholder implementation
 	return apimodels.QuoteStatusSummary{
 		ID:        "status_id",
@@ -371,8 +331,8 @@ func (h *Handler) convertStatusToAPI(_ *lift.Context, _ interface{}) apimodels.Q
 	}
 }
 
-func (h *Handler) getQuoteRelationship(ctx *lift.Context, quoteStatusID string, targetStatusID string) (*storageModels.QuoteRelationship, error) {
-	relationship, err := h.repos.Quote().GetQuoteRelationship(ctx.Context, quoteStatusID, targetStatusID)
+func (h *Handler) getQuoteRelationship(ctx *apptheory.Context, quoteStatusID string, targetStatusID string) (*storageModels.QuoteRelationship, error) {
+	relationship, err := h.repos.Quote().GetQuoteRelationship(ctx.Context(), quoteStatusID, targetStatusID)
 	if err != nil {
 		if pkgErrors.HasCode(err, pkgErrors.CodeNotFound) || strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return nil, nil
@@ -382,14 +342,14 @@ func (h *Handler) getQuoteRelationship(ctx *lift.Context, quoteStatusID string, 
 	return relationship, nil
 }
 
-func (h *Handler) deleteQuoteRelationship(ctx *lift.Context, relationship *storageModels.QuoteRelationship) error {
+func (h *Handler) deleteQuoteRelationship(ctx *apptheory.Context, relationship *storageModels.QuoteRelationship) error {
 	if relationship == nil {
 		return nil
 	}
-	return h.repos.Quote().DeleteQuoteRelationship(ctx.Context, relationship.QuoterNoteID, relationship.TargetNoteID)
+	return h.repos.Quote().DeleteQuoteRelationship(ctx.Context(), relationship.QuoterNoteID, relationship.TargetNoteID)
 }
 
-func (h *Handler) getQuotePermissions(_ *lift.Context, username string) (*storageModels.QuotePermissions, error) {
+func (h *Handler) getQuotePermissions(_ *apptheory.Context, username string) (*storageModels.QuotePermissions, error) {
 	// Placeholder implementation - would query from storage
 	permissions := &storageModels.QuotePermissions{
 		Username: username,
@@ -398,7 +358,7 @@ func (h *Handler) getQuotePermissions(_ *lift.Context, username string) (*storag
 	return permissions, nil
 }
 
-func (h *Handler) saveQuotePermissions(_ *lift.Context, _ *storageModels.QuotePermissions) error {
+func (h *Handler) saveQuotePermissions(_ *apptheory.Context, _ *storageModels.QuotePermissions) error {
 	// Placeholder implementation - would save to storage
 	return nil
 }

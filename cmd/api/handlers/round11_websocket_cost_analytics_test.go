@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -168,7 +168,7 @@ func TestWebSocketBudgetHandlers(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, nil)
 	require.NoError(t, err)
-	ctx.SetParam("user_id", "alice")
+	ctx.Params["user_id"] = "alice"
 
 	resp, err := h.GetUserWebSocketBudget(ctx)
 	require.NoError(t, err)
@@ -180,7 +180,7 @@ func TestWebSocketBudgetHandlers(t *testing.T) {
 	}
 	ctx2, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, body)
 	require.NoError(t, err)
-	ctx2.SetParam("user_id", "alice")
+	ctx2.Params["user_id"] = "alice"
 	ctx2.Request.Body, _ = json.Marshal(body)
 
 	_, err = h.CreateUserWebSocketBudget(ctx2)
@@ -190,7 +190,7 @@ func TestWebSocketBudgetHandlers(t *testing.T) {
 	fakeRepo.existingBudget = &models.WebSocketCostBudget{UserID: "alice", Period: "daily"}
 	ctx3, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/ws-costs/users/alice/budget", nil, nil, body)
 	require.NoError(t, err)
-	ctx3.SetParam("user_id", "alice")
+	ctx3.Params["user_id"] = "alice"
 	ctx3.Request.Body, _ = json.Marshal(body)
 	_, err = h.CreateUserWebSocketBudget(ctx3)
 	require.NoError(t, err)

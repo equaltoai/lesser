@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/base64"
@@ -16,7 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -25,11 +25,11 @@ const (
 )
 
 // HandleRegistrationLift handles user registration requests
-func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
+func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request body
 	var req models.AccountRegistrationRequest
-	if err := common.ParseRequestWithValidation(ctx, &req); err != nil {
-		return err
+	if resp, err := common.ParseRequestWithValidation(ctx, &req); resp != nil {
+		return resp, err
 	}
 
 	// Validate request
@@ -47,7 +47,7 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 
 	// Use Accounts service to register the account
 	accountsService := h.registry.Accounts()
-	result, err := accountsService.RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
+	result, err := accountsService.RegisterAccount(ctx.Context(), &accounts.RegisterAccountCommand{
 		Username:                 req.Username,
 		Email:                    "", // Email is forbidden - always empty
 		Password:                 req.Password,
@@ -82,14 +82,14 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 }
 
 // HandleVerifyCredentialsLift returns the current user's information
-func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
+func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	h.logger.Info("handle verify_credentials: start")
 
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
 		h.logger.Warn("handle verify_credentials: authentication failed", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	h.logger.Info("handle verify_credentials: authentication succeeded",
@@ -102,7 +102,7 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
 	}
 
 	// Call Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), claims.Username)
 	if err != nil {
 		h.logger.Error("handle verify_credentials: failed to get account",
 			zap.String("username", claims.Username),
@@ -117,10 +117,10 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
 }
 
 // HandleUpdateCredentialsLift updates the current user's profile
-func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateCredentialsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse request
 	var req models.UpdateCredentialsRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondInvalidRequest(ctx)
 	}
 
@@ -139,11 +139,11 @@ func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Call Accounts service
-	result, err := h.registry.Accounts().UpdateProfile(ctx.Context, &accounts.UpdateProfileCommand{
+	result, err := h.registry.Accounts().UpdateProfile(ctx.Context(), &accounts.UpdateProfileCommand{
 		Username:     claims.Username,
 		DisplayName:  req.DisplayName,
 		Bio:          req.Note,
@@ -227,14 +227,14 @@ func (h *Handler) extractBoundary(contentType string) (string, error) {
 // buildCredentialsResponse builds the credentials response
 
 // HandleGetAccountLift retrieves account information by ID (username or URL)
-func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Call Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, accountID)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context(), accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondAccountNotFound(ctx)
@@ -243,19 +243,19 @@ func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.JSON(account)
+	return okJSON(account)
 }
 
 // HandleAccountLookupLift looks up an account by username@domain
-func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
+func (h *Handler) HandleAccountLookupLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get acct parameter
-	acct := ctx.Query("acct")
+	acct := queryValue(ctx, "acct")
 	if err := common.ValidateAcctParameter(acct); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Call Accounts service
-	account, err := h.registry.Accounts().LookupAccount(ctx.Context, &accounts.LookupAccountQuery{
+	account, err := h.registry.Accounts().LookupAccount(ctx.Context(), &accounts.LookupAccountQuery{
 		Acct:     acct,
 		ViewerID: "", // Anonymous lookup for now
 	})
@@ -270,7 +270,7 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	// Convert to Mastodon account format
 	mastodonAccount := transformations.ActorToAccountWithCounts(account.Actor, h.cfg.BaseURL(), 0, 0, 0)
 
-	return ctx.JSON(mastodonAccount)
+	return okJSON(mastodonAccount)
 }
 
 // relationshipType represents the type of relationship being queried
@@ -282,7 +282,7 @@ const (
 )
 
 // handleAccountRelationshipsList is a generic handler for followers and following lists
-func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType relationshipType) error {
+func (h *Handler) handleAccountRelationshipsList(ctx *apptheory.Context, relType relationshipType) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -292,15 +292,15 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 	username := accountID
 
 	// Get the actor to verify it exists
-	_, err := h.registry.Accounts().GetAccount(ctx.Context, username)
+	_, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
 	if err != nil {
 		return common.RespondAccountNotFound(ctx)
 	}
 
 	// Parse pagination parameters
 	limit := 40
-	maxID := ctx.Query("max_id")
-	minID := ctx.Query("min_id")
+	maxID := queryValue(ctx, "max_id")
+	minID := queryValue(ctx, "min_id")
 	cursor := maxID
 
 	// Use minID as cursor if provided and maxID is not
@@ -314,13 +314,13 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 
 	switch relType {
 	case relationshipFollowers:
-		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowers(ctx.Context, username, limit, cursor)
+		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowers(ctx.Context(), username, limit, cursor)
 		if err != nil {
 			h.logger.Error("failed to get followers", zap.Error(err))
 			return common.RespondInternalServerError(ctx)
 		}
 	case relationshipFollowing:
-		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowing(ctx.Context, username, limit, cursor)
+		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowing(ctx.Context(), username, limit, cursor)
 		if err != nil {
 			h.logger.Error("failed to get following", zap.Error(err))
 			return common.RespondInternalServerError(ctx)
@@ -339,30 +339,34 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 		accounts = append(accounts, account)
 	}
 
-	// Set Link header for pagination if there's a cursor
+	resp, err := okJSON(accounts)
+	if err != nil {
+		return nil, err
+	}
+
 	if nextCursor != "" {
 		nextURL := fmt.Sprintf("%s/api/v1/accounts/%s/%s?max_id=%s",
 			h.cfg.BaseURL(), accountID, string(relType), nextCursor)
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+		setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
 	}
 
-	return ctx.JSON(accounts)
+	return resp, nil
 }
 
 // HandleGetAccountFollowersLift retrieves the list of accounts following the given account
-func (h *Handler) HandleGetAccountFollowersLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountFollowersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleAccountRelationshipsList(ctx, relationshipFollowers)
 }
 
 // HandleGetAccountFollowingLift retrieves the list of accounts the given account is following
-func (h *Handler) HandleGetAccountFollowingLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetAccountFollowingLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleAccountRelationshipsList(ctx, relationshipFollowing)
 }
 
 // HandleGetFamiliarFollowersLift returns accounts that the requesting user follows and who also follow the given account
-func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFamiliarFollowersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
@@ -376,14 +380,14 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 	}
 
 	// Get account IDs from query parameter
-	accountIDs := ctx.Query("id[]")
+	accountIDs := queryValue(ctx, "id[]")
 	ids, err := common.ValidateAccountIDsParameter(accountIDs)
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Use Accounts service to get familiar followers
-	result, err := h.registry.Accounts().GetFamiliarFollowers(ctx.Context, &accounts.GetFamiliarFollowersQuery{
+	result, err := h.registry.Accounts().GetFamiliarFollowers(ctx.Context(), &accounts.GetFamiliarFollowersQuery{
 		AccountIDs: ids,
 		ViewerID:   claims.Username,
 	})
@@ -415,11 +419,11 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.JSON(results)
+	return okJSON(results)
 }
 
 // HandlePinAccountLift pins an account to the user's profile
-func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandlePinAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -428,11 +432,11 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Call Accounts service
-	result, err := h.registry.Accounts().PinAccount(ctx.Context, &accounts.PinAccountCommand{
+	result, err := h.registry.Accounts().PinAccount(ctx.Context(), &accounts.PinAccountCommand{
 		Username:      claims.Username,
 		TargetAccount: accountID,
 		PinnerID:      claims.Username,
@@ -451,11 +455,11 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleUnpinAccountLift unpins an account from the user's profile
-func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
+func (h *Handler) HandleUnpinAccountLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -464,11 +468,11 @@ func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Call Accounts service
-	result, err := h.registry.Accounts().UnpinAccount(ctx.Context, &accounts.UnpinAccountCommand{
+	result, err := h.registry.Accounts().UnpinAccount(ctx.Context(), &accounts.UnpinAccountCommand{
 		Username:      claims.Username,
 		TargetAccount: accountID,
 		PinnerID:      claims.Username,
@@ -484,11 +488,11 @@ func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleSetAccountNoteLift sets a private note on an account
-func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
+func (h *Handler) HandleSetAccountNoteLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -497,19 +501,19 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Parse request body
 	var req struct {
 		Comment string `json:"comment"`
 	}
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
 	// Call Accounts service
-	result, err := h.registry.Accounts().SetAccountNote(ctx.Context, &accounts.SetAccountNoteCommand{
+	result, err := h.registry.Accounts().SetAccountNote(ctx.Context(), &accounts.SetAccountNoteCommand{
 		Username:      claims.Username,
 		TargetAccount: accountID,
 		Note:          req.Comment,
@@ -526,11 +530,11 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // HandleRemoveFromFollowersLift removes a follower from the current user's followers list
-func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
+func (h *Handler) HandleRemoveFromFollowersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -539,11 +543,11 @@ func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
 	// Authenticate user
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Call Accounts service
-	result, err := h.registry.Accounts().RemoveFollower(ctx.Context, &accounts.RemoveFollowerCommand{
+	result, err := h.registry.Accounts().RemoveFollower(ctx.Context(), &accounts.RemoveFollowerCommand{
 		Username:   claims.Username,
 		FollowerID: accountID,
 		RemoverID:  claims.Username,
@@ -559,7 +563,7 @@ func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.JSON(result.Relationship)
+	return okJSON(result.Relationship)
 }
 
 // Helper methods for Lift implementation
@@ -643,17 +647,17 @@ func (h *Handler) getHeaderURLLift(actor *activitypub.Actor) string {
 // getFieldVerificationTimeLift gets the verification time for a profile field
 
 // HandleActivityPubFollowersLift handles ActivityPub followers collection endpoint
-func (h *Handler) HandleActivityPubFollowersLift(ctx *lift.Context) error {
+func (h *Handler) HandleActivityPubFollowersLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleActivityPubCollection(ctx, "followers")
 }
 
 // HandleActivityPubFollowingLift handles ActivityPub following collection endpoint
-func (h *Handler) HandleActivityPubFollowingLift(ctx *lift.Context) error {
+func (h *Handler) HandleActivityPubFollowingLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleActivityPubCollection(ctx, "following")
 }
 
 // handleActivityPubCollection handles ActivityPub collection requests with proper format
-func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType string) error {
+func (h *Handler) handleActivityPubCollection(ctx *apptheory.Context, collectionType string) (*apptheory.Response, error) {
 	// Extract username from path parameters
 	username := ctx.Param("username")
 	if err := common.ValidateUsernameParamID(username); err != nil {
@@ -661,13 +665,13 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 	}
 
 	// Check if actor exists
-	actor, err := h.registry.Accounts().GetAccount(ctx.Context, username)
+	actor, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
 	if err != nil {
 		return common.RespondUserNotFound(ctx)
 	}
 
 	// Check Accept header for content negotiation
-	acceptHeader := ctx.Header("Accept")
+	acceptHeader := headerValue(ctx, "Accept")
 	isActivityPub := strings.Contains(acceptHeader, "application/activity+json") ||
 		strings.Contains(acceptHeader, "application/ld+json") ||
 		strings.Contains(acceptHeader, "application/json")
@@ -684,9 +688,9 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 	}
 
 	// Parse query parameters for pagination
-	isPage := ctx.Query("page") != ""
-	cursor := ctx.Query("cursor")
-	limit, err := common.ParseAndValidateActivityPubLimit(ctx.Query("limit"))
+	isPage := queryValue(ctx, "page") != ""
+	cursor := queryValue(ctx, "cursor")
+	limit, err := common.ParseAndValidateActivityPubLimit(queryValue(ctx, "limit"))
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
@@ -701,11 +705,11 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 }
 
 // returnActivityPubCollection returns ActivityPub OrderedCollection metadata
-func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string) error {
+func (h *Handler) returnActivityPubCollection(ctx *apptheory.Context, actor *activitypub.Actor, collectionType string) (*apptheory.Response, error) {
 	// Check privacy settings for followers collection
 	if collectionType == string(relationshipFollowers) && actor.ManuallyApprovesFollowers {
 		// Check if the requester is authorized to view followers
-		authHeader := ctx.Header("Authorization")
+		authHeader := headerValue(ctx, "Authorization")
 		if authHeader != "" {
 			token, err := auth.ExtractBearerToken(authHeader)
 			if err == nil {
@@ -731,10 +735,10 @@ func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activity
 
 	switch collectionType {
 	case "followers":
-		count, countErr := h.registry.Relationships().CountFollowers(ctx.Context, actor.PreferredUsername)
+		count, countErr := h.registry.Relationships().CountFollowers(ctx.Context(), actor.PreferredUsername)
 		totalItems, err = int(count), countErr
 	case "following":
-		count, countErr := h.registry.Relationships().CountFollowing(ctx.Context, actor.PreferredUsername)
+		count, countErr := h.registry.Relationships().CountFollowing(ctx.Context(), actor.PreferredUsername)
 		totalItems, err = int(count), countErr
 	}
 
@@ -764,16 +768,20 @@ func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activity
 	}
 
 	// Set ActivityPub content type and caching headers
-	ctx.Response.Header("Content-Type", "application/activity+json")
-	ctx.Response.Header("Cache-Control", "max-age=300")
-	return ctx.JSON(collection)
+	resp, err := okJSON(collection)
+	if err != nil {
+		return nil, err
+	}
+	setHeader(resp, "Content-Type", "application/activity+json")
+	setHeader(resp, "Cache-Control", "max-age=300")
+	return resp, nil
 }
 
 // returnActivityPubCollectionPage returns ActivityPub OrderedCollectionPage with items
-func (h *Handler) returnActivityPubCollectionPage(ctx *lift.Context, actor *activitypub.Actor, collectionType, cursor string, limit int) error {
-	// Check privacy settings and authorization
-	if err := h.checkCollectionAccess(ctx, actor, collectionType); err != nil {
-		return err
+func (h *Handler) returnActivityPubCollectionPage(ctx *apptheory.Context, actor *activitypub.Actor, collectionType, cursor string, limit int) (*apptheory.Response, error) {
+	// Check privacy settings and authorization.
+	if resp, err := h.checkCollectionAccess(ctx, actor, collectionType); resp != nil {
+		return resp, err
 	}
 
 	// Get collection data
@@ -787,19 +795,23 @@ func (h *Handler) returnActivityPubCollectionPage(ctx *lift.Context, actor *acti
 	page := h.buildCollectionPage(actor, collectionType, cursor, nextCursor, limit, usernames)
 
 	// Set ActivityPub content type and caching headers
-	ctx.Response.Header("Content-Type", "application/activity+json")
-	ctx.Response.Header("Cache-Control", "max-age=300")
-	return ctx.JSON(page)
+	resp, err := okJSON(page)
+	if err != nil {
+		return nil, err
+	}
+	setHeader(resp, "Content-Type", "application/activity+json")
+	setHeader(resp, "Cache-Control", "max-age=300")
+	return resp, nil
 }
 
 // checkCollectionAccess checks if the requester is authorized to view the collection
-func (h *Handler) checkCollectionAccess(ctx *lift.Context, actor *activitypub.Actor, collectionType string) error {
+func (h *Handler) checkCollectionAccess(ctx *apptheory.Context, actor *activitypub.Actor, collectionType string) (*apptheory.Response, error) {
 	// Only check privacy for followers collection of private accounts
 	if collectionType != string(relationshipFollowers) || !actor.ManuallyApprovesFollowers {
-		return nil
+		return nil, nil
 	}
 
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
 		return h.returnEmptyCollection(ctx, actor, collectionType)
 	}
@@ -815,11 +827,11 @@ func (h *Handler) checkCollectionAccess(ctx *lift.Context, actor *activitypub.Ac
 		return h.returnEmptyCollection(ctx, actor, collectionType)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // getCollectionData retrieves the collection data based on type
-func (h *Handler) getCollectionData(ctx *lift.Context, actor *activitypub.Actor, collectionType, cursor string, limit int) ([]string, string, error) {
+func (h *Handler) getCollectionData(ctx *apptheory.Context, actor *activitypub.Actor, collectionType, cursor string, limit int) ([]string, string, error) {
 	switch collectionType {
 	case "followers":
 		return h.getFollowersData(ctx, actor.PreferredUsername, cursor, limit)
@@ -832,8 +844,8 @@ func (h *Handler) getCollectionData(ctx *lift.Context, actor *activitypub.Actor,
 }
 
 // getFollowersData gets followers data and converts to usernames
-func (h *Handler) getFollowersData(ctx *lift.Context, username, cursor string, limit int) ([]string, string, error) {
-	accounts, nextCursor, err := h.registry.Relationships().GetFollowers(ctx.Context, username, limit, cursor)
+func (h *Handler) getFollowersData(ctx *apptheory.Context, username, cursor string, limit int) ([]string, string, error) {
+	accounts, nextCursor, err := h.registry.Relationships().GetFollowers(ctx.Context(), username, limit, cursor)
 	if err != nil {
 		return nil, "", err
 	}
@@ -849,8 +861,8 @@ func (h *Handler) getFollowersData(ctx *lift.Context, username, cursor string, l
 }
 
 // getFollowingData gets following data and converts to usernames
-func (h *Handler) getFollowingData(ctx *lift.Context, username, cursor string, limit int) ([]string, string, error) {
-	accounts, nextCursor, err := h.registry.Relationships().GetFollowing(ctx.Context, username, limit, cursor)
+func (h *Handler) getFollowingData(ctx *apptheory.Context, username, cursor string, limit int) ([]string, string, error) {
+	accounts, nextCursor, err := h.registry.Relationships().GetFollowing(ctx.Context(), username, limit, cursor)
 	if err != nil {
 		return nil, "", err
 	}
@@ -910,7 +922,7 @@ func (h *Handler) buildCollectionPage(actor *activitypub.Actor, collectionType, 
 }
 
 // returnEmptyCollection returns an empty ActivityPub collection for privacy protection
-func (h *Handler) returnEmptyCollection(ctx *lift.Context, actor *activitypub.Actor, collectionType string) error {
+func (h *Handler) returnEmptyCollection(ctx *apptheory.Context, actor *activitypub.Actor, collectionType string) (*apptheory.Response, error) {
 	// Build collection URL
 	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
 
@@ -926,7 +938,11 @@ func (h *Handler) returnEmptyCollection(ctx *lift.Context, actor *activitypub.Ac
 		},
 	}
 
-	ctx.Response.Header("Content-Type", "application/activity+json")
-	ctx.Response.Header("Cache-Control", "max-age=300")
-	return ctx.JSON(collection)
+	resp, err := okJSON(collection)
+	if err != nil {
+		return nil, err
+	}
+	setHeader(resp, "Content-Type", "application/activity+json")
+	setHeader(resp, "Cache-Control", "max-age=300")
+	return resp, nil
 }

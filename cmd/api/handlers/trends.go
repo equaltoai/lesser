@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/trends"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -19,25 +19,17 @@ func (h *Handler) getTrendService() *trends.Service {
 	return trends.NewService(h.repos)
 }
 
-// handleTrendError handles common trend service errors
-func (h *Handler) handleTrendError(ctx *lift.Context, err error, operation string) error {
-	if err != nil {
-		h.logger.Error(fmt.Sprintf("failed to %s", operation), zap.Error(err))
-		return common.RespondInternalServerError(ctx, "Internal server error")
-	}
-	return nil
-}
-
 // HandleGetTrendsLift handles GET /api/v1/trends
 // Returns general trends (mix of all types)
-func (h *Handler) HandleGetTrendsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	trendService := h.getTrendService()
 	limit := h.parseLimitParam(ctx, 10, 40)
 
 	// Get mixed trends
-	trends, err := trendService.GetTrends(ctx.Context, limit)
-	if err := h.handleTrendError(ctx, err, "get trends"); err != nil {
-		return err
+	trends, err := trendService.GetTrends(ctx.Context(), limit)
+	if err != nil {
+		h.logger.Error("failed to get trends", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	response := make([]apimodels.Trend, 0, len(trends))
@@ -48,19 +40,20 @@ func (h *Handler) HandleGetTrendsLift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetTrendingStatusesLift handles GET /api/v1/trends/statuses
 // Returns trending statuses
-func (h *Handler) HandleGetTrendingStatusesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendingStatusesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	trendService := h.getTrendService()
 	limit := h.parseLimitParam(ctx, 20, 40)
 
 	// Get trending statuses
-	statuses, err := trendService.GetTrendingStatuses(ctx.Context, limit)
-	if err := h.handleTrendError(ctx, err, "get trending statuses"); err != nil {
-		return err
+	statuses, err := trendService.GetTrendingStatuses(ctx.Context(), limit)
+	if err != nil {
+		h.logger.Error("failed to get trending statuses", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Convert to Mastodon API format
@@ -75,28 +68,29 @@ func (h *Handler) HandleGetTrendingStatusesLift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetTrendingTagsLift handles GET /api/v1/trends/tags
 // Returns trending hashtags
-func (h *Handler) HandleGetTrendingTagsLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendingTagsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleTrendingTags(ctx, 10, 20)
 }
 
 // HandleGetTrendingLinksLift handles GET /api/v1/trends/links
 // Returns trending links
-func (h *Handler) HandleGetTrendingLinksLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendingLinksLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleTrendingLinks(ctx, 10, 20)
 }
 
-func (h *Handler) handleTrendingTags(ctx *lift.Context, defaultLimit, maxLimit int) error {
+func (h *Handler) handleTrendingTags(ctx *apptheory.Context, defaultLimit, maxLimit int) (*apptheory.Response, error) {
 	trendService := h.getTrendService()
 	limit := h.parseLimitParam(ctx, defaultLimit, maxLimit)
 
-	hashtags, err := trendService.GetTrendingHashtags(ctx.Context, limit)
-	if err := h.handleTrendError(ctx, err, "get trending hashtags"); err != nil {
-		return err
+	hashtags, err := trendService.GetTrendingHashtags(ctx.Context(), limit)
+	if err != nil {
+		h.logger.Error("failed to get trending hashtags", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	response := make([]apimodels.Tag, 0, len(hashtags))
@@ -123,16 +117,17 @@ func (h *Handler) handleTrendingTags(ctx *lift.Context, defaultLimit, maxLimit i
 		})
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
-func (h *Handler) handleTrendingLinks(ctx *lift.Context, defaultLimit, maxLimit int) error {
+func (h *Handler) handleTrendingLinks(ctx *apptheory.Context, defaultLimit, maxLimit int) (*apptheory.Response, error) {
 	trendService := h.getTrendService()
 	limit := h.parseLimitParam(ctx, defaultLimit, maxLimit)
 
-	links, err := trendService.GetTrendingLinks(ctx.Context, limit)
-	if err := h.handleTrendError(ctx, err, "get trending links"); err != nil {
-		return err
+	links, err := trendService.GetTrendingLinks(ctx.Context(), limit)
+	if err != nil {
+		h.logger.Error("failed to get trending links", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	response := make([]apimodels.PreviewCard, 0, len(links))
@@ -155,19 +150,14 @@ func (h *Handler) handleTrendingLinks(ctx *lift.Context, defaultLimit, maxLimit 
 		})
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetLinkTimelineLift handles GET /api/v1/timelines/link
 // Returns timeline for a specific link
-func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetLinkTimelineLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract URL from query params
-	url := ctx.Query("url")
-
-	// Fallback to direct query param access if ctx.Query doesn't work
-	if err := common.ValidateRequiredParam("url", url); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		url = ctx.Request.Request.QueryParams["url"]
-	}
+	url := queryValue(ctx, "url")
 
 	if err := common.ValidateRequiredParam("url", url); err != nil {
 		return common.RespondBadRequest(ctx, err.Error())
@@ -176,9 +166,10 @@ func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
 	trendService := h.getTrendService()
 
 	// Get all statuses that contain this link
-	statuses, err := trendService.GetStatusesByLink(ctx.Context, url, 20)
-	if err := h.handleTrendError(ctx, err, "get statuses by link"); err != nil {
-		return err
+	statuses, err := trendService.GetStatusesByLink(ctx.Context(), url, 20)
+	if err != nil {
+		h.logger.Error("failed to get statuses by link", zap.String("url", url), zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Convert statuses to timeline format
@@ -196,7 +187,7 @@ func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
 			URL:     fmt.Sprintf("%s/statuses/%s", h.cfg.BaseURL(), status.ID),
 		})
 	}
-	return ctx.JSON(timeline)
+	return okJSON(timeline)
 }
 
 // Helper methods for trends
@@ -233,13 +224,14 @@ func (h *Handler) extractProviderURLLift(url string) string {
 
 // HandleGetTrendsV2Lift handles GET /api/v2/trends
 // Returns general trends with enhanced metadata
-func (h *Handler) HandleGetTrendsV2Lift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendsV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	trendService := h.getTrendService()
 	limit := h.parseLimitParam(ctx, 10, 40)
 
-	trends, err := trendService.GetTrends(ctx.Context, limit)
-	if err := h.handleTrendError(ctx, err, "get trends"); err != nil {
-		return err
+	trends, err := trendService.GetTrends(ctx.Context(), limit)
+	if err != nil {
+		h.logger.Error("failed to get trends", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	response := make([]apimodels.Trend, 0, len(trends))
@@ -250,24 +242,25 @@ func (h *Handler) HandleGetTrendsV2Lift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetTrendingTagsV2Lift handles GET /api/v2/trends/tags
 // Returns trending hashtags with enhanced metrics
-func (h *Handler) HandleGetTrendingTagsV2Lift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendingTagsV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleTrendingTags(ctx, 10, 20)
 }
 
 // HandleGetTrendingStatusesV2Lift handles GET /api/v2/trends/statuses
 // Returns trending statuses with enhanced metrics
-func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	trendService := h.getTrendService()
 	limit := h.parseLimitParam(ctx, 20, 40)
 
-	statuses, err := trendService.GetTrendingStatuses(ctx.Context, limit)
-	if err := h.handleTrendError(ctx, err, "get trending statuses"); err != nil {
-		return err
+	statuses, err := trendService.GetTrendingStatuses(ctx.Context(), limit)
+	if err != nil {
+		h.logger.Error("failed to get trending statuses", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	response := make([]apimodels.TrendingStatusSummary, 0, len(statuses))
@@ -281,11 +274,11 @@ func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *lift.Context) error {
 		})
 	}
 
-	return ctx.JSON(response)
+	return okJSON(response)
 }
 
 // HandleGetTrendingLinksV2Lift handles GET /api/v2/trends/links
 // Returns trending links with enhanced metadata
-func (h *Handler) HandleGetTrendingLinksV2Lift(ctx *lift.Context) error {
+func (h *Handler) HandleGetTrendingLinksV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.handleTrendingLinks(ctx, 10, 20)
 }

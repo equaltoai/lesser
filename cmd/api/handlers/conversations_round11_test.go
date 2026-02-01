@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -78,21 +78,18 @@ func TestConversationHandlers_Round11(t *testing.T) {
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/conversations", readHeaders, map[string]string{"limit": "5"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetConversationsLift(ctxList))
-	require.Equal(t, http.StatusOK, ctxList.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetConversationsLift(ctxList))
 
 	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
 	writeHeaders := map[string]string{"Authorization": "Bearer " + writeToken}
 
 	ctxDelete, err := round10NewLiftContext(http.MethodDelete, "/api/v1/conversations/conv-1", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxDelete.SetParam("id", "conv-1")
-	require.NoError(t, handler.HandleDeleteConversationLift(ctxDelete))
-	require.Equal(t, http.StatusOK, ctxDelete.Response.StatusCode)
+	ctxDelete.Params["id"] = "conv-1"
+	requireStatus(t, http.StatusOK)(handler.HandleDeleteConversationLift(ctxDelete))
 
 	ctxMark, err := round10NewLiftContext(http.MethodPost, "/api/v1/conversations/conv-1/read", writeHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxMark.SetParam("id", "conv-1")
-	require.NoError(t, handler.HandleMarkConversationReadLift(ctxMark))
-	require.Equal(t, http.StatusOK, ctxMark.Response.StatusCode)
+	ctxMark.Params["id"] = "conv-1"
+	requireStatus(t, http.StatusOK)(handler.HandleMarkConversationReadLift(ctxMark))
 }

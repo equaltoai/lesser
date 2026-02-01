@@ -1,6 +1,7 @@
-package lift
+package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -40,16 +41,14 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 		h, _ := newAdminHandler(t, &round10QueryState{})
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetAdminDomainBlocksLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleGetAdminDomainBlocksLift(ctx))
 	})
 
 	t.Run("requireAdmin invalid token", func(t *testing.T) {
 		h, _ := newAdminHandler(t, &round10QueryState{})
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetAdminDomainBlocksLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleGetAdminDomainBlocksLift(ctx))
 	})
 
 	t.Run("requireAdmin non-admin user", func(t *testing.T) {
@@ -61,8 +60,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			nil,
 		)
 		require.NoError(t, err)
-		require.NoError(t, h.HandleGetAdminDomainBlocksLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleGetAdminDomainBlocksLift(ctx))
 	})
 
 	t.Run("domain blocks list pagination and error branches", func(t *testing.T) {
@@ -75,9 +73,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks", headers, map[string]string{"limit": "nope"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetAdminDomainBlocksLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			require.NotContains(t, ctx.Response.Headers, "Link")
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetAdminDomainBlocksLift(ctx))
+			require.Empty(t, resp.Headers["link"])
 		})
 
 		t.Run("paginates and sets Link header", func(t *testing.T) {
@@ -91,12 +88,13 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks", headers, map[string]string{"limit": "1"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetAdminDomainBlocksLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			require.Contains(t, ctx.Response.Headers["Link"], "max_id=")
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetAdminDomainBlocksLift(ctx))
+			require.NotEmpty(t, resp.Headers["link"])
+			require.Contains(t, resp.Headers["link"][0], "max_id=")
 
-			resp := ctx.Response.Body.([]apimodels.AdminDomainBlockResponse)
-			require.Len(t, resp, 1)
+			var body []apimodels.AdminDomainBlockResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Len(t, body, 1)
 		})
 
 		t.Run("storage error returns 500", func(t *testing.T) {
@@ -104,8 +102,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetAdminDomainBlocksLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetAdminDomainBlocksLift(ctx))
 		})
 	})
 
@@ -114,17 +111,15 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks/:id", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleGetAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("get not found", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{domainBlocks: []storagemodels.InstanceDomainBlock{}})
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks/bad", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "bad")
-			require.NoError(t, h.HandleGetAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["id"] = "bad"
+			requireStatus(t, http.StatusNotFound)(h.HandleGetAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("get success", func(t *testing.T) {
@@ -135,11 +130,11 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks/b1", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleGetAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			resp := ctx.Response.Body.(apimodels.AdminDomainBlockResponse)
-			require.Equal(t, "b1", resp.ID)
+			ctx.Params["id"] = "b1"
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetAdminDomainBlockLift(ctx))
+			var body apimodels.AdminDomainBlockResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "b1", body.ID)
 		})
 
 		t.Run("get storage error returns 500", func(t *testing.T) {
@@ -148,24 +143,21 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_blocks/b1", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleGetAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "b1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("create invalid JSON", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/domain_blocks", headers, nil, []byte("{"))
-			require.NoError(t, h.HandleCreateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleCreateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("create missing domain", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/domain_blocks", headers, nil, apimodels.AdminDomainBlockRequest{})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleCreateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("create invalid domain format", func(t *testing.T) {
@@ -174,8 +166,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{Domain: "bad domain"},
 			)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleCreateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("create defaults severity when missing", func(t *testing.T) {
@@ -184,10 +175,10 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{Domain: "https://Example.COM/path"},
 			)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			resp := ctx.Response.Body.(apimodels.AdminDomainBlockResponse)
-			require.Equal(t, "example.com", resp.Domain)
+			resp := requireStatus(t, http.StatusOK)(h.HandleCreateAdminDomainBlockLift(ctx))
+			var body apimodels.AdminDomainBlockResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "example.com", body.Domain)
 		})
 
 		t.Run("create invalid severity", func(t *testing.T) {
@@ -196,8 +187,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{Domain: "example.com", Severity: "nope"},
 			)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleCreateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("create already exists returns 422", func(t *testing.T) {
@@ -207,8 +197,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{Domain: "example.com", Severity: "suspend"},
 			)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusUnprocessableEntity)(h.HandleCreateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("create storage error returns 500", func(t *testing.T) {
@@ -218,24 +207,21 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{Domain: "example.com", Severity: "suspend"},
 			)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleCreateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleCreateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("update missing id", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/domain_blocks/:id", headers, nil, apimodels.AdminDomainBlockRequest{})
 			require.NoError(t, err)
-			require.NoError(t, h.HandleUpdateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleUpdateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("update invalid JSON", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx := round10NewLiftContextWithBodyBytes(http.MethodPut, "/api/v1/admin/domain_blocks/b1", headers, nil, []byte("{"))
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleUpdateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			ctx.Params["id"] = "b1"
+			requireStatus(t, http.StatusBadRequest)(h.HandleUpdateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("update invalid severity", func(t *testing.T) {
@@ -247,18 +233,16 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{Severity: "nope"},
 			)
 			require.NoError(t, err)
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleUpdateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			ctx.Params["id"] = "b1"
+			requireStatus(t, http.StatusBadRequest)(h.HandleUpdateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("update not found returns 404", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/admin/domain_blocks/missing", headers, nil, apimodels.AdminDomainBlockRequest{})
 			require.NoError(t, err)
-			ctx.SetParam("id", "missing")
-			require.NoError(t, h.HandleUpdateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["id"] = "missing"
+			requireStatus(t, http.StatusNotFound)(h.HandleUpdateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("update storage error returns 500", func(t *testing.T) {
@@ -271,9 +255,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{PrivateComment: "note"},
 			)
 			require.NoError(t, err)
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleUpdateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "b1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleUpdateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("update success", func(t *testing.T) {
@@ -285,26 +268,23 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				apimodels.AdminDomainBlockRequest{PrivateComment: "note"},
 			)
 			require.NoError(t, err)
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleUpdateAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			ctx.Params["id"] = "b1"
+			requireStatus(t, http.StatusOK)(h.HandleUpdateAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("delete missing id", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_blocks/:id", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleDeleteAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleDeleteAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("delete not found", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_blocks/missing", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "missing")
-			require.NoError(t, h.HandleDeleteAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["id"] = "missing"
+			requireStatus(t, http.StatusNotFound)(h.HandleDeleteAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("delete storage error returns 500", func(t *testing.T) {
@@ -315,9 +295,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_blocks/b1", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleDeleteAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["id"] = "b1"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleDeleteAdminDomainBlockLift(ctx))
 		})
 
 		t.Run("delete success", func(t *testing.T) {
@@ -327,9 +306,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{domainBlocks: []storagemodels.InstanceDomainBlock{b1}})
 			ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_blocks/b1", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("id", "b1")
-			require.NoError(t, h.HandleDeleteAdminDomainBlockLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+			ctx.Params["id"] = "b1"
+			requireStatus(t, http.StatusOK)(h.HandleDeleteAdminDomainBlockLift(ctx))
 		})
 	})
 
@@ -346,9 +324,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_allows", headers, map[string]string{"limit": "1"}, nil)
 				require.NoError(t, err)
-				require.NoError(t, h.HandleGetAdminDomainAllowsLift(ctx))
-				require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-				require.Contains(t, ctx.Response.Headers["Link"], "max_id=")
+				resp := requireStatus(t, http.StatusOK)(h.HandleGetAdminDomainAllowsLift(ctx))
+				require.Contains(t, firstStringValue(resp.Headers, "link"), "max_id=")
 			})
 
 			t.Run("list storage error returns 500", func(t *testing.T) {
@@ -356,8 +333,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_allows", headers, nil, nil)
 				require.NoError(t, err)
-				require.NoError(t, h.HandleGetAdminDomainAllowsLift(ctx))
-				require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusInternalServerError)(h.HandleGetAdminDomainAllowsLift(ctx))
 			})
 
 			t.Run("list limit parse error defaults and omits Link", func(t *testing.T) {
@@ -369,32 +345,28 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/domain_allows", headers, map[string]string{"limit": "nope"}, nil)
 				require.NoError(t, err)
-				require.NoError(t, h.HandleGetAdminDomainAllowsLift(ctx))
-				require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-				require.NotContains(t, ctx.Response.Headers, "Link")
+				resp := requireStatus(t, http.StatusOK)(h.HandleGetAdminDomainAllowsLift(ctx))
+				require.Empty(t, resp.Headers["link"])
 			})
 
 			t.Run("create invalid JSON", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/domain_allows", headers, nil, []byte("{"))
-				require.NoError(t, h.HandleCreateAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusBadRequest)(h.HandleCreateAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("create missing domain", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/domain_allows", headers, nil, apimodels.AdminDomainAllowRequest{})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusBadRequest)(h.HandleCreateAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("create invalid domain format", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/domain_allows", headers, nil, apimodels.AdminDomainAllowRequest{Domain: "bad domain"})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusBadRequest)(h.HandleCreateAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("create already exists returns 422", func(t *testing.T) {
@@ -402,8 +374,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/domain_allows", headers, nil, apimodels.AdminDomainAllowRequest{Domain: "example.com"})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusUnprocessableEntity)(h.HandleCreateAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("create storage error returns 500", func(t *testing.T) {
@@ -411,33 +382,29 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/domain_allows", headers, nil, apimodels.AdminDomainAllowRequest{Domain: "example.com"})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusInternalServerError)(h.HandleCreateAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("create success", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/domain_allows", headers, nil, apimodels.AdminDomainAllowRequest{Domain: "example.com"})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusOK)(h.HandleCreateAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("delete missing id", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_allows/:id", headers, nil, nil)
 				require.NoError(t, err)
-				require.NoError(t, h.HandleDeleteAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusBadRequest)(h.HandleDeleteAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("delete forbidden without auth", func(t *testing.T) {
 				h, _ := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_allows/a1", nil, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "a1")
-				require.NoError(t, h.HandleDeleteAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+				ctx.Params["id"] = "a1"
+				requireStatus(t, http.StatusForbidden)(h.HandleDeleteAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("delete not found", func(t *testing.T) {
@@ -445,9 +412,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_allows/missing", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "missing")
-				require.NoError(t, h.HandleDeleteAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+				ctx.Params["id"] = "missing"
+				requireStatus(t, http.StatusNotFound)(h.HandleDeleteAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("delete storage error returns 500", func(t *testing.T) {
@@ -458,9 +424,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_allows/a1", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "a1")
-				require.NoError(t, h.HandleDeleteAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+				ctx.Params["id"] = "a1"
+				requireStatus(t, http.StatusInternalServerError)(h.HandleDeleteAdminDomainAllowLift(ctx))
 			})
 
 			t.Run("delete success", func(t *testing.T) {
@@ -470,9 +435,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/domain_allows/a1", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "a1")
-				require.NoError(t, h.HandleDeleteAdminDomainAllowLift(ctx))
-				require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+				ctx.Params["id"] = "a1"
+				requireStatus(t, http.StatusOK)(h.HandleDeleteAdminDomainAllowLift(ctx))
 			})
 		})
 
@@ -488,10 +452,10 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/email_domain_blocks", headers, map[string]string{"limit": "1"}, nil)
 				require.NoError(t, err)
-				require.NoError(t, h.HandleGetEmailDomainBlocksLift(ctx))
-				require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-				resp := ctx.Response.Body.(apimodels.EmailDomainBlocksResponse)
-				require.NotNil(t, resp.NextCursor)
+				resp := requireStatus(t, http.StatusOK)(h.HandleGetEmailDomainBlocksLift(ctx))
+				var body apimodels.EmailDomainBlocksResponse
+				require.NoError(t, json.Unmarshal(resp.Body, &body))
+				require.NotNil(t, body.NextCursor)
 			})
 
 			t.Run("list storage error returns 500", func(t *testing.T) {
@@ -499,23 +463,20 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/email_domain_blocks", headers, nil, nil)
 				require.NoError(t, err)
-				require.NoError(t, h.HandleGetEmailDomainBlocksLift(ctx))
-				require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusInternalServerError)(h.HandleGetEmailDomainBlocksLift(ctx))
 			})
 
 			t.Run("create invalid JSON", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/admin/email_domain_blocks", headers, nil, []byte("{"))
-				require.NoError(t, h.HandleCreateEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusBadRequest)(h.HandleCreateEmailDomainBlockLift(ctx))
 			})
 
 			t.Run("create missing domain", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/email_domain_blocks", headers, nil, apimodels.EmailDomainBlockRequest{})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusBadRequest)(h.HandleCreateEmailDomainBlockLift(ctx))
 			})
 
 			t.Run("create already exists returns 422", func(t *testing.T) {
@@ -523,8 +484,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/email_domain_blocks", headers, nil, apimodels.EmailDomainBlockRequest{Domain: "@Example.COM"})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusUnprocessableEntity)(h.HandleCreateEmailDomainBlockLift(ctx))
 			})
 
 			t.Run("create storage error returns 500", func(t *testing.T) {
@@ -532,26 +492,24 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/email_domain_blocks", headers, nil, apimodels.EmailDomainBlockRequest{Domain: "@Example.COM"})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusInternalServerError)(h.HandleCreateEmailDomainBlockLift(ctx))
 			})
 
 			t.Run("create success normalizes domain", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/email_domain_blocks", headers, nil, apimodels.EmailDomainBlockRequest{Domain: "@Example.COM"})
 				require.NoError(t, err)
-				require.NoError(t, h.HandleCreateEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-				resp := ctx.Response.Body.(apimodels.EmailDomainBlockResponse)
-				require.Equal(t, "example.com", resp.Domain)
+				resp := requireStatus(t, http.StatusOK)(h.HandleCreateEmailDomainBlockLift(ctx))
+				var body apimodels.EmailDomainBlockResponse
+				require.NoError(t, json.Unmarshal(resp.Body, &body))
+				require.Equal(t, "example.com", body.Domain)
 			})
 
 			t.Run("delete missing id", func(t *testing.T) {
 				h, headers := newAdminHandler(t, &round10QueryState{})
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/email_domain_blocks/:id", headers, nil, nil)
 				require.NoError(t, err)
-				require.NoError(t, h.HandleDeleteEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+				requireStatus(t, http.StatusBadRequest)(h.HandleDeleteEmailDomainBlockLift(ctx))
 			})
 
 			t.Run("delete not found", func(t *testing.T) {
@@ -559,9 +517,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/email_domain_blocks/missing", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "missing")
-				require.NoError(t, h.HandleDeleteEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+				ctx.Params["id"] = "missing"
+				requireStatus(t, http.StatusNotFound)(h.HandleDeleteEmailDomainBlockLift(ctx))
 			})
 
 			t.Run("delete storage error returns 500", func(t *testing.T) {
@@ -572,9 +529,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/email_domain_blocks/e1", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "e1")
-				require.NoError(t, h.HandleDeleteEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+				ctx.Params["id"] = "e1"
+				requireStatus(t, http.StatusInternalServerError)(h.HandleDeleteEmailDomainBlockLift(ctx))
 			})
 
 			t.Run("delete success", func(t *testing.T) {
@@ -584,9 +540,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				h, headers := newAdminHandler(t, state)
 				ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/admin/email_domain_blocks/e1", headers, nil, nil)
 				require.NoError(t, err)
-				ctx.SetParam("id", "e1")
-				require.NoError(t, h.HandleDeleteEmailDomainBlockLift(ctx))
-				require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+				ctx.Params["id"] = "e1"
+				requireStatus(t, http.StatusOK)(h.HandleDeleteEmailDomainBlockLift(ctx))
 			})
 		})
 	})
@@ -597,8 +552,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instances", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetFederationInstancesLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetFederationInstancesLift(ctx))
 		})
 
 		t.Run("instances list success includes block flags", func(t *testing.T) {
@@ -625,28 +579,26 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instances", headers, map[string]string{"limit": "10"}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetFederationInstancesLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			resp := ctx.Response.Body.(apimodels.FederationInstancesResponse)
-			require.Len(t, resp.Instances, 1)
-			require.True(t, resp.Instances[0].IsSilenced)
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetFederationInstancesLift(ctx))
+			var body apimodels.FederationInstancesResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Len(t, body.Instances, 1)
+			require.True(t, body.Instances[0].IsSilenced)
 		})
 
 		t.Run("get instance missing domain", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instance/:domain", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetFederationInstanceLift(ctx))
-			require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusBadRequest)(h.HandleGetFederationInstanceLift(ctx))
 		})
 
 		t.Run("get instance not found", func(t *testing.T) {
 			h, headers := newAdminHandler(t, &round10QueryState{})
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instance/missing", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("domain", "missing")
-			require.NoError(t, h.HandleGetFederationInstanceLift(ctx))
-			require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+			ctx.Params["domain"] = "missing"
+			requireStatus(t, http.StatusNotFound)(h.HandleGetFederationInstanceLift(ctx))
 		})
 
 		t.Run("get instance storage error returns 500", func(t *testing.T) {
@@ -654,9 +606,8 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instance/err", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("domain", "err")
-			require.NoError(t, h.HandleGetFederationInstanceLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			ctx.Params["domain"] = "err"
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetFederationInstanceLift(ctx))
 		})
 
 		t.Run("get instance warns on domain stats/block errors", func(t *testing.T) {
@@ -683,11 +634,11 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instance/remote.example", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("domain", "remote.example")
-			require.NoError(t, h.HandleGetFederationInstanceLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			resp := ctx.Response.Body.(apimodels.FederationInstanceResponse)
-			require.Empty(t, resp.Details)
+			ctx.Params["domain"] = "remote.example"
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetFederationInstanceLift(ctx))
+			var body apimodels.FederationInstanceResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Empty(t, body.Details)
 		})
 
 		t.Run("get instance success", func(t *testing.T) {
@@ -713,11 +664,11 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/instance/remote.example", headers, nil, nil)
 			require.NoError(t, err)
-			ctx.SetParam("domain", "https://remote.example/path")
-			require.NoError(t, h.HandleGetFederationInstanceLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			resp := ctx.Response.Body.(apimodels.FederationInstanceResponse)
-			require.Equal(t, "remote.example", resp.Instance.Domain)
+			ctx.Params["domain"] = "https://remote.example/path"
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetFederationInstanceLift(ctx))
+			var body apimodels.FederationInstanceResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, "remote.example", body.Instance.Domain)
 		})
 
 		t.Run("statistics scan error returns 500", func(t *testing.T) {
@@ -725,8 +676,7 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 			h, headers := newAdminHandler(t, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/admin/federation/statistics", headers, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetFederationStatisticsLift(ctx))
-			require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+			requireStatus(t, http.StatusInternalServerError)(h.HandleGetFederationStatisticsLift(ctx))
 		})
 
 		t.Run("statistics parses time range and aggregates", func(t *testing.T) {
@@ -746,12 +696,12 @@ func TestAdminFederationLift_Round12(t *testing.T) {
 				"end":   end.Format(time.RFC3339),
 			}, nil)
 			require.NoError(t, err)
-			require.NoError(t, h.HandleGetFederationStatisticsLift(ctx))
-			require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-			resp := ctx.Response.Body.(apimodels.FederationStatisticsResponse)
-			require.Equal(t, int64(2), resp.ActiveInstances)
-			require.Equal(t, int64(8), resp.TotalMessages)
-			require.Equal(t, int64(6), resp.TotalUsers)
+			resp := requireStatus(t, http.StatusOK)(h.HandleGetFederationStatisticsLift(ctx))
+			var body apimodels.FederationStatisticsResponse
+			require.NoError(t, json.Unmarshal(resp.Body, &body))
+			require.Equal(t, int64(2), body.ActiveInstances)
+			require.Equal(t, int64(8), body.TotalMessages)
+			require.Equal(t, int64(6), body.TotalUsers)
 		})
 	})
 }

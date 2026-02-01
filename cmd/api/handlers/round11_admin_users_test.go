@@ -1,6 +1,7 @@
-package lift
+package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -28,10 +29,9 @@ func TestAdminCreateUserLift(t *testing.T) {
 	req := apimodels.AdminCreateUserRequest{Username: "newuser", Email: "new@example.com", Password: "password123456", DisplayName: "New User", Role: "user"}
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/users", headers, nil, req)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleAdminCreateUserLift(ctx))
-	require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
-	created, ok := ctx.Response.Body.(*storage.User)
-	require.True(t, ok)
+	resp := requireStatus(t, http.StatusCreated)(handler.HandleAdminCreateUserLift(ctx))
+	var created storage.User
+	require.NoError(t, json.Unmarshal(resp.Body, &created))
 	require.Equal(t, "newuser", created.Username)
 	require.Empty(t, created.Email)
 	require.Empty(t, created.PasswordHash)

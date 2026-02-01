@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/media"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -46,11 +46,14 @@ const (
 )
 
 // HandleUploadMediaLift handles POST /api/v1/media (Lift version)
-func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
+func (h *Handler) HandleUploadMediaLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with write scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse multipart form data
@@ -75,7 +78,7 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 	}
 
 	// Call Media service
-	result, err := h.registry.Media().UploadMedia(ctx.Context, &media.UploadMediaCommand{
+	result, err := h.registry.Media().UploadMedia(ctx.Context(), &media.UploadMediaCommand{
 		UserID:        claims.Username,
 		FileName:      mediaData.FileName,
 		ContentType:   mediaData.MimeType,
@@ -91,15 +94,18 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to upload media")
 	}
 
-	return ctx.JSON(h.convertMediaToAPI(result.Media))
+	return okJSON(h.convertMediaToAPI(result.Media))
 }
 
 // HandleGetMediaLift handles GET /api/v1/media/:id (Lift version)
-func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetMediaLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Extract media ID
@@ -109,7 +115,7 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 	}
 
 	// Call Media service
-	mediaResult, err := h.registry.Media().GetMedia(ctx.Context, &media.GetMediaQuery{
+	mediaResult, err := h.registry.Media().GetMedia(ctx.Context(), &media.GetMediaQuery{
 		MediaID:  mediaID,
 		ViewerID: claims.Username,
 	})
@@ -118,15 +124,18 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 		return common.RespondNotFound(ctx, "media")
 	}
 
-	return ctx.JSON(h.convertMediaToAPI(mediaResult))
+	return okJSON(h.convertMediaToAPI(mediaResult))
 }
 
 // HandleUpdateMediaLift handles PUT /api/v1/media/:id (Lift version)
-func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
+func (h *Handler) HandleUpdateMediaLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with write scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return err
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Extract media ID
@@ -137,7 +146,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 
 	// Parse update request
 	var req apimodels.UpdateMediaRequest
-	if err := ctx.ParseRequest(&req); err != nil {
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
 		return common.RespondBadRequest(ctx, "invalid request body")
 	}
 
@@ -156,7 +165,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 	}
 
 	// Call Media service
-	result, err := h.registry.Media().UpdateMedia(ctx.Context, &media.UpdateMediaCommand{
+	result, err := h.registry.Media().UpdateMedia(ctx.Context(), &media.UpdateMediaCommand{
 		MediaID:     mediaID,
 		UserID:      claims.Username,
 		Description: req.Description,
@@ -167,11 +176,11 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx, "failed to update media")
 	}
 
-	return ctx.JSON(h.convertMediaToAPI(result.Media))
+	return okJSON(h.convertMediaToAPI(result.Media))
 }
 
 // parseMediaUpload parses multipart form data for media uploads
-func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, error) {
+func (h *Handler) parseMediaUpload(ctx *apptheory.Context) (*MediaUploadRequest, error) {
 	var mediaData MediaUploadRequest
 
 	// Get raw body from request
@@ -187,7 +196,7 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 	}
 
 	// Parse multipart form
-	boundary, err := h.extractBoundary(ctx.Header("Content-Type"))
+	boundary, err := h.extractBoundary(headerValue(ctx, "Content-Type"))
 	if err != nil {
 		return nil, errors.Join(failedToExtractBoundary(), err)
 	}

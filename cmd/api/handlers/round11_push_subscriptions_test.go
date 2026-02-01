@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -16,7 +16,7 @@ func TestPushSubscriptionHandlers(t *testing.T) {
 
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/push/subscription", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetPushSubscriptionLift(ctxGet))
+	requireStatus(t, http.StatusOK)(h.HandleGetPushSubscriptionLift(ctxGet))
 
 	body := map[string]any{
 		"subscription": map[string]any{
@@ -31,5 +31,5 @@ func TestPushSubscriptionHandlers(t *testing.T) {
 		},
 	}
 	ctxCreate := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/push/subscription", headers, nil, round11JSONBody(t, body))
-	require.NoError(t, h.HandleCreatePushSubscriptionLift(ctxCreate))
+	requireStatus(t, http.StatusOK)(h.HandleCreatePushSubscriptionLift(ctxCreate))
 }

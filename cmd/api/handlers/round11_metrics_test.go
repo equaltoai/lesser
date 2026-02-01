@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"net/http"
@@ -38,15 +38,15 @@ func TestMetricsHandlers(t *testing.T) {
 
 	ctxMetrics, err := round10NewLiftContext(http.MethodGet, "/api/v1/metrics", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetInstanceMetricsLift(ctxMetrics))
+	requireStatus(t, http.StatusOK)(h.HandleGetInstanceMetricsLift(ctxMetrics))
 
 	ctxDaily, err := round10NewLiftContext(http.MethodGet, "/api/v1/metrics/daily", nil, map[string]string{"days": "7"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetDailyAggregatesLift(ctxDaily))
+	requireStatus(t, http.StatusOK)(h.HandleGetDailyAggregatesLift(ctxDaily))
 
 	ctxPredictive, err := round10NewLiftContext(http.MethodGet, "/api/v1/metrics/predictive", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleGetPredictiveAnalyticsLift(ctxPredictive))
+	requireStatus(t, http.StatusOK)(h.HandleGetPredictiveAnalyticsLift(ctxPredictive))
 }
 
 func TestMetricsHelpers(t *testing.T) {

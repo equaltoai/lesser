@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -93,14 +93,12 @@ func TestAccountsFullHandlers_Round11(t *testing.T) {
 
 	ctxGet, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxGet.SetParam("id", "alice")
-	require.NoError(t, handler.HandleGetAccountFull(ctxGet))
-	require.Equal(t, http.StatusOK, ctxGet.Response.StatusCode)
+	ctxGet.Params["id"] = "alice"
+	requireStatus(t, http.StatusOK)(handler.HandleGetAccountFull(ctxGet))
 
 	ctxVerify, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", readHeaders, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleVerifyCredentialsFull(ctxVerify))
-	require.Equal(t, http.StatusOK, ctxVerify.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleVerifyCredentialsFull(ctxVerify))
 
 	writeToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"write"})
 	writeHeaders := map[string]string{"Authorization": "Bearer " + writeToken}
@@ -108,26 +106,22 @@ func TestAccountsFullHandlers_Round11(t *testing.T) {
 	updateReq := models.UpdateCredentialsRequest{DisplayName: "Alice", Note: "bio"}
 	ctxUpdate, err := round10NewLiftContext(http.MethodPatch, "/api/v1/accounts/update_credentials", writeHeaders, nil, updateReq)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleUpdateCredentialsFull(ctxUpdate))
-	require.Equal(t, http.StatusOK, ctxUpdate.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleUpdateCredentialsFull(ctxUpdate))
 
 	ctxStatuses, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/statuses", readHeaders, map[string]string{"limit": "1"}, nil)
 	require.NoError(t, err)
-	ctxStatuses.SetParam("id", "alice")
-	require.NoError(t, handler.HandleGetAccountStatusesFull(ctxStatuses))
-	require.Equal(t, http.StatusOK, ctxStatuses.Response.StatusCode)
+	ctxStatuses.Params["id"] = "alice"
+	requireStatus(t, http.StatusOK)(handler.HandleGetAccountStatusesFull(ctxStatuses))
 
 	ctxFollowers, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/followers", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxFollowers.SetParam("id", "alice")
-	require.NoError(t, handler.HandleGetAccountFollowersFull(ctxFollowers))
-	require.Equal(t, http.StatusOK, ctxFollowers.Response.StatusCode)
+	ctxFollowers.Params["id"] = "alice"
+	requireStatus(t, http.StatusOK)(handler.HandleGetAccountFollowersFull(ctxFollowers))
 
 	ctxFollowing, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/following", readHeaders, nil, nil)
 	require.NoError(t, err)
-	ctxFollowing.SetParam("id", "alice")
-	require.NoError(t, handler.HandleGetAccountFollowingFull(ctxFollowing))
-	require.Equal(t, http.StatusOK, ctxFollowing.Response.StatusCode)
+	ctxFollowing.Params["id"] = "alice"
+	requireStatus(t, http.StatusOK)(handler.HandleGetAccountFollowingFull(ctxFollowing))
 
 	actorResolved, err := handler.resolveAccountIDFull(context.Background(), "https://example.com/users/alice")
 	require.NoError(t, err)

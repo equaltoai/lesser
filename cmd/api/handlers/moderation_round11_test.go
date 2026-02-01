@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -101,13 +101,11 @@ func TestModerationHandlers_Round11(t *testing.T) {
 		ConfidenceScore: 0.8,
 	})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleModerationFlagLift(ctxFlag))
-	require.Equal(t, http.StatusCreated, ctxFlag.Response.StatusCode)
+	requireStatus(t, http.StatusCreated)(handler.HandleModerationFlagLift(ctxFlag))
 
 	ctxQueue, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/queue", map[string]string{"Authorization": "Bearer " + modToken}, map[string]string{"limit": "10"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleModerationQueueLift(ctxQueue))
-	require.Equal(t, http.StatusOK, ctxQueue.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleModerationQueueLift(ctxQueue))
 
 	ctxReview, err := round10NewLiftContext(http.MethodPost, "/api/v1/moderation/review", map[string]string{"Authorization": "Bearer " + modToken}, nil, models.ReviewRequest{
 		EventID:    "evt-1",
@@ -117,25 +115,21 @@ func TestModerationHandlers_Round11(t *testing.T) {
 		Notes:      "ok",
 	})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleModerationReviewLift(ctxReview))
-	require.Equal(t, http.StatusCreated, ctxReview.Response.StatusCode)
+	requireStatus(t, http.StatusCreated)(handler.HandleModerationReviewLift(ctxReview))
 
 	ctxHistory, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/history/status-1", map[string]string{"Authorization": "Bearer " + modToken}, nil, nil)
 	require.NoError(t, err)
-	ctxHistory.SetParam("object_id", "status-1")
-	require.NoError(t, handler.HandleModerationHistoryLift(ctxHistory))
-	require.Equal(t, http.StatusOK, ctxHistory.Response.StatusCode)
+	ctxHistory.Params["object_id"] = "status-1"
+	requireStatus(t, http.StatusOK)(handler.HandleModerationHistoryLift(ctxHistory))
 
 	ctxConsensus, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/consensus/evt-1", map[string]string{"Authorization": "Bearer " + modToken}, nil, nil)
 	require.NoError(t, err)
-	ctxConsensus.SetParam("event_id", "evt-1")
-	require.NoError(t, handler.HandleGetConsensusLift(ctxConsensus))
-	require.Equal(t, http.StatusOK, ctxConsensus.Response.StatusCode)
+	ctxConsensus.Params["event_id"] = "evt-1"
+	requireStatus(t, http.StatusOK)(handler.HandleGetConsensusLift(ctxConsensus))
 
 	ctxTrust, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust", map[string]string{"Authorization": "Bearer " + userToken}, map[string]string{"direction": "outgoing"}, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetTrustRelationshipsLift(ctxTrust))
-	require.Equal(t, http.StatusOK, ctxTrust.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrustRelationshipsLift(ctxTrust))
 
 	ctxUpdateTrust, err := round10NewLiftContext(http.MethodPut, "/api/v1/moderation/trust", map[string]string{"Authorization": "Bearer " + userToken}, nil, models.UpdateTrustRequest{
 		TrusteeID:  "https://remote.example/users/bob",
@@ -144,14 +138,12 @@ func TestModerationHandlers_Round11(t *testing.T) {
 		Category:   "general",
 	})
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleUpdateTrustLift(ctxUpdateTrust))
-	require.Equal(t, http.StatusOK, ctxUpdateTrust.Response.StatusCode)
+	requireStatus(t, http.StatusOK)(handler.HandleUpdateTrustLift(ctxUpdateTrust))
 
 	ctxScore, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust/alice/score", map[string]string{"Authorization": "Bearer " + modToken}, nil, nil)
 	require.NoError(t, err)
-	ctxScore.SetParam("actor_id", "@alice@example.com")
-	require.NoError(t, handler.HandleGetTrustScoreLift(ctxScore))
-	require.Equal(t, http.StatusOK, ctxScore.Response.StatusCode)
+	ctxScore.Params["actor_id"] = "@alice@example.com"
+	requireStatus(t, http.StatusOK)(handler.HandleGetTrustScoreLift(ctxScore))
 
 	require.Equal(t, 2, parseSeverity("2"))
 	require.Equal(t, 2, parseSeverity("unknown"))

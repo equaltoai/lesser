@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -52,13 +52,13 @@ func TestStatusSourceAndHistory(t *testing.T) {
 
 	ctxSource, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/source", nil, nil, nil)
 	require.NoError(t, err)
-	ctxSource.SetParam("id", "123")
-	require.NoError(t, h.HandleGetStatusSourceLift(ctxSource))
+	ctxSource.Params["id"] = "123"
+	requireStatus(t, http.StatusOK)(h.HandleGetStatusSourceLift(ctxSource))
 
 	ctxHistory, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/history", nil, nil, nil)
 	require.NoError(t, err)
-	ctxHistory.SetParam("id", "123")
-	require.NoError(t, h.HandleGetStatusHistoryLift(ctxHistory))
+	ctxHistory.Params["id"] = "123"
+	requireStatus(t, http.StatusOK)(h.HandleGetStatusHistoryLift(ctxHistory))
 }
 
 func TestStatusHistoryHelpers(t *testing.T) {

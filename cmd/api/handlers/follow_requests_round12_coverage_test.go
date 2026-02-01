@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -32,8 +32,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/follow_requests", nil, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetFollowRequestsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetFollowRequestsLift(ctx))
 	})
 
 	t.Run("get_follow_requests_invalid_token_returns_401", func(t *testing.T) {
@@ -44,8 +43,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/follow_requests", map[string]string{"Authorization": "Bearer not-a-real-jwt"}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetFollowRequestsLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetFollowRequestsLift(ctx))
 	})
 
 	t.Run("get_follow_requests_insufficient_scope_returns_403", func(t *testing.T) {
@@ -57,8 +55,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/follow_requests", map[string]string{"Authorization": "Bearer " + writeOnlyToken}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetFollowRequestsLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleGetFollowRequestsLift(ctx))
 	})
 
 	t.Run("get_follow_requests_get_actor_error_returns_500", func(t *testing.T) {
@@ -74,8 +71,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/follow_requests", map[string]string{"Authorization": "Bearer " + readToken}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleGetFollowRequestsLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetFollowRequestsLift(ctx))
 	})
 
 	t.Run("get_follow_requests_logic_relationships_error_returns_500", func(t *testing.T) {
@@ -93,8 +89,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 		require.NoError(t, err)
 
 		lockedActor := &activitypub.Actor{PreferredUsername: "alice", ManuallyApprovesFollowers: true}
-		require.NoError(t, handler.handleGetFollowRequestsLogic(ctx, lockedActor, "alice"))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.handleGetFollowRequestsLogic(ctx, lockedActor, "alice"))
 	})
 
 	t.Run("get_follow_requests_logic_loops_followers_and_skips_errors", func(t *testing.T) {
@@ -130,8 +125,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 		require.NoError(t, err)
 
 		lockedActor := &activitypub.Actor{PreferredUsername: "alice", ManuallyApprovesFollowers: true}
-		require.NoError(t, handler.handleGetFollowRequestsLogic(ctx, lockedActor, "alice"))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusOK)(handler.handleGetFollowRequestsLogic(ctx, lockedActor, "alice"))
 	})
 
 	t.Run("authorize_missing_account_id_param_returns_400", func(t *testing.T) {
@@ -142,8 +136,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/follow_requests/bob/authorize", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleAuthorizeFollowRequestLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleAuthorizeFollowRequestLift(ctx))
 	})
 
 	t.Run("authorize_unlocked_account_returns_400", func(t *testing.T) {
@@ -164,9 +157,8 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/follow_requests/bob/authorize", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("account_id", "bob")
-		require.NoError(t, handler.HandleAuthorizeFollowRequestLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["account_id"] = "bob"
+		requireStatus(t, http.StatusBadRequest)(handler.HandleAuthorizeFollowRequestLift(ctx))
 	})
 
 	t.Run("authorize_follow_request_not_found_returns_404", func(t *testing.T) {
@@ -193,9 +185,8 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/follow_requests/bob/authorize", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("account_id", "bob")
-		require.NoError(t, handler.HandleAuthorizeFollowRequestLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["account_id"] = "bob"
+		requireStatus(t, http.StatusNotFound)(handler.HandleAuthorizeFollowRequestLift(ctx))
 	})
 
 	t.Run("authorize_service_error_returns_500", func(t *testing.T) {
@@ -222,9 +213,8 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/follow_requests/bob/authorize", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("account_id", "bob")
-		require.NoError(t, handler.HandleAuthorizeFollowRequestLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		ctx.Params["account_id"] = "bob"
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleAuthorizeFollowRequestLift(ctx))
 	})
 
 	t.Run("reject_success_covers_reject_flow", func(t *testing.T) {
@@ -259,9 +249,8 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/follow_requests/bob/reject", map[string]string{"Authorization": "Bearer " + writeToken}, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("account_id", "bob")
-		require.NoError(t, handler.HandleRejectFollowRequestLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		ctx.Params["account_id"] = "bob"
+		requireStatus(t, http.StatusOK)(handler.HandleRejectFollowRequestLift(ctx))
 	})
 
 	t.Run("handleFollowRequestOperation_activity_sender_error_branch", func(t *testing.T) {
@@ -276,7 +265,7 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 		var wg sync.WaitGroup
 		wg.Add(1)
 
-		require.NoError(t, handler.handleFollowRequestOperation(ctx, actor, "alice", "bob", followRequestConfig{
+		requireStatus(t, http.StatusOK)(handler.handleFollowRequestOperation(ctx, actor, "alice", "bob", followRequestConfig{
 			actionType: "accept",
 			serviceMethod: func(_ context.Context, _ *relationships.AcceptFollowRequestCommand) (*relationships.RelationshipResult, error) {
 				return &relationships.RelationshipResult{Relationship: rel}, nil
@@ -339,4 +328,3 @@ func TestFollowRequests_Round12_Coverage(t *testing.T) {
 		require.Error(t, err)
 	})
 }
-

@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"encoding/base64"
@@ -27,17 +27,17 @@ func TestImportStatusAndList(t *testing.T) {
 
 	ctxStatus, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports/import-1", headers, nil, nil)
 	require.NoError(t, err)
-	ctxStatus.SetParam("id", "import-1")
-	require.NoError(t, h.HandleGetImportStatusLift(ctxStatus))
+	ctxStatus.Params["id"] = "import-1"
+	requireStatus(t, http.StatusOK)(h.HandleGetImportStatusLift(ctxStatus))
 
 	ctxList, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", headers, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, h.HandleListImportsLift(ctxList))
+	requireStatus(t, http.StatusOK)(h.HandleListImportsLift(ctxList))
 
 	ctxCancel, err := round10NewLiftContext(http.MethodDelete, "/api/v1/imports/import-1", headers, nil, nil)
 	require.NoError(t, err)
-	ctxCancel.SetParam("id", "import-1")
-	require.NoError(t, h.HandleCancelImportLift(ctxCancel))
+	ctxCancel.Params["id"] = "import-1"
+	requireStatus(t, http.StatusOK)(h.HandleCancelImportLift(ctxCancel))
 }
 
 func TestImportHelpers(t *testing.T) {
@@ -46,10 +46,11 @@ func TestImportHelpers(t *testing.T) {
 	require.Equal(t, "application/json", h.detectContentType([]byte("{}")))
 	require.True(t, h.isValidImportFormat("text/csv"))
 
-	encoded := base64.StdEncoding.EncodeToString([]byte("example"))
+	encoded := base64.StdEncoding.EncodeToString([]byte("{}"))
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/imports", nil, nil, nil)
 	require.NoError(t, err)
-	data, err := h.processImportFileData(ctx, encoded)
+	data, resp, err := h.processImportFileData(ctx, encoded)
 	require.NoError(t, err)
+	require.Nil(t, resp)
 	require.NotEmpty(t, data)
 }

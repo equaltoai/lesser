@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"context"
@@ -68,10 +68,11 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 		require.NoError(t, err)
 
 		otherNote := &activitypub.Note{AttributedTo: cfg.ActorURL("bob")}
-		note, err := handler.convertObjectToNoteWithOwnershipCheck(ctx, otherNote, actorID)
+		note, resp, err := handler.convertObjectToNoteWithOwnershipCheck(ctx, otherNote, actorID)
 		require.NoError(t, err)
 		require.Nil(t, note)
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 		require.NoError(t, err)
@@ -81,8 +82,9 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 			AttributedTo: actorID,
 			Content:      "hello",
 		}
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx2, ownedNote, actorID)
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx2, ownedNote, actorID)
 		require.NoError(t, err)
+		require.Nil(t, resp)
 		require.NotNil(t, note)
 		require.Equal(t, "hello", note.Content)
 
@@ -95,10 +97,11 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 			AuthorUsername: "bob",
 			Note:           &storagemodels.NoteField{Note: ownedNote},
 		}
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx3, statusOtherAuthor, actorID)
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx3, statusOtherAuthor, actorID)
 		require.NoError(t, err)
 		require.Nil(t, note)
-		require.Equal(t, http.StatusForbidden, ctx3.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 
 		ctx4, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 		require.NoError(t, err)
@@ -108,19 +111,21 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 			AuthorUsername: "bob",
 			Note:           &storagemodels.NoteField{Note: ownedNote},
 		}
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx4, statusUsernameMismatch, actorID)
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx4, statusUsernameMismatch, actorID)
 		require.NoError(t, err)
 		require.Nil(t, note)
-		require.Equal(t, http.StatusForbidden, ctx4.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 
 		ctx5, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 		require.NoError(t, err)
 
 		statusMissingNote := &storagemodels.Status{StatusID: "s4", AuthorUsername: "alice"}
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx5, statusMissingNote, actorID)
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx5, statusMissingNote, actorID)
 		require.NoError(t, err)
 		require.Nil(t, note)
-		require.Equal(t, http.StatusInternalServerError, ctx5.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 
 		ctx6, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 		require.NoError(t, err)
@@ -131,27 +136,30 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 			AuthorID:       actorID,
 			Note:           &storagemodels.NoteField{Note: &activitypub.Note{AttributedTo: cfg.ActorURL("bob")}},
 		}
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx6, statusNoteMismatch, actorID)
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx6, statusNoteMismatch, actorID)
 		require.NoError(t, err)
 		require.Nil(t, note)
-		require.Equal(t, http.StatusForbidden, ctx6.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 
 		ctx7, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 		require.NoError(t, err)
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx7, map[string]any{"attributedTo": cfg.ActorURL("bob")}, actorID)
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx7, map[string]any{"attributedTo": cfg.ActorURL("bob")}, actorID)
 		require.NoError(t, err)
 		require.Nil(t, note)
-		require.Equal(t, http.StatusForbidden, ctx7.Response.StatusCode)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 
 		ctx8, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 		require.NoError(t, err)
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx8, map[string]any{
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx8, map[string]any{
 			"id":           cfg.ObjectURL("objects", "m1"),
 			"type":         activitypub.NoteType,
 			"attributedTo": actorID,
 			"content":      "map",
 		}, actorID)
 		require.NoError(t, err)
+		require.Nil(t, resp)
 		require.NotNil(t, note)
 		require.Equal(t, "map", note.Content)
 
@@ -163,13 +171,14 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 		}
 		ctx9, err := round10NewLiftContext(http.MethodGet, "/statuses", nil, nil, nil)
 		require.NoError(t, err)
-		note, err = handler.convertObjectToNoteWithOwnershipCheck(ctx9, noteLike{
+		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx9, noteLike{
 			ID:           cfg.ObjectURL("objects", "u1"),
 			Type:         activitypub.NoteType,
 			AttributedTo: actorID,
 			Content:      "unknown",
 		}, actorID)
 		require.NoError(t, err)
+		require.Nil(t, resp)
 		require.NotNil(t, note)
 		require.Equal(t, "unknown", note.Content)
 	})
@@ -207,9 +216,8 @@ func TestStatusesMoreCoverageStatusContext_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/%/context", headers, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "%")
-		require.NoError(t, handler.HandleGetStatusContextLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		ctx.Params["id"] = "%"
+		requireStatus(t, http.StatusBadRequest)(handler.HandleGetStatusContextLift(ctx))
 	})
 
 	t.Run("validateStatusIDForContext not found", func(t *testing.T) {
@@ -220,9 +228,8 @@ func TestStatusesMoreCoverageStatusContext_Round12(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/missing/context", nil, nil, nil)
 		require.NoError(t, err)
-		ctx.SetParam("id", "missing")
-		require.NoError(t, handler.HandleGetStatusContextLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx.Params["id"] = "missing"
+		requireStatus(t, http.StatusNotFound)(handler.HandleGetStatusContextLift(ctx))
 	})
 }
 
@@ -235,8 +242,7 @@ func TestStatusesMoreCoverageUpdateStorageFailures_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/statuses/s1", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.saveUpdatedStatus(ctx, &activitypub.Note{BaseObject: activitypub.BaseObject{ID: cfg.ObjectURL("objects", "s1")}}))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.saveUpdatedStatus(ctx, &activitypub.Note{BaseObject: activitypub.BaseObject{ID: cfg.ObjectURL("objects", "s1")}}))
 	})
 
 	t.Run("saveUpdatedStatus storage error writes 500", func(t *testing.T) {
@@ -248,11 +254,10 @@ func TestStatusesMoreCoverageUpdateStorageFailures_Round12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, handler.saveUpdatedStatus(ctx, &activitypub.Note{
+		requireStatus(t, http.StatusInternalServerError)(handler.saveUpdatedStatus(ctx, &activitypub.Note{
 			BaseObject: activitypub.BaseObject{ID: cfg.ObjectURL("objects", "s1"), Type: activitypub.NoteType},
 			Content:    "edit",
 		}))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
 	})
 
 	t.Run("createStatusUpdateActivity error writes 500", func(t *testing.T) {
@@ -272,8 +277,7 @@ func TestStatusesMoreCoverageUpdateStorageFailures_Round12(t *testing.T) {
 			AttributedTo: cfg.ActorURL("alice"),
 			Content:      "edit",
 		}
-		require.NoError(t, handler.createStatusUpdateActivity(ctx, note, actor))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(handler.createStatusUpdateActivity(ctx, note, actor))
 	})
 }
 
@@ -289,6 +293,5 @@ func TestStatusesMoreCoveragePublicTimeline_Round12(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/timelines/public", nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, handler.HandleGetPublicTimelineLift(ctx))
-	require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+	requireStatus(t, http.StatusInternalServerError)(handler.HandleGetPublicTimelineLift(ctx))
 }

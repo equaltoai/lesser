@@ -7,10 +7,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/errors"
-	liftTesting "github.com/equaltoai/lesser/pkg/testing/lift"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -30,46 +29,41 @@ func (retryableErr) Unwrap() error   { return nil }
 func TestErrorMiddleware_WrappersAndRecoveryHelpers(t *testing.T) {
 	t.Run("Validation/Production/Development middleware wrappers execute", func(t *testing.T) {
 		logger := zap.NewNop()
-		ctx := liftTesting.MockLiftContext("GET", "/test")
 
-		for _, mw := range []lift.Middleware{
+		for _, mw := range []apptheory.Middleware{
 			ValidationErrorMiddleware("svc", logger),
 			ProductionErrorMiddleware("svc", logger),
 			DevelopmentErrorMiddleware("svc", logger),
 		} {
-			ctx = liftTesting.MockLiftContext("GET", "/test") // reset
-			h := mw(lift.HandlerFunc(func(*lift.Context) error {
-				return ConflictError{Resource: "x", Message: "exists"}
-			}))
-			require.NoError(t, h.Handle(ctx))
-			status, _ := parseResponse(t, ctx)
+			ctx := newTestContext("GET", "/test")
+			h := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+				return nil, ConflictError{Resource: "x", Message: "exists"}
+			})
+			resp, err := h(ctx)
+			require.NoError(t, err)
+			status, _ := parseResponse(t, resp)
 			assert.Equal(t, 409, status)
 		}
 	})
 
 	t.Run("NotFoundMiddleware converts missing response to 404", func(t *testing.T) {
 		mw := NotFoundMiddleware()
-		h := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Response.StatusCode = 0
-			return nil
-		}))
+		h := mw(func(*apptheory.Context) (*apptheory.Response, error) { return nil, nil })
 
-		ctx := liftTesting.MockLiftContext("GET", "/missing")
-		err := h.Handle(ctx)
+		ctx := newTestContext("GET", "/missing")
+		resp, err := h(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, 404, ctx.Response.StatusCode)
+		assert.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("TimeoutErrorMiddleware converts deadline exceeded to 503", func(t *testing.T) {
 		mw := TimeoutErrorMiddleware("svc", zap.NewNop())
-		h := mw(lift.HandlerFunc(func(*lift.Context) error {
-			return context.DeadlineExceeded
-		}))
+		h := mw(func(*apptheory.Context) (*apptheory.Response, error) { return nil, context.DeadlineExceeded })
 
-		ctx := liftTesting.MockLiftContext("GET", "/timeout")
-		err := h.Handle(ctx)
+		ctx := newTestContext("GET", "/timeout")
+		resp, err := h(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, 503, ctx.Response.StatusCode)
+		assert.Equal(t, 503, resp.Status)
 	})
 
 	t.Run("ErrorRecoveryMiddleware recovers from temporary and retryable errors", func(t *testing.T) {
@@ -81,21 +75,21 @@ func TestErrorMiddleware_WrappersAndRecoveryHelpers(t *testing.T) {
 			retryableErr{},
 			errors.Internal("x").AsRetryable(),
 		} {
-			ctx := liftTesting.MockLiftContext("GET", "/recovery")
-			h := mw(lift.HandlerFunc(func(*lift.Context) error { return errToReturn }))
-			err := h.Handle(ctx)
+			ctx := newTestContext("GET", "/recovery")
+			h := mw(func(*apptheory.Context) (*apptheory.Response, error) { return nil, errToReturn })
+			resp, err := h(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, 503, ctx.Response.StatusCode)
+			assert.Equal(t, 503, resp.Status)
 		}
 	})
 
 	t.Run("ErrorRecoveryMiddleware returns original when unrecoverable", func(t *testing.T) {
 		wantErr := stdErrors.New("no")
 		mw := ErrorRecoveryMiddleware("svc", zap.NewNop())
-		h := mw(lift.HandlerFunc(func(*lift.Context) error { return wantErr }))
+		h := mw(func(*apptheory.Context) (*apptheory.Response, error) { return nil, wantErr })
 
-		ctx := liftTesting.MockLiftContext("GET", "/recovery")
-		err := h.Handle(ctx)
+		ctx := newTestContext("GET", "/recovery")
+		_, err := h(ctx)
 		assert.ErrorIs(t, err, wantErr)
 	})
 }
@@ -108,10 +102,11 @@ func TestCreateStandardErrorMiddleware_Branches(t *testing.T) {
 
 	cfg.Environment = "production"
 	mw := CreateStandardErrorMiddleware("svc", logger)
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	h := mw(lift.HandlerFunc(func(*lift.Context) error { return stdErrors.New("x") }))
-	require.NoError(t, h.Handle(ctx))
-	assert.Equal(t, 500, ctx.Response.StatusCode)
+	ctx := newTestContext("GET", "/test")
+	h := mw(func(*apptheory.Context) (*apptheory.Response, error) { return nil, stdErrors.New("x") })
+	resp, err := h(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 500, resp.Status)
 
 	cfg.Environment = "development"
 	_ = CreateAPIErrorMiddleware(logger)

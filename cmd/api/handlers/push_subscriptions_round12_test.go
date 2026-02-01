@@ -1,7 +1,8 @@
-package lift
+package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -24,8 +25,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/push/subscription", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetPushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetPushSubscriptionLift(ctx))
 	})
 
 	t.Run("get subscription invalid token", func(t *testing.T) {
@@ -35,8 +35,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetPushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetPushSubscriptionLift(ctx))
 	})
 
 	t.Run("get subscription insufficient scope", func(t *testing.T) {
@@ -46,8 +45,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetPushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleGetPushSubscriptionLift(ctx))
 	})
 
 	t.Run("get subscription repo error", func(t *testing.T) {
@@ -58,8 +56,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetPushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetPushSubscriptionLift(ctx))
 	})
 
 	t.Run("get subscription empty response when none exist", func(t *testing.T) {
@@ -74,9 +71,9 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetPushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]any)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetPushSubscriptionLift(ctx))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, "", body["id"])
 	})
 
@@ -101,10 +98,10 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleGetPushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.PushSubscription)
-		require.Equal(t, "", resp.ServerKey)
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetPushSubscriptionLift(ctx))
+		var body apimodels.PushSubscription
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "", body.ServerKey)
 	})
 
 	t.Run("create subscription unauthorized", func(t *testing.T) {
@@ -112,8 +109,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/push/subscription", nil, nil, apimodels.PushSubscriptionRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription invalid token", func(t *testing.T) {
@@ -123,8 +119,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription insufficient scope", func(t *testing.T) {
@@ -134,8 +129,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription empty body returns bad request", func(t *testing.T) {
@@ -145,8 +139,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription validates required fields", func(t *testing.T) {
@@ -156,8 +149,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription missing p256dh returns 422", func(t *testing.T) {
@@ -172,8 +164,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription missing auth returns 422", func(t *testing.T) {
@@ -188,8 +179,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnprocessableEntity, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription invalid body", func(t *testing.T) {
@@ -198,8 +188,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 			"Authorization": "Bearer " + writeToken,
 		}, nil, []byte("{"))
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("create subscription continues when deleting old subscription fails", func(t *testing.T) {
@@ -216,10 +205,10 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.PushSubscription)
-		require.Equal(t, "https://push.example.com", resp.Endpoint)
+		resp := requireStatus(t, http.StatusOK)(h.HandleCreatePushSubscriptionLift(ctx))
+		var body apimodels.PushSubscription
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "https://push.example.com", body.Endpoint)
 	})
 
 	t.Run("create subscription success with VAPID keys missing", func(t *testing.T) {
@@ -236,10 +225,10 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.PushSubscription)
-		require.Empty(t, resp.ServerKey)
+		resp := requireStatus(t, http.StatusOK)(h.HandleCreatePushSubscriptionLift(ctx))
+		var body apimodels.PushSubscription
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Empty(t, body.ServerKey)
 	})
 
 	t.Run("create subscription success includes server key", func(t *testing.T) {
@@ -255,10 +244,10 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.PushSubscription)
-		require.Equal(t, "pub", resp.ServerKey)
+		resp := requireStatus(t, http.StatusOK)(h.HandleCreatePushSubscriptionLift(ctx))
+		var body apimodels.PushSubscription
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "pub", body.ServerKey)
 	})
 
 	t.Run("create subscription storage failure returns 500", func(t *testing.T) {
@@ -275,8 +264,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleCreatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleCreatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("update subscription unauthorized", func(t *testing.T) {
@@ -284,8 +272,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPut, "/api/v1/push/subscription", nil, nil, apimodels.PushSubscriptionRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUpdatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("update subscription invalid token", func(t *testing.T) {
@@ -295,8 +282,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleUpdatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("update subscription insufficient scope", func(t *testing.T) {
@@ -306,8 +292,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleUpdatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("update subscription not found", func(t *testing.T) {
@@ -322,8 +307,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{Data: apimodels.PushSubscriptionAlerts{Follow: true}})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(h.HandleUpdatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("update subscription repo error treated as not found", func(t *testing.T) {
@@ -334,8 +318,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{Data: apimodels.PushSubscriptionAlerts{Follow: true}})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNotFound)(h.HandleUpdatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("update subscription invalid body", func(t *testing.T) {
@@ -344,8 +327,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 			"Authorization": "Bearer " + writeToken,
 		}, nil, []byte("{"))
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(h.HandleUpdatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("update subscription success with VAPID keys missing", func(t *testing.T) {
@@ -369,10 +351,10 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{Data: apimodels.PushSubscriptionAlerts{Follow: true}})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.PushSubscription)
-		require.Empty(t, resp.ServerKey)
+		resp := requireStatus(t, http.StatusOK)(h.HandleUpdatePushSubscriptionLift(ctx))
+		var body apimodels.PushSubscription
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Empty(t, body.ServerKey)
 	})
 
 	t.Run("update subscription success includes server key", func(t *testing.T) {
@@ -395,10 +377,10 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{Data: apimodels.PushSubscriptionAlerts{Follow: true}})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		resp := ctx.Response.Body.(apimodels.PushSubscription)
-		require.Equal(t, "pub", resp.ServerKey)
+		resp := requireStatus(t, http.StatusOK)(h.HandleUpdatePushSubscriptionLift(ctx))
+		var body apimodels.PushSubscription
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "pub", body.ServerKey)
 	})
 
 	t.Run("update subscription update failure", func(t *testing.T) {
@@ -422,8 +404,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, apimodels.PushSubscriptionRequest{Data: apimodels.PushSubscriptionAlerts{Follow: true}})
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleUpdatePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleUpdatePushSubscriptionLift(ctx))
 	})
 
 	t.Run("delete subscription unauthorized", func(t *testing.T) {
@@ -431,8 +412,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodDelete, "/api/v1/push/subscription", nil, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleDeletePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleDeletePushSubscriptionLift(ctx))
 	})
 
 	t.Run("delete subscription invalid token", func(t *testing.T) {
@@ -442,8 +422,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleDeletePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusUnauthorized, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(h.HandleDeletePushSubscriptionLift(ctx))
 	})
 
 	t.Run("delete subscription insufficient scope", func(t *testing.T) {
@@ -453,8 +432,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleDeletePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(h.HandleDeletePushSubscriptionLift(ctx))
 	})
 
 	t.Run("delete subscription delete failure", func(t *testing.T) {
@@ -465,8 +443,7 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleDeletePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusInternalServerError, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusInternalServerError)(h.HandleDeletePushSubscriptionLift(ctx))
 	})
 
 	t.Run("delete subscription success returns 204", func(t *testing.T) {
@@ -476,7 +453,6 @@ func TestPushSubscriptionsRound12(t *testing.T) {
 		}, nil, nil)
 		require.NoError(t, err)
 
-		require.NoError(t, h.HandleDeletePushSubscriptionLift(ctx))
-		require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+		requireStatus(t, http.StatusNoContent)(h.HandleDeletePushSubscriptionLift(ctx))
 	})
 }

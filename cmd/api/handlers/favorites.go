@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"fmt"
@@ -7,15 +7,18 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // HandleGetFavouritesLift handles GET /api/v1/favourites
-func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
+func (h *Handler) HandleGetFavouritesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate user with read scope
 	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
 	if err != nil {
+		if isInsufficientScopeError(err) {
+			return h.respondInsufficientScope(ctx)
+		}
 		return h.respondUnauthorized(ctx)
 	}
 
@@ -43,7 +46,7 @@ func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
 	}
 
 	// Get favorited notes
-	result, err := notesService.GetFavoritedNotes(ctx.Context, query)
+	result, err := notesService.GetFavoritedNotes(ctx.Context(), query)
 	if err != nil {
 		h.logger.Error("failed to get favorited notes",
 			zap.String("username", username),
@@ -64,12 +67,16 @@ func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
 		apiStatuses = append(apiStatuses, apiStatus)
 	}
 
-	// Set pagination headers
+	resp, err := okJSON(apiStatuses)
+	if err != nil {
+		return nil, err
+	}
+
 	if result.Pagination.NextCursor != "" {
 		params.MaxID = result.Pagination.NextCursor
-		h.withPaginationHeaders(ctx, fmt.Sprintf("%s/api/v1/favourites", h.cfg.BaseURL()),
+		h.withPaginationHeaders(resp, fmt.Sprintf("%s/api/v1/favourites", h.cfg.BaseURL()),
 			params, true, false)
 	}
 
-	return ctx.JSON(apiStatuses)
+	return resp, nil
 }

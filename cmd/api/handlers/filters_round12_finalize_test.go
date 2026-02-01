@@ -1,4 +1,4 @@
-package lift
+package handlers
 
 import (
 	"errors"
@@ -28,18 +28,15 @@ func TestFiltersHandlers_Finalize_Round12(t *testing.T) {
 
 		ctxUnauthed, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters", nil, nil, apimodels.CreateFilterRequest{Title: "x", Context: []string{"home"}})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateFilterLift(ctxUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthed.Response.StatusCode)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleCreateFilterLift(ctxUnauthed))
 
 		ctxInsufficient, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters", insufficientHeaders, nil, apimodels.CreateFilterRequest{Title: "x", Context: []string{"home"}})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateFilterLift(ctxInsufficient))
-		require.Equal(t, http.StatusForbidden, ctxInsufficient.Response.StatusCode)
+		requireStatus(t, http.StatusForbidden)(handler.HandleCreateFilterLift(ctxInsufficient))
 
 		ctxInvalidAction, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters", writeHeaders, nil, apimodels.CreateFilterRequest{Title: "x", Context: []string{"home"}, FilterAction: "nope"})
 		require.NoError(t, err)
-		require.NoError(t, handler.HandleCreateFilterLift(ctxInvalidAction))
-		require.Equal(t, http.StatusBadRequest, ctxInvalidAction.Response.StatusCode)
+		requireStatus(t, http.StatusBadRequest)(handler.HandleCreateFilterLift(ctxInvalidAction))
 	})
 
 	t.Run("get filter keywords/statuses auth branches", func(t *testing.T) {
@@ -47,15 +44,13 @@ func TestFiltersHandlers_Finalize_Round12(t *testing.T) {
 
 		ctxKeywordsUnauthed, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1/keywords", nil, nil, nil)
 		require.NoError(t, err)
-		ctxKeywordsUnauthed.SetParam("filter_id", "filter-1")
-		require.NoError(t, handler.HandleGetFilterKeywordsLift(ctxKeywordsUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxKeywordsUnauthed.Response.StatusCode)
+		ctxKeywordsUnauthed.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetFilterKeywordsLift(ctxKeywordsUnauthed))
 
 		ctxStatusesInsufficient, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1/statuses", insufficientHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxStatusesInsufficient.SetParam("filter_id", "filter-1")
-		require.NoError(t, handler.HandleGetFilterStatusesLift(ctxStatusesInsufficient))
-		require.Equal(t, http.StatusForbidden, ctxStatusesInsufficient.Response.StatusCode)
+		ctxStatusesInsufficient.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusForbidden)(handler.HandleGetFilterStatusesLift(ctxStatusesInsufficient))
 	})
 
 	t.Run("get filter keyword/status repository errors", func(t *testing.T) {
@@ -69,9 +64,8 @@ func TestFiltersHandlers_Finalize_Round12(t *testing.T) {
 		handlerKWErr, _, _ := round11NewHandler(t, cfg, stateKWErr)
 		ctxKWErr, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxKWErr.SetParam("id", "filter-1")
-		require.NoError(t, handlerKWErr.HandleGetFilterLift(ctxKWErr))
-		require.Equal(t, http.StatusInternalServerError, ctxKWErr.Response.StatusCode)
+		ctxKWErr.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerKWErr.HandleGetFilterLift(ctxKWErr))
 
 		stateStatusErr := &round10QueryState{
 			filtersByID:    map[string]storagemodels.Filter{"filter-1": {ID: "filter-1", Username: "alice", Title: "x", Context: []string{"home"}, FilterAction: "warn"}},
@@ -80,9 +74,8 @@ func TestFiltersHandlers_Finalize_Round12(t *testing.T) {
 		handlerStatusErr, _, _ := round11NewHandler(t, cfg, stateStatusErr)
 		ctxStatusErr, err := round10NewLiftContext(http.MethodGet, "/api/v2/filters/filter-1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxStatusErr.SetParam("id", "filter-1")
-		require.NoError(t, handlerStatusErr.HandleGetFilterLift(ctxStatusErr))
-		require.Equal(t, http.StatusInternalServerError, ctxStatusErr.Response.StatusCode)
+		ctxStatusErr.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerStatusErr.HandleGetFilterLift(ctxStatusErr))
 	})
 
 	t.Run("add/delete filter status ownership and delete error", func(t *testing.T) {
@@ -96,16 +89,14 @@ func TestFiltersHandlers_Finalize_Round12(t *testing.T) {
 
 		ctxAddStatusOwner, err := round10NewLiftContext(http.MethodPost, "/api/v2/filters/filter-1/statuses", writeHeaders, nil, apimodels.AddFilterStatusRequest{StatusID: "status-1"})
 		require.NoError(t, err)
-		ctxAddStatusOwner.SetParam("filter_id", "filter-1")
-		require.NoError(t, handler.HandleAddFilterStatusLift(ctxAddStatusOwner))
-		require.Equal(t, http.StatusNotFound, ctxAddStatusOwner.Response.StatusCode)
+		ctxAddStatusOwner.Params["filter_id"] = "filter-1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleAddFilterStatusLift(ctxAddStatusOwner))
 
 		ctxDeleteStatusOwner, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1/statuses/fs-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxDeleteStatusOwner.SetParam("filter_id", "filter-1")
-		ctxDeleteStatusOwner.SetParam("status_id", "fs-1")
-		require.NoError(t, handler.HandleDeleteFilterStatusLift(ctxDeleteStatusOwner))
-		require.Equal(t, http.StatusNotFound, ctxDeleteStatusOwner.Response.StatusCode)
+		ctxDeleteStatusOwner.Params["filter_id"] = "filter-1"
+		ctxDeleteStatusOwner.Params["status_id"] = "fs-1"
+		requireStatus(t, http.StatusNotFound)(handler.HandleDeleteFilterStatusLift(ctxDeleteStatusOwner))
 
 		// Delete error when filter belongs to user.
 		stateOwned := &round10QueryState{
@@ -117,10 +108,9 @@ func TestFiltersHandlers_Finalize_Round12(t *testing.T) {
 		handlerOwned, _, _ := round11NewHandler(t, cfg, stateOwned)
 		ctxDeleteStatus, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1/statuses/fs-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxDeleteStatus.SetParam("filter_id", "filter-1")
-		ctxDeleteStatus.SetParam("status_id", "fs-1")
-		require.NoError(t, handlerOwned.HandleDeleteFilterStatusLift(ctxDeleteStatus))
-		require.Equal(t, http.StatusInternalServerError, ctxDeleteStatus.Response.StatusCode)
+		ctxDeleteStatus.Params["filter_id"] = "filter-1"
+		ctxDeleteStatus.Params["status_id"] = "fs-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerOwned.HandleDeleteFilterStatusLift(ctxDeleteStatus))
 	})
 
 	t.Run("delete filter auth and get filter error", func(t *testing.T) {
@@ -128,21 +118,18 @@ func TestFiltersHandlers_Finalize_Round12(t *testing.T) {
 
 		ctxUnauthed, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1", nil, nil, nil)
 		require.NoError(t, err)
-		ctxUnauthed.SetParam("id", "filter-1")
-		require.NoError(t, handler.HandleDeleteFilterLift(ctxUnauthed))
-		require.Equal(t, http.StatusUnauthorized, ctxUnauthed.Response.StatusCode)
+		ctxUnauthed.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleDeleteFilterLift(ctxUnauthed))
 
 		ctxInsufficient, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1", readHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxInsufficient.SetParam("id", "filter-1")
-		require.NoError(t, handler.HandleDeleteFilterLift(ctxInsufficient))
-		require.Equal(t, http.StatusForbidden, ctxInsufficient.Response.StatusCode)
+		ctxInsufficient.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusForbidden)(handler.HandleDeleteFilterLift(ctxInsufficient))
 
 		handlerGetErr, _, _ := round11NewHandler(t, cfg, &round10QueryState{allErrorOnce: errors.New("boom")})
 		ctxGetErr, err := round10NewLiftContext(http.MethodDelete, "/api/v2/filters/filter-1", writeHeaders, nil, nil)
 		require.NoError(t, err)
-		ctxGetErr.SetParam("id", "filter-1")
-		require.NoError(t, handlerGetErr.HandleDeleteFilterLift(ctxGetErr))
-		require.Equal(t, http.StatusInternalServerError, ctxGetErr.Response.StatusCode)
+		ctxGetErr.Params["id"] = "filter-1"
+		requireStatus(t, http.StatusInternalServerError)(handlerGetErr.HandleDeleteFilterLift(ctxGetErr))
 	})
 }
