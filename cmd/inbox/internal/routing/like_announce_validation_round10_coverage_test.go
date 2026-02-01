@@ -209,12 +209,12 @@ func TestInboxHandler_Round10_ValidationAndDigest_MoreBranches(t *testing.T) {
 	t.Run("digest verification branches", func(t *testing.T) {
 		body := []byte(`{"hello":"world"}`)
 
-		liftCtx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+		liftCtx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "application/activity+json",
 			"Digest":       "SHA-256=not-a-valid-digest",
 		}, nil, body)
-		liftCtx.SetParam("username", "alice")
+		liftCtx.Params["username"] = "alice"
 
 		req := &InboxRequest{
 			Activity: &activitypub.Activity{Actor: env.remoteActorID},
@@ -223,12 +223,12 @@ func TestInboxHandler_Round10_ValidationAndDigest_MoreBranches(t *testing.T) {
 
 		require.Error(t, env.handler.verifyDigestEnhanced(liftCtx, req))
 
-		convertFail := newLiftContext("BAD METHOD", "/users/alice/inbox", map[string]string{
+		convertFail := newAppTheoryContext("BAD METHOD", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "application/activity+json",
 			"Digest":       "SHA-256=not-a-valid-digest",
 		}, nil, body)
-		convertFail.SetParam("username", "alice")
+		convertFail.Params["username"] = "alice"
 		require.NoError(t, env.handler.verifyDigestEnhanced(convertFail, req))
 	})
 

@@ -10,8 +10,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestInboxMain_Round10_BuildAppAndLambdaHandler(t *testing.T) {
@@ -49,13 +49,15 @@ func TestInboxMain_Round10_BuildAppAndLambdaHandler(t *testing.T) {
 	app := buildInboxApp(&common.LambdaContext{Logger: env.logger}, env.handler)
 	handler := buildInboxLambdaHandler(app, env.handler)
 
-	_, _ = handler(context.Background(), map[string]any{}) // adapter error path
+	_, _ = handler(context.Background(), json.RawMessage(`{}`)) // adapter error path
 
 	okHeaders := map[string]string{
 		"Host":          "localhost",
 		"Authorization": "Bearer " + signed,
 	}
-	_, _ = handler(context.Background(), makeAPIEvent("GET", "/users/alice/inbox", okHeaders))
+	okEvent, err := json.Marshal(makeAPIEvent("GET", "/users/alice/inbox", okHeaders))
+	require.NoError(t, err)
+	_, _ = handler(context.Background(), okEvent)
 
 	// With metrics disabled and cold start window exceeded, exercise the nil-metrics branches.
 	noMetrics := *env.handler
@@ -64,23 +66,29 @@ func TestInboxMain_Round10_BuildAppAndLambdaHandler(t *testing.T) {
 
 	appNoMetrics := buildInboxApp(&common.LambdaContext{Logger: env.logger}, &noMetrics)
 	handlerNoMetrics := buildInboxLambdaHandler(appNoMetrics, &noMetrics)
-	_, _ = handlerNoMetrics(context.Background(), makeAPIEvent("GET", "/users/alice/inbox", map[string]string{"Host": "localhost"}))
+	noMetricsEvent, err := json.Marshal(makeAPIEvent("GET", "/users/alice/inbox", map[string]string{"Host": "localhost"}))
+	require.NoError(t, err)
+	_, _ = handlerNoMetrics(context.Background(), noMetricsEvent)
 
 	// Exercise the panic recovery path in the middleware chain.
-	_ = app.GET("/panic", func(_ *lift.Context) error { panic("boom") })
-	_, _ = handler(context.Background(), makeAPIEvent("GET", "/panic", map[string]string{"Host": "localhost"}))
+	app.Get("/panic", func(*apptheory.Context) (*apptheory.Response, error) { panic("boom") })
+	panicEvent, err := json.Marshal(makeAPIEvent("GET", "/panic", map[string]string{"Host": "localhost"}))
+	require.NoError(t, err)
+	_, _ = handler(context.Background(), panicEvent)
 }
 
 func TestInboxHandler_Round10_GetAndValidationPaths(t *testing.T) {
 	env := newInboxTestEnv(t)
 
 	t.Run("handleGetInbox validation errors", func(t *testing.T) {
-		ctx := newLiftContext("GET", "/users//inbox", map[string]string{"Host": "localhost"}, nil, nil)
-		require.Error(t, env.handler.handleGetInbox(ctx))
+		ctx := newAppTheoryContext("GET", "/users//inbox", map[string]string{"Host": "localhost"}, nil, nil)
+		_, err := env.handler.handleGetInbox(ctx)
+		require.Error(t, err)
 
-		ctx = newLiftContext("GET", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, nil)
-		ctx.SetParam("username", "alice")
-		require.Error(t, env.handler.handleGetInbox(ctx)) // no auth header
+		ctx = newAppTheoryContext("GET", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, nil)
+		ctx.Params["username"] = "alice"
+		_, err = env.handler.handleGetInbox(ctx) // no auth header
+		require.Error(t, err)
 	})
 
 	t.Run("handleGetInbox collection and page", func(t *testing.T) {
@@ -98,15 +106,17 @@ func TestInboxHandler_Round10_GetAndValidationPaths(t *testing.T) {
 			"Authorization": "Bearer " + signed,
 		}
 
-		collectionCtx := newLiftContext("GET", "/users/alice/inbox", headers, map[string]string{}, nil)
-		collectionCtx.SetParam("username", "alice")
-		require.NoError(t, env.handler.handleGetInbox(collectionCtx))
-		require.Equal(t, 200, collectionCtx.Response.StatusCode)
+		collectionCtx := newAppTheoryContext("GET", "/users/alice/inbox", headers, map[string]string{}, nil)
+		collectionCtx.Params["username"] = "alice"
+		resp, err := env.handler.handleGetInbox(collectionCtx)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.Status)
 
-		pageCtx := newLiftContext("GET", "/users/alice/inbox", headers, map[string]string{"page": "true"}, nil)
-		pageCtx.SetParam("username", "alice")
-		require.NoError(t, env.handler.handleGetInbox(pageCtx))
-		require.Equal(t, 200, pageCtx.Response.StatusCode)
+		pageCtx := newAppTheoryContext("GET", "/users/alice/inbox", headers, map[string]string{"page": "true"}, nil)
+		pageCtx.Params["username"] = "alice"
+		resp, err = env.handler.handleGetInbox(pageCtx)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.Status)
 	})
 
 	t.Run("request body and activity parsing", func(t *testing.T) {
@@ -132,12 +142,12 @@ func TestInboxHandler_Round10_GetAndValidationPaths(t *testing.T) {
 	})
 
 	t.Run("verifyAuthentication conversion failure", func(t *testing.T) {
-		ctx := newLiftContext("BAD METHOD", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte("x"))
-		ctx.SetParam("username", "alice")
+		ctx := newAppTheoryContext("BAD METHOD", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte("x"))
+		ctx.Params["username"] = "alice"
 		req := &InboxRequest{
-			Username: "alice",
-			Activity: &activitypub.Activity{Actor: "https://remote.example/users/bob"},
-			Body:     []byte("x"),
+			Username:  "alice",
+			Activity:  &activitypub.Activity{Actor: "https://remote.example/users/bob"},
+			Body:      []byte("x"),
 			StartTime: time.Now(),
 			CostParams: &federation.CostCalculationParams{
 				ActivityID:    "a",
@@ -151,9 +161,9 @@ func TestInboxHandler_Round10_GetAndValidationPaths(t *testing.T) {
 		require.Error(t, env.handler.verifyAuthentication(ctx, req))
 	})
 
-	t.Run("convertLiftRequest and helpers", func(t *testing.T) {
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, map[string]string{"a": "b"}, []byte("x"))
-		httpReq, err := env.handler.convertLiftRequest(ctx, []byte("x"))
+	t.Run("convertRequest and helpers", func(t *testing.T) {
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, map[string]string{"a": "b"}, []byte("x"))
+		httpReq, err := env.handler.convertRequest(ctx, []byte("x"))
 		require.NoError(t, err)
 		require.Equal(t, "localhost", httpReq.URL.Host)
 
@@ -214,10 +224,10 @@ func TestInboxHandler_Round10_FlagAndMoveProcessing(t *testing.T) {
 
 		ok := &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{
-				ID:     env.cfg.BaseURL() + "/activities/move-2",
-				Type:   activitypub.MoveType,
+				ID:   env.cfg.BaseURL() + "/activities/move-2",
+				Type: activitypub.MoveType,
 			},
-			Actor: "https://remote.example/users/old",
+			Actor:  "https://remote.example/users/old",
 			Target: env.cfg.ActorURL("alice"),
 		}
 		require.NoError(t, env.handler.processMoveActivity(context.Background(), ok, env.local))

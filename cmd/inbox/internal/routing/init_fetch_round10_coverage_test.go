@@ -202,8 +202,8 @@ func TestInboxHandler_Round10_ParseActivity_ParseErrorBranch(t *testing.T) {
 func TestInboxHandler_Round10_PerformSecurityChecks_NoActorDomain(t *testing.T) {
 	env := newInboxTestEnv(t)
 
-	ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte("x"))
-	ctx.SetParam("username", "alice")
+	ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte("x"))
+	ctx.Params["username"] = "alice"
 
 	req := &InboxRequest{
 		ActorDomain: "",
@@ -226,11 +226,11 @@ func TestInboxHandler_Round10_CheckRateLimit_ErrorBranch(t *testing.T) {
 		Once()
 	env.mockQuery.ExpectedCalls = append([]*mock.Call{call}, env.mockQuery.ExpectedCalls[:len(env.mockQuery.ExpectedCalls)-1]...)
 
-	ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+	ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 		"Host":            "localhost",
 		"X-Forwarded-For": "1.2.3.4",
 	}, nil, []byte("x"))
-	ctx.SetParam("username", "alice")
+	ctx.Params["username"] = "alice"
 
 	req := &InboxRequest{
 		Username:    "alice",

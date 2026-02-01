@@ -9,8 +9,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	costpkg "github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func setRunAsyncSynchronous(t *testing.T) {
@@ -21,22 +21,22 @@ func setRunAsyncSynchronous(t *testing.T) {
 	t.Cleanup(func() { runAsync = previous })
 }
 
-func signLiftRequest(t *testing.T, env *inboxTestEnv, ctx *lift.Context, body []byte) {
+func signAppTheoryRequest(t *testing.T, env *inboxTestEnv, ctx *apptheory.Context, body []byte) {
 	t.Helper()
 
-	httpReq, err := env.handler.convertLiftRequest(ctx, body)
+	httpReq, err := env.handler.convertRequest(ctx, body)
 	require.NoError(t, err)
 
 	require.NoError(t, federation.SignHTTPRequest(httpReq, env.remotePrivateKey, env.remoteKeyID))
 
 	if date := httpReq.Header.Get("Date"); date != "" {
-		ctx.Request.Headers["Date"] = date
+		ctx.Request.Headers["date"] = []string{date}
 	}
 	if digest := httpReq.Header.Get("Digest"); digest != "" {
-		ctx.Request.Headers["Digest"] = digest
+		ctx.Request.Headers["digest"] = []string{digest}
 	}
 	if signature := httpReq.Header.Get("Signature"); signature != "" {
-		ctx.Request.Headers["Signature"] = signature
+		ctx.Request.Headers["signature"] = []string{signature}
 	}
 }
 
@@ -86,13 +86,14 @@ func TestInboxHandler_Round10_PostPipeline_CreateActivity(t *testing.T) {
 		"User-Agent":      "Mastodon/4.0.0",
 		"X-Forwarded-For": "203.0.113.10",
 	}
-	ctx := newLiftContext("POST", "/users/alice/inbox", headers, nil, body)
-	ctx.SetParam("username", "alice")
+	ctx := newAppTheoryContext("POST", "/users/alice/inbox", headers, nil, body)
+	ctx.Params["username"] = "alice"
 
-	signLiftRequest(t, env, ctx, body)
+	signAppTheoryRequest(t, env, ctx, body)
 
-	require.NoError(t, env.handler.handlePostInbox(ctx))
-	require.Equal(t, 202, ctx.Response.StatusCode)
+	resp, err := env.handler.handlePostInbox(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 202, resp.Status)
 }
 
 func TestInboxHandler_Round10_ProcessorSweep(t *testing.T) {

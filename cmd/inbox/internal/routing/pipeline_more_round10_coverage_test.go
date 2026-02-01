@@ -331,7 +331,7 @@ func TestInboxHandler_Round10_AuthenticateInboxRequest_Branches(t *testing.T) {
 	}
 
 	t.Run("invalid header prefix", func(t *testing.T) {
-		liftCtx := newLiftContext("GET", "/users/alice/inbox", map[string]string{
+		liftCtx := newAppTheoryContext("GET", "/users/alice/inbox", map[string]string{
 			"Host":          "localhost",
 			"Authorization": "Basic abc",
 		}, nil, nil)
@@ -341,7 +341,7 @@ func TestInboxHandler_Round10_AuthenticateInboxRequest_Branches(t *testing.T) {
 	})
 
 	t.Run("invalid token", func(t *testing.T) {
-		liftCtx := newLiftContext("GET", "/users/alice/inbox", map[string]string{
+		liftCtx := newAppTheoryContext("GET", "/users/alice/inbox", map[string]string{
 			"Host":          "localhost",
 			"Authorization": "Bearer invalid",
 		}, nil, nil)
@@ -352,7 +352,7 @@ func TestInboxHandler_Round10_AuthenticateInboxRequest_Branches(t *testing.T) {
 
 	t.Run("token too old triggers auth failure branch", func(t *testing.T) {
 		oldToken := makeToken("alice", time.Now().Add(-48*time.Hour))
-		liftCtx := newLiftContext("GET", "/users/alice/inbox", map[string]string{
+		liftCtx := newAppTheoryContext("GET", "/users/alice/inbox", map[string]string{
 			"Host":          "localhost",
 			"Authorization": "Bearer " + oldToken,
 		}, nil, nil)
@@ -363,7 +363,7 @@ func TestInboxHandler_Round10_AuthenticateInboxRequest_Branches(t *testing.T) {
 
 	t.Run("username mismatch is forbidden", func(t *testing.T) {
 		bobToken := makeToken("bob", time.Now())
-		liftCtx := newLiftContext("GET", "/users/alice/inbox", map[string]string{
+		liftCtx := newAppTheoryContext("GET", "/users/alice/inbox", map[string]string{
 			"Host":          "localhost",
 			"Authorization": "Bearer " + bobToken,
 		}, nil, nil)
@@ -379,7 +379,7 @@ func TestInboxHandler_Round10_InboxPagination_ErrorBranches(t *testing.T) {
 	headers := map[string]string{
 		"Host": "localhost",
 	}
-	liftCtx := newLiftContext("GET", "/users/alice/inbox", headers, nil, nil)
+	liftCtx := newAppTheoryContext("GET", "/users/alice/inbox", headers, nil, nil)
 
 	innerDB := new(dynamormMocks.MockDB)
 	query := new(dynamormMocks.MockQuery)
@@ -396,8 +396,10 @@ func TestInboxHandler_Round10_InboxPagination_ErrorBranches(t *testing.T) {
 	badHandler := *env.handler
 	badHandler.activityRepository = repositories.NewActivityRepository(db, env.cfg.DynamoTableName, zap.NewNop(), nil)
 
-	require.Error(t, badHandler.returnInboxCollection(liftCtx, env.local, "alice"))
-	require.Error(t, badHandler.returnInboxPage(liftCtx, env.local, "alice", 20, ""))
+	_, err := badHandler.returnInboxCollection(liftCtx, env.local, "alice")
+	require.Error(t, err)
+	_, err = badHandler.returnInboxPage(liftCtx, env.local, "alice", 20, "")
+	require.Error(t, err)
 
 	page := env.handler.buildCollectionPage(env.local, []*activitypub.Activity{}, "cursor", "next", 20)
 	require.NotEmpty(t, page.Next)
@@ -408,38 +410,42 @@ func TestInboxHandler_Round10_HandlePostInbox_EarlyFailures(t *testing.T) {
 	env := newInboxTestEnv(t)
 
 	t.Run("missing username param", func(t *testing.T) {
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "application/activity+json",
 		}, nil, []byte(`{}`))
-		require.Error(t, env.handler.handlePostInbox(ctx))
+		_, err := env.handler.handlePostInbox(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("invalid content type", func(t *testing.T) {
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "text/plain",
 		}, nil, []byte(`{}`))
-		ctx.SetParam("username", "alice")
-		require.Error(t, env.handler.handlePostInbox(ctx))
+		ctx.Params["username"] = "alice"
+		_, err := env.handler.handlePostInbox(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("missing body", func(t *testing.T) {
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "application/activity+json",
 		}, nil, nil)
-		ctx.SetParam("username", "alice")
-		require.Error(t, env.handler.handlePostInbox(ctx))
+		ctx.Params["username"] = "alice"
+		_, err := env.handler.handlePostInbox(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("invalid json body", func(t *testing.T) {
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "application/activity+json",
 		}, nil, []byte("{"))
-		ctx.SetParam("username", "alice")
-		require.Error(t, env.handler.handlePostInbox(ctx))
+		ctx.Params["username"] = "alice"
+		_, err := env.handler.handlePostInbox(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("activity not addressed to actor fails validation", func(t *testing.T) {
@@ -454,12 +460,13 @@ func TestInboxHandler_Round10_HandlePostInbox_EarlyFailures(t *testing.T) {
 		body, err := json.Marshal(raw)
 		require.NoError(t, err)
 
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "application/activity+json",
 		}, nil, body)
-		ctx.SetParam("username", "alice")
-		require.Error(t, env.handler.handlePostInbox(ctx))
+		ctx.Params["username"] = "alice"
+		_, err = env.handler.handlePostInbox(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("invalid attachments fail validation", func(t *testing.T) {
@@ -479,11 +486,12 @@ func TestInboxHandler_Round10_HandlePostInbox_EarlyFailures(t *testing.T) {
 		body, err := json.Marshal(raw)
 		require.NoError(t, err)
 
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{
 			"Host":         "localhost",
 			"Content-Type": "application/activity+json",
 		}, nil, body)
-		ctx.SetParam("username", "alice")
-		require.Error(t, env.handler.handlePostInbox(ctx))
+		ctx.Params["username"] = "alice"
+		_, err = env.handler.handlePostInbox(ctx)
+		require.Error(t, err)
 	})
 }

@@ -6,8 +6,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -16,14 +17,15 @@ func TestValidateRequestBody(t *testing.T) {
 
 	err := ValidateRequestBody(logger, nil)
 	require.Error(t, err)
-	require.IsType(t, &lift.LiftError{}, err)
-	require.Equal(t, 400, err.(*lift.LiftError).StatusCode)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeRequiredFieldMissing, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
 
 	err = ValidateRequestBody(logger, make([]byte, common.MaxActivitySize+1))
 	require.Error(t, err)
-	require.IsType(t, &lift.LiftError{}, err)
-	require.Equal(t, 413, err.(*lift.LiftError).StatusCode)
-	require.Equal(t, "PAYLOAD_TOO_LARGE", err.(*lift.LiftError).Code)
+	require.IsType(t, &apptheory.AppError{}, err)
+	require.Equal(t, "app.too_large", err.(*apptheory.AppError).Code)
 }
 
 func TestParseActivity_InvalidTimestamp(t *testing.T) {
@@ -43,8 +45,10 @@ func TestParseActivity_InvalidTimestamp(t *testing.T) {
 
 	_, err = ParseActivity(logger, body)
 	require.Error(t, err)
-	require.IsType(t, &lift.LiftError{}, err)
-	require.Equal(t, 400, err.(*lift.LiftError).StatusCode)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
 }
 
 func TestParseActivity_InvalidJSON(t *testing.T) {
@@ -52,8 +56,10 @@ func TestParseActivity_InvalidJSON(t *testing.T) {
 
 	_, err := ParseActivity(logger, []byte("not-json"))
 	require.Error(t, err)
-	require.IsType(t, &lift.LiftError{}, err)
-	require.Equal(t, 400, err.(*lift.LiftError).StatusCode)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
 }
 
 func TestParseActivity_ValidActivity(t *testing.T) {
@@ -90,8 +96,10 @@ func TestValidateActorUsername(t *testing.T) {
 func TestValidateActorUsername_InvalidURL(t *testing.T) {
 	err := ValidateActorUsername("http://[::1")
 	require.Error(t, err)
-	require.IsType(t, &lift.LiftError{}, err)
-	require.Equal(t, 400, err.(*lift.LiftError).StatusCode)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
 }
 
 func TestIsAddressedTo(t *testing.T) {

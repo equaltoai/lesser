@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +22,6 @@ import (
 	costpkg "github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/observability"
@@ -33,7 +34,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -61,7 +62,7 @@ var (
 	}
 )
 
-// InboxHandler handles ActivityPub inbox requests using Lift
+// InboxHandler handles ActivityPub inbox requests using AppTheory.
 type InboxHandler struct {
 	db                           dynamormCore.DB
 	actorRepository              interfaces.ActorRepository
@@ -400,28 +401,28 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 }
 
 // RegisterRoutes registers all inbox routes
-func (ih *InboxHandler) RegisterRoutes(app *lift.App) {
+func (ih *InboxHandler) RegisterRoutes(app *apptheory.App) {
 	// ActivityPub inbox endpoints
-	_ = app.GET("/users/:username/inbox", ih.handleGetInbox)
-	_ = app.POST("/users/:username/inbox", ih.handlePostInbox)
+	app.Get("/users/:username/inbox", ih.handleGetInbox)
+	app.Post("/users/:username/inbox", ih.handlePostInbox)
 }
 
 // handleGetInbox handles GET requests to retrieve inbox activities
-func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
+func (ih *InboxHandler) handleGetInbox(ctx *apptheory.Context) (*apptheory.Response, error) {
 	username := ctx.Param("username")
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", "missing username parameter", 400)
+		return nil, errors.ValidationFailed("username", "missing username parameter")
 	}
 
 	ih.logger.Info("received inbox GET request",
 		zap.String("username", username),
-		zap.String("user_agent", ctx.Header("User-Agent")),
-		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))))
+		zap.String("user_agent", headerValue(ctx, "User-Agent")),
+		zap.String("request_id", ctx.RequestID))
 
 	// Authenticate and authorize the request
 	actor, err := ih.authenticateInboxRequest(ctx, username)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Parse pagination parameters
@@ -437,15 +438,15 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 }
 
 // authenticateInboxRequest handles authentication and authorization for inbox GET requests
-func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username string) (*activitypub.Actor, error) {
+func (ih *InboxHandler) authenticateInboxRequest(ctx *apptheory.Context, username string) (*activitypub.Actor, error) {
 	// Validate authentication header
-	authHeader := ctx.Header("Authorization")
+	authHeader := headerValue(ctx, "Authorization")
 	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
-		return nil, lift.NewLiftError("UNAUTHORIZED", "authentication required", 401)
+		return nil, errors.Unauthorized("authentication required")
 	}
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return nil, lift.NewLiftError("UNAUTHORIZED", "invalid authorization header format", 401)
+		return nil, errors.Unauthorized("invalid authorization header format")
 	}
 
 	// Validate JWT token
@@ -454,12 +455,12 @@ func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username str
 		ih.logger.Warn("JWT validation failed",
 			zap.Error(err),
 			zap.String("username", username),
-			zap.String("user_agent", ctx.Header("User-Agent")))
+			zap.String("user_agent", headerValue(ctx, "User-Agent")))
 
 		if err == auth.ErrMissingAuthHeader || err == auth.ErrInvalidToken {
-			return nil, lift.NewLiftError("UNAUTHORIZED", "invalid or expired token", 401)
+			return nil, errors.Unauthorized("invalid or expired token").WithInternalError(err)
 		}
-		return nil, lift.NewLiftError("UNAUTHORIZED", "authentication failed", 401)
+		return nil, errors.Unauthorized("authentication failed").WithInternalError(err)
 	}
 
 	// Verify user authorization
@@ -467,43 +468,43 @@ func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username str
 		ih.logger.Warn("user mismatch in inbox request",
 			zap.String("auth_username", claims.Username),
 			zap.String("requested_user", username))
-		return nil, lift.NewLiftError("FORBIDDEN", "cannot access another user's inbox", 403)
+		return nil, errors.Forbidden("cannot access another user's inbox")
 	}
 
 	// Get and validate actor
-	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context, username)
+	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context(), username)
 	if err != nil {
 		if err.Error() == "actor not found" {
-			return nil, lift.NewLiftError("NOT_FOUND", "actor not found", 404)
+			return nil, errors.NotFound("actor")
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
-		return nil, lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
+		return nil, errors.InternalWithCause(err, "internal server error")
 	}
 
 	return actor, nil
 }
 
 // parsePaginationParams extracts and validates pagination parameters from the request
-func (ih *InboxHandler) parsePaginationParams(ctx *lift.Context) (int, string, string) {
-	limitStr := ctx.Query("limit")
+func (ih *InboxHandler) parsePaginationParams(ctx *apptheory.Context) (int, string, string) {
+	limitStr := queryValue(ctx, "limit")
 	limit, err := common.ParseAndValidateActivityPubLimit(limitStr)
 	if err != nil {
 		limit = 20
 	}
 
-	cursor := ctx.Query("cursor")
-	page := ctx.Query("page")
+	cursor := queryValue(ctx, "cursor")
+	page := queryValue(ctx, "page")
 
 	return limit, cursor, page
 }
 
 // returnInboxCollection returns the inbox collection metadata
-func (ih *InboxHandler) returnInboxCollection(ctx *lift.Context, actor *activitypub.Actor, username string) error {
+func (ih *InboxHandler) returnInboxCollection(ctx *apptheory.Context, actor *activitypub.Actor, username string) (*apptheory.Response, error) {
 	// Get first page to calculate total items (simplified approach)
-	activities, _, err := ih.activityRepository.GetInboxActivities(ctx.Context, username, 1, "")
+	activities, _, err := ih.activityRepository.GetInboxActivities(ctx.Context(), username, 1, "")
 	if err != nil {
 		ih.logger.Error("failed to get inbox count", zap.Error(err))
-		return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
+		return nil, errors.InternalWithCause(err, "internal server error")
 	}
 
 	collection := &activitypub.OrderedCollection{
@@ -518,17 +519,23 @@ func (ih *InboxHandler) returnInboxCollection(ctx *lift.Context, actor *activity
 		},
 	}
 
-	ctx.Response.Headers["Content-Type"] = "application/activity+json"
-	return ctx.JSON(collection)
+	resp, err := apptheory.JSON(http.StatusOK, collection)
+	if resp != nil {
+		if resp.Headers == nil {
+			resp.Headers = map[string][]string{}
+		}
+		resp.Headers["content-type"] = []string{"application/activity+json"}
+	}
+	return resp, err
 }
 
 // returnInboxPage returns a paginated collection of inbox activities
-func (ih *InboxHandler) returnInboxPage(ctx *lift.Context, actor *activitypub.Actor, username string, limit int, cursor string) error {
+func (ih *InboxHandler) returnInboxPage(ctx *apptheory.Context, actor *activitypub.Actor, username string, limit int, cursor string) (*apptheory.Response, error) {
 	// Get activities for the page
-	activities, nextCursor, err := ih.activityRepository.GetInboxActivities(ctx.Context, username, limit, cursor)
+	activities, nextCursor, err := ih.activityRepository.GetInboxActivities(ctx.Context(), username, limit, cursor)
 	if err != nil {
 		ih.logger.Error("failed to get inbox activities", zap.Error(err))
-		return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
+		return nil, errors.InternalWithCause(err, "internal server error")
 	}
 
 	// Enrich activities with full object data
@@ -537,12 +544,18 @@ func (ih *InboxHandler) returnInboxPage(ctx *lift.Context, actor *activitypub.Ac
 	// Build collection page
 	collectionPage := ih.buildCollectionPage(actor, activities, cursor, nextCursor, limit)
 
-	ctx.Response.Headers["Content-Type"] = "application/activity+json"
-	return ctx.JSON(collectionPage)
+	resp, err := apptheory.JSON(http.StatusOK, collectionPage)
+	if resp != nil {
+		if resp.Headers == nil {
+			resp.Headers = map[string][]string{}
+		}
+		resp.Headers["content-type"] = []string{"application/activity+json"}
+	}
+	return resp, err
 }
 
 // enrichActivitiesWithObjects enriches Create activities with full object data
-func (ih *InboxHandler) enrichActivitiesWithObjects(ctx *lift.Context, activities []*activitypub.Activity) {
+func (ih *InboxHandler) enrichActivitiesWithObjects(ctx *apptheory.Context, activities []*activitypub.Activity) {
 	for _, activity := range activities {
 		if activity.Type != activitypub.CreateType || activity.Object == nil {
 			continue
@@ -553,7 +566,7 @@ func (ih *InboxHandler) enrichActivitiesWithObjects(ctx *lift.Context, activitie
 			continue
 		}
 
-		obj, err := ih.objectRepository.GetObject(ctx.Context, objID)
+		obj, err := ih.objectRepository.GetObject(ctx.Context(), objID)
 		if err != nil {
 			ih.logger.Warn("failed to fetch object for activity",
 				zap.String("activity_id", activity.ID),
@@ -610,49 +623,49 @@ type InboxRequest struct {
 }
 
 // handlePostInbox handles POST requests to receive activities
-func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
+func (ih *InboxHandler) handlePostInbox(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Initialize and validate request
 	req, err := ih.initializeInboxRequest(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Perform security checks (rate limiting, domain blocks)
 	if err := ih.performSecurityChecks(ctx, req); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Verify authentication (signature verification)
 	if err := ih.verifyAuthentication(ctx, req); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Validate addressing fields and privacy compliance
 	if err := ih.validateAddressingAndPrivacy(ctx, req); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Store and process the activity
 	if err := ih.storeAndProcessActivity(ctx, req); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Record success and complete
 	ih.recordSuccessAndComplete(ctx, req)
 
-	return ctx.Status(http.StatusAccepted).Text("")
+	return apptheory.Text(http.StatusAccepted, ""), nil
 }
 
 // initializeInboxRequest creates and validates the basic request structure
-func (ih *InboxHandler) initializeInboxRequest(ctx *lift.Context) (*InboxRequest, error) {
+func (ih *InboxHandler) initializeInboxRequest(ctx *apptheory.Context) (*InboxRequest, error) {
 	username := ctx.Param("username")
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil, lift.NewLiftError("VALIDATION_ERROR", "missing username parameter", 400)
+		return nil, errors.ValidationFailed("username", "missing username parameter")
 	}
 
 	// Prevent federation to the bootstrap actor until activation completes.
 	if ih.instanceRepository != nil {
-		state, err := ih.instanceRepository.GetInstanceState(ctx.Context)
+		state, err := ih.instanceRepository.GetInstanceState(ctx.Context())
 		bootstrapUsername := models.DefaultBootstrapUsername
 		if err == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
 			bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
@@ -660,31 +673,31 @@ func (ih *InboxHandler) initializeInboxRequest(ctx *lift.Context) (*InboxRequest
 
 		if (err != nil && strings.EqualFold(username, bootstrapUsername)) ||
 			(err == nil && state.Locked && strings.EqualFold(username, bootstrapUsername)) {
-			return nil, lift.NewLiftError("FORBIDDEN", "bootstrap actor does not accept federation while instance is locked", 403)
+			return nil, errors.Forbidden("bootstrap actor does not accept federation while instance is locked")
 		}
 	}
 
 	ih.logger.Info("received inbox POST request",
 		zap.String("username", username),
-		zap.String("content_type", ctx.Header("Content-Type")),
-		zap.String("user_agent", ctx.Header("User-Agent")),
-		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))))
+		zap.String("content_type", headerValue(ctx, "Content-Type")),
+		zap.String("user_agent", headerValue(ctx, "User-Agent")),
+		zap.String("request_id", ctx.RequestID))
 
 	// Validate Content-Type using centralized validation
-	contentType := ctx.Header("Content-Type")
+	contentType := headerValue(ctx, "Content-Type")
 	if err := common.ValidateActivityPubContentType(contentType); err != nil {
 		ih.logger.Warn("invalid content type", zap.String("content_type", contentType), zap.Error(err))
-		return nil, lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid Content-Type: %v", err), 400)
+		return nil, errors.ValidationFailed("Content-Type", fmt.Sprintf("invalid Content-Type: %v", err))
 	}
 
 	// Verify the actor exists
-	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context, username)
+	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context(), username)
 	if err != nil {
 		if err.Error() == "actor not found" {
-			return nil, lift.NewLiftError("NOT_FOUND", "actor not found", 404)
+			return nil, errors.NotFound("actor")
 		}
 		ih.logger.Error("failed to get actor", zap.Error(err))
-		return nil, lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
+		return nil, errors.InternalWithCause(err, "internal server error")
 	}
 
 	// Validate and parse request body
@@ -871,7 +884,7 @@ func (ih *InboxHandler) validateActivityTargeting(activity *activitypub.Activity
 }
 
 // performSecurityChecks handles rate limiting and domain blocking
-func (ih *InboxHandler) performSecurityChecks(ctx *lift.Context, req *InboxRequest) error {
+func (ih *InboxHandler) performSecurityChecks(ctx *apptheory.Context, req *InboxRequest) error {
 	if err := common.ValidateRequiredParam("actorDomain", req.ActorDomain); err != nil {
 		return nil
 	}
@@ -890,18 +903,18 @@ func (ih *InboxHandler) performSecurityChecks(ctx *lift.Context, req *InboxReque
 }
 
 // checkRateLimit performs rate limiting checks
-func (ih *InboxHandler) checkRateLimit(ctx *lift.Context, req *InboxRequest) error {
-	if err := ih.rateLimiter.CheckRateLimit(ctx.Context, req.ActorDomain, ctx.Header("X-Forwarded-For")); err != nil {
+func (ih *InboxHandler) checkRateLimit(ctx *apptheory.Context, req *InboxRequest) error {
+	if err := ih.rateLimiter.CheckRateLimit(ctx.Context(), req.ActorDomain, headerValue(ctx, "X-Forwarded-For")); err != nil {
 		ih.logger.Warn("rate limit exceeded",
 			zap.String("domain", req.ActorDomain),
 			zap.Error(err))
 
 		ih.recordFailureCost(req, "Rate limit exceeded", 2)
-		return lift.NewLiftError("RATE_LIMITED", "rate limit exceeded for domain", 429)
+		return errors.RateLimitExceededGeneric("domain").WithInternalError(err)
 	}
 
 	// Record the rate limit attempt
-	if err := ih.rateLimiter.RecordAttempt(ctx.Context, req.ActorDomain, ctx.Header("X-Forwarded-For"), false); err != nil {
+	if err := ih.rateLimiter.RecordAttempt(ctx.Context(), req.ActorDomain, headerValue(ctx, "X-Forwarded-For"), false); err != nil {
 		ih.logger.Warn("failed to record rate limit attempt", zap.Error(err))
 	}
 
@@ -909,8 +922,8 @@ func (ih *InboxHandler) checkRateLimit(ctx *lift.Context, req *InboxRequest) err
 }
 
 // checkDomainBlock checks if the domain is blocked
-func (ih *InboxHandler) checkDomainBlock(ctx *lift.Context, req *InboxRequest) error {
-	isBlocked, block, err := ih.domainBlockRepository.IsDomainBlocked(ctx.Context, req.ActorDomain)
+func (ih *InboxHandler) checkDomainBlock(ctx *apptheory.Context, req *InboxRequest) error {
+	isBlocked, block, err := ih.domainBlockRepository.IsDomainBlocked(ctx.Context(), req.ActorDomain)
 	if err != nil {
 		ih.logger.Error("failed to check domain block status",
 			zap.String("domain", req.ActorDomain),
@@ -930,7 +943,7 @@ func (ih *InboxHandler) checkDomainBlock(ctx *lift.Context, req *InboxRequest) e
 	// For suspended domains, reject completely
 	if block.Severity == "suspend" {
 		ih.recordFailureCost(req, "Domain is suspended", 3)
-		return lift.NewLiftError("FORBIDDEN", "domain is suspended", 403)
+		return errors.Forbidden("domain is suspended")
 	}
 
 	// For silenced domains, we accept but may limit visibility
@@ -938,23 +951,23 @@ func (ih *InboxHandler) checkDomainBlock(ctx *lift.Context, req *InboxRequest) e
 }
 
 // verifyAuthentication handles public key fetching and signature verification with enhanced security
-func (ih *InboxHandler) verifyAuthentication(ctx *lift.Context, req *InboxRequest) error {
+func (ih *InboxHandler) verifyAuthentication(ctx *apptheory.Context, req *InboxRequest) error {
 	start := time.Now()
 
-	// Convert Lift request to http.Request for enhanced signature verification
-	httpReq, err := ih.convertLiftRequest(ctx, req.Body)
+	// Convert the AppTheory request to http.Request for signature verification.
+	httpReq, err := ih.convertRequest(ctx, req.Body)
 	if err != nil {
 		ih.logger.Error("failed to convert request for signature verification",
 			zap.String("actor", req.Activity.Actor),
 			zap.Error(err))
 		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
 		ih.recordFailureCost(req, fmt.Sprintf("Request conversion failed: %v", err), 3)
-		return lift.NewLiftError("VALIDATION_ERROR", "malformed request", 400)
+		return errors.ValidationFailed("request", "malformed request").WithInternalError(err)
 	}
 
 	// Enhanced signature verification with caching and retry logic
 	signatureVerifyStart := time.Now()
-	if err := ih.signatureService.VerifySignature(ctx.Context, httpReq, req.Activity.Actor); err != nil {
+	if err := ih.signatureService.VerifySignature(ctx.Context(), httpReq, req.Activity.Actor); err != nil {
 		signatureVerifyDuration := time.Since(signatureVerifyStart)
 		totalDuration := time.Since(start)
 
@@ -969,7 +982,7 @@ func (ih *InboxHandler) verifyAuthentication(ctx *lift.Context, req *InboxReques
 			req.CostParams.ProcessingTimeMs = totalDuration.Milliseconds()
 			req.CostParams.SignatureVerificationMs = signatureVerifyDuration.Milliseconds()
 			ih.recordFailureCost(req, fmt.Sprintf("Signature verification failed: %v", err), 3)
-			return lift.NewLiftError("UNAUTHORIZED", "signature verification failed", 401)
+			return errors.Unauthorized("signature verification failed").WithInternalError(err)
 		default:
 			ih.logger.Error("signature verification error - service unavailable",
 				zap.String("actor", req.Activity.Actor),
@@ -982,7 +995,7 @@ func (ih *InboxHandler) verifyAuthentication(ctx *lift.Context, req *InboxReques
 			req.CostParams.HTTPRequestCount = 3 // Max retry attempts
 			req.CostParams.DNSLookupCount = 1
 			ih.recordFailureCost(req, fmt.Sprintf("Unable to verify signature: %v", err), 3)
-			return lift.NewLiftError("SERVICE_UNAVAILABLE", "unable to verify sender", 503)
+			return errors.NewFederationInternalError(errors.CodeExternalServiceUnavailable, "unable to verify sender", err)
 		}
 	}
 
@@ -1001,7 +1014,7 @@ func (ih *InboxHandler) verifyAuthentication(ctx *lift.Context, req *InboxReques
 		digestDuration := time.Since(start)
 		req.CostParams.ProcessingTimeMs = digestDuration.Milliseconds()
 		ih.recordFailureCost(req, fmt.Sprintf("Digest verification failed: %v", err), 1)
-		return lift.NewLiftError("VALIDATION_ERROR", "digest verification failed", 400)
+		return errors.ValidationFailed("digest", "digest verification failed").WithInternalError(err)
 	}
 
 	req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
@@ -1009,7 +1022,7 @@ func (ih *InboxHandler) verifyAuthentication(ctx *lift.Context, req *InboxReques
 }
 
 // validateAddressingAndPrivacy validates addressing fields and privacy compliance
-func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *InboxRequest) error {
+func (ih *InboxHandler) validateAddressingAndPrivacy(_ *apptheory.Context, req *InboxRequest) error {
 	start := time.Now()
 	addressingValidator := activitypub.NewAddressingValidator()
 
@@ -1021,7 +1034,7 @@ func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *Inbox
 			zap.Error(err))
 		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
 		ih.recordFailureCost(req, fmt.Sprintf("Invalid addressing: %v", err), 1)
-		return lift.NewLiftError("VALIDATION_ERROR", "invalid addressing fields", 400)
+		return errors.ValidationFailed("addressing", "invalid addressing fields").WithInternalError(err)
 	}
 
 	// Validate privacy compliance (e.g., direct messages don't have public addressing)
@@ -1032,7 +1045,7 @@ func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *Inbox
 			zap.Error(err))
 		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
 		ih.recordFailureCost(req, fmt.Sprintf("Privacy violation: %v", err), 1)
-		return lift.NewLiftError("VALIDATION_ERROR", "privacy compliance violation", 400)
+		return errors.ValidationFailed("privacy", "privacy compliance violation").WithInternalError(err)
 	}
 
 	// Check if the activity is actually addressed to this actor
@@ -1044,7 +1057,7 @@ func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *Inbox
 		req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
 		ih.recordFailureCost(req, "Activity not addressed to target actor", 1)
 		// Return 404 instead of 403 to maintain privacy (don't leak that actor exists)
-		return lift.NewLiftError("NOT_FOUND", "not found", 404)
+		return errors.NotFound("resource")
 	}
 
 	// For direct messages, perform additional validation
@@ -1056,7 +1069,7 @@ func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *Inbox
 				zap.Error(err))
 			req.CostParams.ProcessingTimeMs = time.Since(start).Milliseconds()
 			ih.recordFailureCost(req, fmt.Sprintf("Direct message validation failed: %v", err), 1)
-			return lift.NewLiftError("VALIDATION_ERROR", "direct message validation failed", 400)
+			return errors.ValidationFailed("direct_message", "direct message validation failed").WithInternalError(err)
 		}
 	}
 
@@ -1117,15 +1130,15 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 }
 
 // verifyDigestEnhanced verifies the digest header with enhanced compatibility support
-func (ih *InboxHandler) verifyDigestEnhanced(ctx *lift.Context, req *InboxRequest) error {
-	digestHeader := ctx.Header("Digest")
+func (ih *InboxHandler) verifyDigestEnhanced(ctx *apptheory.Context, req *InboxRequest) error {
+	digestHeader := headerValue(ctx, "Digest")
 	if err := common.ValidateRequiredParam("digestHeader", digestHeader); err != nil {
 		// No digest header is acceptable for some implementations
 		ih.logger.Debug("no digest header present", zap.String("actor", req.Activity.Actor))
 		return nil
 	}
 
-	httpReq, err := ih.convertLiftRequest(ctx, req.Body)
+	httpReq, err := ih.convertRequest(ctx, req.Body)
 	if err != nil {
 		ih.logger.Warn("failed to convert request for digest verification",
 			zap.String("actor", req.Activity.Actor),
@@ -1149,23 +1162,23 @@ func (ih *InboxHandler) verifyDigestEnhanced(ctx *lift.Context, req *InboxReques
 }
 
 // storeAndProcessActivity stores the activity and processes it based on type
-func (ih *InboxHandler) storeAndProcessActivity(ctx *lift.Context, req *InboxRequest) error {
+func (ih *InboxHandler) storeAndProcessActivity(ctx *apptheory.Context, req *InboxRequest) error {
 	// Store the activity
-	if err := ih.activityRepository.CreateActivity(ctx.Context, req.Activity); err != nil {
+	if err := ih.activityRepository.CreateActivity(ctx.Context(), req.Activity); err != nil {
 		ih.logger.Error("failed to store activity", zap.Error(err))
 		ih.recordFailureCost(req, fmt.Sprintf("Failed to store activity: %v", err), 3)
-		return lift.NewLiftError("INTERNAL_ERROR", "failed to store activity", 500)
+		return errors.InternalWithCause(err, "failed to store activity")
 	}
 
 	req.CostParams.DynamoDBWriteCount = 1 // Activity storage
 
 	// Process by activity type
 	processingStart := time.Now()
-	if err := ih.processActivityByType(ctx.Context, req); err != nil {
+	if err := ih.processActivityByType(ctx.Context(), req); err != nil {
 		processingDuration := time.Since(processingStart)
 		req.CostParams.ProcessingTimeMs += processingDuration.Milliseconds()
 		ih.recordFailureCost(req, fmt.Sprintf("Failed to process %s activity: %v", req.Activity.Type, err), 0)
-		return lift.NewLiftError("INTERNAL_ERROR", fmt.Sprintf("failed to process %s activity", req.Activity.Type), 500)
+		return errors.InternalWithCause(err, fmt.Sprintf("failed to process %s activity", req.Activity.Type))
 	}
 
 	processingDuration := time.Since(processingStart)
@@ -1301,7 +1314,7 @@ func (ih *InboxHandler) processActivityByType(ctx context.Context, req *InboxReq
 }
 
 // recordSuccessAndComplete handles final success logging and cost tracking
-func (ih *InboxHandler) recordSuccessAndComplete(ctx *lift.Context, req *InboxRequest) {
+func (ih *InboxHandler) recordSuccessAndComplete(ctx *apptheory.Context, req *InboxRequest) {
 	ih.logger.Info("activity accepted and processed",
 		zap.String("id", req.Activity.ID),
 		zap.String("type", req.Activity.Type),
@@ -1332,7 +1345,7 @@ func (ih *InboxHandler) recordSuccessAndComplete(ctx *lift.Context, req *InboxRe
 
 	// Mark rate limit success
 	if req.ActorDomain != "" {
-		if err := ih.rateLimiter.RecordAttempt(ctx.Context, req.ActorDomain, ctx.Header("X-Forwarded-For"), true); err != nil {
+		if err := ih.rateLimiter.RecordAttempt(ctx.Context(), req.ActorDomain, headerValue(ctx, "X-Forwarded-For"), true); err != nil {
 			ih.logger.Warn("failed to record rate limit success", zap.Error(err))
 		}
 	}
@@ -1366,37 +1379,43 @@ func (ih *InboxHandler) isAddressedTo(activity *activitypub.Activity, actor *act
 	return inboxvalidation.IsAddressedTo(activity, actor)
 }
 
-// convertLiftRequest converts a Lift request to an http.Request
-func (ih *InboxHandler) convertLiftRequest(ctx *lift.Context, body []byte) (*http.Request, error) {
+// convertRequest converts an AppTheory request to an http.Request.
+func (ih *InboxHandler) convertRequest(ctx *apptheory.Context, body []byte) (*http.Request, error) {
+	host := headerValue(ctx, "Host")
+
 	// Build URL
 	u := &url.URL{
 		Scheme: "https",
-		Host:   ctx.Header("Host"),
+		Host:   host,
 		Path:   ctx.Request.Path,
 	}
 
-	if ctx.Request.QueryParams != nil {
-		q := u.Query()
-		for k, v := range ctx.Request.QueryParams {
-			q.Set(k, v)
+	q := u.Query()
+	for k, values := range ctx.Request.Query {
+		for _, v := range values {
+			q.Add(k, v)
 		}
-		u.RawQuery = q.Encode()
 	}
+	u.RawQuery = q.Encode()
 
 	// Create request with context
-	req, err := http.NewRequestWithContext(ctx.Request.Context(), ctx.Request.Method, u.String(), strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx.Context(), ctx.Request.Method, u.String(), strings.NewReader(string(body)))
 	if err != nil {
 		return nil, err
 	}
 
 	// Copy headers
-	for k, v := range ctx.Request.Headers {
-		req.Header.Set(k, v)
+	for k, values := range ctx.Request.Headers {
+		canonicalKey := http.CanonicalHeaderKey(k)
+		for _, v := range values {
+			req.Header.Add(canonicalKey, v)
+		}
 	}
 
-	// Set host header if not present
-	if common.ValidateRequiredParam("reqHost", req.Header.Get("Host")) != nil && common.ValidateRequiredParam("ctxHost", ctx.Header("Host")) == nil {
-		req.Host = ctx.Header("Host")
+	// Ensure Host is set (both in request and header), as signature verification depends on it.
+	if host != "" {
+		req.Host = host
+		req.Header.Set("Host", host)
 	}
 
 	return req, nil
@@ -3649,73 +3668,59 @@ func (ih *InboxHandler) trackCentralizedCost(req *InboxRequest, operationType st
 	}
 }
 
-func buildInboxApp(lambdaCtx *common.LambdaContext, handler *InboxHandler) *lift.App {
-	app := lift.New()
+func buildInboxApp(_ *common.LambdaContext, handler *InboxHandler) *apptheory.App {
+	app := apptheory.New()
 
 	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	app.Use(panicRecovery(handler.logger))
 
-	// Apply federation security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
-
-	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("inbox-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
+	// Ensure a request id is always present.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx.RequestID == "" {
+				ctx.RequestID = fmt.Sprintf("inbox-%d", time.Now().UnixNano())
+			}
+			ctx.Set("requestID", ctx.RequestID)
+			return next(ctx)
+		}
 	})
 
-	// Add logging middleware (second in chain)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	// Logging middleware
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			start := time.Now()
-			path := ctx.Request.Path
-			method := ctx.Request.Method
+			resp, err := next(ctx)
 
-			err := next.Handle(ctx)
+			status := http.StatusOK
+			if err != nil {
+				status = http.StatusInternalServerError
+			} else if resp != nil && resp.Status != 0 {
+				status = resp.Status
+			}
 
 			handler.logger.Info("inbox request completed",
-				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
-				zap.String("method", method),
-				zap.String("path", path),
+				zap.String("request_id", ctx.RequestID),
+				zap.String("method", ctx.Request.Method),
+				zap.String("path", ctx.Request.Path),
+				zap.Int("status", status),
 				zap.Duration("duration", time.Since(start)),
-				zap.Bool("has_error", err != nil),
+				zap.Bool("has_error", err != nil || status >= 400),
 			)
 
-			return err
-		})
+			return resp, err
+		}
 	})
 
-	// Add recovery middleware (third in chain)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			defer func() {
-				if r := recover(); r != nil {
-					handler.logger.Error("panic recovered in inbox handler",
-						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
-						zap.Any("panic", r))
-					// Return a generic error
-					if err := ctx.Status(500).Text("Internal server error"); err != nil {
-						handler.logger.Error("failed to send error response", zap.Error(err))
-					}
-				}
-			}()
-
-			return next.Handle(ctx)
-		})
-	})
+	// Federation security (CORS + headers + body limit)
+	app.Use(federationSecurityMiddleware())
 
 	// Add unified error handling middleware
 	app.Use(common.CreateFederationErrorMiddleware(handler.logger))
 
-	// Add federation metrics middleware
+	// Add federation metrics middleware (inside error middleware, so it can observe handler errors)
 	if handler.emfMetrics != nil {
 		app.Use(handler.createFederationMetricsMiddleware())
 	}
-
-	// Rate limiting is now handled by ApplySecurityMiddleware
 
 	// Register all inbox routes
 	handler.RegisterRoutes(app)
@@ -3723,9 +3728,9 @@ func buildInboxApp(lambdaCtx *common.LambdaContext, handler *InboxHandler) *lift
 	return app
 }
 
-func buildInboxLambdaHandler(app *lift.App, handler *InboxHandler) func(ctx context.Context, event interface{}) (interface{}, error) {
+func buildInboxLambdaHandler(app *apptheory.App, handler *InboxHandler) func(ctx context.Context, event json.RawMessage) (any, error) {
 	// Wrap Lambda handler with federation observability
-	return func(ctx context.Context, event interface{}) (interface{}, error) {
+	return func(ctx context.Context, event json.RawMessage) (any, error) {
 		requestStart := time.Now()
 
 		// Record cold start metric if this is a cold start
@@ -3736,7 +3741,7 @@ func buildInboxLambdaHandler(app *lift.App, handler *InboxHandler) func(ctx cont
 		}
 
 		// Process the request
-		result, err := app.HandleRequest(ctx, event)
+		result, err := app.HandleLambda(ctx, event)
 
 		// Record request-level metrics
 		requestDuration := time.Since(requestStart)
@@ -3760,6 +3765,144 @@ func buildInboxLambdaHandler(app *lift.App, handler *InboxHandler) func(ctx cont
 	}
 }
 
+func headerValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	values := ctx.Request.Headers[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func queryValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	values := ctx.Request.Query[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func appendHeaderValue(existing []string, add string) []string {
+	add = strings.TrimSpace(add)
+	if add == "" {
+		return existing
+	}
+	for _, v := range existing {
+		if strings.EqualFold(strings.TrimSpace(v), add) {
+			return existing
+		}
+	}
+	return append(existing, add)
+}
+
+func panicRecovery(logger *zap.Logger) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (resp *apptheory.Response, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					requestID := ctx.RequestID
+					if requestID == "" {
+						requestID = common.GenerateRequestIDULID()
+						ctx.RequestID = requestID
+					}
+
+					if logger != nil {
+						logger.Error("panic recovered",
+							zap.Any("panic", r),
+							zap.String("request_id", requestID),
+							zap.String("path", ctx.Request.Path),
+							zap.String("method", ctx.Request.Method),
+							zap.ByteString("stack", debug.Stack()),
+						)
+					}
+
+					resp = apptheory.MustJSON(http.StatusInternalServerError, map[string]any{
+						"error":             "internal_server_error",
+						"error_description": "An unexpected error occurred",
+						"request_id":        requestID,
+					})
+					err = nil
+				}
+			}()
+
+			return next(ctx)
+		}
+	}
+}
+
+func federationSecurityMiddleware() apptheory.Middleware {
+	const maxFederationBodyBytes = 1024 * 1024 // 1MB
+	const allowMethods = "GET, POST, OPTIONS"
+	const allowHeaders = "Accept, Content-Type, Date, Digest, Host, Signature, User-Agent, Accept-Encoding, Authorization"
+	const exposeHeaders = "Content-Type, Date"
+	const maxAgeSeconds = 86400
+
+	applyResponseHeaders := func(resp *apptheory.Response) {
+		if resp == nil {
+			return
+		}
+		if resp.Headers == nil {
+			resp.Headers = map[string][]string{}
+		}
+
+		// CORS (federation requires wildcard origins)
+		resp.Headers["access-control-allow-origin"] = []string{"*"}
+		resp.Headers["access-control-expose-headers"] = []string{exposeHeaders}
+		resp.Headers["vary"] = appendHeaderValue(resp.Headers["vary"], "Origin")
+
+		// Federation-friendly security headers (no CSP).
+		resp.Headers["x-content-type-options"] = []string{"nosniff"}
+		resp.Headers["x-frame-options"] = []string{"SAMEORIGIN"}
+		resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
+		resp.Headers["cross-origin-resource-policy"] = []string{"cross-origin"}
+		resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+	}
+
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			// Enforce federation body size limits (ActivityPub inbox).
+			if contentLength := headerValue(ctx, "Content-Length"); contentLength != "" {
+				if size, err := strconv.ParseInt(contentLength, 10, 64); err == nil && size > maxFederationBodyBytes {
+					resp, sendErr := common.SendError(ctx, http.StatusRequestEntityTooLarge, "Request body too large")
+					applyResponseHeaders(resp)
+					return resp, sendErr
+				}
+			}
+			if int64(len(ctx.Request.Body)) > maxFederationBodyBytes {
+				resp, sendErr := common.SendError(ctx, http.StatusRequestEntityTooLarge, "Request body too large")
+				applyResponseHeaders(resp)
+				return resp, sendErr
+			}
+
+			// Handle preflight requests.
+			if ctx.Request.Method == http.MethodOptions {
+				resp := apptheory.Text(http.StatusNoContent, "")
+				if resp.Headers == nil {
+					resp.Headers = map[string][]string{}
+				}
+				resp.Headers["access-control-allow-origin"] = []string{"*"}
+				resp.Headers["access-control-allow-methods"] = []string{allowMethods}
+				resp.Headers["access-control-allow-headers"] = []string{allowHeaders}
+				resp.Headers["access-control-max-age"] = []string{strconv.Itoa(maxAgeSeconds)}
+				resp.Headers["access-control-expose-headers"] = []string{exposeHeaders}
+				resp.Headers["vary"] = appendHeaderValue(resp.Headers["vary"], "Origin")
+				applyResponseHeaders(resp)
+				return resp, nil
+			}
+
+			resp, err := next(ctx)
+			applyResponseHeaders(resp)
+			return resp, err
+		}
+	}
+}
+
 // Run initializes dependencies and starts the inbox Lambda handler.
 func Run() {
 	// Initialize Lambda with standardized federation configuration
@@ -3778,33 +3921,33 @@ func Run() {
 	app := buildInboxApp(lambdaCtx, handler)
 	lambdaHandler := buildInboxLambdaHandler(app, handler)
 
-	// Use app.HandleRequest for Lambda (not app.Start())
+	// Use AppTheory's Lambda event handler (not a local server)
 	startLambda(lambdaHandler)
 }
 
 // createFederationMetricsMiddleware creates middleware for federation-specific metrics collection
-func (ih *InboxHandler) createFederationMetricsMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func (ih *InboxHandler) createFederationMetricsMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			if ih.emfMetrics == nil {
-				return next.Handle(ctx)
+				return next(ctx)
 			}
 
 			// Extract federation context information
 			federationCtx := ih.extractFederationContext(ctx)
 
 			// Start latency timer and record incoming message
-			timer := ih.emfMetrics.StartLatencyTimer(ctx.Context, "federation_activity")
+			timer := ih.emfMetrics.StartLatencyTimer(ctx.Context(), "federation_activity")
 			ih.recordIncomingFederationMessage(federationCtx)
 
 			// Execute request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Record post-request metrics
 			ih.recordFederationMetrics(federationCtx, timer, err)
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
@@ -3820,23 +3963,17 @@ type federationContext struct {
 }
 
 // extractFederationContext extracts federation-related information from the request context
-func (ih *InboxHandler) extractFederationContext(ctx *lift.Context) *federationContext {
+func (ih *InboxHandler) extractFederationContext(ctx *apptheory.Context) *federationContext {
 	federationCtx := &federationContext{
 		username:     ctx.Param("username"),
-		userAgent:    ctx.Header("User-Agent"),
-		hasSignature: ctx.Header("Signature") != "",
-		path:         "/",
-		method:       "POST",
+		userAgent:    headerValue(ctx, "User-Agent"),
+		hasSignature: headerValue(ctx, "Signature") != "",
+		path:         ctx.Request.Path,
+		method:       ctx.Request.Method,
 	}
 
 	// Determine remote instance from User-Agent
 	federationCtx.remoteInstance = ih.parseRemoteInstance(federationCtx.userAgent)
-
-	// Extract path and method from request
-	if ctx.Request != nil && ctx.Request.Request != nil {
-		federationCtx.path = ctx.Request.Request.Path
-		federationCtx.method = ctx.Request.Request.Method
-	}
 
 	// Build dimensions map
 	federationCtx.dimensions = ih.buildMetricsDimensions(federationCtx)
