@@ -14,26 +14,24 @@ This service handles federation requests from other ActivityPub servers.
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 
 	"strings"
-
-	appErrors "github.com/equaltoai/lesser/pkg/errors"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
-	liftErrors "github.com/equaltoai/lesser/pkg/lift"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -126,120 +124,118 @@ func initializeActor() {
 }
 
 // HandleActorProfile handles ActivityPub actor profile requests
-func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
+func (h *Handler) HandleActorProfile(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Extract username from path parameters
-	username := ctx.Param("username")
+	username := ""
+	if ctx != nil {
+		username = ctx.Param("username")
+	}
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return liftErrors.ValidationErrorWithField("username", "missing username")
+		return actorJSONError(http.StatusUnprocessableEntity, "missing username"), nil
 	}
 
 	var state *storageModels.InstanceState
 	var stateErr error
 	if h.instanceRepo != nil {
-		state, stateErr = h.instanceRepo.GetInstanceState(ctx.Context)
+		state, stateErr = h.instanceRepo.GetInstanceState(ctx.Context())
 	} else {
 		stateErr = errors.New("missing instance repository")
 	}
 	bootstrapUsername := storageModels.DefaultBootstrapUsername
-	if stateErr == nil && strings.TrimSpace(state.BootstrapUsername) != "" {
+	if stateErr == nil && state != nil && strings.TrimSpace(state.BootstrapUsername) != "" {
 		bootstrapUsername = strings.TrimSpace(state.BootstrapUsername)
 	}
-	locked := stateErr != nil || state.Locked
+	locked := stateErr != nil || state == nil || state.Locked
 	if locked && strings.EqualFold(username, bootstrapUsername) {
-		return lift.NewLiftError("FORBIDDEN", "bootstrap actor is not available while instance is locked", 403)
+		return actorJSONError(http.StatusForbidden, "bootstrap actor is not available while instance is locked"), nil
 	}
 
 	// Get request ID from context
-	requestID := ctx.Get("requestID")
-	if requestID == nil {
-		requestID = "unknown"
-	}
+	requestID := actorContextRequestID(ctx)
 
 	logger.Info("fetching actor profile",
 		zap.String("username", username),
-		zap.String("accept", ctx.Header("Accept")),
-		zap.Any("request_id", requestID))
+		zap.String("accept", actorHeaderValue(ctx, "accept")),
+		zap.String("request_id", requestID),
+	)
 
 	// Get actor from repository
-	actor, err := h.actorRepo.GetActorByUsername(ctx.Context, username)
+	actor, err := h.actorRepo.GetActorByUsername(ctx.Context(), username)
 	if err != nil {
 		if common.IsNotFound(err) {
-			return liftErrors.NotFoundError("actor")
+			return actorJSONError(http.StatusNotFound, "actor not found"), nil
 		}
 		logger.Error("failed to get actor",
 			zap.Error(err),
 			zap.String("username", username),
-			zap.Any("request_id", requestID))
-		return appErrors.FailedToGet("actor", err)
+			zap.String("request_id", requestID),
+		)
+		return actorJSONError(http.StatusInternalServerError, "failed to get actor"), nil
 	}
 
 	// Content negotiation
-	accept := ctx.Header("Accept")
-	if err := common.ValidateRequiredParam("accept", accept); err != nil {
-		accept = ctx.Header("accept") // Try lowercase
-	}
+	accept := actorHeaderValue(ctx, "accept")
 
 	// Check if client wants ActivityStreams JSON
 	if strings.Contains(accept, "application/activity+json") ||
 		strings.Contains(accept, "application/ld+json") ||
 		strings.Contains(accept, "application/json") {
 		// Check if authorized fetch is enabled for ActivityPub JSON requests
-		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Context) {
+		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Context()) {
 			logger.Debug("authorized fetch enabled, verifying request",
 				zap.String("username", username),
-				zap.Any("request_id", requestID),
+				zap.String("request_id", requestID),
 			)
 
-			// Convert lift.Context to http.Request for signature verification
-			httpReq, err := h.convertLiftRequest(ctx)
+			// Convert request context for signature verification.
+			httpReq, err := h.convertAppTheoryRequest(ctx)
 			if err != nil {
 				logger.Error("failed to convert request for authorized fetch",
 					zap.String("username", username),
-					zap.Any("request_id", requestID),
+					zap.String("request_id", requestID),
 					zap.Error(err),
 				)
-				return lift.NewLiftError("REQUEST_CONVERSION_ERROR", "malformed request", 400).WithCause(err)
+				return actorJSONError(http.StatusBadRequest, "malformed request"), nil
 			}
 
 			// Verify authorized fetch
-			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(ctx.Context, httpReq)
+			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(ctx.Context(), httpReq)
 			if err != nil {
 				// Check if signature is missing vs invalid
 				if strings.Contains(err.Error(), "missing signature") {
 					logger.Debug("unauthorized request - missing signature",
 						zap.String("username", username),
-						zap.Any("request_id", requestID),
+						zap.String("request_id", requestID),
 					)
-					return lift.NewLiftError("UNAUTHORIZED", "signature required for authorized fetch", 401)
+					return actorJSONError(http.StatusUnauthorized, "signature required for authorized fetch"), nil
 				}
 				logger.Debug("authorized fetch verification failed",
 					zap.String("username", username),
-					zap.Any("request_id", requestID),
+					zap.String("request_id", requestID),
 					zap.Error(err),
 				)
-				return lift.NewLiftError("FORBIDDEN", "signature verification failed", 403).WithCause(err)
+				return actorJSONError(http.StatusForbidden, "signature verification failed"), nil
 			}
 
 			logger.Debug("authorized fetch verification successful",
 				zap.String("username", username),
-				zap.Any("request_id", requestID),
+				zap.String("request_id", requestID),
 			)
 		}
 
 		// Return ActivityStreams JSON
-		if err := ctx.JSON(actor); err != nil {
-			return err
-		}
-		ctx.Response.Header("Content-Type", "application/activity+json")
-		return nil
+		return actorActivityJSON(http.StatusOK, actor)
 	}
 
 	// Return HTML for browsers
 	html := h.generateHTMLProfile(actor)
-	ctx.Response.Headers["Content-Type"] = "text/html; charset=utf-8"
-	ctx.Response.StatusCode = http.StatusOK
-	ctx.Response.Body = html
-	return nil
+	return &apptheory.Response{
+		Status: http.StatusOK,
+		Headers: map[string][]string{
+			"content-type": {"text/html; charset=utf-8"},
+		},
+		Body: []byte(html),
+	}, nil
 }
 
 func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
@@ -383,36 +379,46 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 	return html
 }
 
-// convertLiftRequest converts a Lift request to an http.Request for signature verification
-func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
+// convertAppTheoryRequest converts an AppTheory request to an http.Request for signature verification.
+func (h *Handler) convertAppTheoryRequest(ctx *apptheory.Context) (*http.Request, error) {
+	if ctx == nil {
+		return nil, errors.New("nil context")
+	}
+
 	// Build URL
 	u := &url.URL{
 		Scheme: "https",
-		Host:   ctx.Header("Host"),
+		Host:   actorHeaderValue(ctx, "host"),
 		Path:   ctx.Request.Path,
 	}
-	if ctx.Request.QueryParams != nil {
-		q := u.Query()
-		for k, v := range ctx.Request.QueryParams {
-			q.Set(k, v)
+
+	q := u.Query()
+	for key, values := range ctx.Request.Query {
+		for _, value := range values {
+			q.Add(key, value)
 		}
-		u.RawQuery = q.Encode()
 	}
+	u.RawQuery = q.Encode()
 
 	// Create request with context (no body for GET requests)
-	req, err := http.NewRequestWithContext(ctx.Context, ctx.Request.Method, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx.Context(), ctx.Request.Method, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
 	// Copy headers
 	for k, v := range ctx.Request.Headers {
-		req.Header.Set(k, v)
+		if len(v) == 0 {
+			continue
+		}
+		for _, value := range v {
+			req.Header.Add(k, value)
+		}
 	}
 
 	// Set host header if not present
-	if err := common.ValidateRequiredParam("host", req.Header.Get("Host")); err != nil && ctx.Header("Host") != "" {
-		req.Host = ctx.Header("Host")
+	if err := common.ValidateRequiredParam("host", req.Host); err != nil && actorHeaderValue(ctx, "host") != "" {
+		req.Host = actorHeaderValue(ctx, "host")
 	}
 
 	return req, nil
@@ -423,27 +429,184 @@ func main() {
 }
 
 func runActor() {
-	// Create a new Lift application
-	app := lift.New()
-
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(logger))
-
-	// Apply federation security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, logger)
-
 	// Initialize handler dependencies
 	handler := newHandlerFn()
 
-	// Register actor profile route
-	if err := app.GET("/users/:username", handler.HandleActorProfile); err != nil {
-		logger.Fatal("failed to register actor route", zap.Error(err))
-	}
+	app := buildApp(handler, logger)
 
-	// Use standardized Lambda handler wrapper with observability
-	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
-		return app.HandleRequest(ctx, event)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
+}
+
+func buildApp(handler *Handler, lambdaLogger *zap.Logger) *apptheory.App {
+	app := apptheory.New(
+		apptheory.WithCORS(apptheory.CORSConfig{
+			AllowedOrigins:   []string{"*"},
+			AllowCredentials: false,
+			AllowHeaders: []string{
+				"Accept",
+				"Content-Type",
+				"Date",
+				"Digest",
+				"Host",
+				"Signature",
+				"User-Agent",
+				"X-Forwarded-For",
+				"X-Forwarded-Proto",
+			},
+		}),
+		apptheory.WithLimits(apptheory.Limits{
+			MaxRequestBytes:  64 * 1024,
+			MaxResponseBytes: 0,
+		}),
+	)
+
+	// Panic recovery middleware (MUST be first to catch all panics).
+	app.Use(actorPanicRecovery(lambdaLogger))
+
+	// Request ID middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx != nil {
+				ctx.Set("requestID", actorRequestID(ctx, "actor"))
+			}
+			return next(ctx)
+		}
 	})
 
-	lambdaStartFn(standardHandler)
+	// Security headers middleware (federation-friendly).
+	app.Use(actorActivityPubSecurityHeaders())
+
+	// Logging middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			start := time.Now()
+			resp, err := next(ctx)
+
+			requestID := actorContextRequestID(ctx)
+			hasError := err != nil
+			if !hasError && resp != nil && resp.Status >= 400 {
+				hasError = true
+			}
+
+			logger.Info("actor request completed",
+				zap.String("request_id", requestID),
+				zap.Duration("duration", time.Since(start)),
+				zap.Bool("has_error", hasError),
+			)
+
+			if hasError {
+				logger.Error("actor handler error",
+					zap.String("request_id", requestID),
+					zap.Error(err),
+				)
+			}
+
+			return resp, err
+		}
+	})
+
+	app.Get("/users/:username", handler.HandleActorProfile)
+
+	return app
+}
+
+func actorPanicRecovery(logger *zap.Logger) apptheory.Middleware {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (resp *apptheory.Response, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("panic recovered",
+						zap.String("request_id", actorContextRequestID(ctx)),
+						zap.Any("panic", r),
+					)
+					resp = actorJSONError(http.StatusInternalServerError, "internal server error")
+					err = nil
+				}
+			}()
+			return next(ctx)
+		}
+	}
+}
+
+func actorActivityPubSecurityHeaders() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
+			if resp == nil {
+				return resp, err
+			}
+			if resp.Headers == nil {
+				resp.Headers = map[string][]string{}
+			}
+			resp.Headers["x-content-type-options"] = []string{"nosniff"}
+			resp.Headers["x-frame-options"] = []string{"SAMEORIGIN"}
+			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
+			resp.Headers["cross-origin-resource-policy"] = []string{"cross-origin"}
+			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			return resp, err
+		}
+	}
+}
+
+func actorHeaderValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	values := ctx.Request.Headers[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func actorRequestID(ctx *apptheory.Context, prefix string) string {
+	if ctx != nil && strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "actor"
+	}
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
+func actorContextRequestID(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if rid, ok := ctx.Get("requestID").(string); ok && strings.TrimSpace(rid) != "" {
+		return strings.TrimSpace(rid)
+	}
+	if strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	return ""
+}
+
+func actorJSONError(status int, message string) *apptheory.Response {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "internal server error"
+	}
+	return apptheory.MustJSON(status, map[string]string{"error": message})
+}
+
+func actorActivityJSON(status int, value any) (*apptheory.Response, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return &apptheory.Response{
+		Status: status,
+		Headers: map[string][]string{
+			"content-type": {"application/activity+json"},
+		},
+		Body: body,
+	}, nil
 }
