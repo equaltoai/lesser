@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -15,11 +17,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	liftPkg "github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +29,7 @@ const (
 	CacheControlMaxAge = "max-age=86400"
 )
 
-// WebFingerHandler handles WebFinger and NodeInfo requests using Lift
+// WebFingerHandler handles WebFinger and NodeInfo requests.
 type WebFingerHandler struct {
 	actorRepo    interfaces.ActorRepository
 	repos        core.RepositoryStorage
@@ -60,18 +61,18 @@ func parseWebFingerResource(resource string) (username, domain string, err error
 }
 
 // RegisterRoutes registers all webfinger routes
-func (wh *WebFingerHandler) RegisterRoutes(app *liftPkg.App) {
+func (wh *WebFingerHandler) RegisterRoutes(app *apptheory.App) {
 	// WebFinger endpoint (inventory-owned).
-	_ = app.GET("/.well-known/webfinger", wh.handleWebFinger)
+	_ = app.Get("/.well-known/webfinger", wh.handleWebFinger)
 }
 
 // handleWebFinger handles webfinger requests using DynamORM
-func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
+func (wh *WebFingerHandler) handleWebFinger(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Validate resource parameter
-	resource := ctx.Query("resource")
+	resource := webfingerQueryValue(ctx, "resource")
 	if err := common.ValidateRequiredParam("resource", resource); err != nil {
 		wh.logger.Warn("missing resource parameter")
-		return liftPkg.ValidationError("resource parameter is required")
+		return webfingerJSONError(http.StatusUnprocessableEntity, "resource parameter is required"), nil
 	}
 
 	// Validate webfinger resource format
@@ -79,12 +80,12 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 		wh.logger.Warn("invalid webfinger resource format",
 			zap.String("resource", resource),
 			zap.Error(err))
-		return liftPkg.ValidationError(err.Error())
+		return webfingerJSONError(http.StatusUnprocessableEntity, err.Error()), nil
 	}
 
 	wh.logger.Info("processing webfinger request",
 		zap.String("resource", resource),
-		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+		zap.String("request_id", webfingerContextRequestID(ctx)),
 	)
 
 	// Parse the resource
@@ -94,22 +95,22 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 			zap.String("resource", resource),
 			zap.Error(err),
 		)
-		return liftPkg.ValidationError(err.Error())
+		return webfingerJSONError(http.StatusUnprocessableEntity, err.Error()), nil
 	}
 
 	// Check if the domain matches our instance
-	if domain != cfg.Domain {
+	if wh.cfg == nil || domain != wh.cfg.Domain {
 		wh.logger.Debug("domain mismatch",
 			zap.String("requested_domain", domain),
-			zap.String("our_domain", cfg.Domain),
+			zap.String("our_domain", safeConfigDomain(wh.cfg)),
 		)
-		return liftPkg.NotFound("actor not found")
+		return webfingerJSONError(http.StatusNotFound, "actor not found"), nil
 	}
 
 	var state *storageModels.InstanceState
 	stateErr := fmt.Errorf("instance state repository not available")
 	if wh.instanceRepo != nil {
-		state, stateErr = wh.instanceRepo.GetInstanceState(ctx.Context)
+		state, stateErr = wh.instanceRepo.GetInstanceState(ctx.Context())
 	}
 
 	bootstrapUsername := storageModels.DefaultBootstrapUsername
@@ -119,35 +120,35 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 
 	locked := stateErr != nil || state == nil || state.Locked
 	if locked && !strings.EqualFold(username, bootstrapUsername) {
-		return liftPkg.NotFound("actor not found")
+		return webfingerJSONError(http.StatusNotFound, "actor not found"), nil
 	}
 
 	// When locked, allow WebFinger discovery only for the bootstrap actor.
 	// Ensure the bootstrap actor exists so federation endpoints can return empty collections.
 	if locked && strings.EqualFold(username, bootstrapUsername) {
-		if err := wh.ensureBootstrapActor(ctx.Context, bootstrapUsername); err != nil {
+		if err := wh.ensureBootstrapActor(ctx.Context(), bootstrapUsername); err != nil {
 			wh.logger.Error("failed to ensure bootstrap actor", zap.Error(err))
-			return liftPkg.NewLiftError("INTERNAL_ERROR", "failed to initialize bootstrap actor", 500)
+			return webfingerJSONError(http.StatusInternalServerError, "failed to initialize bootstrap actor"), nil
 		}
 	}
 
 	// For non-bootstrap actors (or unlocked instances), require the actor record to exist.
 	if !locked || !strings.EqualFold(username, bootstrapUsername) {
-		_, err = wh.actorRepo.GetActor(ctx.Context, username)
+		_, err = wh.actorRepo.GetActor(ctx.Context(), username)
 		if err != nil {
 			if common.IsNotFound(err) {
 				wh.logger.Debug("actor not found",
 					zap.String("username", username),
 				)
-				return liftPkg.NotFound("actor not found")
+				return webfingerJSONError(http.StatusNotFound, "actor not found"), nil
 			}
 			wh.logger.Error("failed to get actor", zap.Error(err))
-			return liftPkg.NewLiftError("DATABASE_ERROR", "database error", 500)
+			return webfingerJSONError(http.StatusInternalServerError, "database error"), nil
 		}
 	}
 
 	// Build WebFinger response
-	actorURL := cfg.ActorURL(username)
+	actorURL := wh.cfg.ActorURL(username)
 	response := activitypub.WebFingerResource{
 		Subject: resource,
 		Aliases: []string{actorURL},
@@ -164,23 +165,23 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 			},
 			{
 				Rel:      "http://ostatus.org/schema/1.0/subscribe",
-				Template: fmt.Sprintf("%s/authorize_interaction?uri={uri}", cfg.BaseURL()),
+				Template: fmt.Sprintf("%s/authorize_interaction?uri={uri}", wh.cfg.BaseURL()),
 			},
 		},
 	}
 
 	wh.logger.Info("webfinger request successful",
 		zap.String("username", username),
-		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+		zap.String("request_id", webfingerContextRequestID(ctx)),
 	)
 
 	// Return WebFinger response with proper content type and caching
-	ctx.Response.Headers["Cache-Control"] = CacheControlMaxAge
-	if err := ctx.JSON(response); err != nil {
-		return err
+	resp, err := webfingerJRDJSON(http.StatusOK, response)
+	if err != nil {
+		return nil, err
 	}
-	ctx.Response.Headers["Content-Type"] = "application/jrd+json"
-	return nil
+	resp.Headers["cache-control"] = []string{CacheControlMaxAge}
+	return resp, nil
 }
 
 func (wh *WebFingerHandler) ensureBootstrapActor(ctx context.Context, username string) error {
@@ -294,73 +295,197 @@ func main() {
 }
 
 func runWebFinger(handler *WebFingerHandler, lambdaCtx *common.LambdaContext) {
-	app := buildApp(handler, lambdaCtx.Logger)
+	lambdaLogger := zap.NewNop()
+	if lambdaCtx != nil && lambdaCtx.Logger != nil {
+		lambdaLogger = lambdaCtx.Logger
+	}
 
-	// Use standardized Lambda handler with observability
-	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
-		return app.HandleRequest(ctx, event)
+	app := buildApp(handler, lambdaLogger)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
-
-	lambdaStartFn(standardHandler)
 }
 
-func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *liftPkg.App {
-	app := liftPkg.New()
+func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *apptheory.App {
+	app := apptheory.New(
+		apptheory.WithCORS(apptheory.CORSConfig{
+			AllowedOrigins:   []string{"*"},
+			AllowCredentials: false,
+			AllowHeaders: []string{
+				"Accept",
+				"Content-Type",
+				"Date",
+				"Digest",
+				"Host",
+				"Signature",
+				"User-Agent",
+				"X-Forwarded-For",
+				"X-Forwarded-Proto",
+			},
+		}),
+		apptheory.WithLimits(apptheory.Limits{
+			MaxRequestBytes:  64 * 1024,
+			MaxResponseBytes: 0,
+		}),
+	)
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaLogger))
+	// Panic recovery middleware (MUST be first to catch all panics).
+	app.Use(webfingerPanicRecovery(lambdaLogger))
 
-	// Apply federation security middleware
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaLogger)
-
-	// Add request ID middleware
-	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
-		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
-			requestID := fmt.Sprintf("webfinger-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
+	// Request ID middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if ctx != nil {
+				ctx.Set("requestID", webfingerRequestID(ctx, "webfinger"))
+			}
+			return next(ctx)
+		}
 	})
 
-	// Add logging middleware (second - logs with request ID)
-	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
-		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
+	// Security headers middleware (federation-friendly).
+	app.Use(webfingerActivityPubSecurityHeaders())
+
+	// Logging middleware.
+	app.Use(func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			start := time.Now()
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
+
+			requestID := webfingerContextRequestID(ctx)
+			hasError := err != nil
+			if !hasError && resp != nil && resp.Status >= 400 {
+				hasError = true
+			}
 
 			logger.Info("webfinger request completed",
-				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+				zap.String("request_id", requestID),
 				zap.Duration("duration", time.Since(start)),
-				zap.Bool("has_error", err != nil),
+				zap.Bool("has_error", hasError),
 			)
 
-			if err != nil {
+			if hasError {
 				logger.Error("webfinger handler error",
-					zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+					zap.String("request_id", requestID),
 					zap.Error(err),
 				)
 			}
-			return err
-		})
-	})
 
-	// Add recovery middleware (third - catches panics)
-	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
-		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("panic recovered in webfinger handler",
-						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
-						zap.Any("panic", r),
-					)
-				}
-			}()
-			return next.Handle(ctx)
-		})
+			return resp, err
+		}
 	})
 
 	// Register webfinger routes
 	handler.RegisterRoutes(app)
 
 	return app
+}
+
+func webfingerPanicRecovery(logger *zap.Logger) apptheory.Middleware {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (resp *apptheory.Response, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("panic recovered",
+						zap.String("request_id", webfingerContextRequestID(ctx)),
+						zap.Any("panic", r),
+					)
+					resp = webfingerJSONError(http.StatusInternalServerError, "internal server error")
+					err = nil
+				}
+			}()
+			return next(ctx)
+		}
+	}
+}
+
+func webfingerActivityPubSecurityHeaders() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
+			if resp == nil {
+				return resp, err
+			}
+			if resp.Headers == nil {
+				resp.Headers = map[string][]string{}
+			}
+			resp.Headers["x-content-type-options"] = []string{"nosniff"}
+			resp.Headers["x-frame-options"] = []string{"SAMEORIGIN"}
+			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
+			resp.Headers["cross-origin-resource-policy"] = []string{"cross-origin"}
+			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			return resp, err
+		}
+	}
+}
+
+func webfingerQueryValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	values := ctx.Request.Query[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func webfingerRequestID(ctx *apptheory.Context, prefix string) string {
+	if ctx != nil && strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "webfinger"
+	}
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
+func webfingerContextRequestID(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if rid, ok := ctx.Get("requestID").(string); ok && strings.TrimSpace(rid) != "" {
+		return strings.TrimSpace(rid)
+	}
+	if strings.TrimSpace(ctx.RequestID) != "" {
+		return ctx.RequestID
+	}
+	return ""
+}
+
+func webfingerJSONError(status int, message string) *apptheory.Response {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "internal server error"
+	}
+	return apptheory.MustJSON(status, map[string]string{"error": message})
+}
+
+func webfingerJRDJSON(status int, value any) (*apptheory.Response, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return &apptheory.Response{
+		Status: status,
+		Headers: map[string][]string{
+			"content-type": {"application/jrd+json"},
+		},
+		Body: body,
+	}, nil
+}
+
+func safeConfigDomain(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.Domain
 }
