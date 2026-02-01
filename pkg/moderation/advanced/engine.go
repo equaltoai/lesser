@@ -124,7 +124,7 @@ func NewEngine(
 		imageAnalyzer = NewNoOpImageAnalyzer(logger, config)
 	}
 	patternMatcher := NewPatternMatcher(patternRepo, logger)
-	reputationScorer := NewReputationScorer(nil, tableName, logger, config)
+	reputationScorer := NewReputationScorer(dynamoRM, logger, config)
 
 	// Create threat intelligence repository and component
 	threatRepo := repositories.NewThreatIntelRepository(dynamoRM, tableName, logger, nil)

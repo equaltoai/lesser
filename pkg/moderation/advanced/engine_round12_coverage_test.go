@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	rekognitionTypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -721,16 +720,11 @@ func TestEngine_AnalyzeContent_AndExecuteDecision_Paths(t *testing.T) {
 	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder)
 
-	transport := newStubAWSTransport()
-	transport.failDynamoPutItem = true // Make reputation updates warn but not fail analysis.
-	awsCfg := awsConfigForStub(transport)
-	dynamoClient := dynamodb.NewFromConfig(awsCfg)
-
 	cfg := getTestConfig()
 	cfg.EnableImageAnalysis = false
 	cfg.EnableVideoAnalysis = false
 
-	reputationScorer := NewReputationScorer(dynamoClient, "rep-table", logger, cfg)
+	reputationScorer := NewReputationScorer(nil, logger, cfg)
 
 	engine := &Engine{
 		config:           cfg,
@@ -769,14 +763,10 @@ func TestEngine_AnalyzeImage_SuccessAndError(t *testing.T) {
 	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder)
 
-	transport := newStubAWSTransport()
-	awsCfg := awsConfigForStub(transport)
-	dynamoClient := dynamodb.NewFromConfig(awsCfg)
-
 	cfg := getTestConfig()
 	cfg.EnableImageAnalysis = false
 
-	reputationScorer := NewReputationScorer(dynamoClient, "rep-table", logger, cfg)
+	reputationScorer := NewReputationScorer(nil, logger, cfg)
 
 	engine := &Engine{
 		config:           cfg,
@@ -819,14 +809,10 @@ func TestEngine_AnalyzeVideo_NoOpPath(t *testing.T) {
 	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder)
 
-	transport := newStubAWSTransport()
-	awsCfg := awsConfigForStub(transport)
-	dynamoClient := dynamodb.NewFromConfig(awsCfg)
-
 	cfg := getTestConfig()
 	cfg.EnableVideoAnalysis = true
 
-	reputationScorer := NewReputationScorer(dynamoClient, "rep-table", logger, cfg)
+	reputationScorer := NewReputationScorer(nil, logger, cfg)
 
 	engine := &Engine{
 		config:           cfg,
@@ -1184,14 +1170,10 @@ func TestEngine_Wrappers_And_AnalyzeContentBatch(t *testing.T) {
 	mockUpdateBuilder := new(mocks.MockUpdateBuilder)
 	setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder)
 
-	transport := newStubAWSTransport()
-	awsCfg := awsConfigForStub(transport)
-	dynamoClient := dynamodb.NewFromConfig(awsCfg)
-
 	cfg := getTestConfig()
 	cfg.EnableImageAnalysis = false
 
-	reputationScorer := NewReputationScorer(dynamoClient, "rep-table", logger, cfg)
+	reputationScorer := NewReputationScorer(nil, logger, cfg)
 	patternMatcher := NewPatternMatcher(stubPatternRepo{}, logger)
 	threatIntel := NewThreatIntelligence(stubThreatRepo{}, logger)
 
@@ -1265,14 +1247,13 @@ func TestEngine_AnalyzeVideo_BranchSelection(t *testing.T) {
 	transport := newStubAWSTransport()
 	awsCfg := awsConfigForStub(transport)
 	recClient := rekognition.NewFromConfig(awsCfg)
-	dynamoClient := dynamodb.NewFromConfig(awsCfg)
 
 	cfg := getTestConfig()
 	cfg.EnableVideoAnalysis = true
 	cfg.EnableImageAnalysis = false
 	cfg.S3Bucket = "test-bucket"
 
-	reputationScorer := NewReputationScorer(dynamoClient, "rep-table", logger, cfg)
+	reputationScorer := NewReputationScorer(nil, logger, cfg)
 	patternMatcher := NewPatternMatcher(stubPatternRepo{}, logger)
 	threatIntel := NewThreatIntelligence(stubThreatRepo{}, logger)
 
@@ -1359,15 +1340,11 @@ func TestEngine_AnalyzeContent_LogsOnDecisionAndStoreFailures(t *testing.T) {
 	mockQuery.On("Create").Return(fmt.Errorf("create failed")).Twice()
 	setupPermissiveDynamormMocks(mockDB, mockQuery, mockUpdateBuilder)
 
-	transport := newStubAWSTransport()
-	awsCfg := awsConfigForStub(transport)
-	dynamoClient := dynamodb.NewFromConfig(awsCfg)
-
 	cfg := getTestConfig()
 	cfg.EnableImageAnalysis = false
 	cfg.EnableVideoAnalysis = false
 
-	reputationScorer := NewReputationScorer(dynamoClient, "rep-table", logger, cfg)
+	reputationScorer := NewReputationScorer(nil, logger, cfg)
 
 	engine := &Engine{
 		config:           cfg,
