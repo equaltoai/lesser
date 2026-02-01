@@ -5,32 +5,53 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftadapters "github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
 )
 
-func newWebSocketLiftContext(t *testing.T, endpoint string, connectionID string, body string) *lift.Context {
+func newWebSocketEvent(routeKey, connectionID, body string, query map[string]string, headers map[string]string) events.APIGatewayWebsocketProxyRequest {
+	if query == nil {
+		query = map[string]string{}
+	}
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	return events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: connectionID,
+			RouteKey:     routeKey,
+			DomainName:   "example.com",
+			Stage:        "dev",
+			RequestID:    "req",
+			EventType:    "MESSAGE",
+		},
+		HTTPMethod:            "POST",
+		Path:                  "/graphql-ws",
+		Headers:               headers,
+		QueryStringParameters: query,
+		Body:                  body,
+		IsBase64Encoded:       false,
+	}
+}
+
+func newWebSocketApp(s *wsServer) *apptheory.App {
+	app := apptheory.New()
+	app.WebSocket("$connect", s.handleConnect)
+	app.WebSocket("$disconnect", s.handleDisconnect)
+	app.WebSocket("$default", s.handleDefault)
+	return app
+}
+
+func newWebSocketAppTheoryServerContext(t *testing.T, routeKey, connectionID, body string) events.APIGatewayProxyResponse {
 	t.Helper()
 
-	req := lift.NewRequest(&liftadapters.Request{
-		TriggerType: liftadapters.TriggerWebSocket,
-		Metadata: map[string]any{
-			"connectionId":       connectionID,
-			"managementEndpoint": endpoint,
-			"routeKey":           "$default",
-			"region":             "us-east-1",
-		},
-		Headers:     map[string]string{},
-		QueryParams: map[string]string{},
-		Body:        []byte(body),
-	})
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.SetRequestID("req")
-	return ctx
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	app := newWebSocketApp(s)
+	return app.ServeWebSocket(context.Background(), newWebSocketEvent(routeKey, connectionID, body, nil, nil))
 }
 
 func TestTokenHelpers(t *testing.T) {
@@ -73,20 +94,7 @@ func TestConvertErrors(t *testing.T) {
 	require.Len(t, out, 1)
 }
 
-func TestLiftLoggerAdapter_NoPanic(t *testing.T) {
-	adapter := &liftLoggerAdapter{logger: zap.NewNop()}
-	adapter.Debug("d", map[string]any{"a": 1})
-	adapter.Info("i", map[string]any{"b": 2})
-	adapter.Warn("w", map[string]any{"c": 3})
-	adapter.Error("e", map[string]any{"d": 4})
-
-	withFields := adapter.WithFields(map[string]any{"x": "y"})
-	require.NotNil(t, withFields)
-	withField := adapter.WithField("k", "v")
-	require.NotNil(t, withField)
-}
-
-func TestHandleDefaultLift_SendsExpectedMessages(t *testing.T) {
+func TestHandleDefault_SendsExpectedMessages(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
 	t.Setenv("AWS_SESSION_TOKEN", "dummy")
@@ -95,17 +103,20 @@ func TestHandleDefaultLift_SendsExpectedMessages(t *testing.T) {
 
 	var bodies [][]byte
 	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
-	s.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, err := json.Marshal(payload)
 		require.NoError(t, err)
 		bodies = append(bodies, b)
 		return nil
 	}
 
-	endpoint := "https://example.com"
-	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":"connection_init"}`)))
-	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":"ping"}`)))
-	require.NoError(t, s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"id":"sub1","type":"complete"}`)))
+	app := newWebSocketApp(s)
+	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$default", "c1", `{"type":"connection_init"}`, nil, nil))
+	require.Equal(t, 200, resp.StatusCode)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$default", "c1", `{"type":"ping"}`, nil, nil))
+	require.Equal(t, 200, resp.StatusCode)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$default", "c1", `{"id":"sub1","type":"complete"}`, nil, nil))
+	require.Equal(t, 200, resp.StatusCode)
 
 	require.Len(t, bodies, 3)
 	var env responseEnvelope
@@ -117,10 +128,12 @@ func TestHandleDefaultLift_SendsExpectedMessages(t *testing.T) {
 	require.Equal(t, "complete", env.Type)
 
 	// Unsupported type returns a 400 error without sending.
-	err := s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":"nope"}`))
-	require.Error(t, err)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$default", "c1", `{"type":"nope"}`, nil, nil))
+	require.Equal(t, 400, resp.StatusCode)
+	require.Len(t, bodies, 3)
 
 	// Invalid JSON returns 400 error without sending.
-	err = s.handleDefaultLift(newWebSocketLiftContext(t, endpoint, "c1", `{"type":`))
-	require.Error(t, err)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$default", "c1", `{"type":`, nil, nil))
+	require.Equal(t, 400, resp.StatusCode)
+	require.Len(t, bodies, 3)
 }
