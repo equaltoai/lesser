@@ -7,17 +7,19 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/theory-cloud/tabletheory/pkg/model"
+	"github.com/theory-cloud/tabletheory/pkg/schema"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 	"go.uber.org/zap"
 )
 
 // HealthMonitor monitors infrastructure health
 type HealthMonitor struct {
 	monitor      *PerformanceMonitor
-	dynamoClient dynamoDBAPI
+	tableChecker tableExistsChecker
 	lambdaClient lambdaAPI
 	sqsClient    sqsAPI
 	mu           sync.RWMutex
@@ -48,11 +50,41 @@ const (
 	HealthStatusUnknown HealthStatus = "unknown"
 )
 
+type tableExistsChecker interface {
+	TableExists(tableName string) (bool, error)
+}
+
+type errorTableExistsChecker struct {
+	err error
+}
+
+func (c errorTableExistsChecker) TableExists(_ string) (bool, error) {
+	return false, c.err
+}
+
+var newTableExistsChecker = func(cfg aws.Config) (tableExistsChecker, error) {
+	sess, err := session.NewSession(&session.Config{
+		Region:              cfg.Region,
+		CredentialsProvider: cfg.Credentials,
+	})
+	if err != nil {
+		return nil, err
+	}
+	registry := model.NewRegistry()
+	return schema.NewManager(sess, registry), nil
+}
+
 // NewHealthMonitor creates a new health monitor
 func NewHealthMonitor(cfg aws.Config, monitor *PerformanceMonitor) *HealthMonitor {
+	tableChecker, err := newTableExistsChecker(cfg)
+	if err != nil {
+		zap.L().Warn("failed to initialize TableTheory DynamoDB client for health monitor", zap.Error(err))
+		tableChecker = errorTableExistsChecker{err: err}
+	}
+
 	return &HealthMonitor{
 		monitor:      monitor,
-		dynamoClient: dynamodb.NewFromConfig(cfg),
+		tableChecker: tableChecker,
 		lambdaClient: lambda.NewFromConfig(cfg),
 		sqsClient:    sqs.NewFromConfig(cfg),
 		healthStatus: make(map[string]*ComponentHealth),
@@ -63,15 +95,10 @@ func NewHealthMonitor(cfg aws.Config, monitor *PerformanceMonitor) *HealthMonito
 func (hm *HealthMonitor) CheckDynamoDBHealth(ctx context.Context, tableName string) error {
 	start := time.Now()
 
-	// Describe table to check status
-	input := &dynamodb.DescribeTableInput{
-		TableName: aws.String(tableName),
-	}
-
-	result, err := hm.dynamoClient.DescribeTable(ctx, input)
+	exists, err := hm.tableChecker.TableExists(tableName)
 	if err != nil {
 		hm.updateComponentHealth("dynamodb."+tableName, HealthStatusCritical, err, nil)
-		return fmt.Errorf("failed to describe table: %w", err)
+		return fmt.Errorf("failed to check table exists: %w", err)
 	}
 
 	latency := time.Since(start)
@@ -79,35 +106,22 @@ func (hm *HealthMonitor) CheckDynamoDBHealth(ctx context.Context, tableName stri
 		zap.L().Warn("failed to record DynamoDB health check latency", zap.Error(err))
 	}
 
-	// Check table status
-	tableStatus := string(result.Table.TableStatus)
-	var status HealthStatus
 	metadata := map[string]any{
-		"tableStatus":    tableStatus,
-		"itemCount":      result.Table.ItemCount,
-		"tableSizeBytes": result.Table.TableSizeBytes,
+		"tableExists": exists,
 	}
 
-	switch tableStatus {
-	case "ACTIVE":
-		status = HealthStatusHealthy
-	case "UPDATING", "CREATING":
-		status = HealthStatusWarning
-	default:
+	status := HealthStatusHealthy
+	var healthErr error
+	if !exists {
 		status = HealthStatusCritical
+		healthErr = fmt.Errorf("table %s not found", tableName)
 	}
 
-	// Check for throttling
-	if result.Table.ProvisionedThroughput != nil {
-		if result.Table.ProvisionedThroughput.ReadCapacityUnits != nil {
-			metadata["readCapacity"] = *result.Table.ProvisionedThroughput.ReadCapacityUnits
-		}
-		if result.Table.ProvisionedThroughput.WriteCapacityUnits != nil {
-			metadata["writeCapacity"] = *result.Table.ProvisionedThroughput.WriteCapacityUnits
-		}
-	}
+	hm.updateComponentHealth("dynamodb."+tableName, status, healthErr, metadata)
 
-	hm.updateComponentHealth("dynamodb."+tableName, status, nil, metadata)
+	if healthErr != nil {
+		return healthErr
+	}
 
 	return nil
 }

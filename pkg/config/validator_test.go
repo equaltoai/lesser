@@ -7,7 +7,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/stretchr/testify/assert"
@@ -15,12 +14,13 @@ import (
 	"go.uber.org/zap"
 )
 
-type stubDynamoDBClient struct {
-	err error
+type stubTableExistsChecker struct {
+	exists bool
+	err    error
 }
 
-func (s stubDynamoDBClient) DescribeTable(_ context.Context, _ *dynamodb.DescribeTableInput, _ ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error) {
-	return &dynamodb.DescribeTableOutput{}, s.err
+func (s stubTableExistsChecker) TableExists(_ string) (bool, error) {
+	return s.exists, s.err
 }
 
 type stubS3Client struct {
@@ -57,6 +57,9 @@ func TestQuickValidateProductionConfig(t *testing.T) {
 		t.Setenv("DOMAIN_NAME", "")
 		t.Setenv("AWS_REGION", "")
 		t.Setenv("DYNAMODB_TABLE", "")
+		t.Setenv("DYNAMO_TABLE_NAME", "")
+		t.Setenv("ENVIRONMENT", "")
+		t.Setenv("STAGE", "")
 		t.Setenv("PRIVATE_KEY_SECRET", "")
 		t.Setenv("JWT_SECRET", "")
 		t.Setenv("JWT_SECRET_ARN", "")
@@ -69,7 +72,10 @@ func TestQuickValidateProductionConfig(t *testing.T) {
 	t.Run("configured vars passes", func(t *testing.T) {
 		t.Setenv("DOMAIN_NAME", "example.com")
 		t.Setenv("AWS_REGION", "us-east-1")
-		t.Setenv("DYNAMODB_TABLE", "lesser-main")
+		t.Setenv("DYNAMODB_TABLE", "")
+		t.Setenv("DYNAMO_TABLE_NAME", "")
+		t.Setenv("ENVIRONMENT", "main")
+		t.Setenv("STAGE", "")
 		t.Setenv("PRIVATE_KEY_SECRET", "secret-name")
 		t.Setenv("JWT_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789abcdef")
 		t.Setenv("JWT_SECRET_ARN", "")
@@ -128,16 +134,18 @@ func TestProductionConfigValidator_ValidateProductionConfig_NonCriticalErrorsSti
 }
 
 func TestProductionConfigValidator_ValidateProductionConfig_AWSResourcesValidation_UsesFactories(t *testing.T) {
-	origDynamo := newDynamoDBClient
+	origTableExists := newTableExistsChecker
 	origS3 := newS3Client
 	origSecrets := newSecretsManagerClient
 	t.Cleanup(func() {
-		newDynamoDBClient = origDynamo
+		newTableExistsChecker = origTableExists
 		newS3Client = origS3
 		newSecretsManagerClient = origSecrets
 	})
 
-	newDynamoDBClient = func(_ aws.Config) dynamodbClient { return stubDynamoDBClient{} }
+	newTableExistsChecker = func(_ aws.Config) (tableExistsChecker, error) {
+		return stubTableExistsChecker{exists: true}, nil
+	}
 	newS3Client = func(_ aws.Config) s3Client { return stubS3Client{} }
 	newSecretsManagerClient = func(_ aws.Config) secretsManagerClient { return stubSecretsManagerClient{} }
 

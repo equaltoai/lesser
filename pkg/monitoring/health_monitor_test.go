@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	ddbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdaTypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -15,13 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type stubDynamoDB struct {
-	out *dynamodb.DescribeTableOutput
-	err error
+type stubTableExistsChecker struct {
+	exists bool
+	err    error
 }
 
-func (s *stubDynamoDB) DescribeTable(_ context.Context, _ *dynamodb.DescribeTableInput, _ ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error) {
-	return s.out, s.err
+func (s *stubTableExistsChecker) TableExists(_ string) (bool, error) {
+	return s.exists, s.err
 }
 
 type stubLambda struct {
@@ -83,44 +81,24 @@ func TestHealthMonitorUpdateAndGetters(t *testing.T) {
 func TestHealthMonitorCheckDynamoDBHealth(t *testing.T) {
 	pm, _ := newTestPerformanceMonitor()
 
-	t.Run("status_from_table_state", func(t *testing.T) {
-		for _, tc := range []struct {
-			name       string
-			tableState ddbTypes.TableStatus
-			want       HealthStatus
-		}{
-			{name: "active", tableState: ddbTypes.TableStatusActive, want: HealthStatusHealthy},
-			{name: "updating", tableState: ddbTypes.TableStatusUpdating, want: HealthStatusWarning},
-			{name: "other", tableState: ddbTypes.TableStatusDeleting, want: HealthStatusCritical},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				hm := &HealthMonitor{
-					monitor: pm,
-					dynamoClient: &stubDynamoDB{out: &dynamodb.DescribeTableOutput{Table: &ddbTypes.TableDescription{
-						TableStatus:    tc.tableState,
-						ItemCount:      aws.Int64(10),
-						TableSizeBytes: aws.Int64(20),
-						ProvisionedThroughput: &ddbTypes.ProvisionedThroughputDescription{
-							ReadCapacityUnits:  aws.Int64(1),
-							WriteCapacityUnits: aws.Int64(2),
-						},
-					}}},
-					healthStatus: make(map[string]*ComponentHealth),
-				}
-
-				require.NoError(t, hm.CheckDynamoDBHealth(context.Background(), "table"))
-				status := hm.GetHealthStatus()
-				require.Contains(t, status, "dynamodb.table")
-				assert.Equal(t, tc.want, status["dynamodb.table"].Status)
-				assert.Equal(t, string(tc.tableState), status["dynamodb.table"].Metadata["tableStatus"])
-			})
+	t.Run("table exists is healthy", func(t *testing.T) {
+		hm := &HealthMonitor{
+			monitor:      pm,
+			tableChecker: &stubTableExistsChecker{exists: true},
+			healthStatus: make(map[string]*ComponentHealth),
 		}
+
+		require.NoError(t, hm.CheckDynamoDBHealth(context.Background(), "table"))
+		status := hm.GetHealthStatus()
+		require.Contains(t, status, "dynamodb.table")
+		assert.Equal(t, HealthStatusHealthy, status["dynamodb.table"].Status)
+		assert.Equal(t, true, status["dynamodb.table"].Metadata["tableExists"])
 	})
 
 	t.Run("client_error_sets_critical", func(t *testing.T) {
 		hm := &HealthMonitor{
 			monitor:      pm,
-			dynamoClient: &stubDynamoDB{err: errors.New("describe failed")},
+			tableChecker: &stubTableExistsChecker{err: errors.New("describe failed")},
 			healthStatus: make(map[string]*ComponentHealth),
 		}
 
@@ -128,6 +106,20 @@ func TestHealthMonitorCheckDynamoDBHealth(t *testing.T) {
 		status := hm.GetHealthStatus()
 		require.Contains(t, status, "dynamodb.table")
 		assert.Equal(t, HealthStatusCritical, status["dynamodb.table"].Status)
+	})
+
+	t.Run("not found is critical", func(t *testing.T) {
+		hm := &HealthMonitor{
+			monitor:      pm,
+			tableChecker: &stubTableExistsChecker{exists: false},
+			healthStatus: make(map[string]*ComponentHealth),
+		}
+
+		require.Error(t, hm.CheckDynamoDBHealth(context.Background(), "table"))
+		status := hm.GetHealthStatus()
+		require.Contains(t, status, "dynamodb.table")
+		assert.Equal(t, HealthStatusCritical, status["dynamodb.table"].Status)
+		assert.Equal(t, false, status["dynamodb.table"].Metadata["tableExists"])
 	})
 }
 
@@ -234,10 +226,8 @@ func TestHealthMonitorRunHealthChecksRecordsOverallMetric(t *testing.T) {
 	pm, cw := newTestPerformanceMonitor()
 
 	hm := &HealthMonitor{
-		monitor: pm,
-		dynamoClient: &stubDynamoDB{out: &dynamodb.DescribeTableOutput{
-			Table: &ddbTypes.TableDescription{TableStatus: ddbTypes.TableStatusActive},
-		}},
+		monitor:      pm,
+		tableChecker: &stubTableExistsChecker{exists: true},
 		lambdaClient: &stubLambda{out: &lambda.GetFunctionConfigurationOutput{
 			State:      lambdaTypes.StateActive,
 			Runtime:    lambdaTypes.RuntimeGo1x,
