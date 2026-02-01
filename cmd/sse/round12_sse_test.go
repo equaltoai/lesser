@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -15,9 +18,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -82,22 +84,29 @@ func TestRequireClaims_Round12(t *testing.T) {
 	t.Cleanup(func() { authService = origAuth })
 
 	authService = &fakeValidator{err: errors.New("invalid")}
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Headers: map[string]string{}}))
-	_, err := requireClaims(ctx)
-	require.Error(t, err)
+	_, resp := requireClaims(&apptheory.Context{
+		Request: apptheory.Request{Headers: map[string][]string{}},
+	})
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Headers: map[string]string{"Authorization": "Bearer "}}))
-	_, err = requireClaims(ctx)
-	require.Error(t, err)
+	_, resp = requireClaims(&apptheory.Context{
+		Request: apptheory.Request{Headers: map[string][]string{"authorization": {"Bearer "}}},
+	})
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Headers: map[string]string{"Authorization": "Bearer token"}}))
-	_, err = requireClaims(ctx)
-	require.Error(t, err)
+	_, resp = requireClaims(&apptheory.Context{
+		Request: apptheory.Request{Headers: map[string][]string{"authorization": {"Bearer token"}}},
+	})
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
 	authService = &fakeValidator{claims: &auth.EnhancedClaims{Username: "alice"}}
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Headers: map[string]string{"Authorization": "Bearer token"}}))
-	claims, err := requireClaims(ctx)
-	require.NoError(t, err)
+	claims, resp := requireClaims(&apptheory.Context{
+		Request: apptheory.Request{Headers: map[string][]string{"authorization": {"Bearer token"}}},
+	})
+	require.Nil(t, resp)
 	require.Equal(t, "alice", claims.Username)
 }
 
@@ -109,7 +118,7 @@ func TestShouldSkipSSEItem_Round12(t *testing.T) {
 }
 
 func TestEmitSSEItems_Round12(t *testing.T) {
-	ch := make(chan lift.SSEEvent, 8)
+	ch := make(chan apptheory.SSEEvent, 8)
 	items := []streaming.StreamEventLogItem{
 		{ID: "1", Event: streamEventTypeUpdate, Data: `{"media_attachments":[{}]}`},
 		{ID: "2", Event: streamEventTypeDelete, Data: `{"id":"2"}`},
@@ -118,7 +127,7 @@ func TestEmitSSEItems_Round12(t *testing.T) {
 	require.Equal(t, "2", after)
 
 	close(ch)
-	var got []lift.SSEEvent
+	var got []apptheory.SSEEvent
 	for ev := range ch {
 		got = append(got, ev)
 	}
@@ -127,7 +136,7 @@ func TestEmitSSEItems_Round12(t *testing.T) {
 }
 
 func TestEmitSSEItems_SkipsOnlyMedia_Round12(t *testing.T) {
-	ch := make(chan lift.SSEEvent, 8)
+	ch := make(chan apptheory.SSEEvent, 8)
 	items := []streaming.StreamEventLogItem{
 		{ID: "1", Event: streamEventTypeUpdate, Data: `{}`},
 		{ID: "2", Event: streamEventTypeDelete, Data: `"2"`},
@@ -136,7 +145,7 @@ func TestEmitSSEItems_SkipsOnlyMedia_Round12(t *testing.T) {
 	require.Equal(t, "2", after)
 
 	close(ch)
-	var got []lift.SSEEvent
+	var got []apptheory.SSEEvent
 	for ev := range ch {
 		got = append(got, ev)
 	}
@@ -149,7 +158,7 @@ func TestWaitForSSEPoll_Round12(t *testing.T) {
 	origAfter := timeAfterFn
 	t.Cleanup(func() { timeAfterFn = origAfter })
 
-	eventCh := make(chan lift.SSEEvent, 1)
+	eventCh := make(chan apptheory.SSEEvent, 1)
 
 	// ctx.Done branch.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -180,9 +189,12 @@ func TestStreamSSE_Unavailable_Round12(t *testing.T) {
 	t.Cleanup(func() { eventLog = origLog })
 
 	eventLog = &fakeEventLog{enabled: false}
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/"}))
-	require.NoError(t, streamSSE(ctx, "public", false))
-	require.Equal(t, http.StatusServiceUnavailable, ctx.Response.StatusCode)
+	resp, err := streamSSE(&apptheory.Context{
+		Request: apptheory.Request{Method: http.MethodGet, Path: "/"},
+	}, "public", false)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusServiceUnavailable, resp.Status)
 }
 
 func TestStreamSSE_RecordsLastEventID_Round12(t *testing.T) {
@@ -206,15 +218,17 @@ func TestStreamSSE_RecordsLastEventID_Round12(t *testing.T) {
 	}
 	authService = &fakeValidator{claims: &auth.EnhancedClaims{Username: "alice"}}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method: http.MethodGet,
-		Path:   "/api/v1/streaming/public",
-		Headers: map[string]string{
-			"Authorization": "Bearer token",
-			"Last-Event-ID": "abc",
+	resp, err := streamSSE(&apptheory.Context{
+		Request: apptheory.Request{
+			Method: http.MethodGet,
+			Path:   "/api/v1/streaming/public",
+			Headers: map[string][]string{
+				"authorization": {"Bearer token"},
+				"last-event-id": {"abc"},
+			},
 		},
-	}))
-	require.NoError(t, streamSSE(ctx, streaming.PublicStream, false))
+	}, streaming.PublicStream, false)
+	require.NoError(t, err)
 
 	select {
 	case <-called:
@@ -223,8 +237,10 @@ func TestStreamSSE_RecordsLastEventID_Round12(t *testing.T) {
 	}
 	require.Equal(t, streaming.PublicStream, gotStreamName)
 	require.Equal(t, "abc", gotAfterID)
-	require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-	require.Equal(t, "text/event-stream", ctx.Response.Headers["Content-Type"])
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusOK, resp.Status)
+	require.Equal(t, []string{"text/event-stream"}, resp.Headers["content-type"])
+	_, _ = io.ReadAll(resp.BodyReader)
 }
 
 func TestHandlers_Round12(t *testing.T) {
@@ -246,86 +262,119 @@ func TestHandlers_Round12(t *testing.T) {
 	}
 
 	// Root + health.
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming"}))
-	require.NoError(t, handleStreamingRoot(ctx))
-	require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+	resp, err := handleStreamingRoot(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusNotFound, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming/health"}))
-	require.NoError(t, handleHealth(ctx))
+	resp, err = handleHealth(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/health"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusOK, resp.Status)
 
 	// User streams.
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:  http.MethodGet,
-		Path:    "/api/v1/streaming/user",
-		Headers: map[string]string{"Authorization": "Bearer token"},
-	}))
-	require.NoError(t, handleUserStream(ctx))
-	require.Equal(t, "text/event-stream", ctx.Response.Headers["Content-Type"])
+	resp, err = handleUserStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/user",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, []string{"text/event-stream"}, resp.Headers["content-type"])
+	_, _ = io.ReadAll(resp.BodyReader)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:  http.MethodGet,
-		Path:    "/api/v1/streaming/user/notification",
-		Headers: map[string]string{"Authorization": "Bearer token"},
-	}))
-	require.NoError(t, handleUserNotificationStream(ctx))
+	resp, err = handleUserNotificationStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/user/notification",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	_, _ = io.ReadAll(resp.BodyReader)
 
 	// Public handler closure.
 	public := handlePublicStream(streaming.PublicStream)
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/api/v1/streaming/public",
-		Headers:     map[string]string{"Authorization": "Bearer token"},
-		QueryParams: map[string]string{"only_media": "true"},
-	}))
-	require.NoError(t, public.Handle(ctx))
+	resp, err = public(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/public",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+			Query:   map[string][]string{"only_media": {"true"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	_, _ = io.ReadAll(resp.BodyReader)
 
 	// Hashtag handler closure.
 	hashtag := handleHashtagStream(false)
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/api/v1/streaming/hashtag",
-		Headers:     map[string]string{"Authorization": "Bearer token"},
-		QueryParams: map[string]string{},
-	}))
-	require.NoError(t, hashtag.Handle(ctx))
-	require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+	resp, err = hashtag(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/hashtag",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+			Query:   map[string][]string{},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/api/v1/streaming/hashtag",
-		Headers:     map[string]string{"Authorization": "Bearer token"},
-		QueryParams: map[string]string{"tag": "cats"},
-	}))
-	require.NoError(t, hashtag.Handle(ctx))
-	require.Equal(t, "text/event-stream", ctx.Response.Headers["Content-Type"])
+	resp, err = hashtag(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/hashtag",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+			Query:   map[string][]string{"tag": {"cats"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, []string{"text/event-stream"}, resp.Headers["content-type"])
+	_, _ = io.ReadAll(resp.BodyReader)
 
 	// List stream.
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/api/v1/streaming/list",
-		Headers:     map[string]string{"Authorization": "Bearer token"},
-		QueryParams: map[string]string{},
-	}))
-	require.NoError(t, handleListStream(ctx))
-	require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+	resp, err = handleListStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/list",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+			Query:   map[string][]string{},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/api/v1/streaming/list",
-		Headers:     map[string]string{"Authorization": "Bearer token"},
-		QueryParams: map[string]string{"list": "1"},
-	}))
-	require.NoError(t, handleListStream(ctx))
-	require.Equal(t, "text/event-stream", ctx.Response.Headers["Content-Type"])
+	resp, err = handleListStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/list",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+			Query:   map[string][]string{"list": {"1"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, []string{"text/event-stream"}, resp.Headers["content-type"])
+	_, _ = io.ReadAll(resp.BodyReader)
 
 	// Direct stream.
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:  http.MethodGet,
-		Path:    "/api/v1/streaming/direct",
-		Headers: map[string]string{"Authorization": "Bearer token"},
-	}))
-	require.NoError(t, handleDirectStream(ctx))
-	require.Equal(t, "text/event-stream", ctx.Response.Headers["Content-Type"])
+	resp, err = handleDirectStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/direct",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, []string{"text/event-stream"}, resp.Headers["content-type"])
+	_, _ = io.ReadAll(resp.BodyReader)
 
 	for i := 0; i < 6; i++ {
 		select {
@@ -342,31 +391,37 @@ func TestHandlers_Unauthorized_Round12(t *testing.T) {
 
 	authService = &fakeValidator{err: errors.New("invalid")}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming/user"}))
-	err := handleUserStream(ctx)
-	require.Error(t, err)
+	resp, err := handleUserStream(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/user"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming/user/notification"}))
-	err = handleUserNotificationStream(ctx)
-	require.Error(t, err)
+	resp, err = handleUserNotificationStream(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/user/notification"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
 	public := handlePublicStream(streaming.PublicStream)
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming/public"}))
-	err = public.Handle(ctx)
-	require.Error(t, err)
+	resp, err = public(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/public"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
 	hashtag := handleHashtagStream(false)
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming/hashtag"}))
-	err = hashtag.Handle(ctx)
-	require.Error(t, err)
+	resp, err = hashtag(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/hashtag"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming/list"}))
-	err = handleListStream(ctx)
-	require.Error(t, err)
+	resp, err = handleListStream(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/list"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/api/v1/streaming/direct"}))
-	err = handleDirectStream(ctx)
-	require.Error(t, err)
+	resp, err = handleDirectStream(&apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/direct"}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.Status)
 }
 
 func TestHandleHashtagStream_LocalOnly_Round12(t *testing.T) {
@@ -390,13 +445,17 @@ func TestHandleHashtagStream_LocalOnly_Round12(t *testing.T) {
 	}
 
 	handler := handleHashtagStream(true)
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/api/v1/streaming/hashtag/local",
-		Headers:     map[string]string{"Authorization": "Bearer token"},
-		QueryParams: map[string]string{"tag": "cats"},
-	}))
-	require.NoError(t, handler.Handle(ctx))
+	resp, err := handler(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/hashtag/local",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+			Query:   map[string][]string{"tag": {"cats"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	_, _ = io.ReadAll(resp.BodyReader)
 
 	select {
 	case <-called:
@@ -418,16 +477,16 @@ func TestProduceSSEEvents_Round12(t *testing.T) {
 			},
 		}
 
-		ch := make(chan lift.SSEEvent, 4)
+		ch := make(chan apptheory.SSEEvent, 4)
 		produceSSEEvents(context.Background(), ch, "stream", false, "")
 
-		var got []lift.SSEEvent
+		var got []apptheory.SSEEvent
 		for ev := range ch {
 			got = append(got, ev)
 		}
 		require.Len(t, got, 1)
 		require.Equal(t, "error", got[0].Event)
-		require.Contains(t, got[0].Data, "internal_error")
+		require.Contains(t, got[0].Data.(string), "internal_error")
 	})
 
 	t.Run("items emit and loop continues", func(t *testing.T) {
@@ -450,10 +509,10 @@ func TestProduceSSEEvents_Round12(t *testing.T) {
 			},
 		}
 
-		ch := make(chan lift.SSEEvent, 4)
+		ch := make(chan apptheory.SSEEvent, 4)
 		produceSSEEvents(ctx, ch, "stream", true, "")
 
-		var got []lift.SSEEvent
+		var got []apptheory.SSEEvent
 		for ev := range ch {
 			got = append(got, ev)
 		}
@@ -489,8 +548,8 @@ func TestInitializeAndRunSSE_Round12(t *testing.T) {
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
 			Config: &config.Config{
-				Region:          "us-east-1",
-				DynamoTableName: "test-table",
+				Region:            "us-east-1",
+				DynamoTableName:   "test-table",
 				StreamEventsTable: "stream-events",
 			},
 			Logger: zap.NewNop(),
@@ -520,26 +579,28 @@ func TestInitializeAndRunSSE_Round12(t *testing.T) {
 	called := false
 	lambdaStartFn = func(handler any) {
 		called = true
-		fn, ok := handler.(func(context.Context, any) (any, error))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
 
-		event := map[string]any{
-			"version":  "2.0",
-			"routeKey": "GET /api/v1/streaming/health",
-			"rawPath":  "/api/v1/streaming/health",
-			"requestContext": map[string]any{
-				"requestId": "req",
-				"http": map[string]any{
-					"method": "GET",
-					"path":   "/api/v1/streaming/health",
+		event := events.APIGatewayV2HTTPRequest{
+			Version:  "2.0",
+			RouteKey: "GET /api/v1/streaming/health",
+			RawPath:  "/api/v1/streaming/health",
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				RequestID: "req",
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: "GET",
+					Path:   "/api/v1/streaming/health",
 				},
 			},
 		}
-		resp, err := fn(context.Background(), event)
+		raw, err := json.Marshal(event)
 		require.NoError(t, err)
-		liftResp, ok := resp.(*lift.Response)
+		resp, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		lambdaResp, ok := resp.(events.APIGatewayV2HTTPResponse)
 		require.True(t, ok)
-		require.Equal(t, 200, liftResp.StatusCode)
+		require.Equal(t, 200, lambdaResp.StatusCode)
 	}
 
 	cfg.DebugMode = true
