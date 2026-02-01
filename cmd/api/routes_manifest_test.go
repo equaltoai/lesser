@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConfigureLiftRoutes_RouteManifestMatchesSnapshot(t *testing.T) {
-	actual := extractLiftRouteManifest(t)
+func TestConfigureRoutes_RouteManifestMatchesSnapshot(t *testing.T) {
+	actual := extractRouteManifest(t)
 
 	_, testFile, _, ok := runtime.Caller(0)
 	require.True(t, ok)
@@ -49,7 +49,7 @@ func TestConfigureLiftRoutes_RouteManifestMatchesSnapshot(t *testing.T) {
 	}
 }
 
-func extractLiftRouteManifest(t *testing.T) []string {
+func extractRouteManifest(t *testing.T) []string {
 	t.Helper()
 
 	_, testFile, _, ok := runtime.Caller(0)
@@ -67,13 +67,13 @@ func extractLiftRouteManifest(t *testing.T) []string {
 		if !ok || fn.Name == nil {
 			continue
 		}
-		if fn.Name.Name == "configureLiftRoutes" {
+		if fn.Name.Name == "configureRoutes" {
 			target = fn
 			break
 		}
 	}
-	require.NotNil(t, target, "configureLiftRoutes not found in routes.go")
-	require.NotNil(t, target.Body, "configureLiftRoutes body missing")
+	require.NotNil(t, target, "configureRoutes not found in routes.go")
+	require.NotNil(t, target.Body, "configureRoutes body missing")
 
 	var routes []string
 	seen := map[string]struct{}{}
@@ -113,12 +113,12 @@ func extractRouteFromCall(call *ast.CallExpr) (string, string, bool) {
 	}
 
 	switch sel.Sel.Name {
-	case "GET", "POST", "PUT", "PATCH", "DELETE":
+	case "Get", "Post", "Put", "Patch", "Delete":
 		path, ok := evalStringLiteral(call.Args, 0)
 		if !ok {
 			return "", "", false
 		}
-		return sel.Sel.Name, path, true
+		return strings.ToUpper(sel.Sel.Name), path, true
 	case "Handle":
 		method, ok := evalStringLiteral(call.Args, 0)
 		if !ok {

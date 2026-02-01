@@ -4,36 +4,36 @@ package main
 Lesser API Server - Mastodon-compatible ActivityPub implementation
 
 This Lambda function serves the Lesser API using AWS API Gateway v2.
-All routing is handled by the Lift framework.
+All routing is handled by AppTheory.
 
 The API Gateway configuration forwards the full request path including /api/v1
-and /api/v2 prefixes to this Lambda. All Lift routes must include the complete
+and /api/v2 prefixes to this Lambda. All routes must include the complete
 path with prefix to match Mastodon API specifications.
 */
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	liftHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
+	apiHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/errors"
-	liftAuth "github.com/equaltoai/lesser/pkg/lift"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -54,7 +54,7 @@ var (
 	cfg                 *config.Config
 	repos               core.RepositoryStorage
 	logger              *zap.Logger
-	liftHandler         *liftHandlers.Handler
+	apiHandler          *apiHandlers.Handler
 	authService         *auth.AuthService
 	emfMetrics          *observability.EMFMetrics
 	healthChecker       *observability.HealthChecker
@@ -70,17 +70,17 @@ var (
 	lambdaStart = lambda.Start
 
 	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
-	newRepositoryFactory = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+	newRepositoryFactory     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
 	}
-	newAuthService           = auth.NewAuthService
-	newStreamQueue           = streaming.NewDynamoStreamQueue
+	newAuthService = auth.NewAuthService
+	newStreamQueue = streaming.NewDynamoStreamQueue
 
 	createAPIAuthMiddlewareFromAuthService = auth.CreateAPIAuthMiddlewareFromAuthService
-	newLiftHandler                         = liftHandlers.NewHandler
+	newAPIHandler                          = apiHandlers.NewHandler
 
 	createInstanceLockMiddlewareFn = createInstanceLockMiddleware
-	configureLiftRoutesFn          = configureLiftRoutes
+	configureRoutesFn              = configureRoutes
 
 	trackLambdaInvocation = func(ctx context.Context, service *cost.TrackingService, operation cost.LambdaOperation) error {
 		return service.TrackLambdaInvocation(ctx, operation)
@@ -265,16 +265,10 @@ func initializeManualServices() {
 
 // initializeAPISpecificServices initializes API-specific services
 func initializeAPISpecificServices() {
-	// Initialize Lift-native auth service (future use)
-	_ = liftAuth.NewLiftAuthService(authService)
-
 	// Validate VAPID keys in production environment
-	if err := liftHandlers.ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger); err != nil {
+	if err := apiHandlers.ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger); err != nil {
 		logger.Fatal("VAPID keys validation failed in production", zap.Error(err))
 	}
-
-	// Create unified auth middleware
-	unifiedAuthMiddleware := createAPIAuthMiddlewareFromAuthService(authService, logger)
 
 	// Create stream queue service with proper fallback
 	var streamQueue streaming.StreamQueueService
@@ -306,84 +300,27 @@ func initializeAPISpecificServices() {
 		streamQueue = newStreamQueue(coreDB, cfg.DynamoTableName, logger)
 	}
 
-	// Create Lift handler for all endpoints
-	liftHandler = newLiftHandler(cfg, repos, logger, unifiedAuthMiddleware, streamQueue)
+	// Create API handler for all endpoints
+	apiHandler = newAPIHandler(cfg, repos, logger, streamQueue)
 
 	logger.Info("initialized API-specific services")
 }
 
 func main() {
-	// Create a new Lift application
-	app := lift.New()
-	if cfg.DebugMode {
-		app = lift.New(lift.WithDebug())
-	}
+	app := buildApp(logger)
 
-	// Add global middleware
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
-
-	// Add timeout middleware
-	app.Use(liftMiddleware.TimeoutMiddleware(liftMiddleware.TimeoutConfig{
-		DefaultTimeout: 30 * time.Second,
-	}))
-
-	// Add custom logging middleware
-	app.Use(createLoggingMiddleware(logger))
-
-	// Apply strict security middleware for web clients
-	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
-
-	// Block publishing/signups until instance activation completes.
-	app.Use(createInstanceLockMiddlewareFn(repos, logger))
-
-	// Add unified error handling middleware
-	app.Use(common.CreateAPIErrorMiddleware(logger))
-
-	// Add centralized cost tracking middleware
-	if costTrackingService != nil {
-		app.Use(createCentralizedCostTrackingMiddleware())
-	}
-
-	// Add distributed tracing middleware
-	if tracingManager != nil {
-		app.Use(createTracingMiddleware())
-	}
-
-	// Add EMF-based performance monitoring middleware
-	if emfMetrics != nil {
-		app.Use(createEMFMetricsMiddleware())
-	}
-
-	// Add comprehensive latency tracking middleware
-	app.Use(createLatencyTrackingMiddleware())
-
-	// Note: Rate limiting is now applied per-endpoint in routes_lift.go
-	// Not using global middleware to avoid incorrectly rate limiting read endpoints
-
-	// Configure native Lift routes
-	configureLiftRoutesFn(app)
-
-	// Configure health check routes if available
-	if healthChecker != nil {
-		configureHealthRoutes(app)
-	}
-
-	// Start the Lambda handler with observability
-	lambdaHandler := func(ctx context.Context, event interface{}) (interface{}, error) {
+	lambdaHandler := func(ctx context.Context, event json.RawMessage) (any, error) {
 		requestStart := time.Now()
 
-		// Record cold start metric if this is a cold start
+		// Record cold start metric if this is a cold start.
 		if time.Since(startTime) < 30*time.Second && emfMetrics != nil {
 			emfMetrics.RecordBusinessMetric(observability.MetricColdStarts, 1.0, observability.UnitCount, nil)
 			coldStartDuration := time.Since(startTime)
 			emfMetrics.RecordBusinessMetric(observability.MetricColdStartDuration, float64(coldStartDuration.Milliseconds()), observability.UnitMilliseconds, nil)
 		}
 
-		// Process the request
-		result, err := app.HandleRequest(ctx, event)
+		result, err := app.HandleLambda(ctx, event)
 
-		// Record request metrics
 		requestDuration := time.Since(requestStart)
 		if emfMetrics != nil {
 			emfMetrics.RecordLatency("api_request", requestDuration)
@@ -396,13 +333,85 @@ func main() {
 			}
 		}
 
-		// Use standardized observability flushing
 		lambdaCtx.FlushObservabilityServices()
 
 		return result, err
 	}
 
 	lambdaStart(lambdaHandler)
+}
+
+func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
+	app := apptheory.New(
+		apptheory.WithCORS(apptheory.CORSConfig{
+			AllowedOrigins:   []string{"*"},
+			AllowCredentials: false,
+			AllowHeaders: []string{
+				"Accept",
+				"Authorization",
+				"Content-Type",
+				"User-Agent",
+				"X-Forwarded-For",
+				"X-Forwarded-Proto",
+				"X-Request-Id",
+				"X-Tenant-Id",
+			},
+		}),
+		apptheory.WithLimits(apptheory.Limits{
+			MaxRequestBytes:  512 * 1024,
+			MaxResponseBytes: 0,
+		}),
+	)
+
+	// Timeout middleware (app-tier).
+	app.Use(apptheory.TimeoutMiddleware(apptheory.TimeoutConfig{
+		DefaultTimeout: 30 * time.Second,
+	}))
+
+	// Block publishing/signups until instance activation completes.
+	app.Use(createInstanceLockMiddlewareFn(repos, lambdaLogger))
+
+	// Optional auth (enables user context for public endpoints).
+	if authService != nil {
+		app.Use(createAPIAuthMiddlewareFromAuthService(authService, lambdaLogger))
+	}
+
+	// Request logging with correlation fields.
+	app.Use(createLoggingMiddleware(lambdaLogger))
+
+	// Security headers (web-friendly).
+	app.Use(apiSecurityHeaders())
+
+	// Standardized API error mapping.
+	app.Use(common.CreateAPIErrorMiddleware(lambdaLogger))
+
+	// Centralized cost tracking middleware.
+	if costTrackingService != nil {
+		app.Use(createCentralizedCostTrackingMiddleware())
+	}
+
+	// Distributed tracing middleware.
+	if tracingManager != nil {
+		app.Use(createTracingMiddleware())
+	}
+
+	// EMF metrics middleware.
+	if emfMetrics != nil {
+		app.Use(createEMFMetricsMiddleware())
+	}
+
+	// Comprehensive latency tracking middleware.
+	app.Use(createLatencyTrackingMiddleware())
+
+	// Configure API routes.
+	configureRoutesFn(app)
+
+	// Health check routes.
+	if healthChecker != nil {
+		configureHealthRoutes(app)
+	}
+
+	return app
 }
 
 // requestInfo holds extracted request information
@@ -414,37 +423,52 @@ type requestInfo struct {
 	clientIP  string
 }
 
-// extractRequestInfo extracts request information from Lift context
-func extractRequestInfo(ctx *lift.Context) requestInfo {
+func extractRequestInfo(ctx *apptheory.Context) requestInfo {
 	info := requestInfo{
 		method: "GET",
 		path:   "/",
 	}
 
-	if ctx.Request == nil || ctx.Request.Request == nil {
+	if ctx == nil {
 		info.endpoint = info.method + " " + info.path
 		return info
 	}
 
-	req := ctx.Request.Request
-	info.method = req.Method
-	info.path = req.Path
-	info.userAgent = req.Headers["User-Agent"]
-
-	if xForwarded := req.Headers["X-Forwarded-For"]; xForwarded != "" {
-		info.clientIP = xForwarded
+	if method := strings.TrimSpace(ctx.Request.Method); method != "" {
+		info.method = method
 	}
+	if path := strings.TrimSpace(ctx.Request.Path); path != "" {
+		info.path = path
+	}
+	info.userAgent = headerValue(ctx, "User-Agent")
+	info.clientIP = headerValue(ctx, "X-Forwarded-For")
 
 	info.endpoint = info.method + " " + info.path
 	return info
 }
 
+func headerValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	values := ctx.Request.Headers[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
 // addLatencyContextValues adds latency tracking values to context
-func addLatencyContextValues(ctx *lift.Context, info requestInfo, startTime time.Time) {
-	ctx.Context = context.WithValue(ctx.Context, latencyStartKey, startTime)
-	ctx.Context = context.WithValue(ctx.Context, endpointKey, info.endpoint)
-	ctx.Context = context.WithValue(ctx.Context, methodKey, info.method)
-	ctx.Context = context.WithValue(ctx.Context, pathKey, info.path)
+func addLatencyContextValues(ctx *apptheory.Context, info requestInfo, startTime time.Time) {
+	if ctx == nil {
+		return
+	}
+
+	ctx.Set(string(latencyStartKey), startTime)
+	ctx.Set(string(endpointKey), info.endpoint)
+	ctx.Set(string(methodKey), info.method)
+	ctx.Set(string(pathKey), info.path)
 }
 
 // recordDynamoDBLatencyMetric records latency metric to DynamoDB asynchronously
@@ -560,53 +584,51 @@ func recordEMFMetrics(info requestInfo, statusCode int, totalLatency time.Durati
 }
 
 // createLatencyTrackingMiddleware creates comprehensive latency tracking middleware
-func createLatencyTrackingMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createLatencyTrackingMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			startTime := time.Now()
 			info := extractRequestInfo(ctx)
 
 			addLatencyContextValues(ctx, info, startTime)
 
 			// Execute request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Calculate latency and determine status
 			totalLatency := time.Since(startTime)
-			statusCode := 200
+			statusCode := http.StatusOK
 			if err != nil {
-				statusCode = 500 // Default error status
+				statusCode = http.StatusInternalServerError
+			} else if resp != nil && resp.Status != 0 {
+				statusCode = resp.Status
 			}
 
 			// Record metrics to all available systems
-			recordDynamoDBLatencyMetric(ctx.Context, info, statusCode, totalLatency)
+			recordDynamoDBLatencyMetric(ctx.Context(), info, statusCode, totalLatency)
 			recordAggregatorLatency(info, totalLatency)
-			checkLatencyAlerting(ctx.Context, info, totalLatency)
+			checkLatencyAlerting(ctx.Context(), info, totalLatency)
 			recordEMFMetrics(info, statusCode, totalLatency, err)
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
 // createEMFMetricsMiddleware creates middleware for EMF metrics collection
-func createEMFMetricsMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createEMFMetricsMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			if emfMetrics == nil {
-				return next.Handle(ctx)
+				return next(ctx)
 			}
 
 			// Start latency timer
-			timer := emfMetrics.StartLatencyTimer(ctx.Context, "endpoint_request")
+			timer := emfMetrics.StartLatencyTimer(ctx.Context(), "endpoint_request")
 
 			// Extract endpoint information
-			method := "GET"
-			path := "/"
-			if ctx.Request != nil && ctx.Request.Request != nil {
-				method = ctx.Request.Request.Method
-				path = ctx.Request.Request.Path
-			}
+			method := ctx.Request.Method
+			path := ctx.Request.Path
 			endpoint := method + " " + path
 			dimensions := map[string]string{
 				observability.DimensionEndpoint: path,
@@ -614,14 +636,15 @@ func createEMFMetricsMiddleware() lift.Middleware {
 			}
 
 			// Execute request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Record metrics based on result
 			// Default to 200 if no error
-			statusCode := 200
+			statusCode := http.StatusOK
 			if err != nil {
-				// Infer status from error (this is approximate)
-				statusCode = 500
+				statusCode = http.StatusInternalServerError
+			} else if resp != nil && resp.Status != 0 {
+				statusCode = resp.Status
 			}
 			dimensions[observability.DimensionStatusCode] = fmt.Sprintf("%d", statusCode)
 
@@ -662,43 +685,42 @@ func createEMFMetricsMiddleware() lift.Middleware {
 			// Record throughput
 			emfMetrics.RecordThroughput(endpoint, 1)
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
-// configureHealthRoutes adds health check endpoints to the Lift app
-func configureHealthRoutes(app *lift.App) {
+func configureHealthRoutes(app *apptheory.App) {
 	// Liveness endpoint
-	_ = app.GET("/health/live", func(ctx *lift.Context) error {
+	app.Get("/health/live", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		response := map[string]interface{}{
 			"status":    observability.HealthStatusHealthy,
 			"timestamp": time.Now(),
 			"service":   "api",
 			"version":   cfg.Version,
 		}
-		return ctx.Status(200).JSON(response)
+		return apptheory.JSON(200, response)
 	})
 
 	// Legacy health endpoint (infra + backwards compatibility)
-	_ = app.GET("/health", func(ctx *lift.Context) error {
+	app.Get("/health", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		response := map[string]interface{}{
 			"status":    observability.HealthStatusHealthy,
 			"timestamp": time.Now(),
 			"service":   "api",
 			"version":   cfg.Version,
 		}
-		return ctx.Status(200).JSON(response)
+		return apptheory.JSON(200, response)
 	})
 
 	// Readiness endpoint
-	_ = app.GET("/health/ready", func(ctx *lift.Context) error {
+	app.Get("/health/ready", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		// Basic readiness check - can we access our dependencies?
 		status := observability.HealthStatusHealthy
 		checks := []map[string]interface{}{}
 
 		// Check DynamoDB connectivity
-		checkCtx, cancel := context.WithTimeout(ctx.Context, 5*time.Second)
+		checkCtx, cancel := context.WithTimeout(ctx.Context(), 5*time.Second)
 		defer cancel()
 
 		start := time.Now()
@@ -732,11 +754,11 @@ func configureHealthRoutes(app *lift.App) {
 			statusCode = 503
 		}
 
-		return ctx.Status(statusCode).JSON(response)
+		return apptheory.JSON(statusCode, response)
 	})
 
 	// Detailed health endpoint
-	_ = app.GET("/health/detailed", func(ctx *lift.Context) error {
+	app.Get("/health/detailed", func(ctx *apptheory.Context) (*apptheory.Response, error) {
 		// Comprehensive health check with all components
 		status := observability.HealthStatusHealthy
 		checks := []map[string]interface{}{}
@@ -760,7 +782,7 @@ func configureHealthRoutes(app *lift.App) {
 		summary["healthy_checks"] = summary["healthy_checks"].(int) + 1
 
 		// Database detailed check
-		checkCtx, cancel := context.WithTimeout(ctx.Context, 10*time.Second)
+		checkCtx, cancel := context.WithTimeout(ctx.Context(), 10*time.Second)
 		defer cancel()
 
 		start := time.Now()
@@ -801,20 +823,20 @@ func configureHealthRoutes(app *lift.App) {
 			statusCode = 503
 		}
 
-		return ctx.Status(statusCode).JSON(response)
+		return apptheory.JSON(statusCode, response)
 	})
 }
 
 // createTracingMiddleware creates middleware for distributed tracing
-func createTracingMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createTracingMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			if tracingManager == nil || !tracingManager.IsEnabled() {
-				return next.Handle(ctx)
+				return next(ctx)
 			}
 
 			// Start tracing segment
-			traceCtx, segment := tracingManager.StartSegment(ctx.Context, "api-request")
+			traceCtx, segment := tracingManager.StartSegment(ctx.Context(), "api-request")
 			defer func() {
 				if segment != nil {
 					segment.Close(nil)
@@ -822,19 +844,10 @@ func createTracingMiddleware() lift.Middleware {
 			}()
 
 			// Extract request info
-			method := "GET"
-			url := "/"
-			userAgent := ""
-			clientIP := ""
-			if ctx.Request != nil && ctx.Request.Request != nil {
-				method = ctx.Request.Request.Method
-				url = ctx.Request.Request.Path
-				userAgent = ctx.Request.Request.Headers["User-Agent"]
-				// Try to get client IP from headers
-				if xForwarded := ctx.Request.Request.Headers["X-Forwarded-For"]; xForwarded != "" {
-					clientIP = xForwarded
-				}
-			}
+			method := ctx.Request.Method
+			url := ctx.Request.Path
+			userAgent := headerValue(ctx, "User-Agent")
+			clientIP := headerValue(ctx, "X-Forwarded-For")
 
 			// Add HTTP request information
 			tracingManager.SetHTTPRequest(traceCtx,
@@ -853,13 +866,15 @@ func createTracingMiddleware() lift.Middleware {
 			_ = tracingManager.GetTraceContext(traceCtx)
 
 			// Execute request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Record response information
 			// Default to 200 if no error, 500 if error
-			statusCode := 200
+			statusCode := http.StatusOK
 			if err != nil {
-				statusCode = 500
+				statusCode = http.StatusInternalServerError
+			} else if resp != nil && resp.Status != 0 {
+				statusCode = resp.Status
 			}
 			tracingManager.SetHTTPResponse(traceCtx, statusCode, 0) // Content length not easily available in Lift
 			tracingManager.AddAnnotation(traceCtx, "status_code", statusCode)
@@ -869,8 +884,8 @@ func createTracingMiddleware() lift.Middleware {
 				tracingManager.AddError(traceCtx, err, false)
 			}
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
@@ -906,17 +921,17 @@ func recordLatencyMetric(ctx context.Context, metricType, operation string, dura
 }
 
 // createCentralizedCostTrackingMiddleware creates centralized cost tracking middleware using the TrackingService
-func createCentralizedCostTrackingMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createCentralizedCostTrackingMiddleware() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			if costTrackingService == nil {
-				return next.Handle(ctx)
+				return next(ctx)
 			}
 
 			startTime := time.Now()
 
 			// Execute request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Track Lambda execution cost
 			duration := time.Since(startTime)
@@ -940,7 +955,7 @@ func createCentralizedCostTrackingMiddleware() lift.Middleware {
 				}
 			}()
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }

@@ -1,22 +1,19 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"reflect"
 	"testing"
 	"unsafe"
 
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -61,18 +58,17 @@ func newMiddlewareHarness(t *testing.T) *middlewareHarness {
 	return h
 }
 
-func newTestLiftContext(method, path string) *lift.Context {
-	req := lift.NewRequest(&adapters.Request{
-		Method: method,
-		Path:   path,
-		Headers: map[string]string{
-			"User-Agent":      "test",
-			"X-Forwarded-For": "127.0.0.1",
+func newTestAppTheoryContext(method, path string) *apptheory.Context {
+	return &apptheory.Context{
+		Request: apptheory.Request{
+			Method: method,
+			Path:   path,
+			Headers: map[string][]string{
+				"user-agent":      {"test"},
+				"x-forwarded-for": {"127.0.0.1"},
+			},
 		},
-		QueryParams: map[string]string{},
-		Body:        nil,
-	})
-	return lift.NewContext(context.Background(), req)
+	}
 }
 
 func setRepoField(repo *mocks.MockRepositoryStorage, field string, value any) {
@@ -82,16 +78,15 @@ func setRepoField(repo *mocks.MockRepositoryStorage, field string, value any) {
 
 func TestMiddlewareHelpers_Round11(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	ctx := newTestLiftContext(http.MethodGet, "/api/v1/timelines/home")
+	ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/timelines/home")
 	ctx.Set("claims", &auth.Claims{Username: "alice"})
-	ctx.Set("tenantID", "tenant-1")
+	ctx.TenantID = "tenant-1"
 
 	mw := createLoggingMiddleware(logger)
-	handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-		ctx.Status(http.StatusOK)
-		return nil
-	}))
-	require.NoError(t, handler.Handle(ctx))
+	_, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(http.StatusOK, ""), nil
+	})(ctx)
+	require.NoError(t, err)
 	require.NotNil(t, GetLogger(ctx))
 
 	harness := newMiddlewareHarness(t)
@@ -102,39 +97,31 @@ func TestMiddlewareHelpers_Round11(t *testing.T) {
 	setRepoField(repoMock, "userRepo", userRepo)
 
 	mwLock := createInstanceLockMiddleware(repoMock, logger)
-	handlerLocked := mwLock(lift.HandlerFunc(func(ctx *lift.Context) error {
-		ctx.Status(http.StatusOK)
-		return nil
-	}))
+	handlerLocked := mwLock(func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(http.StatusOK, ""), nil
+	})
 
 	harness.locked = true
-	ctxLocked := newTestLiftContext(http.MethodGet, "/api/v1/timelines/home")
-	require.NoError(t, handlerLocked.Handle(ctxLocked))
-	require.Equal(t, http.StatusOK, ctxLocked.Response.StatusCode)
+	ctxLocked := newTestAppTheoryContext(http.MethodGet, "/api/v1/timelines/home")
+	resp, err := handlerLocked(ctxLocked)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status)
 
 	harness.locked = false
 	// Use a fresh repository to avoid reusing cached instance lock state.
 	instanceRepo = repositories.NewInstanceRepository(harness.db, "table", logger)
 	setRepoField(repoMock, "instanceRepo", instanceRepo)
-	ctxUnlocked := newTestLiftContext(http.MethodPost, "/api/v1/statuses")
-	require.NoError(t, handlerLocked.Handle(ctxUnlocked))
-	require.Equal(t, http.StatusOK, ctxUnlocked.Response.StatusCode)
+	ctxUnlocked := newTestAppTheoryContext(http.MethodPost, "/api/v1/statuses")
+	resp, err = handlerLocked(ctxUnlocked)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status)
 
 	require.True(t, shouldSuppressContentReadWhileLocked("/api/v1/statuses/1"))
 	require.False(t, shouldSuppressContentReadWhileLocked("/api/v1/instance"))
 	require.True(t, isWriteAllowedWhileLocked("/api/v1/apps"))
 	require.False(t, isWriteAllowedWhileLocked("/api/v1/statuses"))
 
-	trackerCtx := newTestLiftContext(http.MethodPost, "/api/v1/statuses")
-	trackerCtx.Set("claims", &auth.Claims{Username: "alice"})
-	mwCost := createCostTrackingMiddleware(logger)
-	handlerCost := mwCost(lift.HandlerFunc(func(ctx *lift.Context) error {
-		TrackCost(ctx, func(_ *cost.Tracker) {})
-		ctx.Status(http.StatusOK)
-		return nil
-	}))
-	require.NoError(t, handlerCost.Handle(trackerCtx))
-
+	trackerCtx := newTestAppTheoryContext(http.MethodPost, "/api/v1/statuses")
 	trackerCtx.Set("claims", &auth.Claims{Username: "alice"})
 	harness.role = "admin"
 	require.NoError(t, checkUserPermissions(trackerCtx, PermissionAdmin, repoMock))
@@ -143,9 +130,9 @@ func TestMiddlewareHelpers_Round11(t *testing.T) {
 	harness.role = "viewer"
 	require.NoError(t, checkUserPermissions(trackerCtx, PermissionViewer, repoMock))
 
-	noClaimsCtx := newTestLiftContext(http.MethodGet, "/api/v1/statuses")
-	err := checkUserPermissions(noClaimsCtx, PermissionAdmin, repoMock)
-	require.Error(t, err)
+	noClaimsCtx := newTestAppTheoryContext(http.MethodGet, "/api/v1/statuses")
+	permErr := checkUserPermissions(noClaimsCtx, PermissionAdmin, repoMock)
+	require.Error(t, permErr)
 
 	require.NotNil(t, createPerformanceMonitoringMiddleware(nil))
 }
