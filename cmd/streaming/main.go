@@ -24,8 +24,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -131,7 +131,6 @@ var (
 	newStreamerClientFn          = streamer.NewClient
 	runAsyncFn                   = func(fn func()) { go fn() }
 	lambdaStartFn                = lambda.Start
-	newLiftAppFn                 = func(opts ...lift.AppOption) *lift.App { return lift.New(opts...) }
 	newStreamingConnectionRepoFn = func(db dynamormCore.DB, connectionsTable string, subscriptionDB dynamormCore.DB, subscriptionsTable string, logger *zap.Logger) streamingConnectionRepository {
 		return repositories.NewStreamingConnectionRepository(db, connectionsTable, subscriptionDB, subscriptionsTable, logger, nil)
 	}
@@ -262,68 +261,91 @@ func registerCommandHandlers(router streamingCommandRouter, serviceRegistry *ser
 	router.RegisterHandler(systemHandler)
 }
 
-// HandleWebSocketEvent handles WebSocket events using Lift patterns (connect, disconnect, message)
-func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
-	// Extract WebSocket event from Lift context
-	if ctx.Request.RawEvent == nil {
-		return lift.NewLiftError("MISSING_EVENT", "no WebSocket event in request", 400)
+func webSocketEventFromAppTheory(ctx *apptheory.Context) (events.APIGatewayWebsocketProxyRequest, error) {
+	if ctx == nil {
+		return events.APIGatewayWebsocketProxyRequest{}, fmt.Errorf("nil apptheory context")
+	}
+	wsCtx := ctx.AsWebSocket()
+	if wsCtx == nil {
+		return events.APIGatewayWebsocketProxyRequest{}, fmt.Errorf("missing websocket context")
 	}
 
-	// Parse the raw event as WebSocket event
-	var event events.APIGatewayWebsocketProxyRequest
-	if wsEvent, ok := ctx.Request.RawEvent.(events.APIGatewayWebsocketProxyRequest); ok {
-		event = wsEvent
-	} else {
-		// Try to parse from interface if it's a map
-		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-		if err != nil {
-			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500)
+	headers := make(map[string]string, len(ctx.Request.Headers))
+	for key, values := range ctx.Request.Headers {
+		if len(values) == 0 {
+			continue
 		}
+		headers[key] = values[0]
+	}
 
-		if err := json.Unmarshal(eventBytes, &event); err != nil {
-			return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse WebSocket event", 500)
+	query := make(map[string]string, len(ctx.Request.Query))
+	for key, values := range ctx.Request.Query {
+		if len(values) == 0 {
+			continue
 		}
+		query[key] = values[0]
 	}
 
-	logger := sh.logger.With(
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.String("connectionID", event.RequestContext.ConnectionID),
-		zap.String("routeKey", event.RequestContext.RouteKey),
-	)
+	return events.APIGatewayWebsocketProxyRequest{
+		Headers:               headers,
+		QueryStringParameters: query,
+		Body:                  string(wsCtx.Body),
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: wsCtx.ConnectionID,
+			RouteKey:     wsCtx.RouteKey,
+			DomainName:   wsCtx.DomainName,
+			Stage:        wsCtx.Stage,
+		},
+	}, nil
+}
 
-	wsCtx, err := ctx.AsWebSocket()
+func (sh *StreamingHandler) HandleWebSocketConnect(ctx *apptheory.Context) (*apptheory.Response, error) {
+	event, err := webSocketEventFromAppTheory(ctx)
 	if err != nil {
-		logger.Warn("invalid WebSocket event", zap.Error(err))
-		return lift.NewLiftError("BAD_REQUEST", "Invalid WebSocket event", 400)
+		return apptheory.Text(400, "invalid websocket event"), nil
 	}
 
-	managementAPIEndpoint := wsCtx.ManagementEndpoint()
-	if managementAPIEndpoint == "" {
-		managementAPIEndpoint = fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
-			event.RequestContext.APIID,
-			sh.awsConfig.Region,
-			event.RequestContext.Stage,
-		)
+	if err := sh.handleConnect(ctx.Context(), event); err != nil {
+		return nil, err
 	}
+	return &apptheory.Response{Status: 200}, nil
+}
 
-	wsClient, err := newStreamerClientFn(ctx.Request.Context(), managementAPIEndpoint, streamer.WithAWSConfig(sh.awsConfig))
+func (sh *StreamingHandler) HandleWebSocketDisconnect(ctx *apptheory.Context) (*apptheory.Response, error) {
+	event, err := webSocketEventFromAppTheory(ctx)
 	if err != nil {
-		logger.Error("failed to initialize WebSocket management client", zap.Error(err))
-		return lift.NewLiftError("INTERNAL_ERROR", "Failed to initialize WebSocket client", 500)
+		return apptheory.Text(400, "invalid websocket event"), nil
+	}
+
+	if err := sh.handleDisconnect(ctx.Context(), event); err != nil {
+		return nil, err
+	}
+	return &apptheory.Response{Status: 200}, nil
+}
+
+func (sh *StreamingHandler) HandleWebSocketDefault(ctx *apptheory.Context) (*apptheory.Response, error) {
+	event, err := webSocketEventFromAppTheory(ctx)
+	if err != nil {
+		return apptheory.Text(400, "invalid websocket event"), nil
+	}
+
+	wsCtx := ctx.AsWebSocket()
+	endpoint := strings.TrimSpace(wsCtx.ManagementEndpoint)
+	if endpoint == "" {
+		return apptheory.Text(500, "missing websocket management endpoint"), nil
+	}
+
+	wsClient, err := newStreamerClientFn(ctx.Context(), endpoint, streamer.WithAWSConfig(sh.awsConfig))
+	if err != nil {
+		return nil, err
 	}
 	sh.wsClient = wsClient
 
-	switch event.RequestContext.RouteKey {
-	case "$connect":
-		return sh.handleConnect(ctx.Request.Context(), event)
-	case "$disconnect":
-		return sh.handleDisconnect(ctx.Request.Context(), event)
-	case "$default":
-		return sh.handleMessage(ctx.Request.Context(), event)
-	default:
-		logger.Warn("unknown route key", zap.String("routeKey", event.RequestContext.RouteKey))
-		return lift.NewLiftError("UNKNOWN_ROUTE", pkgErrors.StreamingUnknownRoute().Error(), 400)
+	if err := sh.handleMessage(ctx.Context(), event); err != nil {
+		return nil, err
 	}
+
+	return &apptheory.Response{Status: 200}, nil
 }
 
 // handleConnect handles WebSocket connection events
@@ -846,16 +868,29 @@ func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token 
 }
 
 func main() {
-	app := newLiftAppFn(lift.WithWebSocketSupport())
-	if cfg != nil && cfg.DebugMode {
-		app = newLiftAppFn(lift.WithWebSocketSupport(), lift.WithDebug())
-	}
+	app := apptheory.New()
+	app.WebSocket("$connect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		if handler == nil {
+			return nil, fmt.Errorf("streaming handler not initialized")
+		}
+		return handler.HandleWebSocketConnect(ctx)
+	})
+	app.WebSocket("$disconnect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		if handler == nil {
+			return nil, fmt.Errorf("streaming handler not initialized")
+		}
+		return handler.HandleWebSocketDisconnect(ctx)
+	})
+	app.WebSocket("$default", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		if handler == nil {
+			return nil, fmt.Errorf("streaming handler not initialized")
+		}
+		return handler.HandleWebSocketDefault(ctx)
+	})
 
-	app.WebSocket("$connect", handler.HandleWebSocketEvent)
-	app.WebSocket("$disconnect", handler.HandleWebSocketEvent)
-	app.WebSocket("$default", handler.HandleWebSocketEvent)
-
-	lambdaStartFn(app.HandleRequest)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
 func ensureRepositoryFactory() error {
