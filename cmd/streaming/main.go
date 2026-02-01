@@ -25,7 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/streamer"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -102,16 +102,20 @@ var (
 var (
 	runningUnitTestsFn = common.RunningUnitTests
 
-	mustInitializeLambdaFn      = common.MustInitializeLambda
-	initializeWithDefaultsFn    = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	ensureRepositoryFactoryFn   = ensureRepositoryFactory
-	resolveDynamoClientFn       = resolveDynamoClient
-	newUserRepositoryFn         = repositories.NewUserRepository
-	newMockPublisherFn          = streaming.NewMockPublisher
-	newCommandRouterFn          = func(logger *zap.Logger) streamingCommandRouter { return streaming.NewCommandRouter(logger) }
-	registerCommandHandlersFn   = registerCommandHandlers
-	newStatusCommandHandlerFn   = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler { return handlers.NewStatusCommandHandlerV2(registry.Notes(), logger) }
-	newAccountCommandHandlerFn  = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler { return handlers.NewAccountCommandHandler(registry.Accounts(), logger) }
+	mustInitializeLambdaFn    = common.MustInitializeLambda
+	initializeWithDefaultsFn  = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	ensureRepositoryFactoryFn = ensureRepositoryFactory
+	resolveDynamoClientFn     = resolveDynamoClient
+	newUserRepositoryFn       = repositories.NewUserRepository
+	newMockPublisherFn        = streaming.NewMockPublisher
+	newCommandRouterFn        = func(logger *zap.Logger) streamingCommandRouter { return streaming.NewCommandRouter(logger) }
+	registerCommandHandlersFn = registerCommandHandlers
+	newStatusCommandHandlerFn = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler {
+		return handlers.NewStatusCommandHandlerV2(registry.Notes(), logger)
+	}
+	newAccountCommandHandlerFn = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler {
+		return handlers.NewAccountCommandHandler(registry.Accounts(), logger)
+	}
 	newRelationshipCommandHandlerFn = func(registry *services.Registry, logger *zap.Logger) streaming.CommandHandler {
 		return handlers.NewRelationshipCommandHandler(registry.Relationships(), registry.Accounts(), logger)
 	}
@@ -124,10 +128,10 @@ var (
 			logger,
 		)
 	}
-	newStreamerClientFn         = func(ctx context.Context, cfg streamer.ClientConfig) (streamer.Client, error) { return streamer.NewClient(ctx, cfg) }
-	runAsyncFn                  = func(fn func()) { go fn() }
-	lambdaStartFn               = lambda.Start
-	newLiftAppFn                = func(opts ...lift.AppOption) *lift.App { return lift.New(opts...) }
+	newStreamerClientFn          = streamer.NewClient
+	runAsyncFn                   = func(fn func()) { go fn() }
+	lambdaStartFn                = lambda.Start
+	newLiftAppFn                 = func(opts ...lift.AppOption) *lift.App { return lift.New(opts...) }
 	newStreamingConnectionRepoFn = func(db dynamormCore.DB, connectionsTable string, subscriptionDB dynamormCore.DB, subscriptionsTable string, logger *zap.Logger) streamingConnectionRepository {
 		return repositories.NewStreamingConnectionRepository(db, connectionsTable, subscriptionDB, subscriptionsTable, logger, nil)
 	}
@@ -137,7 +141,7 @@ var (
 	}
 	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
 	newRepositoryFactoryFn     = factory.NewRepositoryFactory
-	newServiceRegistryFn = func(repos core.RepositoryStorage, publisher streaming.Publisher, logger *zap.Logger, serviceConfig *services.ServiceConfig) (*services.Registry, error) {
+	newServiceRegistryFn       = func(repos core.RepositoryStorage, publisher streaming.Publisher, logger *zap.Logger, serviceConfig *services.ServiceConfig) (*services.Registry, error) {
 		return services.NewRegistry(
 			services.WithStorage(repos),
 			services.WithPublisher(publisher),
@@ -302,10 +306,7 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 		)
 	}
 
-	wsClient, err := newStreamerClientFn(ctx, streamer.ClientConfig{
-		AWSConfig: &sh.awsConfig,
-		Endpoint:  managementAPIEndpoint,
-	})
+	wsClient, err := newStreamerClientFn(ctx.Request.Context(), managementAPIEndpoint, streamer.WithAWSConfig(sh.awsConfig))
 	if err != nil {
 		logger.Error("failed to initialize WebSocket management client", zap.Error(err))
 		return lift.NewLiftError("INTERNAL_ERROR", "Failed to initialize WebSocket client", 500)

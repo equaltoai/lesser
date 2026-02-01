@@ -19,8 +19,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -160,8 +160,8 @@ func (f *fakeWSClient) PostToConnection(_ context.Context, connectionID string, 
 }
 
 func (f *fakeWSClient) DeleteConnection(context.Context, string) error { return nil }
-func (f *fakeWSClient) GetConnection(_ context.Context, connectionID string) (*streamer.ConnectionInfo, error) {
-	return &streamer.ConnectionInfo{ConnectionID: connectionID}, nil
+func (f *fakeWSClient) GetConnection(_ context.Context, _ string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 func TestInitializeNotificationProcessor_AndMain(t *testing.T) {
@@ -264,14 +264,14 @@ func TestNewNotificationProcessor_Branches(t *testing.T) {
 	t.Setenv("WEBSOCKET_ENDPOINT", "https://ws.example.com")
 	config.ResetForTests()
 
-	streamerNewClientFn = func(context.Context, streamer.ClientConfig) (*streamer.AWSClient, error) {
+	streamerNewClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 		return nil, errors.New("boom")
 	}
 	p = NewNotificationProcessor(ctx)
 	require.Nil(t, p.wsClient)
 
-	streamerNewClientFn = func(context.Context, streamer.ClientConfig) (*streamer.AWSClient, error) {
-		return &streamer.AWSClient{}, nil
+	streamerNewClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
+		return &fakeWSClient{}, nil
 	}
 	p = NewNotificationProcessor(ctx)
 	require.NotNil(t, p.wsClient)

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/streamer"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -215,7 +215,7 @@ func (p *apiGatewayPublisher) publishToConnection(ctx context.Context, connectio
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	// Send to connection via Lift streamer client
+	// Send to connection via API Gateway management client
 	err = p.client.PostToConnection(ctx, connectionID, eventData)
 
 	if err != nil {

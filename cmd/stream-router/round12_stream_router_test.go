@@ -18,8 +18,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -109,8 +109,8 @@ func (c *fakeStreamerClient) DeleteConnection(context.Context, string) error {
 	return nil
 }
 
-func (c *fakeStreamerClient) GetConnection(context.Context, string) (*streamer.ConnectionInfo, error) {
-	return nil, nil
+func (c *fakeStreamerClient) GetConnection(context.Context, string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 type fakeFollowerRepo struct {
@@ -936,7 +936,7 @@ func TestNewStreamRouterHandler_StreamClientFailure_Round12(t *testing.T) {
 		newStreamerClient = origNewStreamer
 	})
 
-	newStreamerClient = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
+	newStreamerClient = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 		return nil, stdErrors.New("client down")
 	}
 
@@ -1032,7 +1032,7 @@ func TestNewStreamRouterHandler_ErrorBranches_Round12(t *testing.T) {
 		newStreamerClient = origNewStreamer
 	})
 
-	newStreamerClient = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
+	newStreamerClient = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 		return &fakeStreamerClient{}, nil
 	}
 
@@ -1118,7 +1118,7 @@ func TestNewStreamRouterHandler_Round12(t *testing.T) {
 		newStreamerClient = origNewStreamer
 	})
 
-	newStreamerClient = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
+	newStreamerClient = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 		return &fakeStreamerClient{}, nil
 	}
 

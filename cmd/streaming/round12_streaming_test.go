@@ -25,8 +25,8 @@ import (
 	"github.com/pay-theory/dynamorm"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -148,8 +148,8 @@ func (f *fakeWSClient) PostToConnection(_ context.Context, connectionID string, 
 
 func (f *fakeWSClient) DeleteConnection(_ context.Context, _ string) error { return nil }
 
-func (f *fakeWSClient) GetConnection(_ context.Context, _ string) (*streamer.ConnectionInfo, error) {
-	return &streamer.ConnectionInfo{}, nil
+func (f *fakeWSClient) GetConnection(_ context.Context, _ string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 type fakeCommandRouter struct {
@@ -617,8 +617,8 @@ func TestHandleWebSocketEvent_RoutingAndClientInit(t *testing.T) {
 
 	ws := &fakeWSClient{}
 	var gotEndpoint string
-	newStreamerClientFn = func(_ context.Context, cfg streamer.ClientConfig) (streamer.Client, error) {
-		gotEndpoint = cfg.Endpoint
+	newStreamerClientFn = func(_ context.Context, endpoint string, _ ...streamer.Option) (streamer.Client, error) {
+		gotEndpoint = endpoint
 		return ws, nil
 	}
 
@@ -1084,7 +1084,7 @@ func TestHandleWebSocketEvent_ErrorBranchesAndRoutes(t *testing.T) {
 	})
 
 	t.Run("client_init_error", func(t *testing.T) {
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
+		newStreamerClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 			return nil, errors.New("client failed")
 		}
 		req := lift.NewRequest(nil)
@@ -1103,7 +1103,7 @@ func TestHandleWebSocketEvent_ErrorBranchesAndRoutes(t *testing.T) {
 
 	t.Run("unknown_route", func(t *testing.T) {
 		ws := &fakeWSClient{}
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
+		newStreamerClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 			return ws, nil
 		}
 		req := lift.NewRequest(nil)
@@ -1123,7 +1123,7 @@ func TestHandleWebSocketEvent_ErrorBranchesAndRoutes(t *testing.T) {
 	t.Run("disconnect_route", func(t *testing.T) {
 		connRepo := &fakeConnectionRepo{}
 		ws := &fakeWSClient{}
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
+		newStreamerClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 			return ws, nil
 		}
 		sh.connectionRepo = connRepo
@@ -1144,7 +1144,7 @@ func TestHandleWebSocketEvent_ErrorBranchesAndRoutes(t *testing.T) {
 			getConnectionResp: &models.WebSocketConnection{ConnectionID: "c1", UserID: "u1", Username: "alice"},
 		}
 		ws := &fakeWSClient{}
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
+		newStreamerClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 			return ws, nil
 		}
 		sh.connectionRepo = connRepo

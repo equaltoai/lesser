@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/streamer"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
@@ -221,10 +221,8 @@ var (
 	handler   *StreamRouterHandler
 
 	newLambdaOptimizedClient = dynamorm.NewLambdaOptimizedClient
-	newStreamerClient        = func(ctx context.Context, cfg streamer.ClientConfig) (streamer.Client, error) {
-		return streamer.NewClient(ctx, cfg)
-	}
-	startLambda = lambda.Start
+	newStreamerClient        = streamer.NewClient
+	startLambda              = lambda.Start
 )
 
 func init() {
@@ -393,10 +391,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	accountRepo := repositories.NewAccountRepository(db, tableName, domain, lambdaCtx.Logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, lambdaCtx.Logger, nil)
 
-	apiClient, err := newStreamerClient(context.Background(), streamer.ClientConfig{
-		AWSConfig: &globalCfg,
-		Endpoint:  wsEndpoint,
-	})
+	apiClient, err := newStreamerClient(context.Background(), wsEndpoint, streamer.WithAWSConfig(globalCfg))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WebSocket client: %w", err)
 	}

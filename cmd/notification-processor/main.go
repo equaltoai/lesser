@@ -19,7 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/streamer"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
@@ -177,10 +177,7 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 
 	var wsClient streamer.Client
 	if webSocketEndpoint != "" && lambdaCtx.AWSServices != nil {
-		client, err := streamerNewClientFn(context.Background(), streamer.ClientConfig{
-			AWSConfig: &lambdaCtx.AWSServices.Config,
-			Endpoint:  webSocketEndpoint,
-		})
+		client, err := streamerNewClientFn(context.Background(), webSocketEndpoint, streamer.WithAWSConfig(lambdaCtx.AWSServices.Config))
 		if err != nil {
 			logger.Warn("failed to initialize WebSocket client, websocket notifications disabled", zap.Error(err))
 		} else {

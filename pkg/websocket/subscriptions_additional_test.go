@@ -9,9 +9,9 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -92,8 +92,8 @@ func (s *stubStreamerClient) PostToConnection(_ context.Context, connectionID st
 
 func (s *stubStreamerClient) DeleteConnection(_ context.Context, _ string) error { return nil }
 
-func (s *stubStreamerClient) GetConnection(_ context.Context, connectionID string) (*streamer.ConnectionInfo, error) {
-	return &streamer.ConnectionInfo{ConnectionID: connectionID}, nil
+func (s *stubStreamerClient) GetConnection(_ context.Context, _ string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 func TestSubscriptionManager_SubscribeAndUnsubscribe(t *testing.T) {
