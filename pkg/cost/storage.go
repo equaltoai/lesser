@@ -3,348 +3,126 @@ package cost
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
-// Storage handles persistence of cost data
+var (
+	costHistoryTableNameMu sync.RWMutex
+	costHistoryTableName   string
+)
+
+func setCostHistoryTableName(tableName string) {
+	costHistoryTableNameMu.Lock()
+	costHistoryTableName = tableName
+	costHistoryTableNameMu.Unlock()
+}
+
+func getCostHistoryTableName() string {
+	costHistoryTableNameMu.RLock()
+	tableName := costHistoryTableName
+	costHistoryTableNameMu.RUnlock()
+	return tableName
+}
+
+type operationCostRecord struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+
+	RequestID           string    `theorydb:"attr:requestID"`
+	OperationType       string    `theorydb:"attr:operationType"`
+	Timestamp           time.Time `theorydb:"attr:timestamp"`
+	TotalCostMicroCents int64     `theorydb:"attr:totalCostMicroCents"`
+	DynamoDBReads       int64     `theorydb:"attr:dynamoDBReads"`
+	DynamoDBWrites      int64     `theorydb:"attr:dynamoDBWrites"`
+	LambdaInvocations   int64     `theorydb:"attr:lambdaInvocations"`
+	LambdaDurationMs    int64     `theorydb:"attr:lambdaDurationMs"`
+	LambdaMemoryMB      int64     `theorydb:"attr:lambdaMemoryMB"`
+	S3Gets              int64     `theorydb:"attr:s3Gets"`
+	S3Puts              int64     `theorydb:"attr:s3Puts"`
+	DataTransferBytes   int64     `theorydb:"attr:dataTransferBytes"`
+	Type                string    `theorydb:"attr:type"`
+	TTL                 int64     `theorydb:"ttl,attr:ttl"`
+}
+
+func (operationCostRecord) TableName() string {
+	return getCostHistoryTableName()
+}
+
+// Storage handles persistence of cost data.
+//
+// It is intentionally TableTheory-backed: Lesser does not use direct DynamoDB SDK calls.
 type Storage struct {
-	client    dynamodbAPI
+	db        core.DB
 	tableName string
 	logger    *zap.Logger
 }
 
-type dynamodbAPI interface {
-	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
-	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
-	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
-}
-
-// NewStorage creates a new cost storage instance
-func NewStorage(client dynamodbAPI, tableName string, logger *zap.Logger) *Storage {
+// NewStorage creates a new cost storage instance.
+func NewStorage(db core.DB, tableName string, logger *zap.Logger) *Storage {
+	setCostHistoryTableName(tableName)
 	return &Storage{
-		client:    client,
+		db:        db,
 		tableName: tableName,
 		logger:    logger,
 	}
 }
 
-// SaveOperationCost saves a single operation cost to DynamoDB
+// SaveOperationCost saves a single operation cost record.
 func (s *Storage) SaveOperationCost(ctx context.Context, cost *OperationCost) error {
-	// Use composite keys for efficient querying
-	// PK: COST#YYYY-MM-DD
-	// SK: TIMESTAMP#REQUEST_ID
-
-	date := cost.Timestamp.Format(common.DateFormat)
-	pk := fmt.Sprintf("COST#%s", date)
-	sk := fmt.Sprintf("%d#%s", cost.Timestamp.UnixNano(), cost.RequestID)
-
-	// Also store in GSI for monthly aggregation
-	// GSI1PK: COST#YYYY-MM
-	// GSI1SK: TIMESTAMP
-	month := cost.Timestamp.Format(common.MonthFormat)
-	gsi1pk := fmt.Sprintf("COST#%s", month)
-	gsi1sk := fmt.Sprintf("%d", cost.Timestamp.UnixNano())
-
-	item := map[string]types.AttributeValue{
-		"PK":                  &types.AttributeValueMemberS{Value: pk},
-		"SK":                  &types.AttributeValueMemberS{Value: sk},
-		"gsi1PK":              &types.AttributeValueMemberS{Value: gsi1pk},
-		"gsi1SK":              &types.AttributeValueMemberS{Value: gsi1sk},
-		"RequestID":           &types.AttributeValueMemberS{Value: cost.RequestID},
-		"OperationType":       &types.AttributeValueMemberS{Value: cost.OperationType},
-		"Timestamp":           &types.AttributeValueMemberS{Value: cost.Timestamp.Format(time.RFC3339)},
-		"TotalCostMicrocents": &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.TotalCostMicroCents, 10)},
-		"DynamoDBReads":       &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.DynamoDBReads, 10)},
-		"DynamoDBWrites":      &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.DynamoDBWrites, 10)},
-		"LambdaInvocations":   &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.LambdaInvocations, 10)},
-		"LambdaDurationMs":    &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.LambdaDurationMs, 10)},
-		"LambdaMemoryMB":      &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.LambdaMemoryMB, 10)},
-		"S3Gets":              &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.S3Gets, 10)},
-		"S3Puts":              &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.S3Puts, 10)},
-		"DataTransferBytes":   &types.AttributeValueMemberN{Value: strconv.FormatInt(cost.DataTransferBytes, 10)},
-		"Type":                &types.AttributeValueMemberS{Value: "OPERATION"},
+	if s == nil || s.db == nil {
+		return fmt.Errorf("cost storage is not initialized")
+	}
+	if cost == nil {
+		return fmt.Errorf("operation cost is nil")
 	}
 
-	// Set TTL to 90 days
-	ttl := cost.Timestamp.Add(90 * 24 * time.Hour).Unix()
-	item["TTL"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(ttl, 10)}
+	ts := cost.Timestamp
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
 
-	_, err := s.client.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(s.tableName),
-		Item:      item,
-	})
+	record := &operationCostRecord{
+		PK: fmt.Sprintf("COST#%s", ts.Format(common.DateFormat)),
+		SK: fmt.Sprintf("%d#%s", ts.UnixNano(), cost.RequestID),
 
-	if err != nil {
+		GSI1PK: fmt.Sprintf("COST#%s", ts.Format(common.MonthFormat)),
+		GSI1SK: fmt.Sprintf("%d", ts.UnixNano()),
+
+		RequestID:           cost.RequestID,
+		OperationType:       cost.OperationType,
+		Timestamp:           ts,
+		TotalCostMicroCents: cost.TotalCostMicroCents,
+		DynamoDBReads:       cost.DynamoDBReads,
+		DynamoDBWrites:      cost.DynamoDBWrites,
+		LambdaInvocations:   cost.LambdaInvocations,
+		LambdaDurationMs:    cost.LambdaDurationMs,
+		LambdaMemoryMB:      cost.LambdaMemoryMB,
+		S3Gets:              cost.S3Gets,
+		S3Puts:              cost.S3Puts,
+		DataTransferBytes:   cost.DataTransferBytes,
+		Type:                "operation",
+		TTL:                 ts.Add(90 * 24 * time.Hour).Unix(),
+	}
+
+	if err := s.db.WithContext(ctx).Model(record).Create(); err != nil {
 		if s.logger != nil {
 			s.logger.Error("failed to save operation cost",
 				zap.String("request_id", cost.RequestID),
+				zap.String("table", s.tableName),
 				zap.Error(err),
 			)
 		}
-		return fmt.Errorf("failed to save operation cost: %w", err)
+		return fmt.Errorf("save operation cost: %w", err)
 	}
 
-	return nil
-}
-
-// GetDailyCosts retrieves daily cost aggregates for a date range
-func (s *Storage) GetDailyCosts(ctx context.Context, startDate, endDate time.Time) ([]DailyCostAggregate, error) {
-	var results []DailyCostAggregate
-
-	// Query each day in the range
-	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
-		date := d.Format(common.DateFormat)
-		pk := fmt.Sprintf("COST_DAILY#%s", date)
-
-		result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
-			TableName: aws.String(s.tableName),
-			Key: map[string]types.AttributeValue{
-				"PK": &types.AttributeValueMemberS{Value: pk},
-				"SK": &types.AttributeValueMemberS{Value: "AGGREGATE"},
-			},
-		})
-
-		if err != nil {
-			if s.logger != nil {
-				s.logger.Error("failed to get daily cost",
-					zap.String("date", date),
-					zap.Error(err),
-				)
-			}
-			continue
-		}
-
-		if result.Item == nil {
-			continue
-		}
-
-		var aggregate DailyCostAggregate
-		if err := unmarshalDailyCostAggregate(result.Item, &aggregate); err != nil {
-			if s.logger != nil {
-				s.logger.Error("failed to unmarshal daily cost",
-					zap.String("date", date),
-					zap.Error(err),
-				)
-			}
-			continue
-		}
-
-		results = append(results, aggregate)
-	}
-
-	return results, nil
-}
-
-// GetMonthlyCost retrieves the monthly cost aggregate
-func (s *Storage) GetMonthlyCost(ctx context.Context, year int, month time.Month) (*MonthlyCostAggregate, error) {
-	pk := fmt.Sprintf("COST_MONTHLY#%04d-%02d", year, month)
-
-	result, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(s.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: pk},
-			"SK": &types.AttributeValueMemberS{Value: "AGGREGATE"},
-		},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get monthly cost: %w", err)
-	}
-
-	if result.Item == nil {
-		// Return empty aggregate if none exists
-		return &MonthlyCostAggregate{
-			Year:  year,
-			Month: int(month),
-		}, nil
-	}
-
-	var aggregate MonthlyCostAggregate
-	if err := unmarshalMonthlyCostAggregate(result.Item, &aggregate); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal monthly cost: %w", err)
-	}
-
-	return &aggregate, nil
-}
-
-// SaveDailyAggregate saves a daily cost aggregate
-func (s *Storage) SaveDailyAggregate(ctx context.Context, aggregate *DailyCostAggregate) error {
-	pk := fmt.Sprintf("COST_DAILY#%s", aggregate.Date)
-
-	item := map[string]types.AttributeValue{
-		"PK":                  &types.AttributeValueMemberS{Value: pk},
-		"SK":                  &types.AttributeValueMemberS{Value: "AGGREGATE"},
-		"Date":                &types.AttributeValueMemberS{Value: aggregate.Date},
-		"TotalCostMicrocents": &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.TotalCostMicrocents, 10)},
-		"RequestCount":        &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.RequestCount, 10)},
-		"UniqueUsers":         &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.UniqueUsers, 10)},
-		"DynamoDBReads":       &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.DynamoDBReads, 10)},
-		"DynamoDBWrites":      &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.DynamoDBWrites, 10)},
-		"LambdaInvocations":   &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.LambdaInvocations, 10)},
-		"LambdaDurationMs":    &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.LambdaDurationMs, 10)},
-		"DataTransferBytes":   &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.DataTransferBytes, 10)},
-		"Type":                &types.AttributeValueMemberS{Value: "DAILY_AGGREGATE"},
-		"UpdatedAt":           &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-	}
-
-	_, err := s.client.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(s.tableName),
-		Item:      item,
-	})
-
-	return err
-}
-
-// SaveMonthlyAggregate saves a monthly cost aggregate
-func (s *Storage) SaveMonthlyAggregate(ctx context.Context, aggregate *MonthlyCostAggregate) error {
-	pk := fmt.Sprintf("COST_MONTHLY#%04d-%02d", aggregate.Year, aggregate.Month)
-
-	item := map[string]types.AttributeValue{
-		"PK":                      &types.AttributeValueMemberS{Value: pk},
-		"SK":                      &types.AttributeValueMemberS{Value: "AGGREGATE"},
-		"Year":                    &types.AttributeValueMemberN{Value: strconv.Itoa(aggregate.Year)},
-		"Month":                   &types.AttributeValueMemberN{Value: strconv.Itoa(aggregate.Month)},
-		"TotalCostMicrocents":     &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.TotalCostMicrocents, 10)},
-		"ProjectedCostMicrocents": &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.ProjectedCostMicrocents, 10)},
-		"RequestCount":            &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.RequestCount, 10)},
-		"UniqueUsers":             &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.UniqueUsers, 10)},
-		"DynamoDBReads":           &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.DynamoDBReads, 10)},
-		"DynamoDBWrites":          &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.DynamoDBWrites, 10)},
-		"LambdaInvocations":       &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.LambdaInvocations, 10)},
-		"LambdaDurationMs":        &types.AttributeValueMemberN{Value: strconv.FormatInt(aggregate.LambdaDurationMs, 10)},
-		"DataTransferGB":          &types.AttributeValueMemberN{Value: fmt.Sprintf("%.6f", aggregate.DataTransferGB)},
-		"Type":                    &types.AttributeValueMemberS{Value: "MONTHLY_AGGREGATE"},
-		"UpdatedAt":               &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-	}
-
-	_, err := s.client.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(s.tableName),
-		Item:      item,
-	})
-
-	return err
-}
-
-// QueryCostsByDate queries cost records for a specific date
-func (s *Storage) QueryCostsByDate(ctx context.Context, date string) ([]map[string]types.AttributeValue, error) {
-	pk := fmt.Sprintf("COST#%s", date)
-
-	input := &dynamodb.QueryInput{
-		TableName:              aws.String(s.tableName),
-		KeyConditionExpression: aws.String("PK = :pk"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk": &types.AttributeValueMemberS{Value: pk},
-		},
-	}
-
-	result, err := s.client.Query(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query costs by date: %w", err)
-	}
-
-	return result.Items, nil
-}
-
-// DailyCostAggregate represents aggregated costs for a single day
-type DailyCostAggregate struct {
-	Date                string
-	TotalCostMicrocents int64
-	RequestCount        int64
-	UniqueUsers         int64
-	DynamoDBReads       int64
-	DynamoDBWrites      int64
-	LambdaInvocations   int64
-	LambdaDurationMs    int64
-	DataTransferBytes   int64
-}
-
-// MonthlyCostAggregate represents aggregated costs for a month
-type MonthlyCostAggregate struct {
-	Year                    int
-	Month                   int
-	TotalCostMicrocents     int64
-	ProjectedCostMicrocents int64
-	RequestCount            int64
-	UniqueUsers             int64
-	DynamoDBReads           int64
-	DynamoDBWrites          int64
-	LambdaInvocations       int64
-	LambdaDurationMs        int64
-	DataTransferGB          float64
-}
-
-// Helper functions for unmarshaling
-func unmarshalDailyCostAggregate(item map[string]types.AttributeValue, aggregate *DailyCostAggregate) error {
-	if v, ok := item["Date"].(*types.AttributeValueMemberS); ok {
-		aggregate.Date = v.Value
-	}
-	if v, ok := item["TotalCostMicrocents"].(*types.AttributeValueMemberN); ok {
-		aggregate.TotalCostMicrocents, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["RequestCount"].(*types.AttributeValueMemberN); ok {
-		aggregate.RequestCount, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["UniqueUsers"].(*types.AttributeValueMemberN); ok {
-		aggregate.UniqueUsers, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["DynamoDBReads"].(*types.AttributeValueMemberN); ok {
-		aggregate.DynamoDBReads, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["DynamoDBWrites"].(*types.AttributeValueMemberN); ok {
-		aggregate.DynamoDBWrites, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["LambdaInvocations"].(*types.AttributeValueMemberN); ok {
-		aggregate.LambdaInvocations, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["LambdaDurationMs"].(*types.AttributeValueMemberN); ok {
-		aggregate.LambdaDurationMs, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["DataTransferBytes"].(*types.AttributeValueMemberN); ok {
-		aggregate.DataTransferBytes, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	return nil
-}
-
-func unmarshalMonthlyCostAggregate(item map[string]types.AttributeValue, aggregate *MonthlyCostAggregate) error {
-	if v, ok := item["Year"].(*types.AttributeValueMemberN); ok {
-		aggregate.Year, _ = strconv.Atoi(v.Value)
-	}
-	if v, ok := item["Month"].(*types.AttributeValueMemberN); ok {
-		aggregate.Month, _ = strconv.Atoi(v.Value)
-	}
-	if v, ok := item["TotalCostMicrocents"].(*types.AttributeValueMemberN); ok {
-		aggregate.TotalCostMicrocents, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["ProjectedCostMicrocents"].(*types.AttributeValueMemberN); ok {
-		aggregate.ProjectedCostMicrocents, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["RequestCount"].(*types.AttributeValueMemberN); ok {
-		aggregate.RequestCount, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["UniqueUsers"].(*types.AttributeValueMemberN); ok {
-		aggregate.UniqueUsers, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["DynamoDBReads"].(*types.AttributeValueMemberN); ok {
-		aggregate.DynamoDBReads, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["DynamoDBWrites"].(*types.AttributeValueMemberN); ok {
-		aggregate.DynamoDBWrites, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["LambdaInvocations"].(*types.AttributeValueMemberN); ok {
-		aggregate.LambdaInvocations, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["LambdaDurationMs"].(*types.AttributeValueMemberN); ok {
-		aggregate.LambdaDurationMs, _ = strconv.ParseInt(v.Value, 10, 64)
-	}
-	if v, ok := item["DataTransferGB"].(*types.AttributeValueMemberN); ok {
-		aggregate.DataTransferGB, _ = strconv.ParseFloat(v.Value, 64)
-	}
 	return nil
 }

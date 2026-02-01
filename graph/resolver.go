@@ -3,7 +3,6 @@ package graph
 import (
 	"context"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -44,7 +43,6 @@ type Resolver struct {
 	MastodonConv        mastodon.Converter
 	Logger              *zap.Logger
 	SubscriptionManager *SubscriptionManager // For GraphQL subscriptions
-	DynamoClient        *dynamodb.Client     // Needed for subscription manager
 	AIService           *ai.AIService        // AI analysis service
 }
 
