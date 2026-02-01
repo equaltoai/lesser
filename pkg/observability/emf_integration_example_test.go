@@ -1,15 +1,14 @@
 package observability
 
 import (
-	"context"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -51,17 +50,18 @@ func TestEMFMetricsService_RecordRequestMetrics(t *testing.T) {
 	svc := NewEMFMetricsService(logger)
 	require.NotNil(t, svc.collector)
 
-	req := lift.NewRequest(nil)
-	req.Method = "GET"
-	req.Path = "/health"
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.Response.StatusCode = 204
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: "GET",
+			Path:   "/health",
+		},
+	}
 
 	svc.RecordRequestMetrics(ctx, &PerformanceMetrics{
 		ExecutionDuration: 25 * time.Millisecond,
 		ColdStartDuration: 10 * time.Millisecond,
 		MemoryUsed:        123,
-	}, nil)
+	}, 204, nil)
 
 	require.NotEmpty(t, svc.collector.buffer.metrics)
 }
@@ -97,25 +97,26 @@ func TestEMFIntegration_MiddlewareAndFlushError(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	svc := NewEMFMetricsService(logger)
 
-	req := lift.NewRequest(nil)
-	req.Method = "GET"
-	req.Path = "/foo"
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.Response.StatusCode = 204
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: "GET",
+			Path:   "/foo",
+		},
+	}
 
 	mw := CreateEMFPerformanceMonitoringMiddleware(svc)
-	handler := mw(lift.HandlerFunc(func(c *lift.Context) error {
-		c.Response.StatusCode = 500
-		return assert.AnError
-	}))
+	handler := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(500, ""), assert.AnError
+	})
 
-	require.ErrorIs(t, handler.Handle(ctx), assert.AnError)
+	_, err := handler(ctx)
+	require.ErrorIs(t, err, assert.AnError)
 
 	// Force FlushMetrics error path via NaN metric value (JSON cannot encode NaN).
 	svc.collector.recordMetricWithDimensions("BadMetric", math.NaN(), "Count", map[string]string{"Operation": "op"})
 	require.Error(t, svc.FlushMetrics())
 	svc.Stop()
 
-	blank := lift.NewContext(context.Background(), lift.NewRequest(nil))
+	blank := &apptheory.Context{}
 	assert.Equal(t, HealthStatusUnknown, getOperationName(blank))
 }

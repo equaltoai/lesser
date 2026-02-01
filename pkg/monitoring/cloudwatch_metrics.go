@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
@@ -95,18 +94,6 @@ func NewCloudWatchMetrics(awsConfig aws.Config, config MetricConfig, logger *zap
 	}
 
 	return cwm
-}
-
-// RecordLiftMetric records a Lift framework specific metric
-func (cwm *CloudWatchMetrics) RecordLiftMetric(ctx *lift.Context, name string, value float64, unit types.StandardUnit, extraDims map[string]string) {
-	dimensions := cwm.buildDimensions(map[string]string{
-		"Operation":   cwm.getOperationName(ctx),
-		"Method":      ctx.Request.Method,
-		"TenantID":    ctx.TenantID(),
-		"Environment": cwm.environment,
-	}, extraDims)
-
-	cwm.addMetric(name, value, unit, dimensions)
 }
 
 // RecordDynamORMMetrics records comprehensive DynamoDB operation metrics
@@ -278,14 +265,6 @@ func (cwm *CloudWatchMetrics) buildDimensions(baseDims, extraDims map[string]str
 	}
 
 	return dimensions
-}
-
-// getOperationName extracts operation name from Lift context
-func (cwm *CloudWatchMetrics) getOperationName(ctx *lift.Context) string {
-	if ctx.Request.Path != "" && ctx.Request.Method != "" {
-		return fmt.Sprintf("%s_%s", ctx.Request.Method, sanitizePath(ctx.Request.Path))
-	}
-	return StatusUnknown
 }
 
 // flushToCloudWatch sends metrics to CloudWatch

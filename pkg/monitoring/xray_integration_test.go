@@ -6,13 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-xray-sdk-go/v2/xray"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -140,35 +138,6 @@ func TestXRayTracer_Enabled(t *testing.T) {
 	require.NoError(t, tracer.TraceCostOperation(ctx, "dynamodb", 123, func(context.Context) error {
 		return nil
 	}))
-}
-
-func TestXRayTracer_TraceLiftHandler_UsesLambdaContext(t *testing.T) {
-	logger := zap.NewNop()
-	t.Setenv("_X_AMZN_TRACE_ID", "trace")
-	t.Setenv("AWS_REGION", "us-east-1")
-	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
-
-	tracer := NewXRayTracer("svc", "test", logger)
-	require.True(t, tracer.IsEnabled())
-
-	lc := &lambdacontext.LambdaContext{
-		AwsRequestID:       "aws-req",
-		InvokedFunctionArn: "arn:aws:lambda:us-east-1:123:function:test",
-	}
-	base := lambdacontext.NewContext(context.Background(), lc)
-
-	liftCtx := lift.NewContext(base, &lift.Request{
-		Method:  "GET",
-		Path:    "/inbox",
-		Headers: map[string]string{"X-Test": "1"},
-	})
-	liftCtx.RequestID = "req"
-	liftCtx.SetTenantID("tenant")
-
-	wrapped := tracer.TraceLiftHandler("handler", func(*lift.Context) error {
-		return errors.New("handler boom")
-	})
-	require.Error(t, wrapped(liftCtx))
 }
 
 func TestXRayTracer_InstrumentClient_ConfigErrorFallsBack(t *testing.T) {

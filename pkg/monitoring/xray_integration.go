@@ -2,11 +2,9 @@ package monitoring
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
-	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -14,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-xray-sdk-go/v2/instrumentation/awsv2"
 	"github.com/aws/aws-xray-sdk-go/v2/xray"
-	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
@@ -65,63 +62,6 @@ func (xt *XRayTracer) InstrumentAWSConfig(cfg aws.Config) aws.Config {
 	awsv2.AWSV2Instrumentor(&cfg.APIOptions)
 
 	return cfg
-}
-
-// TraceLiftHandler wraps a Lift handler with X-Ray tracing
-func (xt *XRayTracer) TraceLiftHandler(handlerName string, handler func(*lift.Context) error) func(*lift.Context) error {
-	if !xt.enabled {
-		return handler
-	}
-
-	return func(ctx *lift.Context) error {
-		// Start X-Ray segment for the handler
-		_, seg := xray.BeginSegment(context.Background(), xt.serviceName)
-		defer seg.Close(nil)
-
-		// Add annotations for searchability
-		_ = seg.AddAnnotation("handler", handlerName)
-		_ = seg.AddAnnotation("environment", xt.environment)
-		_ = seg.AddAnnotation("method", ctx.Request.Method)
-		_ = seg.AddAnnotation("path", ctx.Request.Path)
-
-		// Add metadata for detailed tracing
-		_ = seg.AddMetadata("request", map[string]interface{}{
-			"headers":    ctx.Request.Headers,
-			"tenant_id":  ctx.TenantID(),
-			"request_id": ctx.RequestID,
-		})
-
-		// Track cold start
-		if lambdaCtx, ok := lambdacontext.FromContext(ctx.Context); ok {
-			_ = seg.AddAnnotation("cold_start", true)
-			_ = seg.AddMetadata("lambda", map[string]interface{}{
-				"request_id":    lambdaCtx.AwsRequestID,
-				"function_name": lambdaCtx.InvokedFunctionArn,
-			})
-		}
-
-		// Execute handler with X-Ray context
-		start := time.Now()
-		err := handler(ctx)
-		duration := time.Since(start)
-
-		// Record error if present
-		if err != nil {
-			_ = seg.AddError(err)
-			_ = seg.AddMetadata("error", map[string]interface{}{
-				"message": err.Error(),
-				"type":    fmt.Sprintf("%T", err),
-			})
-		}
-
-		// Add response metadata
-		_ = seg.AddMetadata("response", map[string]interface{}{
-			"duration_ms": duration.Milliseconds(),
-			"success":     err == nil,
-		})
-
-		return err
-	}
 }
 
 // TraceDynamoDBOperation traces a DynamoDB operation
