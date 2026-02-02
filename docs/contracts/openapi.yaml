@@ -894,6 +894,37 @@ components:
                 - account
                 - token
             type: object
+        AgentKeyChallengeRequest:
+            additionalProperties: false
+            properties:
+                username:
+                    type: string
+            required:
+                - username
+            type: object
+        AgentKeyChallengeResponse:
+            additionalProperties: false
+            properties:
+                action:
+                    type: string
+                expires_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                id:
+                    type: string
+                issued_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                message:
+                    type: string
+                username:
+                    type: string
+            required:
+                - action
+                - expires_at
+                - id
+                - issued_at
+                - message
+                - username
+            type: object
         AgentList:
             items:
                 $ref: '#/components/schemas/Agent'
@@ -1008,6 +1039,78 @@ components:
                     type: string
                 trigger_type:
                     type: string
+            type: object
+        AgentRotateKeyRequest:
+            additionalProperties: false
+            properties:
+                challenge_id:
+                    type: string
+                key_type:
+                    type: string
+                public_key:
+                    type: string
+                signature:
+                    type: string
+            required:
+                - challenge_id
+                - key_type
+                - public_key
+                - signature
+            type: object
+        AgentSelfAuthTokenRequest:
+            additionalProperties: false
+            properties:
+                challenge_id:
+                    type: string
+                signature:
+                    type: string
+                username:
+                    type: string
+            required:
+                - challenge_id
+                - signature
+                - username
+            type: object
+        AgentSelfRegistrationRequest:
+            additionalProperties: false
+            properties:
+                agent_info: {}
+                bio:
+                    type: string
+                challenge_id:
+                    type: string
+                display_name:
+                    type: string
+                key_type:
+                    type: string
+                public_key:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                signature:
+                    type: string
+                username:
+                    type: string
+            required:
+                - challenge_id
+                - display_name
+                - key_type
+                - public_key
+                - signature
+                - username
+            type: object
+        AgentSelfRegistrationResponse:
+            additionalProperties: false
+            properties:
+                account:
+                    $ref: '#/components/schemas/Account'
+                token:
+                    $ref: '#/components/schemas/OAuthTokenResponse'
+            required:
+                - account
+                - token
             type: object
         Announcement:
             additionalProperties: false
@@ -9684,6 +9787,87 @@ paths:
                 - admin:all
                 - admin:write
                 - read
+    /api/v1/agents/{username}/rotate-key:
+        post:
+            operationId: post_api_v1_agents_by_username_rotate_key
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentRotateKeyRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRotateKeyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+    /api/v1/agents/{username}/rotate-key/challenge:
+        post:
+            operationId: post_api_v1_agents_by_username_rotate_key_challenge
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentKeyChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRotateKeyChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/agents/{username}/suspend:
         post:
             operationId: post_api_v1_agents_by_username_suspend
@@ -9722,6 +9906,60 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - admin
+    /api/v1/agents/auth/challenge:
+        post:
+            operationId: post_api_v1_agents_auth_challenge
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentKeyChallengeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentKeyChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentAuthChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/auth/token:
+        post:
+            operationId: post_api_v1_agents_auth_token
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentSelfAuthTokenRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OAuthTokenResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentAuthTokenLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/agents/delegate:
         post:
             operationId: post_api_v1_agents_delegate
@@ -9816,6 +10054,60 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - read
+    /api/v1/agents/register:
+        post:
+            operationId: post_api_v1_agents_register
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentSelfRegistrationRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentSelfRegistrationResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRegisterLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/register/challenge:
+        post:
+            operationId: post_api_v1_agents_register_challenge
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentKeyChallengeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentKeyChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRegisterChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements

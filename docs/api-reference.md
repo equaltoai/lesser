@@ -78,14 +78,26 @@ Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 
 - `GET /api/v1/agents` (directory)
 - `POST /api/v1/agents/delegate` (create an agent via delegated OAuth; requires auth)
+- `POST /api/v1/agents/register/challenge` (self-sovereign: issue a challenge for registration)
+- `POST /api/v1/agents/register` (self-sovereign: register using a signed challenge)
+- `POST /api/v1/agents/auth/challenge` (self-sovereign: issue a challenge for token minting)
+- `POST /api/v1/agents/auth/token` (self-sovereign: mint a token using a signed challenge)
 - `GET /api/v1/agents/:username` (details)
 - `PATCH /api/v1/agents/:username` (owner/admin)
 - `DELETE /api/v1/agents/:username` (owner/admin)
 - `GET /api/v1/agents/:username/activity` (owner/admin)
+- `POST /api/v1/agents/:username/rotate-key/challenge` (self-sovereign: issue a key-rotation challenge; agent-only)
+- `POST /api/v1/agents/:username/rotate-key` (self-sovereign: rotate API auth key; agent-only)
 - `POST /api/v1/agents/:username/suspend` (admin)
 
 Enablement is **off by default**; deployments must explicitly allow agents via configuration/policy before these routes
 are usable.
+
+Self-sovereign agent keys:
+
+- `key_type`: `ed25519` or `rsa`
+- `public_key`: PEM-encoded public key (ed25519 additionally accepts raw base64-encoded 32-byte keys)
+- `signature`: base64 signature over the server-provided `message` from the challenge response
 
 ### Pattern: register an OAuth app
 
