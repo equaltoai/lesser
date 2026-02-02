@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	ddbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -563,19 +562,6 @@ func TestStreamRouterHandler_ProcessAccountEvent_Success_Round12(t *testing.T) {
 	}
 
 	require.NoError(t, h.processAccountEvent(ctx, requestID, record))
-}
-
-func TestConvertEventAttributeValue_Round12(t *testing.T) {
-	require.IsType(t, &ddbTypes.AttributeValueMemberS{}, convertEventAttributeValue(events.NewStringAttribute("x")))
-	require.IsType(t, &ddbTypes.AttributeValueMemberN{}, convertEventAttributeValue(events.NewNumberAttribute("123")))
-	require.IsType(t, &ddbTypes.AttributeValueMemberBOOL{}, convertEventAttributeValue(events.NewBooleanAttribute(true)))
-	require.IsType(t, &ddbTypes.AttributeValueMemberNULL{}, convertEventAttributeValue(events.NewNullAttribute()))
-	require.IsType(t, &ddbTypes.AttributeValueMemberL{}, convertEventAttributeValue(events.NewListAttribute([]events.DynamoDBAttributeValue{events.NewStringAttribute("x")})))
-	require.IsType(t, &ddbTypes.AttributeValueMemberM{}, convertEventAttributeValue(events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{"k": events.NewStringAttribute("v")})))
-	require.IsType(t, &ddbTypes.AttributeValueMemberSS{}, convertEventAttributeValue(events.NewStringSetAttribute([]string{"a"})))
-	require.IsType(t, &ddbTypes.AttributeValueMemberNS{}, convertEventAttributeValue(events.NewNumberSetAttribute([]string{"1"})))
-	require.IsType(t, &ddbTypes.AttributeValueMemberBS{}, convertEventAttributeValue(events.NewBinarySetAttribute([][]byte{[]byte("x")})))
-	require.IsType(t, &ddbTypes.AttributeValueMemberB{}, convertEventAttributeValue(events.NewBinaryAttribute([]byte("x"))))
 }
 
 type fakePublisher struct {

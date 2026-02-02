@@ -12,8 +12,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory/pkg/core"
@@ -68,13 +66,13 @@ type StreamMessage struct {
 
 // Notification represents a notification extracted from DynamoDB stream
 type Notification struct {
-	ID        string    `dynamodbav:"id"`
-	Type      string    `dynamodbav:"type"`                // follow, mention, favourite, reblog
-	Username  string    `dynamodbav:"username"`            // Recipient of the notification
-	AccountID string    `dynamodbav:"account_id"`          // Who triggered the notification
-	StatusID  string    `dynamodbav:"status_id,omitempty"` // Related status (if any)
-	Read      bool      `dynamodbav:"read"`
-	CreatedAt time.Time `dynamodbav:"created_at"`
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`                // follow, mention, favourite, reblog
+	Username  string    `json:"username"`            // Recipient of the notification
+	AccountID string    `json:"account_id"`          // Who triggered the notification
+	StatusID  string    `json:"status_id,omitempty"` // Related status (if any)
+	Read      bool      `json:"read"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // StreamRouterHandler handles DynamoDB stream events and routes them to WebSocket subscribers
@@ -662,28 +660,17 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, requestID 
 	return nil
 }
 
-// processNotificationEvent processes notification events using DynamORM stream utilities
+// processNotificationEvent processes notification events using TableTheory stream utilities
 func (h *StreamRouterHandler) processNotificationEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Extract the notification from the DynamoDB image
 	if record.EventName != eventNameInsert {
 		return nil
 	}
 
-	// Convert from events.DynamoDBAttributeValue to SDK v2 types
-	notifItem := make(map[string]types.AttributeValue)
-	for k, v := range record.Change.NewImage {
-		notifItem[k] = convertEventAttributeValue(v)
-	}
-
 	// Check if this is a notification record
-	pkAttr, hasPK := notifItem["PK"]
-	if !hasPK {
+	pk, err := stream.GetStringAttribute(record, "PK")
+	if err != nil {
 		return nil
-	}
-
-	pk := ""
-	if s, ok := pkAttr.(*types.AttributeValueMemberS); ok {
-		pk = s.Value
 	}
 
 	// Only process NOTIFICATION# records
@@ -694,13 +681,13 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx context.Context, requ
 	// Extract the notification (struct defined at top level)
 
 	var notifRecord struct {
-		PK           string        `dynamodbav:"PK"`
-		SK           string        `dynamodbav:"SK"`
-		Notification *Notification `dynamodbav:"Notification"`
-		CreatedAt    time.Time     `dynamodbav:"CreatedAt"`
+		PK           string        `json:"PK"`
+		SK           string        `json:"SK"`
+		Notification *Notification `json:"Notification"`
+		CreatedAt    time.Time     `json:"CreatedAt"`
 	}
 
-	if err := attributevalue.UnmarshalMap(notifItem, &notifRecord); err != nil {
+	if err := stream.UnmarshalItem(record, &notifRecord); err != nil {
 		h.logger.Error("failed to unmarshal notification record",
 			zap.String("request_id", requestID),
 			zap.Error(err))
@@ -771,25 +758,20 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx context.Context, requ
 	return nil
 }
 
-// processAccountEvent processes account/user events using DynamORM stream utilities
+// processAccountEvent processes account/user events using TableTheory stream utilities
 func (h *StreamRouterHandler) processAccountEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Account updates (profile changes, etc.)
 	if record.EventName != eventNameModify {
 		return nil
 	}
 
-	// Convert from events.DynamoDBAttributeValue to SDK v2 types
-	accountItem := make(map[string]types.AttributeValue)
-	for k, v := range record.Change.NewImage {
-		accountItem[k] = convertEventAttributeValue(v)
-	}
-
 	// Get the account ID
-	accountID := ""
-	if attr, ok := accountItem["ID"]; ok {
-		if s, ok := attr.(*types.AttributeValueMemberS); ok {
-			accountID = s.Value
-		}
+	accountID, err := stream.GetStringAttribute(record, "ID")
+	if err != nil {
+		accountID, err = stream.GetStringAttribute(record, "id")
+	}
+	if err != nil {
+		accountID = ""
 	}
 
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
@@ -831,42 +813,6 @@ func (h *StreamRouterHandler) processAccountEvent(ctx context.Context, requestID
 		zap.Int("payload_size", len(payload)))
 
 	return nil
-}
-
-// convertEventAttributeValue converts from events.DynamoDBAttributeValue to SDK v2 types.AttributeValue
-func convertEventAttributeValue(attr events.DynamoDBAttributeValue) types.AttributeValue {
-	switch attr.DataType() {
-	case events.DataTypeString:
-		return &types.AttributeValueMemberS{Value: attr.String()}
-	case events.DataTypeNumber:
-		return &types.AttributeValueMemberN{Value: attr.Number()}
-	case events.DataTypeBinary:
-		return &types.AttributeValueMemberB{Value: attr.Binary()}
-	case events.DataTypeBoolean:
-		return &types.AttributeValueMemberBOOL{Value: attr.Boolean()}
-	case events.DataTypeNull:
-		return &types.AttributeValueMemberNULL{Value: true}
-	case events.DataTypeList:
-		list := make([]types.AttributeValue, 0, len(attr.List()))
-		for _, item := range attr.List() {
-			list = append(list, convertEventAttributeValue(item))
-		}
-		return &types.AttributeValueMemberL{Value: list}
-	case events.DataTypeMap:
-		m := make(map[string]types.AttributeValue)
-		for k, v := range attr.Map() {
-			m[k] = convertEventAttributeValue(v)
-		}
-		return &types.AttributeValueMemberM{Value: m}
-	case events.DataTypeStringSet:
-		return &types.AttributeValueMemberSS{Value: attr.StringSet()}
-	case events.DataTypeNumberSet:
-		return &types.AttributeValueMemberNS{Value: attr.NumberSet()}
-	case events.DataTypeBinarySet:
-		return &types.AttributeValueMemberBS{Value: attr.BinarySet()}
-	default:
-		return nil
-	}
 }
 
 // Helper function to extract username from actor ID
@@ -1525,17 +1471,61 @@ func (h *StreamRouterHandler) processTombstoneEvent(ctx context.Context, request
 		return nil
 	}
 
-	// Convert from events.DynamoDBAttributeValue to SDK v2 types
-	tombstoneItem := make(map[string]types.AttributeValue)
-	for k, v := range record.Change.NewImage {
-		tombstoneItem[k] = convertEventAttributeValue(v)
+	// Unmarshal the tombstone record
+	var recordModel struct {
+		ID               string    `json:"ID"`
+		IDLegacy         string    `json:"id"`
+		Type             string    `json:"Type"`
+		TypeLegacy       string    `json:"type"`
+		FormerType       string    `json:"FormerType"`
+		FormerTypeLegacy string    `json:"formerType"`
+		Deleted          time.Time `json:"Deleted"`
+		DeletedLegacy    time.Time `json:"deleted"`
+		DeletedBy        string    `json:"DeletedBy"`
+		DeletedByLegacy  string    `json:"deletedBy"`
 	}
 
-	// Unmarshal the tombstone record
-	var tombstone models.Tombstone
-	if err := attributevalue.UnmarshalMap(tombstoneItem, &tombstone); err != nil {
+	if err := stream.UnmarshalItem(record, &recordModel); err != nil {
 		logger.Error("failed to unmarshal tombstone record", zap.Error(err))
 		return nil // Don't fail the stream processing
+	}
+
+	objectID := recordModel.ID
+	if objectID == "" {
+		objectID = recordModel.IDLegacy
+	}
+	objectType := recordModel.Type
+	if objectType == "" {
+		objectType = recordModel.TypeLegacy
+	}
+	formerType := recordModel.FormerType
+	if formerType == "" {
+		formerType = recordModel.FormerTypeLegacy
+	}
+	deletedAt := recordModel.Deleted
+	if deletedAt.IsZero() {
+		deletedAt = recordModel.DeletedLegacy
+	}
+	deletedBy := recordModel.DeletedBy
+	if deletedBy == "" {
+		deletedBy = recordModel.DeletedByLegacy
+	}
+
+	tombstone := models.Tombstone{
+		ID:         objectID,
+		Type:       objectType,
+		FormerType: formerType,
+		Deleted:    deletedAt,
+		DeletedBy:  deletedBy,
+	}
+
+	if tombstone.ID == "" || tombstone.DeletedBy == "" || tombstone.FormerType == "" || tombstone.Deleted.IsZero() {
+		logger.Debug("invalid tombstone record, skipping",
+			zap.String("object_id", tombstone.ID),
+			zap.String("deleted_by", tombstone.DeletedBy),
+			zap.String("former_type", tombstone.FormerType),
+		)
+		return nil
 	}
 
 	logger = logger.With(
