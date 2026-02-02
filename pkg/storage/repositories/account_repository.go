@@ -141,18 +141,36 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 
 	// Create User model with enhanced validation and defaults
 	userModel := &models.User{
-		Username:        user.Username,
-		Email:           user.Email,
-		PasswordHash:    user.PasswordHash,
-		DisplayName:     user.DisplayName,
-		Approved:        user.Approved,
-		Suspended:       user.Suspended,
-		Silenced:        user.Silenced,
-		Role:            user.Role,
-		Locale:          user.Locale,
-		RecoveryMethods: user.RecoveryMethods,
-		CreatedAt:       user.CreatedAt,
-		UpdatedAt:       user.UpdatedAt,
+		Username:           user.Username,
+		Email:              user.Email,
+		PasswordHash:       user.PasswordHash,
+		DisplayName:        user.DisplayName,
+		Note:               user.Note,
+		Avatar:             user.Avatar,
+		Header:             user.Header,
+		URL:                user.URL,
+		Locked:             user.Locked,
+		Discoverable:       user.Discoverable,
+		Fields:             user.Fields,
+		AllowNSFW:          user.AllowNSFW,
+		RequireNSFWWarning: user.RequireNSFWWarning,
+		Metadata:           user.Metadata,
+		IsAgent:            user.IsAgent,
+		AgentType:          user.AgentType,
+		AgentCapabilities:  user.AgentCapabilities,
+		AgentVersion:       user.AgentVersion,
+		AgentOwner:         user.AgentOwner,
+		AgentCreatedBy:     user.AgentCreatedBy,
+		AgentPublicKey:     user.AgentPublicKey,
+		AgentKeyType:       user.AgentKeyType,
+		Approved:           user.Approved,
+		Suspended:          user.Suspended,
+		Silenced:           user.Silenced,
+		Role:               user.Role,
+		Locale:             user.Locale,
+		RecoveryMethods:    user.RecoveryMethods,
+		CreatedAt:          user.CreatedAt,
+		UpdatedAt:          user.UpdatedAt,
 	}
 
 	// Set defaults using enhanced patterns
@@ -635,6 +653,14 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 		AllowNSFW:          model.AllowNSFW,
 		RequireNSFWWarning: model.RequireNSFWWarning,
 		Metadata:           model.Metadata,
+		IsAgent:            model.IsAgent,
+		AgentType:          model.AgentType,
+		AgentCapabilities:  model.AgentCapabilities,
+		AgentVersion:       model.AgentVersion,
+		AgentOwner:         model.AgentOwner,
+		AgentCreatedBy:     model.AgentCreatedBy,
+		AgentPublicKey:     model.AgentPublicKey,
+		AgentKeyType:       model.AgentKeyType,
 		Version:            model.Version,
 	}
 
@@ -1321,6 +1347,14 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 	userModel.Fields = account.User.Fields
 	userModel.Email = strings.TrimSpace(account.User.Email)
 	userModel.Locale = strings.TrimSpace(account.User.Locale)
+	userModel.IsAgent = account.User.IsAgent
+	userModel.AgentType = strings.TrimSpace(account.User.AgentType)
+	userModel.AgentCapabilities = account.User.AgentCapabilities
+	userModel.AgentVersion = strings.TrimSpace(account.User.AgentVersion)
+	userModel.AgentOwner = strings.TrimSpace(account.User.AgentOwner)
+	userModel.AgentCreatedBy = strings.TrimSpace(account.User.AgentCreatedBy)
+	userModel.AgentPublicKey = strings.TrimSpace(account.User.AgentPublicKey)
+	userModel.AgentKeyType = strings.TrimSpace(account.User.AgentKeyType)
 	userModel.Approved = account.User.Approved
 	userModel.Suspended = account.User.Suspended
 	userModel.Silenced = account.User.Silenced
@@ -1363,6 +1397,14 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 	updateBuilder.Set("Fields", userModel.Fields)
 	updateBuilder.Set("Email", userModel.Email)
 	updateBuilder.Set("Locale", userModel.Locale)
+	updateBuilder.Set("IsAgent", userModel.IsAgent)
+	updateBuilder.Set("AgentType", userModel.AgentType)
+	updateBuilder.Set("AgentCapabilities", userModel.AgentCapabilities)
+	updateBuilder.Set("AgentVersion", userModel.AgentVersion)
+	updateBuilder.Set("AgentOwner", userModel.AgentOwner)
+	updateBuilder.Set("AgentCreatedBy", userModel.AgentCreatedBy)
+	updateBuilder.Set("AgentPublicKey", userModel.AgentPublicKey)
+	updateBuilder.Set("AgentKeyType", userModel.AgentKeyType)
 	updateBuilder.Set("Approved", userModel.Approved)
 	updateBuilder.Set("Suspended", userModel.Suspended)
 	updateBuilder.Set("Silenced", userModel.Silenced)

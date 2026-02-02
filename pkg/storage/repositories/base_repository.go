@@ -16,6 +16,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
@@ -392,6 +393,13 @@ func (r *BaseRepository[T]) transactWriteBatch(ctx context.Context, items []T) e
 
 // Get retrieves a single item by primary and sort key
 func (r *BaseRepository[T]) Get(ctx context.Context, pk, sk string, result T) error {
+	if r == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("repository is nil"))
+	}
+	if r.db == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("%s database client is nil", r.repoName))
+	}
+
 	// Track cost if cost service is available
 	if r.costService != nil {
 		operation := cost.DynamoOperation{

@@ -75,6 +75,12 @@ type Claims struct {
 	TokenVersion int    `json:"tv,omitempty"`  // Token version for invalidation
 	IPAddress    string `json:"ip,omitempty"`  // IP binding (optional)
 	UserAgent    string `json:"ua,omitempty"`  // User agent binding (optional)
+
+	// Agent context (LLM agents)
+	IsAgent        bool   `json:"is_agent,omitempty"`
+	AgentType      string `json:"agent_type,omitempty"`
+	DelegatedBy    string `json:"delegated_by,omitempty"`
+	AgentSessionID string `json:"agent_session_id,omitempty"`
 }
 
 // OAuthService handles OAuth 2.0 operations
@@ -248,27 +254,47 @@ func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challeng
 
 // GenerateTokens generates both access and refresh tokens
 func (s *OAuthService) GenerateTokens(ctx context.Context, username, clientID, ipAddress string, scopes []string) (accessToken, refreshToken string, err error) {
-	// Generate access token
-	accessToken, err = s.generateAccessToken(username, clientID, scopes)
+	return s.GenerateTokensWithAccessTokenTTL(ctx, username, clientID, ipAddress, scopes, AccessTokenDuration)
+}
+
+// GenerateTokensWithAccessTokenTTL generates both access and refresh tokens with a custom access token TTL.
+func (s *OAuthService) GenerateTokensWithAccessTokenTTL(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration) (accessToken, refreshToken string, err error) {
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = AccessTokenDuration
+	}
+
+	isAgent, agentType, delegatedBy := s.resolveAgentClaims(ctx, username)
+	agentSessionID := ""
+	sessionID := ""
+	if isAgent {
+		agentSessionID = generateSecureJTI()
+		sessionID = agentSessionID
+	}
+
+	accessToken, err = s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
+		ExpiresAt:      time.Now().Add(accessTokenTTL),
+		IPAddress:      ipAddress,
+		SessionID:      sessionID,
+		IsAgent:        isAgent,
+		AgentType:      agentType,
+		DelegatedBy:    delegatedBy,
+		AgentSessionID: agentSessionID,
+	})
 	if err != nil {
-		// Log token generation failure
 		if s.auditLogger != nil {
 			s.auditLogger.LogOAuthToken(ctx, clientID, username, ipAddress, AuditOAuthTokenFailed, scopes, false, err)
 		}
 		return "", "", err
 	}
 
-	// Generate refresh token
 	refreshToken, err = s.generateRefreshToken()
 	if err != nil {
-		// Log token generation failure
 		if s.auditLogger != nil {
 			s.auditLogger.LogOAuthToken(ctx, clientID, username, ipAddress, AuditOAuthTokenFailed, scopes, false, err)
 		}
 		return "", "", err
 	}
 
-	// Log successful token issuance
 	if s.auditLogger != nil {
 		s.auditLogger.LogOAuthToken(ctx, clientID, username, ipAddress, AuditOAuthTokenIssued, scopes, true, nil)
 	}
@@ -276,36 +302,82 @@ func (s *OAuthService) GenerateTokens(ctx context.Context, username, clientID, i
 	return accessToken, refreshToken, nil
 }
 
-// generateAccessToken creates a JWT access token with enhanced security
-func (s *OAuthService) generateAccessToken(username, clientID string, scopes []string) (string, error) {
-	return s.generateAccessTokenWithContext(username, clientID, scopes, "", "", 0, "", "")
+type accessTokenMetadata struct {
+	SessionID    string
+	DeviceID     string
+	TokenVersion int
+	IPAddress    string
+	UserAgent    string
+	ExpiresAt    time.Time
+
+	IsAgent        bool
+	AgentType      string
+	DelegatedBy    string
+	AgentSessionID string
 }
 
-// generateAccessTokenWithContext creates a JWT access token with enhanced security context
-func (s *OAuthService) generateAccessTokenWithContext(username, clientID string, scopes []string, sessionID, deviceID string, tokenVersion int, ipAddress, userAgent string) (string, error) {
+// generateAccessTokenWithMetadata creates a JWT access token with enhanced security context.
+func (s *OAuthService) generateAccessTokenWithMetadata(username, clientID string, scopes []string, meta accessTokenMetadata) (string, error) {
 	now := time.Now()
+	expiresAt := meta.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(AccessTokenDuration)
+	}
 
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   username,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTokenDuration)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			NotBefore: jwt.NewNumericDate(now),
 			// Add unique JTI for token tracking
 			ID: generateSecureJTI(),
 		},
-		Username:     username,
-		ClientID:     clientID,
-		Scopes:       scopes,
-		SessionID:    sessionID,
-		DeviceID:     deviceID,
-		TokenVersion: tokenVersion,
-		IPAddress:    ipAddress,
-		UserAgent:    userAgent,
+		Username:       username,
+		ClientID:       clientID,
+		Scopes:         scopes,
+		SessionID:      meta.SessionID,
+		DeviceID:       meta.DeviceID,
+		TokenVersion:   meta.TokenVersion,
+		IPAddress:      meta.IPAddress,
+		UserAgent:      meta.UserAgent,
+		IsAgent:        meta.IsAgent,
+		AgentType:      meta.AgentType,
+		DelegatedBy:    meta.DelegatedBy,
+		AgentSessionID: meta.AgentSessionID,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
+}
+
+func normalizeDelegatedBy(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "@") {
+		return trimmed
+	}
+	return "@" + trimmed
+}
+
+func (s *OAuthService) resolveAgentClaims(ctx context.Context, username string) (bool, string, string) {
+	if s == nil || s.repos == nil {
+		return false, "", ""
+	}
+
+	accountRepo := s.repos.Account()
+	if accountRepo == nil {
+		return false, "", ""
+	}
+
+	user, err := accountRepo.GetUser(ctx, username)
+	if err != nil || user == nil || !user.IsAgent {
+		return false, "", ""
+	}
+
+	return true, strings.TrimSpace(user.AgentType), normalizeDelegatedBy(user.AgentOwner)
 }
 
 // generateRefreshToken creates a random refresh token
@@ -510,8 +582,24 @@ type TokenBlacklist interface {
 
 // GenerateTokensWithContext generates enhanced OAuth tokens with context information including device tracking and refresh token families
 func (s *OAuthService) GenerateTokensWithContext(username, clientID, sessionID, deviceID, ipAddress, userAgent string, scopes []string, tokenVersion int) (accessToken, refreshToken string, err error) {
-	// Generate enhanced access token
-	accessToken, err = s.generateAccessTokenWithContext(username, clientID, scopes, sessionID, deviceID, tokenVersion, ipAddress, userAgent)
+	isAgent, agentType, delegatedBy := s.resolveAgentClaims(context.Background(), username)
+	agentSessionID := ""
+	if isAgent && strings.TrimSpace(sessionID) != "" {
+		agentSessionID = sessionID
+	}
+
+	accessToken, err = s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
+		SessionID:      sessionID,
+		DeviceID:       deviceID,
+		TokenVersion:   tokenVersion,
+		IPAddress:      ipAddress,
+		UserAgent:      userAgent,
+		ExpiresAt:      time.Now().Add(AccessTokenDuration),
+		IsAgent:        isAgent,
+		AgentType:      agentType,
+		DelegatedBy:    delegatedBy,
+		AgentSessionID: agentSessionID,
+	})
 	if err != nil {
 		return "", "", err
 	}

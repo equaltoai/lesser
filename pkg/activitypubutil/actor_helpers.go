@@ -278,18 +278,21 @@ func applyAgentManifest(actor *activitypub.Actor, user *storage.User) {
 	if manifest == nil {
 		manifest = &activitypub.AgentManifest{Type: "Agent"}
 	}
-
-	if manifest.Version == "" {
-		manifest.Version = strings.TrimSpace(user.AgentVersion)
-	}
-	if manifest.Purpose == "" {
-		manifest.Purpose = strings.TrimSpace(user.AgentType)
-	}
-	if manifest.OperatedBy == "" {
-		manifest.OperatedBy = strings.TrimSpace(user.AgentOwner)
+	if strings.TrimSpace(manifest.Type) == "" {
+		manifest.Type = "Agent"
 	}
 
-	if user.AgentCapabilities != nil && manifest.Capabilities == nil {
+	if v := strings.TrimSpace(user.AgentVersion); v != "" {
+		manifest.Version = v
+	}
+	if v := strings.TrimSpace(user.AgentType); v != "" {
+		manifest.Purpose = v
+	}
+	if v := normalizeOperatedBy(user.AgentOwner); v != "" {
+		manifest.OperatedBy = v
+	}
+
+	if user.AgentCapabilities != nil {
 		manifest.Capabilities = &activitypub.AgentCapabilities{
 			CanPost:           user.AgentCapabilities.CanPost,
 			CanReply:          user.AgentCapabilities.CanReply,
@@ -303,6 +306,17 @@ func applyAgentManifest(actor *activitypub.Actor, user *storage.User) {
 	}
 
 	actor.AgentManifest = manifest
+}
+
+func normalizeOperatedBy(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "@") {
+		return trimmed
+	}
+	return "@" + trimmed
 }
 
 func applyActorIdentifiers(actor *activitypub.Actor, base, username string) {

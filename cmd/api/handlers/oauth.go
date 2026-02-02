@@ -641,8 +641,23 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return "", "", auth.ErrInvalidToken
 	}
 
-	// Generate new tokens with same scopes
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokens(ctx, storedToken.Username, clientID, "", storedToken.Scopes)
+	accessTTL := auth.AccessTokenDuration
+	refreshExpiry := time.Now().Add(auth.RefreshTokenDuration)
+
+	// Delegated agent tokens are bounded by the stored refresh token expiry.
+	if storedToken.ClientID == delegatedAgentClientID {
+		remaining := time.Until(storedToken.ExpiresAt)
+		if remaining <= 0 {
+			_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
+			return "", "", auth.ErrInvalidToken
+		}
+		if remaining < accessTTL {
+			accessTTL = remaining
+		}
+		refreshExpiry = storedToken.ExpiresAt
+	}
+
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL)
 	if err != nil {
 		return "", "", errors.Join(failedToGenerateNewTokens(), err)
 	}
@@ -654,7 +669,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		ClientID:  clientID,
 		Scopes:    storedToken.Scopes,
 		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(auth.RefreshTokenDuration),
+		ExpiresAt: refreshExpiry,
 	}
 
 	// Store new refresh token

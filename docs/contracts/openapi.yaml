@@ -793,7 +793,9 @@ components:
                 bio:
                     type: string
                 created_at:
-                    $ref: '#/components/schemas/RFC3339DateTime'
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
                 display_name:
                     type: string
                 username:
@@ -859,10 +861,8 @@ components:
             type: object
         AgentDelegationRequest:
             additionalProperties: false
-            description: Lesser is email-free. This endpoint does not accept email.
             properties:
-                agent_info:
-                    $ref: '#/components/schemas/AnyObject'
+                agent_info: {}
                 agent_username:
                     type: string
                 bio:
@@ -6022,7 +6022,9 @@ components:
             additionalProperties: false
             properties:
                 agent_capabilities:
-                    $ref: '#/components/schemas/AgentCapabilities'
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentCapabilities'
+                        - type: "null"
                 agent_type:
                     type: string
                 agent_version:
@@ -9416,8 +9418,6 @@ paths:
             operationId: patch_api_v1_agents_by_username
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -9452,14 +9452,10 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
         delete:
             operationId: delete_api_v1_agents_by_username
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             parameters:
                 - name: username
                   in: path
@@ -9487,8 +9483,6 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/agents/{username}/activity:
         get:
             operationId: get_api_v1_agents_by_username_activity
@@ -9568,8 +9562,6 @@ paths:
             operationId: post_api_v1_agents_delegate
             tags:
                 - agents
-            security:
-                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -9597,8 +9589,6 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
-            x-oauth-scopes:
-                - write
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements
