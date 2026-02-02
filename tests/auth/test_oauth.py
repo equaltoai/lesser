@@ -95,7 +95,7 @@ def test_authorization_flow(username, password):
             auth_code = params['code'][0]
             returned_state = params.get('state', [None])[0]
             
-            print(f"Authorization code: {auth_code}")
+            print(f"Authorization code: {auth_code[:8]}...{auth_code[-4:] if len(auth_code) > 12 else '[MASKED]'}")
             print(f"State matches: {returned_state == state}")
             
             # Step 2: Exchange code for tokens
@@ -122,7 +122,7 @@ def test_authorization_flow(username, password):
             else:
                 print(f"Token exchange failed: {token_response.text}")
         else:
-            print(f"No authorization code in redirect: {params}")
+            print(f"No authorization code in redirect (params keys: {list(params.keys())})")
     else:
         print(f"Authorization failed: {auth_response.status_code}")
         print(auth_response.text)
