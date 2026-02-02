@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
-	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -952,56 +951,4 @@ func TestMetricsExtractionHelpers_Branches_Round12(t *testing.T) {
 		_, err := p.marshalToRawMetrics(&types.TrainingMetrics{TrainingLoss: &nan})
 		require.Error(t, err)
 	})
-}
-
-func convertEventAttributeValue(attr events.DynamoDBAttributeValue) dynamodbtypes.AttributeValue {
-	switch attr.DataType() {
-	case events.DataTypeString:
-		return &dynamodbtypes.AttributeValueMemberS{Value: attr.String()}
-	case events.DataTypeNumber:
-		return &dynamodbtypes.AttributeValueMemberN{Value: attr.Number()}
-	case events.DataTypeBinary:
-		return &dynamodbtypes.AttributeValueMemberB{Value: attr.Binary()}
-	case events.DataTypeBoolean:
-		return &dynamodbtypes.AttributeValueMemberBOOL{Value: attr.Boolean()}
-	case events.DataTypeNull:
-		return &dynamodbtypes.AttributeValueMemberNULL{Value: true}
-	case events.DataTypeStringSet:
-		return &dynamodbtypes.AttributeValueMemberSS{Value: attr.StringSet()}
-	case events.DataTypeNumberSet:
-		return &dynamodbtypes.AttributeValueMemberNS{Value: attr.NumberSet()}
-	case events.DataTypeBinarySet:
-		return &dynamodbtypes.AttributeValueMemberBS{Value: attr.BinarySet()}
-	case events.DataTypeList:
-		list := make([]dynamodbtypes.AttributeValue, 0, len(attr.List()))
-		for _, item := range attr.List() {
-			list = append(list, convertEventAttributeValue(item))
-		}
-		return &dynamodbtypes.AttributeValueMemberL{Value: list}
-	case events.DataTypeMap:
-		m := make(map[string]dynamodbtypes.AttributeValue)
-		for k, v := range attr.Map() {
-			m[k] = convertEventAttributeValue(v)
-		}
-		return &dynamodbtypes.AttributeValueMemberM{Value: m}
-	default:
-		return nil
-	}
-}
-
-func TestConvertEventAttributeValue_Branches_Round12(t *testing.T) {
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberS{}, convertEventAttributeValue(events.NewStringAttribute("s")))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberN{}, convertEventAttributeValue(events.NewNumberAttribute("123")))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberB{}, convertEventAttributeValue(events.NewBinaryAttribute([]byte("x"))))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberBOOL{}, convertEventAttributeValue(events.NewBooleanAttribute(true)))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberNULL{}, convertEventAttributeValue(events.NewNullAttribute()))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberSS{}, convertEventAttributeValue(events.NewStringSetAttribute([]string{"a"})))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberNS{}, convertEventAttributeValue(events.NewNumberSetAttribute([]string{"1"})))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberBS{}, convertEventAttributeValue(events.NewBinarySetAttribute([][]byte{[]byte("x")})))
-
-	l := events.NewListAttribute([]events.DynamoDBAttributeValue{events.NewStringAttribute("a")})
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberL{}, convertEventAttributeValue(l))
-
-	m := events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{"k": events.NewStringAttribute("v")})
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberM{}, convertEventAttributeValue(m))
 }
