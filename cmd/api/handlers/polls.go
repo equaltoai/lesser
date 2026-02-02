@@ -186,15 +186,6 @@ func (h *Handler) authenticatePollVoter(ctx *apptheory.Context, requiredScope st
 	return claims, actor, nil, nil
 }
 
-// getPollAuthHeader extracts authorization header
-func (h *Handler) getPollAuthHeader(ctx *apptheory.Context) string {
-	authHeader := headerValue(ctx, "Authorization")
-	if authHeader == "" {
-		authHeader = headerValue(ctx, "authorization")
-	}
-	return authHeader
-}
-
 // convertToActorRecord converts activitypub.Actor to storage.ActorRecord
 func (h *Handler) convertToActorRecord(actorData *activitypub.Actor) *storage.ActorRecord {
 	return &storage.ActorRecord{

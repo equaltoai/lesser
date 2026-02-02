@@ -127,7 +127,7 @@ func readGoModVersion(path string) (string, error) {
 		return "", fmt.Errorf("failed to read %q: %w", path, err)
 	}
 
-	re := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+)\s*$`)
+	re := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+)(?:\.[0-9]+)?\s*$`)
 	match := re.FindSubmatch(content)
 	if len(match) != 2 {
 		return "", fmt.Errorf("failed to parse go version from %q", path)

@@ -132,55 +132,57 @@ func TestImportsRound12_AuthAndParsingHelpers(t *testing.T) {
 	cfg := round10TestConfig()
 	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
-	t.Run("extractImportAuthHeader_checks_multiple_sources", func(t *testing.T) {
+	t.Run("getBearerTokenLift_checks_multiple_sources", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", map[string]string{"authorization": "Bearer x"}, nil, nil)
 		require.NoError(t, err)
-		require.Equal(t, "Bearer x", h.extractImportAuthHeader(ctx))
+		require.Equal(t, "x", h.getBearerTokenLift(ctx))
 
 		ctx2, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
 		ctx2.Request.Headers["Authorization"] = []string{"Bearer y"}
-		require.Equal(t, "Bearer y", h.extractImportAuthHeader(ctx2))
+		require.Equal(t, "y", h.getBearerTokenLift(ctx2))
 	})
 
-	t.Run("validateImportToken_errors_and_success", func(t *testing.T) {
+	t.Run("authenticateUser_errors_and_success", func(t *testing.T) {
 		t.Run("missing_token", func(t *testing.T) {
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", nil, nil, nil)
 			require.NoError(t, err)
 
-			username, err := h.validateImportToken(ctx, "")
+			username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 			require.Empty(t, username)
 			require.Error(t, err)
 			require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
 		})
 
 		t.Run("invalid_token", func(t *testing.T) {
-			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", nil, nil, nil)
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", map[string]string{"Authorization": "Bearer bad"}, nil, nil)
 			require.NoError(t, err)
 
-			username, err := h.validateImportToken(ctx, "bad")
+			username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 			require.Empty(t, username)
 			require.Error(t, err)
 			require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
 		})
 
 		t.Run("insufficient_scope", func(t *testing.T) {
-			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", nil, nil, nil)
+			token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-1")
+			headers := map[string]string{"Authorization": "Bearer " + token}
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", headers, nil, nil)
 			require.NoError(t, err)
 
-			token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-1")
-			username, err := h.validateImportToken(ctx, token)
+			username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 			require.Empty(t, username)
 			require.Error(t, err)
 			require.True(t, apperrors.HasCode(err, apperrors.CodeInsufficientScope))
 		})
 
 		t.Run("success", func(t *testing.T) {
-			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", nil, nil, nil)
+			token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-1")
+			headers := map[string]string{"Authorization": "Bearer " + token}
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", headers, nil, nil)
 			require.NoError(t, err)
 
-			token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-1")
-			username, err := h.validateImportToken(ctx, token)
+			username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 			require.NoError(t, err)
 			require.Equal(t, "alice", username)
 		})
@@ -737,7 +739,7 @@ func TestImportsRound12_authenticateImportStatusRequest(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", nil, nil, nil)
 		require.NoError(t, err)
 
-		username, err := h.authenticateImportStatusRequest(ctx)
+		username, err := h.authenticateUser(ctx, []string{auth.ScopeRead, auth.ScopeWrite})
 		require.Empty(t, username)
 		require.Error(t, err)
 		require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
@@ -747,7 +749,7 @@ func TestImportsRound12_authenticateImportStatusRequest(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", map[string]string{"Authorization": "Bearer bad"}, nil, nil)
 		require.NoError(t, err)
 
-		username, err := h.authenticateImportStatusRequest(ctx)
+		username, err := h.authenticateUser(ctx, []string{auth.ScopeRead, auth.ScopeWrite})
 		require.Empty(t, username)
 		require.Error(t, err)
 		require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
@@ -759,7 +761,7 @@ func TestImportsRound12_authenticateImportStatusRequest(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/imports", headers, nil, nil)
 		require.NoError(t, err)
 
-		username, err := h.authenticateImportStatusRequest(ctx)
+		username, err := h.authenticateUser(ctx, []string{auth.ScopeRead, auth.ScopeWrite})
 		require.NoError(t, err)
 		require.Equal(t, "alice", username)
 	})

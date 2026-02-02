@@ -437,6 +437,7 @@ func getErrorType(err error) string {
 	return StatusUnknown
 }
 
+// WebSocketCostMiddleware enforces per-user websocket budget limits and records operation cost telemetry.
 func WebSocketCostMiddleware(costTracker *WebSocketCostTracker) apptheory.Middleware {
 	return func(next apptheory.Handler) apptheory.Handler {
 		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -448,7 +449,7 @@ func WebSocketCostMiddleware(costTracker *WebSocketCostTracker) apptheory.Middle
 			operationType := determineOperationType(ws.RouteKey)
 			opCtx := costTracker.CreateOperationContext(ctx, operationType)
 
-			if err := checkBudgetIfRequired(costTracker, ctx.Context(), operationType, opCtx); err != nil {
+			if err := checkBudgetIfRequired(ctx.Context(), costTracker, operationType, opCtx); err != nil {
 				return nil, err
 			}
 
@@ -480,8 +481,8 @@ func determineOperationType(routeKey string) string {
 	}
 }
 
-// checkBudgetIfRequired checks budget limits for non-disconnect operations with a user ID
-func checkBudgetIfRequired(costTracker *WebSocketCostTracker, ctx context.Context, operationType string, opCtx *WebSocketOperationContext) error {
+// checkBudgetIfRequired checks budget limits for non-disconnect operations with a user ID.
+func checkBudgetIfRequired(ctx context.Context, costTracker *WebSocketCostTracker, operationType string, opCtx *WebSocketOperationContext) error {
 	if operationType == WSEventDisconnect || opCtx.UserID == "" {
 		return nil
 	}

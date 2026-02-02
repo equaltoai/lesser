@@ -3,9 +3,11 @@ package transformations
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/require"
 )
@@ -123,6 +125,36 @@ func TestTransformMentionsAndTags(t *testing.T) {
 	require.True(t, ok)
 }
 
+func TestProcessMentionTag_HTTPDomainParsing(t *testing.T) {
+	mention := processMentionTag(map[string]interface{}{
+		"type": "Mention",
+		"href": "http://remote.example/users/bob",
+		"name": "@bob",
+	})
+
+	mentionMap, ok := mention.(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "bob@remote.example", mentionMap["acct"])
+}
+
+func TestTransformMentionsAndTags_InvalidInputs(t *testing.T) {
+	require.Equal(t, []any{}, transformMentions(map[string]interface{}{}))
+	require.Equal(t, []any{}, transformMentions(map[string]interface{}{"tag": "not-a-slice"}))
+
+	require.Nil(t, processMentionTag("not-a-map"))
+	require.Nil(t, processMentionTag(map[string]interface{}{"type": "Note"}))
+	require.Nil(t, processMentionTag(map[string]interface{}{"type": "Mention", "href": "", "name": "@bob"}))
+	require.Nil(t, processMentionTag(map[string]interface{}{"type": "Mention", "href": "users/bob", "name": ""}))
+
+	require.Equal(t, []any{}, transformTags(map[string]interface{}{}))
+	require.Equal(t, []any{}, transformTags(map[string]interface{}{"tag": "not-a-slice"}))
+
+	require.Nil(t, processHashtagTag("not-a-map"))
+	require.Nil(t, processHashtagTag(map[string]interface{}{"type": "Note"}))
+	require.Nil(t, processHashtagTag(map[string]interface{}{"type": "Hashtag", "href": "", "name": "#go"}))
+	require.Nil(t, processHashtagTag(map[string]interface{}{"type": "Hashtag", "href": "https://example/tags/go", "name": ""}))
+}
+
 func TestConvertObjectToMap_Note(t *testing.T) {
 	now := time.Now().UTC()
 	note := &activitypub.Note{
@@ -218,6 +250,142 @@ func TestNotesToStatusAny_ExtractsActorFromAuthorID(t *testing.T) {
 	require.Equal(t, "alice", status.Account.Username)
 }
 
+func TestActorToAccountWithCounts_SetsCounts(t *testing.T) {
+	account := ActorToAccountWithCounts(&activitypub.Actor{PreferredUsername: "alice"}, "https://base", 1, 2, 3)
+	require.Equal(t, "alice", account.Username)
+	require.Equal(t, 1, account.FollowersCount)
+	require.Equal(t, 2, account.FollowingCount)
+	require.Equal(t, 3, account.StatusesCount)
+
+	require.Equal(t, models.Account{}, ActorToAccountWithCounts(nil, "https://base", 1, 2, 3))
+}
+
+func TestBuildAgentConstraints(t *testing.T) {
+	require.Nil(t, buildAgentConstraints(nil))
+
+	constraints := buildAgentConstraints(&activitypub.AgentCapabilities{
+		MaxPostsPerHour:   10,
+		RequiresApproval:  true,
+		RestrictedDomains: []string{"example.com", "remote.example"},
+	})
+
+	require.Contains(t, constraints, "max_posts_per_hour:10")
+	require.Contains(t, constraints, "requires_approval")
+	require.Contains(t, constraints, "restricted_domains:example.com,remote.example")
+}
+
+func TestBuildAgentPostAttribution_Branches(t *testing.T) {
+	require.Nil(t, buildAgentPostAttribution(nil))
+
+	require.Nil(t, buildAgentPostAttribution(&activitypub.Actor{
+		BaseObject: activitypub.BaseObject{Type: activitypub.PersonType},
+	}))
+
+	attribution := buildAgentPostAttribution(&activitypub.Actor{
+		BaseObject: activitypub.BaseObject{Type: activitypub.ServiceType},
+	})
+	require.NotNil(t, attribution)
+	require.Equal(t, "unknown", attribution.ModelVersion)
+	require.Nil(t, attribution.Constraints)
+
+	attribution = buildAgentPostAttribution(&activitypub.Actor{
+		BaseObject: activitypub.BaseObject{Type: activitypub.PersonType},
+		AgentManifest: &activitypub.AgentManifest{
+			Version:    "m1",
+			OperatedBy: "@delegator",
+			Capabilities: &activitypub.AgentCapabilities{
+				RequiresApproval: true,
+			},
+		},
+	})
+	require.NotNil(t, attribution)
+	require.Equal(t, "m1", attribution.ModelVersion)
+	require.Equal(t, "@delegator", attribution.DelegatedBy)
+	require.Contains(t, attribution.Constraints, "requires_approval")
+}
+
+func TestObjectToStatusAny_SetsAgentAttribution(t *testing.T) {
+	obj := map[string]interface{}{
+		"id":        "https://example.com/objects/1",
+		"content":   "hi",
+		"published": "2024-01-02T03:04:05Z",
+	}
+
+	status := ObjectToStatusAny(obj, &activitypub.Actor{BaseObject: activitypub.BaseObject{Type: activitypub.ServiceType}}, "https://base")
+	require.NotNil(t, status.AgentAttribution)
+
+	require.Equal(t, models.Status{}, ObjectToStatusAny(nil, &activitypub.Actor{}, "https://base"))
+	require.Equal(t, models.Status{}, ObjectToStatusAny(obj, nil, "https://base"))
+}
+
+func TestConverters_AdditionalBranches(t *testing.T) {
+	now := time.Now().UTC()
+	account := ActorToAccountBase(&activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{Published: &now},
+		PreferredUsername: "alice",
+	}, "https://base")
+	require.NotEmpty(t, account.CreatedAt)
+
+	require.Len(t, transformAttachments(map[string]interface{}{"name": "n", "value": "v"}), 1)
+	require.Equal(t, []any{}, transformAttachments(nil))
+
+	require.True(t, extractSensitive(map[string]interface{}{"sensitive": true}))
+	require.False(t, extractSensitive(map[string]interface{}{"sensitive": "no"}))
+	require.False(t, extractSensitive(map[string]interface{}{}))
+
+	require.Equal(t, "spoiler", extractSpoilerText(map[string]interface{}{"summary": "spoiler"}))
+	require.Equal(t, "", extractSpoilerText(map[string]interface{}{"summary": 123}))
+	require.Equal(t, "", extractSpoilerText(map[string]interface{}{}))
+
+	require.Nil(t, processMediaAttachmentItem(map[string]interface{}{"type": "PropertyValue"}))
+	require.Nil(t, processMediaAttachmentItem(map[string]interface{}{"type": "Image", "url": ""}))
+
+	require.Nil(t, processHashtagTag(map[string]interface{}{"type": "Hashtag", "href": "https://example/tags/x", "name": "#"}))
+
+	require.NotEmpty(t, GenerateNumericIDFromURL("https://example.com/users/alice/"))
+	require.Equal(t, "0", GenerateNumericIDFromURL(""))
+
+	account, err := ActorToAccountWithContext(context.WithValue(context.Background(), "baseURL", "https://ctx"), &activitypub.Actor{PreferredUsername: "bob"})
+	require.NoError(t, err)
+	require.Equal(t, "bob", account.Username)
+
+	require.Equal(t, "", ExtractUsernameFromActorID(""))
+
+	status := ObjectToStatusBase(map[string]interface{}{
+		"id":         "https://example.com/objects/1",
+		"content":    "hi",
+		"published":  "2024-01-02T03:04:05Z",
+		"contentMap": map[string]interface{}{"en": "hi"},
+	}, &activitypub.Actor{PreferredUsername: "alice"}, "https://base")
+	require.Equal(t, "en", status.Language)
+
+	mention := processMentionTag(map[string]interface{}{
+		"type": "Mention",
+		"href": "users/bob",
+		"name": "@bob",
+	})
+	mentionMap, ok := mention.(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "bob", mentionMap["acct"])
+}
+
+func TestGenerateNumericID_NormalizesNegativeHashes(t *testing.T) {
+	var hash int64
+	length := 0
+	for i := 0; i < 100; i++ {
+		hash = hash*31 + int64('z')
+		length = i + 1
+		if hash < 0 {
+			break
+		}
+	}
+	require.Less(t, hash, int64(0))
+
+	id := generateNumericID(strings.Repeat("z", length))
+	require.NotEmpty(t, id)
+	require.NotEqual(t, "-", id[:1])
+}
+
 func TestExtractUsernameFromActorID(t *testing.T) {
 	require.Equal(t, "", ExtractUsernameFromActorID(""))
 	require.Equal(t, "alice", ExtractUsernameFromActorID("https://example.com/users/alice"))
@@ -267,6 +435,40 @@ func TestExtractReplyToID(t *testing.T) {
 	require.NotNil(t, replyTo)
 	require.NotEmpty(t, *replyTo)
 	require.Nil(t, extractReplyToID(map[string]interface{}{}))
+}
+
+func TestTransformMediaAttachments_InvalidInputs(t *testing.T) {
+	require.Equal(t, []any{}, transformMediaAttachments(map[string]interface{}{}))
+	require.Equal(t, []any{}, transformMediaAttachments(map[string]interface{}{"attachment": "not-a-slice"}))
+
+	require.Nil(t, processMediaAttachmentItem("not-a-map"))
+
+	video := processMediaAttachmentItem(map[string]interface{}{
+		"type":      "Video",
+		"mediaType": "video/mp4",
+		"url":       "https://cdn.example/video.mp4",
+	})
+	videoMap, ok := video.(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "video", videoMap["type"])
+
+	audio := processMediaAttachmentItem(map[string]interface{}{
+		"type":      "Audio",
+		"mediaType": "audio/mpeg",
+		"url":       "https://cdn.example/audio.mp3",
+	})
+	audioMap, ok := audio.(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "audio", audioMap["type"])
+
+	unknown := processMediaAttachmentItem(map[string]interface{}{
+		"type":      "Document",
+		"mediaType": "application/pdf",
+		"url":       "https://cdn.example/file.pdf",
+	})
+	unknownMap, ok := unknown.(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "unknown", unknownMap["type"])
 }
 
 func TestNilInputs_ReturnZeroValues(t *testing.T) {

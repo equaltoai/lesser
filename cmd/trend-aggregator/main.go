@@ -51,7 +51,7 @@ func NewTrendAggregatorHandler(db core.DB, logger *zap.Logger) *TrendAggregatorH
 }
 
 // HandleScheduledEvent runs the daily aggregation task (invoked by EventBridge schedules).
-func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContext, _ events.EventBridgeEvent) (any, error) {
 	start := time.Now()
 	requestID := ""
 	if ctx != nil {

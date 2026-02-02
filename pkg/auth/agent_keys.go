@@ -14,11 +14,15 @@ import (
 )
 
 var (
+	// ErrUnsupportedAgentKeyType is returned when the requested key type is not supported.
 	ErrUnsupportedAgentKeyType = errors.New("unsupported agent key type")
-	ErrInvalidAgentPublicKey   = errors.New("invalid agent public key")
-	ErrInvalidAgentSignature   = errors.New("invalid agent signature")
+	// ErrInvalidAgentPublicKey is returned when a provided agent public key cannot be parsed.
+	ErrInvalidAgentPublicKey = errors.New("invalid agent public key")
+	// ErrInvalidAgentSignature is returned when a provided signature cannot be verified.
+	ErrInvalidAgentSignature = errors.New("invalid agent signature")
 )
 
+// ParseAgentPublicKey parses an agent-provided public key for supported key types ("ed25519", "rsa").
 func ParseAgentPublicKey(keyType string, publicKey string) (crypto.PublicKey, error) {
 	keyType = strings.ToLower(strings.TrimSpace(keyType))
 	publicKey = strings.TrimSpace(publicKey)
@@ -36,6 +40,7 @@ func ParseAgentPublicKey(keyType string, publicKey string) (crypto.PublicKey, er
 	}
 }
 
+// VerifyAgentChallengeSignature verifies a base64 signature over the server-provided challenge message.
 func VerifyAgentChallengeSignature(keyType string, publicKey string, message string, signatureBase64 string) error {
 	pub, err := ParseAgentPublicKey(keyType, publicKey)
 	if err != nil {

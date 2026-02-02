@@ -3,7 +3,6 @@ package monitoring
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -350,39 +349,6 @@ func (emb *EnhancedMetricBuffer) Size() int {
 	emb.mu.RLock()
 	defer emb.mu.RUnlock()
 	return len(emb.metrics)
-}
-
-// Helper functions
-
-// sanitizePath cleans a URL path for use in metric names
-func sanitizePath(path string) string {
-	// Replace common path characters with underscores
-	result := path
-	replacements := map[string]string{
-		"/": "_",
-		"{": "",
-		"}": "",
-		"-": "_",
-		".": "_",
-	}
-
-	for old, new := range replacements {
-		result = strings.ReplaceAll(result, old, new)
-	}
-
-	// Remove leading/trailing underscores
-	if len(result) > 0 && result[0] == '_' {
-		result = result[1:]
-	}
-	if len(result) > 0 && result[len(result)-1] == '_' {
-		result = result[:len(result)-1]
-	}
-
-	if err := common.ValidateRequiredParam("result", result); err != nil {
-		return "root"
-	}
-
-	return result
 }
 
 // classifyDynamoDBError classifies DynamoDB errors for metrics

@@ -202,7 +202,7 @@ func (h *Handler) saveUserPreferences(ctx *apptheory.Context, username string, p
 }
 
 // returnUpdatedPreferences returns the updated preferences in Mastodon format
-func (h *Handler) returnUpdatedPreferences(ctx *apptheory.Context, prefs *storage.UserPreferences) (*apptheory.Response, error) {
+func (h *Handler) returnUpdatedPreferences(_ *apptheory.Context, prefs *storage.UserPreferences) (*apptheory.Response, error) {
 	preferences := models.Preferences{
 		PostingDefaultVisibility: prefs.DefaultPostingVisibility,
 		PostingDefaultSensitive:  prefs.DefaultMediaSensitive,

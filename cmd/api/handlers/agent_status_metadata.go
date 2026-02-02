@@ -166,7 +166,7 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 
 	modelVersion := strings.TrimSpace(agentUser.AgentVersion)
 	if modelVersion == "" {
-		modelVersion = "unknown"
+		modelVersion = agentVersionUnknown
 	}
 
 	attribution := &activitypub.AgentPostAttribution{

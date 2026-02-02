@@ -990,7 +990,7 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *apptheory.Context) (*apptheory
 }
 
 // HandleGetInstanceConfigurationLift returns configuration details
-func (h *Handler) HandleGetInstanceConfigurationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+func (h *Handler) HandleGetInstanceConfigurationLift(_ *apptheory.Context) (*apptheory.Response, error) {
 	// Build configuration response
 	config := map[string]any{
 		"urls": map[string]any{

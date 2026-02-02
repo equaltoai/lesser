@@ -465,7 +465,7 @@ func (h *Handler) authenticateDebugRequest(ctx *apptheory.Context, _ string) (*a
 }
 
 // validateRequiredParam validates a required parameter and returns a 400 error response if missing/empty
-func (h *Handler) validateRequiredParam(ctx *apptheory.Context, paramName, paramValue, errorMessage string) (*apptheory.Response, error) {
+func (h *Handler) validateRequiredParam(_ *apptheory.Context, paramName, paramValue, errorMessage string) (*apptheory.Response, error) {
 	if err := common.ValidateRequiredParam(paramName, paramValue); err != nil {
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{"error": errorMessage})
 	}

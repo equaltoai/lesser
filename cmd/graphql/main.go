@@ -74,7 +74,6 @@ var (
 	//nolint:gochecknoglobals // These are initialized once at startup
 	logger              *zap.Logger
 	graphQLHandler      http.Handler
-	emfMetricsService   interface{}   // *observability.EMFMetricsService interface
 	costTracker         *cost.Tracker // Legacy tracker for resolver compatibility
 	costTrackingService lambdaInvocationTracker
 	initTime            time.Time
@@ -152,7 +151,6 @@ func extractStandardizedServices() {
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	emfMetricsService = lambdaCtx.EMFMetrics
 
 	// Initialize centralized cost tracking service if CloudWatch client is available
 	if lambdaCtx.AWSServices != nil && lambdaCtx.AWSServices.CloudWatch != nil {
@@ -404,8 +402,55 @@ func graphQLErrorPresenter(ctx context.Context, err error) *gqlerror.Error {
 	return gqlErr
 }
 
-// handleGraphQL processes GraphQL requests with proper context and DataLoader
-func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
+type graphQLHTTPRequestParts struct {
+	method  string
+	path    string
+	body    []byte
+	headers map[string][]string
+	query   map[string][]string
+}
+
+func graphqlExtractRequestParts(ctx *apptheory.Context) graphQLHTTPRequestParts {
+	parts := graphQLHTTPRequestParts{}
+	if ctx == nil {
+		return parts
+	}
+	parts.method = ctx.Request.Method
+	parts.path = ctx.Request.Path
+	parts.body = ctx.Request.Body
+	parts.headers = ctx.Request.Headers
+	parts.query = ctx.Request.Query
+	return parts
+}
+
+func graphqlBuildURL(path string, query map[string][]string) *url.URL {
+	u := &url.URL{Path: path}
+	if len(query) == 0 {
+		return u
+	}
+
+	q := u.Query()
+	for key, values := range query {
+		for _, value := range values {
+			q.Add(key, value)
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u
+}
+
+func graphqlCopyHeaders(dst http.Header, headers map[string][]string) {
+	if len(headers) == 0 || dst == nil {
+		return
+	}
+	for k, values := range headers {
+		for _, value := range values {
+			dst.Add(k, value)
+		}
+	}
+}
+
+func graphqlWithTimeout(ctx *apptheory.Context) (context.Context, context.CancelFunc) {
 	requestCtx := context.Background()
 	if ctx != nil {
 		requestCtx = ctx.Context()
@@ -415,14 +460,107 @@ func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if cfg != nil && cfg.GraphQLRequestTimeout > 0 {
 		timeout = cfg.GraphQLRequestTimeout
 	}
-	var cancel context.CancelFunc
-	requestCtx, cancel = context.WithTimeout(requestCtx, timeout)
+
+	return context.WithTimeout(requestCtx, timeout)
+}
+
+func graphqlWithUser(requestCtx context.Context, ctx *apptheory.Context) context.Context {
+	if ctx == nil {
+		return requestCtx
+	}
+
+	requestCtx = context.WithValue(requestCtx, contextKeyUser, ctx.Get("user"))
+
+	if username, ok := ctx.Get("username").(string); ok && username != "" {
+		requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+	}
+
+	return requestCtx
+}
+
+func graphqlWithClaims(requestCtx context.Context, ctx *apptheory.Context) context.Context {
+	if ctx == nil {
+		return requestCtx
+	}
+
+	claimsVal := ctx.Get("claims")
+	if claimsVal == nil {
+		logger.Info("GraphQL request without authentication context",
+			zap.String("path", ctx.Request.Path))
+		return requestCtx
+	}
+
+	logger.Info("GraphQL authentication context detected",
+		zap.String("path", ctx.Request.Path),
+		zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
+	)
+
+	if claims, ok := claimsVal.(common.Claims); ok && claims != nil {
+		logger.Info("GraphQL claims type assertion successful",
+			zap.String("username", claims.GetUsername()),
+		)
+		requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claims)
+
+		if username := claims.GetUsername(); username != "" {
+			requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
+		} else {
+			logger.Warn("GraphQL claims have empty username",
+				zap.String("claims_type", fmt.Sprintf("%T", claims)),
+			)
+		}
+		return requestCtx
+	}
+
+	logger.Warn("GraphQL claims type assertion failed",
+		zap.String("actual_type", fmt.Sprintf("%T", claimsVal)),
+	)
+	return requestCtx
+}
+
+func graphqlWithCostTracker(requestCtx context.Context, ctx *apptheory.Context) context.Context {
+	if ctx == nil {
+		return requestCtx
+	}
+	return context.WithValue(requestCtx, contextKeyCostTracker, ctx.Get("cost_tracker"))
+}
+
+func graphqlWithLoaders(requestCtx context.Context, ctx *apptheory.Context) context.Context {
+	if ctx == nil {
+		return requestCtx
+	}
+
+	loadersVal := ctx.Get("loaders")
+	if loadersVal == nil {
+		return requestCtx
+	}
+
+	if loaders, ok := loadersVal.(*graph.Loaders); ok {
+		requestCtx = graph.WithLoaders(requestCtx, loaders)
+		requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loaders)
+		return requestCtx
+	}
+
+	logger.Warn("GraphQL loaders type assertion failed",
+		zap.String("actual_type", fmt.Sprintf("%T", loadersVal)))
+	return context.WithValue(requestCtx, contextKeyLoaders, loadersVal)
+}
+
+func graphqlLogQuoteLoaderMetrics(requestCtx context.Context) {
+	hits, misses := graph.QuoteLoaderMetrics(requestCtx)
+	if hits == 0 && misses == 0 {
+		return
+	}
+	logger.Info("quote target loader usage",
+		zap.Int64("cache_hits", hits),
+		zap.Int64("misses", misses))
+}
+
+// handleGraphQL processes GraphQL requests with proper context and DataLoader
+func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
+	requestCtx, cancel := graphqlWithTimeout(ctx)
 	defer cancel()
 
-	// Create request context with user information.
-	if ctx != nil {
-		requestCtx = context.WithValue(requestCtx, contextKeyUser, ctx.Get("user"))
-	}
+	requestCtx = graphqlWithUser(requestCtx, ctx)
 
 	authHeader := graphqlExtractAuthHeader(ctx)
 	logger.Info("GraphQL request auth header check",
@@ -430,114 +568,33 @@ func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
 		zap.Bool("has_header", authHeader != ""),
 	)
 
-	if ctx != nil {
-		if claimsVal := ctx.Get("claims"); claimsVal != nil {
-			logger.Info("GraphQL authentication context detected",
-				zap.String("path", ctx.Request.Path),
-				zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
-			)
-		} else {
-			logger.Info("GraphQL request without authentication context",
-				zap.String("path", ctx.Request.Path))
-		}
-
-		// Propagate authenticated username if available.
-		if username, ok := ctx.Get("username").(string); ok && username != "" {
-			requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
-		}
-
-		// Propagate claims for resolvers that require authentication.
-		claimsVal := ctx.Get("claims")
-		if claimsVal != nil {
-			logger.Info("GraphQL claims found in context",
-				zap.String("claims_type", fmt.Sprintf("%T", claimsVal)),
-				zap.Bool("is_common_claims", claimsVal != nil),
-			)
-			if claims, ok := claimsVal.(common.Claims); ok && claims != nil {
-				logger.Info("GraphQL claims type assertion successful",
-					zap.String("username", claims.GetUsername()),
-				)
-				requestCtx = context.WithValue(requestCtx, common.ContextKeyClaims, claims)
-				// Ensure contextKeyUser is set even if username wasn't populated separately.
-				if username := claims.GetUsername(); username != "" {
-					requestCtx = context.WithValue(requestCtx, contextKeyUser, username)
-				} else {
-					logger.Warn("GraphQL claims have empty username",
-						zap.String("claims_type", fmt.Sprintf("%T", claims)),
-					)
-				}
-			} else {
-				logger.Warn("GraphQL claims type assertion failed",
-					zap.String("actual_type", fmt.Sprintf("%T", claimsVal)),
-				)
-			}
-		}
-
-		requestCtx = context.WithValue(requestCtx, contextKeyCostTracker, ctx.Get("cost_tracker"))
-
-		// Attach DataLoaders to request context so resolvers can batch fetches safely.
-		if loadersVal := ctx.Get("loaders"); loadersVal != nil {
-			if loaders, ok := loadersVal.(*graph.Loaders); ok {
-				requestCtx = graph.WithLoaders(requestCtx, loaders)
-				requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loaders)
-			} else {
-				logger.Warn("GraphQL loaders type assertion failed",
-					zap.String("actual_type", fmt.Sprintf("%T", loadersVal)))
-				requestCtx = context.WithValue(requestCtx, contextKeyLoaders, loadersVal)
-			}
-		}
-	}
+	requestCtx = graphqlWithClaims(requestCtx, ctx)
+	requestCtx = graphqlWithCostTracker(requestCtx, ctx)
+	requestCtx = graphqlWithLoaders(requestCtx, ctx)
 
 	// Create HTTP request wrapper for GraphQL handler.
-	method := ""
-	path := ""
-	body := []byte(nil)
-	headers := map[string][]string(nil)
-	query := map[string][]string(nil)
-	if ctx != nil {
-		method = ctx.Request.Method
-		path = ctx.Request.Path
-		body = ctx.Request.Body
-		headers = ctx.Request.Headers
-		query = ctx.Request.Query
-	}
-
-	u := &url.URL{Path: path}
-	q := u.Query()
-	for key, values := range query {
-		for _, value := range values {
-			q.Add(key, value)
-		}
-	}
-	u.RawQuery = q.Encode()
+	parts := graphqlExtractRequestParts(ctx)
+	u := graphqlBuildURL(parts.path, parts.query)
 
 	httpReq := &http.Request{
-		Method: method,
+		Method: parts.method,
 		URL:    u,
 		Header: make(http.Header),
-		Body:   &bytesReader{data: body},
+		Body:   &bytesReader{data: parts.body},
 	}
 	httpReq = httpReq.WithContext(requestCtx)
-
-	// Copy headers.
-	for k, values := range headers {
-		for _, value := range values {
-			httpReq.Header.Add(k, value)
-		}
-	}
+	graphqlCopyHeaders(httpReq.Header, parts.headers)
 
 	// Process GraphQL request.
 	responseWriter := newGraphQLResponseWriter()
 	handlerStart := time.Now()
+	path := parts.path
+	method := parts.method
 	logger.Info("GraphQL handler invocation started",
 		zap.String("path", path),
 		zap.String("method", method))
 	graphQLHandler.ServeHTTP(responseWriter, httpReq)
-	if hits, misses := graph.QuoteLoaderMetrics(requestCtx); hits > 0 || misses > 0 {
-		logger.Info("quote target loader usage",
-			zap.Int64("cache_hits", hits),
-			zap.Int64("misses", misses))
-	}
+	graphqlLogQuoteLoaderMetrics(requestCtx)
 	logger.Info("GraphQL handler invocation completed",
 		zap.String("path", path),
 		zap.String("method", method),

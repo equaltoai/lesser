@@ -404,16 +404,6 @@ func (h *Handler) authenticateDirectTimeline(ctx *apptheory.Context) (string, *a
 	return claims.Username, nil, nil
 }
 
-// extractDirectTimelineAuthHeader extracts authorization header from request
-func (h *Handler) extractDirectTimelineAuthHeader(ctx *apptheory.Context) string {
-	authHeader := headerValue(ctx, "Authorization")
-	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	return authHeader
-}
-
 // getUserActorForDirectTimeline gets the user's actor for direct timeline operations
 
 // parseDirectTimelineParams parses query parameters for direct timeline using centralized helper

@@ -29,12 +29,6 @@ func TestUnifiedBoostRound12_Coverage(t *testing.T) {
 		require.Equal(t, "hello", h.extractContentFromObject(&activitypub.Note{Content: "hello"}))
 		require.Equal(t, "mapped", h.extractContentFromObject(map[string]any{"content": "mapped"}))
 		require.Equal(t, "", h.extractContentFromObject(map[string]any{"content": 123}))
-
-		// extractAuthHeaderForBoost: case-insensitive header lookup
-		ctx, err := round10NewLiftContext(http.MethodGet, "/x", nil, nil, nil)
-		require.NoError(t, err)
-		ctx.Request.Headers = map[string][]string{"authorization": {"Bearer token"}}
-		require.Equal(t, "Bearer token", h.extractAuthHeaderForBoost(ctx))
 	})
 
 	t.Run("handle unified boost: missing id + unauthorized", func(t *testing.T) {

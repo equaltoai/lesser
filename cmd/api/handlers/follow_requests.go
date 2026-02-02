@@ -307,7 +307,7 @@ func (h *Handler) deliverActivityLift(_ context.Context, activity *activitypub.A
 
 // respondWithRelationship consolidates the duplicate relationship response formatting
 // This eliminates the identical relationship mapping found in authorize and reject handlers
-func (h *Handler) respondWithRelationship(ctx *apptheory.Context, accountID string, relationship *relationships.RelationshipData) (*apptheory.Response, error) {
+func (h *Handler) respondWithRelationship(_ *apptheory.Context, accountID string, relationship *relationships.RelationshipData) (*apptheory.Response, error) {
 	// Convert relationship data to Mastodon API format
 	relationshipResponse := map[string]any{
 		"id":                   accountID,

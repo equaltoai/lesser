@@ -125,11 +125,17 @@ func TestAuthHelpers_HeaderExtractionAndAccessValidation(t *testing.T) {
 		baseErr := stdErrors.New("x")
 		assert.ErrorIs(t, ValidateWriteAccess(&AuthenticationResult{Error: baseErr}), baseErr)
 
-		err := ValidateWriteAccess(&AuthenticationResult{Context: &AuthContext{Claims: newMockClaims("alice", ScopeRead)}})
+		err := ValidateWriteAccess(&AuthenticationResult{Context: &AuthContext{}})
+		assert.ErrorIs(t, err, ErrAuthenticationRequired)
+
+		err = ValidateWriteAccess(&AuthenticationResult{Context: &AuthContext{Claims: newMockClaims("alice", ScopeRead)}})
 		assert.ErrorIs(t, err, ErrInsufficientScopeWrite)
 
 		err = ValidateReadAccess(&AuthenticationResult{Context: &AuthContext{Claims: newMockClaims("alice", ScopeWrite)}})
 		assert.ErrorIs(t, err, ErrInsufficientScopeRead)
+
+		err = ValidateReadAccess(&AuthenticationResult{Context: &AuthContext{}})
+		assert.ErrorIs(t, err, ErrAuthenticationRequiredRead)
 
 		assert.NoError(t, ValidateReadAccess(&AuthenticationResult{Context: &AuthContext{Claims: newMockClaims("alice", ScopeRead)}}))
 	})

@@ -173,7 +173,7 @@ func (h *Handler) HandleGetAIStatsLift(ctx *apptheory.Context) (*apptheory.Respo
 
 // HandleGetAISummaryLift returns a summary of AI features and capabilities
 // GET /api/v1/ai/capabilities
-func (h *Handler) HandleGetAISummaryLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+func (h *Handler) HandleGetAISummaryLift(_ *apptheory.Context) (*apptheory.Response, error) {
 	capabilities := map[string]any{
 		"text_analysis": map[string]any{
 			"sentiment_analysis": true,

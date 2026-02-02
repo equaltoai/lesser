@@ -176,14 +176,81 @@ func init() {
 	initializeWebSocketCostAggregator()
 }
 
+func scheduledEventContext(ctx *apptheory.EventContext) (context.Context, string) {
+	if ctx == nil {
+		return context.Background(), ""
+	}
+	return ctx.Context(), ctx.RequestID
+}
+
+func scheduledOperations(event events.EventBridgeEvent) []string {
+	operations := []string{"idle_tracking", "cost_aggregation", "budget_updates"}
+
+	if len(event.Detail) == 0 {
+		return operations
+	}
+
+	var detail map[string]interface{}
+	if err := json.Unmarshal(event.Detail, &detail); err != nil {
+		return operations
+	}
+
+	opsRaw, ok := detail["operations"].([]interface{})
+	if !ok || len(opsRaw) == 0 {
+		return operations
+	}
+
+	out := make([]string, 0, len(opsRaw))
+	for _, op := range opsRaw {
+		if opStr, ok := op.(string); ok && opStr != "" {
+			out = append(out, opStr)
+		}
+	}
+	if len(out) == 0 {
+		return operations
+	}
+	return out
+}
+
+func (h *WebSocketCostAggregatorHandler) handleScheduledOperation(runCtx context.Context, requestID string, operation string) {
+	switch operation {
+	case "idle_tracking":
+		if err := h.trackIdleConnections(runCtx); err != nil {
+			h.logger.Error("failed to track idle connections",
+				zap.String("request_id", requestID),
+				zap.Error(err))
+		}
+
+	case "cost_aggregation":
+		if err := h.performCostAggregation(runCtx); err != nil {
+			h.logger.Error("failed to perform cost aggregation",
+				zap.String("request_id", requestID),
+				zap.Error(err))
+		}
+
+	case "budget_updates":
+		if err := h.updateBudgetAlerts(runCtx); err != nil {
+			h.logger.Error("failed to update budget alerts",
+				zap.String("request_id", requestID),
+				zap.Error(err))
+		}
+
+	case "cleanup":
+		if err := h.cleanupStaleConnections(runCtx); err != nil {
+			h.logger.Error("failed to cleanup stale connections",
+				zap.String("request_id", requestID),
+				zap.Error(err))
+		}
+
+	default:
+		h.logger.Warn("unknown operation requested",
+			zap.String("operation", operation))
+	}
+}
+
 // HandleScheduledEvent handles CloudWatch Events (EventBridge) scheduled events
 func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
-	requestID := ""
-	runCtx := context.Background()
-	if ctx != nil {
-		requestID = ctx.RequestID
-		runCtx = ctx.Context()
-	}
+	runCtx, requestID := scheduledEventContext(ctx)
 
 	h.logger.Info("processing WebSocket cost aggregation",
 		zap.String("request_id", requestID),
@@ -191,59 +258,11 @@ func (h *WebSocketCostAggregatorHandler) HandleScheduledEvent(ctx *apptheory.Eve
 		zap.Time("event_time", event.Time),
 	)
 
-	// Determine what operations to perform based on the event
-	operations := []string{"idle_tracking", "cost_aggregation", "budget_updates"}
-
-	// Check if specific operations are requested via detail
-	if len(event.Detail) > 0 {
-		var detail map[string]interface{}
-		if err := json.Unmarshal(event.Detail, &detail); err == nil {
-			if ops, ok := detail["operations"].([]interface{}); ok {
-				operations = make([]string, len(ops))
-				for i, op := range ops {
-					if opStr, ok := op.(string); ok {
-						operations[i] = opStr
-					}
-				}
-			}
-		}
-	}
+	operations := scheduledOperations(event)
 
 	// Process each operation
 	for _, operation := range operations {
-		switch operation {
-		case "idle_tracking":
-			if err := h.trackIdleConnections(runCtx); err != nil {
-				h.logger.Error("failed to track idle connections",
-					zap.String("request_id", requestID),
-					zap.Error(err))
-			}
-
-		case "cost_aggregation":
-			if err := h.performCostAggregation(runCtx); err != nil {
-				h.logger.Error("failed to perform cost aggregation",
-					zap.String("request_id", requestID),
-					zap.Error(err))
-			}
-
-		case "budget_updates":
-			if err := h.updateBudgetAlerts(runCtx); err != nil {
-				h.logger.Error("failed to update budget alerts",
-					zap.String("request_id", requestID),
-					zap.Error(err))
-			}
-
-		case "cleanup":
-			if err := h.cleanupStaleConnections(runCtx); err != nil {
-				h.logger.Error("failed to cleanup stale connections",
-					zap.String("request_id", requestID),
-					zap.Error(err))
-			}
-
-		default:
-			h.logger.Warn("unknown operation requested",
-				zap.String("operation", operation))
-		}
+		h.handleScheduledOperation(runCtx, requestID, operation)
 	}
 
 	h.logger.Info("completed WebSocket cost aggregation",

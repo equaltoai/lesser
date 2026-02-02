@@ -1,4 +1,4 @@
-package errors
+package errors // nolint:revive // Legacy package name; import with an alias when also using stdlib errors.
 
 // Validation domain errors
 // Consolidates input validation errors from across the application

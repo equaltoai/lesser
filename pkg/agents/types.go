@@ -1,3 +1,4 @@
+// Package agents defines shared types and helpers for LLM agent accounts.
 package agents
 
 // Capabilities describe what an agent account is permitted to do at a high level.

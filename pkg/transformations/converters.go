@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -432,11 +433,9 @@ func processMentionTag(tag interface{}) interface{} {
 
 	// Extract domain from href if it's a remote mention
 	var domain *string
-	if strings.Contains(href, "://") {
-		// Parse the URL to extract domain
-		if idx := strings.Index(href[8:], "/"); idx != -1 {
-			domainStr := href[8 : 8+idx]
-			domain = &domainStr
+	if parsed, err := url.Parse(href); err == nil {
+		if host := strings.TrimSpace(parsed.Hostname()); host != "" {
+			domain = &host
 		}
 	}
 

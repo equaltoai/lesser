@@ -698,7 +698,7 @@ func createEMFMetricsMiddleware() apptheory.Middleware {
 
 func configureHealthRoutes(app *apptheory.App) {
 	// Liveness endpoint
-	app.Get("/health/live", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+	app.Get("/health/live", func(_ *apptheory.Context) (*apptheory.Response, error) {
 		response := map[string]interface{}{
 			"status":    observability.HealthStatusHealthy,
 			"timestamp": time.Now(),
@@ -709,7 +709,7 @@ func configureHealthRoutes(app *apptheory.App) {
 	})
 
 	// Legacy health endpoint (infra + backwards compatibility)
-	app.Get("/health", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+	app.Get("/health", func(_ *apptheory.Context) (*apptheory.Response, error) {
 		response := map[string]interface{}{
 			"status":    observability.HealthStatusHealthy,
 			"timestamp": time.Now(),

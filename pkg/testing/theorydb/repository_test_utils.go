@@ -1,4 +1,4 @@
-// Package dynamorm provides testing utilities and test cases for DynamORM repository validation.
+// Package theorydb provides test utilities for validating TheoryDB/DynamORM-backed repositories.
 package theorydb
 
 import (

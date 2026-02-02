@@ -1,4 +1,4 @@
-// Package lift implements error handlers for the API Lambda function.
+// Package handlers implements API handlers and supporting helpers for the API Lambda function.
 package handlers
 
 import (

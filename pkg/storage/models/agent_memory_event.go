@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// Memory event types for agent timeline-as-memory indexing.
 const (
 	MemoryEventCreate     = "create"
 	MemoryEventCorrection = "correction"

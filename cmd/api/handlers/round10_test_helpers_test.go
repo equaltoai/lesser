@@ -65,6 +65,7 @@ type round10QueryState struct {
 	instanceHistories           []storagemodels.InstanceHistory
 	instanceMetrics             map[string]storagemodels.InstanceMetrics
 	instanceState               *storagemodels.InstanceState
+	agentInstanceConfig         *storagemodels.AgentInstanceConfig
 	quoteRelationships          []storagemodels.QuoteRelationship
 	announcesByKey              map[string]storagemodels.Announce
 	oauthStates                 map[string]storagemodels.OAuthState
@@ -106,6 +107,11 @@ type round10QueryState struct {
 	trendingHashtags           []storagemodels.HashtagTrend
 	trendingStatuses           []storagemodels.StatusTrend
 	trendingLinks              []storagemodels.LinkTrend
+
+	agentKeyChallengesByID   map[string]storagemodels.AgentKeyChallenge
+	agentMemoryEventsByAgent map[string][]storagemodels.AgentMemoryEvent
+	remoteActorsByPK         map[string]storagemodels.RemoteActor
+	auditLogsByUser          map[string][]*storagemodels.AuthAuditLog
 
 	forceVapidNotFound bool
 
@@ -258,12 +264,15 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
 
 	// UpdateBuilder support
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()
 	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Add", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
 	if state.executeErrorOnce != nil {
 		mockUpdate.On("Execute").Return(state.executeErrorOnce).Once()
 	}
@@ -444,6 +453,12 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
 		switch d := dest.(type) {
+		case *storagemodels.AgentInstanceConfig:
+			if state.agentInstanceConfig != nil {
+				*d = *state.agentInstanceConfig
+				return
+			}
+			*d = *storagemodels.NewAgentInstanceConfig()
 		case *storagemodels.User:
 			username := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "USER#") {
@@ -502,6 +517,25 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				*d = state.objectList[0]
 				return
 			}
+		case *storagemodels.AgentKeyChallenge:
+			pk, _ := state.whereString("PK")
+			id := strings.TrimPrefix(pk, "AGENT_KEY_CHALLENGE#")
+			if state.agentKeyChallengesByID != nil {
+				if challenge, ok := state.agentKeyChallengesByID[id]; ok {
+					*d = challenge
+					return
+				}
+			}
+			*d = storagemodels.AgentKeyChallenge{PK: pk, SK: "CHALLENGE", ID: id}
+		case *storagemodels.RemoteActor:
+			pk, _ := state.whereString("PK")
+			if state.remoteActorsByPK != nil {
+				if actor, ok := state.remoteActorsByPK[pk]; ok {
+					*d = actor
+					return
+				}
+			}
+			*d = storagemodels.RemoteActor{PK: pk, SK: storagemodels.SKProfile}
 		case *storagemodels.Tombstone:
 			objectID := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "OBJECT#") {
@@ -1146,6 +1180,26 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 			}
 			*d = []*storagemodels.Activity{}
+		case *[]*storagemodels.AuthAuditLog:
+			pk, _ := state.whereString("gsi1PK")
+			username := strings.TrimPrefix(pk, "USER#")
+			if state.auditLogsByUser != nil {
+				if logs, ok := state.auditLogsByUser[username]; ok {
+					*d = append([]*storagemodels.AuthAuditLog(nil), logs...)
+					return
+				}
+			}
+			*d = []*storagemodels.AuthAuditLog{}
+		case *[]storagemodels.AgentMemoryEvent:
+			agentPK, _ := state.whereString("gsi1PK")
+			agentUsername := strings.TrimPrefix(agentPK, "AGENT#")
+			if state.agentMemoryEventsByAgent != nil {
+				if events, ok := state.agentMemoryEventsByAgent[agentUsername]; ok {
+					*d = append([]storagemodels.AgentMemoryEvent(nil), events...)
+					return
+				}
+			}
+			*d = []storagemodels.AgentMemoryEvent{}
 		case *[]storagemodels.User:
 			role, _ := state.whereString("gsi3PK")
 			switch role {

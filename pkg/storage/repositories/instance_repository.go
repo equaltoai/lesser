@@ -138,6 +138,7 @@ func (r *InstanceRepository) setCachedAgentConfig(cfg *models.AgentInstanceConfi
 	r.agentCache.mu.Unlock()
 }
 
+//nolint:unused // Reserved for future cache invalidation hooks.
 func (r *InstanceRepository) invalidateAgentConfigCache() {
 	r.agentCache.mu.Lock()
 	r.agentCache.cfg = nil
@@ -205,7 +206,7 @@ func (r *InstanceRepository) EnsureAgentInstanceConfig(ctx context.Context) (*mo
 	cfg = models.NewAgentInstanceConfig()
 	if createErr := r.agentRepo.Create(ctx, cfg); createErr != nil {
 		// If another writer created it concurrently, read it back.
-		if appErrors.HasCode(createErr, appErrors.CodeConflict) {
+		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) || appErrors.HasCode(createErr, appErrors.CodeConflict) {
 			cfg = &models.AgentInstanceConfig{}
 			if err := r.agentRepo.Get(ctx, storage.InstanceConfigKey, "AGENT_CONFIG", cfg); err != nil {
 				return nil, err

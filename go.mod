@@ -2,6 +2,8 @@ module github.com/equaltoai/lesser
 
 go 1.25.0
 
+toolchain go1.25.6
+
 require (
 	github.com/99designs/gqlgen v0.17.85
 	github.com/aws/aws-lambda-go v1.52.0

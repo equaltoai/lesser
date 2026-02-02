@@ -541,7 +541,7 @@ func (h *Handler) createStatusUpdateActivity(ctx *apptheory.Context, note *activ
 }
 
 // buildUpdateStatusResponse builds the response for the updated status
-func (h *Handler) buildUpdateStatusResponse(ctx *apptheory.Context, note *activitypub.Note, actor *activitypub.Actor, req *models.UpdateStatusRequest) (*apptheory.Response, error) {
+func (h *Handler) buildUpdateStatusResponse(_ *apptheory.Context, note *activitypub.Note, actor *activitypub.Actor, req *models.UpdateStatusRequest) (*apptheory.Response, error) {
 	resp := transformations.ObjectToStatusAny(note, actor, h.cfg.BaseURL())
 	if req.Visibility != "" {
 		resp.Visibility = req.Visibility

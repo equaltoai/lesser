@@ -472,7 +472,7 @@ func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, st
 	}
 
 	out := &models.AgentPostAttribution{
-		ModelVersion: "unknown",
+		ModelVersion: agentVersionUnknown,
 	}
 
 	if noteAttr != nil {
@@ -502,7 +502,7 @@ func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, st
 		out.Constraints = buildAgentCapabilityConstraints(authorAccount.User.AgentCapabilities)
 	}
 
-	if out.ModelVersion == "unknown" {
+	if out.ModelVersion == agentVersionUnknown {
 		if v := strings.TrimSpace(authorAccount.User.AgentVersion); v != "" {
 			out.ModelVersion = v
 		} else if authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
@@ -822,12 +822,6 @@ func (h *Handler) authenticateWithClaims(ctx *apptheory.Context, requiredScopes 
 	}
 
 	return claims, nil
-}
-
-// authenticateUserWithWriteScope handles the common authentication pattern with write scope requirement
-// Returns the authenticated username or triggers an HTTP error response
-func (h *Handler) authenticateUserWithWriteScope(ctx *apptheory.Context) (string, error) {
-	return h.authenticateUser(ctx, []string{auth.ScopeWrite})
 }
 
 // respondOK sends a 200 OK response with data

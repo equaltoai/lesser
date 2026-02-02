@@ -18,7 +18,12 @@ import (
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
-const delegatedAgentClientID = "lesser-agent-delegation"
+const (
+	delegatedAgentClientID = "lesser-agent-delegation"
+
+	agentTypeCustom     = "CUSTOM"
+	agentVersionUnknown = "unknown"
+)
 
 type delegationAgentInfo struct {
 	AgentType         string               `json:"agent_type"`
@@ -79,14 +84,70 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		return resp, err
 	}
 
+	req, resp, err := parseAgentDelegationRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	if resp, err := h.validateAgentDelegationRequest(ctx, req); resp != nil || err != nil {
+		return resp, err
+	}
+
+	requestedScopes, resp, err := h.validateDelegationScopes(ctx, ownerClaims.Scopes, req.Scopes)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	accessTTL, resp, err := validateAgentAccessTokenTTL(ctx, req.ExpiresIn)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	now := time.Now().UTC()
+	info, resp, err := parseAgentDelegationInfo(ctx, req.AgentInfo, requestedScopes)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	account, resp, err := h.createDelegatedAgentAccount(ctx, ownerClaims, req, info, requestedScopes, now)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	token, err := h.mintDelegatedAgentTokens(ctx, req.AgentUsername, requestedScopes, accessTTL)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	apiAccount := h.converter.ActorToAccount(account.Actor)
+	respPayload := apimodels.AgentDelegationResponse{
+		Account: apiAccount,
+		Token:   token,
+	}
+
+	return okJSON(respPayload)
+}
+
+type delegationResolvedInfo struct {
+	AgentType    string
+	AgentVersion string
+	Capabilities *agents.Capabilities
+}
+
+func parseAgentDelegationRequest(ctx *apptheory.Context) (*apimodels.AgentDelegationRequest, *apptheory.Response, error) {
 	var req apimodels.AgentDelegationRequest
 	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
-		return common.RespondBadRequest(ctx, "invalid request body")
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return nil, resp, respErr
 	}
 
 	req.AgentUsername = strings.TrimSpace(req.AgentUsername)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
 
+	return &req, nil, nil
+}
+
+func (h *Handler) validateAgentDelegationRequest(ctx *apptheory.Context, req *apimodels.AgentDelegationRequest) (*apptheory.Response, error) {
 	if err := common.ValidateUsernameParamID(req.AgentUsername); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
@@ -103,19 +164,14 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		}
 	}
 
-	requestedScopes, resp, err := h.validateDelegationScopes(ctx, ownerClaims.Scopes, req.Scopes)
-	if resp != nil || err != nil {
-		return resp, err
-	}
+	return nil, nil
+}
 
-	accessTTL, resp, err := validateAgentAccessTokenTTL(ctx, req.ExpiresIn)
-	if resp != nil || err != nil {
-		return resp, err
-	}
-
-	info, err := parseDelegationAgentInfo(req.AgentInfo)
+func parseAgentDelegationInfo(ctx *apptheory.Context, raw any, requestedScopes []string) (delegationResolvedInfo, *apptheory.Response, error) {
+	info, err := parseDelegationAgentInfo(raw)
 	if err != nil {
-		return common.RespondBadRequest(ctx, "invalid agent_info")
+		resp, respErr := common.RespondBadRequest(ctx, "invalid agent_info")
+		return delegationResolvedInfo{}, resp, respErr
 	}
 
 	capabilities := info.Capabilities
@@ -126,19 +182,26 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 
 	agentType := strings.TrimSpace(info.AgentType)
 	if agentType == "" {
-		agentType = "CUSTOM"
+		agentType = agentTypeCustom
 	}
+
 	agentVersion := strings.TrimSpace(info.Version)
 	if agentVersion == "" {
-		agentVersion = "unknown"
+		agentVersion = agentVersionUnknown
 	}
 
-	ownerIdentifier := "@" + ownerClaims.Username
+	return delegationResolvedInfo{
+		AgentType:    agentType,
+		AgentVersion: agentVersion,
+		Capabilities: capabilities,
+	}, nil, nil
+}
 
-	now := time.Now().UTC()
-	quarantineDays := 7
-	maxPostsPerHourAllowed := agentDefaultMaxPostsPerHour
-	if h.repos != nil && h.repos.Instance() != nil {
+func (h *Handler) agentRegistrationLimits(ctx *apptheory.Context) (quarantineDays int, maxPostsPerHourAllowed int) {
+	quarantineDays = 7
+	maxPostsPerHourAllowed = agentDefaultMaxPostsPerHour
+
+	if h != nil && h.repos != nil && h.repos.Instance() != nil {
 		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
 			if policy.DefaultQuarantineDays > 0 {
 				quarantineDays = policy.DefaultQuarantineDays
@@ -152,14 +215,35 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 	if maxPostsPerHourAllowed <= 0 {
 		maxPostsPerHourAllowed = agentDefaultMaxPostsPerHour
 	}
+
+	return quarantineDays, maxPostsPerHourAllowed
+}
+
+func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
+	if capabilities == nil {
+		return
+	}
 	if capabilities.MaxPostsPerHour <= 0 {
 		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
 	}
 	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
 		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
 	}
+}
 
+func (h *Handler) createDelegatedAgentAccount(
+	ctx *apptheory.Context,
+	ownerClaims *auth.Claims,
+	req *apimodels.AgentDelegationRequest,
+	info delegationResolvedInfo,
+	requestedScopes []string,
+	now time.Time,
+) (*storage.Account, *apptheory.Response, error) {
+	quarantineDays, maxPostsPerHourAllowed := h.agentRegistrationLimits(ctx)
+	clampMaxPostsPerHour(info.Capabilities, maxPostsPerHourAllowed)
 	quarantineEnd := now.AddDate(0, 0, quarantineDays)
+
+	ownerIdentifier := "@" + ownerClaims.Username
 	user := &storage.User{
 		Username:          req.AgentUsername,
 		Email:             "",
@@ -175,11 +259,11 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		CreatedAt:         now,
 		UpdatedAt:         now,
 		IsAgent:           true,
-		AgentType:         agentType,
-		AgentVersion:      agentVersion,
+		AgentType:         info.AgentType,
+		AgentVersion:      info.AgentVersion,
 		AgentOwner:        ownerIdentifier,
 		AgentCreatedBy:    ownerClaims.Username,
-		AgentCapabilities: capabilities,
+		AgentCapabilities: info.Capabilities,
 		Metadata: map[string]interface{}{
 			"agent_quarantine_status": "quarantined",
 			"agent_quarantine_start":  now.Format(time.RFC3339),
@@ -190,15 +274,18 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 
 	actorID := h.cfg.ActorURL(req.AgentUsername)
@@ -214,7 +301,6 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 	}
 
 	actor = activitypubutil.BuildLocalActor(req.AgentUsername, h.cfg.BaseURL(), user, actor)
-
 	account := &storage.Account{
 		User:       user,
 		Actor:      actor,
@@ -223,42 +309,43 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 
 	if err := h.repos.Account().CreateAccount(ctx.Context(), account); err != nil {
 		if common.IsConflict(err) {
-			return common.RespondConflict(ctx, "username already taken")
+			resp, respErr := common.RespondConflict(ctx, "username already taken")
+			return nil, resp, respErr
 		}
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 
+	return account, nil, nil
+}
+
+func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername string, requestedScopes []string, accessTTL time.Duration) (apimodels.OAuthTokenResponse, error) {
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx.Context(), req.AgentUsername, delegatedAgentClientID, "", requestedScopes, accessTTL)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx.Context(), agentUsername, delegatedAgentClientID, "", requestedScopes, accessTTL)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return apimodels.OAuthTokenResponse{}, err
 	}
 
-	refreshExpiry := time.Now().Add(accessTTL)
+	now := time.Now()
+	refreshExpiry := now.Add(accessTTL)
 	oauthRefreshToken := &storage.RefreshToken{
 		Token:     refreshToken,
-		Username:  req.AgentUsername,
+		Username:  agentUsername,
 		ClientID:  delegatedAgentClientID,
 		Scopes:    requestedScopes,
-		CreatedAt: time.Now(),
+		CreatedAt: now,
 		ExpiresAt: refreshExpiry,
 	}
 	_ = h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken)
 
-	apiAccount := h.converter.ActorToAccount(actor)
-	respPayload := apimodels.AgentDelegationResponse{
-		Account: apiAccount,
-		Token: apimodels.OAuthTokenResponse{
-			AccessToken:  accessToken,
-			TokenType:    "Bearer",
-			Scope:        strings.Join(requestedScopes, " "),
-			CreatedAt:    time.Now().Unix(),
-			ExpiresIn:    int(accessTTL.Seconds()),
-			RefreshToken: refreshToken,
-		},
-	}
-
-	return okJSON(respPayload)
+	return apimodels.OAuthTokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		Scope:        strings.Join(requestedScopes, " "),
+		CreatedAt:    now.Unix(),
+		ExpiresIn:    int(accessTTL.Seconds()),
+		RefreshToken: refreshToken,
+	}, nil
 }
 
 // HandleListAgentsLift handles GET /api/v1/agents.
@@ -337,78 +424,159 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 		return common.RespondForbidden(ctx, "not authorized to modify agent")
 	}
 
-	var req apimodels.UpdateAgentRequest
-	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
-		return common.RespondBadRequest(ctx, "invalid request body")
+	req, resp, err := parseUpdateAgentRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
 	}
 
-	if req.DisplayName != "" && h.mastodonLogic != nil {
+	if resp, err := h.validateUpdateAgentRequest(ctx, req); resp != nil || err != nil {
+		return resp, err
+	}
+
+	now := time.Now().UTC()
+	h.applyAgentUpdateRequest(ctx, account, username, claims, req, now)
+
+	if err := h.repos.Account().UpdateAccount(ctx.Context(), account); err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	return okJSON(agentFromStorageUser(account.User))
+}
+
+func parseUpdateAgentRequest(ctx *apptheory.Context) (*apimodels.UpdateAgentRequest, *apptheory.Response, error) {
+	var req apimodels.UpdateAgentRequest
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return nil, resp, respErr
+	}
+	return &req, nil, nil
+}
+
+func (h *Handler) validateUpdateAgentRequest(ctx *apptheory.Context, req *apimodels.UpdateAgentRequest) (*apptheory.Response, error) {
+	if h.mastodonLogic == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(req.DisplayName) != "" {
 		if err := h.mastodonLogic.ValidateDisplayName(req.DisplayName); err != nil {
 			return common.RespondValidationError(ctx, err)
 		}
 	}
-	if req.Bio != "" && h.mastodonLogic != nil {
+	if strings.TrimSpace(req.Bio) != "" {
 		if err := h.mastodonLogic.ValidateBio(req.Bio); err != nil {
 			return common.RespondValidationError(ctx, err)
 		}
 	}
+	return nil, nil
+}
 
-	// Apply user updates.
-	if strings.TrimSpace(req.DisplayName) != "" {
-		account.User.DisplayName = strings.TrimSpace(req.DisplayName)
+func (h *Handler) applyAgentUpdateRequest(
+	ctx *apptheory.Context,
+	account *storage.Account,
+	username string,
+	claims *auth.Claims,
+	req *apimodels.UpdateAgentRequest,
+	now time.Time,
+) {
+	applyAgentProfileUpdates(account, req)
+	applyAgentInfoUpdates(account.User, req)
+	h.applyAgentCapabilitiesUpdate(ctx, account.User, req.AgentCapabilities)
+	applyAgentQuarantineExit(account.User, claims, req.ExitQuarantine, now)
+
+	h.ensureAgentActor(username, account)
+	account.User.UpdatedAt = now
+	if account.Actor != nil {
+		account.Actor.Updated = &now
+	}
+}
+
+func applyAgentProfileUpdates(account *storage.Account, req *apimodels.UpdateAgentRequest) {
+	if account == nil || account.User == nil || req == nil {
+		return
+	}
+
+	if v := strings.TrimSpace(req.DisplayName); v != "" {
+		account.User.DisplayName = v
 		if account.Actor != nil {
-			account.Actor.Name = account.User.DisplayName
+			account.Actor.Name = v
 		}
 	}
-	if strings.TrimSpace(req.Bio) != "" {
-		account.User.Note = strings.TrimSpace(req.Bio)
+	if v := strings.TrimSpace(req.Bio); v != "" {
+		account.User.Note = v
 		if account.Actor != nil {
-			account.Actor.Summary = account.User.Note
+			account.Actor.Summary = v
 		}
 	}
-	if strings.TrimSpace(req.AgentType) != "" {
-		account.User.AgentType = strings.TrimSpace(req.AgentType)
-	}
-	if strings.TrimSpace(req.AgentVersion) != "" {
-		account.User.AgentVersion = strings.TrimSpace(req.AgentVersion)
-	}
-	if req.AgentCapabilities != nil {
-		account.User.AgentCapabilities = storageAgentCapabilitiesFromAPI(*req.AgentCapabilities)
+}
 
-		allowed := agentDefaultMaxPostsPerHour
-		verifiedAllowed := agentVerifiedDefaultMaxPostsPerHour
-		if h.repos != nil && h.repos.Instance() != nil {
-			if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
-				if policy.AgentMaxPostsPerHour > 0 {
-					allowed = policy.AgentMaxPostsPerHour
-				}
-				if policy.VerifiedAgentMaxPostsPerHour > 0 {
-					verifiedAllowed = policy.VerifiedAgentMaxPostsPerHour
-				}
+func applyAgentInfoUpdates(user *storage.User, req *apimodels.UpdateAgentRequest) {
+	if user == nil || req == nil {
+		return
+	}
+	if v := strings.TrimSpace(req.AgentType); v != "" {
+		user.AgentType = v
+	}
+	if v := strings.TrimSpace(req.AgentVersion); v != "" {
+		user.AgentVersion = v
+	}
+}
+
+func applyAgentQuarantineExit(user *storage.User, claims *auth.Claims, exitQuarantine bool, now time.Time) {
+	if !exitQuarantine || user == nil {
+		return
+	}
+	if user.Metadata == nil {
+		user.Metadata = map[string]interface{}{}
+	}
+
+	approvedBy := ""
+	if claims != nil {
+		approvedBy = claims.Username
+	}
+
+	user.Metadata["agent_quarantine_status"] = "approved"
+	user.Metadata["agent_quarantine_end"] = now.Format(time.RFC3339)
+	user.Metadata["agent_quarantine_approved_by"] = approvedBy
+	user.Metadata["agent_quarantine_approved_at"] = now.Format(time.RFC3339)
+}
+
+func (h *Handler) applyAgentCapabilitiesUpdate(ctx *apptheory.Context, user *storage.User, apiCaps *apimodels.AgentCapabilities) {
+	if user == nil || apiCaps == nil {
+		return
+	}
+
+	user.AgentCapabilities = storageAgentCapabilitiesFromAPI(*apiCaps)
+	maxAllowed := h.maxPostsPerHourAllowedForUpdate(ctx, user)
+	if user.AgentCapabilities != nil && user.AgentCapabilities.MaxPostsPerHour > maxAllowed {
+		user.AgentCapabilities.MaxPostsPerHour = maxAllowed
+	}
+}
+
+func (h *Handler) maxPostsPerHourAllowedForUpdate(ctx *apptheory.Context, user *storage.User) int {
+	allowed := agentDefaultMaxPostsPerHour
+	verifiedAllowed := agentVerifiedDefaultMaxPostsPerHour
+
+	if h != nil && h.repos != nil && h.repos.Instance() != nil {
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
+			if policy.AgentMaxPostsPerHour > 0 {
+				allowed = policy.AgentMaxPostsPerHour
+			}
+			if policy.VerifiedAgentMaxPostsPerHour > 0 {
+				verifiedAllowed = policy.VerifiedAgentMaxPostsPerHour
 			}
 		}
-
-		maxAllowed := allowed
-		if agentMetadataBool(account.User, "agent_verified") {
-			maxAllowed = verifiedAllowed
-		}
-
-		if account.User.AgentCapabilities != nil && account.User.AgentCapabilities.MaxPostsPerHour > maxAllowed {
-			account.User.AgentCapabilities.MaxPostsPerHour = maxAllowed
-		}
-	}
-	if req.ExitQuarantine {
-		if account.User.Metadata == nil {
-			account.User.Metadata = map[string]interface{}{}
-		}
-		now := time.Now().UTC()
-		account.User.Metadata["agent_quarantine_status"] = "approved"
-		account.User.Metadata["agent_quarantine_end"] = now.Format(time.RFC3339)
-		account.User.Metadata["agent_quarantine_approved_by"] = claims.Username
-		account.User.Metadata["agent_quarantine_approved_at"] = now.Format(time.RFC3339)
 	}
 
-	// Ensure actor reflects updated agent metadata.
+	maxAllowed := allowed
+	if agentMetadataBool(user, "agent_verified") {
+		maxAllowed = verifiedAllowed
+	}
+	return maxAllowed
+}
+
+func (h *Handler) ensureAgentActor(username string, account *storage.Account) {
+	if h == nil || account == nil || account.User == nil {
+		return
+	}
 	if account.Actor == nil {
 		actorID := h.cfg.ActorURL(username)
 		account.Actor = activitypub.NewActor(activitypub.ServiceType, actorID, username)
@@ -416,16 +584,6 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 	account.Actor.Type = activitypub.ServiceType
 	account.User.IsAgent = true
 	account.Actor = activitypubutil.BuildLocalActor(username, h.cfg.BaseURL(), account.User, account.Actor)
-
-	account.User.UpdatedAt = time.Now().UTC()
-	now := account.User.UpdatedAt
-	account.Actor.Updated = &now
-
-	if err := h.repos.Account().UpdateAccount(ctx.Context(), account); err != nil {
-		return common.RespondInternalServerError(ctx)
-	}
-
-	return okJSON(agentFromStorageUser(account.User))
 }
 
 // HandleDeleteAgentLift handles DELETE /api/v1/agents/:username.
@@ -650,7 +808,7 @@ func (h *Handler) validateDelegationScopes(ctx *apptheory.Context, ownerScopes [
 
 		base := strings.Split(scope, ":")[0]
 		switch base {
-		case "admin", "push":
+		case roleAdmin, "push":
 			resp, respErr := common.RespondForbidden(ctx, "delegation cannot grant admin or push scopes")
 			return nil, resp, respErr
 		}
@@ -757,8 +915,8 @@ func validateAgentAccessTokenTTL(ctx *apptheory.Context, expiresIn int) (time.Du
 		return 0, resp, respErr
 	}
 
-	max := 7 * 24 * 60 * 60
-	if expiresIn > max {
+	maxSeconds := 7 * 24 * 60 * 60
+	if expiresIn > maxSeconds {
 		resp, respErr := common.RespondValidationError(ctx, common.ValidationError{Field: "expires_in", Message: "cannot exceed 7 days"})
 		return 0, resp, respErr
 	}
@@ -791,10 +949,10 @@ func agentFromStorageUser(user *storage.User) apimodels.Agent {
 	out.DelegatedScopes = agentDelegatedScopes(user)
 	out.AgentCapabilities = apiAgentCapabilitiesFromStorage(user.AgentCapabilities)
 	if strings.TrimSpace(out.AgentType) == "" {
-		out.AgentType = "CUSTOM"
+		out.AgentType = agentTypeCustom
 	}
 	if strings.TrimSpace(out.AgentVersion) == "" {
-		out.AgentVersion = "unknown"
+		out.AgentVersion = agentVersionUnknown
 	}
 
 	return out

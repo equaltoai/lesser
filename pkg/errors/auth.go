@@ -1,4 +1,4 @@
-package errors
+package errors // nolint:revive // Legacy package name; import with an alias when also using stdlib errors.
 
 // Authentication and authorization domain errors
 // Consolidates errors from pkg/auth/errors.go, pkg/common/errors.go (auth-related), and related files

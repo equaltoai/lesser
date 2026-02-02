@@ -14,6 +14,7 @@ import (
 
 const packagePathLift = "github.com/equaltoai/lesser/cmd/api/handlers"
 const packagePathAppTheory = "github.com/theory-cloud/apptheory/runtime"
+const selectorNameJSON = "JSON"
 
 type handlerPayloadInfo struct {
 	Request      types.Type
@@ -765,13 +766,14 @@ func commonParseTargetArgIndex(call *ast.CallExpr, info *types.Info) (int, bool)
 	}
 }
 
+//nolint:unused // Deprecated: retained to keep older analysis helpers available during migration.
 func isLiftJSONCall(call *ast.CallExpr, info *types.Info) bool {
 	// Deprecated: legacy matcher. Prefer isAppTheoryJSONCall.
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel == nil || sel.Sel == nil {
 		return false
 	}
-	if sel.Sel.Name != "JSON" {
+	if sel.Sel.Name != selectorNameJSON {
 		return false
 	}
 
@@ -836,7 +838,7 @@ func isAppTheoryJSONCall(call *ast.CallExpr, info *types.Info) bool {
 	if !ok || sel == nil || sel.Sel == nil {
 		return false
 	}
-	if strings.TrimSpace(sel.Sel.Name) != "JSON" {
+	if strings.TrimSpace(sel.Sel.Name) != selectorNameJSON {
 		return false
 	}
 
@@ -844,5 +846,5 @@ func isAppTheoryJSONCall(call *ast.CallExpr, info *types.Info) bool {
 	if !ok || fn == nil || fn.Pkg() == nil {
 		return false
 	}
-	return fn.Pkg().Path() == packagePathAppTheory && strings.TrimSpace(fn.Name()) == "JSON"
+	return fn.Pkg().Path() == packagePathAppTheory && strings.TrimSpace(fn.Name()) == selectorNameJSON
 }

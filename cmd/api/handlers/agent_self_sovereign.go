@@ -54,14 +54,56 @@ func (h *Handler) HandleAgentRegisterChallengeLift(ctx *apptheory.Context) (*app
 	return okJSON(agentKeyChallengeResponse(challenge))
 }
 
+// HandleAgentRegisterLift registers a self-sovereign agent by verifying a signed registration challenge and
+// minting OAuth tokens for the new agent.
 func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentRegistrationEnabled(ctx); resp != nil || err != nil {
 		return resp, err
 	}
 
+	req, resp, err := parseAgentSelfRegistrationRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	if resp, err := h.validateAgentSelfRegistrationRequest(ctx, req); resp != nil || err != nil {
+		return resp, err
+	}
+
+	if resp, err := h.verifyAndConsumeSelfRegistrationChallenge(ctx, req); resp != nil || err != nil {
+		return resp, err
+	}
+
+	now := time.Now().UTC()
+	user, requestedScopes, resp, err := h.buildSelfSovereignAgentUser(ctx, req, now)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	account, resp, err := h.createSelfSovereignAgentAccount(ctx, user, req.Username, req.DisplayName, req.Bio, now)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	token, err := h.mintSelfSovereignTokens(ctx, req.Username, requestedScopes)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	apiAccount := h.converter.ActorToAccount(account.Actor)
+	respPayload := apimodels.AgentSelfRegistrationResponse{
+		Account: apiAccount,
+		Token:   token,
+	}
+
+	return okJSON(respPayload)
+}
+
+func parseAgentSelfRegistrationRequest(ctx *apptheory.Context) (*apimodels.AgentSelfRegistrationRequest, *apptheory.Response, error) {
 	var req apimodels.AgentSelfRegistrationRequest
 	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
-		return common.RespondBadRequest(ctx, "invalid request body")
+		resp, respErr := common.RespondBadRequest(ctx, "invalid request body")
+		return nil, resp, respErr
 	}
 
 	req.Username = strings.TrimSpace(req.Username)
@@ -71,6 +113,10 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 	req.ChallengeID = strings.TrimSpace(req.ChallengeID)
 	req.Signature = strings.TrimSpace(req.Signature)
 
+	return &req, nil, nil
+}
+
+func (h *Handler) validateAgentSelfRegistrationRequest(ctx *apptheory.Context, req *apimodels.AgentSelfRegistrationRequest) (*apptheory.Response, error) {
 	if err := common.ValidateUsernameParamID(req.Username); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
@@ -99,6 +145,10 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 		}
 	}
 
+	return nil, nil
+}
+
+func (h *Handler) verifyAndConsumeSelfRegistrationChallenge(ctx *apptheory.Context, req *apimodels.AgentSelfRegistrationRequest) (*apptheory.Response, error) {
 	challenge, resp, err := h.loadAndValidateAgentKeyChallenge(ctx, req.ChallengeID, req.Username, agentKeyActionRegister)
 	if resp != nil || err != nil {
 		return resp, err
@@ -121,9 +171,14 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 		return common.RespondInternalServerError(ctx)
 	}
 
+	return nil, nil
+}
+
+func (h *Handler) buildSelfSovereignAgentUser(ctx *apptheory.Context, req *apimodels.AgentSelfRegistrationRequest, now time.Time) (*storage.User, []string, *apptheory.Response, error) {
 	instanceInfo, err := parseDelegationAgentInfo(req.AgentInfo)
 	if err != nil {
-		return common.RespondBadRequest(ctx, "invalid agent_info")
+		resp, respErr := common.RespondBadRequest(ctx, "invalid agent_info")
+		return nil, nil, resp, respErr
 	}
 
 	requestedScopes := normalizeSelfSovereignScopes(req.Scopes)
@@ -132,16 +187,16 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 		derived := deriveAgentCapabilitiesFromScopes(requestedScopes)
 		capabilities = &derived
 	}
+
 	agentType := strings.TrimSpace(instanceInfo.AgentType)
 	if agentType == "" {
-		agentType = "CUSTOM"
+		agentType = agentTypeCustom
 	}
 	agentVersion := strings.TrimSpace(instanceInfo.Version)
 	if agentVersion == "" {
-		agentVersion = "unknown"
+		agentVersion = agentVersionUnknown
 	}
 
-	now := time.Now().UTC()
 	quarantineDays := 7
 	maxPostsPerHourAllowed := agentDefaultMaxPostsPerHour
 	if h.repos != nil && h.repos.Instance() != nil {
@@ -166,7 +221,6 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 	}
 
 	quarantineEnd := now.AddDate(0, 0, quarantineDays)
-
 	user := &storage.User{
 		Username:          req.Username,
 		Email:             "",
@@ -198,24 +252,31 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 		},
 	}
 
+	return user, requestedScopes, nil, nil
+}
+
+func (h *Handler) createSelfSovereignAgentAccount(ctx *apptheory.Context, user *storage.User, username, displayName, bio string, now time.Time) (*storage.Account, *apptheory.Response, error) {
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 
-	actorID := h.cfg.ActorURL(req.Username)
-	actor := activitypub.NewActor(activitypub.ServiceType, actorID, req.Username)
-	actor.Name = req.DisplayName
-	actor.Summary = req.Bio
-	actor.URL = fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), req.Username)
+	actorID := h.cfg.ActorURL(username)
+	actor := activitypub.NewActor(activitypub.ServiceType, actorID, username)
+	actor.Name = displayName
+	actor.Summary = bio
+	actor.URL = fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), username)
 	actor.CreatedAt = &now
 	actor.PublicKey = &activitypub.PublicKey{
 		ID:           actorID + "#main-key",
@@ -223,8 +284,7 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 		PublicKeyPem: string(publicKeyPEM),
 	}
 
-	actor = activitypubutil.BuildLocalActor(req.Username, h.cfg.BaseURL(), user, actor)
-
+	actor = activitypubutil.BuildLocalActor(username, h.cfg.BaseURL(), user, actor)
 	account := &storage.Account{
 		User:       user,
 		Actor:      actor,
@@ -233,44 +293,46 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 
 	if err := h.repos.Account().CreateAccount(ctx.Context(), account); err != nil {
 		if common.IsConflict(err) {
-			return common.RespondConflict(ctx, "username already taken")
+			resp, respErr := common.RespondConflict(ctx, "username already taken")
+			return nil, resp, respErr
 		}
-		return common.RespondInternalServerError(ctx)
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
 	}
 
+	return account, nil, nil
+}
+
+func (h *Handler) mintSelfSovereignTokens(ctx *apptheory.Context, username string, requestedScopes []string) (apimodels.OAuthTokenResponse, error) {
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx.Context(), req.Username, selfSovereignAgentClientID, "", requestedScopes)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx.Context(), username, selfSovereignAgentClientID, "", requestedScopes)
 	if err != nil {
-		return common.RespondInternalServerError(ctx)
+		return apimodels.OAuthTokenResponse{}, err
 	}
 
-	refreshExpiry := time.Now().Add(auth.AccessTokenDuration)
+	now := time.Now()
+	refreshExpiry := now.Add(auth.AccessTokenDuration)
 	oauthRefreshToken := &storage.RefreshToken{
 		Token:     refreshToken,
-		Username:  req.Username,
+		Username:  username,
 		ClientID:  selfSovereignAgentClientID,
 		Scopes:    requestedScopes,
-		CreatedAt: time.Now(),
+		CreatedAt: now,
 		ExpiresAt: refreshExpiry,
 	}
 	_ = h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken)
 
-	apiAccount := h.converter.ActorToAccount(actor)
-	respPayload := apimodels.AgentSelfRegistrationResponse{
-		Account: apiAccount,
-		Token: apimodels.OAuthTokenResponse{
-			AccessToken:  accessToken,
-			TokenType:    "Bearer",
-			Scope:        strings.Join(requestedScopes, " "),
-			CreatedAt:    time.Now().Unix(),
-			ExpiresIn:    int(auth.AccessTokenDuration.Seconds()),
-			RefreshToken: refreshToken,
-		},
-	}
-
-	return okJSON(respPayload)
+	return apimodels.OAuthTokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		Scope:        strings.Join(requestedScopes, " "),
+		CreatedAt:    now.Unix(),
+		ExpiresIn:    int(auth.AccessTokenDuration.Seconds()),
+		RefreshToken: refreshToken,
+	}, nil
 }
 
+// HandleAgentAuthChallengeLift issues a one-time challenge for self-sovereign token minting.
 func (h *Handler) HandleAgentAuthChallengeLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentsEnabled(ctx); resp != nil || err != nil {
 		return resp, err
@@ -302,6 +364,7 @@ func (h *Handler) HandleAgentAuthChallengeLift(ctx *apptheory.Context) (*apptheo
 	return okJSON(agentKeyChallengeResponse(challenge))
 }
 
+// HandleAgentAuthTokenLift mints an OAuth token by verifying a signed challenge.
 func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentsEnabled(ctx); resp != nil || err != nil {
 		return resp, err
@@ -384,6 +447,7 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 	})
 }
 
+// HandleAgentRotateKeyChallengeLift issues a one-time challenge for rotating a self-sovereign agent key.
 func (h *Handler) HandleAgentRotateKeyChallengeLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentsEnabled(ctx); resp != nil || err != nil {
 		return resp, err
@@ -421,6 +485,7 @@ func (h *Handler) HandleAgentRotateKeyChallengeLift(ctx *apptheory.Context) (*ap
 	return okJSON(agentKeyChallengeResponse(challenge))
 }
 
+// HandleAgentRotateKeyLift rotates a self-sovereign agent key after verifying a signed challenge.
 func (h *Handler) HandleAgentRotateKeyLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentsEnabled(ctx); resp != nil || err != nil {
 		return resp, err

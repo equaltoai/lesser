@@ -20,7 +20,7 @@ type StandardErrorResponse struct {
 // This consolidates the 400+ occurrences of apptheory.JSON(4XX, map[string]string{"error": "..."})
 
 // RespondUnauthorized handles authentication errors (401) - now using centralized errors
-func RespondUnauthorized(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondUnauthorized(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Unauthorized"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
@@ -33,7 +33,7 @@ func RespondUnauthorized(ctx *apptheory.Context, message ...string) (*apptheory.
 }
 
 // RespondUnauthorizedWithDescription handles authentication errors (401) with additional description
-func RespondUnauthorizedWithDescription(ctx *apptheory.Context, description string) (*apptheory.Response, error) {
+func RespondUnauthorizedWithDescription(_ *apptheory.Context, description string) (*apptheory.Response, error) {
 	appErr := errors.Unauthorized("Unauthorized")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error:       appErr.Message,
@@ -48,7 +48,7 @@ func RespondMissingAuth(ctx *apptheory.Context) (*apptheory.Response, error) {
 }
 
 // RespondInvalidToken handles invalid token errors by returning a 401 unauthorized response
-func RespondInvalidToken(ctx *apptheory.Context) (*apptheory.Response, error) {
+func RespondInvalidToken(_ *apptheory.Context) (*apptheory.Response, error) {
 	appErr := errors.NewAuthError(errors.CodeTokenInvalid, "invalid token")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
@@ -57,7 +57,7 @@ func RespondInvalidToken(ctx *apptheory.Context) (*apptheory.Response, error) {
 }
 
 // RespondExpiredToken handles expired token errors by returning a 401 unauthorized response
-func RespondExpiredToken(ctx *apptheory.Context) (*apptheory.Response, error) {
+func RespondExpiredToken(_ *apptheory.Context) (*apptheory.Response, error) {
 	appErr := errors.NewAuthError(errors.CodeTokenExpired, "token expired")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
@@ -66,7 +66,7 @@ func RespondExpiredToken(ctx *apptheory.Context) (*apptheory.Response, error) {
 }
 
 // RespondForbidden handles authorization/permission errors (403) - now using centralized errors
-func RespondForbidden(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondForbidden(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Forbidden"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
@@ -79,7 +79,7 @@ func RespondForbidden(ctx *apptheory.Context, message ...string) (*apptheory.Res
 }
 
 // RespondInsufficientScope handles insufficient OAuth scope errors by returning a 403 forbidden response
-func RespondInsufficientScope(ctx *apptheory.Context, requiredScope ...string) (*apptheory.Response, error) {
+func RespondInsufficientScope(_ *apptheory.Context, requiredScope ...string) (*apptheory.Response, error) {
 	msg := "insufficient scope"
 	if len(requiredScope) > 0 {
 		msg = fmt.Sprintf("insufficient scope: requires %s", requiredScope[0])
@@ -107,7 +107,7 @@ func RespondNotAuthorizedToDelete(ctx *apptheory.Context, resource string) (*app
 }
 
 // RespondBadRequest handles validation and bad request errors (400) - now using centralized errors
-func RespondBadRequest(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondBadRequest(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Bad Request"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
@@ -120,7 +120,7 @@ func RespondBadRequest(ctx *apptheory.Context, message ...string) (*apptheory.Re
 }
 
 // RespondValidationError handles validation failed errors - now using centralized errors
-func RespondValidationError(ctx *apptheory.Context, err error) (*apptheory.Response, error) {
+func RespondValidationError(_ *apptheory.Context, err error) (*apptheory.Response, error) {
 	var appErr *errors.AppError
 	if err != nil {
 		if existingAppErr, ok := errors.AsAppError(err); ok {
@@ -163,7 +163,7 @@ func RespondInvalidRequest(ctx *apptheory.Context) (*apptheory.Response, error) 
 }
 
 // RespondNotFound handles resource not found errors (404) - now using centralized errors
-func RespondNotFound(ctx *apptheory.Context, resource ...string) (*apptheory.Response, error) {
+func RespondNotFound(_ *apptheory.Context, resource ...string) (*apptheory.Response, error) {
 	var appErr *errors.AppError
 	if len(resource) > 0 && resource[0] != "" {
 		appErr = errors.NotFound(resource[0])
@@ -207,7 +207,7 @@ func RespondConversationNotFound(ctx *apptheory.Context) (*apptheory.Response, e
 }
 
 // RespondMethodNotAllowed handles HTTP method not allowed errors by returning a 405 response
-func RespondMethodNotAllowed(ctx *apptheory.Context) (*apptheory.Response, error) {
+func RespondMethodNotAllowed(_ *apptheory.Context) (*apptheory.Response, error) {
 	appErr := errors.NewAppError(errors.CodeMethodNotAllowed, errors.CategoryAPI, "Method Not Allowed")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
@@ -216,7 +216,7 @@ func RespondMethodNotAllowed(ctx *apptheory.Context) (*apptheory.Response, error
 }
 
 // RespondConflict handles resource conflict errors (409) - now using centralized errors
-func RespondConflict(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondConflict(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Conflict"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
@@ -234,7 +234,7 @@ func RespondAlreadyExists(ctx *apptheory.Context, resource string) (*apptheory.R
 }
 
 // RespondGone handles resource gone errors (410) with optional custom message
-func RespondGone(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondGone(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Gone"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
@@ -247,7 +247,7 @@ func RespondGone(ctx *apptheory.Context, message ...string) (*apptheory.Response
 }
 
 // RespondUnprocessableEntity handles unprocessable entity errors (422) with optional custom message
-func RespondUnprocessableEntity(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondUnprocessableEntity(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Unprocessable Entity"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
@@ -270,7 +270,7 @@ func RespondInvalidContent(ctx *apptheory.Context) (*apptheory.Response, error) 
 }
 
 // RespondRateLimited handles rate limit exceeded errors by returning a 429 response
-func RespondRateLimited(ctx *apptheory.Context) (*apptheory.Response, error) {
+func RespondRateLimited(_ *apptheory.Context) (*apptheory.Response, error) {
 	appErr := errors.NewAppError(errors.CodeRateLimited, errors.CategoryAPI, "Rate limit exceeded")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
@@ -279,7 +279,7 @@ func RespondRateLimited(ctx *apptheory.Context) (*apptheory.Response, error) {
 }
 
 // RespondInternalServerError handles internal server errors (500) - now using centralized errors
-func RespondInternalServerError(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondInternalServerError(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Internal server error"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
@@ -317,7 +317,7 @@ func RespondFailedToGet(ctx *apptheory.Context, resource string) (*apptheory.Res
 }
 
 // RespondServiceUnavailable handles service unavailable errors (503) with optional service name
-func RespondServiceUnavailable(ctx *apptheory.Context, service ...string) (*apptheory.Response, error) {
+func RespondServiceUnavailable(_ *apptheory.Context, service ...string) (*apptheory.Response, error) {
 	msg := "Service Unavailable"
 	if len(service) > 0 && service[0] != "" {
 		msg = fmt.Sprintf("%s service unavailable", service[0])
@@ -494,7 +494,7 @@ func isNotFoundError(err error) bool {
 // Helper functions for common response patterns
 
 // RespondWithAppError creates a response from a centralized AppError
-func RespondWithAppError(ctx *apptheory.Context, appErr *errors.AppError) (*apptheory.Response, error) {
+func RespondWithAppError(_ *apptheory.Context, appErr *errors.AppError) (*apptheory.Response, error) {
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
 		Code:  string(appErr.Code),
@@ -502,7 +502,7 @@ func RespondWithAppError(ctx *apptheory.Context, appErr *errors.AppError) (*appt
 }
 
 // RespondWithErrorMessage creates a standardized error response with custom message
-func RespondWithErrorMessage(ctx *apptheory.Context, statusCode int, message string) (*apptheory.Response, error) {
+func RespondWithErrorMessage(_ *apptheory.Context, statusCode int, message string) (*apptheory.Response, error) {
 	return apptheory.JSON(statusCode, StandardErrorResponse{
 		Error: message,
 		Code:  errorCodeForHTTPStatus(statusCode),
@@ -510,7 +510,7 @@ func RespondWithErrorMessage(ctx *apptheory.Context, statusCode int, message str
 }
 
 // RespondWithErrorAndDescription creates a detailed error response
-func RespondWithErrorAndDescription(ctx *apptheory.Context, statusCode int, errorMsg, description string) (*apptheory.Response, error) {
+func RespondWithErrorAndDescription(_ *apptheory.Context, statusCode int, errorMsg, description string) (*apptheory.Response, error) {
 	return apptheory.JSON(statusCode, StandardErrorResponse{
 		Error:       errorMsg,
 		Description: description,
@@ -519,7 +519,7 @@ func RespondWithErrorAndDescription(ctx *apptheory.Context, statusCode int, erro
 }
 
 // RespondWithErrorCode creates an error response with an error code
-func RespondWithErrorCode(ctx *apptheory.Context, statusCode int, errorMsg, code string) (*apptheory.Response, error) {
+func RespondWithErrorCode(_ *apptheory.Context, statusCode int, errorMsg, code string) (*apptheory.Response, error) {
 	return apptheory.JSON(statusCode, StandardErrorResponse{
 		Error: errorMsg,
 		Code:  code,
@@ -530,7 +530,7 @@ func RespondWithErrorCode(ctx *apptheory.Context, statusCode int, errorMsg, code
 // These maintain backward compatibility while encouraging migration to new patterns
 
 // RespondLegacyError maintains compatibility with existing map[string]string{"error": "message"} pattern
-func RespondLegacyError(ctx *apptheory.Context, statusCode int, message string) (*apptheory.Response, error) {
+func RespondLegacyError(_ *apptheory.Context, statusCode int, message string) (*apptheory.Response, error) {
 	return apptheory.JSON(statusCode, map[string]string{"error": message})
 }
 
@@ -576,6 +576,6 @@ var (
 )
 
 // RespondSuccess handles successful responses with data
-func RespondSuccess(ctx *apptheory.Context, data interface{}) (*apptheory.Response, error) {
+func RespondSuccess(_ *apptheory.Context, data interface{}) (*apptheory.Response, error) {
 	return apptheory.JSON(200, data)
 }

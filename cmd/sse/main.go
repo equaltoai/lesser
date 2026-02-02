@@ -202,10 +202,7 @@ func handlePublicStream(streamName string) apptheory.Handler {
 		if _, resp := requireClaims(ctx); resp != nil {
 			return resp, nil
 		}
-		onlyMedia := false
-		if ctx != nil && sseQueryParam(ctx, "only_media") == "true" {
-			onlyMedia = true
-		}
+		onlyMedia := ctx != nil && sseQueryParam(ctx, "only_media") == "true"
 		return streamSSE(ctx, streamName, onlyMedia)
 	}
 }
@@ -229,10 +226,7 @@ func handleHashtagStream(localOnly bool) apptheory.Handler {
 			streamName = fmt.Sprintf("hashtag:local:%s", tag)
 		}
 
-		onlyMedia := false
-		if ctx != nil && sseQueryParam(ctx, "only_media") == "true" {
-			onlyMedia = true
-		}
+		onlyMedia := ctx != nil && sseQueryParam(ctx, "only_media") == "true"
 		return streamSSE(ctx, streamName, onlyMedia)
 	}
 }

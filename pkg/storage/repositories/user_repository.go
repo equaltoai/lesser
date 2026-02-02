@@ -527,81 +527,110 @@ func (r *UserRepository) modelToStorage(userModel *models.User) *storage.User {
 	}
 }
 
-// applyUpdates applies the updates map to the user model
+type userUpdateApplier func(*models.User, any)
+
+var userUpdateAppliers = map[string]userUpdateApplier{
+	"email": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.Email = v
+		}
+	},
+	"password_hash": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.PasswordHash = v
+		}
+	},
+	"display_name": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.DisplayName = v
+		}
+	},
+	"approved": func(user *models.User, value any) {
+		if v, ok := value.(bool); ok {
+			user.Approved = v
+		}
+	},
+	"suspended": func(user *models.User, value any) {
+		if v, ok := value.(bool); ok {
+			user.Suspended = v
+		}
+	},
+	"silenced": func(user *models.User, value any) {
+		if v, ok := value.(bool); ok {
+			user.Silenced = v
+		}
+	},
+	"role": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.Role = v
+		}
+	},
+	"locale": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.Locale = v
+		}
+	},
+	"recovery_methods": func(user *models.User, value any) {
+		if v, ok := value.([]string); ok {
+			user.RecoveryMethods = v
+		}
+	},
+	"is_agent": func(user *models.User, value any) {
+		if v, ok := value.(bool); ok {
+			user.IsAgent = v
+		}
+	},
+	"agent_type": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.AgentType = v
+		}
+	},
+	"agent_version": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.AgentVersion = v
+		}
+	},
+	"agent_owner": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.AgentOwner = v
+		}
+	},
+	"agent_created_by": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.AgentCreatedBy = v
+		}
+	},
+	"agent_public_key": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.AgentPublicKey = v
+		}
+	},
+	"agent_key_type": func(user *models.User, value any) {
+		if v, ok := value.(string); ok {
+			user.AgentKeyType = v
+		}
+	},
+	"agent_capabilities": func(user *models.User, value any) {
+		if v, ok := value.(*agents.Capabilities); ok {
+			user.AgentCapabilities = v
+			return
+		}
+		if v, ok := value.(agents.Capabilities); ok {
+			capsCopy := v
+			user.AgentCapabilities = &capsCopy
+		}
+	},
+}
+
+// applyUpdates applies the updates map to the user model.
 func (r *UserRepository) applyUpdates(userModel *models.User, updates map[string]any) {
+	if userModel == nil || len(updates) == 0 {
+		return
+	}
+
 	for key, value := range updates {
-		switch key {
-		case "email":
-			if v, ok := value.(string); ok {
-				userModel.Email = v
-			}
-		case "password_hash":
-			if v, ok := value.(string); ok {
-				userModel.PasswordHash = v
-			}
-		case "display_name":
-			if v, ok := value.(string); ok {
-				userModel.DisplayName = v
-			}
-		case "approved":
-			if v, ok := value.(bool); ok {
-				userModel.Approved = v
-			}
-		case "suspended":
-			if v, ok := value.(bool); ok {
-				userModel.Suspended = v
-			}
-		case "silenced":
-			if v, ok := value.(bool); ok {
-				userModel.Silenced = v
-			}
-		case "role":
-			if v, ok := value.(string); ok {
-				userModel.Role = v
-			}
-		case "locale":
-			if v, ok := value.(string); ok {
-				userModel.Locale = v
-			}
-		case "recovery_methods":
-			if v, ok := value.([]string); ok {
-				userModel.RecoveryMethods = v
-			}
-		case "is_agent":
-			if v, ok := value.(bool); ok {
-				userModel.IsAgent = v
-			}
-		case "agent_type":
-			if v, ok := value.(string); ok {
-				userModel.AgentType = v
-			}
-		case "agent_version":
-			if v, ok := value.(string); ok {
-				userModel.AgentVersion = v
-			}
-		case "agent_owner":
-			if v, ok := value.(string); ok {
-				userModel.AgentOwner = v
-			}
-		case "agent_created_by":
-			if v, ok := value.(string); ok {
-				userModel.AgentCreatedBy = v
-			}
-		case "agent_public_key":
-			if v, ok := value.(string); ok {
-				userModel.AgentPublicKey = v
-			}
-		case "agent_key_type":
-			if v, ok := value.(string); ok {
-				userModel.AgentKeyType = v
-			}
-		case "agent_capabilities":
-			if v, ok := value.(*agents.Capabilities); ok {
-				userModel.AgentCapabilities = v
-			} else if v, ok := value.(agents.Capabilities); ok {
-				copy := v
-				userModel.AgentCapabilities = &copy
-			}
+		if apply, ok := userUpdateAppliers[key]; ok {
+			apply(userModel, value)
 		}
 	}
 }

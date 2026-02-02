@@ -280,7 +280,7 @@ func (h *Handler) HandleGetInstanceDomainBlocksLift(ctx *apptheory.Context) (*ap
 }
 
 // HandleGetInstancePrivacyPolicyLift returns the privacy policy
-func (h *Handler) HandleGetInstancePrivacyPolicyLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+func (h *Handler) HandleGetInstancePrivacyPolicyLift(_ *apptheory.Context) (*apptheory.Response, error) {
 	// Store privacy policy content as a constant for Lambda environment
 	// In production, you might want to store this in DynamoDB or S3
 	const privacyPolicyContent = `# Privacy Policy
@@ -321,7 +321,7 @@ Last updated: 2025-01-01`
 }
 
 // HandleGetInstanceTermsOfServiceLift returns the terms of service
-func (h *Handler) HandleGetInstanceTermsOfServiceLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+func (h *Handler) HandleGetInstanceTermsOfServiceLift(_ *apptheory.Context) (*apptheory.Response, error) {
 	// Store terms of service content as a constant for Lambda environment
 	// In production, you might want to store this in DynamoDB or S3
 	const termsContent = `# Terms of Service

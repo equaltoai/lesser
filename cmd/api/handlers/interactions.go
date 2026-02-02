@@ -19,6 +19,9 @@ import (
 const (
 	agentDefaultMaxFollowsPerHour         = 20
 	agentVerifiedDefaultMaxFollowsPerHour = 100
+
+	relationshipOpFollow   = "follow"
+	relationshipOpUnfollow = "unfollow"
 )
 
 // relationshipOperation performs common relationship operations (follow/unfollow/block/unblock)
@@ -33,8 +36,8 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		err    error
 	)
 	switch operation {
-	case "follow", "unfollow":
-		claims, err = h.authenticateWithAnyScope(ctx, "follow", "write:follows", auth.ScopeWrite)
+	case relationshipOpFollow, relationshipOpUnfollow:
+		claims, err = h.authenticateWithAnyScope(ctx, relationshipOpFollow, "write:follows", auth.ScopeWrite)
 	case "block", "unblock":
 		claims, err = h.authenticateWithAnyScope(ctx, "write:blocks", auth.ScopeWrite)
 	default:
@@ -53,7 +56,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	}
 
 	switch operation {
-	case "follow":
+	case relationshipOpFollow:
 		var req models.FollowRequest
 		_ = common.ParseRequestWithFallback(ctx, &req)
 
@@ -73,7 +76,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
 		return okJSON(h.relationshipFromService(r.Relationship))
-	case "unfollow":
+	case relationshipOpUnfollow:
 		r, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
 			FollowerID:  claims.Username,
 			FollowingID: accountID,

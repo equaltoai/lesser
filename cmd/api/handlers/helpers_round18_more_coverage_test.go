@@ -1,0 +1,168 @@
+package handlers
+
+import (
+	"context"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/require"
+)
+
+func TestHelpersRound18_ResolveAccountID_CacheHits(t *testing.T) {
+	cfg := round11TestConfig()
+
+	now := time.Now()
+	remoteActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://remote.example/users/alice",
+			Type: "Person",
+		},
+		PreferredUsername: "alice",
+		Name:              "Alice",
+	}
+
+	cached := storagemodels.RemoteActor{
+		Handle:    "alice@remote.example",
+		Actor:     remoteActor,
+		ExpiresAt: now.Add(1 * time.Hour),
+		CachedAt:  now.Add(-1 * time.Minute),
+		UpdatedAt: now.Add(-1 * time.Minute),
+	}
+	cached.UpdateKeys()
+
+	state := &round10QueryState{
+		remoteActorsByPK: map[string]storagemodels.RemoteActor{
+			cached.PK: cached,
+		},
+	}
+	h, _, _ := round11NewHandler(t, cfg, state)
+
+	t.Run("remote actor URL uses cached remote actor", func(t *testing.T) {
+		actor, err := h.resolveAccountID(context.Background(), "https://remote.example/users/alice")
+		require.NoError(t, err)
+		require.NotNil(t, actor)
+		require.Equal(t, remoteActor.ID, actor.ID)
+	})
+
+	t.Run("remote handle uses cached remote actor", func(t *testing.T) {
+		actor, err := h.resolveAccountID(context.Background(), "alice@remote.example")
+		require.NoError(t, err)
+		require.NotNil(t, actor)
+		require.Equal(t, remoteActor.ID, actor.ID)
+	})
+
+	t.Run("local handle resolves to local actor", func(t *testing.T) {
+		actor, err := h.resolveAccountID(context.Background(), "alice@"+cfg.Domain)
+		require.NoError(t, err)
+		require.NotNil(t, actor)
+		require.Equal(t, cfg.ActorURL("alice"), actor.ID)
+	})
+}
+
+func TestHelpersRound18_ResolveAccountID_InvalidURLBranches(t *testing.T) {
+	cfg := round11TestConfig()
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	t.Run("URL without hostname rejects", func(t *testing.T) {
+		_, err := h.resolveAccountID(context.Background(), "https:///users/alice")
+		require.Error(t, err)
+	})
+
+	t.Run("local URL without /users/{username} rejects", func(t *testing.T) {
+		_, err := h.resolveAccountID(context.Background(), cfg.BaseURL()+"/@alice")
+		require.Error(t, err)
+	})
+}
+
+func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
+	cfg := round11TestConfig()
+	h := &Handler{cfg: cfg}
+
+	t.Run("non agent returns nil", func(t *testing.T) {
+		out := h.buildStatusAgentAttribution(&storage.Account{User: &storage.User{Username: "alice"}}, nil)
+		require.Nil(t, out)
+	})
+
+	t.Run("agent uses attribution from note when present", func(t *testing.T) {
+		status := &storagemodels.Status{
+			Note: &activitypub.Note{
+				AgentAttribution: &activitypub.AgentPostAttribution{
+					TriggerType:     "mention",
+					TriggerDetails:  "test",
+					MemoryCitations: []string{"m1"},
+					DelegatedBy:     "operator",
+					Scopes:          []string{"read"},
+					Constraints:     []string{"requires_approval"},
+					ModelVersion:    "v2",
+				},
+			},
+		}
+
+		account := &storage.Account{
+			User: &storage.User{IsAgent: true},
+		}
+
+		out := h.buildStatusAgentAttribution(account, status)
+		require.NotNil(t, out)
+		require.Equal(t, "mention", out.TriggerType)
+		require.Equal(t, "test", out.TriggerDetails)
+		require.Equal(t, []string{"m1"}, out.MemoryCitations)
+		require.Equal(t, "operator", out.DelegatedBy)
+		require.Equal(t, []string{"read"}, out.Scopes)
+		require.Equal(t, []string{"requires_approval"}, out.Constraints)
+		require.Equal(t, "v2", out.ModelVersion)
+	})
+
+	t.Run("agent falls back to stored delegation and constraints", func(t *testing.T) {
+		account := &storage.Account{
+			User: &storage.User{
+				Username:    "bot",
+				IsAgent:     true,
+				AgentOwner:  "",
+				AgentVersion: "",
+				Metadata: map[string]any{
+					"agent_delegated_scopes": []any{"read", "write:statuses"},
+				},
+				AgentCapabilities: &agents.Capabilities{
+					MaxPostsPerHour:   5,
+					RequiresApproval:  true,
+					RestrictedDomains: []string{"example.org"},
+				},
+			},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{ID: cfg.ActorURL("bot"), Type: "Service"},
+				AgentManifest: &activitypub.AgentManifest{
+					OperatedBy: "manifest-owner",
+					Version:    "manifest-v1",
+				},
+				PreferredUsername: "bot",
+			},
+		}
+
+		out := h.buildStatusAgentAttribution(account, &storagemodels.Status{Note: &activitypub.Note{}})
+		require.NotNil(t, out)
+		require.Equal(t, "manifest-owner", out.DelegatedBy)
+		require.Equal(t, []string{"read", "write:statuses"}, out.Scopes)
+		require.Contains(t, out.Constraints, "max_posts_per_hour:5")
+		require.Contains(t, out.Constraints, "requires_approval")
+		require.Contains(t, out.Constraints, "restricted_domains:example.org")
+		require.Equal(t, "manifest-v1", out.ModelVersion)
+	})
+}
+
+func TestHelpersRound18_ResponseDefaults(t *testing.T) {
+	h := &Handler{logger: round10TestLogger(t)}
+
+	ctxBad, err := round10NewLiftContext(http.MethodGet, "/test", nil, nil, nil)
+	require.NoError(t, err)
+	requireStatus(t, http.StatusBadRequest)(h.respondBadRequest(ctxBad, ""))
+
+	ctxConflict, err := round10NewLiftContext(http.MethodGet, "/test", nil, nil, nil)
+	require.NoError(t, err)
+	requireStatus(t, http.StatusConflict)(h.respondConflict(ctxConflict, ""))
+}

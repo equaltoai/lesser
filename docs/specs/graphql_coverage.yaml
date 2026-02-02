@@ -34,6 +34,12 @@ exemptions:
             - /api/oembed
         prefixes:
             - /embed
+    - id: agents
+      reason: Agent management endpoints are currently REST-only (no GraphQL surface yet).
+      match:
+        prefixes:
+            - /api/v1/admin/agents
+            - /api/v1/agents
 routes:
     - method: GET
       path: /
@@ -429,6 +435,82 @@ routes:
       status: covered
       graphql:
         - Mutation.adminSetStatusSensitive
+    - method: GET
+      path: /api/v1/admin/agents/policy
+      policy: rest_only
+      exemptedBy: agents
+    - method: PUT
+      path: /api/v1/admin/agents/policy
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/admin/agents/{username}/unverify
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/admin/agents/{username}/verify
+      policy: rest_only
+      exemptedBy: agents
+    - method: GET
+      path: /api/v1/agents
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/auth/challenge
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/auth/token
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/delegate
+      policy: rest_only
+      exemptedBy: agents
+    - method: GET
+      path: /api/v1/agents/memory/search
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/memory/search
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/register
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/register/challenge
+      policy: rest_only
+      exemptedBy: agents
+    - method: DELETE
+      path: /api/v1/agents/{username}
+      policy: rest_only
+      exemptedBy: agents
+    - method: GET
+      path: /api/v1/agents/{username}
+      policy: rest_only
+      exemptedBy: agents
+    - method: PATCH
+      path: /api/v1/agents/{username}
+      policy: rest_only
+      exemptedBy: agents
+    - method: GET
+      path: /api/v1/agents/{username}/activity
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/{username}/rotate-key
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/{username}/rotate-key/challenge
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/{username}/suspend
+      policy: rest_only
+      exemptedBy: agents
     - method: GET
       path: /api/v1/announcements
       policy: graphql_required
@@ -1363,4 +1445,3 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
-

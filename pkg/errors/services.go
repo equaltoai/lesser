@@ -1,7 +1,7 @@
 // Package errors defines common error types and constants used across the Lesser ActivityPub service layer.
 // It provides centralized error definitions for activity processing, validation, federation operations,
 // and various service-specific error conditions.
-package errors
+package errors // nolint:revive // Legacy package name; import with an alias when also using stdlib errors.
 
 import "errors"
 

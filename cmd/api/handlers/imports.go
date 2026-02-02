@@ -94,45 +94,6 @@ func (h *Handler) HandleCreateImportLift(ctx *apptheory.Context) (*apptheory.Res
 	return apptheory.JSON(http.StatusAccepted, job)
 }
 
-// authenticateImportRequest handles authentication for import requests
-func (h *Handler) authenticateImportRequest(ctx *apptheory.Context) (string, error) {
-	// Extract auth header
-	authHeader := h.extractImportAuthHeader(ctx)
-
-	// Extract and validate token
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", helperUnauthorized()
-	}
-
-	// Validate token and check scope
-	return h.validateImportToken(ctx, token)
-}
-
-// extractImportAuthHeader extracts authorization header
-func (h *Handler) extractImportAuthHeader(ctx *apptheory.Context) string {
-	return common.ExtractAuthHeader(ctx)
-}
-
-// validateImportToken validates the token and checks scope using centralized validation
-func (h *Handler) validateImportToken(ctx *apptheory.Context, token string) (string, error) {
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return "", helperUnauthorized()
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", helperUnauthorized()
-	}
-
-	if !claims.HasScope(auth.ScopeWrite) {
-		return "", helperInsufficientScope()
-	}
-
-	return claims.Username, nil
-}
-
 // parseImportRequest parses the import request body
 func (h *Handler) parseImportRequest(ctx *apptheory.Context) (*apimodels.ImportRequest, *apptheory.Response, error) {
 	var req apimodels.ImportRequest
@@ -329,7 +290,7 @@ func (h *Handler) queueImportJobSQS(ctx *apptheory.Context, importID, username s
 // HandleGetImportStatusLift handles GET /api/v1/imports/:id
 func (h *Handler) HandleGetImportStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request using consolidated pattern
-	username, err := h.authenticateUser(ctx, nil)
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead, auth.ScopeWrite})
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}
@@ -385,7 +346,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *apptheory.Context) (*apptheory.
 // HandleListImportsLift handles GET /api/v1/imports
 func (h *Handler) HandleListImportsLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Authenticate request using consolidated pattern
-	username, err := h.authenticateUser(ctx, nil)
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead, auth.ScopeWrite})
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
 	}
@@ -706,26 +667,4 @@ func (h *Handler) basicFileValidation(data []byte) error {
 		return unsupportedFileFormat()
 	}
 	return nil
-}
-
-// authenticateImportStatusRequest handles authentication for import status/list requests
-// This consolidates the duplicate authentication logic from HandleGetImportStatusLift and HandleListImportsLift
-func (h *Handler) authenticateImportStatusRequest(ctx *apptheory.Context) (string, error) {
-	// Extract auth header
-	authHeader := h.extractImportAuthHeader(ctx)
-
-	// Extract and validate token
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", helperUnauthorized()
-	}
-
-	// Validate token (no scope check needed for read operations)
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", helperUnauthorized()
-	}
-
-	return claims.Username, nil
 }

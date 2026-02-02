@@ -3,6 +3,7 @@ package validation
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -205,5 +206,243 @@ func TestIsAddressedTo_AcceptsCCBToBCCAndPublicAddress(t *testing.T) {
 			Object:     "https://example.com/objects/1",
 		}
 		require.False(t, IsAddressedTo(activity, actor))
+	})
+}
+
+func TestValidateBasicActivityAndAddressing(t *testing.T) {
+	t.Run("basic activity uses custom context", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.ContextValue{"https://www.w3.org/ns/activitystreams"},
+				ID:      "https://example.com/activities/1",
+				Type:    activitypub.CreateType,
+				To:      []string{"https://example.com/users/alice"},
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/objects/1",
+		}
+
+		require.NoError(t, ValidateBasicActivity(activity))
+		require.NoError(t, ValidateActivityAddressing(activity))
+	})
+
+	t.Run("invalid activity is rejected", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "",
+				Type: activitypub.CreateType,
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/objects/1",
+		}
+
+		err := ValidateBasicActivity(activity)
+		require.Error(t, err)
+		appErr, ok := pkgErrors.AsAppError(err)
+		require.True(t, ok)
+		require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	})
+
+	t.Run("invalid addressing is rejected", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+				BTo:  []string{"not-a-url"},
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/objects/1",
+		}
+
+		err := ValidateActivityAddressing(activity)
+		require.Error(t, err)
+	})
+}
+
+func TestValidateBasicActorAndPublicKey(t *testing.T) {
+	t.Run("basic actor is accepted", func(t *testing.T) {
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice",
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: "alice",
+			Inbox:             "https://example.com/users/alice/inbox",
+			Outbox:            "https://example.com/users/alice/outbox",
+		}
+
+		require.NoError(t, ValidateBasicActor(actor))
+		require.NoError(t, ValidateActorPublicKey(actor))
+	})
+
+	t.Run("invalid actor is rejected", func(t *testing.T) {
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "not-a-url",
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: "alice",
+			Inbox:             "not-a-url",
+			Outbox:            "not-a-url",
+		}
+
+		err := ValidateBasicActor(actor)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid public key is rejected", func(t *testing.T) {
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice",
+				Type: activitypub.PersonType,
+			},
+			PreferredUsername: "alice",
+			Inbox:             "https://example.com/users/alice/inbox",
+			Outbox:            "https://example.com/users/alice/outbox",
+			PublicKey: &activitypub.PublicKey{
+				ID:           "not-a-url",
+				Owner:        "not-a-url",
+				PublicKeyPem: "not-a-pem",
+			},
+		}
+
+		err := ValidateActorPublicKey(actor)
+		require.Error(t, err)
+		appErr, ok := pkgErrors.AsAppError(err)
+		require.True(t, ok)
+		require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	})
+}
+
+func TestValidateCreateActivityObject_Branches(t *testing.T) {
+	t.Run("non-Create activities are ignored", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.UpdateType,
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: map[string]any{"type": "Note"},
+		}
+
+		require.NoError(t, ValidateCreateActivityObject(activity))
+	})
+
+	t.Run("Create activities with non-map objects are ignored", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/objects/1",
+		}
+
+		require.NoError(t, ValidateCreateActivityObject(activity))
+	})
+
+	t.Run("invalid attachments are rejected", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+			},
+			Actor: "https://remote.example/users/bob",
+			Object: map[string]any{
+				"type":       "Note",
+				"attachment": "bad",
+			},
+		}
+
+		require.Error(t, ValidateCreateActivityObject(activity))
+	})
+
+	t.Run("invalid tags are rejected", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+			},
+			Actor: "https://remote.example/users/bob",
+			Object: map[string]any{
+				"type": "Note",
+				"tag":  123,
+			},
+		}
+
+		require.Error(t, ValidateCreateActivityObject(activity))
+	})
+
+	t.Run("invalid Note objects are rejected", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+			},
+			Actor: "https://remote.example/users/bob",
+			Object: map[string]any{
+				"type": "Note",
+			},
+		}
+
+		require.Error(t, ValidateCreateActivityObject(activity))
+	})
+}
+
+func TestValidateComprehensiveAddressingAndTargeting(t *testing.T) {
+	logger := zap.NewNop()
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://example.com/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+		Inbox:             "https://example.com/users/alice/inbox",
+		Outbox:            "https://example.com/users/alice/outbox",
+	}
+
+	t.Run("invalid addressing fails comprehensive validation", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+				To:   []string{"not-a-url"},
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/objects/1",
+		}
+
+		require.Error(t, ValidateComprehensiveAddressing(logger, activity))
+	})
+
+	t.Run("targeting requires activity to be addressed to actor", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+				To:   []string{"https://elsewhere.example/users/other"},
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/objects/1",
+		}
+
+		require.Error(t, ValidateActivityTargeting(logger, activity, actor))
+	})
+
+	t.Run("full validation succeeds for minimal valid payload", func(t *testing.T) {
+		published := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:        "https://example.com/activities/1",
+				Type:      activitypub.CreateType,
+				To:        []string{actor.ID},
+				Published: &published,
+			},
+			Actor:  "https://remote.example/users/bob",
+			Object: "https://example.com/objects/1",
+		}
+
+		require.NoError(t, ValidateActivity(logger, activity, actor))
 	})
 }

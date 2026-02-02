@@ -1,4 +1,4 @@
-package errors
+package errors // nolint:revive // Legacy package name; import with an alias when also using stdlib errors.
 
 import (
 	stdErrors "errors"
