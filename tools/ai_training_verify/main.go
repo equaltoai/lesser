@@ -283,7 +283,7 @@ func readGoVersion(repoFS fs.FS, goModPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	re := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+)\s*$`)
+	re := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+)(?:\.[0-9]+)?\s*$`)
 	m := re.FindStringSubmatch(string(contents))
 	if len(m) != 2 {
 		return "", errors.New("unable to determine Go version from go.mod")

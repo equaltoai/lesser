@@ -23,7 +23,7 @@ and tests cleanly with Lift/DynamORM absent.
 - Verified locally:
   - `go test ./...` passes
   - `./lesser test` passes
-- Not yet run in this branch: `make verify` (run before declaring final “done”).
+  - `make verify` passes
 
 ## Scope
 - In scope:

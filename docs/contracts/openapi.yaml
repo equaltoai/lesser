@@ -6377,7 +6377,7 @@ paths:
             x-lesser-handler: inline
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /.well-known/nodeinfo:
         get:
             operationId: get_well_known_nodeinfo
@@ -6397,7 +6397,7 @@ paths:
             x-lesser-handler: HandleNodeInfoWellKnownLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
                 - infra/cdk/inventory/lambdas.go:api
     /.well-known/reputation-keys:
         get:
@@ -6418,7 +6418,7 @@ paths:
             x-lesser-handler: HandleGetReputationKeysLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /.well-known/webfinger:
         get:
             operationId: get_well_known_webfinger
@@ -6542,7 +6542,7 @@ paths:
             x-lesser-handler: HandleOEmbedLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/accounts:
         post:
             operationId: post_api_v1_accounts
@@ -6587,7 +6587,7 @@ paths:
             x-lesser-handler: HandleRegistrationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/accounts/{id}/block:
         post:
             operationId: post_api_v1_accounts_by_id_block
@@ -6646,7 +6646,7 @@ paths:
             x-lesser-handler: HandleBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/accounts/{id}/follow:
@@ -6707,7 +6707,7 @@ paths:
             x-lesser-handler: HandleFollowLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/accounts/{id}/mute:
@@ -6768,7 +6768,7 @@ paths:
             x-lesser-handler: HandleMuteAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/accounts/{id}/notes:
@@ -6799,7 +6799,7 @@ paths:
             x-lesser-handler: HandleGetUserNotesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/accounts/{id}/quote_permissions:
         get:
             operationId: get_api_v1_accounts_by_id_quote_permissions
@@ -6827,7 +6827,7 @@ paths:
             x-lesser-handler: HandleGetQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/accounts/{id}/statuses:
         get:
             operationId: get_api_v1_accounts_by_id_statuses
@@ -6878,7 +6878,7 @@ paths:
             x-lesser-handler: HandleGetAccountStatusesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/accounts/{id}/unblock:
         post:
             operationId: post_api_v1_accounts_by_id_unblock
@@ -6937,7 +6937,7 @@ paths:
             x-lesser-handler: HandleUnblockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/accounts/{id}/unfollow:
@@ -6998,7 +6998,7 @@ paths:
             x-lesser-handler: HandleUnfollowLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/accounts/{id}/unmute:
@@ -7054,7 +7054,7 @@ paths:
             x-lesser-handler: HandleUnmuteAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/accounts/quote_permissions:
@@ -7089,7 +7089,7 @@ paths:
             x-lesser-handler: HandleUpdateQuotePermissionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:accounts
     /api/v1/accounts/relationships:
@@ -7117,7 +7117,7 @@ paths:
             x-lesser-handler: HandleGetRelationshipsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:accounts
     /api/v1/accounts/search:
@@ -7170,7 +7170,7 @@ paths:
             x-lesser-handler: HandleAccountSearchLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:accounts
     /api/v1/accounts/search/suggestions:
@@ -7197,7 +7197,7 @@ paths:
             x-lesser-handler: HandleGetSearchSuggestionsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/accounts/update_credentials:
         patch:
             operationId: patch_api_v1_accounts_update_credentials
@@ -7248,7 +7248,7 @@ paths:
             x-lesser-handler: HandleUpdateCredentialsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/accounts/verify_credentials:
@@ -7276,7 +7276,7 @@ paths:
             x-lesser-handler: HandleVerifyCredentialsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/admin/accounts:
@@ -7307,7 +7307,7 @@ paths:
             x-lesser-handler: HandleAdminGetAccountsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
         post:
@@ -7322,6 +7322,12 @@ paths:
                         schema:
                             $ref: '#/components/schemas/AdminCreateUserRequest'
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "201":
                     description: OK
                     content:
@@ -7341,7 +7347,7 @@ paths:
             x-lesser-handler: HandleAdminCreateUserLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/accounts/{id}:
@@ -7377,7 +7383,7 @@ paths:
             x-lesser-handler: HandleAdminGetAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/accounts/{id}/action:
@@ -7399,6 +7405,12 @@ paths:
                         schema:
                             $ref: '#/components/schemas/AdminAccountActionRequest'
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7416,7 +7428,7 @@ paths:
             x-lesser-handler: HandleAdminAccountActionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/accounts/{id}/approve:
@@ -7433,6 +7445,12 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7450,7 +7468,7 @@ paths:
             x-lesser-handler: HandleAdminApproveAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/accounts/{id}/enable:
@@ -7467,6 +7485,12 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7484,7 +7508,7 @@ paths:
             x-lesser-handler: HandleAdminEnableAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/accounts/{id}/reject:
@@ -7501,6 +7525,12 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7518,7 +7548,7 @@ paths:
             x-lesser-handler: HandleAdminRejectAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/accounts/{id}/unsensitive:
@@ -7535,6 +7565,12 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7552,7 +7588,7 @@ paths:
             x-lesser-handler: HandleAdminUnsensitiveAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/accounts/{id}/unsilence:
@@ -7569,6 +7605,12 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7586,7 +7628,7 @@ paths:
             x-lesser-handler: HandleAdminUnsilenceAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/accounts/{id}/unsuspend:
@@ -7603,6 +7645,12 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7620,7 +7668,7 @@ paths:
             x-lesser-handler: HandleAdminUnsuspendAccountLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/announcements:
@@ -7636,6 +7684,12 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateAnnouncementRequest'
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "201":
                     description: OK
                     content:
@@ -7655,7 +7709,7 @@ paths:
             x-lesser-handler: HandleCreateAnnouncementLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/custom_emojis:
@@ -7690,7 +7744,7 @@ paths:
             x-lesser-handler: HandleCreateCustomEmojiLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/custom_emojis/{shortcode}:
@@ -7733,7 +7787,7 @@ paths:
             x-lesser-handler: HandleUpdateCustomEmojiLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
         delete:
@@ -7768,7 +7822,7 @@ paths:
             x-lesser-handler: HandleDeleteCustomEmojiLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/domain_allows:
@@ -7804,7 +7858,7 @@ paths:
             x-lesser-handler: HandleGetAdminDomainAllowsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
         post:
@@ -7838,7 +7892,7 @@ paths:
             x-lesser-handler: HandleCreateAdminDomainAllowLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/domain_allows/{id}:
@@ -7874,7 +7928,7 @@ paths:
             x-lesser-handler: HandleDeleteAdminDomainAllowLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/domain_blocks:
@@ -7910,7 +7964,7 @@ paths:
             x-lesser-handler: HandleGetAdminDomainBlocksLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
         post:
@@ -7944,7 +7998,7 @@ paths:
             x-lesser-handler: HandleCreateAdminDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/domain_blocks/{id}:
@@ -7980,7 +8034,7 @@ paths:
             x-lesser-handler: HandleGetAdminDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
         put:
@@ -8022,7 +8076,7 @@ paths:
             x-lesser-handler: HandleUpdateAdminDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
         delete:
@@ -8057,7 +8111,7 @@ paths:
             x-lesser-handler: HandleDeleteAdminDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/email_domain_blocks:
@@ -8088,7 +8142,7 @@ paths:
             x-lesser-handler: HandleGetEmailDomainBlocksLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
         post:
@@ -8122,7 +8176,7 @@ paths:
             x-lesser-handler: HandleCreateEmailDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/email_domain_blocks/{id}:
@@ -8158,7 +8212,7 @@ paths:
             x-lesser-handler: HandleDeleteEmailDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/federation/instance/{domain}:
@@ -8194,7 +8248,7 @@ paths:
             x-lesser-handler: HandleGetFederationInstanceLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/federation/instances:
@@ -8225,7 +8279,7 @@ paths:
             x-lesser-handler: HandleGetFederationInstancesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/federation/statistics:
@@ -8262,7 +8316,7 @@ paths:
             x-lesser-handler: HandleGetFederationStatisticsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/moderation/events:
@@ -8313,7 +8367,7 @@ paths:
             x-lesser-handler: HandleAdminGetModerationEventsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/moderation/events/{id}/override:
@@ -8356,7 +8410,7 @@ paths:
             x-lesser-handler: HandleAdminOverrideModerationEventLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/moderation/overview:
@@ -8384,7 +8438,7 @@ paths:
             x-lesser-handler: HandleAdminModerationOverviewLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/moderation/reviewers:
@@ -8412,7 +8466,7 @@ paths:
             x-lesser-handler: HandleAdminGetReviewersLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/moderation/reviewers/{id}/demote:
@@ -8450,7 +8504,7 @@ paths:
             x-lesser-handler: HandleAdminDemoteModeratorLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/moderation/reviewers/{id}/promote:
@@ -8488,7 +8542,7 @@ paths:
             x-lesser-handler: HandleAdminPromoteModeratorLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/moderation/trust/{from}/{to}:
@@ -8536,7 +8590,7 @@ paths:
             x-lesser-handler: HandleAdminUpdateTrustLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/moderation/trust/graph:
@@ -8566,7 +8620,7 @@ paths:
             x-lesser-handler: HandleAdminGetTrustGraphLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/reports:
@@ -8601,7 +8655,7 @@ paths:
             x-lesser-handler: HandleAdminGetReportsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/reports/{id}:
@@ -8637,7 +8691,7 @@ paths:
             x-lesser-handler: HandleAdminGetReportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/reports/{id}/assign_to_self:
@@ -8675,7 +8729,7 @@ paths:
             x-lesser-handler: HandleAdminAssignReportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/reports/{id}/reopen:
@@ -8713,7 +8767,7 @@ paths:
             x-lesser-handler: HandleAdminReopenReportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/reports/{id}/resolve:
@@ -8751,7 +8805,7 @@ paths:
             x-lesser-handler: HandleAdminResolveReportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/reports/{id}/unassign:
@@ -8789,7 +8843,7 @@ paths:
             x-lesser-handler: HandleAdminUnassignReportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/statuses:
@@ -8864,7 +8918,7 @@ paths:
             x-lesser-handler: HandleAdminGetStatusesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
     /api/v1/admin/statuses/{id}:
@@ -8900,7 +8954,7 @@ paths:
             x-lesser-handler: HandleAdminGetStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:read
         delete:
@@ -8916,6 +8970,12 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -8931,7 +8991,7 @@ paths:
             x-lesser-handler: HandleAdminDeleteStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/statuses/{id}/sensitive:
@@ -8969,7 +9029,7 @@ paths:
             x-lesser-handler: HandleAdminMarkStatusSensitiveLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/admin/statuses/{id}/unsensitive:
@@ -9007,7 +9067,7 @@ paths:
             x-lesser-handler: HandleAdminUnmarkStatusSensitiveLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
     /api/v1/announcements:
@@ -9033,7 +9093,7 @@ paths:
             x-lesser-handler: HandleGetAnnouncementsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/announcements/{id}/dismiss:
         post:
             operationId: post_api_v1_announcements_by_id_dismiss
@@ -9069,7 +9129,7 @@ paths:
             x-lesser-handler: HandleDismissAnnouncementLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/announcements/{id}/reactions/{name}:
@@ -9112,7 +9172,7 @@ paths:
             x-lesser-handler: HandleAddAnnouncementReactionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
         delete:
@@ -9152,7 +9212,7 @@ paths:
             x-lesser-handler: HandleRemoveAnnouncementReactionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/apps:
@@ -9195,7 +9255,7 @@ paths:
             x-lesser-handler: HandleAppRegistrationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/auth/webauthn/credentials:
@@ -9223,7 +9283,7 @@ paths:
             x-lesser-handler: HandleListWebAuthnCredentialsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/auth/webauthn/credentials/{credentialId}:
@@ -9266,7 +9326,7 @@ paths:
             x-lesser-handler: HandleUpdateWebAuthnCredentialNameLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
         delete:
@@ -9301,7 +9361,7 @@ paths:
             x-lesser-handler: HandleDeleteWebAuthnCredentialLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/auth/webauthn/login/begin:
@@ -9348,7 +9408,7 @@ paths:
             x-lesser-handler: HandleBeginWebAuthnLoginLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/auth/webauthn/login/finish:
         post:
             operationId: post_api_v1_auth_webauthn_login_finish
@@ -9393,7 +9453,7 @@ paths:
             x-lesser-handler: HandleFinishWebAuthnLoginLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/auth/webauthn/register/begin:
         post:
             operationId: post_api_v1_auth_webauthn_register_begin
@@ -9439,7 +9499,7 @@ paths:
             x-lesser-handler: HandleBeginWebAuthnRegistrationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/auth/webauthn/register/finish:
@@ -9492,7 +9552,7 @@ paths:
             x-lesser-handler: HandleFinishWebAuthnRegistrationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/blocks:
@@ -9544,7 +9604,7 @@ paths:
             x-lesser-handler: HandleGetBlocksLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/bookmarks:
@@ -9580,7 +9640,7 @@ paths:
             x-lesser-handler: HandleGetBookmarksLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/conversations:
@@ -9616,7 +9676,7 @@ paths:
             x-lesser-handler: HandleGetConversationsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/conversations/{id}:
@@ -9652,7 +9712,7 @@ paths:
             x-lesser-handler: HandleDeleteConversationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/conversations/{id}/read:
@@ -9690,7 +9750,7 @@ paths:
             x-lesser-handler: HandleMarkConversationReadLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/custom_emojis:
@@ -9712,7 +9772,7 @@ paths:
             x-lesser-handler: HandleGetCustomEmojisLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/directory:
         get:
             operationId: get_api_v1_directory
@@ -9737,7 +9797,7 @@ paths:
             x-lesser-handler: HandleGetDirectoryLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/domain_blocks:
         get:
             operationId: get_api_v1_domain_blocks
@@ -9763,7 +9823,7 @@ paths:
             x-lesser-handler: HandleGetDomainBlocksLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:blocks
         post:
@@ -9815,7 +9875,7 @@ paths:
             x-lesser-handler: HandleCreateDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:blocks
         delete:
@@ -9865,9 +9925,8 @@ paths:
             x-lesser-handler: HandleDeleteDomainBlockLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
-                - write
                 - write:blocks
     /api/v1/endorsements:
         get:
@@ -9894,7 +9953,7 @@ paths:
             x-lesser-handler: HandleGetEndorsementsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/exports:
@@ -9922,7 +9981,7 @@ paths:
             x-lesser-handler: HandleListExportsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         post:
@@ -9937,6 +9996,28 @@ paths:
                         schema:
                             $ref: '#/components/schemas/ExportRequest'
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "202":
                     description: OK
                     content:
@@ -9974,7 +10055,7 @@ paths:
             x-lesser-handler: HandleCreateExportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/exports/{id}:
@@ -10010,7 +10091,7 @@ paths:
             x-lesser-handler: HandleGetExportStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/exports/{id}/download:
@@ -10046,7 +10127,7 @@ paths:
             x-lesser-handler: HandleDownloadExportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/favourites:
@@ -10074,7 +10155,7 @@ paths:
             x-lesser-handler: HandleGetFavouritesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/follow_requests:
@@ -10102,7 +10183,7 @@ paths:
             x-lesser-handler: HandleGetFollowRequestsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
                 - read:follows
@@ -10137,7 +10218,7 @@ paths:
             x-lesser-handler: HandleAuthorizeFollowRequestLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
                 - write:follows
@@ -10172,7 +10253,7 @@ paths:
             x-lesser-handler: HandleRejectFollowRequestLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
                 - write:follows
@@ -10201,7 +10282,7 @@ paths:
             x-lesser-handler: HandleListImportsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         post:
@@ -10216,6 +10297,28 @@ paths:
                         schema:
                             $ref: '#/components/schemas/ImportRequest'
             responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AnyObject'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "202":
                     description: OK
                     content:
@@ -10253,7 +10356,7 @@ paths:
             x-lesser-handler: HandleCreateImportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/imports/{id}:
@@ -10289,7 +10392,7 @@ paths:
             x-lesser-handler: HandleGetImportStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         delete:
@@ -10324,7 +10427,7 @@ paths:
             x-lesser-handler: HandleCancelImportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/instance:
@@ -10346,7 +10449,7 @@ paths:
             x-lesser-handler: HandleGetInstanceV1Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/instance/activity:
         get:
             operationId: get_api_v1_instance_activity
@@ -10366,7 +10469,7 @@ paths:
             x-lesser-handler: HandleGetInstanceActivityLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/instance/domain_blocks:
         get:
             operationId: get_api_v1_instance_domain_blocks
@@ -10386,7 +10489,7 @@ paths:
             x-lesser-handler: HandleGetInstanceDomainBlocksLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/instance/peers:
         get:
             operationId: get_api_v1_instance_peers
@@ -10406,7 +10509,7 @@ paths:
             x-lesser-handler: HandleGetInstancePeersLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/instance/translation_languages:
         get:
             operationId: get_api_v1_instance_translation_languages
@@ -10422,7 +10525,7 @@ paths:
             x-lesser-handler: HandleGetTranslationLanguagesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/lists:
         get:
             operationId: get_api_v1_lists
@@ -10448,7 +10551,7 @@ paths:
             x-lesser-handler: HandleGetListsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         post:
@@ -10463,6 +10566,8 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateListRequest'
             responses:
+                "200":
+                    description: OK
                 "201":
                     description: OK
                     content:
@@ -10482,7 +10587,7 @@ paths:
             x-lesser-handler: HandleCreateListLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/lists/{id}:
@@ -10518,7 +10623,7 @@ paths:
             x-lesser-handler: HandleGetListLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         put:
@@ -10560,7 +10665,7 @@ paths:
             x-lesser-handler: HandleUpdateListLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
         delete:
@@ -10595,7 +10700,7 @@ paths:
             x-lesser-handler: HandleDeleteListLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/lists/{id}/accounts:
@@ -10631,7 +10736,7 @@ paths:
             x-lesser-handler: HandleGetListAccountsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         post:
@@ -10673,7 +10778,7 @@ paths:
             x-lesser-handler: HandleAddAccountsToListLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
         delete:
@@ -10708,7 +10813,7 @@ paths:
             x-lesser-handler: HandleRemoveAccountsFromListLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/markers:
@@ -10741,7 +10846,7 @@ paths:
             x-lesser-handler: HandleGetMarkersLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         post:
@@ -10775,7 +10880,7 @@ paths:
             x-lesser-handler: HandleSaveMarkersLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/media:
@@ -10846,7 +10951,7 @@ paths:
             x-lesser-handler: HandleUploadMediaLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/media/{id}:
@@ -10882,7 +10987,7 @@ paths:
             x-lesser-handler: HandleGetMediaLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         put:
@@ -10924,7 +11029,7 @@ paths:
             x-lesser-handler: HandleUpdateMediaLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/moderation/consensus/{event_id}:
@@ -10958,7 +11063,7 @@ paths:
             x-lesser-handler: HandleGetConsensusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/moderation/flag:
         post:
             operationId: post_api_v1_moderation_flag
@@ -10970,6 +11075,24 @@ paths:
                         schema:
                             $ref: '#/components/schemas/FlagRequest'
             responses:
+                "200":
+                    description: OK
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "201":
                     description: OK
                     content:
@@ -11007,7 +11130,7 @@ paths:
             x-lesser-handler: HandleModerationFlagLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/moderation/history/{object_id}:
         get:
             operationId: get_api_v1_moderation_history_by_object_id
@@ -11039,7 +11162,7 @@ paths:
             x-lesser-handler: HandleModerationHistoryLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/moderation/queue:
         get:
             operationId: get_api_v1_moderation_queue
@@ -11066,7 +11189,7 @@ paths:
             x-lesser-handler: HandleModerationQueueLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/moderation/review:
         post:
             operationId: post_api_v1_moderation_review
@@ -11078,6 +11201,24 @@ paths:
                         schema:
                             $ref: '#/components/schemas/ReviewRequest'
             responses:
+                "200":
+                    description: OK
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "201":
                     description: OK
                     content:
@@ -11115,7 +11256,7 @@ paths:
             x-lesser-handler: HandleModerationReviewLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/moderation/trust:
         get:
             operationId: get_api_v1_moderation_trust
@@ -11144,7 +11285,7 @@ paths:
             x-lesser-handler: HandleGetTrustRelationshipsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
         put:
             operationId: put_api_v1_moderation_trust
             tags:
@@ -11174,7 +11315,7 @@ paths:
             x-lesser-handler: HandleUpdateTrustLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/moderation/trust/{actor_id}/score:
         get:
             operationId: get_api_v1_moderation_trust_by_actor_id_score
@@ -11206,7 +11347,7 @@ paths:
             x-lesser-handler: HandleGetTrustScoreLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/mutes:
         get:
             operationId: get_api_v1_mutes
@@ -11257,7 +11398,7 @@ paths:
             x-lesser-handler: HandleGetMutedAccountsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/notes:
@@ -11265,14 +11406,30 @@ paths:
             operationId: post_api_v1_notes
             tags:
                 - notes
-            security:
-                - bearerAuth: []
             requestBody:
                 content:
                     application/json:
                         schema:
                             $ref: '#/components/schemas/CreateCommunityNoteRequest'
             responses:
+                "200":
+                    description: OK
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "201":
                     description: OK
                     content:
@@ -11310,16 +11467,12 @@ paths:
             x-lesser-handler: HandleCreateNoteLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
-            x-oauth-scopes:
-                - write
+                - cmd/api/routes.go
     /api/v1/notes/{id}/vote:
         post:
             operationId: post_api_v1_notes_by_id_vote
             tags:
                 - notes
-            security:
-                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -11371,9 +11524,7 @@ paths:
             x-lesser-handler: HandleVoteNoteLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
-            x-oauth-scopes:
-                - write
+                - cmd/api/routes.go
     /api/v1/notes/{object_id}:
         get:
             operationId: get_api_v1_notes_by_object_id
@@ -11405,7 +11556,7 @@ paths:
             x-lesser-handler: HandleGetNotesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/notifications:
         get:
             operationId: get_api_v1_notifications
@@ -11461,7 +11612,7 @@ paths:
             x-lesser-handler: HandleGetNotificationsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:notifications
     /api/v1/notifications/{id}:
@@ -11497,7 +11648,7 @@ paths:
             x-lesser-handler: HandleGetNotificationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:notifications
     /api/v1/notifications/{id}/dismiss:
@@ -11514,6 +11665,8 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
                 "204":
                     description: No Content
                 "400":
@@ -11531,7 +11684,7 @@ paths:
             x-lesser-handler: HandleDismissNotificationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:notifications
     /api/v1/notifications/clear:
@@ -11542,6 +11695,8 @@ paths:
             security:
                 - bearerAuth: []
             responses:
+                "200":
+                    description: OK
                 "204":
                     description: No Content
                 "400":
@@ -11557,7 +11712,7 @@ paths:
             x-lesser-handler: HandleClearNotificationsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:notifications
     /api/v1/preferences:
@@ -11585,7 +11740,7 @@ paths:
             x-lesser-handler: HandleGetPreferencesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         patch:
@@ -11619,7 +11774,7 @@ paths:
             x-lesser-handler: HandleUpdatePreferencesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/push/subscription:
@@ -11645,7 +11800,7 @@ paths:
             x-lesser-handler: HandleGetPushSubscriptionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
         post:
             operationId: post_api_v1_push_subscription
             tags:
@@ -11693,7 +11848,7 @@ paths:
             x-lesser-handler: HandleCreatePushSubscriptionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
         put:
             operationId: put_api_v1_push_subscription
             tags:
@@ -11741,12 +11896,14 @@ paths:
             x-lesser-handler: HandleUpdatePushSubscriptionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
         delete:
             operationId: delete_api_v1_push_subscription
             tags:
                 - push
             responses:
+                "200":
+                    description: OK
                 "204":
                     description: No Content
                 "400":
@@ -11760,7 +11917,7 @@ paths:
             x-lesser-handler: HandleDeletePushSubscriptionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/reports:
         post:
             operationId: post_api_v1_reports
@@ -11809,7 +11966,7 @@ paths:
             x-lesser-handler: HandleCreateReportLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/reputation/{actor_id}:
         get:
             operationId: get_api_v1_reputation_by_actor_id
@@ -11843,7 +12000,7 @@ paths:
             x-lesser-handler: HandleGetReputationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/reputation/export:
@@ -11873,7 +12030,7 @@ paths:
             x-lesser-handler: HandleExportReputationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/reputation/import:
@@ -11908,7 +12065,7 @@ paths:
             x-lesser-handler: HandleImportReputationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/reputation/verify:
@@ -11937,12 +12094,14 @@ paths:
             x-lesser-handler: HandleVerifyReputationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/scheduled_statuses:
         get:
             operationId: get_api_v1_scheduled_statuses
             tags:
                 - scheduled_statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - $ref: '#/components/parameters/Limit'
                 - $ref: '#/components/parameters/MaxID'
@@ -11961,17 +12120,25 @@ paths:
                                 type: string
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleGetScheduledStatusesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/scheduled_statuses/{id}:
         get:
             operationId: get_api_v1_scheduled_statuses_by_id
             tags:
                 - scheduled_statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -11987,6 +12154,10 @@ paths:
                                 $ref: '#/components/schemas/ScheduledStatus'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -11994,11 +12165,15 @@ paths:
             x-lesser-handler: HandleGetScheduledStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
         put:
             operationId: put_api_v1_scheduled_statuses_by_id
             tags:
                 - scheduled_statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -12019,6 +12194,10 @@ paths:
                                 $ref: '#/components/schemas/ScheduledStatus'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "422":
@@ -12028,11 +12207,15 @@ paths:
             x-lesser-handler: HandleUpdateScheduledStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
         delete:
             operationId: delete_api_v1_scheduled_statuses_by_id
             tags:
                 - scheduled_statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -12048,6 +12231,10 @@ paths:
                                 $ref: '#/components/schemas/EmptyObject'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -12055,7 +12242,9 @@ paths:
             x-lesser-handler: HandleDeleteScheduledStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
     /api/v1/search/statuses:
         get:
             operationId: get_api_v1_search_statuses
@@ -12119,7 +12308,7 @@ paths:
             x-lesser-handler: HandleStatusSearchLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
         post:
@@ -12186,7 +12375,7 @@ paths:
             x-lesser-handler: HandleStatusSearchLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/statuses:
@@ -12202,6 +12391,24 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateStatusRequest'
             responses:
+                "200":
+                    description: OK
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
                 "201":
                     description: OK
                     content:
@@ -12239,7 +12446,7 @@ paths:
             x-lesser-handler: HandleCreateStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}:
@@ -12273,7 +12480,7 @@ paths:
             x-lesser-handler: HandleGetStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
         put:
             operationId: put_api_v1_statuses_by_id
             tags:
@@ -12329,7 +12536,7 @@ paths:
             x-lesser-handler: HandleUpdateStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
         delete:
             operationId: delete_api_v1_statuses_by_id
             tags:
@@ -12380,7 +12587,7 @@ paths:
             x-lesser-handler: HandleDeleteStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/bookmark:
@@ -12436,7 +12643,7 @@ paths:
             x-lesser-handler: HandleBookmarkLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:statuses
     /api/v1/statuses/{id}/context:
@@ -12466,7 +12673,7 @@ paths:
             x-lesser-handler: HandleGetStatusContextLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/statuses/{id}/favourite:
         post:
             operationId: post_api_v1_statuses_by_id_favourite
@@ -12520,7 +12727,7 @@ paths:
             x-lesser-handler: HandleFavoriteLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/favourited_by:
@@ -12557,7 +12764,7 @@ paths:
             x-lesser-handler: HandleGetStatusFavouritedByLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/statuses/{id}/history:
         get:
             operationId: get_api_v1_statuses_by_id_history
@@ -12589,7 +12796,7 @@ paths:
             x-lesser-handler: HandleGetStatusHistoryLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/statuses/{id}/mute:
         post:
             operationId: post_api_v1_statuses_by_id_mute
@@ -12643,7 +12850,7 @@ paths:
             x-lesser-handler: HandleMuteConversationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/pin:
@@ -12699,7 +12906,7 @@ paths:
             x-lesser-handler: HandlePinStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/quote:
@@ -12760,7 +12967,7 @@ paths:
             x-lesser-handler: HandleCreateQuotePostLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:statuses
     /api/v1/statuses/{id}/quote/{quote_id}:
@@ -12801,7 +13008,7 @@ paths:
             x-lesser-handler: HandleDeleteQuotePostLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:statuses
     /api/v1/statuses/{id}/quotes:
@@ -12833,7 +13040,7 @@ paths:
             x-lesser-handler: HandleGetQuotesOfStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/statuses/{id}/reblog:
         post:
             operationId: post_api_v1_statuses_by_id_reblog
@@ -12887,7 +13094,7 @@ paths:
             x-lesser-handler: HandleReblogLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/reblogged_by:
@@ -12924,7 +13131,7 @@ paths:
             x-lesser-handler: HandleGetStatusRebloggedByLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/statuses/{id}/source:
         get:
             operationId: get_api_v1_statuses_by_id_source
@@ -12952,7 +13159,7 @@ paths:
             x-lesser-handler: HandleGetStatusSourceLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/statuses/{id}/translate:
         post:
             operationId: post_api_v1_statuses_by_id_translate
@@ -13002,7 +13209,7 @@ paths:
             x-lesser-handler: HandleTranslateStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:statuses
     /api/v1/statuses/{id}/unbookmark:
@@ -13058,7 +13265,7 @@ paths:
             x-lesser-handler: HandleUnbookmarkLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:statuses
     /api/v1/statuses/{id}/unfavourite:
@@ -13114,7 +13321,7 @@ paths:
             x-lesser-handler: HandleUnfavoriteLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/unmute:
@@ -13170,7 +13377,7 @@ paths:
             x-lesser-handler: HandleUnmuteConversationLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/unpin:
@@ -13226,7 +13433,7 @@ paths:
             x-lesser-handler: HandleUnpinStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/statuses/{id}/unreblog:
@@ -13282,7 +13489,7 @@ paths:
             x-lesser-handler: HandleUnreblogLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/streaming:
@@ -13613,7 +13820,7 @@ paths:
             x-lesser-handler: HandleGetSuggestionsV1Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/suggestions/{account_id}:
         delete:
             operationId: delete_api_v1_suggestions_by_account_id
@@ -13645,7 +13852,7 @@ paths:
             x-lesser-handler: HandleRemoveSuggestionLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/timelines/direct:
         get:
             operationId: get_api_v1_timelines_direct
@@ -13671,7 +13878,7 @@ paths:
             x-lesser-handler: HandleGetDirectTimelineLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/timelines/home:
@@ -13707,7 +13914,7 @@ paths:
             x-lesser-handler: HandleGetHomeTimelineLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/timelines/link:
@@ -13734,7 +13941,7 @@ paths:
             x-lesser-handler: HandleGetLinkTimelineLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/timelines/list/{list_id}:
         get:
             operationId: get_api_v1_timelines_list_by_list_id
@@ -13768,7 +13975,7 @@ paths:
             x-lesser-handler: HandleGetListTimelineLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/timelines/public:
@@ -13806,7 +14013,7 @@ paths:
             x-lesser-handler: HandleGetPublicTimelineLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/timelines/tag/{hashtag}:
         get:
             operationId: get_api_v1_timelines_tag_by_hashtag
@@ -13838,7 +14045,7 @@ paths:
             x-lesser-handler: HandleGetTagTimelineLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/trends:
         get:
             operationId: get_api_v1_trends
@@ -13860,7 +14067,7 @@ paths:
             x-lesser-handler: HandleGetTrendsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/trends/links:
         get:
             operationId: get_api_v1_trends_links
@@ -13882,7 +14089,7 @@ paths:
             x-lesser-handler: HandleGetTrendingLinksLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/trends/statuses:
         get:
             operationId: get_api_v1_trends_statuses
@@ -13904,7 +14111,7 @@ paths:
             x-lesser-handler: HandleGetTrendingStatusesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/trends/tags:
         get:
             operationId: get_api_v1_trends_tags
@@ -13926,7 +14133,7 @@ paths:
             x-lesser-handler: HandleGetTrendingTagsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v1/vouches:
         post:
             operationId: post_api_v1_vouches
@@ -13940,6 +14147,8 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateVouchRequest'
             responses:
+                "200":
+                    description: OK
                 "201":
                     description: OK
                     content:
@@ -13959,7 +14168,7 @@ paths:
             x-lesser-handler: HandleCreateVouchLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v1/vouches/{actor_id}:
@@ -13995,7 +14204,7 @@ paths:
             x-lesser-handler: HandleGetVouchesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v1/vouches/{vouch_id}:
@@ -14012,6 +14221,8 @@ paths:
                   schema:
                     type: string
             responses:
+                "200":
+                    description: OK
                 "204":
                     description: No Content
                 "400":
@@ -14027,7 +14238,7 @@ paths:
             x-lesser-handler: HandleRevokeVouchLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v2/filters:
@@ -14055,7 +14266,7 @@ paths:
             x-lesser-handler: HandleGetFiltersLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:filters
         post:
@@ -14089,7 +14300,7 @@ paths:
             x-lesser-handler: HandleCreateFilterLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
     /api/v2/filters/{filter_id}/keywords:
@@ -14125,7 +14336,7 @@ paths:
             x-lesser-handler: HandleGetFilterKeywordsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:filters
         post:
@@ -14167,7 +14378,7 @@ paths:
             x-lesser-handler: HandleAddFilterKeywordLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
     /api/v2/filters/{filter_id}/keywords/{keyword_id}:
@@ -14208,7 +14419,7 @@ paths:
             x-lesser-handler: HandleDeleteFilterKeywordLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
     /api/v2/filters/{filter_id}/statuses:
@@ -14244,7 +14455,7 @@ paths:
             x-lesser-handler: HandleGetFilterStatusesLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:filters
         post:
@@ -14286,7 +14497,7 @@ paths:
             x-lesser-handler: HandleAddFilterStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
     /api/v2/filters/{filter_id}/statuses/{status_id}:
@@ -14327,7 +14538,7 @@ paths:
             x-lesser-handler: HandleDeleteFilterStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
     /api/v2/filters/{id}:
@@ -14363,7 +14574,7 @@ paths:
             x-lesser-handler: HandleGetFilterLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read:filters
         put:
@@ -14405,7 +14616,7 @@ paths:
             x-lesser-handler: HandleUpdateFilterLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
         delete:
@@ -14440,7 +14651,7 @@ paths:
             x-lesser-handler: HandleDeleteFilterLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
     /api/v2/filters/test:
@@ -14475,7 +14686,7 @@ paths:
             x-lesser-handler: HandleTestFilterLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write:filters
     /api/v2/instance:
@@ -14497,7 +14708,7 @@ paths:
             x-lesser-handler: HandleGetInstanceV2Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v2/notifications/grouped:
         get:
             operationId: get_api_v2_notifications_grouped
@@ -14581,7 +14792,7 @@ paths:
             x-lesser-handler: HandleGetGroupedNotificationsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /api/v2/notifications/groups/{group_id}/read:
@@ -14619,7 +14830,7 @@ paths:
             x-lesser-handler: HandleMarkGroupAsReadLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /api/v2/search:
@@ -14659,7 +14870,7 @@ paths:
             x-lesser-handler: HandleSearchV2Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v2/suggestions:
         get:
             operationId: get_api_v2_suggestions
@@ -14685,7 +14896,7 @@ paths:
             x-lesser-handler: HandleGetSuggestionsV2Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v2/trends:
         get:
             operationId: get_api_v2_trends
@@ -14707,7 +14918,7 @@ paths:
             x-lesser-handler: HandleGetTrendsV2Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v2/trends/links:
         get:
             operationId: get_api_v2_trends_links
@@ -14729,7 +14940,7 @@ paths:
             x-lesser-handler: HandleGetTrendingLinksV2Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v2/trends/statuses:
         get:
             operationId: get_api_v2_trends_statuses
@@ -14751,7 +14962,7 @@ paths:
             x-lesser-handler: HandleGetTrendingStatusesV2Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /api/v2/trends/tags:
         get:
             operationId: get_api_v2_trends_tags
@@ -14773,7 +14984,7 @@ paths:
             x-lesser-handler: HandleGetTrendingTagsV2Lift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /auth/wallet/challenge:
         post:
             operationId: post_auth_wallet_challenge
@@ -14818,7 +15029,7 @@ paths:
             x-lesser-handler: HandleCreateChallengeLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /auth/wallet/link:
         post:
             operationId: post_auth_wallet_link
@@ -14852,7 +15063,7 @@ paths:
             x-lesser-handler: HandleLinkWalletLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /auth/wallet/list:
@@ -14880,7 +15091,7 @@ paths:
             x-lesser-handler: HandleGetWalletsLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - read
     /auth/wallet/login:
@@ -14927,7 +15138,7 @@ paths:
             x-lesser-handler: HandleLoginWalletLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /auth/wallet/unlink/{address}:
         delete:
             operationId: delete_auth_wallet_unlink_by_address
@@ -14961,7 +15172,7 @@ paths:
             x-lesser-handler: HandleUnlinkWalletLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /auth/wallet/verify:
@@ -15008,7 +15219,7 @@ paths:
             x-lesser-handler: HandleVerifySignatureLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /embed/{id}:
         get:
             operationId: get_embed_by_id
@@ -15032,7 +15243,7 @@ paths:
             x-lesser-handler: HandleEmbedPageLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /health:
         get:
             operationId: get_health
@@ -15120,7 +15331,7 @@ paths:
             x-lesser-handler: HandleNodeInfoLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /oauth/authorize:
         get:
             operationId: get_oauth_authorize
@@ -15212,7 +15423,7 @@ paths:
                 "302":
                     - Location
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /oauth/consent:
         post:
             operationId: post_oauth_consent
@@ -15258,7 +15469,7 @@ paths:
             x-lesser-handler: HandleOAuthConsentLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /oauth/token:
         post:
             operationId: post_oauth_token
@@ -15304,7 +15515,7 @@ paths:
             x-lesser-handler: HandleOAuthTokenLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /objects/{id}:
         get:
             operationId: get_objects_by_id
@@ -15360,7 +15571,7 @@ paths:
             x-lesser-handler: HandleSetupCreateAdminLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /setup/bootstrap/challenge:
         post:
             operationId: post_setup_bootstrap_challenge
@@ -15405,7 +15616,7 @@ paths:
             x-lesser-handler: HandleSetupBootstrapChallengeLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /setup/bootstrap/verify:
         post:
             operationId: post_setup_bootstrap_verify
@@ -15450,7 +15661,7 @@ paths:
             x-lesser-handler: HandleSetupBootstrapVerifyLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /setup/finalize:
         post:
             operationId: post_setup_finalize
@@ -15478,7 +15689,7 @@ paths:
             x-lesser-handler: HandleSetupFinalizeLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
             x-oauth-scopes:
                 - write
     /setup/status:
@@ -15500,7 +15711,7 @@ paths:
             x-lesser-handler: HandleSetupStatusLift
             x-lesser-lambda: api
             x-lesser-routeSources:
-                - cmd/api/routes_lift.go
+                - cmd/api/routes.go
     /users/{username}:
         get:
             operationId: get_users_by_username

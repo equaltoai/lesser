@@ -392,7 +392,7 @@ func findRepoRoot() (string, error) {
 
 	dir := start
 	for {
-		if fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, "cmd", "api", "routes_lift.go")) {
+		if fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, "cmd", "api", "routes.go")) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
@@ -401,7 +401,7 @@ func findRepoRoot() (string, error) {
 		}
 		dir = parent
 	}
-	return "", errors.New("unable to locate repo root (expected go.mod and cmd/api/routes_lift.go)")
+	return "", errors.New("unable to locate repo root (expected go.mod and cmd/api/routes.go)")
 }
 
 func fileExists(path string) bool {
@@ -492,14 +492,14 @@ func routeKey(method, path string) string {
 
 func extractConfiguredRoutes(repoRoot string) ([]routeDef, error) {
 	files := []string{
-		filepath.Join(repoRoot, "cmd", "api", "routes_lift.go"),
+		filepath.Join(repoRoot, "cmd", "api", "routes.go"),
 		filepath.Join(repoRoot, "cmd", "api", "main.go"),
 	}
 
 	var routes []routeDef
 	seen := make(map[string]struct{})
 
-	callRE := regexp.MustCompile(`\bapp\.(GET|POST|PUT|PATCH|DELETE)\("([^"]+)"`)
+	callRE := regexp.MustCompile(`\bapp\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete)\("([^"]+)"`)
 	handleRE := regexp.MustCompile(`\bapp\.Handle\("([^"]+)",\s*"([^"]+)"`)
 
 	for _, path := range files {

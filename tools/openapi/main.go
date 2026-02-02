@@ -1006,7 +1006,7 @@ func findRepoRoot() (string, error) {
 
 	dir := start
 	for {
-		if fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, "cmd", "api", "routes_lift.go")) {
+		if fileExists(filepath.Join(dir, "go.mod")) && fileExists(filepath.Join(dir, "cmd", "api", "routes.go")) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
@@ -1015,7 +1015,7 @@ func findRepoRoot() (string, error) {
 		}
 		dir = parent
 	}
-	return "", errors.New("unable to locate repo root (expected go.mod and cmd/api/routes_lift.go)")
+	return "", errors.New("unable to locate repo root (expected go.mod and cmd/api/routes.go)")
 }
 
 func fileExists(path string) bool {
@@ -1038,20 +1038,20 @@ type routeAgg struct {
 func extractConfiguredRoutes(repoRoot string) ([]routeDef, error) {
 	routesByKey := make(map[string]*routeAgg)
 
-	apiLiftRoutes, err := extractAPILiftRoutes(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range apiLiftRoutes {
-		addRouteAgg(routesByKey, r, filepath.ToSlash("cmd/api/routes_lift.go"))
-	}
-
-	// API (health, etc) routes.
-	apiRoutes, err := extractRoutesFromSourceFile(repoRoot, "cmd/api/main.go", lambdaAPI, authModePublic)
+	apiRoutes, err := extractAPIRoutes(repoRoot)
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range apiRoutes {
+		addRouteAgg(routesByKey, r, filepath.ToSlash("cmd/api/routes.go"))
+	}
+
+	// API (health, etc) routes.
+	apiMainRoutes, err := extractRoutesFromSourceFile(repoRoot, "cmd/api/main.go", lambdaAPI, authModePublic)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range apiMainRoutes {
 		addRouteAgg(routesByKey, r, filepath.ToSlash("cmd/api/main.go"))
 	}
 
@@ -1173,7 +1173,7 @@ func extractRoutesFromSourceFile(repoRoot, relPath, lambda string, auth authMode
 		return nil, fmt.Errorf("read %s: %w", absPath, err)
 	}
 
-	callRE := regexp.MustCompile(`\bapp\.(GET|POST|PUT|PATCH|DELETE)\("([^"]+)"`)
+	callRE := regexp.MustCompile(`\bapp\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete)\("([^"]+)"`)
 	handleRE := regexp.MustCompile(`\bapp\.Handle\("([^"]+)",\s*"([^"]+)"`)
 
 	var routes []routeDef
@@ -1473,8 +1473,8 @@ type apiRouteMeta struct {
 	RateLimited bool
 }
 
-func extractAPILiftRoutes(repoRoot string) ([]routeDef, error) {
-	handlerAuth, err := classifyAPILiftHandlerAuthModes(repoRoot)
+func extractAPIRoutes(repoRoot string) ([]routeDef, error) {
+	handlerAuth, err := classifyAPIHandlerAuthModes(repoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1507,7 +1507,7 @@ func extractAPILiftRoutes(repoRoot string) ([]routeDef, error) {
 }
 
 func extractAPIRouteMetadata(repoRoot string) ([]apiRouteMeta, error) {
-	path := filepath.Join(repoRoot, "cmd", "api", "routes_lift.go")
+	path := filepath.Join(repoRoot, "cmd", "api", "routes.go")
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, nil, 0)
 	if err != nil {
@@ -1545,12 +1545,14 @@ func extractAPIRouteMeta(call *ast.CallExpr) (apiRouteMeta, bool) {
 		return apiRouteMeta{}, false
 	}
 
-	method := sel.Sel.Name
+	if sel.Sel.Name == "Handle" {
+		return extractAPIRouteMetaFromHandleArgs(call.Args)
+	}
+
+	method := strings.ToUpper(sel.Sel.Name)
 	switch method {
 	case methodGET, methodPOST, methodPUT, methodPATCH, methodDELETE:
 		return extractAPIRouteMetaFromArgs(method, call.Args, 1)
-	case "Handle":
-		return extractAPIRouteMetaFromHandleArgs(call.Args)
 	default:
 		return apiRouteMeta{}, false
 	}
@@ -1605,7 +1607,7 @@ type handlerAnalysis struct {
 	Callees map[string]struct{}
 }
 
-func classifyAPILiftHandlerAuthModes(repoRoot string) (map[string]authMode, error) {
+func classifyAPIHandlerAuthModes(repoRoot string) (map[string]authMode, error) {
 	analyses, err := loadHandlerAnalyses(repoRoot)
 	if err != nil {
 		return nil, err
@@ -1614,7 +1616,7 @@ func classifyAPILiftHandlerAuthModes(repoRoot string) (map[string]authMode, erro
 }
 
 func loadHandlerAnalyses(repoRoot string) (map[string]handlerAnalysis, error) {
-	dir := filepath.Join(repoRoot, "cmd", "api", "lift")
+	dir := filepath.Join(repoRoot, "cmd", "api", "handlers")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", dir, err)

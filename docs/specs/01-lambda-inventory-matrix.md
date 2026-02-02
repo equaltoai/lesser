@@ -46,26 +46,26 @@ The inventory set is enforced by:
 | collections | api-http | HTTP: GET /users/{username}/followers<br>HTTP: GET /users/{username}/following<br>HTTP: GET /users/{username}/liked | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | cost-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=2s; parallel=1; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | dlq-processor | hybrid | SQS: queue=enhanced-federation-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=export-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=federation-aggregator-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=federation-delivery-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=import-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=media-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=notification-processor-queue; consume=dlq; batch=10; window=1s<br>SQS: queue=push-delivery-queue; consume=dlq; batch=10; window=1s<br>Schedule: expression=rate(15 minutes) | — | basic | memory=512MB; timeout=30s; logs=7d |
-| enhanced-federation-processor | processor-sqs | SQS: queue=enhanced-federation-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
-| export-generator | processor-sqs | SQS: queue=export-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
-| federation-aggregator | hybrid | SQS: queue=federation-aggregator-queue<br>Schedule: expression=rate(1 hour) | — | basic | memory=512MB; timeout=30s; logs=7d |
-| federation-delivery | processor-sqs | SQS: queue=federation-delivery-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
+| enhanced-federation-processor | processor-sqs | SQS: queue=enhanced-federation-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| export-generator | processor-sqs | SQS: queue=export-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
+| federation-aggregator | hybrid | SQS: queue=federation-aggregator-queue; partialFailure=true<br>Schedule: expression=rate(1 hour) | — | basic | memory=512MB; timeout=30s; logs=7d |
+| federation-delivery | processor-sqs | SQS: queue=federation-delivery-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | federation-timeseries | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | federation-tracker | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | graphql | api-http | HTTP: GET /api/graphql<br>HTTP: POST /api/graphql | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | graphql-ws | api-ws | — | — | encryption | memory=512MB; timeout=30s; logs=7d |
-| import-processor | processor-sqs | SQS: queue=import-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
+| import-processor | processor-sqs | SQS: queue=import-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | inbox | api-http | HTTP: GET /users/{username}/inbox<br>HTTP: POST /users/{username}/inbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
-| media-processor | processor-sqs | SQS: queue=media-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
+| media-processor | processor-sqs | SQS: queue=media-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-aggregator | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | metrics-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | ml-training-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=5; window=1s; parallel=1; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=900s; logs=7d |
 | moderation-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | note-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
-| notification-processor | processor-sqs | SQS: queue=notification-processor-queue | — | basic | memory=512MB; timeout=30s; logs=7d |
+| notification-processor | processor-sqs | SQS: queue=notification-processor-queue; partialFailure=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | objects | api-http | HTTP: GET /objects/{id} | — | encryption | memory=512MB; timeout=30s; logs=7d |
 | outbox | api-http | HTTP: GET /users/{username}/outbox<br>HTTP: POST /users/{username}/outbox | — | encryption | memory=512MB; timeout=30s; logs=7d |
-| push-delivery | processor-sqs | SQS: queue=push-delivery-queue | VAPID_PUBLIC_KEY<br>VAPID_SUBJECT<br>VAPID_SECRET_ARN | basic | memory=512MB; timeout=30s; logs=7d |
+| push-delivery | processor-sqs | SQS: queue=push-delivery-queue; partialFailure=true | VAPID_PUBLIC_KEY<br>VAPID_SUBJECT<br>VAPID_SECRET_ARN | basic | memory=512MB; timeout=30s; logs=7d |
 | report-trust-updater | processor-stream | Stream: table=main-table; start=LATEST; batch=25; window=5s; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | search-indexer | processor-stream | Stream: table=main-table; start=LATEST; batch=100; window=30s; parallel=5; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=512MB; timeout=30s; logs=7d |
 | severance-processor | processor-stream | Stream: table=main-table; start=LATEST; batch=10; window=5s; parallel=2; maxRetry=3; bisect=true; reportBatchItemFailures=true | — | basic | memory=1024MB; timeout=30s; logs=7d |
