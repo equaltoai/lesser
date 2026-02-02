@@ -15,24 +15,24 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	dynamotypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	smstypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/theory-cloud/tabletheory"
+	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/mastodon"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 type walletSecretPayload struct {
@@ -71,9 +71,10 @@ type ownerBootstrapArgs struct {
 	force            bool
 }
 
-type dynamodbAPI interface {
-	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
-	TransactWriteItems(ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error)
+type tableTheoryAPI interface {
+	Model(model any) theorydb.Query
+	TransactWrite(ctx context.Context, fn func(theorydb.TransactionBuilder) error) error
+	Close() error
 }
 
 type secretsManagerAPI interface {
@@ -87,8 +88,10 @@ type kmsAPI interface {
 }
 
 var (
-	loadAWSConfigFn           = awsconfig.LoadDefaultConfig
-	newDynamoClientFn         = func(cfg aws.Config) dynamodbAPI { return dynamodb.NewFromConfig(cfg) }
+	loadAWSConfigFn    = awsconfig.LoadDefaultConfig
+	newTableTheoryDBFn = func(cfg aws.Config) (tableTheoryAPI, error) {
+		return tabletheory.New(session.Config{Region: cfg.Region, CredentialsProvider: cfg.Credentials})
+	}
 	newSecretsManagerClientFn = func(cfg aws.Config) secretsManagerAPI { return secretsmanager.NewFromConfig(cfg) }
 	newKMSClientFn            = func(cfg aws.Config) kmsAPI { return kms.NewFromConfig(cfg) }
 	exitFn                    = os.Exit
@@ -189,13 +192,21 @@ func runOwnerBootstrap(ctx context.Context, args ownerBootstrapArgs) {
 		ownerBootstrapFatal("aws_config_load_failed", "load AWS config", map[string]any{"error": err.Error()})
 	}
 
-	ddb := newDynamoClientFn(awsCfg)
+	storagemodels.MainTableName = args.tableName
+
+	db, err := newTableTheoryDBFn(awsCfg)
+	if err != nil {
+		ownerBootstrapFatal("tabletheory_init_failed", "init TableTheory", map[string]any{"error": err.Error()})
+	}
+	defer func() {
+		_ = db.Close()
+	}()
 	sm := newSecretsManagerClientFn(awsCfg)
 	kmsClient := newKMSClientFn(awsCfg)
 
 	userPK := fmt.Sprintf("USER#%s", args.username)
 
-	state, err := checkBootstrapState(ctx, ddb, sm, args, userPK)
+	state, err := checkBootstrapState(ctx, db, sm, args, userPK)
 	if err != nil {
 		ownerBootstrapFatal("bootstrap_check_failed", "check existing bootstrap state", map[string]any{"error": err.Error()})
 	}
@@ -218,7 +229,7 @@ func runOwnerBootstrap(ctx context.Context, args ownerBootstrapArgs) {
 
 	now := time.Now().UTC()
 	artifacts := generateBootstrapArtifacts(ctx, kmsClient, args, now)
-	persistResult := persistBootstrapArtifacts(ctx, ddb, sm, args, artifacts)
+	persistResult := persistBootstrapArtifacts(ctx, db, sm, args, artifacts)
 
 	ownerBootstrapInfo("provisioning_complete", "bootstrap complete", map[string]any{
 		"environment": args.environment,
@@ -241,8 +252,8 @@ func runOwnerBootstrap(ctx context.Context, args ownerBootstrapArgs) {
 	})
 }
 
-func checkBootstrapState(ctx context.Context, ddb dynamodbAPI, sm secretsManagerAPI, args ownerBootstrapArgs, userPK string) (bootstrapState, error) {
-	userExists, err := dynamoItemExists(ctx, ddb, args.tableName, userPK, "METADATA")
+func checkBootstrapState(ctx context.Context, db tableTheoryAPI, sm secretsManagerAPI, args ownerBootstrapArgs, userPK string) (bootstrapState, error) {
+	userExists, err := userMetadataExists(ctx, db, userPK, storagemodels.SKMetadata)
 	if err != nil {
 		return bootstrapState{}, fmt.Errorf("check admin user existence: %w", err)
 	}
@@ -306,7 +317,7 @@ func validateBootstrapState(state bootstrapState, args ownerBootstrapArgs, userP
 }
 
 type bootstrapArtifacts struct {
-	items             []transactPut
+	items             []any
 	walletSecretJSON  []byte
 	oauthSecretJSON   []byte
 	walletAddress     string
@@ -377,36 +388,35 @@ func generateBootstrapArtifacts(ctx context.Context, kmsClient kmsAPI, args owne
 		ownerBootstrapFatal("json_marshal_failed", "marshal oauth secret", map[string]any{"error": err.Error()})
 	}
 
-	actorItem, err := buildActorItem(args.username, args.domain, actorPublicKeyPEM, encryptedActorPrivateKeyB64, now)
+	actorModel, err := buildActorModel(args.username, args.domain, actorPublicKeyPEM, encryptedActorPrivateKeyB64, now)
 	if err != nil {
-		ownerBootstrapFatal("item_build_failed", "build actor item", map[string]any{"error": err.Error()})
+		ownerBootstrapFatal("item_build_failed", "build actor model", map[string]any{"error": err.Error()})
 	}
-	userItem, err := buildUserItem(args.username, now)
+	userModel, err := buildUserModel(args.username, now)
 	if err != nil {
-		ownerBootstrapFatal("item_build_failed", "build user item", map[string]any{"error": err.Error()})
-	}
-
-	walletCredentialItem, err := buildWalletCredentialItem(args.username, walletAddressLower, args.chainID, now)
-	if err != nil {
-		ownerBootstrapFatal("item_build_failed", "build wallet credential item", map[string]any{"error": err.Error()})
-	}
-	walletIndexItem, err := buildWalletIndexItem(args.username, walletAddressLower)
-	if err != nil {
-		ownerBootstrapFatal("item_build_failed", "build wallet index item", map[string]any{"error": err.Error()})
+		ownerBootstrapFatal("item_build_failed", "build user model", map[string]any{"error": err.Error()})
 	}
 
-	oauthClientItem, err := buildOAuthClientItem(args.username, clientID, clientSecret, redirectURIs, now)
+	walletCredentialModel, err := buildWalletCredentialModel(args.username, walletAddressLower, args.chainID, now)
 	if err != nil {
-		ownerBootstrapFatal("item_build_failed", "build oauth client item", map[string]any{"error": err.Error()})
+		ownerBootstrapFatal("item_build_failed", "build wallet credential model", map[string]any{"error": err.Error()})
+	}
+	walletIndexModel, err := buildWalletIndexModel(args.username, walletAddressLower)
+	if err != nil {
+		ownerBootstrapFatal("item_build_failed", "build wallet index model", map[string]any{"error": err.Error()})
 	}
 
-	userPK := fmt.Sprintf("USER#%s", args.username)
-	items := []transactPut{
-		{item: userItem, pk: userPK, sk: "METADATA"},
-		{item: actorItem, pk: fmt.Sprintf("ACTOR#%s", args.username), sk: "PROFILE"},
-		{item: walletCredentialItem, pk: fmt.Sprintf("USER#%s", args.username), sk: fmt.Sprintf("WALLET#%s", walletAddressLower)},
-		{item: walletIndexItem, pk: fmt.Sprintf("WALLET#ethereum#%s", walletAddressLower), sk: fmt.Sprintf("USER#%s", args.username)},
-		{item: oauthClientItem, pk: fmt.Sprintf("OAUTH_CLIENT#%s", clientID), sk: "CLIENT"},
+	oauthClientModel, err := buildOAuthClientModel(args.username, clientID, clientSecret, redirectURIs, now)
+	if err != nil {
+		ownerBootstrapFatal("item_build_failed", "build oauth client model", map[string]any{"error": err.Error()})
+	}
+
+	items := []any{
+		userModel,
+		actorModel,
+		walletCredentialModel,
+		walletIndexModel,
+		oauthClientModel,
 	}
 
 	return bootstrapArtifacts{
@@ -429,21 +439,21 @@ type bootstrapPersistResult struct {
 	oauthCreated  bool
 }
 
-func persistBootstrapArtifacts(ctx context.Context, ddb dynamodbAPI, sm secretsManagerAPI, args ownerBootstrapArgs, artifacts bootstrapArtifacts) bootstrapPersistResult {
-	if err := transactWriteAll(ctx, ddb, args.tableName, artifacts.items); err != nil {
-		ownerBootstrapFatal("dynamodb_transact_failed", "write admin artifacts to DynamoDB", map[string]any{"error": err.Error(), "table": args.tableName})
+func persistBootstrapArtifacts(ctx context.Context, db tableTheoryAPI, sm secretsManagerAPI, args ownerBootstrapArgs, artifacts bootstrapArtifacts) bootstrapPersistResult {
+	if err := transactWriteAll(ctx, db, artifacts.items); err != nil {
+		ownerBootstrapFatal("tabletheory_transact_failed", "write admin artifacts to DynamoDB", map[string]any{"error": err.Error(), "table": args.tableName})
 	}
 
 	var result bootstrapPersistResult
 
 	if err := createSecret(ctx, sm, args.walletSecretName, string(artifacts.walletSecretJSON), artifacts.walletDescription); err != nil {
-		rollbackSecretsAndDynamo(ctx, ddb, sm, args.tableName, nil, artifacts.items)
+		rollbackSecretsAndTableTheory(ctx, db, sm, nil, artifacts.items)
 		ownerBootstrapFatal("secret_create_failed", "create wallet secret", map[string]any{"error": err.Error(), "secret": args.walletSecretName})
 	}
 	result.walletCreated = true
 
 	if err := createSecret(ctx, sm, args.oauthSecretName, string(artifacts.oauthSecretJSON), artifacts.oauthDescription); err != nil {
-		rollbackSecretsAndDynamo(ctx, ddb, sm, args.tableName, []string{args.walletSecretName}, artifacts.items)
+		rollbackSecretsAndTableTheory(ctx, db, sm, []string{args.walletSecretName}, artifacts.items)
 		ownerBootstrapFatal("secret_create_failed", "create oauth secret", map[string]any{"error": err.Error(), "secret": args.oauthSecretName})
 	}
 	result.oauthCreated = true
@@ -464,20 +474,29 @@ func ownerBootstrapFatal(event, message string, fields map[string]any) {
 	exitFn(1)
 }
 
-func dynamoItemExists(ctx context.Context, ddb dynamodbAPI, table, pk, sk string) (bool, error) {
-	resp, err := ddb.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName:      aws.String(table),
-		ConsistentRead: aws.Bool(true),
-		Key: map[string]dynamotypes.AttributeValue{
-			"PK": &dynamotypes.AttributeValueMemberS{Value: pk},
-			"SK": &dynamotypes.AttributeValueMemberS{Value: sk},
-		},
-		ProjectionExpression: aws.String("PK"),
-	})
+func userMetadataExists(ctx context.Context, db tableTheoryAPI, pk, sk string) (bool, error) {
+	if db == nil {
+		return false, errors.New("database is nil")
+	}
+
+	var record storagemodels.User
+	err := db.Model(&storagemodels.User{}).
+		WithContext(ctx).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		ConsistentRead().
+		First(&record)
 	if err != nil {
+		if errors.Is(err, theorydbErrors.ErrTableNotFound) {
+			return false, err
+		}
+		if theorydbErrors.IsNotFound(err) {
+			return false, nil
+		}
 		return false, err
 	}
-	return len(resp.Item) > 0, nil
+
+	return true, nil
 }
 
 func secretExists(ctx context.Context, sm secretsManagerAPI, secretName string) (bool, error) {
@@ -571,7 +590,7 @@ func generateOAuthClientSecret() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-func buildActorItem(username, domain, publicKeyPEM, encryptedPrivateKeyB64 string, now time.Time) (map[string]dynamotypes.AttributeValue, error) {
+func buildActorModel(username, domain, publicKeyPEM, encryptedPrivateKeyB64 string, now time.Time) (*storagemodels.Actor, error) {
 	actorID := fmt.Sprintf("https://%s/users/%s", domain, username)
 	actor := activitypub.NewActor(activitypub.PersonType, actorID, username)
 	actor.Name = username
@@ -590,202 +609,125 @@ func buildActorItem(username, domain, publicKeyPEM, encryptedPrivateKeyB64 strin
 	actor.Followers = fmt.Sprintf("%s/followers", actorID)
 	actor.Following = fmt.Sprintf("%s/following", actorID)
 
-	actorBytes, err := json.Marshal(actor)
-	if err != nil {
+	model := &storagemodels.Actor{
+		Actor:          actor,
+		Username:       username,
+		PrivateKey:     encryptedPrivateKeyB64,
+		KeyType:        "RSA",
+		NumericID:      common.GenerateNumericID(username),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		FollowerCount:  0,
+		FollowingCount: 0,
+		StatusCount:    0,
+		Version:        1,
+	}
+
+	if domain != "" {
+		model.GSI3PK = "DOMAIN#" + domain
+		model.GSI3SK = username
+	}
+
+	if err := model.UpdateKeys(); err != nil {
 		return nil, err
 	}
-	var actorMap map[string]any
-	if err := json.Unmarshal(actorBytes, &actorMap); err != nil {
+
+	return model, nil
+}
+
+func buildUserModel(username string, now time.Time) (*storagemodels.User, error) {
+	model := &storagemodels.User{
+		Username:           username,
+		Approved:           true,
+		Role:               "admin",
+		Locked:             false,
+		Discoverable:       false,
+		Suspended:          false,
+		Silenced:           false,
+		RecoveryMethods:    []string{"wallet"},
+		AllowNSFW:          false,
+		RequireNSFWWarning: true,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		Version:            1,
+	}
+
+	if err := model.UpdateKeys(); err != nil {
 		return nil, err
 	}
 
-	usernameLower := strings.ToLower(username)
-	prefix := usernameLower
-	if len(prefix) >= 2 {
-		prefix = prefix[:2]
-	}
-
-	displayLower := strings.ToLower(strings.TrimSpace(username))
-	displayPrefix := displayLower
-	if len(displayPrefix) >= 2 {
-		displayPrefix = displayPrefix[:2]
-	}
-
-	dateKey := now.Format("2006-01-02")
-
-	item := map[string]any{
-		"PK": "ACTOR#" + username,
-		"SK": "PROFILE",
-
-		"gsi1PK": "USERNAME_SEARCH#" + prefix,
-		"gsi1SK": usernameLower,
-
-		"gsi2PK": "NAME_SEARCH#" + displayPrefix,
-		"gsi2SK": displayLower + "#" + username,
-
-		"gsi3PK": "DOMAIN#" + domain,
-		"gsi3SK": username,
-
-		"gsi4PK": "ACTOR_RANK#0-9",
-		"gsi4SK": fmt.Sprintf("%010d#%s", 0, username),
-
-		"gsi5PK": "ACTIVE#" + dateKey,
-		"gsi5SK": fmt.Sprintf("%d#%s", now.Unix(), username),
-
-		"actor":      actorMap,
-		"username":   username,
-		"privateKey": encryptedPrivateKeyB64,
-		"keyType":    "RSA",
-		"numericID":  mastodon.GenerateNumericID(username),
-
-		"createdAt": now,
-		"updatedAt": now,
-
-		"followerCount":  0,
-		"followingCount": 0,
-		"statusCount":    0,
-
-		"version": 1,
-	}
-
-	return attributevalue.MarshalMap(item)
+	return model, nil
 }
 
-func buildUserItem(username string, now time.Time) (map[string]dynamotypes.AttributeValue, error) {
-	createdAtKey := now.Format(time.RFC3339)
-
-	usernameLower := strings.ToLower(username)
-	prefix := usernameLower
-	if len(prefix) > 2 {
-		prefix = prefix[:2]
+func buildWalletCredentialModel(username, addressLower string, chainID int, now time.Time) (*storagemodels.WalletCredential, error) {
+	model := &storagemodels.WalletCredential{
+		Username: username,
+		Address:  addressLower,
+		ChainID:  chainID,
+		Type:     "ethereum",
+		LinkedAt: now,
+		LastUsed: now,
 	}
 
-	item := map[string]any{
-		"PK": "USER#" + username,
-		"SK": "METADATA",
-
-		"gsi1PK": "USERS",
-		"gsi1SK": fmt.Sprintf("%s#%s", createdAtKey, username),
-
-		"gsi3PK": "ROLE#admin",
-		"gsi3SK": username,
-
-		"gsi4PK": "STATUS#active",
-		"gsi4SK": username,
-
-		"gsi5PK": fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix),
-		"gsi5SK": usernameLower,
-
-		"username": username,
-		"approved": true,
-		"role":     "admin",
-
-		"locked":       false,
-		"discoverable": false,
-		"suspended":    false,
-		"silenced":     false,
-
-		"recoveryMethods": []string{"wallet"},
-
-		"allowNSFW":          false,
-		"requireNSFWWarning": true,
-
-		"createdAt": now,
-		"updatedAt": now,
-
-		"version": 1,
+	if err := model.UpdateKeys(); err != nil {
+		return nil, err
 	}
 
-	return attributevalue.MarshalMap(item)
+	return model, nil
 }
 
-func buildWalletCredentialItem(username, addressLower string, chainID int, now time.Time) (map[string]dynamotypes.AttributeValue, error) {
-	item := map[string]any{
-		"PK": fmt.Sprintf("USER#%s", username),
-		"SK": fmt.Sprintf("WALLET#%s", addressLower),
-
-		"username": username,
-		"address":  addressLower,
-		"chainID":  chainID,
-		"type":     "ethereum",
-		"linkedAt": now,
-		"lastUsed": now,
-	}
-	return attributevalue.MarshalMap(item)
+func buildWalletIndexModel(username, addressLower string) (*storagemodels.WalletIndex, error) {
+	model := &storagemodels.WalletIndex{}
+	model.UpdateKeys("ethereum", addressLower, username)
+	return model, nil
 }
 
-func buildWalletIndexItem(username, addressLower string) (map[string]dynamotypes.AttributeValue, error) {
-	item := map[string]any{
-		"PK": fmt.Sprintf("WALLET#ethereum#%s", addressLower),
-		"SK": fmt.Sprintf("USER#%s", username),
-
-		"username":   username,
-		"walletType": "ethereum",
-		"address":    addressLower,
-	}
-	return attributevalue.MarshalMap(item)
-}
-
-func buildOAuthClientItem(ownerID, clientID, clientSecret string, redirectURIs []string, now time.Time) (map[string]dynamotypes.AttributeValue, error) {
+func buildOAuthClientModel(ownerID, clientID, clientSecret string, redirectURIs []string, now time.Time) (*storagemodels.OAuthClient, error) {
 	storedSecret, err := common.HashOAuthClientSecret(clientSecret)
 	if err != nil {
 		return nil, err
 	}
 
-	descTs := encodeDescendingTimestamp(now)
-	item := map[string]any{
-		"PK": "OAUTH_CLIENT#" + clientID,
-		"SK": "CLIENT",
-
-		"gsi1PK": "OWNER#" + ownerID,
-		"gsi1SK": "CLIENT#" + clientID,
-
-		"oauthClientsPK": "OAUTH_CLIENTS",
-		"oauthClientsSK": fmt.Sprintf("CREATED_AT#%019d#CLIENT#%s", descTs, clientID),
-
-		"clientID":     clientID,
-		"clientSecret": storedSecret,
-		"name":         "Owner Console",
-		"redirectURIs": redirectURIs,
-		"grantTypes":   []string{"authorization_code", "refresh_token"},
-		"scopes":       []string{"read", "write", "admin"},
-		"ownerID":      ownerID,
-		"confidential": true,
-		"createdAt":    now,
-		"updatedAt":    now,
+	model := &storagemodels.OAuthClient{
+		ClientID:     clientID,
+		ClientSecret: storedSecret,
+		Name:         "Owner Console",
+		RedirectURIs: redirectURIs,
+		GrantTypes:   []string{"authorization_code", "refresh_token"},
+		Scopes:       []string{"read", "write", "admin"},
+		OwnerID:      ownerID,
+		Confidential: true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
-	return attributevalue.MarshalMap(item)
-}
 
-func encodeDescendingTimestamp(timestamp time.Time) int64 {
-	if timestamp.IsZero() {
-		timestamp = time.Now().UTC()
+	if err := model.UpdateKeys(); err != nil {
+		return nil, err
 	}
-	return math.MaxInt64 - timestamp.UTC().UnixNano()
+
+	return model, nil
 }
 
-type transactPut struct {
-	item map[string]dynamotypes.AttributeValue
-	pk   string
-	sk   string
-}
-
-func transactWriteAll(ctx context.Context, ddb dynamodbAPI, table string, puts []transactPut) error {
-	tx := make([]dynamotypes.TransactWriteItem, 0, len(puts))
-	for _, p := range puts {
-		tx = append(tx, dynamotypes.TransactWriteItem{
-			Put: &dynamotypes.Put{
-				TableName:           aws.String(table),
-				Item:                p.item,
-				ConditionExpression: aws.String("attribute_not_exists(PK)"),
-			},
-		})
+func transactWriteAll(ctx context.Context, db tableTheoryAPI, items []any) error {
+	if db == nil {
+		return errors.New("database is nil")
 	}
-	_, err := ddb.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx})
-	return err
+	if len(items) == 0 {
+		return nil
+	}
+
+	return db.TransactWrite(ctx, func(tx theorydb.TransactionBuilder) error {
+		for _, item := range items {
+			if item == nil {
+				return errors.New("transaction item is nil")
+			}
+			tx.Create(item)
+		}
+		return nil
+	})
 }
 
-func rollbackSecretsAndDynamo(ctx context.Context, ddb dynamodbAPI, sm secretsManagerAPI, table string, secrets []string, puts []transactPut) {
+func rollbackSecretsAndTableTheory(ctx context.Context, db tableTheoryAPI, sm secretsManagerAPI, secrets []string, items []any) {
 	if len(secrets) > 0 {
 		for _, s := range secrets {
 			if err := deleteSecretImmediate(ctx, sm, s); err != nil {
@@ -796,24 +738,21 @@ func rollbackSecretsAndDynamo(ctx context.Context, ddb dynamodbAPI, sm secretsMa
 		}
 	}
 
-	tx := make([]dynamotypes.TransactWriteItem, 0, len(puts))
-	for _, p := range puts {
-		tx = append(tx, dynamotypes.TransactWriteItem{
-			Delete: &dynamotypes.Delete{
-				TableName: aws.String(table),
-				Key: map[string]dynamotypes.AttributeValue{
-					"PK": &dynamotypes.AttributeValueMemberS{Value: p.pk},
-					"SK": &dynamotypes.AttributeValueMemberS{Value: p.sk},
-				},
-			},
-		})
-	}
-	if len(tx) == 0 {
+	if len(items) == 0 || db == nil {
 		return
 	}
-	if _, err := ddb.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{TransactItems: tx}); err != nil {
-		ownerBootstrapInfo("rollback_dynamodb_failed", "failed to rollback DynamoDB items", map[string]any{"error": err.Error(), "table": table})
+
+	if err := db.TransactWrite(ctx, func(tx theorydb.TransactionBuilder) error {
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			tx.Delete(item)
+		}
+		return nil
+	}); err != nil {
+		ownerBootstrapInfo("rollback_dynamodb_failed", "failed to rollback DynamoDB items", map[string]any{"error": err.Error(), "table": storagemodels.MainTableName})
 	} else {
-		ownerBootstrapInfo("rollback_dynamodb_complete", "rolled back DynamoDB items", map[string]any{"table": table, "items": len(puts)})
+		ownerBootstrapInfo("rollback_dynamodb_complete", "rolled back DynamoDB items", map[string]any{"table": storagemodels.MainTableName, "items": len(items)})
 	}
 }
