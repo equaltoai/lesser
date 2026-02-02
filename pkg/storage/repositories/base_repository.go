@@ -98,6 +98,13 @@ func NewBaseRepositoryWithCostTracking[T BaseModel](db core.DB, tableName string
 
 // Create stores a new item in the database
 func (r *BaseRepository[T]) Create(ctx context.Context, item T) error {
+	if r == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("repository is nil"))
+	}
+	if r.db == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("%s database client is nil", r.repoName))
+	}
+
 	// Update keys before saving
 	if err := item.UpdateKeys(); err != nil {
 		return ErrorHandler.HandleCreateError(err, "base entity keys", item.GetPK())
@@ -447,6 +454,13 @@ func (r *BaseRepository[T]) Get(ctx context.Context, pk, sk string, result T) er
 // Note: In DynamORM, you need to update the model fields before calling Update()
 // This method is provided for consistency but may need adaptation per repository
 func (r *BaseRepository[T]) Update(ctx context.Context, item T) error {
+	if r == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("repository is nil"))
+	}
+	if r.db == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("%s database client is nil", r.repoName))
+	}
+
 	// Track cost if cost service is available
 	if r.costService != nil {
 		operation := cost.DynamoOperation{
@@ -485,6 +499,13 @@ func (r *BaseRepository[T]) Update(ctx context.Context, item T) error {
 
 // Delete removes an item from the database
 func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
+	if r == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("repository is nil"))
+	}
+	if r.db == nil {
+		return pkgErrors.DatabaseConnectionFailed(fmt.Errorf("%s database client is nil", r.repoName))
+	}
+
 	// Track cost if cost service is available
 	if r.costService != nil {
 		operation := cost.DynamoOperation{

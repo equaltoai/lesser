@@ -88,6 +88,25 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		req.Visibility = VisibilityPublic
 	}
 
+	// Agent-specific safety rails (Phase 1).
+	if claims.IsAgent {
+		if resp, normErr := h.normalizeAgentMemoryEventRequest(ctx, claims, &req); resp != nil || normErr != nil {
+			return resp, normErr
+		}
+		if resp, railErr := h.enforceAgentStatusCreateRails(ctx, claims, &req); resp != nil || railErr != nil {
+			return resp, railErr
+		}
+	}
+
+	var agentAttribution *activitypub.AgentPostAttribution
+	if claims.IsAgent {
+		attr, resp, buildErr := h.buildAgentStatusAttribution(ctx, claims, &req)
+		if resp != nil || buildErr != nil {
+			return resp, buildErr
+		}
+		agentAttribution = attr
+	}
+
 	// Call Notes service
 	result, err := h.registry.Notes().CreateNote(ctx.Context(), &notes.CreateNoteCommand{
 		AuthorID:    claims.Username,
@@ -98,10 +117,15 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		Language:    req.Language,
 		InReplyToID: req.InReplyToID,
 		MediaIDs:    req.MediaIDs,
+		AgentAttribution: agentAttribution,
 	})
 	if err != nil {
 		h.logger.Error("failed to create note", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to create status")
+	}
+
+	if claims.IsAgent {
+		h.recordAgentMemoryEvent(ctx, claims.Username, result.Note.StatusID, &req)
 	}
 
 	// Convert to Mastodon API format with storage-aware helper
@@ -114,6 +138,19 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 	h.logger.Info("created status",
 		zap.String("id", result.Note.StatusID),
 		zap.String("content", req.Status))
+
+	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Note.StatusID, map[string]any{
+		"visibility":       req.Visibility,
+		"in_reply_to_id":   req.InReplyToID,
+		"has_media":        len(req.MediaIDs) > 0,
+		"has_poll":         req.Poll != nil,
+		"content_length":   len(req.Status),
+		"spoiler_length":   len(req.SpoilerText),
+		"language":         req.Language,
+		"sensitive":        req.Sensitive,
+		"scheduled":        req.ScheduledAt != nil,
+		"requested_scopes": strings.Join(claims.Scopes, " "),
+	})
 
 	return createdJSON(apiStatus)
 }
@@ -169,6 +206,16 @@ func (h *Handler) HandleDeleteStatusLift(ctx *apptheory.Context) (*apptheory.Res
 
 	h.logger.Info("deleted status", zap.String("id", statusID))
 
+	h.recordAgentAuditEvent(ctx, claims, "agent.status.delete", statusID, map[string]any{
+		"status_id": statusID,
+	})
+
+	if h.repos != nil && h.repos.User() != nil && status != nil && status.AuthorUsername != "" {
+		if author, _ := h.repos.User().GetUser(ctx.Context(), status.AuthorUsername); author != nil && author.IsAgent {
+			h.recordAgentMemoryTombstone(ctx.Context(), status.AuthorUsername, statusID, "")
+		}
+	}
+
 	return okJSON(mastodonStatus)
 }
 
@@ -181,9 +228,20 @@ func (h *Handler) HandleUpdateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 
 	// Authenticate and authorize user
-	_, actor, resp, err := h.authenticateStatusUpdate(ctx)
+	claims, actor, resp, err := h.authenticateStatusUpdate(ctx)
 	if resp != nil || err != nil {
 		return resp, err
+	}
+
+	// Agents must not silently edit; use explicit corrections/retractions via new posts.
+	if claims != nil && claims.IsAgent {
+		h.recordAgentAuditEvent(ctx, claims, "agent.status.update.blocked", statusID, map[string]any{
+			"reason": "silent_edit_disallowed",
+		})
+		return apptheory.JSON(http.StatusForbidden, map[string]any{
+			"error":             "agent_edit_disallowed",
+			"error_description": "agents must not silently edit posts; publish a correction or retraction as a new status",
+		})
 	}
 
 	// Get and verify object ownership
@@ -661,8 +719,21 @@ func (h *Handler) HandleGetStatusContextLift(ctx *apptheory.Context) (*apptheory
 		return resp, err
 	}
 
+	// Optional auth: agent tokens receive stricter context shaping.
+	isAgent := false
+	if token := h.getBearerTokenLift(ctx); token != "" {
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil && claims.IsAgent {
+			isAgent = true
+		}
+	}
+
 	// Get ancestors and descendants
-	ancestors := h.getStatusAncestors(ctx.Context(), objectID)
+	ancestors := h.getStatusAncestors(ctx.Context(), objectID, 200)
+	if isAgent && len(ancestors) > 20 {
+		// Root + last 20 to cap agent context expansion.
+		ancestors = append([]models.Status{ancestors[0]}, ancestors[len(ancestors)-20:]...)
+	}
 	descendants := h.getStatusDescendants(ctx.Context(), objectID)
 
 	// Return context response
@@ -719,23 +790,30 @@ func (h *Handler) validateStatusIDForContext(ctx *apptheory.Context) (string, *a
 }
 
 // getStatusAncestors retrieves the ancestors (parent statuses) of a status
-func (h *Handler) getStatusAncestors(ctx context.Context, objectID string) []models.Status {
-	ancestors := []models.Status{}
+func (h *Handler) getStatusAncestors(ctx context.Context, objectID string, maxDepth int) []models.Status {
+	if maxDepth <= 0 {
+		maxDepth = 10
+	}
+
+	parentIDs := make([]string, 0, maxDepth)
 	currentID := objectID
 
-	for i := 0; i < 10; i++ { // Limit depth to prevent infinite loops
+	for i := 0; i < maxDepth; i++ {
 		parentID := h.getParentStatusID(ctx, currentID)
 		if err := common.ValidateRequiredParam("parentID", parentID); err != nil {
 			break
 		}
-
-		parentStatus := h.loadStatusWithActor(ctx, parentID)
-		if parentStatus == nil {
-			break
-		}
-
-		ancestors = append([]models.Status{*parentStatus}, ancestors...) // Prepend to maintain order
+		parentIDs = append(parentIDs, parentID)
 		currentID = parentID
+	}
+
+	ancestors := make([]models.Status, 0, len(parentIDs))
+	for i := len(parentIDs) - 1; i >= 0; i-- {
+		parentStatus := h.loadStatusWithActor(ctx, parentIDs[i])
+		if parentStatus == nil {
+			continue
+		}
+		ancestors = append(ancestors, *parentStatus)
 	}
 
 	return ancestors

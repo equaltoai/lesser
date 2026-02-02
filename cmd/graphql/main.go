@@ -344,8 +344,30 @@ func initializeGraphQLSpecificServices() {
 	if cfg.GraphQLParserTokenLimit > 0 {
 		server.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
 	}
+	// Depth enforcement: agents are restricted to shallow queries (max depth 3), humans use configured depth.
 	if cfg.GraphQLMaxDepth > 0 {
-		server.Use(gqllimits.FixedDepthLimit(cfg.GraphQLMaxDepth))
+		server.Use(&gqllimits.DepthLimit{
+			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+				if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
+					if claims, ok := claimsVal.(*auth.Claims); ok && claims.IsAgent {
+						return 3
+					}
+				}
+				return cfg.GraphQLMaxDepth
+			},
+		})
+	} else {
+		// Even if depth is disabled for humans, enforce a strict limit for agents.
+		server.Use(&gqllimits.DepthLimit{
+			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+				if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
+					if claims, ok := claimsVal.(*auth.Claims); ok && claims.IsAgent {
+						return 3
+					}
+				}
+				return 0
+			},
+		})
 	}
 	if cfg.GraphQLMaxComplexity > 0 {
 		server.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))

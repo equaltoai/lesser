@@ -25,6 +25,7 @@ type Agent struct {
 	AgentType         string            `json:"agent_type"`
 	AgentVersion      string            `json:"agent_version"`
 	AgentOwner        string            `json:"agent_owner,omitempty"`
+	DelegatedScopes   []string          `json:"delegated_scopes,omitempty"`
 	AgentCapabilities AgentCapabilities `json:"agent_capabilities"`
 }
 
@@ -53,4 +54,7 @@ type UpdateAgentRequest struct {
 	AgentType         string             `json:"agent_type,omitempty"`
 	AgentVersion      string             `json:"agent_version,omitempty"`
 	AgentCapabilities *AgentCapabilities `json:"agent_capabilities,omitempty"`
+
+	// ExitQuarantine allows an owner/admin to approve an agent to post publicly before the quarantine window ends.
+	ExitQuarantine bool `json:"exit_quarantine,omitempty"`
 }

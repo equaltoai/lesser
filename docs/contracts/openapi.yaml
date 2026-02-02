@@ -796,6 +796,10 @@ components:
                     anyOf:
                         - $ref: '#/components/schemas/RFC3339DateTime'
                         - type: "null"
+                delegated_scopes:
+                    items:
+                        type: string
+                    type: array
                 display_name:
                     type: string
                 username:
@@ -814,8 +818,7 @@ components:
                     type: string
                 agent_username:
                     type: string
-                metadata:
-                    $ref: '#/components/schemas/AnyObject'
+                metadata: {}
                 target_id:
                     type: string
                 timestamp:
@@ -895,6 +898,40 @@ components:
             items:
                 $ref: '#/components/schemas/Agent'
             type: array
+        AgentMemoryEventRequest:
+            additionalProperties: false
+            properties:
+                event_type:
+                    type: string
+                original_id:
+                    type: string
+                reason:
+                    type: string
+            type: object
+        AgentPostAttribution:
+            additionalProperties: false
+            properties:
+                constraints:
+                    items:
+                        type: string
+                    type: array
+                delegated_by:
+                    type: string
+                memory_citations:
+                    items:
+                        type: string
+                    type: array
+                model_version:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                trigger_details:
+                    type: string
+                trigger_type:
+                    type: string
+            type: object
         Announcement:
             additionalProperties: false
             properties:
@@ -1471,6 +1508,10 @@ components:
         CreateStatusRequest:
             additionalProperties: false
             properties:
+                agent_attribution:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentPostAttribution'
+                        - type: "null"
                 in_reply_to_id:
                     type: string
                 language:
@@ -1479,6 +1520,10 @@ components:
                     items:
                         type: string
                     type: array
+                memory_event:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentMemoryEventRequest'
+                        - type: "null"
                 poll:
                     anyOf:
                         - $ref: '#/components/schemas/Poll'
@@ -4169,6 +4214,10 @@ components:
             properties:
                 account:
                     $ref: '#/components/schemas/Account'
+                agent_attribution:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentPostAttribution'
+                        - type: "null"
                 application:
                     additionalProperties: {}
                     type: object
@@ -5282,6 +5331,32 @@ components:
                     anyOf:
                         - additionalProperties: false
                           properties:
+                            _:agentAttribution:
+                                anyOf:
+                                    - additionalProperties: false
+                                      properties:
+                                        constraints:
+                                            items:
+                                                type: string
+                                            type: array
+                                        delegated_by:
+                                            type: string
+                                        memory_citations:
+                                            items:
+                                                type: string
+                                            type: array
+                                        model_version:
+                                            type: string
+                                        scopes:
+                                            items:
+                                                type: string
+                                            type: array
+                                        trigger_details:
+                                            type: string
+                                        trigger_type:
+                                            type: string
+                                      type: object
+                                    - type: "null"
                             _:quoteContext:
                                 anyOf:
                                     - additionalProperties: false
@@ -6033,6 +6108,8 @@ components:
                     type: string
                 display_name:
                     type: string
+                exit_quarantine:
+                    type: boolean
             type: object
         UpdateCredentialsRequest:
             additionalProperties: false
@@ -9518,6 +9595,9 @@ paths:
             x-lesser-routeSources:
                 - cmd/api/routes.go
             x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
                 - read
     /api/v1/agents/{username}/suspend:
         post:

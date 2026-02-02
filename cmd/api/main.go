@@ -375,6 +375,12 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	if authService != nil {
 		app.Use(createAPIAuthMiddlewareFromAuthService(authService, lambdaLogger))
 	}
+	// Optional OAuth auth fallback (enables user context for OAuth/agent tokens too).
+	// This allows downstream middleware (rate limits, logging) to key by username for agents.
+	app.Use(createOptionalOAuthAuthMiddleware(cfg, repos, lambdaLogger))
+
+	// Agent safety rails middleware (Phase 1).
+	app.Use(createAgentSafetyRailsMiddleware(cfg, repos, lambdaLogger))
 
 	// Request logging with correlation fields.
 	app.Use(createLoggingMiddleware(lambdaLogger))

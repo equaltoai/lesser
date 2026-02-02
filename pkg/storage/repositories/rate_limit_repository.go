@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -162,6 +163,27 @@ func (r *RateLimitRepository) IsRateLimited(ctx context.Context, identifier stri
 		zap.Time("unlock_time", lockout.UnlockTime))
 
 	return false, time.Time{}, nil
+}
+
+// ImposeLockout creates or updates a lockout record for the given identifier.
+//
+// This is used by security and governance rails (including LLM agent circuit breakers).
+func (r *RateLimitRepository) ImposeLockout(ctx context.Context, identifier string, duration time.Duration) error {
+	if r == nil || r.rateLimitLockouts == nil {
+		return ErrorHandler.HandleCreateError(storage.ErrDatabaseConnectionFailed, EntityRateLimit, "lockout")
+	}
+
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityRateLimit, "lockout")
+	}
+
+	if duration <= 0 {
+		duration = time.Hour
+	}
+
+	lockout := models.NewRateLimitLockout(identifier, time.Now().Add(duration))
+	return r.rateLimitLockouts.Create(ctx, lockout)
 }
 
 // ClearLoginAttempts clears all login attempts for an identifier using BaseRepository

@@ -453,10 +453,66 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 		URL:                fmt.Sprintf("https://%s/@%s/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
 	}
 
+	apiStatus.AgentAttribution = h.buildStatusAgentAttribution(authorAccount, storageStatus)
+
 	// Poll support is implemented in polls.go handler
 	// Status.Poll field would be populated here if the status has an associated poll
 
 	return apiStatus, nil
+}
+
+func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, status *storageModels.Status) *models.AgentPostAttribution {
+	if authorAccount == nil || authorAccount.User == nil || !authorAccount.User.IsAgent {
+		return nil
+	}
+
+	var noteAttr *activitypub.AgentPostAttribution
+	if status != nil && status.Note != nil {
+		noteAttr = status.Note.AgentAttribution
+	}
+
+	out := &models.AgentPostAttribution{
+		ModelVersion: "unknown",
+	}
+
+	if noteAttr != nil {
+		out.TriggerType = strings.TrimSpace(noteAttr.TriggerType)
+		out.TriggerDetails = strings.TrimSpace(noteAttr.TriggerDetails)
+		out.MemoryCitations = append([]string(nil), noteAttr.MemoryCitations...)
+		out.DelegatedBy = strings.TrimSpace(noteAttr.DelegatedBy)
+		out.Scopes = append([]string(nil), noteAttr.Scopes...)
+		out.Constraints = append([]string(nil), noteAttr.Constraints...)
+		if v := strings.TrimSpace(noteAttr.ModelVersion); v != "" {
+			out.ModelVersion = v
+		}
+	}
+
+	if out.DelegatedBy == "" {
+		out.DelegatedBy = strings.TrimSpace(authorAccount.User.AgentOwner)
+		if out.DelegatedBy == "" && authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
+			out.DelegatedBy = strings.TrimSpace(authorAccount.Actor.AgentManifest.OperatedBy)
+		}
+	}
+
+	if len(out.Scopes) == 0 {
+		out.Scopes = agentDelegatedScopes(authorAccount.User)
+	}
+
+	if len(out.Constraints) == 0 {
+		out.Constraints = buildAgentCapabilityConstraints(authorAccount.User.AgentCapabilities)
+	}
+
+	if out.ModelVersion == "unknown" {
+		if v := strings.TrimSpace(authorAccount.User.AgentVersion); v != "" {
+			out.ModelVersion = v
+		} else if authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
+			if v := strings.TrimSpace(authorAccount.Actor.AgentManifest.Version); v != "" {
+				out.ModelVersion = v
+			}
+		}
+	}
+
+	return out
 }
 
 // createOAuthService creates an OAuth service with proper audit logger setup

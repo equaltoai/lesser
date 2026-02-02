@@ -3,7 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -139,6 +139,13 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 	ownerIdentifier := "@" + ownerClaims.Username
 
 	now := time.Now().UTC()
+	quarantineDays := 7
+	if h.repos != nil && h.repos.Instance() != nil {
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil && policy.DefaultQuarantineDays > 0 {
+			quarantineDays = policy.DefaultQuarantineDays
+		}
+	}
+	quarantineEnd := now.AddDate(0, 0, quarantineDays)
 	user := &storage.User{
 		Username:          req.AgentUsername,
 		Email:             "",
@@ -159,6 +166,12 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		AgentOwner:        ownerIdentifier,
 		AgentCreatedBy:    ownerClaims.Username,
 		AgentCapabilities: capabilities,
+		Metadata: map[string]interface{}{
+			"agent_quarantine_status": "quarantined",
+			"agent_quarantine_start":  now.Format(time.RFC3339),
+			"agent_quarantine_end":    quarantineEnd.Format(time.RFC3339),
+			"agent_delegated_scopes":  requestedScopes,
+		},
 	}
 
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
@@ -348,6 +361,16 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 	if req.AgentCapabilities != nil {
 		account.User.AgentCapabilities = storageAgentCapabilitiesFromAPI(*req.AgentCapabilities)
 	}
+	if req.ExitQuarantine {
+		if account.User.Metadata == nil {
+			account.User.Metadata = map[string]interface{}{}
+		}
+		now := time.Now().UTC()
+		account.User.Metadata["agent_quarantine_status"] = "approved"
+		account.User.Metadata["agent_quarantine_end"] = now.Format(time.RFC3339)
+		account.User.Metadata["agent_quarantine_approved_by"] = claims.Username
+		account.User.Metadata["agent_quarantine_approved_at"] = now.Format(time.RFC3339)
+	}
 
 	// Ensure actor reflects updated agent metadata.
 	if account.Actor == nil {
@@ -419,7 +442,12 @@ func (h *Handler) HandleGetAgentActivityLift(ctx *apptheory.Context) (*apptheory
 		return resp, err
 	}
 
-	_, err := h.authenticateWithScope(ctx, auth.ScopeRead)
+	username := ctx.Param("username")
+	if err := common.ValidateUsernameParamID(username); err != nil {
+		return common.RespondValidationError(ctx, err)
+	}
+
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondInsufficientScope(ctx, auth.ScopeRead)
@@ -427,10 +455,66 @@ func (h *Handler) HandleGetAgentActivityLift(ctx *apptheory.Context) (*apptheory
 		return common.RespondUnauthorized(ctx)
 	}
 
-	return apptheory.JSON(http.StatusNotImplemented, map[string]any{
-		"error":             "not implemented",
-		"error_description": "agent activity log is not implemented yet",
+	account, err := h.repos.Account().GetAccount(ctx.Context(), username)
+	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
+		return common.RespondNotFound(ctx, "agent")
+	}
+
+	// Owner/admin can view. Allow the agent itself to view its log as well.
+	if !h.isAgentOwnerOrAdmin(claims, account.User) && !strings.EqualFold(claims.Username, username) {
+		return common.RespondForbidden(ctx, "not authorized to view agent activity")
+	}
+
+	if h.repos == nil || h.repos.Audit() == nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	now := time.Now().UTC()
+	start := now.Add(-30 * 24 * time.Hour)
+	logs, err := h.repos.Audit().GetUserAuditLogs(ctx.Context(), username, 200, start, now)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	entries := make([]apimodels.AgentActivityLogEntry, 0, len(logs))
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(log.EventType), "agent.") {
+			continue
+		}
+
+		var (
+			meta     any
+			targetID string
+		)
+		if raw := strings.TrimSpace(log.Metadata); raw != "" {
+			parsed := map[string]any{}
+			if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+				meta = parsed
+				if v, ok := parsed["target_id"].(string); ok {
+					targetID = v
+				}
+			} else {
+				meta = map[string]any{"raw": raw}
+			}
+		}
+
+		entries = append(entries, apimodels.AgentActivityLogEntry{
+			AgentUsername: username,
+			Action:        log.EventType,
+			TargetID:      targetID,
+			Timestamp:     log.Timestamp,
+			Metadata:      meta,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Timestamp.After(entries[j].Timestamp)
 	})
+
+	return okJSON(apimodels.AgentActivityLogList(entries))
 }
 
 // HandleSuspendAgentLift handles POST /api/v1/agents/:username/suspend.
@@ -661,6 +745,7 @@ func agentFromStorageUser(user *storage.User) apimodels.Agent {
 		out.CreatedAt = &created
 	}
 
+	out.DelegatedScopes = agentDelegatedScopes(user)
 	out.AgentCapabilities = apiAgentCapabilitiesFromStorage(user.AgentCapabilities)
 	if strings.TrimSpace(out.AgentType) == "" {
 		out.AgentType = "CUSTOM"
@@ -670,6 +755,32 @@ func agentFromStorageUser(user *storage.User) apimodels.Agent {
 	}
 
 	return out
+}
+
+func agentDelegatedScopes(user *storage.User) []string {
+	if user == nil || user.Metadata == nil {
+		return nil
+	}
+
+	raw, ok := user.Metadata["agent_delegated_scopes"]
+	if !ok || raw == nil {
+		return nil
+	}
+
+	switch v := raw.(type) {
+	case []string:
+		return append([]string(nil), v...)
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func apiAgentCapabilitiesFromStorage(caps *agents.Capabilities) apimodels.AgentCapabilities {

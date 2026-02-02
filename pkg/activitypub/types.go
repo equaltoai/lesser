@@ -188,6 +188,9 @@ type Note struct {
 	Quoteable          bool          `json:"_:quoteable,omitempty"`
 	QuoteNotifications bool          `json:"_:quoteNotifications,omitempty"`
 	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
+
+	// Lesser extension: per-status attribution for agent-authored content.
+	AgentAttribution *AgentPostAttribution `json:"_:agentAttribution,omitempty"`
 }
 
 // QuoteNote is retained for backwards compatibility; it now simply aliases Note.

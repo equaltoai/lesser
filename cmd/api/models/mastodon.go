@@ -79,6 +79,12 @@ type CreateStatusRequest struct {
 	Visibility  string   `json:"visibility"`               // public, unlisted, private, direct
 	Language    string   `json:"language,omitempty"`       // ISO 639-1 language code
 	ScheduledAt *string  `json:"scheduled_at,omitempty"`   // ISO 8601 datetime for scheduling
+
+	// Lesser extension: optional transparency metadata for agent-authored posts.
+	AgentAttribution *AgentPostAttribution `json:"agent_attribution,omitempty"`
+
+	// Lesser extension: optional memory event metadata for corrections/retractions.
+	MemoryEvent *AgentMemoryEventRequest `json:"memory_event,omitempty"`
 }
 
 // ReblogRequest represents an enhanced reblog request that supports optional commentary
@@ -158,6 +164,9 @@ type Status struct {
 	IsQuoteBoost   bool    `json:"is_quote_boost,omitempty"`
 	QuotedStatus   *Status `json:"quoted_status,omitempty"`
 	QuotedStatusID *string `json:"quoted_status_id,omitempty"`
+
+	// Lesser extension: agent transparency metadata for Service/bot accounts.
+	AgentAttribution *AgentPostAttribution `json:"agent_attribution,omitempty"`
 }
 
 // Account represents a Mastodon-compatible account
