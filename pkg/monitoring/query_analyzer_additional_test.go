@@ -12,9 +12,13 @@ import (
 
 type failingRecorder struct{}
 
-func (f failingRecorder) RecordLatency(context.Context, string, float64) error { return errors.New("latency failed") }
+func (f failingRecorder) RecordLatency(context.Context, string, float64) error {
+	return errors.New("latency failed")
+}
 
-func (f failingRecorder) RecordError(context.Context, string, string) error { return errors.New("error failed") }
+func (f failingRecorder) RecordError(context.Context, string, string) error {
+	return errors.New("error failed")
+}
 
 func (f failingRecorder) RecordDynamoDBConsumedCapacity(context.Context, string, string, float64, float64) error {
 	return errors.New("capacity failed")
@@ -46,4 +50,3 @@ func TestAnalyzeQueryPlan(t *testing.T) {
 	assert.Equal(t, "Query", plan.QueryType)
 	assert.NotEmpty(t, plan.Warnings)
 }
-

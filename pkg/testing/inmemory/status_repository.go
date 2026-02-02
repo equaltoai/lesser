@@ -95,8 +95,8 @@ func (r *StatusRepository) CreateStatus(_ context.Context, status *models.Status
 	r.statuses[status.StatusID] = entry
 
 	// Update URL index
-	if status.Note != nil && status.Note.Get() != nil && status.Note.Get().ID != "" {
-		r.statusByURL[status.Note.Get().ID] = status.StatusID
+	if status.Note != nil && status.Note.ID != "" {
+		r.statusByURL[status.Note.ID] = status.StatusID
 	}
 
 	// Update timeline indexes
@@ -795,7 +795,6 @@ func copyStatus(status *models.Status) *models.Status {
 
 	return &statusCopy
 }
-
 
 // Count operations
 

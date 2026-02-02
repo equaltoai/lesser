@@ -7,28 +7,28 @@ import (
 
 // TrusteeConfig represents a trusted contact for social recovery
 type TrusteeConfig struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // TRUSTEE#CONFIG
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // {category} (e.g., recovery#{username}, moderation#{username})
+	PK string `theorydb:"pk,attr:PK" json:"-"` // TRUSTEE#CONFIG
+	SK string `theorydb:"sk,attr:SK" json:"-"` // {category} (e.g., recovery#{username}, moderation#{username})
 
 	// Attributes from interface
-	Username  string    `dynamorm:"attr:username" json:"username"` // Who owns this trustee relationship
-	ActorID   string    `dynamorm:"attr:actorID" json:"actor_id"`  // @friend@mastodon.social
-	AddedAt   time.Time `dynamorm:"attr:addedAt" json:"added_at"`
-	Confirmed bool      `dynamorm:"attr:confirmed" json:"confirmed"`
+	Username  string    `theorydb:"attr:username" json:"username"` // Who owns this trustee relationship
+	ActorID   string    `theorydb:"attr:actorID" json:"actor_id"`  // @friend@mastodon.social
+	AddedAt   time.Time `theorydb:"attr:addedAt" json:"added_at"`
+	Confirmed bool      `theorydb:"attr:confirmed" json:"confirmed"`
 
 	// Additional attributes
-	Category         string     `dynamorm:"attr:category" json:"category"`      // recovery, moderation, emergency
-	TrustLevel       string     `dynamorm:"attr:trustLevel" json:"trust_level"` // full, limited, emergency_only
-	ConfirmedAt      *time.Time `dynamorm:"attr:confirmedAt" json:"confirmed_at,omitempty"`
-	LastUsed         *time.Time `dynamorm:"attr:lastUsed" json:"last_used,omitempty"`
-	UsageCount       int        `dynamorm:"attr:usageCount" json:"usage_count"`
-	RecoveryPriority int        `dynamorm:"attr:recoveryPriority" json:"recovery_priority"` // Order in recovery process (1 = first)
-	Permissions      []string   `dynamorm:"attr:permissions" json:"permissions,omitempty"`  // Specific permissions granted
-	Notes            string     `dynamorm:"attr:notes" json:"notes,omitempty"`              // User notes about this trustee
-	UpdatedAt        time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Category         string     `theorydb:"attr:category" json:"category"`      // recovery, moderation, emergency
+	TrustLevel       string     `theorydb:"attr:trustLevel" json:"trust_level"` // full, limited, emergency_only
+	ConfirmedAt      *time.Time `theorydb:"attr:confirmedAt" json:"confirmed_at,omitempty"`
+	LastUsed         *time.Time `theorydb:"attr:lastUsed" json:"last_used,omitempty"`
+	UsageCount       int        `theorydb:"attr:usageCount" json:"usage_count"`
+	RecoveryPriority int        `theorydb:"attr:recoveryPriority" json:"recovery_priority"` // Order in recovery process (1 = first)
+	Permissions      []string   `theorydb:"attr:permissions" json:"permissions,omitempty"`  // Specific permissions granted
+	Notes            string     `theorydb:"attr:notes" json:"notes,omitempty"`              // User notes about this trustee
+	UpdatedAt        time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing TrusteeConfig.

@@ -4,19 +4,21 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"io"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -60,30 +62,42 @@ func TestWebFingerHandler_handleWebFinger_Branches(t *testing.T) {
 	}
 
 	t.Run("missing resource", func(t *testing.T) {
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		err := handler.handleWebFinger(ctx)
-		require.Error(t, err)
+		app := buildApp(handler, zap.NewNop())
+		resp := app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+		})
+		require.Equal(t, 422, resp.Status)
 	})
 
 	t.Run("invalid resource format", func(t *testing.T) {
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.QueryParams = map[string]string{"resource": "acct:bad"}
-		err := handler.handleWebFinger(ctx)
-		require.Error(t, err)
+		app := buildApp(handler, zap.NewNop())
+		resp := app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+			Query:  map[string][]string{"resource": {"acct:bad"}},
+		})
+		require.Equal(t, 422, resp.Status)
 	})
 
 	t.Run("domain mismatch", func(t *testing.T) {
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.QueryParams = map[string]string{"resource": "acct:alice@other.example"}
-		err := handler.handleWebFinger(ctx)
-		require.Error(t, err)
+		app := buildApp(handler, zap.NewNop())
+		resp := app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+			Query:  map[string][]string{"resource": {"acct:alice@other.example"}},
+		})
+		require.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("locked instance hides non-bootstrap", func(t *testing.T) {
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.QueryParams = map[string]string{"resource": "acct:alice@example.com"}
-		err := handler.handleWebFinger(ctx)
-		require.Error(t, err)
+		app := buildApp(handler, zap.NewNop())
+		resp := app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+			Query:  map[string][]string{"resource": {"acct:alice@example.com"}},
+		})
+		require.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("unlocked instance requires actor", func(t *testing.T) {
@@ -91,10 +105,13 @@ func TestWebFingerHandler_handleWebFinger_Branches(t *testing.T) {
 
 		actorRepo.On("GetActor", mock.Anything, "alice").Return(nil, common.ActorNotFoundError{Username: "alice"}).Once()
 
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.QueryParams = map[string]string{"resource": "acct:alice@example.com"}
-		err := handler.handleWebFinger(ctx)
-		require.Error(t, err)
+		app := buildApp(handler, zap.NewNop())
+		resp := app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+			Query:  map[string][]string{"resource": {"acct:alice@example.com"}},
+		})
+		require.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("unlocked instance actor lookup error", func(t *testing.T) {
@@ -102,10 +119,13 @@ func TestWebFingerHandler_handleWebFinger_Branches(t *testing.T) {
 
 		actorRepo.On("GetActor", mock.Anything, "alice").Return(nil, errors.New("db down")).Once()
 
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.QueryParams = map[string]string{"resource": "acct:alice@example.com"}
-		err := handler.handleWebFinger(ctx)
-		require.Error(t, err)
+		app := buildApp(handler, zap.NewNop())
+		resp := app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+			Query:  map[string][]string{"resource": {"acct:alice@example.com"}},
+		})
+		require.Equal(t, 500, resp.Status)
 	})
 }
 
@@ -132,24 +152,24 @@ func TestWebFingerHandler_handleWebFinger_SuccessAndBootstrap(t *testing.T) {
 		cfg:          cfg,
 	}
 
-	call := func(resource string) (*lift.Response, error) {
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.QueryParams = map[string]string{"resource": resource}
-		err := handler.handleWebFinger(ctx)
-		return ctx.Response, err
+	call := func(resource string) apptheory.Response {
+		app := buildApp(handler, zap.NewNop())
+		return app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+			Query:  map[string][]string{"resource": {resource}},
+		})
 	}
 
-	resp, err := call("acct:alice@example.com")
-	require.NoError(t, err)
-	require.Equal(t, 200, resp.StatusCode)
-	require.Equal(t, "application/jrd+json", resp.Headers["Content-Type"])
-	require.Equal(t, CacheControlMaxAge, resp.Headers["Cache-Control"])
+	resp := call("acct:alice@example.com")
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, []string{"application/jrd+json"}, resp.Headers["content-type"])
+	require.Equal(t, []string{CacheControlMaxAge}, resp.Headers["cache-control"])
 
 	// Locked instance: only bootstrap is discoverable, and must be ensured.
 	handler.instanceRepo = &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: true, BootstrapUsername: "bootstrap"}}
-	resp, err = call("acct:bootstrap@example.com")
-	require.NoError(t, err)
-	require.Equal(t, 200, resp.StatusCode)
+	resp = call("acct:bootstrap@example.com")
+	require.Equal(t, 200, resp.Status)
 }
 
 func TestWebFingerHandler_ensureBootstrapActor_Branches(t *testing.T) {
@@ -216,32 +236,16 @@ func TestBuildApp_WebFingerRoute(t *testing.T) {
 
 	app := buildApp(handler, zap.NewNop())
 
-	call := func(resource string) *lift.Response {
-		event := map[string]any{
-			"version":  "2.0",
-			"routeKey": "GET /.well-known/webfinger",
-			"requestContext": map[string]any{
-				"requestId": "test-request-id",
-				"http": map[string]any{
-					"method": "GET",
-					"path":   "/.well-known/webfinger",
-				},
-				"stage": "$default",
-			},
-			"queryStringParameters": map[string]any{
-				"resource": resource,
-			},
-		}
-
-		result, err := app.HandleRequest(context.Background(), event)
-		require.NoError(t, err)
-		resp, ok := result.(*lift.Response)
-		require.True(t, ok)
-		return resp
+	call := func(resource string) apptheory.Response {
+		return app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   "/.well-known/webfinger",
+			Query:  map[string][]string{"resource": {resource}},
+		})
 	}
 
-	require.Equal(t, 200, call("acct:alice@example.com").StatusCode)
-	require.Equal(t, 422, call("bad").StatusCode)
+	require.Equal(t, 200, call("acct:alice@example.com").Status)
+	require.Equal(t, 422, call("bad").Status)
 }
 
 func TestRunWebFinger_UsesLambdaStartFn(t *testing.T) {
@@ -267,30 +271,31 @@ func TestRunWebFinger_UsesLambdaStartFn(t *testing.T) {
 		cfg:          cfg,
 	}
 
-	event := map[string]any{
-		"version":  "2.0",
-		"routeKey": "GET /.well-known/webfinger",
-		"requestContext": map[string]any{
-			"requestId": "test-request-id",
-			"http": map[string]any{
-				"method": "GET",
-				"path":   "/.well-known/webfinger",
+	event := events.APIGatewayV2HTTPRequest{
+		Version:               "2.0",
+		RouteKey:              "GET /.well-known/webfinger",
+		RawPath:               "/.well-known/webfinger",
+		QueryStringParameters: map[string]string{"resource": "acct:alice@example.com"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			RequestID: "test-request-id",
+			Stage:     "$default",
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: "GET",
+				Path:   "/.well-known/webfinger",
 			},
-			"stage": "$default",
-		},
-		"queryStringParameters": map[string]any{
-			"resource": "acct:alice@example.com",
 		},
 	}
 
 	called := false
 	lambdaStartFn = func(handler any) {
 		called = true
-		h, ok := handler.(func(context.Context, any) (any, error))
+		h, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
-		result, err := h(context.Background(), event)
+		raw, err := json.Marshal(event)
 		require.NoError(t, err)
-		resp, ok := result.(*lift.Response)
+		result, err := h(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := result.(events.APIGatewayV2HTTPResponse)
 		require.True(t, ok)
 		require.Equal(t, 200, resp.StatusCode)
 	}

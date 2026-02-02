@@ -10,8 +10,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 

@@ -7,9 +7,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -300,7 +300,7 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 	})
 
 	t.Run("enrichActivitiesWithObjects branches", func(t *testing.T) {
-		liftCtx := newLiftContext("GET", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, nil)
+		liftCtx := newAppTheoryContext("GET", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, nil)
 
 		activities := []*activitypub.Activity{
 			{BaseObject: activitypub.BaseObject{Type: activitypub.FollowType}},

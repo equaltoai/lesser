@@ -23,19 +23,19 @@ func (NotificationFilter) TableName() string {
 
 // HashtagNotificationSettings stores per-hashtag notification preferences for a user.
 type HashtagNotificationSettings struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // user#{userID}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // settings#{name}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // user#{userID}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // settings#{name}
 
-	UserID     string               `dynamorm:"attr:userID" json:"user_id"`
-	Hashtag    string               `dynamorm:"attr:hashtag" json:"hashtag"`
-	Level      string               `dynamorm:"attr:level" json:"level"`
-	Muted      bool                 `dynamorm:"attr:muted" json:"muted"`
-	MutedUntil *time.Time           `dynamorm:"attr:mutedUntil" json:"muted_until,omitempty"`
-	Filters    []NotificationFilter `dynamorm:"attr:filters" json:"filters,omitempty"`
-	CreatedAt  time.Time            `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt  time.Time            `dynamorm:"attr:updatedAt" json:"updated_at"`
+	UserID     string               `theorydb:"attr:userID" json:"user_id"`
+	Hashtag    string               `theorydb:"attr:hashtag" json:"hashtag"`
+	Level      string               `theorydb:"attr:level" json:"level"`
+	Muted      bool                 `theorydb:"attr:muted" json:"muted"`
+	MutedUntil *time.Time           `theorydb:"attr:mutedUntil" json:"muted_until,omitempty"`
+	Filters    []NotificationFilter `theorydb:"attr:filters" json:"filters,omitempty"`
+	CreatedAt  time.Time            `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time            `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeysWithParams ensures composite keys are populated.

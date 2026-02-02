@@ -269,4 +269,3 @@ func TestActivityHandler_UndoCoverageForMoreTypes(t *testing.T) {
 		listRepo.AssertExpectations(t)
 	})
 }
-

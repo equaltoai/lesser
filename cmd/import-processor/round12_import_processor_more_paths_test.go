@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"io"
-	"net/http"
 	"strings"
 	"testing"
 
@@ -15,10 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -60,16 +57,6 @@ func (r *importRepoRecorder) UpdateBudgetUsage(_ context.Context, _ string, _ st
 func (r *importRepoRecorder) UpdateImportProgress(_ context.Context, _ string, progress int) error {
 	r.progressCalls = append(r.progressCalls, progress)
 	return r.progressErr
-}
-
-func newLiftContext() *lift.Context {
-	req := lift.NewRequest(&adapters.Request{
-		Method:  http.MethodPost,
-		Path:    "/",
-		Headers: map[string]string{},
-		Body:    []byte(`{}`),
-	})
-	return lift.NewContext(context.Background(), req)
 }
 
 func setAWSEnvForS3Test(t *testing.T, endpoint string) {
@@ -364,7 +351,7 @@ func TestImportProcessor_ProcessImportJob_AndHandleSQS_Round12(t *testing.T) {
 		})
 	})
 
-	t.Run("HandleSQS parses formats and updates failures", func(t *testing.T) {
+	t.Run("HandleSQSMessage parses formats and updates failures", func(t *testing.T) {
 		setAWSEnvForS3Test(t, "https://example.com")
 		origNew := newS3Client
 		t.Cleanup(func() { newS3Client = origNew })
@@ -397,7 +384,9 @@ func TestImportProcessor_ProcessImportJob_AndHandleSQS_Round12(t *testing.T) {
 			},
 		}
 
-		require.NoError(t, p.HandleSQS(newLiftContext(), event))
+		for _, msg := range event.Records {
+			require.NoError(t, p.HandleSQSMessage(nil, msg))
+		}
 		require.NotEmpty(t, repo.statusCalls)
 	})
 }
@@ -586,21 +575,43 @@ func TestImportProcessor_AdditionalErrorBranches_Round12(t *testing.T) {
 }
 
 func TestImportProcessor_Main_AndAdapters_Round12(t *testing.T) {
-	t.Run("main delegates to startSQSLambda", func(t *testing.T) {
-		orig := startSQSLambda
-		t.Cleanup(func() { startSQSLambda = orig })
+	t.Run("main registers SQS handler and starts lambda", func(t *testing.T) {
+		origStart := lambdaStartFn
+		t.Cleanup(func() { lambdaStartFn = origStart })
 
-		called := 0
-		startSQSLambda = func(queueName string, handler patterns.SQSHandler, logger *zap.Logger) {
-			called++
-			require.Equal(t, "import-processing", queueName)
-			require.NotNil(t, handler)
-			require.NotNil(t, logger)
+		startCalls := 0
+		lambdaStartFn = func(handler interface{}) {
+			startCalls++
+			h, ok := handler.(func(context.Context, json.RawMessage) (any, error))
+			require.True(t, ok)
+
+			event := events.SQSEvent{
+				Records: []events.SQSMessage{
+					{
+						MessageId:      "1",
+						Body:           "{bad json",
+						EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-import-processor-queue",
+						EventSource:    "aws:sqs",
+					},
+				},
+			}
+			raw, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			respAny, err := h(context.Background(), raw)
+			require.NoError(t, err)
+			resp, ok := respAny.(events.SQSEventResponse)
+			require.True(t, ok)
+			require.Empty(t, resp.BatchItemFailures)
 		}
 
-		processor = &ImportProcessor{logger: zap.NewNop()}
+		t.Setenv("APP_NAME", "lesser")
+		t.Setenv("STAGE", "dev")
+		t.Setenv("ENVIRONMENT", "dev")
+
+		processor = &ImportProcessor{logger: zap.NewNop(), s3Client: &s3ClientStub{}}
 		main()
-		require.Equal(t, 1, called)
+		require.Equal(t, 1, startCalls)
 	})
 
 	t.Run("importStorageAdapter nil storage returns nil repos", func(t *testing.T) {

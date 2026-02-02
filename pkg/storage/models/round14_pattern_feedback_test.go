@@ -89,4 +89,3 @@ func TestPatternFeedback_KeysTypesAndAggregations(t *testing.T) {
 		assert.InDelta(t, 50.0, metrics["recall"].(float64), 0.000001)
 	})
 }
-

@@ -93,4 +93,3 @@ func buildSTCOAtom(offsets []uint32) []byte {
 
 	return atom
 }
-

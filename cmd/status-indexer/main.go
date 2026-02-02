@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -17,9 +18,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/google/uuid"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -64,7 +64,7 @@ func NewStatusIndexer(db dynamormCore.DB, tableName, domain string, aiService em
 }
 
 var (
-	processor *StatusIndexer
+	processor              *StatusIndexer
 	mustInitializeLambdaFn = common.MustInitializeLambda
 	loadAWSConfigFn        = awsconfig.LoadDefaultConfig
 	newAIServiceFn         = func(cfg aws.Config, aiConfig *ai.AIConfig) embeddingGenerator { return ai.NewAIService(cfg, aiConfig) }
@@ -72,49 +72,32 @@ var (
 	lambdaStartFn          = lambda.Start
 )
 
-func handleStatusIndexerStream(ctx *lift.Context) error {
+func handleStatusIndexerStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
 	if processor == nil {
-		return lift.NewLiftError("MISSING_PROCESSOR", "status indexer processor not initialized", 500)
+		return fmt.Errorf("status indexer processor not initialized")
 	}
-
-	records, err := ctx.DynamoDBRecords()
-	if err != nil {
-		return err
-	}
-	return processor.HandleStream(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
+	return processor.HandleDynamoDBRecord(ctx, record)
 }
 
-// HandleStream processes DynamoDB stream events with Lift-style patterns
-func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
-	// Generate request ID for tracking (Lift pattern)
+func (si *StatusIndexer) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
 	requestID := uuid.New().String()
-
-	// Add request ID to context for downstream use
-	ctx = context.WithValue(ctx, requestIDKey, requestID)
-
-	si.logger.Info("processing status indexer stream batch",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Process records with error collection
-	var errors []error
-	for _, record := range event.Records {
-		if err := si.processRecord(ctx, record); err != nil {
-			si.logger.Error("failed to process record",
-				zap.String("request_id", requestID),
-				zap.String("event_id", record.EventID),
-				zap.Error(err))
-			errors = append(errors, err)
+	runCtx := context.Background()
+	if ctx != nil {
+		if strings.TrimSpace(ctx.RequestID) != "" {
+			requestID = ctx.RequestID
 		}
+		runCtx = ctx.Context()
 	}
 
-	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		si.logger.Error("partial batch processing failure",
+	runCtx = context.WithValue(runCtx, requestIDKey, requestID)
+
+	if err := si.processRecord(runCtx, record); err != nil {
+		si.logger.Error("failed to process record",
 			zap.String("request_id", requestID),
-			zap.Int("failed_records", len(errors)),
-			zap.Int("total_records", len(event.Records)))
-		return pkgErrors.StatusIndexerPartialBatchFailure()
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
+		)
+		return err
 	}
 
 	return nil
@@ -370,14 +353,14 @@ func (si *StatusIndexer) processStatusEvent(ctx context.Context, statusID, conte
 // indexWord indexes a word for search using DynamORM
 func (si *StatusIndexer) indexWord(ctx context.Context, word, statusID string, published time.Time) error {
 	wordIndex := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
-		GSI5PK    string `dynamorm:"index:gsi5,pk"`
-		GSI5SK    string `dynamorm:"index:gsi5,sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
+		GSI5PK    string `theorydb:"index:gsi5,pk"`
+		GSI5SK    string `theorydb:"index:gsi5,sk"`
 		StatusID  string `json:"status_id"`
 		Word      string `json:"word"`
 		IndexedAt string `json:"indexed_at"`
-		TTL       int64  `dynamorm:"ttl"`
+		TTL       int64  `theorydb:"ttl"`
 	}{
 		PK:        fmt.Sprintf("WORD#%s#%s", word, statusID),
 		SK:        "INDEX",
@@ -395,14 +378,14 @@ func (si *StatusIndexer) indexWord(ctx context.Context, word, statusID string, p
 // indexHashtag indexes a hashtag for search using DynamORM
 func (si *StatusIndexer) indexHashtag(ctx context.Context, tag, statusID string, published time.Time) error {
 	tagIndex := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
-		GSI6PK    string `dynamorm:"index:gsi6,pk"`
-		GSI6SK    string `dynamorm:"index:gsi6,sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
+		GSI6PK    string `theorydb:"index:gsi6,pk"`
+		GSI6SK    string `theorydb:"index:gsi6,sk"`
 		StatusID  string `json:"status_id"`
 		Tag       string `json:"tag"`
 		IndexedAt string `json:"indexed_at"`
-		TTL       int64  `dynamorm:"ttl"`
+		TTL       int64  `theorydb:"ttl"`
 	}{
 		PK:        fmt.Sprintf("TAG#%s#%s", tag, statusID),
 		SK:        "INDEX",
@@ -420,14 +403,14 @@ func (si *StatusIndexer) indexHashtag(ctx context.Context, tag, statusID string,
 // indexByAuthor indexes a status by author using DynamORM
 func (si *StatusIndexer) indexByAuthor(ctx context.Context, authorID, statusID string, published time.Time) error {
 	authorIndex := struct {
-		PK        string `dynamorm:"pk"`
-		SK        string `dynamorm:"sk"`
-		GSI7PK    string `dynamorm:"index:gsi7,pk"`
-		GSI7SK    string `dynamorm:"index:gsi7,sk"`
+		PK        string `theorydb:"pk"`
+		SK        string `theorydb:"sk"`
+		GSI7PK    string `theorydb:"index:gsi7,pk"`
+		GSI7SK    string `theorydb:"index:gsi7,sk"`
 		StatusID  string `json:"status_id"`
 		AuthorID  string `json:"author_id"`
 		IndexedAt string `json:"indexed_at"`
-		TTL       int64  `dynamorm:"ttl"`
+		TTL       int64  `theorydb:"ttl"`
 	}{
 		PK:        fmt.Sprintf("AUTHOR#%s#%s", authorID, statusID),
 		SK:        "INDEX",
@@ -617,17 +600,17 @@ func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, 
 	hour := time.Now().Format("2006-01-02-15") // Hour-level granularity
 
 	trendingHashtag := struct {
-		PK            string    `dynamorm:"pk"`
-		SK            string    `dynamorm:"sk"`
-		GSI6PK        string    `dynamorm:"index:gsi6,pk"`
-		GSI6SK        string    `dynamorm:"index:gsi6,sk"`
+		PK            string    `theorydb:"pk"`
+		SK            string    `theorydb:"sk"`
+		GSI6PK        string    `theorydb:"index:gsi6,pk"`
+		GSI6SK        string    `theorydb:"index:gsi6,sk"`
 		Tag           string    `json:"tag"`
 		Date          string    `json:"date"`
 		Hour          string    `json:"hour"`
 		EngagementSum float64   `json:"engagement_sum"`
 		PostCount     int       `json:"post_count"`
 		LastUpdated   time.Time `json:"last_updated"`
-		TTL           int64     `dynamorm:"ttl"`
+		TTL           int64     `theorydb:"ttl"`
 	}{
 		PK:            fmt.Sprintf("TRENDING_TAG#%s#%s", tag, hour),
 		SK:            "METRICS",
@@ -644,17 +627,17 @@ func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, 
 
 	// Try to get existing record first and update it
 	var existing struct {
-		PK            string    `dynamorm:"pk"`
-		SK            string    `dynamorm:"sk"`
-		GSI6PK        string    `dynamorm:"index:gsi6,pk"`
-		GSI6SK        string    `dynamorm:"index:gsi6,sk"`
+		PK            string    `theorydb:"pk"`
+		SK            string    `theorydb:"sk"`
+		GSI6PK        string    `theorydb:"index:gsi6,pk"`
+		GSI6SK        string    `theorydb:"index:gsi6,sk"`
 		Tag           string    `json:"tag"`
 		Date          string    `json:"date"`
 		Hour          string    `json:"hour"`
 		EngagementSum float64   `json:"engagement_sum"`
 		PostCount     int       `json:"post_count"`
 		LastUpdated   time.Time `json:"last_updated"`
-		TTL           int64     `dynamorm:"ttl"`
+		TTL           int64     `theorydb:"ttl"`
 	}
 
 	err := si.db.WithContext(ctx).Model(&existing).
@@ -749,11 +732,9 @@ func main() {
 	// Initialize processor
 	processor = newStatusIndexerFn(db, cfg.DynamoTableName, cfg.Domain, aiService, logger)
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
-
-	_ = app.DynamoDB("*", handleStatusIndexerStream)
-
-	lambdaStartFn(app.HandleRequest)
+	app := apptheory.New()
+	app.DynamoDB(cfg.DynamoTableName, handleStatusIndexerStreamRecord)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }

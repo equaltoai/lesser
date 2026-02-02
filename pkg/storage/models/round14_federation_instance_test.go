@@ -91,4 +91,3 @@ func TestFederationInstanceRegistryHealthHistory_Keys(t *testing.T) {
 	h = &FederationInstanceRegistryHealthHistory{}
 	assert.Equal(t, "", h.extractInstanceIDFromPK())
 }
-

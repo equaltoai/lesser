@@ -11,20 +11,21 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/translate"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/storage/core"
+	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/theory-cloud/tabletheory"
+	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 	"go.uber.org/zap"
 )
 
 // Service provides translation functionality using AWS Translate
 type Service struct {
-	client       translateAPI
-	dynamoClient dynamodbAPI
-	tableName    string
-	store        core.RepositoryStorage
+	client translateAPI
+	db     theorydb.DB
+
 	logger       *zap.Logger
 	cacheEnabled bool
 	cacheTTL     time.Duration
@@ -35,13 +36,39 @@ type translateAPI interface {
 	ListLanguages(ctx context.Context, params *translate.ListLanguagesInput, optFns ...func(*translate.Options)) (*translate.ListLanguagesOutput, error)
 }
 
-type dynamodbAPI interface {
-	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
-	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+type translationCacheItem struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	TranslatedText   string    `theorydb:"attr:translatedText"`
+	DetectedLanguage string    `theorydb:"attr:detectedLanguage"`
+	CachedAt         time.Time `theorydb:"attr:cachedAt"`
+	TTL              int64     `theorydb:"ttl,attr:ttl"`
 }
 
-// NewService creates a new translation service
-func NewService(ctx context.Context, cfg *lesserconfig.Config, store core.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (*Service, error) {
+func (translationCacheItem) TableName() string {
+	return lesserconfig.GetMainTableName()
+}
+
+type supportedLanguagesCacheItem struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	Languages []LanguageInfo `theorydb:"attr:languages"`
+	CachedAt  time.Time      `theorydb:"attr:cachedAt"`
+	TTL       int64          `theorydb:"ttl,attr:ttl"`
+}
+
+func (supportedLanguagesCacheItem) TableName() string {
+	return lesserconfig.GetMainTableName()
+}
+
+// NewService creates a new translation service.
+func NewService(ctx context.Context, cfg *lesserconfig.Config, store storagecore.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (*Service, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -51,17 +78,34 @@ func NewService(ctx context.Context, cfg *lesserconfig.Config, store core.Reposi
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Get table name from config
-	tableName := cfg.DynamoTableName
-	if tableName == "" {
-		tableName = "lesser-main" // Default table name
+	var db theorydb.DB
+	if store != nil {
+		db = store.GetDB()
+	}
+
+	if db == nil {
+		if tabletheory.IsLambdaEnvironment() {
+			lambdaDB, dbErr := tabletheory.NewLambdaOptimized()
+			if dbErr != nil {
+				return nil, fmt.Errorf("initialize TableTheory LambdaDB: %w", dbErr)
+			}
+			db = lambdaDB
+		} else {
+			region := cfg.Region
+			if region == "" {
+				region = "us-east-1"
+			}
+			standardDB, dbErr := tabletheory.New(session.Config{Region: region})
+			if dbErr != nil {
+				return nil, fmt.Errorf("initialize TableTheory DB: %w", dbErr)
+			}
+			db = standardDB
+		}
 	}
 
 	return &Service{
-		client:       translate.NewFromConfig(awsCfg),
-		dynamoClient: dynamodb.NewFromConfig(awsCfg),
-		tableName:    tableName,
-		store:        store,
+		client: translate.NewFromConfig(awsCfg),
+		db:     db,
 		logger:       logger,
 		cacheEnabled: cacheEnabled,
 		cacheTTL:     30 * 24 * time.Hour, // Cache translations for 30 days
@@ -220,70 +264,53 @@ func (s *Service) generateCacheKey(text, sourceLang, targetLang string) string {
 
 // getCachedTranslation retrieves a cached translation from DynamoDB
 func (s *Service) getCachedTranslation(ctx context.Context, cacheKey string) (*TranslationCache, error) {
-	input := &dynamodb.GetItemInput{
-		TableName: aws.String(s.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("TRANSLATION#%s", cacheKey)},
-			"SK": &types.AttributeValueMemberS{Value: "RESULT"},
-		},
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("translation service database is not initialized")
 	}
 
-	result, err := s.dynamoClient.GetItem(ctx, input)
+	item := &translationCacheItem{
+		PK: fmt.Sprintf("TRANSLATION#%s", cacheKey),
+		SK: "RESULT",
+	}
+
+	err := s.db.Model(item).
+		WithContext(ctx).
+		Where("PK", "=", item.PK).
+		Where("SK", "=", item.SK).
+		First(item)
 	if err != nil {
+		if theorydbErrors.IsNotFound(err) {
+			return nil, nil // Cache miss
+		}
 		return nil, fmt.Errorf("failed to get cached translation: %w", err)
 	}
 
-	if result.Item == nil {
-		return nil, nil // Cache miss
-	}
-
-	// Parse the cached result
-	var cache TranslationCache
-	if translatedText, ok := result.Item["TranslatedText"]; ok {
-		if textVal, ok := translatedText.(*types.AttributeValueMemberS); ok {
-			cache.TranslatedText = textVal.Value
-		}
-	}
-	if detectedLang, ok := result.Item["DetectedLanguage"]; ok {
-		if langVal, ok := detectedLang.(*types.AttributeValueMemberS); ok {
-			cache.DetectedLanguage = langVal.Value
-		}
-	}
-	if cachedAt, ok := result.Item["CachedAt"]; ok {
-		switch timeVal := cachedAt.(type) {
-		case *types.AttributeValueMemberS:
-			if timestamp, err := time.Parse(time.RFC3339, timeVal.Value); err == nil {
-				cache.CachedAt = timestamp
-			}
-		case *types.AttributeValueMemberN:
-			if timestamp, err := time.Parse(time.RFC3339, timeVal.Value); err == nil {
-				cache.CachedAt = timestamp
-			}
-		}
-	}
-
-	return &cache, nil
+	return &TranslationCache{
+		TranslatedText:   item.TranslatedText,
+		DetectedLanguage: item.DetectedLanguage,
+		CachedAt:         item.CachedAt,
+	}, nil
 }
 
 // cacheTranslation stores a translation in DynamoDB
 func (s *Service) cacheTranslation(ctx context.Context, cacheKey, translatedText, detectedLang string) error {
-	ttl := time.Now().Add(s.cacheTTL).Unix()
-	cachedAt := time.Now().Format(time.RFC3339)
-
-	item := map[string]types.AttributeValue{
-		"PK":               &types.AttributeValueMemberS{Value: fmt.Sprintf("TRANSLATION#%s", cacheKey)},
-		"SK":               &types.AttributeValueMemberS{Value: "RESULT"},
-		"TranslatedText":   &types.AttributeValueMemberS{Value: translatedText},
-		"DetectedLanguage": &types.AttributeValueMemberS{Value: detectedLang},
-		"CachedAt":         &types.AttributeValueMemberS{Value: cachedAt},
-		"TTL":              &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)},
+	if s == nil || s.db == nil {
+		return fmt.Errorf("translation service database is not initialized")
 	}
 
-	_, err := s.dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(s.tableName),
-		Item:      item,
-	})
-	if err != nil {
+	now := time.Now().UTC()
+
+	item := &translationCacheItem{
+		PK: fmt.Sprintf("TRANSLATION#%s", cacheKey),
+		SK: "RESULT",
+
+		TranslatedText:   translatedText,
+		DetectedLanguage: detectedLang,
+		CachedAt:         now,
+		TTL:              now.Add(s.cacheTTL).Unix(),
+	}
+
+	if err := s.db.Model(item).WithContext(ctx).CreateOrUpdate(); err != nil {
 		return fmt.Errorf("failed to cache translation: %w", err)
 	}
 
@@ -292,117 +319,48 @@ func (s *Service) cacheTranslation(ctx context.Context, cacheKey, translatedText
 
 // getCachedLanguages retrieves cached language list from DynamoDB
 func (s *Service) getCachedLanguages(ctx context.Context) ([]LanguageInfo, error) {
-	input := &dynamodb.GetItemInput{
-		TableName: aws.String(s.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: "CACHE#LANGUAGES"},
-			"SK": &types.AttributeValueMemberS{Value: "SUPPORTED"},
-		},
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("translation service database is not initialized")
 	}
 
-	result, err := s.dynamoClient.GetItem(ctx, input)
+	item := &supportedLanguagesCacheItem{
+		PK: "CACHE#LANGUAGES",
+		SK: "SUPPORTED",
+	}
+
+	err := s.db.Model(item).
+		WithContext(ctx).
+		Where("PK", "=", item.PK).
+		Where("SK", "=", item.SK).
+		First(item)
 	if err != nil {
+		if theorydbErrors.IsNotFound(err) {
+			return nil, nil // Cache miss
+		}
 		return nil, fmt.Errorf("failed to get cached languages: %w", err)
 	}
 
-	if result.Item == nil {
-		return nil, nil // Cache miss
-	}
-
-	return s.parseLanguagesFromCache(result.Item)
-}
-
-// parseLanguagesFromCache parses the language list from DynamoDB cache item
-func (s *Service) parseLanguagesFromCache(item map[string]types.AttributeValue) ([]LanguageInfo, error) {
-	languageList, ok := item["Languages"]
-	if !ok {
-		return nil, nil
-	}
-
-	listVal, ok := languageList.(*types.AttributeValueMemberL)
-	if !ok {
-		return nil, nil
-	}
-
-	var languages []LanguageInfo
-	for _, langItem := range listVal.Value {
-		if lang := s.parseLanguageItem(langItem); lang != nil {
-			languages = append(languages, *lang)
-		}
-	}
-
-	return languages, nil
-}
-
-// parseLanguageItem parses a single language item from DynamoDB attribute value
-func (s *Service) parseLanguageItem(langItem types.AttributeValue) *LanguageInfo {
-	langMap, ok := langItem.(*types.AttributeValueMemberM)
-	if !ok {
-		return nil
-	}
-
-	lang := &LanguageInfo{}
-
-	// Extract language code
-	if code := s.extractStringValue(langMap.Value, "Code"); code != "" {
-		lang.Code = code
-	}
-
-	// Extract language name
-	if name := s.extractStringValue(langMap.Value, "Name"); name != "" {
-		lang.Name = name
-	}
-
-	// Return nil if both code and name are empty
-	if lang.Code == "" && lang.Name == "" {
-		return nil
-	}
-
-	return lang
-}
-
-// extractStringValue extracts a string value from a DynamoDB attribute map
-func (s *Service) extractStringValue(attrMap map[string]types.AttributeValue, key string) string {
-	attr, ok := attrMap[key]
-	if !ok {
-		return ""
-	}
-
-	strVal, ok := attr.(*types.AttributeValueMemberS)
-	if !ok {
-		return ""
-	}
-
-	return strVal.Value
+	return item.Languages, nil
 }
 
 // cacheLanguages stores the language list in DynamoDB
 func (s *Service) cacheLanguages(ctx context.Context, languages []LanguageInfo) error {
-	ttl := time.Now().Add(24 * time.Hour).Unix() // 24 hour TTL for language list
-
-	// Convert languages to DynamoDB format
-	languageList := make([]types.AttributeValue, 0, len(languages))
-	for _, lang := range languages {
-		langMap := map[string]types.AttributeValue{
-			"Code": &types.AttributeValueMemberS{Value: lang.Code},
-			"Name": &types.AttributeValueMemberS{Value: lang.Name},
-		}
-		languageList = append(languageList, &types.AttributeValueMemberM{Value: langMap})
+	if s == nil || s.db == nil {
+		return fmt.Errorf("translation service database is not initialized")
 	}
 
-	item := map[string]types.AttributeValue{
-		"PK":        &types.AttributeValueMemberS{Value: "CACHE#LANGUAGES"},
-		"SK":        &types.AttributeValueMemberS{Value: "SUPPORTED"},
-		"Languages": &types.AttributeValueMemberL{Value: languageList},
-		"CachedAt":  &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		"TTL":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", ttl)},
+	now := time.Now().UTC()
+
+	item := &supportedLanguagesCacheItem{
+		PK: "CACHE#LANGUAGES",
+		SK: "SUPPORTED",
+
+		Languages: languages,
+		CachedAt:  now,
+		TTL:       now.Add(24 * time.Hour).Unix(),
 	}
 
-	_, err := s.dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(s.tableName),
-		Item:      item,
-	})
-	if err != nil {
+	if err := s.db.Model(item).WithContext(ctx).CreateOrUpdate(); err != nil {
 		return fmt.Errorf("failed to cache languages: %w", err)
 	}
 

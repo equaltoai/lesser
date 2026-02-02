@@ -18,10 +18,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -30,6 +30,7 @@ func setModerationProcessorTestGlobals(t *testing.T) {
 
 	cfgValue := *config.Get()
 	cfg := &cfgValue
+	cfg.DynamoTableName = "test-table"
 	lambdaCtx = &common.LambdaContext{
 		Config: cfg,
 		Logger: zap.NewNop(),
@@ -1149,15 +1150,16 @@ func TestMain_DynamoDBHandler_CoversBatchProcessingPaths(t *testing.T) {
 
 	require.NotNil(t, capturedHandler)
 
-	handleRequest, ok := capturedHandler.(func(context.Context, any) (any, error))
+	handleRequest, ok := capturedHandler.(func(context.Context, json.RawMessage) (any, error))
 	require.True(t, ok)
 
 	successEvent := events.DynamoDBEvent{
 		Records: []events.DynamoDBEventRecord{
 			{
-				EventSource: "aws:dynamodb",
-				EventName:   "REMOVE",
-				EventID:     "success",
+				EventSource:    "aws:dynamodb",
+				EventName:      "REMOVE",
+				EventID:        "success",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
 				Change: events.DynamoDBStreamRecord{
 					Keys: map[string]events.DynamoDBAttributeValue{
 						"PK": events.NewStringAttribute("IGNORED"),
@@ -1168,18 +1170,22 @@ func TestMain_DynamoDBHandler_CoversBatchProcessingPaths(t *testing.T) {
 		},
 	}
 
-	successRaw, err := marshalAsMap(successEvent)
+	successRaw, err := json.Marshal(successEvent)
 	require.NoError(t, err)
 
-	_, err = handleRequest(context.Background(), successRaw)
+	respAny, err := handleRequest(context.Background(), successRaw)
 	require.NoError(t, err)
+	resp, ok := respAny.(events.DynamoDBEventResponse)
+	require.True(t, ok)
+	require.Empty(t, resp.BatchItemFailures)
 
 	errorEvent := events.DynamoDBEvent{
 		Records: []events.DynamoDBEventRecord{
 			{
-				EventSource: "aws:dynamodb",
-				EventName:   "INSERT",
-				EventID:     "bad-review",
+				EventSource:    "aws:dynamodb",
+				EventName:      "INSERT",
+				EventID:        "bad-review",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
 				Change: events.DynamoDBStreamRecord{
 					Keys: map[string]events.DynamoDBAttributeValue{
 						"PK": events.NewStringAttribute("REVIEW#evt-1"),
@@ -1190,25 +1196,15 @@ func TestMain_DynamoDBHandler_CoversBatchProcessingPaths(t *testing.T) {
 		},
 	}
 
-	errorRaw, err := marshalAsMap(errorEvent)
+	errorRaw, err := json.Marshal(errorEvent)
 	require.NoError(t, err)
 
-	_, err = handleRequest(context.Background(), errorRaw)
-	require.Error(t, err)
-}
-
-func marshalAsMap(event any) (map[string]any, error) {
-	raw, err := json.Marshal(event)
-	if err != nil {
-		return nil, err
-	}
-
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-
-	return out, nil
+	respAny, err = handleRequest(context.Background(), errorRaw)
+	require.NoError(t, err)
+	resp, ok = respAny.(events.DynamoDBEventResponse)
+	require.True(t, ok)
+	require.Len(t, resp.BatchItemFailures, 1)
+	require.Equal(t, "bad-review", resp.BatchItemFailures[0].ItemIdentifier)
 }
 
 func TestModeratorSelector_hasHandledCategory_CoversAdminAndHistoryPaths(t *testing.T) {

@@ -132,7 +132,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "enhanced-federation-queue", EnablePartialFailure: false},
+				{Queue: "enhanced-federation-queue", EnablePartialFailure: true},
 			},
 		},
 		{
@@ -140,7 +140,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "export-processor-queue", EnablePartialFailure: false},
+				{Queue: "export-processor-queue", EnablePartialFailure: true},
 			},
 		},
 		{
@@ -148,7 +148,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeHybrid,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "federation-aggregator-queue", EnablePartialFailure: false},
+				{Queue: "federation-aggregator-queue", EnablePartialFailure: true},
 			},
 			ScheduleTriggers: []ScheduleTrigger{
 				{Expression: "rate(1 hour)"},
@@ -159,7 +159,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "federation-delivery-queue", EnablePartialFailure: false},
+				{Queue: "federation-delivery-queue", EnablePartialFailure: true},
 			},
 		},
 		{
@@ -209,7 +209,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "import-processor-queue", EnablePartialFailure: false},
+				{Queue: "import-processor-queue", EnablePartialFailure: true},
 			},
 		},
 		{
@@ -226,7 +226,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "media-processor-queue", EnablePartialFailure: false},
+				{Queue: "media-processor-queue", EnablePartialFailure: true},
 			},
 		},
 		{
@@ -314,7 +314,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "notification-processor-queue", EnablePartialFailure: false},
+				{Queue: "notification-processor-queue", EnablePartialFailure: true},
 			},
 		},
 		{
@@ -339,7 +339,7 @@ var LambdaInventory = Inventory{
 			Type: LambdaTypeProcessorSQS,
 			Role: RoleClassBasic,
 			SQSTriggers: []SQSTrigger{
-				{Queue: "push-delivery-queue", EnablePartialFailure: false},
+				{Queue: "push-delivery-queue", EnablePartialFailure: true},
 			},
 			RequiredEnvVars: []string{"VAPID_PUBLIC_KEY", "VAPID_SUBJECT", "VAPID_SECRET_ARN"},
 		},

@@ -339,4 +339,3 @@ func TestService_UpdateMediaFromTranscodingJob_round26_coverage(t *testing.T) {
 		require.ErrorIs(t, err, ErrMediaUpdateFailed)
 	})
 }
-

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -48,4 +48,3 @@ func TestRound08_RateLimitRepository_ClearLoginAttempts_EmptyAttempts(t *testing
 	repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)
 	require.NoError(t, repo.ClearLoginAttempts(ctx, "user-1"))
 }
-

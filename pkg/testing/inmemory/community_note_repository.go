@@ -52,7 +52,6 @@ func (r *CommunityNoteRepository) CreateCommunityNote(_ context.Context, note *s
 	return nil
 }
 
-
 // GetCommunityNote retrieves a note by ID
 func (r *CommunityNoteRepository) GetCommunityNote(_ context.Context, noteID string) (*storage.CommunityNote, error) {
 	r.mu.RLock()
@@ -141,7 +140,6 @@ func (r *CommunityNoteRepository) UpdateCommunityNoteAnalysis(_ context.Context,
 	note.SourceQuality = sourceQuality
 	return nil
 }
-
 
 // CreateCommunityNoteVote creates a vote on a note
 func (r *CommunityNoteRepository) CreateCommunityNoteVote(_ context.Context, vote *storage.CommunityNoteVote) error {

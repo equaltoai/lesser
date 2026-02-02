@@ -8,36 +8,36 @@ import (
 // MissingReply represents a reply that we know should exist but haven't fetched yet
 // Used for tracking gaps in thread synchronization
 type MissingReply struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // THREAD#{rootStatusID}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // MISSING#{replyID}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // THREAD#{rootStatusID}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // MISSING#{replyID}
 
 	// GSI for querying by parent status
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{parentStatusID}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // MISSING_REPLY
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{parentStatusID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // MISSING_REPLY
 
 	// Missing reply data
-	RootStatusID   string     `dynamorm:"attr:rootStatusID" json:"root_status_id"`             // Root of the thread
-	ParentStatusID string     `dynamorm:"attr:parentStatusID" json:"parent_status_id"`         // Parent that references this reply
-	ReplyID        string     `dynamorm:"attr:replyID" json:"reply_id"`                        // The missing reply ID (could be URL)
-	ReplyURL       string     `dynamorm:"attr:replyURL" json:"reply_url,omitempty"`            // URL if known
-	DetectedAt     time.Time  `dynamorm:"attr:detectedAt" json:"detected_at"`                  // When we first detected this gap
-	LastAttemptAt  *time.Time `dynamorm:"attr:lastAttemptAt" json:"last_attempt_at,omitempty"` // Last fetch attempt
-	AttemptCount   int        `dynamorm:"attr:attemptCount" json:"attempt_count"`              // Number of fetch attempts
-	LastError      string     `dynamorm:"attr:lastError" json:"last_error,omitempty"`          // Last error message
-	Status         string     `dynamorm:"attr:status" json:"status"`                           // pending, fetching, failed, resolved
-	FailureReason  string     `dynamorm:"attr:failureReason" json:"failure_reason,omitempty"`  // deleted, 404, 403, timeout, etc.
-	ResolvedAt     *time.Time `dynamorm:"attr:resolvedAt" json:"resolved_at,omitempty"`        // When the reply was successfully fetched
-	UpdatedAt      time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`                    // Last update
+	RootStatusID   string     `theorydb:"attr:rootStatusID" json:"root_status_id"`             // Root of the thread
+	ParentStatusID string     `theorydb:"attr:parentStatusID" json:"parent_status_id"`         // Parent that references this reply
+	ReplyID        string     `theorydb:"attr:replyID" json:"reply_id"`                        // The missing reply ID (could be URL)
+	ReplyURL       string     `theorydb:"attr:replyURL" json:"reply_url,omitempty"`            // URL if known
+	DetectedAt     time.Time  `theorydb:"attr:detectedAt" json:"detected_at"`                  // When we first detected this gap
+	LastAttemptAt  *time.Time `theorydb:"attr:lastAttemptAt" json:"last_attempt_at,omitempty"` // Last fetch attempt
+	AttemptCount   int        `theorydb:"attr:attemptCount" json:"attempt_count"`              // Number of fetch attempts
+	LastError      string     `theorydb:"attr:lastError" json:"last_error,omitempty"`          // Last error message
+	Status         string     `theorydb:"attr:status" json:"status"`                           // pending, fetching, failed, resolved
+	FailureReason  string     `theorydb:"attr:failureReason" json:"failure_reason,omitempty"`  // deleted, 404, 403, timeout, etc.
+	ResolvedAt     *time.Time `theorydb:"attr:resolvedAt" json:"resolved_at,omitempty"`        // When the reply was successfully fetched
+	UpdatedAt      time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`                    // Last update
 
 	// Metadata for retry logic
-	NextRetryAt *time.Time `dynamorm:"attr:nextRetryAt" json:"next_retry_at,omitempty"` // When to retry (exponential backoff)
-	Priority    int        `dynamorm:"attr:priority" json:"priority"`                   // Priority for fetching (1=high, 5=low)
+	NextRetryAt *time.Time `theorydb:"attr:nextRetryAt" json:"next_retry_at,omitempty"` // When to retry (exponential backoff)
+	Priority    int        `theorydb:"attr:priority" json:"priority"`                   // Priority for fetching (1=high, 5=low)
 
 	// TTL for auto-cleanup (7 days for resolved, 30 days for failed)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 const (

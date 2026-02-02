@@ -11,11 +11,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -55,7 +55,9 @@ type statusPrivacyDeps struct {
 func (d *statusPrivacyDeps) GetFollowing(_ context.Context, _ string, _ int, _ string) ([]string, string, error) {
 	return nil, "", nil
 }
-func (d *statusPrivacyDeps) IsBlocked(_ context.Context, _, _ string) (bool, error) { return false, nil }
+func (d *statusPrivacyDeps) IsBlocked(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
 func (d *statusPrivacyDeps) IsBlockedBidirectional(_ context.Context, actor1, actor2 string) (bool, error) {
 	if d.errorTargets != nil && d.errorTargets[actor1+"|"+actor2] {
 		return false, assert.AnError

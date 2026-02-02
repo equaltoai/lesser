@@ -7,34 +7,34 @@ import (
 
 // RouteMetricsWindow represents aggregated route metrics for a time window
 type RouteMetricsWindow struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // METRICS#ROUTE#{routeID}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // METRICS#ROUTE#{routeID}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
 
 	// Route and time info
-	RouteID     string    `dynamorm:"attr:routeID" json:"route_id"`
-	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"`
-	WindowSize  int64     `dynamorm:"attr:windowSizeMinutes" json:"window_size_minutes"`
+	RouteID     string    `theorydb:"attr:routeID" json:"route_id"`
+	WindowStart time.Time `theorydb:"attr:windowStart" json:"window_start"`
+	WindowSize  int64     `theorydb:"attr:windowSizeMinutes" json:"window_size_minutes"`
 
 	// Aggregated metrics
-	MessageCount   int64   `dynamorm:"attr:messageCount" json:"message_count"`
-	SuccessCount   int64   `dynamorm:"attr:successCount" json:"success_count"`
-	FailureCount   int64   `dynamorm:"attr:failureCount" json:"failure_count"`
-	TotalBytes     int64   `dynamorm:"attr:totalBytes" json:"total_bytes"`
-	TotalCost      float64 `dynamorm:"attr:totalCost" json:"total_cost"`
-	AvgLatency     int64   `dynamorm:"attr:avgLatencyMs" json:"avg_latency_ms"`
-	CircuitChanges int64   `dynamorm:"attr:circuitChanges" json:"circuit_changes"`
+	MessageCount   int64   `theorydb:"attr:messageCount" json:"message_count"`
+	SuccessCount   int64   `theorydb:"attr:successCount" json:"success_count"`
+	FailureCount   int64   `theorydb:"attr:failureCount" json:"failure_count"`
+	TotalBytes     int64   `theorydb:"attr:totalBytes" json:"total_bytes"`
+	TotalCost      float64 `theorydb:"attr:totalCost" json:"total_cost"`
+	AvgLatency     int64   `theorydb:"attr:avgLatencyMs" json:"avg_latency_ms"`
+	CircuitChanges int64   `theorydb:"attr:circuitChanges" json:"circuit_changes"`
 
 	// Latency histogram (JSON-encoded map[int]int64)
-	LatencyHistogram string `dynamorm:"attr:latencyHistogram" json:"latency_histogram,omitempty"`
+	LatencyHistogram string `theorydb:"attr:latencyHistogram" json:"latency_histogram,omitempty"`
 
 	// Error types (JSON-encoded map[string]int64)
-	ErrorTypes string `dynamorm:"attr:errorTypes" json:"error_types,omitempty"`
+	ErrorTypes string `theorydb:"attr:errorTypes" json:"error_types,omitempty"`
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing RouteMetricsWindow.
@@ -64,36 +64,36 @@ func (r *RouteMetricsWindow) GetSK() string {
 
 // GlobalMetricsWindow represents aggregated global metrics for a time window
 type GlobalMetricsWindow struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // METRICS#GLOBAL#SUMMARY
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // METRICS#GLOBAL#SUMMARY
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
 
 	// GSI keys for time-based queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRICS#GLOBAL
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {windowStartUnix}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRICS#GLOBAL
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {windowStartUnix}
 
 	// Time info
-	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"`
-	WindowSize  int64     `dynamorm:"attr:windowSizeMinutes" json:"window_size_minutes"`
+	WindowStart time.Time `theorydb:"attr:windowStart" json:"window_start"`
+	WindowSize  int64     `theorydb:"attr:windowSizeMinutes" json:"window_size_minutes"`
 
 	// Aggregated metrics
-	TotalMessages   int64   `dynamorm:"attr:totalMessages" json:"total_messages"`
-	TotalBytes      int64   `dynamorm:"attr:totalBytes" json:"total_bytes"`
-	TotalCost       float64 `dynamorm:"attr:totalCost" json:"total_cost"`
-	UniqueInstances int64   `dynamorm:"attr:uniqueInstances" json:"unique_instances"`
-	ActiveRoutes    int64   `dynamorm:"attr:activeRoutes" json:"active_routes"`
+	TotalMessages   int64   `theorydb:"attr:totalMessages" json:"total_messages"`
+	TotalBytes      int64   `theorydb:"attr:totalBytes" json:"total_bytes"`
+	TotalCost       float64 `theorydb:"attr:totalCost" json:"total_cost"`
+	UniqueInstances int64   `theorydb:"attr:uniqueInstances" json:"unique_instances"`
+	ActiveRoutes    int64   `theorydb:"attr:activeRoutes" json:"active_routes"`
 
 	// Hourly volume (JSON-encoded [24]int64)
-	HourlyVolume string `dynamorm:"attr:hourlyVolume" json:"hourly_volume,omitempty"`
+	HourlyVolume string `theorydb:"attr:hourlyVolume" json:"hourly_volume,omitempty"`
 
 	// Top/bottom performers (JSON-encoded)
-	TopRoutes    string `dynamorm:"attr:topRoutes" json:"top_routes,omitempty"`
-	BottomRoutes string `dynamorm:"attr:bottomRoutes" json:"bottom_routes,omitempty"`
+	TopRoutes    string `theorydb:"attr:topRoutes" json:"top_routes,omitempty"`
+	BottomRoutes string `theorydb:"attr:bottomRoutes" json:"bottom_routes,omitempty"`
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing GlobalMetricsWindow.
@@ -126,29 +126,29 @@ func (g *GlobalMetricsWindow) GetSK() string {
 
 // InstanceMetricsWindow represents aggregated instance metrics for a time window
 type InstanceMetricsWindow struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // METRICS#INSTANCE#{instanceID}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // METRICS#INSTANCE#{instanceID}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
 
 	// Instance and time info
-	InstanceID  string    `dynamorm:"attr:instanceID" json:"instance_id"`
-	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"`
-	WindowSize  int64     `dynamorm:"attr:windowSizeMinutes" json:"window_size_minutes"`
+	InstanceID  string    `theorydb:"attr:instanceID" json:"instance_id"`
+	WindowStart time.Time `theorydb:"attr:windowStart" json:"window_start"`
+	WindowSize  int64     `theorydb:"attr:windowSizeMinutes" json:"window_size_minutes"`
 
 	// Aggregated metrics
-	TotalMessages int64   `dynamorm:"attr:totalMessages" json:"total_messages"`
-	TotalBytes    int64   `dynamorm:"attr:totalBytes" json:"total_bytes"`
-	TotalCost     float64 `dynamorm:"attr:totalCost" json:"total_cost"`
-	HealthChecks  int64   `dynamorm:"attr:healthChecks" json:"health_checks"`
-	Availability  float64 `dynamorm:"attr:availability" json:"availability"`
+	TotalMessages int64   `theorydb:"attr:totalMessages" json:"total_messages"`
+	TotalBytes    int64   `theorydb:"attr:totalBytes" json:"total_bytes"`
+	TotalCost     float64 `theorydb:"attr:totalCost" json:"total_cost"`
+	HealthChecks  int64   `theorydb:"attr:healthChecks" json:"health_checks"`
+	Availability  float64 `theorydb:"attr:availability" json:"availability"`
 
 	// Message type distribution (JSON-encoded map[string]int64)
-	MessageTypes string `dynamorm:"attr:messageTypes" json:"message_types,omitempty"`
+	MessageTypes string `theorydb:"attr:messageTypes" json:"message_types,omitempty"`
 
 	// TTL for cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing InstanceMetricsWindow.

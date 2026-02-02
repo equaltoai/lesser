@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -44,16 +44,16 @@ func TestRoutingMetricsRepository_StoreAndGet_RouteWindows(t *testing.T) {
 
 	windowStart := time.Date(2025, 1, 2, 3, 4, 0, 0, time.UTC)
 	require.NoError(t, repo.StoreRouteMetricsWindow(ctx, &models.RouteMetricsWindow{
-		RouteID:       "route-1",
-		WindowStart:   windowStart,
-		WindowSize:    5,
-		MessageCount:  10,
-		SuccessCount:  9,
-		FailureCount:  1,
-		TotalBytes:    1234,
-		TotalCost:     0.001,
-		AvgLatency:    50,
-		ErrorTypes:    "{}",
+		RouteID:          "route-1",
+		WindowStart:      windowStart,
+		WindowSize:       5,
+		MessageCount:     10,
+		SuccessCount:     9,
+		FailureCount:     1,
+		TotalBytes:       1234,
+		TotalCost:        0.001,
+		AvgLatency:       50,
+		ErrorTypes:       "{}",
 		LatencyHistogram: "{}",
 	}))
 
@@ -154,12 +154,12 @@ func TestRoutingMetricsRepository_StoreGlobalAndInstance_Windows_SuccessAndError
 		mockQuery.On("Create").Return(nil).Once()
 
 		require.NoError(t, repo.StoreGlobalMetricsWindow(ctx, &models.GlobalMetricsWindow{
-			WindowStart:    windowStart,
-			WindowSize:     5,
-			TotalMessages:  100,
-			TotalBytes:     1024,
-			TotalCost:      0.001,
-			ActiveRoutes:   3,
+			WindowStart:     windowStart,
+			WindowSize:      5,
+			TotalMessages:   100,
+			TotalBytes:      1024,
+			TotalCost:       0.001,
+			ActiveRoutes:    3,
 			UniqueInstances: 2,
 		}))
 	}

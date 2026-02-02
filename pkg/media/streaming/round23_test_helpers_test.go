@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 type fakeDynamormDB struct {
@@ -56,9 +56,9 @@ func (db *fakeDynamormDB) Transaction(fn func(tx *dynamormCore.Tx) error) error 
 	return fn(tx)
 }
 
-func (db *fakeDynamormDB) Migrate() error                 { return nil }
+func (db *fakeDynamormDB) Migrate() error                  { return nil }
 func (db *fakeDynamormDB) AutoMigrate(models ...any) error { return nil }
-func (db *fakeDynamormDB) Close() error                   { return nil }
+func (db *fakeDynamormDB) Close() error                    { return nil }
 func (db *fakeDynamormDB) WithContext(_ context.Context) dynamormCore.DB {
 	return db
 }
@@ -74,40 +74,54 @@ func (q *fakeDynamormQuery) Where(field string, _ string, value any) dynamormCor
 	return q
 }
 
-func (q *fakeDynamormQuery) Index(_ string) dynamormCore.Query                                       { return q }
-func (q *fakeDynamormQuery) Filter(_ string, _ string, _ any) dynamormCore.Query                     { return q }
-func (q *fakeDynamormQuery) OrFilter(_ string, _ string, _ any) dynamormCore.Query                   { return q }
-func (q *fakeDynamormQuery) FilterGroup(fn func(dynamormCore.Query)) dynamormCore.Query              { fn(q); return q }
-func (q *fakeDynamormQuery) OrFilterGroup(fn func(dynamormCore.Query)) dynamormCore.Query            { fn(q); return q }
-func (q *fakeDynamormQuery) IfNotExists() dynamormCore.Query                                         { return q }
-func (q *fakeDynamormQuery) IfExists() dynamormCore.Query                                            { return q }
-func (q *fakeDynamormQuery) WithCondition(_ string, _ string, _ any) dynamormCore.Query              { return q }
-func (q *fakeDynamormQuery) WithConditionExpression(_ string, _ map[string]any) dynamormCore.Query    { return q }
-func (q *fakeDynamormQuery) OrderBy(_ string, _ string) dynamormCore.Query                            { return q }
-func (q *fakeDynamormQuery) Limit(_ int) dynamormCore.Query                                           { return q }
-func (q *fakeDynamormQuery) Offset(_ int) dynamormCore.Query                                          { return q }
-func (q *fakeDynamormQuery) Select(_ ...string) dynamormCore.Query                                    { return q }
-func (q *fakeDynamormQuery) ConsistentRead() dynamormCore.Query                                       { return q }
-func (q *fakeDynamormQuery) WithRetry(_ int, _ time.Duration) dynamormCore.Query                       { return q }
-func (q *fakeDynamormQuery) All(_ any) error                                                          { return nil }
-func (q *fakeDynamormQuery) AllPaginated(_ any) (*dynamormCore.PaginatedResult, error)                { return &dynamormCore.PaginatedResult{}, nil }
-func (q *fakeDynamormQuery) Count() (int64, error)                                                     { return 0, nil }
-func (q *fakeDynamormQuery) CreateOrUpdate() error                                                     { return q.Create() }
-func (q *fakeDynamormQuery) UpdateBuilder() dynamormCore.UpdateBuilder                                 { return &fakeUpdateBuilder{} }
-func (q *fakeDynamormQuery) Delete() error                                                             { return nil }
-func (q *fakeDynamormQuery) Scan(_ any) error                                                          { return nil }
-func (q *fakeDynamormQuery) ParallelScan(_ int32, _ int32) dynamormCore.Query                          { return q }
-func (q *fakeDynamormQuery) ScanAllSegments(_ any, _ int32) error                                      { return nil }
-func (q *fakeDynamormQuery) BatchGet(_ []any, _ any) error                                             { return nil }
-func (q *fakeDynamormQuery) BatchGetWithOptions(_ []any, _ any, _ *dynamormCore.BatchGetOptions) error { return nil }
-func (q *fakeDynamormQuery) BatchGetBuilder() dynamormCore.BatchGetBuilder                             { return &fakeBatchGetBuilder{} }
-func (q *fakeDynamormQuery) BatchCreate(_ any) error                                                   { return nil }
-func (q *fakeDynamormQuery) BatchDelete(_ []any) error                                                 { return nil }
-func (q *fakeDynamormQuery) BatchWrite(_ []any, _ []any) error                                         { return nil }
-func (q *fakeDynamormQuery) BatchUpdateWithOptions(_ []any, _ []string, _ ...any) error                { return nil }
-func (q *fakeDynamormQuery) Cursor(_ string) dynamormCore.Query                                        { return q }
-func (q *fakeDynamormQuery) SetCursor(_ string) error                                                  { return nil }
-func (q *fakeDynamormQuery) WithContext(_ context.Context) dynamormCore.Query                          { return q }
+func (q *fakeDynamormQuery) Index(_ string) dynamormCore.Query                     { return q }
+func (q *fakeDynamormQuery) Filter(_ string, _ string, _ any) dynamormCore.Query   { return q }
+func (q *fakeDynamormQuery) OrFilter(_ string, _ string, _ any) dynamormCore.Query { return q }
+func (q *fakeDynamormQuery) FilterGroup(fn func(dynamormCore.Query)) dynamormCore.Query {
+	fn(q)
+	return q
+}
+func (q *fakeDynamormQuery) OrFilterGroup(fn func(dynamormCore.Query)) dynamormCore.Query {
+	fn(q)
+	return q
+}
+func (q *fakeDynamormQuery) IfNotExists() dynamormCore.Query                            { return q }
+func (q *fakeDynamormQuery) IfExists() dynamormCore.Query                               { return q }
+func (q *fakeDynamormQuery) WithCondition(_ string, _ string, _ any) dynamormCore.Query { return q }
+func (q *fakeDynamormQuery) WithConditionExpression(_ string, _ map[string]any) dynamormCore.Query {
+	return q
+}
+func (q *fakeDynamormQuery) OrderBy(_ string, _ string) dynamormCore.Query       { return q }
+func (q *fakeDynamormQuery) Limit(_ int) dynamormCore.Query                      { return q }
+func (q *fakeDynamormQuery) Offset(_ int) dynamormCore.Query                     { return q }
+func (q *fakeDynamormQuery) Select(_ ...string) dynamormCore.Query               { return q }
+func (q *fakeDynamormQuery) ConsistentRead() dynamormCore.Query                  { return q }
+func (q *fakeDynamormQuery) WithRetry(_ int, _ time.Duration) dynamormCore.Query { return q }
+func (q *fakeDynamormQuery) All(_ any) error                                     { return nil }
+func (q *fakeDynamormQuery) AllPaginated(_ any) (*dynamormCore.PaginatedResult, error) {
+	return &dynamormCore.PaginatedResult{}, nil
+}
+func (q *fakeDynamormQuery) Count() (int64, error)                            { return 0, nil }
+func (q *fakeDynamormQuery) CreateOrUpdate() error                            { return q.Create() }
+func (q *fakeDynamormQuery) UpdateBuilder() dynamormCore.UpdateBuilder        { return &fakeUpdateBuilder{} }
+func (q *fakeDynamormQuery) Delete() error                                    { return nil }
+func (q *fakeDynamormQuery) Scan(_ any) error                                 { return nil }
+func (q *fakeDynamormQuery) ParallelScan(_ int32, _ int32) dynamormCore.Query { return q }
+func (q *fakeDynamormQuery) ScanAllSegments(_ any, _ int32) error             { return nil }
+func (q *fakeDynamormQuery) BatchGet(_ []any, _ any) error                    { return nil }
+func (q *fakeDynamormQuery) BatchGetWithOptions(_ []any, _ any, _ *dynamormCore.BatchGetOptions) error {
+	return nil
+}
+func (q *fakeDynamormQuery) BatchGetBuilder() dynamormCore.BatchGetBuilder {
+	return &fakeBatchGetBuilder{}
+}
+func (q *fakeDynamormQuery) BatchCreate(_ any) error                                    { return nil }
+func (q *fakeDynamormQuery) BatchDelete(_ []any) error                                  { return nil }
+func (q *fakeDynamormQuery) BatchWrite(_ []any, _ []any) error                          { return nil }
+func (q *fakeDynamormQuery) BatchUpdateWithOptions(_ []any, _ []string, _ ...any) error { return nil }
+func (q *fakeDynamormQuery) Cursor(_ string) dynamormCore.Query                         { return q }
+func (q *fakeDynamormQuery) SetCursor(_ string) error                                   { return nil }
+func (q *fakeDynamormQuery) WithContext(_ context.Context) dynamormCore.Query           { return q }
 
 func (q *fakeDynamormQuery) First(dest any) error {
 	if q.db.forceFirstErr != nil {
@@ -216,36 +230,42 @@ func keyFromModel(model any) (string, bool) {
 
 type fakeUpdateBuilder struct{}
 
-func (b *fakeUpdateBuilder) Set(_ string, _ any) dynamormCore.UpdateBuilder                      { return b }
-func (b *fakeUpdateBuilder) SetIfNotExists(_ string, _ any, _ any) dynamormCore.UpdateBuilder    { return b }
-func (b *fakeUpdateBuilder) Add(_ string, _ any) dynamormCore.UpdateBuilder                      { return b }
-func (b *fakeUpdateBuilder) Increment(_ string) dynamormCore.UpdateBuilder                       { return b }
-func (b *fakeUpdateBuilder) Decrement(_ string) dynamormCore.UpdateBuilder                       { return b }
-func (b *fakeUpdateBuilder) Remove(_ string) dynamormCore.UpdateBuilder                          { return b }
-func (b *fakeUpdateBuilder) Delete(_ string, _ any) dynamormCore.UpdateBuilder                   { return b }
-func (b *fakeUpdateBuilder) AppendToList(_ string, _ any) dynamormCore.UpdateBuilder             { return b }
-func (b *fakeUpdateBuilder) PrependToList(_ string, _ any) dynamormCore.UpdateBuilder            { return b }
-func (b *fakeUpdateBuilder) RemoveFromListAt(_ string, _ int) dynamormCore.UpdateBuilder         { return b }
-func (b *fakeUpdateBuilder) SetListElement(_ string, _ int, _ any) dynamormCore.UpdateBuilder    { return b }
-func (b *fakeUpdateBuilder) Condition(_ string, _ string, _ any) dynamormCore.UpdateBuilder      { return b }
-func (b *fakeUpdateBuilder) OrCondition(_ string, _ string, _ any) dynamormCore.UpdateBuilder    { return b }
-func (b *fakeUpdateBuilder) ConditionExists(_ string) dynamormCore.UpdateBuilder                 { return b }
-func (b *fakeUpdateBuilder) ConditionNotExists(_ string) dynamormCore.UpdateBuilder              { return b }
-func (b *fakeUpdateBuilder) ConditionVersion(_ int64) dynamormCore.UpdateBuilder                 { return b }
-func (b *fakeUpdateBuilder) ReturnValues(_ string) dynamormCore.UpdateBuilder                    { return b }
-func (b *fakeUpdateBuilder) Execute() error                                                      { return nil }
-func (b *fakeUpdateBuilder) ExecuteWithResult(_ any) error                                        { return nil }
+func (b *fakeUpdateBuilder) Set(_ string, _ any) dynamormCore.UpdateBuilder { return b }
+func (b *fakeUpdateBuilder) SetIfNotExists(_ string, _ any, _ any) dynamormCore.UpdateBuilder {
+	return b
+}
+func (b *fakeUpdateBuilder) Add(_ string, _ any) dynamormCore.UpdateBuilder              { return b }
+func (b *fakeUpdateBuilder) Increment(_ string) dynamormCore.UpdateBuilder               { return b }
+func (b *fakeUpdateBuilder) Decrement(_ string) dynamormCore.UpdateBuilder               { return b }
+func (b *fakeUpdateBuilder) Remove(_ string) dynamormCore.UpdateBuilder                  { return b }
+func (b *fakeUpdateBuilder) Delete(_ string, _ any) dynamormCore.UpdateBuilder           { return b }
+func (b *fakeUpdateBuilder) AppendToList(_ string, _ any) dynamormCore.UpdateBuilder     { return b }
+func (b *fakeUpdateBuilder) PrependToList(_ string, _ any) dynamormCore.UpdateBuilder    { return b }
+func (b *fakeUpdateBuilder) RemoveFromListAt(_ string, _ int) dynamormCore.UpdateBuilder { return b }
+func (b *fakeUpdateBuilder) SetListElement(_ string, _ int, _ any) dynamormCore.UpdateBuilder {
+	return b
+}
+func (b *fakeUpdateBuilder) Condition(_ string, _ string, _ any) dynamormCore.UpdateBuilder { return b }
+func (b *fakeUpdateBuilder) OrCondition(_ string, _ string, _ any) dynamormCore.UpdateBuilder {
+	return b
+}
+func (b *fakeUpdateBuilder) ConditionExists(_ string) dynamormCore.UpdateBuilder    { return b }
+func (b *fakeUpdateBuilder) ConditionNotExists(_ string) dynamormCore.UpdateBuilder { return b }
+func (b *fakeUpdateBuilder) ConditionVersion(_ int64) dynamormCore.UpdateBuilder    { return b }
+func (b *fakeUpdateBuilder) ReturnValues(_ string) dynamormCore.UpdateBuilder       { return b }
+func (b *fakeUpdateBuilder) Execute() error                                         { return nil }
+func (b *fakeUpdateBuilder) ExecuteWithResult(_ any) error                          { return nil }
 
 type fakeBatchGetBuilder struct{}
 
-func (b *fakeBatchGetBuilder) Keys(_ []any) dynamormCore.BatchGetBuilder                   { return b }
-func (b *fakeBatchGetBuilder) ChunkSize(_ int) dynamormCore.BatchGetBuilder                { return b }
-func (b *fakeBatchGetBuilder) ConsistentRead() dynamormCore.BatchGetBuilder                { return b }
-func (b *fakeBatchGetBuilder) Parallel(_ int) dynamormCore.BatchGetBuilder                 { return b }
+func (b *fakeBatchGetBuilder) Keys(_ []any) dynamormCore.BatchGetBuilder    { return b }
+func (b *fakeBatchGetBuilder) ChunkSize(_ int) dynamormCore.BatchGetBuilder { return b }
+func (b *fakeBatchGetBuilder) ConsistentRead() dynamormCore.BatchGetBuilder { return b }
+func (b *fakeBatchGetBuilder) Parallel(_ int) dynamormCore.BatchGetBuilder  { return b }
 func (b *fakeBatchGetBuilder) WithRetry(_ *dynamormCore.RetryPolicy) dynamormCore.BatchGetBuilder {
 	return b
 }
-func (b *fakeBatchGetBuilder) Select(_ ...string) dynamormCore.BatchGetBuilder                         { return b }
+func (b *fakeBatchGetBuilder) Select(_ ...string) dynamormCore.BatchGetBuilder { return b }
 func (b *fakeBatchGetBuilder) OnProgress(_ dynamormCore.BatchProgressCallback) dynamormCore.BatchGetBuilder {
 	return b
 }
@@ -374,13 +394,13 @@ func writeListObjectsV2Response(w http.ResponseWriter, bucket, prefix string, ke
 	}
 
 	type listBucketResult struct {
-		XMLName     xml.Name `xml:"ListBucketResult"`
-		Xmlns       string   `xml:"xmlns,attr"`
-		Name        string   `xml:"Name"`
-		Prefix      string   `xml:"Prefix"`
-		KeyCount    int      `xml:"KeyCount"`
-		MaxKeys     int      `xml:"MaxKeys"`
-		IsTruncated bool     `xml:"IsTruncated"`
+		XMLName     xml.Name      `xml:"ListBucketResult"`
+		Xmlns       string        `xml:"xmlns,attr"`
+		Name        string        `xml:"Name"`
+		Prefix      string        `xml:"Prefix"`
+		KeyCount    int           `xml:"KeyCount"`
+		MaxKeys     int           `xml:"MaxKeys"`
+		IsTruncated bool          `xml:"IsTruncated"`
 		Contents    []objectEntry `xml:"Contents"`
 	}
 

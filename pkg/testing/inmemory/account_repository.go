@@ -24,9 +24,9 @@ type AccountRepository struct {
 	accountsByURL   map[string]string           // actorURL -> username mapping
 
 	// Session data
-	sessions              map[string]*storage.Session // sessionID -> session
-	sessionsByUser        map[string][]string         // username -> sessionIDs
-	sessionsByRefresh     map[string]string           // refreshToken -> sessionID
+	sessions          map[string]*storage.Session // sessionID -> session
+	sessionsByUser    map[string][]string         // username -> sessionIDs
+	sessionsByRefresh map[string]string           // refreshToken -> sessionID
 
 	// Password reset data
 	passwordResets map[string]*storage.PasswordReset // token -> reset
@@ -39,8 +39,8 @@ type AccountRepository struct {
 	recoveryTokens map[string]map[string]interface{} // key -> data
 
 	// WebAuthn data
-	webAuthnChallenges   map[string]*storage.WebAuthnChallenge   // challengeID -> challenge
-	webAuthnCredentials  map[string]*storage.WebAuthnCredential  // credentialID -> credential
+	webAuthnChallenges  map[string]*storage.WebAuthnChallenge  // challengeID -> challenge
+	webAuthnCredentials map[string]*storage.WebAuthnCredential // credentialID -> credential
 
 	// Account pins
 	accountPins map[string][]*storage.AccountPin // username -> pins
@@ -77,27 +77,27 @@ type rateLimitEntry struct {
 // NewAccountRepository creates a new in-memory account repository
 func NewAccountRepository() *AccountRepository {
 	return &AccountRepository{
-		accounts:             make(map[string]*storage.Account),
-		accountsByEmail:      make(map[string]string),
-		accountsByURL:        make(map[string]string),
-		sessions:             make(map[string]*storage.Session),
-		sessionsByUser:       make(map[string][]string),
-		sessionsByRefresh:    make(map[string]string),
-		passwordResets:       make(map[string]*storage.PasswordReset),
-		devices:              make(map[string]*storage.Device),
-		devicesByUser:        make(map[string][]string),
-		recoveryTokens:       make(map[string]map[string]interface{}),
-		webAuthnChallenges:   make(map[string]*storage.WebAuthnChallenge),
-		webAuthnCredentials:  make(map[string]*storage.WebAuthnCredential),
-		accountPins:          make(map[string][]*storage.AccountPin),
-		accountNotes:         make(map[string]map[string]*storage.AccountNote),
-		accountPreferences:   make(map[string]map[string]interface{}),
-		accountFeatures:      make(map[string]map[string]bool),
-		loginAttempts:        make(map[string][]*storage.LoginAttempt),
-		rateLimits:           make(map[string]*rateLimitEntry),
-		followRequestStates:  make(map[string]string),
-		blockedDomains:       make(map[string]map[string]bool),
-		bookmarks:            make(map[string][]*storage.Bookmark),
+		accounts:            make(map[string]*storage.Account),
+		accountsByEmail:     make(map[string]string),
+		accountsByURL:       make(map[string]string),
+		sessions:            make(map[string]*storage.Session),
+		sessionsByUser:      make(map[string][]string),
+		sessionsByRefresh:   make(map[string]string),
+		passwordResets:      make(map[string]*storage.PasswordReset),
+		devices:             make(map[string]*storage.Device),
+		devicesByUser:       make(map[string][]string),
+		recoveryTokens:      make(map[string]map[string]interface{}),
+		webAuthnChallenges:  make(map[string]*storage.WebAuthnChallenge),
+		webAuthnCredentials: make(map[string]*storage.WebAuthnCredential),
+		accountPins:         make(map[string][]*storage.AccountPin),
+		accountNotes:        make(map[string]map[string]*storage.AccountNote),
+		accountPreferences:  make(map[string]map[string]interface{}),
+		accountFeatures:     make(map[string]map[string]bool),
+		loginAttempts:       make(map[string][]*storage.LoginAttempt),
+		rateLimits:          make(map[string]*rateLimitEntry),
+		followRequestStates: make(map[string]string),
+		blockedDomains:      make(map[string]map[string]bool),
+		bookmarks:           make(map[string][]*storage.Bookmark),
 	}
 }
 
@@ -609,7 +609,6 @@ func (r *AccountRepository) GetPreference(_ context.Context, username, key strin
 	return "", nil
 }
 
-
 // Authentication and session management
 
 // ValidateCredentials validates user credentials
@@ -890,7 +889,7 @@ func (r *AccountRepository) DeleteSession(_ context.Context, sessionID string) e
 
 	// Clean up indexes
 	delete(r.sessionsByRefresh, session.RefreshToken)
-	
+
 	// Remove from user's sessions
 	userSessions := r.sessionsByUser[session.Username]
 	for i, id := range userSessions {
@@ -920,7 +919,7 @@ func (r *AccountRepository) InvalidateSession(_ context.Context, username, sessi
 
 	// Clean up indexes
 	delete(r.sessionsByRefresh, session.RefreshToken)
-	
+
 	// Remove from user's sessions
 	userSessions := r.sessionsByUser[username]
 	for i, id := range userSessions {
@@ -969,7 +968,7 @@ func (r *AccountRepository) GetLoginHistory(_ context.Context, username string, 
 	defer r.mu.RUnlock()
 
 	attempts := r.loginAttempts[username]
-	
+
 	// Apply pagination
 	end := opts.Limit
 	if end > len(attempts) {

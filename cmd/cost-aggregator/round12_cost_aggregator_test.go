@@ -17,11 +17,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -37,7 +35,7 @@ type fakeCostRepo struct {
 
 	createAggregatedErr error
 	createErr           error
-	aggregateErr error
+	aggregateErr        error
 
 	getAggregatedFn func(period, opType string) (*models.DynamoDBCostAggregation, error)
 	highCostOps     []*models.DynamoDBCostRecord
@@ -183,14 +181,14 @@ func TestCostAggregator_extractCostFromStreamRecord_Round12(t *testing.T) {
 	cost, err = ca.extractCostFromStreamRecord(events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
-			"PK":                  events.NewStringAttribute("cost#PutItem"),
-			"operation_type":      events.NewStringAttribute("PutItem"),
-			"table_name":          events.NewStringAttribute("tbl"),
-			"read_capacity_units": events.NewNumberAttribute("0"),
+			"PK":                   events.NewStringAttribute("cost#PutItem"),
+			"operation_type":       events.NewStringAttribute("PutItem"),
+			"table_name":           events.NewStringAttribute("tbl"),
+			"read_capacity_units":  events.NewNumberAttribute("0"),
 			"write_capacity_units": events.NewNumberAttribute("10"),
-			"item_count":          events.NewNumberAttribute("1"),
-			"service_name":        events.NewStringAttribute("api"),
-			"timestamp":           events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+			"item_count":           events.NewNumberAttribute("1"),
+			"service_name":         events.NewStringAttribute("api"),
+			"timestamp":            events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
 		}},
 	})
 	require.NoError(t, err)
@@ -224,15 +222,12 @@ func TestCostAggregator_processRealtimeCosts_Round12(t *testing.T) {
 		logger:                 zap.NewNop(),
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.Set("request_id", "req")
-
 	costs := []*models.DynamoDBCostRecord{
 		{OperationType: "PutItem", Table: "tbl", ReadCapacityUnits: 0, WriteCapacityUnits: 1, TotalCostMicroCents: 10, ItemCount: 1, RequestDuration: 5, ServiceName: "api"},
 		{OperationType: "PutItem", Table: "tbl2", ReadCapacityUnits: 0, WriteCapacityUnits: 2, TotalCostMicroCents: 20, ItemCount: 2, RequestDuration: 15, ServiceName: "api"},
 	}
 
-	require.NoError(t, ca.processRealtimeCosts(ctx, costs))
+	require.NoError(t, ca.processRealtimeCosts(context.Background(), "req", costs))
 	require.Equal(t, 1, repo.createAggregatedCalls)
 	require.Equal(t, 2, repo.createCalls)
 	require.NotNil(t, repo.lastAggregated)
@@ -401,22 +396,15 @@ func TestCostAggregator_triggerAggregation_FallbackToLambda_Round12(t *testing.T
 	require.Error(t, ca.triggerAggregation(context.Background(), AggregationEvent{Type: "daily", StartTime: time.Now().Add(-24 * time.Hour), EndTime: time.Now()}))
 }
 
-func TestHandleCostAggregatorStream_Round12(t *testing.T) {
+func TestHandleCostAggregatorStreamRecord_Round12(t *testing.T) {
 	origProcessor := processor
 	t.Cleanup(func() { processor = origProcessor })
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-
 	processor = nil
-	require.Error(t, handleCostAggregatorStream(ctx))
+	require.Error(t, handleCostAggregatorStreamRecord(nil, events.DynamoDBEventRecord{EventID: "e1", EventName: "INSERT"}))
 
 	processor = &CostAggregator{logger: zap.NewNop(), costTrackingRepository: &fakeCostRepo{}}
-	ctx.Request.TriggerType = lift.TriggerEventBus
-	ctx.Request.Records = []any{"bad-record"}
-	require.Error(t, handleCostAggregatorStream(ctx))
-
-	ctx.Request.Records = []any{}
-	require.NoError(t, handleCostAggregatorStream(ctx))
+	require.NoError(t, handleCostAggregatorStreamRecord(nil, events.DynamoDBEventRecord{EventID: "e1", EventName: "REMOVE"}))
 }
 
 func TestCostAggregator_HandleCloudWatchEvent_Round12(t *testing.T) {
@@ -441,44 +429,33 @@ func TestCostAggregator_HandleCloudWatchEvent_Round12(t *testing.T) {
 	require.Equal(t, 10, repo.aggregateCalls)
 }
 
-func TestCostAggregator_HandleStream_Round12(t *testing.T) {
+func TestCostAggregator_HandleDynamoDBRecord_Round12(t *testing.T) {
 	repo := &fakeCostRepo{createAggregatedErr: errors.New("agg"), createErr: errors.New("create")}
 	ca := &CostAggregator{
 		costTrackingRepository: repo,
 		logger:                 zap.NewNop(),
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	ctx.Set("request_id", "req")
-
-	require.NoError(t, ca.HandleStream(ctx, events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{EventName: "REMOVE"},
-			{
-				EventName: "INSERT",
-				Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
-					"PK":         events.NewStringAttribute("OTHER#1"),
-					"table_name": events.NewStringAttribute("tbl"),
-				}},
-			},
-		},
+	require.NoError(t, ca.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{EventName: "REMOVE"}))
+	require.NoError(t, ca.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+			"PK":         events.NewStringAttribute("OTHER#1"),
+			"table_name": events.NewStringAttribute("tbl"),
+		}},
 	}))
 
-	require.NoError(t, ca.HandleStream(ctx, events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName: "INSERT",
-				Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
-					"PK":                  events.NewStringAttribute("cost#PutItem"),
-					"operation_type":      events.NewStringAttribute("PutItem"),
-					"table_name":          events.NewStringAttribute("tbl"),
-					"read_capacity_units": events.NewNumberAttribute("0"),
-					"write_capacity_units": events.NewNumberAttribute("1"),
-					"item_count":          events.NewNumberAttribute("1"),
-					"timestamp":           events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
-				}},
-			},
-		},
+	require.NoError(t, ca.HandleDynamoDBRecord(nil, events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+			"PK":                   events.NewStringAttribute("cost#PutItem"),
+			"operation_type":       events.NewStringAttribute("PutItem"),
+			"table_name":           events.NewStringAttribute("tbl"),
+			"read_capacity_units":  events.NewNumberAttribute("0"),
+			"write_capacity_units": events.NewNumberAttribute("1"),
+			"item_count":           events.NewNumberAttribute("1"),
+			"timestamp":            events.NewStringAttribute(time.Now().UTC().Format(time.RFC3339)),
+		}},
 	}))
 	require.Equal(t, 1, repo.createAggregatedCalls)
 	require.Equal(t, 1, repo.createCalls)

@@ -118,4 +118,3 @@ func TestMissingReply_LifecycleAndRetry(t *testing.T) {
 		assert.Equal(t, 5, m.Priority)
 	})
 }
-

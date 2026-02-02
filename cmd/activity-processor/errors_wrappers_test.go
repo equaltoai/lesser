@@ -37,7 +37,9 @@ func TestActivityProcessor_ErrorWrappers(t *testing.T) {
 		{"timelineEntriesWriteFailed", func() *apperrors.AppError { return timelineEntriesWriteFailed(baseErr) }},
 		{"actorRetrievalFailed", func() *apperrors.AppError { return actorRetrievalFailed("actor", baseErr) }},
 		{"followersQueryingFailed", func() *apperrors.AppError { return followersQueryingFailed(baseErr) }},
-		{"remoteObjectFetchFailed", func() *apperrors.AppError { return remoteObjectFetchFailed("https://remote.example/objects/1", baseErr) }},
+		{"remoteObjectFetchFailed", func() *apperrors.AppError {
+			return remoteObjectFetchFailed("https://remote.example/objects/1", baseErr)
+		}},
 		{"objectMarshalingFailed", func() *apperrors.AppError { return objectMarshalingFailed("Object", baseErr) }},
 		{"objectUnmarshalingToNoteFailed", func() *apperrors.AppError { return objectUnmarshalingToNoteFailed(baseErr) }},
 		{"dlqRecordCreationFailed", func() *apperrors.AppError { return dlqRecordCreationFailed("msg-1", baseErr) }},
@@ -56,7 +58,9 @@ func TestActivityProcessor_ErrorWrappers(t *testing.T) {
 		{"tombstoneCreationFailed", func() *apperrors.AppError { return tombstoneCreationFailed(baseErr) }},
 		{"likeRecordCreationFailed", func() *apperrors.AppError { return likeRecordCreationFailed(baseErr) }},
 		{"announceRecordCreationFailed", func() *apperrors.AppError { return announceRecordCreationFailed(baseErr) }},
-		{"originalActivityFetchFailed", func() *apperrors.AppError { return originalActivityFetchFailed("https://example.com/activities/1", baseErr) }},
+		{"originalActivityFetchFailed", func() *apperrors.AppError {
+			return originalActivityFetchFailed("https://example.com/activities/1", baseErr)
+		}},
 		{"activityNotFoundLocally", func() *apperrors.AppError { return activityNotFoundLocally("https://example.com/activities/1") }},
 		{"followRelationshipDeletionFailed", func() *apperrors.AppError { return followRelationshipDeletionFailed(baseErr) }},
 		{"createdObjectDeletionFailed", func() *apperrors.AppError { return createdObjectDeletionFailed(baseErr) }},

@@ -3,20 +3,23 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
+	"os"
+	"strings"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 type trendingRepository interface {
@@ -48,9 +51,16 @@ func NewTrendAggregatorHandler(db core.DB, logger *zap.Logger) *TrendAggregatorH
 }
 
 // HandleScheduledEvent runs the daily aggregation task (invoked by EventBridge schedules).
-func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *lift.Context) error {
+func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
 	start := time.Now()
-	requestID := ctx.GetRequestID()
+	requestID := ""
+	if ctx != nil {
+		requestID = ctx.RequestID
+	}
+	runCtx := context.Background()
+	if ctx != nil {
+		runCtx = ctx.Context()
+	}
 
 	h.logger.Info("starting trend aggregation",
 		zap.String("request_id", requestID),
@@ -65,7 +75,7 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *lift.Context) error {
 	processedCount := 0
 
 	// 1. Aggregate hashtag trends
-	hashtagCount, err := h.aggregateHashtagTrends(ctx.Request.Context(), since)
+	hashtagCount, err := h.aggregateHashtagTrends(runCtx, since)
 	if err != nil {
 		h.logger.Error("error aggregating hashtag trends",
 			zap.String("request_id", requestID),
@@ -80,7 +90,7 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *lift.Context) error {
 	}
 
 	// 2. Aggregate status trends
-	statusCount, err := h.aggregateStatusTrends(ctx.Request.Context(), since)
+	statusCount, err := h.aggregateStatusTrends(runCtx, since)
 	if err != nil {
 		h.logger.Error("error aggregating status trends",
 			zap.String("request_id", requestID),
@@ -95,7 +105,7 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *lift.Context) error {
 	}
 
 	// 3. Aggregate link trends
-	linkCount, err := h.aggregateLinkTrends(ctx.Request.Context(), since)
+	linkCount, err := h.aggregateLinkTrends(runCtx, since)
 	if err != nil {
 		h.logger.Error("error aggregating link trends",
 			zap.String("request_id", requestID),
@@ -110,7 +120,7 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *lift.Context) error {
 	}
 
 	// Clean up old trend data
-	h.cleanupOldTrends(ctx.Request.Context())
+	h.cleanupOldTrends(runCtx)
 
 	duration := time.Since(start)
 	h.logger.Info("completed trend aggregation",
@@ -120,7 +130,7 @@ func (h *TrendAggregatorHandler) HandleScheduledEvent(ctx *lift.Context) error {
 		zap.Duration("duration", duration),
 	)
 
-	return nil
+	return nil, nil
 }
 
 // aggregateHashtagTrends processes hashtag usage and updates trending scores
@@ -449,7 +459,7 @@ var (
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	lambdaStartFn              = lambda.Start
 )
 
@@ -486,22 +496,17 @@ func initializeTrendAggregator() {
 }
 
 func runTrendAggregator() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(middleware.PanicRecovery(lambdaCtx.Logger)))
-	app.Use(lift.MarkGlobalMiddleware(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			if ctx.GetRequestID() == "" {
-				ctx.SetRequestID(fmt.Sprintf("trend-aggregator-%d", time.Now().UnixNano()))
-			}
-			return next.Handle(ctx)
-		})
-	}))
+	app := apptheory.New()
 
-	_ = app.EventBridge("lesser-trend-aggregator-schedule-*", func(ctx *lift.Context) error {
-		return handler.HandleScheduledEvent(ctx)
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	ruleName := naming.ResourceNameWithApp(appName, "trend-aggregator-schedule-0", stage)
+
+	app.EventBridge(apptheory.EventBridgeRule(ruleName), handler.HandleScheduledEvent)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
-
-	lambdaStartFn(app.HandleRequest)
 }
 
 func main() {

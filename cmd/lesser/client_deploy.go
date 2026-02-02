@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	replaceBucketWithDirFn  = replaceBucketWithDir
-	invalidateClientPathsFn = invalidateClientPaths
+	replaceBucketWithDirFn         = replaceBucketWithDir
+	invalidateClientPathsFn        = invalidateClientPaths
 	createCloudfrontInvalidationFn = func(ctx context.Context, client *cloudfront.Client, input *cloudfront.CreateInvalidationInput) (*cloudfront.CreateInvalidationOutput, error) {
 		return client.CreateInvalidation(ctx, input)
 	}

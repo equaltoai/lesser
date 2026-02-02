@@ -115,8 +115,8 @@ func TestCalculateResponseSize(t *testing.T) {
 
 func TestCalculateHeadersSize(t *testing.T) {
 	headers := map[string]string{
-		"Content-Type":   "application/json",
-		"X-Custom":       "value",
+		"Content-Type": "application/json",
+		"X-Custom":     "value",
 	}
 
 	size := calculateHeadersSize(headers)
@@ -330,7 +330,7 @@ func TestSaveCostWithRetry(t *testing.T) {
 
 		logger := zap.NewNop()
 		cost := &OperationCost{
-			RequestID:          "req-123",
+			RequestID:           "req-123",
 			TotalCostMicroCents: 1000,
 		}
 
@@ -341,7 +341,7 @@ func TestSaveCostWithRetry(t *testing.T) {
 	t.Run("does nothing when cost is 0", func(t *testing.T) {
 		logger := zap.NewNop()
 		cost := &OperationCost{
-			RequestID:          "req-123",
+			RequestID:           "req-123",
 			TotalCostMicroCents: 0,
 		}
 
@@ -374,7 +374,6 @@ func TestMiddleware_NilResponse(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, response)
 }
-
 
 func TestCostBuffer(t *testing.T) {
 	// Test that the cost buffer variables exist and have expected defaults

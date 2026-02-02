@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -29,17 +29,17 @@ func TestThreatIntelRepository_Round09_MoreCoverage(t *testing.T) {
 		}))
 	})
 
-		t.Run("GetSharedThreats and GetThreatsByType query error", func(t *testing.T) {
-			mockDB := new(mocks.MockDB)
-			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("All", mockMatchedByType[*[]map[string]interface{}]()).Return(ErrTestMockError).Twice()
-			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
-			repo := NewThreatIntelRepository(mockDB, "test-table", zap.NewNop(), nil)
-			_, err := repo.GetSharedThreats(ctx, baseTime.Add(-time.Hour))
-			require.Error(t, err)
-			_, err = repo.GetThreatsByType(ctx, "spam", 10)
-			require.Error(t, err)
-		})
+	t.Run("GetSharedThreats and GetThreatsByType query error", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("All", mockMatchedByType[*[]map[string]interface{}]()).Return(ErrTestMockError).Twice()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+		repo := NewThreatIntelRepository(mockDB, "test-table", zap.NewNop(), nil)
+		_, err := repo.GetSharedThreats(ctx, baseTime.Add(-time.Hour))
+		require.Error(t, err)
+		_, err = repo.GetThreatsByType(ctx, "spam", 10)
+		require.Error(t, err)
+	})
 
 	t.Run("UpdateThreatConfidence success and updateThreat get error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)

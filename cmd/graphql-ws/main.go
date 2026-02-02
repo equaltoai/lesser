@@ -22,13 +22,13 @@ import (
 	gqllimits "github.com/equaltoai/lesser/pkg/graphql/limits"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
@@ -76,15 +76,15 @@ type wsServer struct {
 	logger              *zap.Logger
 	subscriptionManager subscriptionManager
 	exec                gqlExecutor
-	startOnce    sync.Once
-	connRepo     graphqlConnectionRepo
-	instanceRepo instanceStateRepo
+	startOnce           sync.Once
+	connRepo            graphqlConnectionRepo
+	instanceRepo        instanceStateRepo
 
 	mu          sync.RWMutex
 	connections map[string]*connectionState
-	wsContexts  map[string]*lift.WebSocketContext // Store WebSocket contexts for message sending
+	wsContexts  map[string]*apptheory.WebSocketContext // Store WebSocket contexts for message sending
 
-	sendJSONMessage func(wsCtx *lift.WebSocketContext, payload any) error
+	sendJSONMessage func(wsCtx *apptheory.WebSocketContext, payload any) error
 }
 
 type wsMessage struct {
@@ -139,14 +139,14 @@ func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlEx
 		connRepo:            connRepo,
 		instanceRepo:        instanceRepo,
 		connections:         make(map[string]*connectionState),
-		wsContexts:          make(map[string]*lift.WebSocketContext),
-		sendJSONMessage: func(wsCtx *lift.WebSocketContext, payload any) error {
+		wsContexts:          make(map[string]*apptheory.WebSocketContext),
+		sendJSONMessage: func(wsCtx *apptheory.WebSocketContext, payload any) error {
 			return wsCtx.SendJSONMessage(payload)
 		},
 	}
 }
 
-func (s *wsServer) sendJSON(wsCtx *lift.WebSocketContext, payload any) error {
+func (s *wsServer) sendJSON(wsCtx *apptheory.WebSocketContext, payload any) error {
 	if wsCtx == nil {
 		return fmt.Errorf("websocket context is nil")
 	}
@@ -411,29 +411,69 @@ func convertErrors(list gqlerror.List) []error {
 	return errs
 }
 
-// Lift adapter handlers - use Lift framework's WebSocket support
-func (s *wsServer) handleConnectLift(ctx *lift.Context) error {
-	wsCtx, err := ctx.AsWebSocket()
-	if err != nil {
-		return lift.NewLiftError("BAD_REQUEST", "Invalid WebSocket event", 400)
+func queryValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	values := ctx.Request.Query[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func headerValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	values := ctx.Request.Headers[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func appError(code, message string) error {
+	code = strings.TrimSpace(code)
+	message = strings.TrimSpace(message)
+	if code == "" {
+		code = "app.internal"
+	}
+	if message == "" {
+		message = "internal error"
+	}
+	return &apptheory.AppError{Code: code, Message: message}
+}
+
+func okWebSocketResponse() *apptheory.Response {
+	return &apptheory.Response{Status: 200}
+}
+
+func (s *wsServer) handleConnect(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if ctx == nil {
+		return nil, appError("app.bad_request", "Invalid WebSocket event")
+	}
+	wsCtx := ctx.AsWebSocket()
+	if wsCtx == nil {
+		return nil, appError("app.bad_request", "Invalid WebSocket event")
 	}
 
-	connectionID := wsCtx.ConnectionID()
+	connectionID := wsCtx.ConnectionID
 	log := s.logger.With(
 		zap.String("connection_id", connectionID),
 		zap.String("route", "$connect"),
 	)
 
-	// Use Lift's ctx.Query() method exactly like penny-lift does
 	// Priority order: access_token (Mastodon standard) > token (alternative)
-	rawAccessToken := strings.TrimSpace(ctx.Query("access_token"))
+	rawAccessToken := strings.TrimSpace(queryValue(ctx, "access_token"))
 	sanitizedAccessToken := cleanToken(rawAccessToken)
-	rawToken := strings.TrimSpace(ctx.Query("token"))
+	rawToken := strings.TrimSpace(queryValue(ctx, "token"))
 	sanitizedToken := cleanToken(rawToken)
 	log.Info("graphql ws token probes",
 		zap.Bool("has_access_token_param", rawAccessToken != ""),
 		zap.Bool("has_token_param", rawToken != ""),
-		zap.Int("query_param_count", len(ctx.Request.QueryParams)),
+		zap.Int("query_param_count", len(ctx.Request.Query)),
 		zap.String("access_token_preview", previewToken(sanitizedAccessToken)))
 
 	tokenValue := sanitizedAccessToken
@@ -441,31 +481,27 @@ func (s *wsServer) handleConnectLift(ctx *lift.Context) error {
 		tokenValue = sanitizedToken
 	}
 	if tokenValue == "" {
-		authHeader := ctx.Header("Authorization")
+		authHeader := headerValue(ctx, "authorization")
 		tokenValue = normalizeAuthToken(authHeader)
-	}
-	if tokenValue == "" {
-		authHeaderLower := ctx.Header("authorization")
-		tokenValue = normalizeAuthToken(authHeaderLower)
 	}
 
 	if tokenValue == "" {
 		log.Warn("websocket connect missing authentication token",
-			zap.Any("query_params", ctx.Request.QueryParams),
+			zap.Any("query", ctx.Request.Query),
 			zap.Any("headers", ctx.Request.Headers))
-		return lift.NewLiftError("UNAUTHORIZED", "Access token required", 401)
+		return nil, appError("app.unauthorized", "Access token required")
 	}
 
 	if s.oauthService == nil {
 		log.Error("oauth service not configured for graphql websocket server")
-		return lift.NewLiftError("INTERNAL_ERROR", "OAuth service unavailable", 500)
+		return nil, appError("app.internal", "OAuth service unavailable")
 	}
 
 	claims, err := s.oauthService.ValidateAccessToken(tokenValue)
 	if err != nil {
 		log.Warn("websocket connect failed token validation",
 			zap.Error(err))
-		return lift.NewLiftError("UNAUTHORIZED", "Invalid or expired token", 401)
+		return nil, appError("app.unauthorized", "Invalid or expired token")
 	}
 
 	username := claims.GetUsername()
@@ -475,7 +511,7 @@ func (s *wsServer) handleConnectLift(ctx *lift.Context) error {
 
 	if username == "" {
 		log.Warn("websocket connect missing username in claims")
-		return lift.NewLiftError("FORBIDDEN", "Missing username in token claims", 403)
+		return nil, appError("app.forbidden", "Missing username in token claims")
 	}
 
 	// Store WebSocket context for later message sending
@@ -484,7 +520,7 @@ func (s *wsServer) handleConnectLift(ctx *lift.Context) error {
 	s.mu.Unlock()
 
 	// Register connection
-	if err := s.registerConnection(ctx.Request.Context(), connectionID, username, claims); err != nil {
+	if err := s.registerConnection(ctx.Context(), connectionID, username, claims); err != nil {
 		log.Error("failed to persist websocket connection",
 			zap.String("username", username),
 			zap.Error(err))
@@ -494,41 +530,49 @@ func (s *wsServer) handleConnectLift(ctx *lift.Context) error {
 		delete(s.wsContexts, connectionID)
 		s.mu.Unlock()
 
-		return lift.NewLiftError("INTERNAL_ERROR", "Failed to persist connection", 500)
+		return nil, appError("app.internal", "Failed to persist connection")
 	}
 
 	log.Info("websocket connection established",
 		zap.String("username", username))
 
-	return nil
+	return okWebSocketResponse(), nil
 }
 
-func (s *wsServer) handleDisconnectLift(ctx *lift.Context) error {
-	wsCtx, err := ctx.AsWebSocket()
-	if err != nil {
-		return nil // Ignore errors on disconnect
+func (s *wsServer) handleDisconnect(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if ctx == nil {
+		return okWebSocketResponse(), nil
 	}
 
-	connectionID := wsCtx.ConnectionID()
+	wsCtx := ctx.AsWebSocket()
+	if wsCtx == nil {
+		return okWebSocketResponse(), nil
+	}
+
+	connectionID := wsCtx.ConnectionID
 
 	// Clean up stored WebSocket context
 	s.mu.Lock()
 	delete(s.wsContexts, connectionID)
 	s.mu.Unlock()
 
-	s.removeConnection(ctx.Request.Context(), connectionID)
+	s.removeConnection(ctx.Context(), connectionID)
 	s.logger.Info("websocket connection closed",
 		zap.String("connection_id", connectionID))
-	return nil
+	return okWebSocketResponse(), nil
 }
 
-func (s *wsServer) handleDefaultLift(ctx *lift.Context) error {
-	wsCtx, err := ctx.AsWebSocket()
-	if err != nil {
-		return lift.NewLiftError("BAD_REQUEST", "Invalid WebSocket event", 400)
+func (s *wsServer) handleDefault(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if ctx == nil {
+		return nil, appError("app.bad_request", "Invalid WebSocket event")
 	}
 
-	connectionID := wsCtx.ConnectionID()
+	wsCtx := ctx.AsWebSocket()
+	if wsCtx == nil {
+		return nil, appError("app.bad_request", "Invalid WebSocket event")
+	}
+
+	connectionID := wsCtx.ConnectionID
 
 	// Store WebSocket context for async message sending (subscriptions)
 	s.mu.Lock()
@@ -537,39 +581,45 @@ func (s *wsServer) handleDefaultLift(ctx *lift.Context) error {
 
 	// Parse message body
 	var msg wsMessage
-	if err := ctx.ParseRequest(&msg); err != nil {
+	if err := json.Unmarshal(ctx.Request.Body, &msg); err != nil {
 		s.logger.Warn("failed to parse websocket message",
 			zap.String("connection_id", connectionID),
 			zap.Error(err))
-		return lift.NewLiftError("BAD_REQUEST", "Failed to parse message body", 400)
+		return nil, appError("app.bad_request", "Failed to parse message body")
 	}
 
 	switch strings.ToLower(msg.Type) {
 	case "connection_init":
 		s.logger.Info("received connection_init",
 			zap.String("connection_id", connectionID))
-		return s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"})
+		if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
+			return nil, err
+		}
+		return okWebSocketResponse(), nil
 	case "ping":
-		return s.sendJSON(wsCtx, responseEnvelope{Type: "pong"})
+		if err := s.sendJSON(wsCtx, responseEnvelope{Type: "pong"}); err != nil {
+			return nil, err
+		}
+		return okWebSocketResponse(), nil
 	case "subscribe":
-		s.handleSubscribeWithLift(ctx.Request.Context(), msg, wsCtx)
-		return nil
+		s.handleSubscribe(ctx.Context(), msg, wsCtx)
+		return okWebSocketResponse(), nil
 	case "complete":
 		s.logger.Info("received completion request",
 			zap.String("connection_id", connectionID),
 			zap.String("subscription_id", msg.ID))
-		if !s.cancelSubscription(ctx.Request.Context(), connectionID, msg.ID) {
+		if !s.cancelSubscription(ctx.Context(), connectionID, msg.ID) {
 			_ = s.sendJSON(wsCtx, responseEnvelope{
 				ID:   msg.ID,
 				Type: "complete",
 			})
 		}
-		return nil
+		return okWebSocketResponse(), nil
 	default:
 		s.logger.Warn("received unsupported websocket message type",
 			zap.String("connection_id", connectionID),
 			zap.String("type", msg.Type))
-		return lift.NewLiftError("BAD_REQUEST", fmt.Sprintf("message type %q is not supported", msg.Type), 400)
+		return nil, appError("app.bad_request", fmt.Sprintf("message type %q is not supported", msg.Type))
 	}
 }
 
@@ -610,41 +660,40 @@ func previewToken(token string) string {
 	return token[:5] + "..." + token[len(token)-5:]
 }
 
-// handleSubscribeWithLift handles subscription requests using Lift's WebSocket context
-func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, wsCtx *lift.WebSocketContext) {
+func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *apptheory.WebSocketContext) {
 	if msg.ID == "" {
-		s.sendErrorViaLift(wsCtx, "", "invalid_request", "subscription messages must include an id")
+		s.sendError(wsCtx, "", "invalid_request", "subscription messages must include an id")
 		return
 	}
 
 	if s.instanceRepo == nil {
 		s.logger.Error("instance repository unavailable for graphql subscriptions")
-		s.sendErrorViaLift(wsCtx, msg.ID, "internal_error", "instance repository unavailable")
+		s.sendError(wsCtx, msg.ID, "internal_error", "instance repository unavailable")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
 	instanceState, instanceErr := s.instanceRepo.GetInstanceState(ctx)
 	if instanceErr != nil || instanceState.Locked {
-		s.sendErrorViaLift(wsCtx, msg.ID, "instance_locked", "instance is locked")
+		s.sendError(wsCtx, msg.ID, "instance_locked", "instance is locked")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
-	connectionID := wsCtx.ConnectionID()
+	connectionID := wsCtx.ConnectionID
 	state, err := s.getConnection(ctx, connectionID)
 	if err != nil {
 		s.logger.Warn("failed to load connection context",
 			zap.String("connection_id", connectionID),
 			zap.Error(err))
-		s.sendErrorViaLift(wsCtx, msg.ID, "unauthorized", "connection context not found")
+		s.sendError(wsCtx, msg.ID, "unauthorized", "connection context not found")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
 	if s.exec == nil {
 		s.logger.Error("graphql executor not initialized")
-		s.sendErrorViaLift(wsCtx, msg.ID, "internal_error", "GraphQL executor unavailable")
+		s.sendError(wsCtx, msg.ID, "internal_error", "GraphQL executor unavailable")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
@@ -655,14 +704,14 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 			s.logger.Warn("failed to parse subscription payload",
 				zap.String("connection_id", connectionID),
 				zap.Error(err))
-			s.sendErrorViaLift(wsCtx, msg.ID, "invalid_payload", "subscription payload could not be parsed")
+			s.sendError(wsCtx, msg.ID, "invalid_payload", "subscription payload could not be parsed")
 			_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 			return
 		}
 	}
 
 	if strings.TrimSpace(payload.Query) == "" {
-		s.sendErrorViaLift(wsCtx, msg.ID, "invalid_request", "subscription payload must include a query")
+		s.sendError(wsCtx, msg.ID, "invalid_request", "subscription payload must include a query")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
@@ -688,7 +737,7 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 			zap.String("connection_id", connectionID),
 			zap.String("subscription_id", msg.ID),
 			zap.Errors("errors", convertErrors(gqlErrs)))
-		s.sendGraphQLErrorsViaLift(wsCtx, msg.ID, gqlErrs)
+		s.sendGraphQLErrors(wsCtx, msg.ID, gqlErrs)
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
@@ -697,7 +746,7 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 		s.logger.Warn("operation is not a subscription",
 			zap.String("connection_id", connectionID),
 			zap.String("subscription_id", msg.ID))
-		s.sendErrorViaLift(wsCtx, msg.ID, "invalid_operation", "operation must be a subscription")
+		s.sendError(wsCtx, msg.ID, "invalid_operation", "operation must be a subscription")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
@@ -707,18 +756,17 @@ func (s *wsServer) handleSubscribeWithLift(ctx context.Context, msg wsMessage, w
 	subscriptionCtx, cancel := context.WithCancel(baseCtx)
 	if !s.addSubscription(connectionID, msg.ID, cancel) {
 		cancel()
-		s.sendErrorViaLift(wsCtx, msg.ID, "connection_closed", "connection no longer active")
+		s.sendError(wsCtx, msg.ID, "connection_closed", "connection no longer active")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}
 
 	s.logger.Info("starting subscription", zap.String("connection_id", connectionID), zap.String("subscription_id", msg.ID))
 
-	go s.executeSubscriptionWithLift(subscriptionCtx, connectionID, msg.ID, opCtx, cancel, wsCtx)
+	go s.executeSubscription(subscriptionCtx, connectionID, msg.ID, opCtx, cancel, wsCtx)
 }
 
-// Helper methods for sending messages via Lift WebSocket context
-func (s *wsServer) sendErrorViaLift(wsCtx *lift.WebSocketContext, id, code, message string) {
+func (s *wsServer) sendError(wsCtx *apptheory.WebSocketContext, id, code, message string) {
 	payload := errorPayload{
 		Message: message,
 		Code:    code,
@@ -731,7 +779,7 @@ func (s *wsServer) sendErrorViaLift(wsCtx *lift.WebSocketContext, id, code, mess
 	_ = s.sendJSON(wsCtx, env)
 }
 
-func (s *wsServer) sendGraphQLErrorsViaLift(wsCtx *lift.WebSocketContext, id string, errs gqlerror.List) {
+func (s *wsServer) sendGraphQLErrors(wsCtx *apptheory.WebSocketContext, id string, errs gqlerror.List) {
 	payload := make([]*gqlerror.Error, 0, len(errs))
 	for _, e := range errs {
 		if e != nil {
@@ -749,7 +797,7 @@ func (s *wsServer) sendGraphQLErrorsViaLift(wsCtx *lift.WebSocketContext, id str
 	_ = s.sendJSON(wsCtx, env)
 }
 
-func (s *wsServer) sendGraphQLResponseViaLift(wsCtx *lift.WebSocketContext, id string, resp *graphql.Response) error {
+func (s *wsServer) sendGraphQLResponse(wsCtx *apptheory.WebSocketContext, id string, resp *graphql.Response) error {
 	payload := make(map[string]interface{})
 
 	if resp != nil {
@@ -785,7 +833,7 @@ func (s *wsServer) sendGraphQLResponseViaLift(wsCtx *lift.WebSocketContext, id s
 	return s.sendJSON(wsCtx, responseEnvelope{ID: id, Type: "next", Payload: payload})
 }
 
-func (s *wsServer) executeSubscriptionWithLift(ctx context.Context, connectionID, subscriptionID string, opCtx *graphql.OperationContext, cancel context.CancelFunc, wsCtx *lift.WebSocketContext) {
+func (s *wsServer) executeSubscription(ctx context.Context, connectionID, subscriptionID string, opCtx *graphql.OperationContext, cancel context.CancelFunc, wsCtx *apptheory.WebSocketContext) {
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("subscription panic: %v", r)
@@ -793,7 +841,7 @@ func (s *wsServer) executeSubscriptionWithLift(ctx context.Context, connectionID
 				zap.String("connection_id", connectionID),
 				zap.String("subscription_id", subscriptionID),
 				zap.Error(err))
-			s.sendGraphQLErrorsViaLift(wsCtx, subscriptionID, gqlerror.List{gqlerror.Errorf("%v", err)})
+			s.sendGraphQLErrors(wsCtx, subscriptionID, gqlerror.List{gqlerror.Errorf("%v", err)})
 		}
 
 		_ = s.clearSubscription(ctx, connectionID, subscriptionID, false)
@@ -818,7 +866,7 @@ func (s *wsServer) executeSubscriptionWithLift(ctx context.Context, connectionID
 			return
 		}
 
-		if err := s.sendGraphQLResponseViaLift(wsCtx, subscriptionID, response); err != nil {
+		if err := s.sendGraphQLResponse(wsCtx, subscriptionID, response); err != nil {
 			s.logger.Warn("failed to send subscription response",
 				zap.String("connection_id", connectionID),
 				zap.String("subscription_id", subscriptionID),
@@ -1048,7 +1096,7 @@ func resolveStreamQueue() streaming.StreamQueueService {
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
 	initializeWithDefaultsFn   = func(lambdaCtx *common.LambdaContext) error { return lambdaCtx.InitializeWithDefaults() }
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
 	}
@@ -1100,78 +1148,13 @@ func initializeGraphQLWS() {
 	logger.Info("graphql-ws lambda initialized")
 }
 
-// liftLoggerAdapter adapts zap.Logger to Lift's Logger interface
-type liftLoggerAdapter struct {
-	logger *zap.Logger
-}
-
-func (l *liftLoggerAdapter) Debug(msg string, fields ...map[string]any) {
-	l.logger.Debug(msg, mergeFieldsToZapFields(fields)...)
-}
-
-func (l *liftLoggerAdapter) Info(msg string, fields ...map[string]any) {
-	l.logger.Info(msg, mergeFieldsToZapFields(fields)...)
-}
-
-func (l *liftLoggerAdapter) Warn(msg string, fields ...map[string]any) {
-	l.logger.Warn(msg, mergeFieldsToZapFields(fields)...)
-}
-
-func (l *liftLoggerAdapter) Error(msg string, fields ...map[string]any) {
-	l.logger.Error(msg, mergeFieldsToZapFields(fields)...)
-}
-
-func (l *liftLoggerAdapter) WithFields(fields map[string]any) lift.Logger {
-	return &liftLoggerAdapter{
-		logger: l.logger.With(mapToZapFields(fields)...),
-	}
-}
-
-func (l *liftLoggerAdapter) WithField(key string, value any) lift.Logger {
-	return &liftLoggerAdapter{
-		logger: l.logger.With(zap.Any(key, value)),
-	}
-}
-
-func mergeFieldsToZapFields(fields []map[string]any) []zap.Field {
-	if len(fields) == 0 {
-		return nil
-	}
-	// Merge all field maps into one
-	merged := make(map[string]any)
-	for _, fieldMap := range fields {
-		for k, v := range fieldMap {
-			merged[k] = v
-		}
-	}
-	return mapToZapFields(merged)
-}
-
-func mapToZapFields(fields map[string]any) []zap.Field {
-	if fields == nil {
-		return nil
-	}
-	zapFields := make([]zap.Field, 0, len(fields))
-	for k, v := range fields {
-		zapFields = append(zapFields, zap.Any(k, v))
-	}
-	return zapFields
-}
-
 func main() {
-	// Create Lift app with WebSocket support
-	app := lift.New(lift.WithWebSocketSupport())
+	app := apptheory.New()
+	app.WebSocket("$connect", server.handleConnect)
+	app.WebSocket("$disconnect", server.handleDisconnect)
+	app.WebSocket("$default", server.handleDefault)
 
-	// Set up logger if available
-	if logger != nil {
-		app.WithLogger(&liftLoggerAdapter{logger: logger})
-	}
-
-	// Register WebSocket routes using Lift's adapter
-	app.WebSocket("$connect", server.handleConnectLift)
-	app.WebSocket("$disconnect", server.handleDisconnectLift)
-	app.WebSocket("$default", server.handleDefaultLift)
-
-	// Start Lambda handler
-	lambdaStartFn(app.HandleRequest)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }

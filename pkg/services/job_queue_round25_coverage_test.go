@@ -288,4 +288,3 @@ func TestJobQueueService_Round25_GetQueueAttributes(t *testing.T) {
 		mockClient.getQueueAttrOutput = nil
 	})
 }
-

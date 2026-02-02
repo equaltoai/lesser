@@ -43,8 +43,8 @@ func (r *mutationResolver) UpdateStatus(ctx context.Context, id string, input mo
 	}
 
 	spoilerText := ""
-	if current.Note != nil && current.Note.Get() != nil {
-		spoilerText = current.Note.Get().Summary
+	if current.Note != nil {
+		spoilerText = current.Note.Summary
 	}
 	if input.SpoilerText != nil {
 		spoilerText = *input.SpoilerText

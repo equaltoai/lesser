@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -150,7 +152,7 @@ func TestSeveranceProcessor_CountAffectedRelationships_Branches(t *testing.T) {
 	require.Equal(t, 4, following)
 }
 
-func TestSeveranceProcessor_HandleDynamoDBStreamEvent_ContinuesOnError(t *testing.T) {
+func TestSeveranceProcessor_HandleDynamoDBRecord_ContinuesOnError(t *testing.T) {
 	sev := &fakeSeveranceService{err: errors.New("boom")}
 	p := &SeveranceProcessor{
 		logger: zap.NewNop(),
@@ -167,27 +169,25 @@ func TestSeveranceProcessor_HandleDynamoDBStreamEvent_ContinuesOnError(t *testin
 		},
 	}
 
-	event := events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName: "INSERT",
-				EventID:   "e1",
-				Change: events.DynamoDBStreamRecord{
-					NewImage: map[string]events.DynamoDBAttributeValue{
-						"PK":     events.NewStringAttribute("DOMAIN_BLOCK#remote.example"),
-						"SK":     events.NewStringAttribute("METADATA"),
-						"Domain": events.NewStringAttribute("remote.example"),
-					},
+	ctx := &apptheory.EventContext{RequestID: "req"}
+	records := []events.DynamoDBEventRecord{
+		{
+			EventName: "INSERT",
+			EventID:   "e1",
+			Change: events.DynamoDBStreamRecord{
+				NewImage: map[string]events.DynamoDBAttributeValue{
+					"PK":     events.NewStringAttribute("DOMAIN_BLOCK#remote.example"),
+					"SK":     events.NewStringAttribute("METADATA"),
+					"Domain": events.NewStringAttribute("remote.example"),
 				},
 			},
-			{EventName: "REMOVE", EventID: "e2"},
 		},
+		{EventName: "REMOVE", EventID: "e2"},
 	}
 
-	require.NoError(t, p.HandleDynamoDBStreamEvent(context.Background(), event))
-
-	h := &Handler{processor: p}
-	require.NoError(t, h.HandleDynamoDBStreamEvent(context.Background(), event))
+	for _, record := range records {
+		require.NoError(t, p.HandleDynamoDBRecord(ctx, record))
+	}
 }
 
 func TestSeveranceProcessor_ProcessRecord_RoutesAndBranches(t *testing.T) {
@@ -391,14 +391,50 @@ func TestSeveranceProcessor_HandleFederationIssue_AndHealth_Branches(t *testing.
 func TestMain_UsesLambdaStartFn(t *testing.T) {
 	originalStart := lambdaStartFn
 	originalLogger := logger
+	originalProcessor := processor
 	t.Cleanup(func() {
 		lambdaStartFn = originalStart
 		logger = originalLogger
+		processor = originalProcessor
 	})
 
 	logger = zap.NewNop()
+	processor = &SeveranceProcessor{logger: zap.NewNop(), registry: &fakeRegistry{}}
+
 	called := false
-	lambdaStartFn = func(interface{}) { called = true }
+	lambdaStartFn = func(handler any) {
+		called = true
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
+
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "1",
+				EventName:      "INSERT",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+				Change: events.DynamoDBStreamRecord{
+					NewImage: map[string]events.DynamoDBAttributeValue{
+						"PK":     events.NewStringAttribute("DOMAIN_BLOCK#remote.example"),
+						"SK":     events.NewStringAttribute("METADATA"),
+						"Domain": events.NewStringAttribute("remote.example"),
+					},
+				},
+			},
+		}}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
+	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	main()
 	require.True(t, called)

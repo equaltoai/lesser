@@ -205,4 +205,3 @@ func TestNoteProcessor_ReputationScoring_CoversThresholdsAndBuckets(t *testing.T
 	require.Equal(t, 0.2, np.calculateModerationPenalty(ctx, "minor"))
 	require.Equal(t, 0.0, (&NoteProcessor{logger: zap.NewNop()}).calculateModerationPenalty(ctx, "any"))
 }
-

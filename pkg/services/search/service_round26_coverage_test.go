@@ -97,8 +97,8 @@ func (r *fakeActorRepo) GetAccountSuggestions(_ context.Context, userID string, 
 }
 
 type fakeRemoveSuggestionCall struct {
-	user      string
-	targetID  string
+	user     string
+	targetID string
 }
 
 func (r *fakeActorRepo) RemoveAccountSuggestion(_ context.Context, userID, targetID string) error {
@@ -111,9 +111,13 @@ type fakeRelationshipRepo struct {
 	followingCount int
 }
 
-func (r *fakeRelationshipRepo) CountFollowers(context.Context, string) (int, error) { return r.followersCount, nil }
+func (r *fakeRelationshipRepo) CountFollowers(context.Context, string) (int, error) {
+	return r.followersCount, nil
+}
 
-func (r *fakeRelationshipRepo) CountFollowing(context.Context, string) (int, error) { return r.followingCount, nil }
+func (r *fakeRelationshipRepo) CountFollowing(context.Context, string) (int, error) {
+	return r.followingCount, nil
+}
 
 type fakeStatusRepo struct {
 	statusesByAuthor int
@@ -123,7 +127,9 @@ type fakeStatusRepo struct {
 	calls            []string
 }
 
-func (r *fakeStatusRepo) CountStatusesByAuthor(context.Context, string) (int, error) { return r.statusesByAuthor, nil }
+func (r *fakeStatusRepo) CountStatusesByAuthor(context.Context, string) (int, error) {
+	return r.statusesByAuthor, nil
+}
 
 func (r *fakeStatusRepo) GetStatusCounts(_ context.Context, statusID string) (likes, reblogs, replies int, err error) {
 	r.calls = append(r.calls, statusID)
@@ -136,7 +142,7 @@ func (r *fakeStatusRepo) GetStatusCounts(_ context.Context, statusID string) (li
 
 type fakeHashtagRepo struct {
 	followingByUserHashtag map[string]bool
-	errByUserHashtag        map[string]error
+	errByUserHashtag       map[string]error
 	calls                  []string
 }
 

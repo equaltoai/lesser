@@ -62,7 +62,6 @@ func (m *MockDomainBlockRepository) GetInstanceDomainBlock(ctx context.Context, 
 	return args.Get(0).(*storage.InstanceDomainBlock), args.Error(1)
 }
 
-
 // GetInstanceDomainBlockByID mocks the GetInstanceDomainBlockByID method
 func (m *MockDomainBlockRepository) GetInstanceDomainBlockByID(ctx context.Context, id string) (*storage.InstanceDomainBlock, error) {
 	args := m.Called(ctx, id)

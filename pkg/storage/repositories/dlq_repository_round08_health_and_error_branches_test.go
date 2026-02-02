@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -30,13 +30,13 @@ func TestDLQRepository_Round08_MonitorDLQHealth_Alerts(t *testing.T) {
 				status = DLQStatusReprocessing
 			}
 			messages[i] = &models.DLQMessage{
-				ID:                 "id",
-				Service:            "svc",
-				Status:             status,
-				ErrorType:           "type",
-				ReprocessingCount:   4,
+				ID:                   "id",
+				Service:              "svc",
+				Status:               status,
+				ErrorType:            "type",
+				ReprocessingCount:    4,
 				MaxReprocessAttempts: 10,
-				FirstSeenAt:         time.Now(),
+				FirstSeenAt:          time.Now(),
 			}
 		}
 		*dest = messages
@@ -109,4 +109,3 @@ func TestDLQRepository_Round08_CreateDLQMessage_BeforeCreateValidationError(t *t
 	// Missing required fields -> BeforeCreate()->Validate fails.
 	require.Error(t, repo.CreateDLQMessage(ctx, &models.DLQMessage{}))
 }
-

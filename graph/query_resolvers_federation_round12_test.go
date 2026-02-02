@@ -65,4 +65,3 @@ func TestRound12QueryFederation_RelationshipsAndBudgets(t *testing.T) {
 	_, _ = qry.InstanceBudgets(context.Background(), nil)
 	_, _ = qry.InstanceHealthReport(context.Background(), "example.com")
 }
-

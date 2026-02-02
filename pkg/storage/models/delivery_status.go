@@ -14,27 +14,27 @@ const (
 
 // DeliveryStatus tracks the delivery status of activities to remote instances
 type DeliveryStatus struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI fields for failed delivery queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
 	// Business fields
-	ActivityID   string    `dynamorm:"attr:activityID" json:"activity_id"`
-	TargetDomain string    `dynamorm:"attr:targetDomain" json:"target_domain"`
-	Status       string    `dynamorm:"attr:status" json:"status"`            // pending/delivered/failed
-	Attempts     int       `dynamorm:"attr:attempts" json:"attempts"`        // Number of delivery attempts
-	LastAttempt  time.Time `dynamorm:"attr:lastAttempt" json:"last_attempt"` // Time of last delivery attempt
-	Error        string    `dynamorm:"attr:error" json:"error,omitempty"`    // Error message if failed
-	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	DeliveredAt  time.Time `dynamorm:"attr:deliveredAt" json:"delivered_at,omitempty"`
-	NextRetry    time.Time `dynamorm:"attr:nextRetry" json:"next_retry,omitempty"`
-	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
+	ActivityID   string    `theorydb:"attr:activityID" json:"activity_id"`
+	TargetDomain string    `theorydb:"attr:targetDomain" json:"target_domain"`
+	Status       string    `theorydb:"attr:status" json:"status"`            // pending/delivered/failed
+	Attempts     int       `theorydb:"attr:attempts" json:"attempts"`        // Number of delivery attempts
+	LastAttempt  time.Time `theorydb:"attr:lastAttempt" json:"last_attempt"` // Time of last delivery attempt
+	Error        string    `theorydb:"attr:error" json:"error,omitempty"`    // Error message if failed
+	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	DeliveredAt  time.Time `theorydb:"attr:deliveredAt" json:"delivered_at,omitempty"`
+	NextRetry    time.Time `theorydb:"attr:nextRetry" json:"next_retry,omitempty"`
+	TTL          int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
 }
 
 // UpdateKeys updates the composite keys based on the delivery status data

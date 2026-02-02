@@ -7,8 +7,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 // setupPermissiveRound08Mocks configures DynamORM mocks to succeed by default and

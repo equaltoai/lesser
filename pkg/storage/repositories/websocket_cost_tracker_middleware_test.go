@@ -2,52 +2,54 @@ package repositories
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
 func TestWebSocketCostTracker_CreateOperationContext(t *testing.T) {
 	tracker := &WebSocketCostTracker{}
 
+	var opCtx *WebSocketOperationContext
+
 	wsEvent := events.APIGatewayWebsocketProxyRequest{
 		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
 			ConnectionID: "conn-1",
 			RouteKey:     "$connect",
-			Identity: events.APIGatewayRequestIdentity{
-				SourceIP: "1.2.3.4",
-			},
+			RequestID:    "req-1",
 		},
 		Headers: map[string]string{
 			"user-agent":      "iPhone mobile",
 			"Authorization":   "Bearer token",
-			"x-forwarded-for": "9.9.9.9",
+			"x-forwarded-for": "1.2.3.4, 9.9.9.9",
 		},
 		QueryStringParameters: map[string]string{
 			"access_token": "token",
 		},
 	}
 
-	ctx := &lift.Context{
-		Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{}),
-	}
-	ctx.SetRequestID("req-1")
-	ctx.Set("user_id", "user-1")
-	ctx.Set("username", "alice")
+	app := apptheory.New()
+	app.WebSocket("$connect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		ctx.Set("user_id", "user-1")
+		ctx.Set("username", "alice")
+		opCtx = tracker.CreateOperationContext(ctx, WSEventConnect)
+		return apptheory.Text(200, ""), nil
+	})
 
-	opCtx := tracker.CreateOperationContext(ctx, wsEvent, "connect")
+	resp := app.ServeWebSocket(context.Background(), wsEvent)
+	require.Equal(t, 200, resp.StatusCode)
+	require.NotNil(t, opCtx)
+
 	require.Equal(t, "conn-1", opCtx.ConnectionID)
-	require.Equal(t, "connect", opCtx.OperationType)
+	require.Equal(t, WSEventConnect, opCtx.OperationType)
 	require.Equal(t, "req-1", opCtx.RequestID)
 	require.Equal(t, "1.2.3.4", opCtx.ClientIP)
 	require.Equal(t, "iPhone mobile", opCtx.UserAgent)
@@ -58,58 +60,29 @@ func TestWebSocketCostTracker_CreateOperationContext(t *testing.T) {
 	require.WithinDuration(t, time.Now(), opCtx.StartTime, time.Second)
 
 	t.Run("ignores non-string user context values", func(t *testing.T) {
-		ctx := &lift.Context{
-			Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{}),
-		}
-		ctx.SetRequestID("req-2")
-		ctx.Set("user_id", 123)
-		ctx.Set("username", 456)
-
-		opCtx := tracker.CreateOperationContext(ctx, wsEvent, "connect")
-		require.Empty(t, opCtx.UserID)
-		require.Empty(t, opCtx.Username)
-	})
-}
-
-func TestExtractWebSocketEvent(t *testing.T) {
-	t.Run("returns raw event when type matches", func(t *testing.T) {
+		var opCtx *WebSocketOperationContext
 		wsEvent := events.APIGatewayWebsocketProxyRequest{
 			RequestContext: events.APIGatewayWebsocketProxyRequestContext{
-				ConnectionID: "conn-raw",
-				RouteKey:     "$disconnect",
+				ConnectionID: "conn-2",
+				RouteKey:     "$connect",
+				RequestID:    "req-2",
 			},
 		}
 
-		ctx := &lift.Context{
-			Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{
-				RawEvent: wsEvent,
-			}),
-		}
-
-		got := extractWebSocketEvent(ctx)
-		require.Equal(t, "conn-raw", got.RequestContext.ConnectionID)
-		require.Equal(t, "$disconnect", got.RequestContext.RouteKey)
-	})
-
-	t.Run("falls back to JSON body when raw event type mismatches", func(t *testing.T) {
-		body, err := json.Marshal(events.APIGatewayWebsocketProxyRequest{
-			RequestContext: events.APIGatewayWebsocketProxyRequestContext{
-				ConnectionID: "conn-body",
-				RouteKey:     "$default",
-			},
+		app := apptheory.New()
+		app.WebSocket("$connect", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			ctx.Set("user_id", 123)
+			ctx.Set("username", 456)
+			opCtx = tracker.CreateOperationContext(ctx, WSEventConnect)
+			return apptheory.Text(200, ""), nil
 		})
-		require.NoError(t, err)
 
-		ctx := &lift.Context{
-			Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{
-				RawEvent: "not websocket event",
-				Body:     body,
-			}),
-		}
+		resp := app.ServeWebSocket(context.Background(), wsEvent)
+		require.Equal(t, 200, resp.StatusCode)
+		require.NotNil(t, opCtx)
 
-		got := extractWebSocketEvent(ctx)
-		require.Equal(t, "conn-body", got.RequestContext.ConnectionID)
-		require.Equal(t, "$default", got.RequestContext.RouteKey)
+		require.Empty(t, opCtx.UserID)
+		require.Empty(t, opCtx.Username)
 	})
 }
 
@@ -144,21 +117,18 @@ func TestWebSocketCostMiddleware(t *testing.T) {
 		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
 			ConnectionID: "conn-1",
 			RouteKey:     "$disconnect",
+			RequestID:    "req-1",
 		},
 	}
 
-	ctx := &lift.Context{
-		Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{
-			RawEvent: wsEvent,
-		}),
-	}
-	ctx.SetRequestID("req-1")
+	app := apptheory.New()
+	app.Use(WebSocketCostMiddleware(tracker))
+	app.WebSocket("$disconnect", func(_ *apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(200, ""), nil
+	})
 
-	next := lift.HandlerFunc(func(_ *lift.Context) error { return nil })
-	handler := WebSocketCostMiddleware(tracker)(next)
-
-	err := handler.Handle(ctx)
-	require.NoError(t, err)
+	resp := app.ServeWebSocket(context.Background(), wsEvent)
+	require.Equal(t, 200, resp.StatusCode)
 
 	mockQuery.AssertExpectations(t)
 }
@@ -234,13 +204,12 @@ func TestCheckBudgetIfRequired_BudgetBranches(t *testing.T) {
 		}
 
 		tracker := &WebSocketCostTracker{costRepo: repo, logger: logger}
-		ctx := &lift.Context{Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{})}
 		opCtx := &WebSocketOperationContext{UserID: "user-1"}
 
-		require.NoError(t, checkBudgetIfRequired(tracker, ctx, "connect", opCtx))
+		require.NoError(t, checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx))
 	})
 
-	t.Run("budget exceeded returns lift error", func(t *testing.T) {
+	t.Run("budget exceeded returns app error", func(t *testing.T) {
 		tracker := buildTracker(t, func(dest *[]*models.WebSocketCostBudget) {
 			now := time.Now()
 			*dest = []*models.WebSocketCostBudget{
@@ -254,10 +223,9 @@ func TestCheckBudgetIfRequired_BudgetBranches(t *testing.T) {
 			}
 		})
 
-		ctx := &lift.Context{Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{})}
 		opCtx := &WebSocketOperationContext{UserID: "user-1"}
 
-		err := checkBudgetIfRequired(tracker, ctx, "connect", opCtx)
+		err := checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx)
 		require.Error(t, err)
 	})
 
@@ -266,9 +234,8 @@ func TestCheckBudgetIfRequired_BudgetBranches(t *testing.T) {
 			*dest = []*models.WebSocketCostBudget{}
 		})
 
-		ctx := &lift.Context{Request: lift.NewRequestWithContext(context.Background(), &adapters.Request{})}
 		opCtx := &WebSocketOperationContext{UserID: "user-1"}
 
-		require.NoError(t, checkBudgetIfRequired(tracker, ctx, "connect", opCtx))
+		require.NoError(t, checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx))
 	})
 }

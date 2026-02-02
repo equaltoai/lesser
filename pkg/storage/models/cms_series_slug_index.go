@@ -13,15 +13,15 @@ const (
 
 // CMSSeriesSlugIndex maps a series slug to its owning author + series ID for efficient lookup.
 type CMSSeriesSlugIndex struct {
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
-	Slug     string `dynamorm:"attr:slug" json:"slug"`
-	AuthorID string `dynamorm:"attr:authorID" json:"author_id"`
-	SeriesID string `dynamorm:"attr:seriesID" json:"series_id"`
+	Slug     string `theorydb:"attr:slug" json:"slug"`
+	AuthorID string `theorydb:"attr:authorID" json:"author_id"`
+	SeriesID string `theorydb:"attr:seriesID" json:"series_id"`
 
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing CMSSeriesSlugIndex.

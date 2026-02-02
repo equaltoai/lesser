@@ -174,4 +174,3 @@ func TestService_GetStatusesByLink_DelegatesToAnalytics(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []interface{}{"a", "b"}, out)
 }
-

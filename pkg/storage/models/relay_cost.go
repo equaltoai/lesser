@@ -9,50 +9,50 @@ import (
 
 // RelayCost represents cost tracking for relay operations
 type RelayCost struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying by relay URL
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
 
 	// GSI fields for querying by time period
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
 
 	// Cost tracking fields
-	RelayURL      string `dynamorm:"attr:relayURL" json:"relay_url"`
-	Domain        string `dynamorm:"attr:domain" json:"domain"`
-	OperationType string `dynamorm:"attr:operationType" json:"operation_type"`         // "subscription", "delivery", "processing", "bandwidth"
-	Direction     string `dynamorm:"attr:direction" json:"direction"`                  // "inbound", "outbound"
-	ActivityType  string `dynamorm:"attr:activityType" json:"activity_type,omitempty"` // Create, Announce, Follow, etc.
+	RelayURL      string `theorydb:"attr:relayURL" json:"relay_url"`
+	Domain        string `theorydb:"attr:domain" json:"domain"`
+	OperationType string `theorydb:"attr:operationType" json:"operation_type"`         // "subscription", "delivery", "processing", "bandwidth"
+	Direction     string `theorydb:"attr:direction" json:"direction"`                  // "inbound", "outbound"
+	ActivityType  string `theorydb:"attr:activityType" json:"activity_type,omitempty"` // Create, Announce, Follow, etc.
 
 	// Cost details
-	HTTPRequestCount    int64 `dynamorm:"attr:httpRequestCount" json:"http_request_count"`        // Number of HTTP requests
-	HTTPRequestCost     int64 `dynamorm:"attr:httpRequestCost" json:"http_request_cost"`          // Cost in microdollars
-	DataTransferBytes   int64 `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"`      // Bytes transferred
-	DataTransferCost    int64 `dynamorm:"attr:dataTransferCost" json:"data_transfer_cost"`        // Cost in microdollars
-	LambdaDurationMs    int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"`        // Lambda processing time
-	LambdaCost          int64 `dynamorm:"attr:lambdaCost" json:"lambda_cost"`                     // Cost in microdollars
-	DynamoDBOperations  int64 `dynamorm:"attr:dynamoDBOperations" json:"dynamodb_operations"`     // DB operation count
-	DynamoDBCost        int64 `dynamorm:"attr:dynamoDBCost" json:"dynamodb_cost"`                 // Cost in microdollars
-	SQSMessages         int64 `dynamorm:"attr:sqsMessages" json:"sqs_messages"`                   // SQS message count
-	SQSCost             int64 `dynamorm:"attr:sqsCost" json:"sqs_cost"`                           // Cost in microdollars
-	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost in microdollars
+	HTTPRequestCount    int64 `theorydb:"attr:httpRequestCount" json:"http_request_count"`        // Number of HTTP requests
+	HTTPRequestCost     int64 `theorydb:"attr:httpRequestCost" json:"http_request_cost"`          // Cost in microdollars
+	DataTransferBytes   int64 `theorydb:"attr:dataTransferBytes" json:"data_transfer_bytes"`      // Bytes transferred
+	DataTransferCost    int64 `theorydb:"attr:dataTransferCost" json:"data_transfer_cost"`        // Cost in microdollars
+	LambdaDurationMs    int64 `theorydb:"attr:lambdaDurationMs" json:"lambda_duration_ms"`        // Lambda processing time
+	LambdaCost          int64 `theorydb:"attr:lambdaCost" json:"lambda_cost"`                     // Cost in microdollars
+	DynamoDBOperations  int64 `theorydb:"attr:dynamoDBOperations" json:"dynamodb_operations"`     // DB operation count
+	DynamoDBCost        int64 `theorydb:"attr:dynamoDBCost" json:"dynamodb_cost"`                 // Cost in microdollars
+	SQSMessages         int64 `theorydb:"attr:sqsMessages" json:"sqs_messages"`                   // SQS message count
+	SQSCost             int64 `theorydb:"attr:sqsCost" json:"sqs_cost"`                           // Cost in microdollars
+	TotalCostMicroCents int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost in microdollars
 
 	// Performance metrics
-	ResponseTimeMs int64  `dynamorm:"attr:responseTimeMs" json:"response_time_ms"`
-	Success        bool   `dynamorm:"attr:success" json:"success"`
-	ErrorMessage   string `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
-	RetryCount     int    `dynamorm:"attr:retryCount" json:"retry_count"`
+	ResponseTimeMs int64  `theorydb:"attr:responseTimeMs" json:"response_time_ms"`
+	Success        bool   `theorydb:"attr:success" json:"success"`
+	ErrorMessage   string `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
+	RetryCount     int    `theorydb:"attr:retryCount" json:"retry_count"`
 
 	// Metadata
-	RequestID string    `dynamorm:"attr:requestID" json:"request_id,omitempty"`
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
+	RequestID string    `theorydb:"attr:requestID" json:"request_id,omitempty"`
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	TTL       int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // For automatic cleanup
 }
 
 // TableName returns the DynamoDB table backing RelayCost.
@@ -109,63 +109,63 @@ func (rc *RelayCost) BeforeCreate() error {
 
 // RelayMetrics represents aggregated metrics for relay operations
 type RelayMetrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying by relay URL
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
 
 	// Metrics details
-	RelayURL    string    `dynamorm:"attr:relayURL" json:"relay_url"`
-	Domain      string    `dynamorm:"attr:domain" json:"domain"`
-	Period      string    `dynamorm:"attr:period" json:"period"` // "hourly", "daily", "weekly", "monthly"
-	WindowStart time.Time `dynamorm:"attr:windowStart" json:"window_start"`
-	WindowEnd   time.Time `dynamorm:"attr:windowEnd" json:"window_end"`
+	RelayURL    string    `theorydb:"attr:relayURL" json:"relay_url"`
+	Domain      string    `theorydb:"attr:domain" json:"domain"`
+	Period      string    `theorydb:"attr:period" json:"period"` // "hourly", "daily", "weekly", "monthly"
+	WindowStart time.Time `theorydb:"attr:windowStart" json:"window_start"`
+	WindowEnd   time.Time `theorydb:"attr:windowEnd" json:"window_end"`
 
 	// Aggregate counts
-	TotalOperations        int64 `dynamorm:"attr:totalOperations" json:"total_operations"`
-	SuccessfulOperations   int64 `dynamorm:"attr:successfulOperations" json:"successful_operations"`
-	FailedOperations       int64 `dynamorm:"attr:failedOperations" json:"failed_operations"`
-	TotalHTTPRequests      int64 `dynamorm:"attr:totalHTTPRequests" json:"total_http_requests"`
-	TotalDataTransferBytes int64 `dynamorm:"attr:totalDataTransferBytes" json:"total_data_transfer_bytes"`
-	TotalLambdaDurationMs  int64 `dynamorm:"attr:totalLambdaDurationMs" json:"total_lambda_duration_ms"`
-	TotalDynamoDBOps       int64 `dynamorm:"attr:totalDynamoDBOps" json:"total_dynamodb_ops"`
-	TotalSQSMessages       int64 `dynamorm:"attr:totalSQSMessages" json:"total_sqs_messages"`
+	TotalOperations        int64 `theorydb:"attr:totalOperations" json:"total_operations"`
+	SuccessfulOperations   int64 `theorydb:"attr:successfulOperations" json:"successful_operations"`
+	FailedOperations       int64 `theorydb:"attr:failedOperations" json:"failed_operations"`
+	TotalHTTPRequests      int64 `theorydb:"attr:totalHTTPRequests" json:"total_http_requests"`
+	TotalDataTransferBytes int64 `theorydb:"attr:totalDataTransferBytes" json:"total_data_transfer_bytes"`
+	TotalLambdaDurationMs  int64 `theorydb:"attr:totalLambdaDurationMs" json:"total_lambda_duration_ms"`
+	TotalDynamoDBOps       int64 `theorydb:"attr:totalDynamoDBOps" json:"total_dynamodb_ops"`
+	TotalSQSMessages       int64 `theorydb:"attr:totalSQSMessages" json:"total_sqs_messages"`
 
 	// Aggregate costs (in microdollars)
-	TotalHTTPRequestCost  int64 `dynamorm:"attr:totalHTTPRequestCost" json:"total_http_request_cost"`
-	TotalDataTransferCost int64 `dynamorm:"attr:totalDataTransferCost" json:"total_data_transfer_cost"`
-	TotalLambdaCost       int64 `dynamorm:"attr:totalLambdaCost" json:"total_lambda_cost"`
-	TotalDynamoDBCost     int64 `dynamorm:"attr:totalDynamoDBCost" json:"total_dynamodb_cost"`
-	TotalSQSCost          int64 `dynamorm:"attr:totalSQSCost" json:"total_sqs_cost"`
-	TotalCostMicroCents   int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalHTTPRequestCost  int64 `theorydb:"attr:totalHTTPRequestCost" json:"total_http_request_cost"`
+	TotalDataTransferCost int64 `theorydb:"attr:totalDataTransferCost" json:"total_data_transfer_cost"`
+	TotalLambdaCost       int64 `theorydb:"attr:totalLambdaCost" json:"total_lambda_cost"`
+	TotalDynamoDBCost     int64 `theorydb:"attr:totalDynamoDBCost" json:"total_dynamodb_cost"`
+	TotalSQSCost          int64 `theorydb:"attr:totalSQSCost" json:"total_sqs_cost"`
+	TotalCostMicroCents   int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
 	// Performance metrics
-	AverageResponseTimeMs float64 `dynamorm:"attr:averageResponseTimeMs" json:"average_response_time_ms"`
-	SuccessRate           float64 `dynamorm:"attr:successRate" json:"success_rate"` // 0.0 to 1.0
-	AverageRetryCount     float64 `dynamorm:"attr:averageRetryCount" json:"average_retry_count"`
+	AverageResponseTimeMs float64 `theorydb:"attr:averageResponseTimeMs" json:"average_response_time_ms"`
+	SuccessRate           float64 `theorydb:"attr:successRate" json:"success_rate"` // 0.0 to 1.0
+	AverageRetryCount     float64 `theorydb:"attr:averageRetryCount" json:"average_retry_count"`
 
 	// Cost efficiency metrics
-	CostPerOperation    float64 `dynamorm:"attr:costPerOperation" json:"cost_per_operation"`        // Dollars
-	CostPerSuccessfulOp float64 `dynamorm:"attr:costPerSuccessfulOp" json:"cost_per_successful_op"` // Dollars
-	CostPerMB           float64 `dynamorm:"attr:costPerMB" json:"cost_per_mb"`                      // Dollars per MB
+	CostPerOperation    float64 `theorydb:"attr:costPerOperation" json:"cost_per_operation"`        // Dollars
+	CostPerSuccessfulOp float64 `theorydb:"attr:costPerSuccessfulOp" json:"cost_per_successful_op"` // Dollars
+	CostPerMB           float64 `theorydb:"attr:costPerMB" json:"cost_per_mb"`                      // Dollars per MB
 
 	// Breakdown by operation type
-	OperationBreakdown map[string]*RelayOperationStats `dynamorm:"attr:operationBreakdown" json:"operation_breakdown,omitempty"`
+	OperationBreakdown map[string]*RelayOperationStats `theorydb:"attr:operationBreakdown" json:"operation_breakdown,omitempty"`
 
 	// Budget tracking
-	BudgetLimitMicroCents int64   `dynamorm:"attr:budgetLimitMicroCents" json:"budget_limit_micro_cents,omitempty"`
-	BudgetUsedPercent     float64 `dynamorm:"attr:budgetUsedPercent" json:"budget_used_percent,omitempty"`
-	BudgetExceeded        bool    `dynamorm:"attr:budgetExceeded" json:"budget_exceeded,omitempty"`
+	BudgetLimitMicroCents int64   `theorydb:"attr:budgetLimitMicroCents" json:"budget_limit_micro_cents,omitempty"`
+	BudgetUsedPercent     float64 `theorydb:"attr:budgetUsedPercent" json:"budget_used_percent,omitempty"`
+	BudgetExceeded        bool    `theorydb:"attr:budgetExceeded" json:"budget_exceeded,omitempty"`
 
 	// Metadata
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	TTL       int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing RelayMetrics.
@@ -175,15 +175,15 @@ func (RelayMetrics) TableName() string {
 
 // RelayOperationStats represents stats for a specific operation type
 type RelayOperationStats struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	OperationType       string  `dynamorm:"attr:operationType" json:"operation_type"`
-	Count               int64   `dynamorm:"attr:count" json:"count"`
-	SuccessCount        int64   `dynamorm:"attr:successCount" json:"success_count"`
-	FailureCount        int64   `dynamorm:"attr:failureCount" json:"failure_count"`
-	TotalCostMicroCents int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
-	AverageResponseTime float64 `dynamorm:"attr:averageResponseTimeMs" json:"average_response_time_ms"`
-	SuccessRate         float64 `dynamorm:"attr:successRate" json:"success_rate"`
+	OperationType       string  `theorydb:"attr:operationType" json:"operation_type"`
+	Count               int64   `theorydb:"attr:count" json:"count"`
+	SuccessCount        int64   `theorydb:"attr:successCount" json:"success_count"`
+	FailureCount        int64   `theorydb:"attr:failureCount" json:"failure_count"`
+	TotalCostMicroCents int64   `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	AverageResponseTime float64 `theorydb:"attr:averageResponseTimeMs" json:"average_response_time_ms"`
+	SuccessRate         float64 `theorydb:"attr:successRate" json:"success_rate"`
 }
 
 // TableName returns the DynamoDB table backing RelayOperationStats.
@@ -291,41 +291,41 @@ func (rm *RelayMetrics) BeforeUpdate() error {
 
 // RelayBudget represents budget limits for relay operations
 type RelayBudget struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// Budget details
-	RelayURL        string `dynamorm:"attr:relayURL" json:"relay_url"`
-	Domain          string `dynamorm:"attr:domain" json:"domain"`
-	Period          string `dynamorm:"attr:period" json:"period"`                     // "daily", "weekly", "monthly"
-	LimitMicroCents int64  `dynamorm:"attr:limitMicroCents" json:"limit_micro_cents"` // Budget limit in microdollars
+	RelayURL        string `theorydb:"attr:relayURL" json:"relay_url"`
+	Domain          string `theorydb:"attr:domain" json:"domain"`
+	Period          string `theorydb:"attr:period" json:"period"`                     // "daily", "weekly", "monthly"
+	LimitMicroCents int64  `theorydb:"attr:limitMicroCents" json:"limit_micro_cents"` // Budget limit in microdollars
 
 	// Alert thresholds
-	WarningThresholdPercent  float64 `dynamorm:"attr:warningThresholdPercent" json:"warning_threshold_percent"`   // e.g., 75.0 for 75%
-	CriticalThresholdPercent float64 `dynamorm:"attr:criticalThresholdPercent" json:"critical_threshold_percent"` // e.g., 90.0 for 90%
+	WarningThresholdPercent  float64 `theorydb:"attr:warningThresholdPercent" json:"warning_threshold_percent"`   // e.g., 75.0 for 75%
+	CriticalThresholdPercent float64 `theorydb:"attr:criticalThresholdPercent" json:"critical_threshold_percent"` // e.g., 90.0 for 90%
 
 	// Current usage
-	CurrentUsageMicroCents int64     `dynamorm:"attr:currentUsageMicroCents" json:"current_usage_micro_cents"`
-	CurrentUsagePercent    float64   `dynamorm:"attr:currentUsagePercent" json:"current_usage_percent"`
-	LastResetAt            time.Time `dynamorm:"attr:lastResetAt" json:"last_reset_at"`
+	CurrentUsageMicroCents int64     `theorydb:"attr:currentUsageMicroCents" json:"current_usage_micro_cents"`
+	CurrentUsagePercent    float64   `theorydb:"attr:currentUsagePercent" json:"current_usage_percent"`
+	LastResetAt            time.Time `theorydb:"attr:lastResetAt" json:"last_reset_at"`
 
 	// Alert status
-	WarningAlertSent  bool `dynamorm:"attr:warningAlertSent" json:"warning_alert_sent"`
-	CriticalAlertSent bool `dynamorm:"attr:criticalAlertSent" json:"critical_alert_sent"`
-	BudgetExceeded    bool `dynamorm:"attr:budgetExceeded" json:"budget_exceeded"`
+	WarningAlertSent  bool `theorydb:"attr:warningAlertSent" json:"warning_alert_sent"`
+	CriticalAlertSent bool `theorydb:"attr:criticalAlertSent" json:"critical_alert_sent"`
+	BudgetExceeded    bool `theorydb:"attr:budgetExceeded" json:"budget_exceeded"`
 
 	// Actions on budget exceeded
-	PauseRelay      bool `dynamorm:"attr:pauseRelay" json:"pause_relay"`           // Pause relay when budget exceeded
-	NotifyAdmin     bool `dynamorm:"attr:notifyAdmin" json:"notify_admin"`         // Send admin notification
-	ReduceFrequency bool `dynamorm:"attr:reduceFrequency" json:"reduce_frequency"` // Reduce relay forwarding frequency
+	PauseRelay      bool `theorydb:"attr:pauseRelay" json:"pause_relay"`           // Pause relay when budget exceeded
+	NotifyAdmin     bool `theorydb:"attr:notifyAdmin" json:"notify_admin"`         // Send admin notification
+	ReduceFrequency bool `theorydb:"attr:reduceFrequency" json:"reduce_frequency"` // Reduce relay forwarding frequency
 
 	// Metadata
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	TTL       int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing RelayBudget.

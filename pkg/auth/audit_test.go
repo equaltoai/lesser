@@ -276,10 +276,10 @@ func TestAuditLogger_LogEvent_StoreToFileMarshalError_SurfaceError(t *testing.T)
 	al := &AuditLogger{
 		logger: zap.NewNop(),
 		config: &AuditConfig{
-			Enabled:      true,
-			StoreToFile:  true,
-			StoreToDB:    false,
-			StoreToSIEM:  false,
+			Enabled:         true,
+			StoreToFile:     true,
+			StoreToDB:       false,
+			StoreToSIEM:     false,
 			HashIPAddresses: false,
 		},
 	}

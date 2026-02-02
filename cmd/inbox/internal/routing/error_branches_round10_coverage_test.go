@@ -10,11 +10,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -180,28 +180,28 @@ func TestInboxHandler_Round10_VerifyAuthentication_FailureBranches(t *testing.T)
 		"Host":         "localhost",
 		"Content-Type": "application/activity+json",
 	}
-	liftCtx := newLiftContext("POST", "/users/alice/inbox", headers, nil, body)
-	liftCtx.SetParam("username", "alice")
+	ctx := newAppTheoryContext("POST", "/users/alice/inbox", headers, nil, body)
+	ctx.Params["username"] = "alice"
 
 	t.Run("missing signature returns service unavailable", func(t *testing.T) {
 		req := makeReq(env.remoteActorID, body)
-		require.Error(t, env.handler.verifyAuthentication(liftCtx, req))
+		require.Error(t, env.handler.verifyAuthentication(ctx, req))
 	})
 
 	t.Run("digest mismatch returns validation error", func(t *testing.T) {
-		liftCtx2 := newLiftContext("POST", "/users/alice/inbox", headers, nil, body)
-		liftCtx2.SetParam("username", "alice")
+		ctx2 := newAppTheoryContext("POST", "/users/alice/inbox", headers, nil, body)
+		ctx2.Params["username"] = "alice"
 
-		httpReq, err := env.handler.convertLiftRequest(liftCtx2, body)
+		httpReq, err := env.handler.convertRequest(ctx2, body)
 		require.NoError(t, err)
 		require.NoError(t, federation.SignHTTPRequestWithAlgorithm(httpReq, env.remotePrivateKey, env.remoteKeyID, federation.AlgorithmRSASHA256))
 
-		liftCtx2.Request.Headers["Date"] = httpReq.Header.Get("Date")
-		liftCtx2.Request.Headers["Signature"] = httpReq.Header.Get("Signature")
-		liftCtx2.Request.Headers["Digest"] = "SHA-256=not-a-valid-digest"
+		ctx2.Request.Headers["date"] = []string{httpReq.Header.Get("Date")}
+		ctx2.Request.Headers["signature"] = []string{httpReq.Header.Get("Signature")}
+		ctx2.Request.Headers["digest"] = []string{"SHA-256=not-a-valid-digest"}
 
 		req := makeReq(env.remoteActorID, body)
-		require.Error(t, env.handler.verifyAuthentication(liftCtx2, req))
+		require.Error(t, env.handler.verifyAuthentication(ctx2, req))
 	})
 }
 
@@ -209,8 +209,8 @@ func TestInboxHandler_Round10_StoreAndProcessActivity_ErrorBranches(t *testing.T
 	env := newInboxTestEnv(t)
 	setRunAsyncSynchronous(t)
 
-	liftCtx := newLiftContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte(`{}`))
-	liftCtx.SetParam("username", "alice")
+	ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte(`{}`))
+	ctx.Params["username"] = "alice"
 
 	t.Run("activity storage failure", func(t *testing.T) {
 		innerDB := new(mocks.MockDB)
@@ -253,7 +253,7 @@ func TestInboxHandler_Round10_StoreAndProcessActivity_ErrorBranches(t *testing.T
 				Timestamp:     now,
 			},
 		}
-		require.Error(t, badHandler.storeAndProcessActivity(liftCtx, req))
+		require.Error(t, badHandler.storeAndProcessActivity(ctx, req))
 	})
 
 	t.Run("activity processing failure", func(t *testing.T) {
@@ -304,7 +304,7 @@ func TestInboxHandler_Round10_StoreAndProcessActivity_ErrorBranches(t *testing.T
 				Timestamp:     now,
 			},
 		}
-		require.Error(t, badHandler.storeAndProcessActivity(liftCtx, req))
+		require.Error(t, badHandler.storeAndProcessActivity(ctx, req))
 	})
 }
 
@@ -312,9 +312,9 @@ func TestInboxHandler_Round10_CheckDomainBlock_Branches(t *testing.T) {
 	env := newInboxTestEnv(t)
 	setRunAsyncSynchronous(t)
 
-	makeLiftCtx := func() *lift.Context {
-		ctx := newLiftContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte(`{}`))
-		ctx.SetParam("username", "alice")
+	makeCtx := func() *apptheory.Context {
+		ctx := newAppTheoryContext("POST", "/users/alice/inbox", map[string]string{"Host": "localhost"}, nil, []byte(`{}`))
+		ctx.Params["username"] = "alice"
 		return ctx
 	}
 
@@ -350,7 +350,7 @@ func TestInboxHandler_Round10_CheckDomainBlock_Branches(t *testing.T) {
 		handler := *env.handler
 		handler.domainBlockRepository = badRepo
 
-		err := handler.checkDomainBlock(makeLiftCtx(), makeReq("blocked.example"))
+		err := handler.checkDomainBlock(makeCtx(), makeReq("blocked.example"))
 		require.Error(t, err)
 	})
 
@@ -369,6 +369,6 @@ func TestInboxHandler_Round10_CheckDomainBlock_Branches(t *testing.T) {
 		handler := *env.handler
 		handler.domainBlockRepository = badRepo
 
-		require.NoError(t, handler.checkDomainBlock(makeLiftCtx(), makeReq("blocked.example")))
+		require.NoError(t, handler.checkDomainBlock(makeCtx(), makeReq("blocked.example")))
 	})
 }

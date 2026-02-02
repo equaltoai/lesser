@@ -9,37 +9,37 @@ import (
 // HashtagStatusIndex represents an efficient index for hashtag-to-status mapping
 // This enables fast hashtag timeline queries without scanning all statuses
 type HashtagStatusIndex struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - hashtag timeline
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "HASHTAG_TIMELINE#{hashtag_name}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "STATUS#{timestamp_desc}#{status_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "HASHTAG_TIMELINE#{hashtag_name}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "STATUS#{timestamp_desc}#{status_id}"
 
 	// GSI1 - Status-to-hashtag reverse index for cleanup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "STATUS_HASHTAGS#{status_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "HASHTAG#{hashtag_name}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "STATUS_HASHTAGS#{status_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "HASHTAG#{hashtag_name}"
 
 	// GSI2 - Timeline by visibility for filtering
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "HASHTAG_VIS#{hashtag_name}#{visibility}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "TIMELINE#{timestamp_desc}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "HASHTAG_VIS#{hashtag_name}#{visibility}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "TIMELINE#{timestamp_desc}"
 
 	// Status data
-	StatusID     string    `dynamorm:"attr:statusID" json:"status_id"`
-	AuthorID     string    `dynamorm:"attr:authorID" json:"author_id"`
-	AuthorHandle string    `dynamorm:"attr:authorHandle" json:"author_handle"`
-	StatusURL    string    `dynamorm:"attr:statusURL" json:"status_url,omitempty"`
-	Content      string    `dynamorm:"attr:content" json:"content,omitempty"`        // Excerpt for search results
-	MediaCount   int       `dynamorm:"attr:mediaCount" json:"media_count,omitempty"` // Number of media attachments
-	Language     string    `dynamorm:"attr:language" json:"language,omitempty"`      // Content language
-	Visibility   string    `dynamorm:"attr:visibility" json:"visibility"`            // public, unlisted, private, direct
-	Published    time.Time `dynamorm:"attr:published" json:"published"`              // When the status was published
-	HashtagName  string    `dynamorm:"attr:hashtagName" json:"hashtag_name"`         // The hashtag (for reverse index)
+	StatusID     string    `theorydb:"attr:statusID" json:"status_id"`
+	AuthorID     string    `theorydb:"attr:authorID" json:"author_id"`
+	AuthorHandle string    `theorydb:"attr:authorHandle" json:"author_handle"`
+	StatusURL    string    `theorydb:"attr:statusURL" json:"status_url,omitempty"`
+	Content      string    `theorydb:"attr:content" json:"content,omitempty"`        // Excerpt for search results
+	MediaCount   int       `theorydb:"attr:mediaCount" json:"media_count,omitempty"` // Number of media attachments
+	Language     string    `theorydb:"attr:language" json:"language,omitempty"`      // Content language
+	Visibility   string    `theorydb:"attr:visibility" json:"visibility"`            // public, unlisted, private, direct
+	Published    time.Time `theorydb:"attr:published" json:"published"`              // When the status was published
+	HashtagName  string    `theorydb:"attr:hashtagName" json:"hashtag_name"`         // The hashtag (for reverse index)
 
 	// TTL for automatic cleanup (90 days for efficient hashtag timelines)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName ensures HashtagStatusIndex records persist in the shared Dynamo table.
@@ -82,46 +82,46 @@ func (hsi *HashtagStatusIndex) GetSK() string {
 
 // HashtagTrendingData represents trending data for hashtags with time-windowed metrics
 type HashtagTrendingData struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - trending hashtag data
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "TRENDING_HASHTAG#{date}#{hour}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "HASHTAG#{score_padded}#{hashtag_name}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "TRENDING_HASHTAG#{date}#{hour}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "HASHTAG#{score_padded}#{hashtag_name}"
 
 	// GSI1 - Query by hashtag across time periods
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "HASHTAG_TREND#{hashtag_name}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "TIME#{timestamp}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "HASHTAG_TREND#{hashtag_name}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "TIME#{timestamp}"
 
 	// GSI2 - Query trending for time period
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "TRENDING_PERIOD#{time_window}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "SCORE#{score_padded}#{hashtag_name}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "TRENDING_PERIOD#{time_window}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "SCORE#{score_padded}#{hashtag_name}"
 
 	// Hashtag info
-	HashtagName string    `dynamorm:"attr:hashtagName" json:"hashtag_name"`
-	URL         string    `dynamorm:"attr:url" json:"url"`
-	Period      time.Time `dynamorm:"attr:period" json:"period"`          // Start of the time period
-	TimeWindow  string    `dynamorm:"attr:timeWindow" json:"time_window"` // "1h", "6h", "24h", "7d"
+	HashtagName string    `theorydb:"attr:hashtagName" json:"hashtag_name"`
+	URL         string    `theorydb:"attr:url" json:"url"`
+	Period      time.Time `theorydb:"attr:period" json:"period"`          // Start of the time period
+	TimeWindow  string    `theorydb:"attr:timeWindow" json:"time_window"` // "1h", "6h", "24h", "7d"
 
 	// Trending metrics
-	TrendScore     float64 `dynamorm:"attr:trendScore" json:"trend_score"`         // Overall trending score
-	UsageCount     int64   `dynamorm:"attr:usageCount" json:"usage_count"`         // Usage count in period
-	UniqueUsers    int64   `dynamorm:"attr:uniqueUsers" json:"unique_users"`       // Unique users in period
-	Growth         float64 `dynamorm:"attr:growth" json:"growth"`                  // Growth rate vs previous period
-	Velocity       float64 `dynamorm:"attr:velocity" json:"velocity"`              // Usage per hour
-	MomentumScore  float64 `dynamorm:"attr:momentumScore" json:"momentum_score"`   // Acceleration indicator
-	TrustScore     float64 `dynamorm:"attr:trustScore" json:"trust_score"`         // Trust-weighted score
-	EngagementRate float64 `dynamorm:"attr:engagementRate" json:"engagement_rate"` // Engagement per usage
-	DiversityScore float64 `dynamorm:"attr:diversityScore" json:"diversity_score"` // User diversity score
+	TrendScore     float64 `theorydb:"attr:trendScore" json:"trend_score"`         // Overall trending score
+	UsageCount     int64   `theorydb:"attr:usageCount" json:"usage_count"`         // Usage count in period
+	UniqueUsers    int64   `theorydb:"attr:uniqueUsers" json:"unique_users"`       // Unique users in period
+	Growth         float64 `theorydb:"attr:growth" json:"growth"`                  // Growth rate vs previous period
+	Velocity       float64 `theorydb:"attr:velocity" json:"velocity"`              // Usage per hour
+	MomentumScore  float64 `theorydb:"attr:momentumScore" json:"momentum_score"`   // Acceleration indicator
+	TrustScore     float64 `theorydb:"attr:trustScore" json:"trust_score"`         // Trust-weighted score
+	EngagementRate float64 `theorydb:"attr:engagementRate" json:"engagement_rate"` // Engagement per usage
+	DiversityScore float64 `theorydb:"attr:diversityScore" json:"diversity_score"` // User diversity score
 
 	// Component scores for analysis
-	ComponentScores map[string]float64 `dynamorm:"attr:componentScores" json:"component_scores,omitempty"`
+	ComponentScores map[string]float64 `theorydb:"attr:componentScores" json:"component_scores,omitempty"`
 
 	// TTL for automatic cleanup (30 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName ensures trending data records use the shared single table.
@@ -152,30 +152,30 @@ func (htd *HashtagTrendingData) UpdateKeys() {
 
 // HashtagSearchCache represents a cache for hashtag search results to improve performance
 type HashtagSearchCache struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - search cache
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "HASHTAG_SEARCH_CACHE#{query_hash}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "CACHE#{params_hash}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "HASHTAG_SEARCH_CACHE#{query_hash}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "CACHE#{params_hash}"
 
 	// GSI1 - Cleanup by creation time
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SEARCH_CACHE"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "CREATED#{timestamp}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SEARCH_CACHE"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "CREATED#{timestamp}"
 
 	// Cache data
-	Query        string                 `dynamorm:"attr:query" json:"query"`
-	Parameters   map[string]interface{} `dynamorm:"attr:parameters" json:"parameters"`
-	Results      []string               `dynamorm:"attr:results" json:"results"`            // Hashtag names
-	TotalResults int                    `dynamorm:"attr:totalResults" json:"total_results"` // Total available
-	NextCursor   string                 `dynamorm:"attr:nextCursor" json:"next_cursor,omitempty"`
-	HitCount     int64                  `dynamorm:"attr:hitCount" json:"hit_count"` // Number of times used
-	LastAccessed time.Time              `dynamorm:"attr:lastAccessed" json:"last_accessed"`
+	Query        string                 `theorydb:"attr:query" json:"query"`
+	Parameters   map[string]interface{} `theorydb:"attr:parameters" json:"parameters"`
+	Results      []string               `theorydb:"attr:results" json:"results"`            // Hashtag names
+	TotalResults int                    `theorydb:"attr:totalResults" json:"total_results"` // Total available
+	NextCursor   string                 `theorydb:"attr:nextCursor" json:"next_cursor,omitempty"`
+	HitCount     int64                  `theorydb:"attr:hitCount" json:"hit_count"` // Number of times used
+	LastAccessed time.Time              `theorydb:"attr:lastAccessed" json:"last_accessed"`
 
 	// TTL for automatic cleanup (2 hours for hashtag search cache)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName ensures hashtag search cache items share the main table.

@@ -35,8 +35,8 @@ type s3BucketUploaderAPI interface {
 }
 
 var (
-	s3ObjectExistsFn   = s3ObjectExists
-	putObjectStringFn  = putObjectString
+	s3ObjectExistsFn  = s3ObjectExists
+	putObjectStringFn = putObjectString
 )
 
 func s3ObjectExists(ctx context.Context, client s3HeadObjectAPI, bucket string, key string) (bool, error) {

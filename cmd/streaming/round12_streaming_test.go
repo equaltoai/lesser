@@ -22,11 +22,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pay-theory/dynamorm"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -148,8 +148,8 @@ func (f *fakeWSClient) PostToConnection(_ context.Context, connectionID string, 
 
 func (f *fakeWSClient) DeleteConnection(_ context.Context, _ string) error { return nil }
 
-func (f *fakeWSClient) GetConnection(_ context.Context, _ string) (*streamer.ConnectionInfo, error) {
-	return &streamer.ConnectionInfo{}, nil
+func (f *fakeWSClient) GetConnection(_ context.Context, _ string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 type fakeCommandRouter struct {
@@ -606,7 +606,7 @@ func TestHandleConnect_HeaderTokenAndErrors(t *testing.T) {
 	}))
 }
 
-func TestHandleWebSocketEvent_RoutingAndClientInit(t *testing.T) {
+func TestWebSocketDefault_InitializesClientAndRespondsToPing(t *testing.T) {
 	originalNewClient := newStreamerClientFn
 	originalRunAsync := runAsyncFn
 	t.Cleanup(func() {
@@ -617,37 +617,37 @@ func TestHandleWebSocketEvent_RoutingAndClientInit(t *testing.T) {
 
 	ws := &fakeWSClient{}
 	var gotEndpoint string
-	newStreamerClientFn = func(_ context.Context, cfg streamer.ClientConfig) (streamer.Client, error) {
-		gotEndpoint = cfg.Endpoint
+	newStreamerClientFn = func(_ context.Context, endpoint string, _ ...streamer.Option) (streamer.Client, error) {
+		gotEndpoint = endpoint
 		return ws, nil
 	}
 
-	connRepo := &fakeConnectionRepo{}
-	costTracker := &fakeCostTracker{}
 	sh := &StreamingHandler{
-		connectionRepo: connRepo,
-		costTracker:    costTracker,
+		connectionRepo: &fakeConnectionRepo{},
+		costTracker:    &fakeCostTracker{},
 		logger:         zap.NewNop(),
 		cfg:            &config.Config{JWTSecret: "secret"},
 		awsConfig:      aws.Config{Region: "us-east-1"},
 	}
 
-	liftReq := lift.NewRequest(nil)
-	liftReq.TriggerType = lift.TriggerWebSocket
-	liftReq.RawEvent = events.APIGatewayWebsocketProxyRequest{
+	app := apptheory.New()
+	app.WebSocket("$default", sh.HandleWebSocketDefault)
+
+	resp := app.ServeWebSocket(context.Background(), events.APIGatewayWebsocketProxyRequest{
 		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
 			ConnectionID: "c1",
-			RouteKey:     "$connect",
-			APIID:        "api",
+			RouteKey:     "$default",
+			DomainName:   "api.execute-api.us-east-1.amazonaws.com",
 			Stage:        "dev",
 		},
-	}
-	liftReq.Metadata = map[string]any{"managementEndpoint": ""}
-
-	liftCtx := lift.NewContext(context.Background(), liftReq)
-	liftCtx.SetRequestID("req")
-	require.NoError(t, sh.HandleWebSocketEvent(liftCtx))
-	require.NotEmpty(t, gotEndpoint)
+		Path: "/",
+		Body: `{"type":"ping"}`,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+	require.Equal(t, "https://api.execute-api.us-east-1.amazonaws.com/dev", gotEndpoint)
+	require.NotEmpty(t, ws.posts)
+	require.Equal(t, "c1", ws.posts[0].connectionID)
+	require.Contains(t, string(ws.posts[0].data), `"type":"pong"`)
 }
 
 func TestInitializeStreaming_SuccessAndErrors(t *testing.T) {
@@ -689,7 +689,7 @@ func TestInitializeStreaming_SuccessAndErrors(t *testing.T) {
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeLambda }
 	initializeWithDefaultsFn = func(*common.LambdaContext) error { return errors.New("defaults failed") }
 	ensureRepositoryFactoryFn = func() error { return nil }
-	resolveDynamoClientFn = func() dynamormCore.DB { return &dynamorm.LambdaDB{} }
+	resolveDynamoClientFn = func() dynamormCore.DB { return &tabletheory.LambdaDB{} }
 	newUserRepositoryFn = func(dynamormCore.DB, string, *zap.Logger) *repositories.UserRepository { return nil }
 	newStreamingConnectionRepoFn = func(dynamormCore.DB, string, dynamormCore.DB, string, *zap.Logger) streamingConnectionRepository {
 		return &fakeConnectionRepo{}
@@ -708,7 +708,7 @@ func TestInitializeStreaming_SuccessAndErrors(t *testing.T) {
 	resolveDynamoClientFn = func() dynamormCore.DB { return nil }
 	require.Error(t, initializeStreaming())
 
-	resolveDynamoClientFn = func() dynamormCore.DB { return &dynamorm.LambdaDB{} }
+	resolveDynamoClientFn = func() dynamormCore.DB { return &tabletheory.LambdaDB{} }
 	fakeLambda.Config.DynamoTableName = ""
 	require.Error(t, initializeStreaming())
 
@@ -771,7 +771,7 @@ func TestInitializeManualRepositories_SuccessAndErrors(t *testing.T) {
 	logger = nil
 	repos = nil
 
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return &factory.RepositoryFactory{}, nil
 	}
@@ -791,7 +791,7 @@ func TestInitializeManualRepositories_SuccessAndErrors(t *testing.T) {
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return nil, errors.New("client failed") }
 	require.Error(t, initializeManualRepositories())
 
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return nil, errors.New("factory failed")
 	}
@@ -814,7 +814,7 @@ func TestInitializeManualRepositories_RegionResolution(t *testing.T) {
 		newRepositoryFactoryFn = originalNewFactory
 	})
 
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return &factory.RepositoryFactory{}, nil
 	}
@@ -885,7 +885,7 @@ func TestEnsureRepositoryFactory_Branches(t *testing.T) {
 	repos = nil
 	logger = nil
 	cfg = &config.Config{Region: "us-east-2", DynamoTableName: "tbl"}
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(dynamormCore.DB, string, *zap.Logger) (*factory.RepositoryFactory, error) {
 		return &factory.RepositoryFactory{}, nil
 	}
@@ -901,7 +901,7 @@ func TestResolveDynamoClient_UsesLambdaContextDynamo(t *testing.T) {
 		repos = originalRepos
 	})
 
-	lambdaCtx = &common.LambdaContext{DynamoDB: &dynamorm.LambdaDB{}}
+	lambdaCtx = &common.LambdaContext{DynamoDB: &tabletheory.LambdaDB{}}
 	repos = nil
 	require.NotNil(t, resolveDynamoClient())
 
@@ -918,7 +918,7 @@ func TestResolveDynamoClient_UsesReposDB(t *testing.T) {
 	})
 
 	mockStorage := &testingmocks.MockRepositoryStorage{}
-	db := dynamormCore.DB(&dynamorm.LambdaDB{})
+	db := dynamormCore.DB(&tabletheory.LambdaDB{})
 	mockStorage.On("GetDB").Return(db)
 
 	lambdaCtx = &common.LambdaContext{}
@@ -970,7 +970,7 @@ func TestInitializeStreamingOnStart_InitializesWhenNotUnitTests(t *testing.T) {
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeLambda }
 	initializeWithDefaultsFn = func(*common.LambdaContext) error { return nil }
 	ensureRepositoryFactoryFn = func() error { return nil }
-	resolveDynamoClientFn = func() dynamormCore.DB { return &dynamorm.LambdaDB{} }
+	resolveDynamoClientFn = func() dynamormCore.DB { return &tabletheory.LambdaDB{} }
 	newUserRepositoryFn = func(dynamormCore.DB, string, *zap.Logger) *repositories.UserRepository { return nil }
 	newStreamingConnectionRepoFn = func(dynamormCore.DB, string, dynamormCore.DB, string, *zap.Logger) streamingConnectionRepository {
 		return &fakeConnectionRepo{}
@@ -987,178 +987,130 @@ func TestInitializeStreamingOnStart_InitializesWhenNotUnitTests(t *testing.T) {
 }
 
 func TestMain_RegistersRoutesAndStartsLambda(t *testing.T) {
-	originalCfg := cfg
 	originalHandler := handler
-	originalNewApp := newLiftAppFn
 	originalLambdaStart := lambdaStartFn
+	originalNewClient := newStreamerClientFn
+	originalRunAsync := runAsyncFn
 	t.Cleanup(func() {
-		cfg = originalCfg
 		handler = originalHandler
-		newLiftAppFn = originalNewApp
 		lambdaStartFn = originalLambdaStart
+		newStreamerClientFn = originalNewClient
+		runAsyncFn = originalRunAsync
 	})
 
-	handler = &StreamingHandler{logger: zap.NewNop(), cfg: &config.Config{}, awsConfig: aws.Config{Region: "us-east-1"}}
+	runAsyncFn = func(fn func()) { fn() }
 
-	var gotOptLens []int
-	newLiftAppFn = func(opts ...lift.AppOption) *lift.App {
-		gotOptLens = append(gotOptLens, len(opts))
-		return lift.New(opts...)
+	wsClient := &fakeWSClient{}
+	newStreamerClientFn = func(_ context.Context, _ string, _ ...streamer.Option) (streamer.Client, error) {
+		return wsClient, nil
 	}
 
-	var startedWith any
-	lambdaStartFn = func(h any) { startedWith = h }
-
-	cfg = &config.Config{DebugMode: false}
-	main()
-	require.Equal(t, []int{1}, gotOptLens)
-	require.NotNil(t, startedWith)
-
-	gotOptLens = nil
-	startedWith = nil
-	cfg = &config.Config{DebugMode: true}
-	main()
-	require.Equal(t, []int{1, 2}, gotOptLens)
-	require.NotNil(t, startedWith)
-}
-
-func TestHandleWebSocketEvent_ErrorBranchesAndRoutes(t *testing.T) {
-	originalNewClient := newStreamerClientFn
-	t.Cleanup(func() { newStreamerClientFn = originalNewClient })
-
-	sh := &StreamingHandler{
-		connectionRepo: &fakeConnectionRepo{},
+	connRepo := &fakeConnectionRepo{
+		getConnectionResp: &models.WebSocketConnection{ConnectionID: "c1", UserID: "u1", Username: "alice"},
+	}
+	handler = &StreamingHandler{
+		connectionRepo: connRepo,
 		costTracker:    &fakeCostTracker{},
 		logger:         zap.NewNop(),
 		cfg:            &config.Config{JWTSecret: "secret"},
 		awsConfig:      aws.Config{Region: "us-east-1"},
 	}
 
-	t.Run("missing_event", func(t *testing.T) {
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerWebSocket
-		ctx := lift.NewContext(context.Background(), req)
-		err := sh.HandleWebSocketEvent(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "MISSING_EVENT", liftErr.Code)
-	})
+	var startedWith any
+	lambdaStartFn = func(h any) { startedWith = h }
 
-	t.Run("marshal_error", func(t *testing.T) {
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerWebSocket
-		req.RawEvent = map[string]any{"bad": func() {}}
-		ctx := lift.NewContext(context.Background(), req)
-		err := sh.HandleWebSocketEvent(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "EVENT_PARSE_ERROR", liftErr.Code)
-	})
+	main()
+	require.NotNil(t, startedWith)
 
-	t.Run("unmarshal_error", func(t *testing.T) {
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerWebSocket
-		req.RawEvent = map[string]any{"requestContext": "nope"}
-		ctx := lift.NewContext(context.Background(), req)
-		err := sh.HandleWebSocketEvent(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "EVENT_PARSE_ERROR", liftErr.Code)
-	})
+	handlerFn, ok := startedWith.(func(context.Context, json.RawMessage) (any, error))
+	require.True(t, ok)
 
-	t.Run("as_websocket_error", func(t *testing.T) {
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerAPIGateway
-		req.RawEvent = events.APIGatewayWebsocketProxyRequest{
-			RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "$connect"},
-		}
-		ctx := lift.NewContext(context.Background(), req)
-		err := sh.HandleWebSocketEvent(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "BAD_REQUEST", liftErr.Code)
-	})
+	connectEvent := events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: "c1",
+			RouteKey:     "$connect",
+			DomainName:   "api.execute-api.us-east-1.amazonaws.com",
+			Stage:        "dev",
+		},
+		Path: "/",
+	}
+	raw, err := json.Marshal(connectEvent)
+	require.NoError(t, err)
+	respAny, err := handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.APIGatewayProxyResponse)
+	require.True(t, ok)
+	require.Equal(t, 200, resp.StatusCode)
+	require.Len(t, connRepo.wroteConnections, 1)
 
-	t.Run("client_init_error", func(t *testing.T) {
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
-			return nil, errors.New("client failed")
-		}
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerWebSocket
-		req.RawEvent = events.APIGatewayWebsocketProxyRequest{
-			RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "$connect"},
-		}
-		req.Metadata = map[string]any{"managementEndpoint": "https://custom"}
-		ctx := lift.NewContext(context.Background(), req)
-		err := sh.HandleWebSocketEvent(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "INTERNAL_ERROR", liftErr.Code)
-	})
+	defaultEvent := events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: "c1",
+			RouteKey:     "$default",
+			DomainName:   "api.execute-api.us-east-1.amazonaws.com",
+			Stage:        "dev",
+		},
+		Path: "/",
+		Body: `{"type":"ping"}`,
+	}
+	raw, err = json.Marshal(defaultEvent)
+	require.NoError(t, err)
+	respAny, err = handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok = respAny.(events.APIGatewayProxyResponse)
+	require.True(t, ok)
+	require.Equal(t, 200, resp.StatusCode)
+	require.NotEmpty(t, wsClient.posts)
 
-	t.Run("unknown_route", func(t *testing.T) {
-		ws := &fakeWSClient{}
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
-			return ws, nil
-		}
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerWebSocket
-		req.RawEvent = events.APIGatewayWebsocketProxyRequest{
-			RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "wat"},
-		}
-		req.Metadata = map[string]any{"managementEndpoint": "https://custom"}
-		ctx := lift.NewContext(context.Background(), req)
-		err := sh.HandleWebSocketEvent(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, "UNKNOWN_ROUTE", liftErr.Code)
-	})
+	disconnectEvent := events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: "c1",
+			RouteKey:     "$disconnect",
+			DomainName:   "api.execute-api.us-east-1.amazonaws.com",
+			Stage:        "dev",
+		},
+		Path: "/",
+	}
+	raw, err = json.Marshal(disconnectEvent)
+	require.NoError(t, err)
+	respAny, err = handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok = respAny.(events.APIGatewayProxyResponse)
+	require.True(t, ok)
+	require.Equal(t, 200, resp.StatusCode)
+	require.Equal(t, []string{"c1"}, connRepo.deletedConnections)
+}
 
-	t.Run("disconnect_route", func(t *testing.T) {
-		connRepo := &fakeConnectionRepo{}
-		ws := &fakeWSClient{}
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
-			return ws, nil
-		}
-		sh.connectionRepo = connRepo
+func TestWebSocketDefault_Returns500WhenClientInitFails(t *testing.T) {
+	originalNewClient := newStreamerClientFn
+	t.Cleanup(func() { newStreamerClientFn = originalNewClient })
 
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerWebSocket
-		req.RawEvent = events.APIGatewayWebsocketProxyRequest{
-			RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "$disconnect"},
-		}
-		req.Metadata = map[string]any{"managementEndpoint": "https://custom"}
-		ctx := lift.NewContext(context.Background(), req)
-		require.NoError(t, sh.HandleWebSocketEvent(ctx))
-		require.Equal(t, []string{"c1"}, connRepo.deletedConnections)
-	})
+	newStreamerClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
+		return nil, errors.New("client failed")
+	}
 
-	t.Run("default_route", func(t *testing.T) {
-		connRepo := &fakeConnectionRepo{
+	sh := &StreamingHandler{
+		connectionRepo: &fakeConnectionRepo{
 			getConnectionResp: &models.WebSocketConnection{ConnectionID: "c1", UserID: "u1", Username: "alice"},
-		}
-		ws := &fakeWSClient{}
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (streamer.Client, error) {
-			return ws, nil
-		}
-		sh.connectionRepo = connRepo
-		sh.wsClient = nil
+		},
+		costTracker: &fakeCostTracker{},
+		logger:      zap.NewNop(),
+		cfg:         &config.Config{JWTSecret: "secret"},
+		awsConfig:   aws.Config{Region: "us-east-1"},
+	}
 
-		req := lift.NewRequest(nil)
-		req.TriggerType = lift.TriggerWebSocket
-		req.RawEvent = events.APIGatewayWebsocketProxyRequest{
-			RequestContext: events.APIGatewayWebsocketProxyRequestContext{ConnectionID: "c1", RouteKey: "$default"},
-			Body:           `{"type":"ping"}`,
-		}
-		req.Metadata = map[string]any{"managementEndpoint": "https://custom"}
-		ctx := lift.NewContext(context.Background(), req)
-		require.NoError(t, sh.HandleWebSocketEvent(ctx))
-		require.NotEmpty(t, ws.posts)
+	app := apptheory.New()
+	app.WebSocket("$default", sh.HandleWebSocketDefault)
+
+	resp := app.ServeWebSocket(context.Background(), events.APIGatewayWebsocketProxyRequest{
+		RequestContext: events.APIGatewayWebsocketProxyRequestContext{
+			ConnectionID: "c1",
+			RouteKey:     "$default",
+			DomainName:   "api.execute-api.us-east-1.amazonaws.com",
+			Stage:        "dev",
+		},
+		Path: "/",
+		Body: `{"type":"ping"}`,
 	})
+	require.Equal(t, 500, resp.StatusCode)
 }

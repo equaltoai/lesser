@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	liftTesting "github.com/equaltoai/lesser/pkg/testing/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestErrorCodeForHTTPStatus_MappingAndDefaults(t *testing.T) {
@@ -26,53 +26,40 @@ func TestErrorCodeForHTTPStatus_MappingAndDefaults(t *testing.T) {
 }
 
 func TestSendError_AndMastodonError(t *testing.T) {
-	ctx := liftTesting.MockLiftContext("GET", "/test")
-	err := SendError(ctx, 404, "missing")
+	ctx := newTestContext("GET", "/test")
+	resp, err := SendError(ctx, 404, "missing")
 	require.NoError(t, err)
-	assert.Equal(t, 404, ctx.Response.StatusCode)
+	assert.Equal(t, 404, resp.Status)
 
 	var std StandardErrorResponse
-	switch body := ctx.Response.Body.(type) {
-	case StandardErrorResponse:
-		std = body
-	case []byte:
-		require.NoError(t, json.Unmarshal(body, &std))
-	default:
-		t.Fatalf("unexpected response body type %T", ctx.Response.Body)
-	}
+	require.NoError(t, json.Unmarshal(resp.Body, &std))
 	assert.Equal(t, "missing", std.Error)
 	assert.Equal(t, "NOT_FOUND", std.Code)
 
-	ctx2 := liftTesting.MockLiftContext("GET", "/test")
-	err = SendMastodonError(ctx2, 422, "bad input")
+	ctx2 := newTestContext("GET", "/test")
+	resp2, err := SendMastodonError(ctx2, 422, "bad input")
 	require.NoError(t, err)
-	assert.Equal(t, 422, ctx2.Response.StatusCode)
+	assert.Equal(t, 422, resp2.Status)
 
 	var m map[string]any
-	switch body := ctx2.Response.Body.(type) {
-	case map[string]any:
-		m = body
-	case []byte:
-		require.NoError(t, json.Unmarshal(body, &m))
-	default:
-		t.Fatalf("unexpected response body type %T", ctx2.Response.Body)
-	}
+	require.NoError(t, json.Unmarshal(resp2.Body, &m))
 	assert.Equal(t, "bad input", m["error"])
 	assert.Equal(t, "UNPROCESSABLE_ENTITY", m["error_code"])
 	assert.Equal(t, "Validation failed", m["error_description"])
 }
 
 func TestGetBaseURL_AndPaginatedMastodonResponse_LinkHeader(t *testing.T) {
-	ctx := liftTesting.MockLiftContext("GET", "/api/v1/test", liftTesting.WithHeaders(map[string]string{
-		"Host":              "example.com",
-		"X-Forwarded-Proto": "http",
-	}))
-	ctx.Request.Request.Headers["X-Forwarded-Proto"] = "http"
+	ctx := newTestContext("GET", "/api/v1/test", func(ctx *apptheory.Context) {
+		ctx.Request.Headers = map[string][]string{
+			"host":              {"example.com"},
+			"x-forwarded-proto": {"http"},
+		}
+	})
 
 	assert.Equal(t, "http://example.com/api/v1/test", GetBaseURL(ctx))
 
 	params := PaginationParams{Limit: 20}
-	err := SendPaginatedMastodonResponse(ctx, []string{"a"}, params, true, false, "next", "")
+	resp, err := SendPaginatedMastodonResponse(ctx, []string{"a"}, params, true, false, "next", "")
 	require.NoError(t, err)
-	assert.NotEmpty(t, ctx.Response.Headers["Link"])
+	assert.NotEmpty(t, resp.Headers["link"])
 }

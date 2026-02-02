@@ -2,30 +2,31 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
-	liftapi "github.com/equaltoai/lesser/cmd/api/lift"
+	apiHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/equaltoai/lesser/pkg/auth"
 	awsinit "github.com/equaltoai/lesser/pkg/aws"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -67,11 +68,11 @@ func TestExtractStandardizedServicesRound12(t *testing.T) {
 		return nil
 	}, "api")
 	lambdaCtx = &common.LambdaContext{
-		Config:       cfg,
-		Logger:       logger,
-		Repos:        repoStorage,
-		AuthService:  &auth.AuthService{},
-		EMFMetrics:   observability.NewEMFMetrics(logger, "Lesser/Test", "api"),
+		Config:        cfg,
+		Logger:        logger,
+		Repos:         repoStorage,
+		AuthService:   &auth.AuthService{},
+		EMFMetrics:    observability.NewEMFMetrics(logger, "Lesser/Test", "api"),
 		HealthChecker: &observability.HealthChecker{},
 		TracingManager: observability.NewTracingManager(logger, &observability.TracingConfig{
 			ServiceName:    "lesser-api",
@@ -81,8 +82,8 @@ func TestExtractStandardizedServicesRound12(t *testing.T) {
 		}),
 		MetricsCollector:  &observability.MetricsCollector{},
 		LatencyAggregator: observability.NewLatencyAggregator(logger, metricsRecorder),
-		LatencyAlerter: &observability.LatencyAlerter{},
-		AWSServices:    &awsinit.AWSServices{CloudWatch: cwClient},
+		LatencyAlerter:    &observability.LatencyAlerter{},
+		AWSServices:       &awsinit.AWSServices{CloudWatch: cwClient},
 	}
 
 	t.Cleanup(func() {
@@ -121,7 +122,9 @@ func TestInitializeManualServicesRound12(t *testing.T) {
 	newRepositoryFactory = func(dynamormCore.DB, string, *zap.Logger) (storagecore.RepositoryStorage, error) {
 		return newMainTestRepos(t), nil
 	}
-	newAuthService = func(_ *config.Config, _ auth.StorageProvider) (*auth.AuthService, error) { return &auth.AuthService{}, nil }
+	newAuthService = func(_ *config.Config, _ auth.StorageProvider) (*auth.AuthService, error) {
+		return &auth.AuthService{}, nil
+	}
 
 	logger = zap.NewNop()
 	cfg = &config.Config{
@@ -162,13 +165,11 @@ func TestInitializeManualServicesRound12(t *testing.T) {
 }
 
 func TestInitializeAPISpecificServicesRound12(t *testing.T) {
-	origNewLiftHandler := newLiftHandler
+	origNewAPIHandler := newAPIHandler
 	origNewStreamQueue := newStreamQueue
-	origCreateAuthMw := createAPIAuthMiddlewareFromAuthService
 	t.Cleanup(func() {
-		newLiftHandler = origNewLiftHandler
+		newAPIHandler = origNewAPIHandler
 		newStreamQueue = origNewStreamQueue
-		createAPIAuthMiddlewareFromAuthService = origCreateAuthMw
 	})
 
 	cfg = &config.Config{
@@ -185,17 +186,14 @@ func TestInitializeAPISpecificServicesRound12(t *testing.T) {
 	streamQueue := &streamQueueStub{}
 
 	created := false
-	newLiftHandler = func(_ *config.Config, _ storagecore.RepositoryStorage, _ *zap.Logger, _ lift.Middleware, _ streaming.StreamQueueService) *liftapi.Handler {
+	newAPIHandler = func(_ *config.Config, _ storagecore.RepositoryStorage, _ *zap.Logger, _ streaming.StreamQueueService) *apiHandlers.Handler {
 		created = true
-		return &liftapi.Handler{}
+		return &apiHandlers.Handler{}
 	}
 	newStreamQueueCalled := false
 	newStreamQueue = func(_ dynamormCore.DB, _ string, _ *zap.Logger) streaming.StreamQueueService {
 		newStreamQueueCalled = true
 		return streamQueue
-	}
-	createAPIAuthMiddlewareFromAuthService = func(_ *auth.AuthService, _ *zap.Logger) lift.Middleware {
-		return func(next lift.Handler) lift.Handler { return next }
 	}
 
 	// Uses configured stream queue.
@@ -206,7 +204,7 @@ func TestInitializeAPISpecificServicesRound12(t *testing.T) {
 	initializeAPISpecificServices()
 
 	require.True(t, created)
-	require.NotNil(t, liftHandler)
+	require.NotNil(t, apiHandler)
 	require.False(t, newStreamQueueCalled)
 
 	// Falls back to DynamoDB-backed stream queue creation.
@@ -228,32 +226,20 @@ func TestConfigureHealthRoutesRound12(t *testing.T) {
 
 	repos = newMainTestRepos(t)
 
-	app := lift.New()
+	app := apptheory.New()
 	configureHealthRoutes(app)
 
-	call := func(path string) *lift.Response {
-		event := map[string]any{
-			"version":  "2.0",
-			"routeKey": "GET " + path,
-			"requestContext": map[string]any{
-				"requestId": "test-request-id",
-				"http": map[string]any{
-					"method": "GET",
-					"path":   path,
-				},
-			},
-		}
-		result, err := app.HandleRequest(context.Background(), event)
-		require.NoError(t, err)
-		resp, ok := result.(*lift.Response)
-		require.True(t, ok)
-		return resp
+	call := func(path string) apptheory.Response {
+		return app.Serve(context.Background(), apptheory.Request{
+			Method: "GET",
+			Path:   path,
+		})
 	}
 
-	require.Equal(t, 200, call("/health/live").StatusCode)
-	require.Equal(t, 200, call("/health").StatusCode)
-	require.Equal(t, 200, call("/health/ready").StatusCode)
-	require.Equal(t, 200, call("/health/detailed").StatusCode)
+	require.Equal(t, 200, call("/health/live").Status)
+	require.Equal(t, 200, call("/health").Status)
+	require.Equal(t, 200, call("/health/ready").Status)
+	require.Equal(t, 200, call("/health/detailed").Status)
 
 	// Now exercise a failing DB dependency path.
 	errorRepos := func(t *testing.T) *mainTestRepos {
@@ -271,15 +257,15 @@ func TestConfigureHealthRoutesRound12(t *testing.T) {
 		account := repositories.NewAccountRepository(mockDB, "test-table", "example.com", logger)
 		metric := repositories.NewMetricRecordRepository(mockDB, "test-table", logger, nil)
 		return &mainTestRepos{
-			MockRepositoryStorage: &liftapi.MockRepositoryStorage{},
+			MockRepositoryStorage: &apiHandlers.MockRepositoryStorage{},
 			account:               account,
 			metricRecord:          metric,
 		}
 	}
 
 	repos = errorRepos(t)
-	require.Equal(t, 503, call("/health/ready").StatusCode)
-	require.Equal(t, 503, call("/health/detailed").StatusCode)
+	require.Equal(t, 503, call("/health/ready").Status)
+	require.Equal(t, 503, call("/health/detailed").Status)
 }
 
 func TestTracingAndMetricsMiddlewareRound12(t *testing.T) {
@@ -293,8 +279,9 @@ func TestTracingAndMetricsMiddlewareRound12(t *testing.T) {
 	// Tracing: disabled path.
 	tracingManager = nil
 	mw := createTracingMiddleware()
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	require.NoError(t, mw(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(ctx))
+	ctx := &apptheory.Context{Request: apptheory.Request{Method: "GET", Path: "/"}}
+	_, err := mw(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(ctx)
+	require.NoError(t, err)
 
 	// Tracing: enabled path (exercise header parsing + error path).
 	tracingManager = observability.NewTracingManager(zap.NewNop(), &observability.TracingConfig{
@@ -305,18 +292,20 @@ func TestTracingAndMetricsMiddlewareRound12(t *testing.T) {
 		LocalTesting:   false,
 	})
 	mw = createTracingMiddleware()
-	ctx = lift.NewContext(context.Background(), nil)
-	require.NoError(t, mw(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(ctx))
+	ctx = &apptheory.Context{Request: apptheory.Request{Method: "GET", Path: "/"}}
+	_, err = mw(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(ctx)
+	require.NoError(t, err)
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
+	ctx = &apptheory.Context{Request: apptheory.Request{
 		Method: "POST",
 		Path:   "/trace",
-		Headers: map[string]string{
-			"User-Agent":      "test-agent",
-			"X-Forwarded-For": "203.0.113.10",
+		Headers: map[string][]string{
+			"user-agent":      {"test-agent"},
+			"x-forwarded-for": {"203.0.113.10"},
 		},
-	}))
-	require.Error(t, mw(lift.HandlerFunc(func(*lift.Context) error { return errors.New("boom") })).Handle(ctx))
+	}}
+	_, err = mw(func(*apptheory.Context) (*apptheory.Response, error) { return nil, errors.New("boom") })(ctx)
+	require.Error(t, err)
 
 	// EMF: recordEMFMetrics no-op when disabled.
 	emfMetrics = nil
@@ -330,21 +319,30 @@ func TestTracingAndMetricsMiddlewareRound12(t *testing.T) {
 	// EMF middleware: early return when EMF disabled and when request is missing.
 	emfMetrics = nil
 	emfMW := createEMFMetricsMiddleware()
-	require.NoError(t, emfMW(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(lift.NewContext(context.Background(), lift.NewRequest(nil))))
+	_, err = emfMW(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(&apptheory.Context{
+		Request: apptheory.Request{Method: "GET", Path: "/"},
+	})
+	require.NoError(t, err)
 
 	emfMetrics = observability.NewEMFMetrics(zap.NewNop(), "Lesser/Test", "api")
 	emfMW = createEMFMetricsMiddleware()
-	require.NoError(t, emfMW(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(lift.NewContext(context.Background(), nil)))
-	require.Error(t, emfMW(lift.HandlerFunc(func(*lift.Context) error { return errors.New("boom") })).Handle(lift.NewContext(context.Background(), lift.NewRequest(nil))))
+	_, err = emfMW(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(&apptheory.Context{
+		Request: apptheory.Request{Method: "GET", Path: "/"},
+	})
+	require.NoError(t, err)
+	_, err = emfMW(func(*apptheory.Context) (*apptheory.Response, error) { return nil, errors.New("boom") })(&apptheory.Context{
+		Request: apptheory.Request{Method: "GET", Path: "/"},
+	})
+	require.Error(t, err)
 }
 
 func TestExtractRequestInfoRound12_NilRequest(t *testing.T) {
-	info := extractRequestInfo(&lift.Context{})
+	info := extractRequestInfo(&apptheory.Context{})
 	require.Equal(t, "GET", info.method)
 	require.Equal(t, "/", info.path)
 	require.Equal(t, "GET /", info.endpoint)
 
-	info = extractRequestInfo(lift.NewContext(context.Background(), &lift.Request{}))
+	info = extractRequestInfo(nil)
 	require.Equal(t, "GET", info.method)
 	require.Equal(t, "/", info.path)
 	require.Equal(t, "GET /", info.endpoint)
@@ -365,8 +363,9 @@ func TestCreateCentralizedCostTrackingMiddlewareRound12(t *testing.T) {
 	logger = zap.NewNop()
 
 	mw := createCentralizedCostTrackingMiddleware()
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	require.NoError(t, mw(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(ctx))
+	ctx := &apptheory.Context{Request: apptheory.Request{Method: "GET", Path: "/"}}
+	_, err := mw(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(ctx)
+	require.NoError(t, err)
 
 	costTrackingService = cost.NewTrackingService(nil, logger, cost.DefaultTrackingServiceConfig())
 	t.Cleanup(func() { _ = costTrackingService.Close(context.Background()) })
@@ -384,8 +383,9 @@ func TestCreateCentralizedCostTrackingMiddlewareRound12(t *testing.T) {
 	t.Cleanup(func() { _ = os.Unsetenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE") })
 
 	mw = createCentralizedCostTrackingMiddleware()
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(nil))
-	require.NoError(t, mw(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(ctx))
+	ctx = &apptheory.Context{Request: apptheory.Request{Method: "GET", Path: "/"}}
+	_, err = mw(func(*apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })(ctx)
+	require.NoError(t, err)
 
 	select {
 	case <-done:
@@ -396,11 +396,11 @@ func TestCreateCentralizedCostTrackingMiddlewareRound12(t *testing.T) {
 
 func TestMainRound12(t *testing.T) {
 	origLambdaStart := lambdaStart
-	origRoutes := configureLiftRoutesFn
+	origRoutes := configureRoutesFn
 	origLock := createInstanceLockMiddlewareFn
 	t.Cleanup(func() {
 		lambdaStart = origLambdaStart
-		configureLiftRoutesFn = origRoutes
+		configureRoutesFn = origRoutes
 		createInstanceLockMiddlewareFn = origLock
 	})
 
@@ -418,20 +418,24 @@ func TestMainRound12(t *testing.T) {
 	startTime = time.Now()
 	emfMetrics = observability.NewEMFMetrics(logger, "Lesser/Test", "api")
 
-	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) lift.Middleware {
-		return func(next lift.Handler) lift.Handler { return next }
+	createInstanceLockMiddlewareFn = func(_ storagecore.RepositoryStorage, _ *zap.Logger) apptheory.Middleware {
+		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
-	configureLiftRoutesFn = func(app *lift.App) { _ = app.GET("/ping", func(ctx *lift.Context) error { return ctx.Status(200).JSON(map[string]string{"ok": "true"}) }) }
+	configureRoutesFn = func(app *apptheory.App) {
+		app.Get("/ping", func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.JSON(200, map[string]string{"ok": "true"})
+		})
+	}
 
 	var captured any
 	lambdaStart = func(h any) { captured = h }
 
 	main()
 
-	handler, ok := captured.(func(context.Context, interface{}) (interface{}, error))
+	handler, ok := captured.(func(context.Context, json.RawMessage) (any, error))
 	require.True(t, ok)
 
-	respAny, err := handler(context.Background(), map[string]any{
+	payload, err := json.Marshal(map[string]any{
 		"version":  "2.0",
 		"routeKey": "GET /ping",
 		"requestContext": map[string]any{
@@ -444,7 +448,10 @@ func TestMainRound12(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	resp, ok := respAny.(*lift.Response)
+	respAny, err := handler(context.Background(), payload)
+	require.NoError(t, err)
+
+	resp, ok := respAny.(events.APIGatewayV2HTTPResponse)
 	require.True(t, ok)
 	require.Equal(t, 200, resp.StatusCode)
 }

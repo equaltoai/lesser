@@ -6,18 +6,18 @@ import (
 
 // NumericIDMapping represents a mapping from numeric ID to username for Mastodon API compatibility
 type NumericIDMapping struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "NUMERIC_ID#{numeric_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "NUMERIC_ID#{numeric_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
 	// Mapping data
-	NumericID string    `dynamorm:"attr:numericID" json:"numeric_id"`
-	Username  string    `dynamorm:"attr:username" json:"username"`
-	ActorID   string    `dynamorm:"attr:actorID" json:"actor_id"`
-	Type      string    `dynamorm:"attr:type" json:"type"` // "NumericIDMapping"
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	NumericID string    `theorydb:"attr:numericID" json:"numeric_id"`
+	Username  string    `theorydb:"attr:username" json:"username"`
+	ActorID   string    `theorydb:"attr:actorID" json:"actor_id"`
+	Type      string    `theorydb:"attr:type" json:"type"` // "NumericIDMapping"
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table name for the NumericIDMapping model

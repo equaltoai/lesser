@@ -13,7 +13,7 @@ func TestRound12MutationResolvers_ModerationParity_SubmitModerationReview(t *tes
 
 	notes := "looks good"
 	out, err := resolver.Mutation().SubmitModerationReview(ctx, model.ModerationReviewInput{
-		EventID:     "evt-1",
+		EventID:    "evt-1",
 		Action:     "hide",
 		Severity:   2,
 		Confidence: 0.75,
@@ -25,11 +25,10 @@ func TestRound12MutationResolvers_ModerationParity_SubmitModerationReview(t *tes
 	require.Equal(t, "evt-1", out.EventID)
 
 	_, err = resolver.Mutation().SubmitModerationReview(ctx, model.ModerationReviewInput{
-		EventID:     "evt-2",
+		EventID:    "evt-2",
 		Action:     "hide",
 		Severity:   9,
 		Confidence: 0.75,
 	})
 	require.Error(t, err)
 }
-

@@ -170,4 +170,3 @@ func TestBandwidthTracker_publishBandwidthMetric_NoCloudWatch(t *testing.T) {
 	}()
 	wg.Wait()
 }
-

@@ -208,7 +208,6 @@ func (m *MockModerationRepository) GetModerationHistory(ctx context.Context, obj
 	return args.Get(0).(*storage.ModerationHistory), args.Error(1)
 }
 
-
 // ===== Filter Operations =====
 
 // CreateFilter mocks the CreateFilter method

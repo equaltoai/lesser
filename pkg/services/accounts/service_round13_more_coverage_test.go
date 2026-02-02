@@ -14,17 +14,17 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/marshalers"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -80,7 +80,7 @@ type permissiveAccountsStorage struct {
 }
 
 func (s *permissiveAccountsStorage) Account() *repositories.AccountRepository { return s.account }
-func (s *permissiveAccountsStorage) Actor() interfaces.ActorRepository     { return s.actor }
+func (s *permissiveAccountsStorage) Actor() interfaces.ActorRepository        { return s.actor }
 func (s *permissiveAccountsStorage) Relationship() interfaces.ConcreteRelationshipRepository {
 	return s.relationship
 }
@@ -92,11 +92,11 @@ func (s *permissiveAccountsStorage) Instance() *repositories.InstanceRepository 
 func (s *permissiveAccountsStorage) DomainBlock() *repositories.DomainBlockRepository {
 	return s.domainBlock
 }
-func (s *permissiveAccountsStorage) Quote() *repositories.QuoteRepository       { return s.quote }
-func (s *permissiveAccountsStorage) Activity() interfaces.ActivityRepository    { return s.activity }
-func (s *permissiveAccountsStorage) GetDB() dynamormcore.DB                     { return s.db }
-func (s *permissiveAccountsStorage) GetTableName() string                       { return s.tableName }
-func (s *permissiveAccountsStorage) GetLogger() *zap.Logger                     { return s.logger }
+func (s *permissiveAccountsStorage) Quote() *repositories.QuoteRepository    { return s.quote }
+func (s *permissiveAccountsStorage) Activity() interfaces.ActivityRepository { return s.activity }
+func (s *permissiveAccountsStorage) GetDB() dynamormcore.DB                  { return s.db }
+func (s *permissiveAccountsStorage) GetTableName() string                    { return s.tableName }
+func (s *permissiveAccountsStorage) GetLogger() *zap.Logger                  { return s.logger }
 
 type permissiveDBOptions struct {
 	domain               string
@@ -1524,7 +1524,7 @@ func TestService_Round13_MoreBranchCoverage(t *testing.T) {
 
 	t.Run("getFollowers/getFollowing page data error paths", func(t *testing.T) {
 		svc, _ := newPermissiveAccountsService(t, permissiveDBOptions{
-			domain:       "example.com",
+			domain:        "example.com",
 			firstAllError: errors.New("all failed"),
 		})
 
@@ -1565,7 +1565,7 @@ func TestService_Round13_MoreBranchCoverage(t *testing.T) {
 
 	t.Run("relationship helper error branches", func(t *testing.T) {
 		svc, _ := newPermissiveAccountsService(t, permissiveDBOptions{
-			domain:                     "example.com",
+			domain:                      "example.com",
 			firstRelationshipFirstError: errors.New("relationship read failed"),
 			firstMuteFirstError:         errors.New("mute read failed"),
 		})

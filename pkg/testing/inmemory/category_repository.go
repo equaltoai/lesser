@@ -9,7 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 // RootCategoryKey is the parent key used for top-level categories.

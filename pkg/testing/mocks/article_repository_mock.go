@@ -6,8 +6,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/mock"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 // MockArticleRepository is a mock implementation of interfaces.ArticleRepository

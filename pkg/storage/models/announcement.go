@@ -51,35 +51,35 @@ func (Mention) TableName() string {
 
 // Announcement represents an announcement in DynamoDB
 type Announcement struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// GSI1 - Status-based queries (active/inactive)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "ANNOUNCEMENT#active" or "ANNOUNCEMENT#inactive"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "reverse_timestamp" for chronological order
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "ANNOUNCEMENT#active" or "ANNOUNCEMENT#inactive"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "reverse_timestamp" for chronological order
 
 	// GSI2 - Created by queries (admin management)
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "ADMIN#{admin_username}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{published_at}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "ADMIN#{admin_username}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{published_at}#{id}"
 
 	// Announcement fields
-	ID          string        `dynamorm:"attr:id" json:"id"`
-	Content     string        `dynamorm:"attr:content" json:"content"`               // HTML content
-	Text        string        `dynamorm:"attr:text" json:"text"`                     // Plain text version
-	PublishedAt time.Time     `dynamorm:"attr:publishedAt" json:"published_at"`      // When it was published
-	UpdatedAt   time.Time     `dynamorm:"attr:updatedAt" json:"updated_at"`          // When it was last updated
-	AllDay      bool          `dynamorm:"attr:allDay" json:"all_day"`                // Whether it's an all-day announcement
-	StartsAt    *time.Time    `dynamorm:"attr:startsAt" json:"starts_at,omitempty"`  // When the announcement starts
-	EndsAt      *time.Time    `dynamorm:"attr:endsAt" json:"ends_at,omitempty"`      // When the announcement ends
-	Reactions   []Reaction    `dynamorm:"attr:reactions" json:"reactions,omitempty"` // Available reactions
-	Tags        []string      `dynamorm:"attr:tags" json:"tags,omitempty"`           // Hashtags
-	Emojis      []CustomEmoji `dynamorm:"attr:emojis" json:"emojis,omitempty"`       // Custom emojis
-	Mentions    []Mention     `dynamorm:"attr:mentions" json:"mentions,omitempty"`   // Mentions
-	CreatedBy   string        `dynamorm:"attr:createdBy" json:"created_by"`          // Admin who created it
-	CreatedAt   time.Time     `dynamorm:"attr:createdAt" json:"created_at"`
+	ID          string        `theorydb:"attr:id" json:"id"`
+	Content     string        `theorydb:"attr:content" json:"content"`               // HTML content
+	Text        string        `theorydb:"attr:text" json:"text"`                     // Plain text version
+	PublishedAt time.Time     `theorydb:"attr:publishedAt" json:"published_at"`      // When it was published
+	UpdatedAt   time.Time     `theorydb:"attr:updatedAt" json:"updated_at"`          // When it was last updated
+	AllDay      bool          `theorydb:"attr:allDay" json:"all_day"`                // Whether it's an all-day announcement
+	StartsAt    *time.Time    `theorydb:"attr:startsAt" json:"starts_at,omitempty"`  // When the announcement starts
+	EndsAt      *time.Time    `theorydb:"attr:endsAt" json:"ends_at,omitempty"`      // When the announcement ends
+	Reactions   []Reaction    `theorydb:"attr:reactions" json:"reactions,omitempty"` // Available reactions
+	Tags        []string      `theorydb:"attr:tags" json:"tags,omitempty"`           // Hashtags
+	Emojis      []CustomEmoji `theorydb:"attr:emojis" json:"emojis,omitempty"`       // Custom emojis
+	Mentions    []Mention     `theorydb:"attr:mentions" json:"mentions,omitempty"`   // Mentions
+	CreatedBy   string        `theorydb:"attr:createdBy" json:"created_by"`          // Admin who created it
+	CreatedAt   time.Time     `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table backing Announcement.
@@ -154,16 +154,16 @@ func (a *Announcement) BeforeCreate() error {
 
 // AnnouncementDismissal represents a user dismissing an announcement
 type AnnouncementDismissal struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Dismissal fields
-	Username       string    `dynamorm:"attr:username" json:"username"`
-	AnnouncementID string    `dynamorm:"attr:announcementID" json:"announcement_id"`
-	DismissedAt    time.Time `dynamorm:"attr:dismissedAt" json:"dismissed_at"`
+	Username       string    `theorydb:"attr:username" json:"username"`
+	AnnouncementID string    `theorydb:"attr:announcementID" json:"announcement_id"`
+	DismissedAt    time.Time `theorydb:"attr:dismissedAt" json:"dismissed_at"`
 }
 
 // TableName returns the DynamoDB table backing AnnouncementDismissal.
@@ -186,17 +186,17 @@ func (d *AnnouncementDismissal) BeforeCreate() error {
 
 // AnnouncementReaction represents a user's reaction to an announcement
 type AnnouncementReaction struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Reaction fields
-	Username       string    `dynamorm:"attr:username" json:"username"`
-	AnnouncementID string    `dynamorm:"attr:announcementID" json:"announcement_id"`
-	EmojiName      string    `dynamorm:"attr:emojiName" json:"emoji_name"`
-	ReactedAt      time.Time `dynamorm:"attr:reactedAt" json:"reacted_at"`
+	Username       string    `theorydb:"attr:username" json:"username"`
+	AnnouncementID string    `theorydb:"attr:announcementID" json:"announcement_id"`
+	EmojiName      string    `theorydb:"attr:emojiName" json:"emoji_name"`
+	ReactedAt      time.Time `theorydb:"attr:reactedAt" json:"reacted_at"`
 }
 
 // TableName returns the DynamoDB table backing AnnouncementReaction.

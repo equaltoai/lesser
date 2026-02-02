@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -75,7 +75,7 @@ func TestSearchServiceIntegration_Round09_MoreCoverage(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once() // create default budget path
-		mockQuery.On("Create").Return(nil).Once()                                         // createDefaultBudget
+		mockQuery.On("Create").Return(nil).Once()                                          // createDefaultBudget
 		mockQuery.
 			On("First", mockMatchedByType[*models.SearchBudget]()).
 			Run(func(args mock.Arguments) {

@@ -30,8 +30,8 @@ func (s *storageProviderStub) Activity() storageinterfaces.ActivityRepository {
 	return s.activityRepo
 }
 func (s *storageProviderStub) Notification() storageinterfaces.NotificationRepository { return nil }
-func (s *storageProviderStub) Recovery() *repositories.RecoveryRepository           { return nil }
-func (s *storageProviderStub) Audit() *repositories.AuditRepository                 { return nil }
+func (s *storageProviderStub) Recovery() *repositories.RecoveryRepository             { return nil }
+func (s *storageProviderStub) Audit() *repositories.AuditRepository                   { return nil }
 
 func TestNewAuthService_ValidatesJWTSecretAndInitializes(t *testing.T) {
 	t.Parallel()

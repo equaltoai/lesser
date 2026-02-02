@@ -10,51 +10,51 @@ import (
 
 // FederationInstanceRegistry represents a federated instance in the routing registry
 type FederationInstanceRegistry struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - using pattern: PK=INSTANCE#<domain>, SK=METADATA
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI keys for status-based queries (GSI1)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI keys for tier-based queries (GSI2)
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Core instance attributes
-	ID             string `dynamorm:"attr:id" json:"id"`
-	Domain         string `dynamorm:"attr:domain" json:"domain"`
-	InboxURL       string `dynamorm:"attr:inboxURL" json:"inbox_url"`
-	SharedInboxURL string `dynamorm:"attr:sharedInboxURL" json:"shared_inbox_url"`
-	PublicKeyPEM   string `dynamorm:"attr:publicKeyPEM" json:"public_key_pem"`
+	ID             string `theorydb:"attr:id" json:"id"`
+	Domain         string `theorydb:"attr:domain" json:"domain"`
+	InboxURL       string `theorydb:"attr:inboxURL" json:"inbox_url"`
+	SharedInboxURL string `theorydb:"attr:sharedInboxURL" json:"shared_inbox_url"`
+	PublicKeyPEM   string `theorydb:"attr:publicKeyPEM" json:"public_key_pem"`
 
 	// Capabilities
-	SupportedTypes []string `dynamorm:"attr:supportedTypes" json:"supported_types"`
-	MaxMessageSize int64    `dynamorm:"attr:maxMessageSize" json:"max_message_size"`
+	SupportedTypes []string `theorydb:"attr:supportedTypes" json:"supported_types"`
+	MaxMessageSize int64    `theorydb:"attr:maxMessageSize" json:"max_message_size"`
 
 	// Rate limits (stored as nested JSON)
-	RateLimits map[string]interface{} `dynamorm:"attr:rateLimits" json:"rate_limits"`
+	RateLimits map[string]interface{} `theorydb:"attr:rateLimits" json:"rate_limits"`
 
 	// Status and timestamps
-	Status       string    `dynamorm:"attr:status" json:"status"`
-	LastSeen     time.Time `dynamorm:"attr:lastSeen" json:"last_seen"`
-	RegisteredAt time.Time `dynamorm:"attr:registeredAt" json:"registered_at"`
+	Status       string    `theorydb:"attr:status" json:"status"`
+	LastSeen     time.Time `theorydb:"attr:lastSeen" json:"last_seen"`
+	RegisteredAt time.Time `theorydb:"attr:registeredAt" json:"registered_at"`
 
 	// Performance metrics
-	AvgResponseTime int64   `dynamorm:"attr:avgResponseTime" json:"avg_response_time"` // milliseconds
-	SuccessRate     float64 `dynamorm:"attr:successRate" json:"success_rate"`
-	ErrorRate       float64 `dynamorm:"attr:errorRate" json:"error_rate"`
+	AvgResponseTime int64   `theorydb:"attr:avgResponseTime" json:"avg_response_time"` // milliseconds
+	SuccessRate     float64 `theorydb:"attr:successRate" json:"success_rate"`
+	ErrorRate       float64 `theorydb:"attr:errorRate" json:"error_rate"`
 
 	// Cost tracking
-	TierLevel    string `dynamorm:"attr:tierLevel" json:"tier_level"`
-	MonthlyQuota int64  `dynamorm:"attr:monthlyQuota" json:"monthly_quota"`
-	CurrentUsage int64  `dynamorm:"attr:currentUsage" json:"current_usage"`
+	TierLevel    string `theorydb:"attr:tierLevel" json:"tier_level"`
+	MonthlyQuota int64  `theorydb:"attr:monthlyQuota" json:"monthly_quota"`
+	CurrentUsage int64  `theorydb:"attr:currentUsage" json:"current_usage"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 }
 
 // TableName returns the DynamoDB table backing FederationInstanceRegistry.
@@ -94,24 +94,24 @@ func (f *FederationInstanceRegistry) GetSK() string {
 
 // FederationInstanceRegistryHealthHistory represents health history records
 type FederationInstanceRegistryHealthHistory struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - using pattern: PK=INSTANCE#<instanceID>, SK=HEALTH#<timestamp>
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// Health status fields
-	Reachable       bool      `dynamorm:"attr:reachable" json:"reachable"`
-	ResponseTime    int64     `dynamorm:"attr:responseTime" json:"response_time"` // milliseconds
-	StatusCode      int       `dynamorm:"attr:statusCode" json:"status_code"`
-	ErrorRate       float64   `dynamorm:"attr:errorRate" json:"error_rate"`
-	InboxBacklog    int       `dynamorm:"attr:inboxBacklog" json:"inbox_backlog"`
-	ProcessingDelay int64     `dynamorm:"attr:processingDelay" json:"processing_delay"` // milliseconds
-	ErrorMessage    string    `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
-	Timestamp       time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	Reachable       bool      `theorydb:"attr:reachable" json:"reachable"`
+	ResponseTime    int64     `theorydb:"attr:responseTime" json:"response_time"` // milliseconds
+	StatusCode      int       `theorydb:"attr:statusCode" json:"status_code"`
+	ErrorRate       float64   `theorydb:"attr:errorRate" json:"error_rate"`
+	InboxBacklog    int       `theorydb:"attr:inboxBacklog" json:"inbox_backlog"`
+	ProcessingDelay int64     `theorydb:"attr:processingDelay" json:"processing_delay"` // milliseconds
+	ErrorMessage    string    `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
+	Timestamp       time.Time `theorydb:"attr:timestamp" json:"timestamp"`
 
 	// TTL for automatic cleanup (keep 7 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 }
 
 // TableName returns the DynamoDB table backing FederationInstanceRegistryHealthHistory.

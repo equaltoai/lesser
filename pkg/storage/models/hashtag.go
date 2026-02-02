@@ -8,26 +8,26 @@ import (
 
 // Hashtag represents hashtag metadata stored in DynamoDB using DynamORM
 type Hashtag struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - hashtag metadata
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "HASHTAG#{hashtag_name}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "HASHTAG#{hashtag_name}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
 	// GSI3 - Hashtag search by prefix
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{hashtag_name}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{hashtag_name}"
 
 	// Core hashtag data
-	Name       string    `dynamorm:"attr:name" json:"name"`              // Hashtag name (lowercase, no #)
-	URL        string    `dynamorm:"attr:url" json:"url"`                // Public URL for the hashtag
-	UsageCount int64     `dynamorm:"attr:usageCount" json:"usage_count"` // Total number of times used
-	FirstSeen  time.Time `dynamorm:"attr:firstSeen" json:"first_seen"`   // When first seen
-	LastUsed   time.Time `dynamorm:"attr:lastUsed" json:"last_used"`     // When last used
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`   // Last metadata update
+	Name       string    `theorydb:"attr:name" json:"name"`              // Hashtag name (lowercase, no #)
+	URL        string    `theorydb:"attr:url" json:"url"`                // Public URL for the hashtag
+	UsageCount int64     `theorydb:"attr:usageCount" json:"usage_count"` // Total number of times used
+	FirstSeen  time.Time `theorydb:"attr:firstSeen" json:"first_seen"`   // When first seen
+	LastUsed   time.Time `theorydb:"attr:lastUsed" json:"last_used"`     // When last used
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"updated_at"`   // Last metadata update
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // UpdateKeys updates the GSI keys when the hashtag data changes
@@ -57,23 +57,23 @@ func (Hashtag) TableName() string {
 
 // HashtagUsage represents a single usage of a hashtag stored in DynamoDB using DynamORM
 type HashtagUsage struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - hashtag usage
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "HASHTAG#{hashtag_name}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "USAGE#{timestamp}#{status_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "HASHTAG#{hashtag_name}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "USAGE#{timestamp}#{status_id}"
 
 	// Usage data
-	StatusID   string    `dynamorm:"attr:statusID" json:"status_id"`
-	AuthorID   string    `dynamorm:"attr:authorID" json:"author_id"`
-	UsedAt     time.Time `dynamorm:"attr:usedAt" json:"used_at"`
-	Visibility string    `dynamorm:"attr:visibility" json:"visibility"`
+	StatusID   string    `theorydb:"attr:statusID" json:"status_id"`
+	AuthorID   string    `theorydb:"attr:authorID" json:"author_id"`
+	UsedAt     time.Time `theorydb:"attr:usedAt" json:"used_at"`
+	Visibility string    `theorydb:"attr:visibility" json:"visibility"`
 
 	// TTL for automatic cleanup (30 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName ensures hashtag usage records live in the shared single-table schema.

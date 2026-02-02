@@ -11,12 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	dynamotypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/crypto"
+	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/tyler-smith/go-bip32"
 	"github.com/tyler-smith/go-bip39"
 )
@@ -32,16 +31,37 @@ type bootstrapWallet struct {
 }
 
 var (
-	determineBootstrapWalletFn      = determineBootstrapWallet
-	writeBootstrapKeyMaterialFn     = writeBootstrapKeyMaterial
-	readBootstrapKeyMaterialFn      = readBootstrapKeyMaterial
-	inspectBootstrapRequirementsFn  = inspectBootstrapRequirements
-	ensureStageBootstrapStateFn     = ensureStageBootstrapState
+	determineBootstrapWalletFn     = determineBootstrapWallet
+	writeBootstrapKeyMaterialFn    = writeBootstrapKeyMaterial
+	readBootstrapKeyMaterialFn     = readBootstrapKeyMaterial
+	inspectBootstrapRequirementsFn = inspectBootstrapRequirements
+	ensureStageBootstrapStateFn    = ensureStageBootstrapState
 )
 
-type dynamodbAPI interface {
-	GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
-	UpdateItem(context.Context, *dynamodb.UpdateItemInput, ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
+type bootstrapDBFactory func() (theorydb.DB, error)
+
+var bootstrapTableName string
+
+type bootstrapInstanceStateRecord struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	Locked bool `theorydb:"attr:locked"`
+
+	BootstrapUsername      string `theorydb:"attr:bootstrapUsername"`
+	BootstrapWalletAddress string `theorydb:"attr:bootstrapWalletAddress"`
+
+	PrimaryAdminUsername string     `theorydb:"attr:primaryAdminUsername"`
+	ActivatedAt          *time.Time `theorydb:"attr:activatedAt"`
+
+	CreatedAt time.Time `theorydb:"attr:createdAt"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt"`
+}
+
+func (bootstrapInstanceStateRecord) TableName() string {
+	return bootstrapTableName
 }
 
 func determineBootstrapWallet(existingAddress string) (bootstrapWallet, error) {
@@ -182,9 +202,19 @@ func stageMainTableName(app string, stage naming.Stage) string {
 	return naming.ResourceNameWithApp(app, "main-table", string(stage))
 }
 
-func ensureStageBootstrapState(ctx context.Context, ddb dynamodbAPI, app string, stage naming.Stage, desiredAddress string) (stageBootstrapState, error) {
+func ensureStageBootstrapState(ctx context.Context, newDB bootstrapDBFactory, app string, stage naming.Stage, desiredAddress string) (stageBootstrapState, error) {
+	if newDB == nil {
+		return stageBootstrapState{}, errors.New("bootstrap database factory is nil")
+	}
+
+	db, err := newDB()
+	if err != nil {
+		return stageBootstrapState{}, err
+	}
+	defer func() { _ = db.Close() }()
+
 	tableName := stageMainTableName(app, stage)
-	current, err := getInstanceStateItem(ctx, ddb, tableName)
+	current, err := getInstanceStateItem(ctx, db, tableName)
 	if err != nil {
 		return stageBootstrapState{}, err
 	}
@@ -208,7 +238,7 @@ func ensureStageBootstrapState(ctx context.Context, ddb dynamodbAPI, app string,
 	}
 
 	now := time.Now().UTC()
-	if err := upsertInstanceState(ctx, ddb, tableName, now, desiredAddress); err != nil {
+	if err := upsertInstanceState(ctx, db, tableName, now, desiredAddress); err != nil {
 		return stageBootstrapState{}, err
 	}
 	return stageBootstrapState{Locked: true, Address: desiredAddress, Updated: true}, nil
@@ -228,80 +258,78 @@ func (e tableNotFoundError) Error() string {
 	return fmt.Sprintf("DynamoDB table %q not found", e.TableName)
 }
 
-func getInstanceStateItem(ctx context.Context, ddb dynamodbAPI, tableName string) (instanceStateItem, error) {
-	out, err := ddb.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName:      aws.String(tableName),
-		ConsistentRead: aws.Bool(true),
-		Key: map[string]dynamotypes.AttributeValue{
-			"PK": &dynamotypes.AttributeValueMemberS{Value: instanceConfigKeyPK},
-			"SK": &dynamotypes.AttributeValueMemberS{Value: "STATE"},
-		},
-	})
+func getInstanceStateItem(ctx context.Context, db theorydb.DB, tableName string) (instanceStateItem, error) {
+	if db == nil {
+		return instanceStateItem{}, errors.New("bootstrap database is nil")
+	}
+
+	bootstrapTableName = tableName
+
+	var record bootstrapInstanceStateRecord
+	err := db.WithContext(ctx).Model(&bootstrapInstanceStateRecord{}).
+		Where("PK", "=", instanceConfigKeyPK).
+		Where("SK", "=", "STATE").
+		ConsistentRead().
+		First(&record)
 	if err != nil {
-		var rnfe *dynamotypes.ResourceNotFoundException
-		if errors.As(err, &rnfe) {
+		if errors.Is(err, theorydbErrors.ErrTableNotFound) {
 			return instanceStateItem{}, tableNotFoundError{TableName: tableName}
 		}
+		if theorydbErrors.IsNotFound(err) {
+			return instanceStateItem{Exists: false, Locked: true}, nil
+		}
 		return instanceStateItem{}, fmt.Errorf("get instance state from %q: %w", tableName, err)
-	}
-	if len(out.Item) == 0 {
-		return instanceStateItem{Exists: false, Locked: true}, nil
-	}
-
-	locked := true
-	if v, ok := out.Item["locked"].(*dynamotypes.AttributeValueMemberBOOL); ok {
-		locked = v.Value
-	}
-
-	addr := ""
-	if v, ok := out.Item["bootstrapWalletAddress"].(*dynamotypes.AttributeValueMemberS); ok {
-		addr = v.Value
 	}
 
 	return instanceStateItem{
 		Exists:                 true,
-		Locked:                 locked,
-		BootstrapWalletAddress: strings.ToLower(strings.TrimSpace(addr)),
+		Locked:                 record.Locked,
+		BootstrapWalletAddress: strings.ToLower(strings.TrimSpace(record.BootstrapWalletAddress)),
 	}, nil
 }
 
-func upsertInstanceState(ctx context.Context, ddb dynamodbAPI, tableName string, now time.Time, bootstrapAddress string) error {
-	_, err := ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]dynamotypes.AttributeValue{
-			"PK": &dynamotypes.AttributeValueMemberS{Value: instanceConfigKeyPK},
-			"SK": &dynamotypes.AttributeValueMemberS{Value: "STATE"},
-		},
-		UpdateExpression: aws.String("SET #locked = :locked, #bootstrapUsername = :bootstrapUsername, #bootstrapWalletAddress = :bootstrapWalletAddress, #updatedAt = :updatedAt, #createdAt = if_not_exists(#createdAt, :createdAt) REMOVE #activatedAt, #primaryAdminUsername"),
-		ExpressionAttributeNames: map[string]string{
-			"#locked":                 "locked",
-			"#bootstrapUsername":      "bootstrapUsername",
-			"#bootstrapWalletAddress": "bootstrapWalletAddress",
-			"#updatedAt":              "updatedAt",
-			"#createdAt":              "createdAt",
-			"#activatedAt":            "activatedAt",
-			"#primaryAdminUsername":   "primaryAdminUsername",
-		},
-		ExpressionAttributeValues: map[string]dynamotypes.AttributeValue{
-			":locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: true},
-			":bootstrapUsername":      &dynamotypes.AttributeValueMemberS{Value: "bootstrap"},
-			":bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: strings.ToLower(strings.TrimSpace(bootstrapAddress))},
-			":updatedAt":              &dynamotypes.AttributeValueMemberS{Value: now.Format(time.RFC3339Nano)},
-			":createdAt":              &dynamotypes.AttributeValueMemberS{Value: now.Format(time.RFC3339Nano)},
-		},
-	})
-	if err != nil {
+func upsertInstanceState(ctx context.Context, db theorydb.DB, tableName string, now time.Time, bootstrapAddress string) error {
+	if db == nil {
+		return errors.New("bootstrap database is nil")
+	}
+
+	bootstrapTableName = tableName
+
+	builder := db.WithContext(ctx).Model(&bootstrapInstanceStateRecord{}).
+		Where("PK", "=", instanceConfigKeyPK).
+		Where("SK", "=", "STATE").
+		UpdateBuilder()
+
+	bootstrapAddress = strings.ToLower(strings.TrimSpace(bootstrapAddress))
+	builder.Set("Locked", true).
+		Set("BootstrapUsername", "bootstrap").
+		Set("BootstrapWalletAddress", bootstrapAddress).
+		Set("UpdatedAt", now).
+		SetIfNotExists("CreatedAt", now, now).
+		Remove("ActivatedAt").
+		Remove("PrimaryAdminUsername")
+
+	if err := builder.Execute(); err != nil {
 		return fmt.Errorf("update instance state in %q: %w", tableName, err)
 	}
 	return nil
 }
 
-func inspectBootstrapRequirements(ctx context.Context, ddb dynamodbAPI, app string, stages []naming.Stage) (existingBootstrapAddress string, bootstrapRequired bool, err error) {
+func inspectBootstrapRequirements(ctx context.Context, newDB bootstrapDBFactory, app string, stages []naming.Stage) (existingBootstrapAddress string, bootstrapRequired bool, err error) {
+	if newDB == nil {
+		return "", false, errors.New("bootstrap database factory is nil")
+	}
+
 	addrs := map[string]struct{}{}
 
 	for _, stage := range stages {
 		tableName := stageMainTableName(app, stage)
-		item, getErr := getInstanceStateItem(ctx, ddb, tableName)
+		db, dbErr := newDB()
+		if dbErr != nil {
+			return "", false, dbErr
+		}
+		item, getErr := getInstanceStateItem(ctx, db, tableName)
+		_ = db.Close()
 		if getErr != nil {
 			var tnf tableNotFoundError
 			if errors.As(getErr, &tnf) {

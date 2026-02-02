@@ -9,27 +9,27 @@ import (
 
 // NotificationDelivery tracks delivery attempts for notifications
 type NotificationDelivery struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - using notification ID and delivery method
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "NOTIFICATION#{notificationID}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "DELIVERY#{method}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "NOTIFICATION#{notificationID}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "DELIVERY#{method}"
 
 	// Core fields
-	NotificationID string    `dynamorm:"attr:notificationID" json:"notification_id"`
-	DeliveryMethod string    `dynamorm:"attr:deliveryMethod" json:"delivery_method"` // "push", "websocket", "web"
-	Status         string    `dynamorm:"attr:status" json:"status"`                  // "pending", "sent", "failed"
-	AttemptCount   int       `dynamorm:"attr:attemptCount" json:"attempt_count"`
-	LastAttempt    time.Time `dynamorm:"attr:lastAttempt" json:"last_attempt"`
-	Error          string    `dynamorm:"attr:error" json:"error,omitempty"` // Error message if failed
-	SentAt         time.Time `dynamorm:"attr:sentAt" json:"sent_at,omitempty"`
+	NotificationID string    `theorydb:"attr:notificationID" json:"notification_id"`
+	DeliveryMethod string    `theorydb:"attr:deliveryMethod" json:"delivery_method"` // "push", "websocket", "web"
+	Status         string    `theorydb:"attr:status" json:"status"`                  // "pending", "sent", "failed"
+	AttemptCount   int       `theorydb:"attr:attemptCount" json:"attempt_count"`
+	LastAttempt    time.Time `theorydb:"attr:lastAttempt" json:"last_attempt"`
+	Error          string    `theorydb:"attr:error" json:"error,omitempty"` // Error message if failed
+	SentAt         time.Time `theorydb:"attr:sentAt" json:"sent_at,omitempty"`
 
 	// Metadata
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for cleanup (7 days after creation)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 }
 
 // TableName returns the DynamoDB table name

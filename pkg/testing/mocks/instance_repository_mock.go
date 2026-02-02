@@ -58,7 +58,6 @@ func (m *MockInstanceRepository) SetPrimaryAdminUsername(ctx context.Context, us
 	return args.Error(0)
 }
 
-
 // GetInstanceRules mocks the GetInstanceRules method
 func (m *MockInstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error) {
 	args := m.Called(ctx)
@@ -112,7 +111,6 @@ func (m *MockInstanceRepository) GetTotalDomainCount(ctx context.Context) (int64
 	args := m.Called(ctx)
 	return args.Get(0).(int64), args.Error(1)
 }
-
 
 // GetActiveUserCount mocks the GetActiveUserCount method
 func (m *MockInstanceRepository) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
@@ -176,7 +174,6 @@ func (m *MockInstanceRepository) GetStorageHistory(ctx context.Context, days int
 	}
 	return args.Get(0).([]any), args.Error(1)
 }
-
 
 // GetUserGrowthHistory mocks the GetUserGrowthHistory method
 func (m *MockInstanceRepository) GetUserGrowthHistory(ctx context.Context, days int) ([]any, error) {

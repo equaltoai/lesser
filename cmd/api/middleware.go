@@ -6,31 +6,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // createLoggingMiddleware creates a custom logging middleware with structured correlation
-func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			start := time.Now()
-			requestID := ctx.GetRequestID()
+			requestID := ctx.RequestID
 
 			// Extract user and tenant context for correlation
 			userID := ""
-			tenantID := ""
-			if claims, ok := ctx.Get("claims").(*auth.Claims); ok && claims != nil {
-				userID = claims.Username
+			if claims, ok := ctx.Get("claims").(common.Claims); ok && claims != nil {
+				userID = claims.GetUsername()
 			}
-			if tenant, ok := ctx.Get("tenantID").(string); ok {
-				tenantID = tenant
-			}
+			tenantID := ctx.TenantID
 
 			// Create contextual logger with correlation fields
 			contextLogger := logger.With(
@@ -49,16 +45,21 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 			contextLogger.Info("request_start",
 				zap.String("method", ctx.Request.Method),
 				zap.String("path", ctx.Request.Path),
-				zap.String("user_agent", ctx.Header("User-Agent")),
-				zap.String("remote_addr", ctx.Header("X-Forwarded-For")),
+				zap.String("user_agent", headerValue(ctx, "User-Agent")),
+				zap.String("remote_addr", headerValue(ctx, "X-Forwarded-For")),
 			)
 
 			// Process the request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Calculate execution metrics
 			duration := time.Since(start)
-			statusCode := ctx.Response.StatusCode
+			statusCode := http.StatusOK
+			if err != nil {
+				statusCode = http.StatusInternalServerError
+			} else if resp != nil && resp.Status != 0 {
+				statusCode = resp.Status
+			}
 
 			// Log request completion with metrics
 			logLevel := zap.InfoLevel
@@ -77,32 +78,52 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 				zap.Error(err),
 			)
 
-			return err
-		})
+			return resp, err
+		}
+	}
+}
+
+func apiSecurityHeaders() apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			resp, err := next(ctx)
+			if resp == nil {
+				return resp, err
+			}
+			if resp.Headers == nil {
+				resp.Headers = map[string][]string{}
+			}
+			resp.Headers["x-content-type-options"] = []string{"nosniff"}
+			resp.Headers["x-frame-options"] = []string{"DENY"}
+			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
+			resp.Headers["cross-origin-resource-policy"] = []string{"same-origin"}
+			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			return resp, err
+		}
 	}
 }
 
 // createInstanceLockMiddleware blocks publishing and signups until the instance is activated.
-func createInstanceLockMiddleware(repos core.RepositoryStorage, logger *zap.Logger) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createInstanceLockMiddleware(repos core.RepositoryStorage, logger *zap.Logger) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			method := ctx.Request.Method
 			path := ctx.Request.Path
 
 			if method == http.MethodOptions {
-				return next.Handle(ctx)
+				return next(ctx)
 			}
 			if method == http.MethodGet || method == http.MethodHead {
 				return handleLockedReadRequest(ctx, repos, logger, path, method, next)
 			}
 			return handleLockedWriteRequest(ctx, repos, logger, path, method, next)
-		})
+		}
 	}
 }
 
-func handleLockedReadRequest(ctx *lift.Context, repos core.RepositoryStorage, logger *zap.Logger, path string, method string, next lift.Handler) error {
+func handleLockedReadRequest(ctx *apptheory.Context, repos core.RepositoryStorage, logger *zap.Logger, path string, method string, next apptheory.Handler) (*apptheory.Response, error) {
 	if !shouldSuppressContentReadWhileLocked(path) {
-		return next.Handle(ctx)
+		return next(ctx)
 	}
 
 	locked, err := instanceLocked(ctx, repos)
@@ -113,13 +134,13 @@ func handleLockedReadRequest(ctx *lift.Context, repos core.RepositoryStorage, lo
 			zap.String("path", path))
 	}
 	if !locked {
-		return next.Handle(ctx)
+		return next(ctx)
 	}
 
 	return respondLockedContentRead(ctx, path)
 }
 
-func handleLockedWriteRequest(ctx *lift.Context, repos core.RepositoryStorage, logger *zap.Logger, path string, method string, next lift.Handler) error {
+func handleLockedWriteRequest(ctx *apptheory.Context, repos core.RepositoryStorage, logger *zap.Logger, path string, method string, next apptheory.Handler) (*apptheory.Response, error) {
 	locked, err := instanceLocked(ctx, repos)
 	if err != nil {
 		logger.Warn("failed to get instance lock state; defaulting to locked",
@@ -129,16 +150,16 @@ func handleLockedWriteRequest(ctx *lift.Context, repos core.RepositoryStorage, l
 		return common.RespondForbidden(ctx, "instance is locked")
 	}
 	if !locked {
-		return next.Handle(ctx)
+		return next(ctx)
 	}
 	if isWriteAllowedWhileLocked(path) {
-		return next.Handle(ctx)
+		return next(ctx)
 	}
 	return common.RespondForbidden(ctx, "instance is locked")
 }
 
-func instanceLocked(ctx *lift.Context, repos core.RepositoryStorage) (bool, error) {
-	state, err := repos.Instance().GetInstanceState(ctx.Context)
+func instanceLocked(ctx *apptheory.Context, repos core.RepositoryStorage) (bool, error) {
+	state, err := repos.Instance().GetInstanceState(ctx.Context())
 	if err != nil {
 		return true, err
 	}
@@ -183,7 +204,7 @@ func shouldSuppressContentReadWhileLocked(path string) bool {
 	return false
 }
 
-func respondLockedContentRead(ctx *lift.Context, path string) error {
+func respondLockedContentRead(ctx *apptheory.Context, path string) (*apptheory.Response, error) {
 	// For locked instances, lists become empty and individual objects are 404.
 	switch {
 	case strings.HasPrefix(path, "/api/v1/statuses/"):
@@ -191,24 +212,26 @@ func respondLockedContentRead(ctx *lift.Context, path string) error {
 	case strings.HasPrefix(path, "/api/oembed"):
 		return common.RespondNotFound(ctx, "resource not found")
 	case strings.HasPrefix(path, "/api/v2/search"):
-		ctx.Status(http.StatusOK)
-		return ctx.JSON(map[string]any{
+		return apptheory.JSON(http.StatusOK, map[string]any{
 			"accounts": []any{},
 			"statuses": []any{},
 			"hashtags": []any{},
 		})
 	default:
-		ctx.Status(http.StatusOK)
-		return ctx.JSON([]any{})
+		return apptheory.JSON(http.StatusOK, []any{})
 	}
 }
 
 //nolint:unused // Used in tests and infrastructure patterns - part of complete middleware infrastructure
-func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createCostTrackingMiddleware(logger *zap.Logger) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			// Initialize unified cost tracking system
-			unifiedTracker := cost.NewUnifiedTracker(nil, logger, ctx.GetUserID(), ctx.GetRequestID())
+			userID := ""
+			if claims, ok := ctx.Get("claims").(common.Claims); ok && claims != nil {
+				userID = claims.GetUsername()
+			}
+			unifiedTracker := cost.NewUnifiedTracker(nil, logger, userID, ctx.RequestID)
 
 			// Store the unified tracker in context for all cost tracking
 			ctx.Set("cost_tracker", unifiedTracker)
@@ -218,12 +241,12 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 			start := time.Now()
 
 			// Process request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Calculate Lambda execution cost using centralized tracking
 			duration := time.Since(start)
 			memoryMB := int64(128) // Default Lambda memory, could be configurable
-			if trackErr := unifiedTracker.TrackLambdaInvocation(ctx.Request.Context(), "api", duration, memoryMB); trackErr != nil {
+			if trackErr := unifiedTracker.TrackLambdaInvocation(ctx.Context(), "api", duration, memoryMB); trackErr != nil {
 				logger.Warn("failed to track lambda cost", zap.Error(trackErr))
 			}
 
@@ -231,28 +254,26 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 			totalCost := unifiedTracker.GetCurrentCostMicroCents()
 			if totalCost > 0 {
 				logger.Info("request_costs",
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", ctx.RequestID),
 					zap.Int64("total_cost_microcents", totalCost),
 				)
 			}
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
 // Helper functions for cost tracking
 
-// GetCostTracker retrieves the cost tracker from the Lift context
-func GetCostTracker(ctx *lift.Context) *cost.Tracker {
+func GetCostTracker(ctx *apptheory.Context) *cost.Tracker {
 	if tracker, ok := ctx.Get("cost_tracker").(*cost.Tracker); ok {
 		return tracker
 	}
 	return nil
 }
 
-// TrackCost is a convenience function to track costs from a Lift context
-func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
+func TrackCost(ctx *apptheory.Context, fn func(*cost.Tracker)) {
 	if tracker := GetCostTracker(ctx); tracker != nil {
 		fn(tracker)
 	}
@@ -263,19 +284,18 @@ func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
 // This function is kept for backwards compatibility but should not be used in new code
 //
 //nolint:unused // Used in tests (infrastructure_test.go)
-func createPerformanceMonitoringMiddleware(_ *observability.MetricsCollector) lift.Middleware {
+func createPerformanceMonitoringMiddleware(_ *observability.MetricsCollector) apptheory.Middleware {
 	// This is now a no-op since we've migrated to EMF
 	// The EMF middleware handles all performance monitoring without polling
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			// Just pass through - EMF middleware handles metrics collection
-			return next.Handle(ctx)
-		})
+			return next(ctx)
+		}
 	}
 }
 
-// GetLogger retrieves the contextual logger from the Lift context
-func GetLogger(ctx *lift.Context) *zap.Logger {
+func GetLogger(ctx *apptheory.Context) *zap.Logger {
 	if logger, ok := ctx.Get("logger").(*zap.Logger); ok {
 		return logger
 	}
@@ -291,23 +311,23 @@ const (
 
 // createRBACMiddleware creates middleware for role-based access control
 // This middleware should be used after authentication middleware
-func createRBACMiddleware(requiredPermission string, repos core.RepositoryStorage) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func createRBACMiddleware(requiredPermission string, repos core.RepositoryStorage) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			// Check if the user has the required permissions
 			if err := checkUserPermissions(ctx, requiredPermission, repos); err != nil {
 				return common.RespondForbidden(ctx, "You do not have permission to access this resource")
 			}
 
-			return next.Handle(ctx)
-		})
+			return next(ctx)
+		}
 	}
 }
 
 // checkUserPermissions checks if the current user has the required permission level
-func checkUserPermissions(ctx *lift.Context, requiredPermission string, repos core.RepositoryStorage) error {
+func checkUserPermissions(ctx *apptheory.Context, requiredPermission string, repos core.RepositoryStorage) error {
 	// Get user claims from context (set by auth middleware)
-	claims, ok := ctx.Get("claims").(*auth.Claims)
+	claims, ok := ctx.Get("claims").(common.Claims)
 	if !ok || claims == nil {
 		return errors.New(common.ErrorUnauthorizedNoValidClaims)
 	}
@@ -315,7 +335,7 @@ func checkUserPermissions(ctx *lift.Context, requiredPermission string, repos co
 	// Get user role from storage
 	userRole := "user" // Default role
 	if repos != nil && repos.User() != nil {
-		if user, err := repos.User().GetUser(ctx.Request.Context(), claims.Username); err == nil && user != nil {
+		if user, err := repos.User().GetUser(ctx.Context(), claims.GetUsername()); err == nil && user != nil {
 			userRole = user.Role
 		}
 		// If user lookup fails, we fall back to default "user" role for security
@@ -347,16 +367,16 @@ func checkUserPermissions(ctx *lift.Context, requiredPermission string, repos co
 }
 
 // AdminOnlyMiddleware creates middleware that requires admin permissions
-func AdminOnlyMiddleware(repos core.RepositoryStorage) lift.Middleware {
+func AdminOnlyMiddleware(repos core.RepositoryStorage) apptheory.Middleware {
 	return createRBACMiddleware(PermissionAdmin, repos)
 }
 
 // ModeratorOrHigherMiddleware creates middleware that requires moderator or admin permissions
-func ModeratorOrHigherMiddleware(repos core.RepositoryStorage) lift.Middleware {
+func ModeratorOrHigherMiddleware(repos core.RepositoryStorage) apptheory.Middleware {
 	return createRBACMiddleware(PermissionModerator, repos)
 }
 
 // ViewerOrHigherMiddleware creates middleware that requires viewer, moderator, or admin permissions
-func ViewerOrHigherMiddleware(repos core.RepositoryStorage) lift.Middleware {
+func ViewerOrHigherMiddleware(repos core.RepositoryStorage) apptheory.Middleware {
 	return createRBACMiddleware(PermissionViewer, repos)
 }

@@ -6,18 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/dlq"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -32,13 +33,13 @@ type dlqProcessor interface {
 	SearchMessages(ctx context.Context, filter *repositories.DLQSearchFilter) ([]*models.DLQMessage, string, error)
 }
 
-// DLQProcessorHandler handles dead letter queue message processing
+// DLQProcessorHandler handles dead letter queue message processing.
 type DLQProcessorHandler struct {
 	processor dlqProcessor
 	logger    *zap.Logger
 }
 
-// NewDLQProcessorHandler creates a new DLQ processor handler
+// NewDLQProcessorHandler creates a new DLQ processor handler.
 func NewDLQProcessorHandler(processor dlqProcessor, logger *zap.Logger) *DLQProcessorHandler {
 	return &DLQProcessorHandler{
 		processor: processor,
@@ -46,85 +47,105 @@ func NewDLQProcessorHandler(processor dlqProcessor, logger *zap.Logger) *DLQProc
 	}
 }
 
-// HandleSQS processes SQS events containing DLQ messages
-func (h *DLQProcessorHandler) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
-	h.logger.Info("processing DLQ event",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("message_count", len(event.Records)),
-	)
-
-	// Initialize AWS clients using the underlying context
-	if err := h.processor.InitializeAWSClients(ctx.Request.Context()); err != nil {
-		h.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+func (h *DLQProcessorHandler) HandleSQSMessage(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
 	}
 
-	// Process the DLQ messages
-	if err := h.processor.ProcessDLQMessages(ctx.Request.Context(), event); err != nil {
-		h.logger.Error("failed to process DLQ messages", zap.Error(err))
-		return lift.NewLiftError("DLQ_PROCESSING_FAILED", "failed to process DLQ messages", 500).WithCause(err)
+	if h.logger == nil {
+		h.logger = zap.NewNop()
+	}
+
+	h.logger.Info("processing DLQ message",
+		zap.String("request_id", requestID),
+		zap.String("message_id", msg.MessageId),
+	)
+
+	if err := h.processor.InitializeAWSClients(runCtx); err != nil {
+		h.logger.Error("failed to initialize AWS clients",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	// AppTheory routes SQS per-message; convert to a single-record SQSEvent for the dlq processor.
+	event := events.SQSEvent{Records: []events.SQSMessage{msg}}
+	if err := h.processor.ProcessDLQMessages(runCtx, event); err != nil {
+		h.logger.Error("failed to process DLQ message",
+			zap.String("request_id", requestID),
+			zap.String("message_id", msg.MessageId),
+			zap.Error(err),
+		)
+		return err
 	}
 
 	return nil
 }
 
-// HandleEventBridge processes EventBridge events for scheduled operations
-func (h *DLQProcessorHandler) HandleEventBridge(ctx *lift.Context, event events.EventBridgeEvent) error {
+func (h *DLQProcessorHandler) HandleEventBridge(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
+
+	if h.logger == nil {
+		h.logger = zap.NewNop()
+	}
+
 	h.logger.Info("processing EventBridge event",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("source", event.Source),
 		zap.String("detail_type", event.DetailType),
 	)
 
 	switch event.DetailType {
-	case "DLQ Scheduled Reprocessing":
-		return h.handleScheduledReprocessing(ctx)
-	case "Scheduled Event":
-		// Default detail-type for EventBridge schedule rules.
-		return h.handleScheduledReprocessing(ctx)
+	case "DLQ Scheduled Reprocessing", "Scheduled Event":
+		return nil, h.handleScheduledReprocessing(runCtx)
 	case "DLQ Cleanup":
-		return h.handleCleanup(ctx)
+		return nil, h.handleCleanup(runCtx)
 	case "DLQ Analytics":
-		return h.handleAnalytics(ctx)
+		return nil, h.handleAnalytics(runCtx)
 	default:
 		h.logger.Warn("unknown EventBridge event type",
 			zap.String("detail_type", event.DetailType),
 		)
-		return nil
+		return nil, nil
 	}
 }
 
-// handleScheduledReprocessing handles scheduled reprocessing of failed messages
-func (h *DLQProcessorHandler) handleScheduledReprocessing(ctx *lift.Context) error {
+func (h *DLQProcessorHandler) handleScheduledReprocessing(ctx context.Context) error {
 	h.logger.Info("starting scheduled reprocessing")
 
-	if err := h.processor.ScheduledReprocessing(ctx.Request.Context()); err != nil {
+	if err := h.processor.ScheduledReprocessing(ctx); err != nil {
 		h.logger.Error("scheduled reprocessing failed", zap.Error(err))
-		return lift.NewLiftError("REPROCESSING_FAILED", "scheduled reprocessing failed", 500).WithCause(err)
+		return err
 	}
 
 	h.logger.Info("completed scheduled reprocessing")
 	return nil
 }
 
-// handleCleanup handles cleanup of expired DLQ messages
-func (h *DLQProcessorHandler) handleCleanup(ctx *lift.Context) error {
+func (h *DLQProcessorHandler) handleCleanup(ctx context.Context) error {
 	h.logger.Info("starting DLQ cleanup")
 
-	if err := h.processor.CleanupExpiredMessages(ctx.Request.Context()); err != nil {
+	if err := h.processor.CleanupExpiredMessages(ctx); err != nil {
 		h.logger.Error("DLQ cleanup failed", zap.Error(err))
-		return lift.NewLiftError("CLEANUP_FAILED", "DLQ cleanup failed", 500).WithCause(err)
+		return err
 	}
 
 	h.logger.Info("completed DLQ cleanup")
 	return nil
 }
 
-// handleAnalytics handles analytics generation for monitoring
-func (h *DLQProcessorHandler) handleAnalytics(ctx *lift.Context) error {
+func (h *DLQProcessorHandler) handleAnalytics(ctx context.Context) error {
 	h.logger.Info("generating DLQ analytics")
 
-	// Generate analytics for all services
 	services := []string{
 		"notification-processor",
 		"activity-processor",
@@ -134,12 +155,12 @@ func (h *DLQProcessorHandler) handleAnalytics(ctx *lift.Context) error {
 	}
 
 	timeRange := repositories.DLQTimeRange{
-		StartTime: time.Now().Add(-24 * time.Hour), // Last 24 hours
+		StartTime: time.Now().Add(-24 * time.Hour),
 		EndTime:   time.Now(),
 	}
 
 	for _, service := range services {
-		analytics, err := h.processor.GetAnalytics(ctx.Request.Context(), service, timeRange)
+		analytics, err := h.processor.GetAnalytics(ctx, service, timeRange)
 		if err != nil {
 			h.logger.Error("failed to generate analytics for service",
 				zap.String("service", service),
@@ -161,13 +182,13 @@ func (h *DLQProcessorHandler) handleAnalytics(ctx *lift.Context) error {
 	return nil
 }
 
-// Global variables for standardized Lambda initialization
+// Global variables for standardized Lambda initialization.
 var (
-	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
-	logger    *zap.Logger
-	repos     interface{} //nolint:unused // dependency injection pattern - available for processor extensions
-	handler   *DLQProcessorHandler
+	lambdaCtx     *common.LambdaContext
+	cfg           *config.Config
+	logger        *zap.Logger
+	repos         interface{} //nolint:unused // dependency injection pattern - available for processor extensions
+	handler       *DLQProcessorHandler
 	lambdaStartFn = lambda.Start
 )
 
@@ -175,248 +196,75 @@ func init() {
 	if common.RunningUnitTests() {
 		return
 	}
-	// Standardized Lambda initialization for background processors
+
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "dlq-processor",
-		LambdaType:  common.LambdaTypeProcessor, // Background processing
+		LambdaType:  common.LambdaTypeProcessor,
 	})
 
-	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos
 
-	// Initialize with processor-specific defaults
-	err := lambdaCtx.InitializeWithDefaults()
-	if err != nil {
+	if err := lambdaCtx.InitializeWithDefaults(); err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 
-	// DLQ processor-specific initialization
 	db := lambdaCtx.DynamoDB.(core.DB)
 	processor := dlq.NewProcessor(db, cfg.DynamoTableName, logger)
-
-	// Initialize handler
 	handler = NewDLQProcessorHandler(processor, logger)
 
 	logger.Info("DLQ processor initialized successfully")
 }
 
 func main() {
-	// Create Lift app
-	app := lift.New()
+	app := apptheory.New()
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
 
-	// Set up middleware
-	setupMiddleware(app)
-
-	// Set up route handlers
-	setupRouteHandlers(app)
-
-	// Start the Lambda handler
-	lambdaStartFn(app.HandleRequest)
-}
-
-// setupMiddleware configures all middleware for the application
-func setupMiddleware(app *lift.App) {
-	app.Use(requestIDMiddleware())
-	app.Use(loggingMiddleware())
-	app.Use(errorHandlingMiddleware())
-	app.Use(costTrackingMiddleware())
-}
-
-// requestIDMiddleware adds a unique request ID to each request
-func requestIDMiddleware() func(lift.Handler) lift.Handler {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("dlq-%d", time.Now().UnixNano())
-			ctx.SetRequestID(requestID)
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
+	// Inventory-driven DLQ consumers (ConsumeDeadLetterQueue=true).
+	dlqQueues := []string{
+		"enhanced-federation-queue",
+		"export-processor-queue",
+		"federation-aggregator-queue",
+		"federation-delivery-queue",
+		"import-processor-queue",
+		"media-processor-queue",
+		"notification-processor-queue",
+		"push-delivery-queue",
 	}
-}
 
-// loggingMiddleware logs request processing details
-func loggingMiddleware() func(lift.Handler) lift.Handler {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			requestID := ctx.Get("requestID").(string)
-
-			logger.Info("processing request",
-				zap.String("request_id", requestID),
-			)
-
-			err := next.Handle(ctx)
-
-			logRequestCompletion(requestID, time.Since(start), err)
-			return err
-		})
-	}
-}
-
-// logRequestCompletion logs the completion status of a request
-func logRequestCompletion(requestID string, duration time.Duration, err error) {
-	if err != nil {
-		logger.Error("request failed",
-			zap.String("request_id", requestID),
-			zap.Error(err),
-			zap.Duration("duration", duration),
-		)
-	} else {
-		logger.Info("request completed successfully",
-			zap.String("request_id", requestID),
-			zap.Duration("duration", duration),
-		)
-	}
-}
-
-// errorHandlingMiddleware handles and logs errors
-func errorHandlingMiddleware() func(lift.Handler) lift.Handler {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			err := next.Handle(ctx)
-			if err != nil {
-				logHandlerError(ctx, err)
+	for _, q := range dlqQueues {
+		dlqName := naming.ResourceNameWithApp(appName, fmt.Sprintf("%s-dlq", q), stage)
+		app.SQS(dlqName, func(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+			if handler == nil {
+				return fmt.Errorf("dlq processor handler not initialized")
 			}
-			return err
+			return handler.HandleSQSMessage(ctx, msg)
 		})
 	}
+
+	ruleName := naming.ResourceNameWithApp(appName, "dlq-processor-schedule-0", stage)
+	app.EventBridge(apptheory.EventBridgeRule(ruleName), func(ctx *apptheory.EventContext, event events.EventBridgeEvent) (any, error) {
+		if handler == nil {
+			return nil, fmt.Errorf("dlq processor handler not initialized")
+		}
+		return handler.HandleEventBridge(ctx, event)
+	})
+
+	app.Get("/health", handleHealthCheck)
+	app.Get("/analytics/:service", handleAnalyticsHTTP)
+	app.Get("/trends/:service", handleTrendsHTTP)
+	app.Post("/search", handleSearchHTTP)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-// logHandlerError logs handler errors with additional details
-func logHandlerError(ctx *lift.Context, err error) {
-	logger.Error("handler error",
-		zap.String("request_id", ctx.Get("requestID").(string)),
-		zap.Error(err),
-	)
-
-	// Track error metrics
-	if liftErr, ok := err.(*lift.LiftError); ok {
-		logger.Error("lift error details",
-			zap.String("error_code", liftErr.Code),
-			zap.String("error_message", liftErr.Message),
-			zap.Int("status_code", liftErr.StatusCode),
-		)
-	}
-}
-
-// costTrackingMiddleware tracks the cost of request processing
-func costTrackingMiddleware() func(lift.Handler) lift.Handler {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			err := next.Handle(ctx)
-			duration := time.Since(start)
-
-			trackRequestCost(ctx, duration)
-			return err
-		})
-	}
-}
-
-// trackRequestCost calculates and logs request processing costs
-func trackRequestCost(ctx *lift.Context, duration time.Duration) {
-	processingCostMicroCents := calculateProcessingCost(duration)
-
-	logger.Info("request cost tracking",
-		zap.String("request_id", ctx.Get("requestID").(string)),
-		zap.Duration("duration", duration),
-		zap.Int64("cost_micro_cents", processingCostMicroCents),
-		zap.Float64("cost_dollars", float64(processingCostMicroCents)/1_000_000.0),
-	)
-}
-
-// calculateProcessingCost calculates the cost based on processing duration
-func calculateProcessingCost(duration time.Duration) int64 {
-	processingCostMicroCents := int64(20) // Base Lambda cost
-
-	// Additional cost based on processing time
-	if duration > time.Second {
-		processingCostMicroCents += int64(duration.Seconds() * 10) // Cost per second
-	}
-
-	return processingCostMicroCents
-}
-
-// setupRouteHandlers configures all route handlers for the application
-func setupRouteHandlers(app *lift.App) {
-
-	// SQS handler for DLQ message processing
-	_ = app.SQS("*", handleSQSEvent)
-
-	// EventBridge handler for scheduled operations
-	_ = app.EventBridge("lesser-dlq-processor-schedule-*", handleEventBridgeEvent)
-
-	// HTTP handlers for admin/monitoring
-	_ = app.GET("/health", handleHealthCheck)
-	_ = app.GET("/analytics/:service", handleAnalytics)
-	_ = app.GET("/trends/:service", handleTrends)
-	_ = app.POST("/search", handleSearch)
-}
-
-// handleSQSEvent processes SQS events from the DLQ
-func handleSQSEvent(ctx *lift.Context) error {
-	event, err := extractSQSEvent(ctx)
-	if err != nil {
-		return err
-	}
-	return handler.HandleSQS(ctx, event)
-}
-
-// extractSQSEvent extracts and parses the SQS event from the context
-func extractSQSEvent(ctx *lift.Context) (events.SQSEvent, error) {
-	if ctx.Request.RawEvent == nil {
-		return events.SQSEvent{}, lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
-	}
-
-	eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-	if err != nil {
-		return events.SQSEvent{}, lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
-	}
-
-	var event events.SQSEvent
-	if err := json.Unmarshal(eventBytes, &event); err != nil {
-		return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-	}
-
-	return event, nil
-}
-
-// handleEventBridgeEvent processes EventBridge events
-func handleEventBridgeEvent(ctx *lift.Context) error {
-	event, err := extractEventBridgeEvent(ctx)
-	if err != nil {
-		return err
-	}
-	return handler.HandleEventBridge(ctx, event)
-}
-
-// extractEventBridgeEvent extracts and parses the EventBridge event from the context
-func extractEventBridgeEvent(ctx *lift.Context) (events.EventBridgeEvent, error) {
-	if ctx.Request.RawEvent == nil {
-		return events.EventBridgeEvent{}, lift.NewLiftError("MISSING_EVENT", "no EventBridge event in request", 400)
-	}
-
-	eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-	if err != nil {
-		return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_MARSHAL_ERROR", "failed to marshal raw event", 500).WithCause(err)
-	}
-
-	var event events.EventBridgeEvent
-	if err := json.Unmarshal(eventBytes, &event); err != nil {
-		return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500).WithCause(err)
-	}
-
-	return event, nil
-}
-
-// handleHealthCheck returns the health status of the service
-func handleHealthCheck(ctx *lift.Context) error {
-	return ctx.JSON(map[string]interface{}{
+func handleHealthCheck(_ *apptheory.Context) (*apptheory.Response, error) {
+	return apptheory.JSON(200, map[string]interface{}{
 		"status":    "healthy",
 		"service":   "dlq-processor",
 		"timestamp": time.Now().Format(time.RFC3339),
@@ -424,46 +272,46 @@ func handleHealthCheck(ctx *lift.Context) error {
 	})
 }
 
-// handleAnalytics returns analytics for a specific service
-func handleAnalytics(ctx *lift.Context) error {
+func handleAnalyticsHTTP(ctx *apptheory.Context) (*apptheory.Response, error) {
 	service := ctx.Param("service")
 	if err := common.ValidateRequiredParam("service", service); err != nil {
-		return lift.ValidationError("service parameter is required")
+		return apptheory.JSON(400, map[string]any{"error": "service parameter is required"})
+	}
+	if handler == nil {
+		return apptheory.JSON(500, map[string]any{"error": "dlq processor not initialized"})
 	}
 
-	// Default to last 24 hours
 	timeRange := repositories.DLQTimeRange{
 		StartTime: time.Now().Add(-24 * time.Hour),
 		EndTime:   time.Now(),
 	}
 
-	analytics, err := handler.processor.GetAnalytics(ctx.Request.Context(), service, timeRange)
+	analytics, err := handler.processor.GetAnalytics(ctx.Context(), service, timeRange)
 	if err != nil {
-		return lift.NewLiftError("ANALYTICS_ERROR", "failed to get analytics", 500).WithCause(err)
+		return apptheory.JSON(500, map[string]any{"error": "failed to get analytics"})
 	}
 
-	return ctx.JSON(analytics)
+	return apptheory.JSON(200, analytics)
 }
 
-// handleTrends returns trend data for a specific service
-func handleTrends(ctx *lift.Context) error {
+func handleTrendsHTTP(ctx *apptheory.Context) (*apptheory.Response, error) {
 	service := ctx.Param("service")
 	if err := common.ValidateRequiredParam("service", service); err != nil {
-		return lift.ValidationError("service parameter is required")
+		return apptheory.JSON(400, map[string]any{"error": "service parameter is required"})
+	}
+	if handler == nil {
+		return apptheory.JSON(500, map[string]any{"error": "dlq processor not initialized"})
 	}
 
-	// Default to last 7 days
-	days := 7
-
-	trends, err := handler.processor.GetTrends(ctx.Request.Context(), service, days)
+	trends, err := handler.processor.GetTrends(ctx.Context(), service, 7)
 	if err != nil {
-		return lift.NewLiftError("TRENDS_ERROR", "failed to get trends", 500).WithCause(err)
+		return apptheory.JSON(500, map[string]any{"error": "failed to get trends"})
 	}
 
-	return ctx.JSON(trends)
+	return apptheory.JSON(200, trends)
 }
 
-// searchFilter represents the search filter request body
+// searchFilter represents the search filter request body.
 type searchFilter struct {
 	Service     string    `json:"service"`
 	ErrorType   string    `json:"error_type,omitempty"`
@@ -477,45 +325,45 @@ type searchFilter struct {
 	Cursor      string    `json:"cursor,omitempty"`
 }
 
-// handleSearch processes search requests for DLQ messages
-func handleSearch(ctx *lift.Context) error {
+func handleSearchHTTP(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if handler == nil {
+		return apptheory.JSON(500, map[string]any{"error": "dlq processor not initialized"})
+	}
+
 	filter, err := parseSearchFilter(ctx)
 	if err != nil {
-		return err
+		return apptheory.JSON(400, map[string]any{"error": err.Error()})
 	}
 
-	messages, nextCursor, err := handler.processor.SearchMessages(ctx.Request.Context(), filter)
+	messages, nextCursor, err := handler.processor.SearchMessages(ctx.Context(), filter)
 	if err != nil {
-		return lift.NewLiftError("SEARCH_ERROR", "failed to search messages", 500).WithCause(err)
+		return apptheory.JSON(500, map[string]any{"error": "failed to search messages"})
 	}
 
-	return ctx.JSON(map[string]interface{}{
+	return apptheory.JSON(200, map[string]interface{}{
 		"messages":    messages,
 		"next_cursor": nextCursor,
 		"count":       len(messages),
 	})
 }
 
-// parseSearchFilter parses and validates the search filter from the request
-func parseSearchFilter(ctx *lift.Context) (*repositories.DLQSearchFilter, error) {
+func parseSearchFilter(ctx *apptheory.Context) (*repositories.DLQSearchFilter, error) {
 	var filter searchFilter
 
 	if err := common.ValidateSliceNotEmpty("ctx.Request.Body", ctx.Request.Body); err == nil {
 		if err := json.Unmarshal(ctx.Request.Body, &filter); err != nil {
-			return nil, lift.ValidationError("invalid search filter")
+			return nil, fmt.Errorf("invalid search filter")
 		}
 	}
 
 	if err := common.ValidateRequiredParam("filter.Service", filter.Service); err != nil {
-		return nil, lift.ValidationError("service is required for search")
+		return nil, fmt.Errorf("service is required for search")
 	}
 
-	// Set default limit
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
 
-	// Convert to repository filter type
 	return &repositories.DLQSearchFilter{
 		Service:     filter.Service,
 		ErrorType:   filter.ErrorType,
@@ -529,5 +377,3 @@ func parseSearchFilter(ctx *lift.Context) (*repositories.DLQSearchFilter, error)
 		Cursor:      filter.Cursor,
 	}, nil
 }
-
-// Helper functions for admin operations

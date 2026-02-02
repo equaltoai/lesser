@@ -32,7 +32,7 @@ func TestRound12QueryResolvers_ModerationParity_Resolvers(t *testing.T) {
 	require.NotNil(t, modRepo)
 
 	event := &storage.ModerationEvent{
-		ID:             "evt-1",
+		ID:              "evt-1",
 		ObjectID:        "obj-1",
 		ObjectType:      "status",
 		ActorID:         "alice",
@@ -65,22 +65,22 @@ func TestRound12QueryResolvers_ModerationParity_Resolvers(t *testing.T) {
 	}))
 
 	require.NoError(t, modRepo.CreateModerationDecision(context.Background(), &storage.ModerationDecision{
-		ID:             "dec-1",
-		EventID:         "evt-1",
-		ObjectID:        "obj-1",
-		Action:          "approve",
-		ConsensusScore:  0.55,
-		ReviewerCount:   2,
+		ID:               "dec-1",
+		EventID:          "evt-1",
+		ObjectID:         "obj-1",
+		Action:           "approve",
+		ConsensusScore:   0.55,
+		ReviewerCount:    2,
 		TrustWeightTotal: 1.0,
-		Decided:         time.Now().Add(-30 * time.Second),
+		Decided:          time.Now().Add(-30 * time.Second),
 	}))
 
 	trustRepo := storageRepo.Trust()
 	require.NoError(t, trustRepo.UpdateTrustScore(context.Background(), &storage.TrustScore{
-		ActorID:   "reviewer-1",
-		Category:  storageModels.TrustCategoryContent,
-		Score:     0.8,
-		CacheTTL:  time.Now().Add(time.Hour),
+		ActorID:  "reviewer-1",
+		Category: storageModels.TrustCategoryContent,
+		Score:    0.8,
+		CacheTTL: time.Now().Add(time.Hour),
 	}))
 
 	adminCtx := round12AuthContext("admin")

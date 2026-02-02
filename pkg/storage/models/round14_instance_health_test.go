@@ -116,4 +116,3 @@ func TestInstanceHealthSummary_UpdateKeysAndBuilder(t *testing.T) {
 		assert.Contains(t, s.SK, "SUMMARY#")
 	})
 }
-

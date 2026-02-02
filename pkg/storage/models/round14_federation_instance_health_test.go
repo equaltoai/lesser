@@ -41,9 +41,9 @@ func TestFederationInstanceHealthTracking_KeysAndScoring(t *testing.T) {
 	t.Run("BeforeCreate sets timestamps, TTL, and computes health score", func(t *testing.T) {
 		before := time.Now()
 		h := &FederationInstanceHealthTracking{
-			Domain:         "example.com",
-			SuccessRate:    1.0,
-			ResponseTimeP95: 100,
+			Domain:           "example.com",
+			SuccessRate:      1.0,
+			ResponseTimeP95:  100,
 			ConsecutiveFails: 0,
 		}
 		require.NoError(t, h.BeforeCreate())

@@ -7,42 +7,42 @@ import (
 
 // Report represents a user report stored in DynamoDB
 type Report struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // REPORT#id
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // REPORT
+	PK string `theorydb:"pk,attr:PK" json:"-"` // REPORT#id
+	SK string `theorydb:"sk,attr:SK" json:"-"` // REPORT
 
 	// GSI fields
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#reporterID
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // REPORT#timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#reporterID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // REPORT#timestamp
 
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"-"` // REPORTED#targetAccountID
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"-"` // REPORT#timestamp
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // REPORTED#targetAccountID
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // REPORT#timestamp
 
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"-"` // STATUS#status
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"-"` // REPORT#timestamp
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // STATUS#status
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // REPORT#timestamp
 
 	// Report fields
-	ID                string     `dynamorm:"attr:id" json:"id"`
-	ReporterID        string     `dynamorm:"attr:reporterID" json:"reporter_id"`
-	TargetAccountID   string     `dynamorm:"attr:targetAccountID" json:"target_account_id"`
-	StatusIDs         []string   `dynamorm:"attr:statusIDs" json:"status_ids,omitempty"`
-	Comment           string     `dynamorm:"attr:comment" json:"comment"`
-	Category          string     `dynamorm:"attr:category" json:"category"`
-	RuleIDs           []int      `dynamorm:"attr:ruleIDs" json:"rule_ids,omitempty"`
-	Forwarded         bool       `dynamorm:"attr:forwarded" json:"forwarded"`
-	Status            string     `dynamorm:"attr:status" json:"status"`
-	ActionTaken       string     `dynamorm:"attr:actionTaken" json:"action_taken,omitempty"`
-	ActionTakenAt     *time.Time `dynamorm:"attr:actionTakenAt" json:"action_taken_at,omitempty"`
-	ModeratorID       string     `dynamorm:"attr:moderatorID" json:"moderator_id,omitempty"`
-	ModerationEventID string     `dynamorm:"attr:moderationEventID" json:"moderation_event_id,omitempty"`
-	CreatedAt         time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt         time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
-	AssignedTo        string     `dynamorm:"attr:assignedTo" json:"assigned_to,omitempty"`
+	ID                string     `theorydb:"attr:id" json:"id"`
+	ReporterID        string     `theorydb:"attr:reporterID" json:"reporter_id"`
+	TargetAccountID   string     `theorydb:"attr:targetAccountID" json:"target_account_id"`
+	StatusIDs         []string   `theorydb:"attr:statusIDs" json:"status_ids,omitempty"`
+	Comment           string     `theorydb:"attr:comment" json:"comment"`
+	Category          string     `theorydb:"attr:category" json:"category"`
+	RuleIDs           []int      `theorydb:"attr:ruleIDs" json:"rule_ids,omitempty"`
+	Forwarded         bool       `theorydb:"attr:forwarded" json:"forwarded"`
+	Status            string     `theorydb:"attr:status" json:"status"`
+	ActionTaken       string     `theorydb:"attr:actionTaken" json:"action_taken,omitempty"`
+	ActionTakenAt     *time.Time `theorydb:"attr:actionTakenAt" json:"action_taken_at,omitempty"`
+	ModeratorID       string     `theorydb:"attr:moderatorID" json:"moderator_id,omitempty"`
+	ModerationEventID string     `theorydb:"attr:moderationEventID" json:"moderation_event_id,omitempty"`
+	CreatedAt         time.Time  `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt         time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`
+	AssignedTo        string     `theorydb:"attr:assignedTo" json:"assigned_to,omitempty"`
 
 	// TTL for auto-deletion (90 days)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys updates the GSI keys based on the report data
@@ -76,18 +76,18 @@ func (Report) TableName() string {
 
 // ReportStats represents reporting statistics for a user
 type ReportStats struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // USER#username
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // REPORT_STATS
+	PK string `theorydb:"pk,attr:PK" json:"-"` // USER#username
+	SK string `theorydb:"sk,attr:SK" json:"-"` // REPORT_STATS
 
 	// Stats fields
-	TotalReports      int        `dynamorm:"attr:totalReports" json:"total_reports"`
-	ResolvedReports   int        `dynamorm:"attr:resolvedReports" json:"resolved_reports"`
-	FalseReports      int        `dynamorm:"attr:falseReports" json:"false_reports"`
-	LastReportAt      *time.Time `dynamorm:"attr:lastReportAt" json:"last_report_at,omitempty"`
-	LastFalseReportAt *time.Time `dynamorm:"attr:lastFalseReportAt" json:"last_false_report_at,omitempty"`
+	TotalReports      int        `theorydb:"attr:totalReports" json:"total_reports"`
+	ResolvedReports   int        `theorydb:"attr:resolvedReports" json:"resolved_reports"`
+	FalseReports      int        `theorydb:"attr:falseReports" json:"false_reports"`
+	LastReportAt      *time.Time `theorydb:"attr:lastReportAt" json:"last_report_at,omitempty"`
+	LastFalseReportAt *time.Time `theorydb:"attr:lastFalseReportAt" json:"last_false_report_at,omitempty"`
 }
 
 // UpdateKeys updates the primary key fields

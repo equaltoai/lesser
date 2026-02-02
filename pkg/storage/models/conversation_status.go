@@ -10,17 +10,17 @@ import (
 // ConversationStatus represents a user's read status for a conversation
 // This tracks whether a user has unread messages in a conversation
 type ConversationStatus struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk,attr:PK" json:"PK"` // CONVERSATION_STATUS#conversationID
-	SK string `dynamorm:"sk,attr:SK" json:"SK"` // USER#username
+	PK string `theorydb:"pk,attr:PK" json:"PK"` // CONVERSATION_STATUS#conversationID
+	SK string `theorydb:"sk,attr:SK" json:"SK"` // USER#username
 
 	// Core fields from storage.ConversationStatus
-	ConversationID string    `dynamorm:"attr:conversationID" json:"conversation_id"`
-	UserID         string    `dynamorm:"attr:userID" json:"user_id"` // username
-	Unread         bool      `dynamorm:"attr:unread" json:"unread"`
-	LastReadAt     time.Time `dynamorm:"attr:lastReadAt" json:"last_read_at"`
+	ConversationID string    `theorydb:"attr:conversationID" json:"conversation_id"`
+	UserID         string    `theorydb:"attr:userID" json:"user_id"` // username
+	Unread         bool      `theorydb:"attr:unread" json:"unread"`
+	LastReadAt     time.Time `theorydb:"attr:lastReadAt" json:"last_read_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -73,21 +73,21 @@ func (s *ConversationStatus) GetSK() string {
 // but the legacy code doesn't show this pattern being used.
 // This model is included for completeness based on the instructions.
 type ConversationMessage struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys as specified in instructions
-	PK string `dynamorm:"pk,attr:PK" json:"PK"` // CONVERSATION#conversationID
-	SK string `dynamorm:"sk,attr:SK" json:"SK"` // STATUS#timestamp#statusID
+	PK string `theorydb:"pk,attr:PK" json:"PK"` // CONVERSATION#conversationID
+	SK string `theorydb:"sk,attr:SK" json:"SK"` // STATUS#timestamp#statusID
 
 	// Fields from instructions
-	ConversationID string               `dynamorm:"attr:conversationID" json:"conversation_id"`
-	StatusID       string               `dynamorm:"attr:statusID" json:"status_id"`
-	SenderUsername string               `dynamorm:"attr:senderUsername" json:"sender_username"`
-	CreatedAt      time.Time            `dynamorm:"attr:createdAt" json:"created_at"`
-	ReadBy         map[string]time.Time `dynamorm:"attr:readBy" json:"read_by,omitempty"` // username -> read timestamp
+	ConversationID string               `theorydb:"attr:conversationID" json:"conversation_id"`
+	StatusID       string               `theorydb:"attr:statusID" json:"status_id"`
+	SenderUsername string               `theorydb:"attr:senderUsername" json:"sender_username"`
+	CreatedAt      time.Time            `theorydb:"attr:createdAt" json:"created_at"`
+	ReadBy         map[string]time.Time `theorydb:"attr:readBy" json:"read_by,omitempty"` // username -> read timestamp
 
 	// TTL for message retention (optional)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

@@ -12,7 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/lift/pkg/streamer"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -141,9 +141,7 @@ type subscriptionManager struct {
 
 // NewSubscriptionManager creates a new subscription manager
 func NewSubscriptionManager(repo *repositories.WebSocketSubscriptionManagerRepository, apiGWEndpoint string, logger *zap.Logger) (SubscriptionManager, error) {
-	apiClient, err := streamer.NewClient(context.Background(), streamer.ClientConfig{
-		Endpoint: apiGWEndpoint,
-	})
+	apiClient, err := streamer.NewClient(context.Background(), apiGWEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WebSocket client: %w", err)
 	}

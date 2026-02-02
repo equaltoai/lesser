@@ -11,11 +11,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -150,7 +150,7 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 				Published:    time.Now(),
 				AttributedTo: "https://example.com/users/alice",
 			},
-			Slug:         slug,
+			Slug: slug,
 		})
 		require.Error(t, err)
 		assert.True(t, apperrors.HasCode(err, apperrors.CodeAlreadyExists))
@@ -172,7 +172,7 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 				Published:    time.Now(),
 				AttributedTo: "https://example.com/users/alice",
 			},
-			Slug:         "slug-2",
+			Slug: "slug-2",
 		})
 		require.Error(t, err)
 		repo.createErr = nil
@@ -182,7 +182,7 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 		db, q = newCMSMockDB(t)
 		repo.db = db
 
-		q.On("Create").Return(nil).Once()                  // slug index
+		q.On("Create").Return(nil).Once()                      // slug index
 		q.On("Create").Return(errors.New("index fail")).Once() // first CMS index entry
 		q.On("Delete").Return(nil).Maybe()
 
@@ -193,7 +193,7 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 				Published:    time.Now(),
 				AttributedTo: "https://example.com/users/alice",
 			},
-			Slug:         "slug-3",
+			Slug: "slug-3",
 		}
 		err := svc.CreateArticle(ctx, article)
 		require.Error(t, err)
@@ -251,7 +251,7 @@ func TestArticleService_Round25_CreateUpdateDeleteArticle(t *testing.T) {
 				Published:    time.Now(),
 				AttributedTo: "https://example.com/users/alice",
 			},
-			Slug:         "slug",
+			Slug: "slug",
 		})
 		require.NoError(t, err)
 		assert.Equal(t, int32(1), revisions.calls.Load())
@@ -300,7 +300,7 @@ func TestArticleService_Round25_federationHelpersAndUsernameExtraction(t *testin
 			Published:    time.Now(),
 			AttributedTo: "https://example.com/users/alice",
 		},
-		Slug:         "slug",
+		Slug: "slug",
 	}
 
 	svc.federateArticleWriteActivity(ctx, article, activitypub.CreateType, "create")

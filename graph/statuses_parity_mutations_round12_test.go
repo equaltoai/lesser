@@ -33,7 +33,7 @@ func TestRound12MutationResolvers_StatusesParity_UpdateMuteUnmute(t *testing.T) 
 		CreatedAt:      now.Add(-time.Hour),
 		UpdatedAt:      now.Add(-time.Hour),
 		ModifiedAt:     now.Add(-time.Hour),
-		Note: &models.NoteField{Note: &activitypub.Note{
+		Note: &activitypub.Note{
 			BaseObject: activitypub.BaseObject{
 				ID:        "https://localhost/users/alice/statuses/status-1",
 				Type:      activitypub.NoteType,
@@ -41,7 +41,7 @@ func TestRound12MutationResolvers_StatusesParity_UpdateMuteUnmute(t *testing.T) 
 				Sensitive: false,
 			},
 			Content: "old content",
-		}},
+		},
 	}))
 
 	// Auth required.

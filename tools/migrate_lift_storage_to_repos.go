@@ -203,7 +203,7 @@ var complexMappings = []ComplexMapping{
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: go run migrate_lift_storage_to_repos.go <directory>")
-		fmt.Println("Example: go run migrate_lift_storage_to_repos.go /Users/aronprice/lesser/cmd/api/lift")
+		fmt.Println("Example: go run migrate_lift_storage_to_repos.go /Users/aronprice/lesser/cmd/api/handlers")
 		os.Exit(1)
 	}
 

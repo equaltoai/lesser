@@ -51,4 +51,3 @@ func TestRound12QueryResolvers_ReputationParity_ReputationAndVouches(t *testing.
 	_, err = resolver.Query().Reputation(ctx, " ")
 	require.Error(t, err)
 }
-

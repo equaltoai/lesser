@@ -23,7 +23,7 @@ type fakeEmojiRepo struct {
 	updateErr error
 	deleteErr error
 
-	remoteByKey   map[string]*storage.CustomEmoji
+	remoteByKey    map[string]*storage.CustomEmoji
 	remoteErrByKey map[string]error
 
 	searchCalls []fakeEmojiSearchCall
@@ -34,7 +34,7 @@ type fakeEmojiRepo struct {
 	popularResp  []*storage.CustomEmoji
 	popularErr   error
 
-	incrementCalls []string
+	incrementCalls     []string
 	incrementErrByCode map[string]error
 }
 

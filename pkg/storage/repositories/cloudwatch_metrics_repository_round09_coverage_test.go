@@ -86,7 +86,7 @@ func TestCloudWatchMetricsRepository_GetServiceMetrics_UsesStubbedHTTP(t *testin
 		return &http.Response{
 			StatusCode: 200,
 			Body: io.NopCloser(bytes.NewBufferString(
-				`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Sum>`+sum+`</Sum></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
+				`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Sum>` + sum + `</Sum></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
 			Header: make(http.Header),
 		}, nil
 	})
@@ -305,7 +305,7 @@ func TestCloudWatchMetricsRepository_WithCachingConstructorAndPercentileEdgeCase
 	awsCfg := aws.Config{
 		Region:      "us-east-1",
 		Credentials: credentials.NewStaticCredentialsProvider("AKIA...", "secret", ""),
-		HTTPClient: &http.Client{Transport: stubRoundTripper{fn: responder}},
+		HTTPClient:  &http.Client{Transport: stubRoundTripper{fn: responder}},
 		EndpointResolverWithOptions: aws.EndpointResolverWithOptionsFunc(func(service, region string, _ ...any) (aws.Endpoint, error) {
 			return aws.Endpoint{URL: "http://example.com", SigningRegion: "us-east-1"}, nil
 		}),

@@ -38,4 +38,3 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	_, err = resolver.Mutation().UpdateQuotePermissions(round12AuthContext("bob"), "status-1", true, model.QuotePermissionEveryone)
 	require.Error(t, err)
 }
-

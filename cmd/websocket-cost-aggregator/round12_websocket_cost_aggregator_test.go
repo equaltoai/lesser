@@ -18,11 +18,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
-	"github.com/pay-theory/dynamorm"
+	"github.com/theory-cloud/tabletheory"
 )
 
 type fakeCostRepo struct {
@@ -187,8 +187,8 @@ func TestSendWebhookAlert_SuccessAndFailures(t *testing.T) {
 
 	var captured *http.Request
 	h := &WebSocketCostAggregatorHandler{
-		logger:      zap.NewNop(),
-		webhookURL:  "https://example.com/webhook",
+		logger:     zap.NewNop(),
+		webhookURL: "https://example.com/webhook",
 		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
 			captured = req
 			return &http.Response{
@@ -381,8 +381,8 @@ func TestCleanupStaleConnections_SendsCleanupAlert(t *testing.T) {
 				Request:    req,
 			}, nil
 		}},
-		snsTopicArn:    "arn:aws:sns:us-east-1:123:topic",
-		snsClient:      snsClient,
+		snsTopicArn: "arn:aws:sns:us-east-1:123:topic",
+		snsClient:   snsClient,
 	}
 
 	require.NoError(t, h.cleanupStaleConnections(context.Background()))
@@ -407,8 +407,8 @@ func TestSendCleanupAlert_LogsFailures(t *testing.T) {
 
 	snsClient := &fakeSNS{publishErr: errors.New("sns failed")}
 	h := &WebSocketCostAggregatorHandler{
-		logger:      zap.NewNop(),
-		webhookURL:  "https://example.com/webhook",
+		logger:     zap.NewNop(),
+		webhookURL: "https://example.com/webhook",
 		httpClient: &httpDoerStub{doFn: func(req *http.Request) (*http.Response, error) {
 			received <- struct{}{}
 			return &http.Response{
@@ -464,8 +464,8 @@ func TestBudgetAlerts_AndAllMethodsFailed(t *testing.T) {
 				Request:    req,
 			}, nil
 		}},
-		snsTopicArn:    "arn:aws:sns:us-east-1:123:topic",
-		snsClient:      snsClient,
+		snsTopicArn: "arn:aws:sns:us-east-1:123:topic",
+		snsClient:   snsClient,
 	}
 
 	require.Error(t, h.sendBudgetAlert(context.Background(), costRepo.topUsers[0], costRepo.budgetByUser["u1"]))
@@ -511,8 +511,8 @@ func TestUpdateBudgetAlerts_LogsSendBudgetAlertError(t *testing.T) {
 				Request:    req,
 			}, nil
 		}},
-		snsTopicArn:    "arn:aws:sns:us-east-1:123:topic",
-		snsClient:      &fakeSNS{publishErr: errors.New("sns failed")},
+		snsTopicArn: "arn:aws:sns:us-east-1:123:topic",
+		snsClient:   &fakeSNS{publishErr: errors.New("sns failed")},
 	}
 
 	require.NoError(t, h.updateBudgetAlerts(context.Background()))
@@ -607,15 +607,14 @@ func TestHandleScheduledEvent_ParsesOperations(t *testing.T) {
 		logger:         zap.NewNop(),
 	}
 
-	event := events.CloudWatchEvent{
+	event := events.EventBridgeEvent{
 		Source: "aws.events",
 		Time:   time.Unix(0, 0).UTC(),
 		Detail: json.RawMessage(`{"operations":["idle_tracking","cleanup","unknown",123]}`),
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	liftCtx.SetRequestID("req")
-	require.NoError(t, h.HandleScheduledEvent(liftCtx, event))
+	_, err := h.HandleScheduledEvent(&apptheory.EventContext{RequestID: "req"}, event)
+	require.NoError(t, err)
 }
 
 func TestHandleScheduledEvent_CleanupErrorPath(t *testing.T) {
@@ -626,15 +625,14 @@ func TestHandleScheduledEvent_CleanupErrorPath(t *testing.T) {
 		logger:         zap.NewNop(),
 	}
 
-	event := events.CloudWatchEvent{
+	event := events.EventBridgeEvent{
 		Source: "aws.events",
 		Time:   time.Unix(0, 0).UTC(),
 		Detail: json.RawMessage(`{"operations":["cleanup"]}`),
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	liftCtx.SetRequestID("req")
-	require.NoError(t, h.HandleScheduledEvent(liftCtx, event))
+	_, err := h.HandleScheduledEvent(&apptheory.EventContext{RequestID: "req"}, event)
+	require.NoError(t, err)
 }
 
 func TestHandleScheduledEvent_DefaultOperations(t *testing.T) {
@@ -652,14 +650,13 @@ func TestHandleScheduledEvent_DefaultOperations(t *testing.T) {
 		logger:         zap.NewNop(),
 	}
 
-	event := events.CloudWatchEvent{
+	event := events.EventBridgeEvent{
 		Source: "aws.events",
 		Time:   time.Unix(0, 0).UTC(),
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	liftCtx.SetRequestID("req")
-	require.NoError(t, h.HandleScheduledEvent(liftCtx, event))
+	_, err := h.HandleScheduledEvent(&apptheory.EventContext{RequestID: "req"}, event)
+	require.NoError(t, err)
 
 	require.Len(t, tracker.aggCalls, 1)
 	require.Equal(t, "hour", tracker.aggCalls[0].period)
@@ -721,15 +718,18 @@ func TestInitializeAndMain_RoutesEventBridge(t *testing.T) {
 
 	config.ResetForTests()
 	t.Setenv("DOMAIN", "example.com")
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	fakeCtx := &common.LambdaContext{
-		Config:  &config.Config{DynamoTableName: "", Domain: "example.com"},
-		Logger:  zap.NewNop(),
-		Repos:   nil,
+		Config:   &config.Config{DynamoTableName: "", Domain: "example.com"},
+		Logger:   zap.NewNop(),
+		Repos:    nil,
 		DynamoDB: nil,
 	}
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeCtx }
-	getLambdaClientFn = func(context.Context) (*dynamorm.LambdaDB, error) { return &dynamorm.LambdaDB{}, nil }
+	getLambdaClientFn = func(context.Context) (*tabletheory.LambdaDB, error) { return &tabletheory.LambdaDB{}, nil }
 	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
 		return aws.Config{Region: "us-east-1"}, nil
 	}
@@ -754,54 +754,30 @@ func TestInitializeAndMain_RoutesEventBridge(t *testing.T) {
 	main()
 	require.NotNil(t, started)
 
-	handleRequest, ok := started.(func(context.Context, any) (any, error))
+	handleRequest, ok := started.(func(context.Context, json.RawMessage) (any, error))
 	require.True(t, ok)
 
-	resources := []any{"arn:aws:events:us-east-1:123:rule/lesser-websocket-cost-aggregator-schedule-5min"}
 	event := map[string]any{
 		"source":      "aws.events",
 		"detail-type": "Scheduled Event",
 		"detail": map[string]any{
 			"operations": []any{"idle_tracking"},
 		},
-		"resources": resources,
-		"time":      time.Now().UTC().Format(time.RFC3339),
-		"id":        "evt",
+		"resources": []any{
+			"arn:aws:events:us-east-1:123456789012:rule/lesser-dev-websocket-cost-aggregator-schedule-0",
+		},
+		"time": time.Now().UTC().Format(time.RFC3339),
+		"id":   "evt",
 	}
 
-	_, err := handleRequest(context.Background(), event)
+	raw, err := json.Marshal(event)
 	require.NoError(t, err)
 
-	// Ensure raw event marshaling works for bad payloads.
-	respAny, err := handleRequest(context.Background(), map[string]any{
-		"source":      "aws.events",
-		"detail-type": "Scheduled Event",
-		"detail":      make(chan int),
-		"resources":   resources,
-		"time":        time.Now().UTC().Format(time.RFC3339),
-	})
+	_, err = handleRequest(context.Background(), raw)
 	require.NoError(t, err)
-	resp, ok := respAny.(*lift.Response)
-	require.True(t, ok)
-	require.Equal(t, 500, resp.StatusCode)
-	body, ok := resp.Body.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "EVENT_MARSHAL_ERROR", body["code"])
 
-	respAny, err = handleRequest(context.Background(), map[string]any{
-		"source":      "aws.events",
-		"detail-type": "Scheduled Event",
-		"detail":      map[string]any{},
-		"resources":   resources,
-		"time":        "not-a-time",
-	})
-	require.NoError(t, err)
-	resp, ok = respAny.(*lift.Response)
-	require.True(t, ok)
-	require.Equal(t, 500, resp.StatusCode)
-	body, ok = resp.Body.(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "EVENT_PARSE_ERROR", body["code"])
+	_, err = handleRequest(context.Background(), json.RawMessage(`{"time":"not-a-time","resources":["arn:aws:events:us-east-1:123456789012:rule/lesser-dev-websocket-cost-aggregator-schedule-0"],"source":"aws.events","detail-type":"Scheduled Event","detail":{}}`))
+	require.Error(t, err)
 }
 
 func TestInitializeWebSocketCostAggregator_LoadAWSConfigError(t *testing.T) {
@@ -818,13 +794,13 @@ func TestInitializeWebSocketCostAggregator_LoadAWSConfigError(t *testing.T) {
 	t.Setenv("DOMAIN", "example.com")
 
 	fakeCtx := &common.LambdaContext{
-		Config:  &config.Config{DynamoTableName: "", Domain: "example.com"},
-		Logger:  zap.NewNop(),
-		Repos:   nil,
+		Config:   &config.Config{DynamoTableName: "", Domain: "example.com"},
+		Logger:   zap.NewNop(),
+		Repos:    nil,
 		DynamoDB: nil,
 	}
 	mustInitializeLambdaFn = func(_ common.LambdaConfig) *common.LambdaContext { return fakeCtx }
-	getLambdaClientFn = func(context.Context) (*dynamorm.LambdaDB, error) { return &dynamorm.LambdaDB{}, nil }
+	getLambdaClientFn = func(context.Context) (*tabletheory.LambdaDB, error) { return &tabletheory.LambdaDB{}, nil }
 	loadAWSConfigFn = func(context.Context, ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
 		return aws.Config{}, errors.New("load failed")
 	}
@@ -832,4 +808,23 @@ func TestInitializeWebSocketCostAggregator_LoadAWSConfigError(t *testing.T) {
 	initializeWebSocketCostAggregator()
 	require.NotNil(t, handler)
 	require.Nil(t, handler.snsClient)
+}
+
+func TestHandleScheduledEvent_WithNilContext(t *testing.T) {
+	costRepo := &fakeCostRepo{topUsers: []*repositories.WebSocketUserCostRanking{}}
+	connRepo := &fakeConnectionRepo{}
+	h := &WebSocketCostAggregatorHandler{
+		costRepo:       costRepo,
+		connectionRepo: connRepo,
+		costTracker:    &fakeCostTracker{},
+		logger:         zap.NewNop(),
+	}
+
+	_, err := h.HandleScheduledEvent(nil, events.EventBridgeEvent{
+		Source:     "aws.events",
+		DetailType: "Scheduled Event",
+		Detail:     json.RawMessage(`{"operations":["idle_tracking"]}`),
+		Time:       time.Unix(0, 0).UTC(),
+	})
+	require.NoError(t, err)
 }

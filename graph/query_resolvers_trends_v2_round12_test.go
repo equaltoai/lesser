@@ -91,4 +91,3 @@ func TestRound12QueryResolvers_TrendsV2_ServiceAndConverters(t *testing.T) {
 	item = convertTrendToTrendingItem(trends.Trend{Type: trendTypeLink, Value: &trends.LinkTrend{URL: "https://example.com"}})
 	require.NotNil(t, item)
 }
-

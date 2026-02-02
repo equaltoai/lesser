@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -351,7 +352,7 @@ func TestDLQHandler_HandleStreamFailure(t *testing.T) {
 	require.Error(t, handler.HandleStreamFailure(context.Background(), record, errors.New("boom")))
 }
 
-func TestHandler_HandleDynamoDBStreamEvent_PartialFailureSendsToDLQ(t *testing.T) {
+func TestHandler_HandleDynamoDBRecord_FailureSendsToDLQ(t *testing.T) {
 	var dlqStored int
 	processor := newTestProcessor(stubMetricWriter{
 		create: func(_ context.Context, _ *models.MetricRecord) error {
@@ -370,23 +371,19 @@ func TestHandler_HandleDynamoDBStreamEvent_PartialFailureSendsToDLQ(t *testing.T
 		logger:    zap.NewNop(),
 	}
 
-	event := events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName:   eventTypeInsert,
-				EventID:     "evt1",
-				EventSource: "aws:dynamodb",
-				Change: events.DynamoDBStreamRecord{
-					NewImage: map[string]events.DynamoDBAttributeValue{
-						"PK": events.NewStringAttribute("USER#admin"),
-						"SK": events.NewStringAttribute("METADATA"),
-					},
-				},
+	record := events.DynamoDBEventRecord{
+		EventName:   eventTypeInsert,
+		EventID:     "evt1",
+		EventSource: "aws:dynamodb",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("USER#admin"),
+				"SK": events.NewStringAttribute("METADATA"),
 			},
 		},
 	}
 
-	require.NoError(t, h.HandleDynamoDBStreamEvent(context.Background(), event))
+	require.NoError(t, h.HandleDynamoDBRecord(nil, record))
 	require.Equal(t, 1, dlqStored)
 }
 
@@ -433,28 +430,38 @@ func TestInitializeMetricsProcessor_AndMain(t *testing.T) {
 		startedHandle = h
 	}
 
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
+
 	main()
 	require.True(t, started)
 
-	handlerFn, ok := startedHandle.(func(context.Context, any) (any, error))
+	handlerFn, ok := startedHandle.(func(context.Context, json.RawMessage) (any, error))
 	require.True(t, ok)
 
-	_, err := handlerFn(context.Background(), map[string]any{
-		"Records": []any{
-			map[string]any{
-				"eventID":     "evt",
-				"eventName":   eventTypeInsert,
-				"eventSource": "aws:dynamodb",
-				"dynamodb": map[string]any{
-					"NewImage": map[string]any{
-						"PK": map[string]any{"S": "USER#admin"},
-						"SK": map[string]any{"S": "METADATA"},
-					},
+	event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+		{
+			EventID:        "evt",
+			EventName:      eventTypeInsert,
+			EventSource:    "aws:dynamodb",
+			EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+			Change: events.DynamoDBStreamRecord{
+				NewImage: map[string]events.DynamoDBAttributeValue{
+					"PK": events.NewStringAttribute("USER#admin"),
+					"SK": events.NewStringAttribute("METADATA"),
 				},
 			},
 		},
-	})
+	}}
+	raw, err := json.Marshal(event)
 	require.NoError(t, err)
+
+	respAny, err := handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.DynamoDBEventResponse)
+	require.True(t, ok)
+	require.Empty(t, resp.BatchItemFailures)
 
 	_, ok = any(repos).(core.RepositoryStorage)
 	require.True(t, ok)

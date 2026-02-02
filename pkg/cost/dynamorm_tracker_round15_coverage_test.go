@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 

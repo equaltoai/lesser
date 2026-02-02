@@ -4,7 +4,7 @@
 
 # Find all test files that use MockStorageAdapter
 echo "=== Finding test files that need updating ==="
-test_files=$(grep -l "MockStorageAdapter" cmd/api/lift/*_test.go)
+test_files=$(grep -l "MockStorageAdapter" cmd/api/handlers/*_test.go)
 echo "Found $(echo "$test_files" | wc -l) files to update"
 
 # Common replacements

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/cost"

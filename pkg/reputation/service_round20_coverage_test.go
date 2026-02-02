@@ -495,7 +495,7 @@ func TestService_Round20_GetReputation_CalculateAndStore_ExportImport(t *testing
 	statusTime := now.Add(-2 * time.Hour)
 	outboxTime := now.Add(-1 * time.Hour)
 	statuses := []*models.Status{
-		{Note: &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Published: &statusTime}}}},
+		{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Published: &statusTime}}},
 	}
 	activities := []*activitypub.Activity{
 		{BaseObject: activitypub.BaseObject{Published: &outboxTime}},
@@ -768,7 +768,7 @@ func TestService_Round20_ErrorAndEdgeBranches(t *testing.T) {
 		svc.statusRepo = &round20StatusRepo{timelineByUser: map[string][]*models.Status{"alice": {{Note: nil}}}}
 		require.True(t, svc.getLastStatusTime(ctx, "alice").IsZero())
 
-		svc.statusRepo = &round20StatusRepo{timelineByUser: map[string][]*models.Status{"alice": {{Note: &models.NoteField{Note: &activitypub.Note{}}}}}}
+		svc.statusRepo = &round20StatusRepo{timelineByUser: map[string][]*models.Status{"alice": {{Note: &activitypub.Note{}}}}}
 		require.True(t, svc.getLastStatusTime(ctx, "alice").IsZero())
 	})
 
@@ -790,7 +790,7 @@ func TestService_Round20_ErrorAndEdgeBranches(t *testing.T) {
 		statusTime := now.Add(-1 * time.Hour)
 		outboxTime := now.Add(-2 * time.Hour)
 		svc := &Service{
-			statusRepo:   &round20StatusRepo{timelineByUser: map[string][]*models.Status{"alice": {{Note: &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Published: &statusTime}}}}}}},
+			statusRepo:   &round20StatusRepo{timelineByUser: map[string][]*models.Status{"alice": {{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Published: &statusTime}}}}}},
 			activityRepo: &round20ActivityRepo{activitiesByUser: map[string][]*activitypub.Activity{"alice": {{BaseObject: activitypub.BaseObject{Published: &outboxTime}}}}},
 			cache:        &round20CacheDB{store: &round20CacheStore{}},
 			logger:       zap.NewNop(),

@@ -7,19 +7,19 @@ import (
 
 // HashtagFollow represents a user following a hashtag
 type HashtagFollow struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // user#{userID}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // hashtag#{name}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // user#{userID}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // hashtag#{name}
 
 	// Fields
-	UserID               string    `dynamorm:"attr:userID" json:"user_id"`
-	Hashtag              string    `dynamorm:"attr:hashtag" json:"hashtag"`
-	NotificationsEnabled bool      `dynamorm:"attr:notificationsEnabled" json:"notifications_enabled"`
-	Muted                bool      `dynamorm:"attr:muted" json:"muted"`
-	CreatedAt            time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt            time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	UserID               string    `theorydb:"attr:userID" json:"user_id"`
+	Hashtag              string    `theorydb:"attr:hashtag" json:"hashtag"`
+	NotificationsEnabled bool      `theorydb:"attr:notificationsEnabled" json:"notifications_enabled"`
+	Muted                bool      `theorydb:"attr:muted" json:"muted"`
+	CreatedAt            time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt            time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeysWithParams updates the primary and sort keys for DynamoDB

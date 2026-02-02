@@ -7,16 +7,16 @@ import (
 
 // TimelineMarker represents a user's position in a timeline
 type TimelineMarker struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // USER#{username}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // MARKER#{timeline}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // USER#{username}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // MARKER#{timeline}
 
-	Username   string    `dynamorm:"attr:username" json:"username"`
-	Timeline   string    `dynamorm:"attr:timeline" json:"timeline"` // home, notifications, etc.
-	LastReadID string    `dynamorm:"attr:lastReadID" json:"last_read_id"`
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	Version    int       `dynamorm:"version,attr:version" json:"version"`
+	Username   string    `theorydb:"attr:username" json:"username"`
+	Timeline   string    `theorydb:"attr:timeline" json:"timeline"` // home, notifications, etc.
+	LastReadID string    `theorydb:"attr:lastReadID" json:"last_read_id"`
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	Version    int       `theorydb:"version,attr:version" json:"version"`
 }
 
 // TableName returns the DynamoDB table name

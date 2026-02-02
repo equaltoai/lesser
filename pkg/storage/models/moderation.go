@@ -79,44 +79,44 @@ const (
 
 // ModerationEvent represents a moderation event stored in DynamoDB
 type ModerationEvent struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - Events are stored by object being moderated
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "EVENT#{object_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{event_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "EVENT#{object_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{event_id}"
 
 	// GSI1 - Actor queries (find events by who created the content)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "ACTOR#{actor_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "ACTOR#{actor_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Type/Category/Severity queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TYPE#{event_type}#{category}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "SEVERITY#{severity}#{RFC3339}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TYPE#{event_type}#{category}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "SEVERITY#{severity}#{RFC3339}"
 
 	// GSI3 - Event ID lookups
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "EVENTID#{event_id}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "EVENTID#{event_id}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "EVENTID#{event_id}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "EVENTID#{event_id}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "EVENT"
+	Type string `theorydb:"attr:type" json:"type"` // "EVENT"
 
 	// ModerationEvent fields (copied to avoid circular import)
-	ID              string    `dynamorm:"attr:id" json:"id"`
-	EventType       string    `dynamorm:"attr:eventType" json:"event_type"`
-	ObjectID        string    `dynamorm:"attr:objectID" json:"object_id"`     // ID of content being moderated
-	ObjectType      string    `dynamorm:"attr:objectType" json:"object_type"` // status, account, media
-	ActorID         string    `dynamorm:"attr:actorID" json:"actor_id"`       // Who triggered this event
-	Category        string    `dynamorm:"attr:category" json:"category"`
-	Severity        string    `dynamorm:"attr:severity" json:"severity"`
-	ConfidenceScore float64   `dynamorm:"attr:confidenceScore" json:"confidence_score"` // 0.0-1.0
-	Evidence        []any     `dynamorm:"attr:evidence" json:"evidence"`
-	Reason          string    `dynamorm:"attr:reason" json:"reason,omitempty"` // Human-provided reason
-	Created         time.Time `dynamorm:"attr:created" json:"created"`
-	Updated         time.Time `dynamorm:"attr:updated" json:"updated"`
+	ID              string    `theorydb:"attr:id" json:"id"`
+	EventType       string    `theorydb:"attr:eventType" json:"event_type"`
+	ObjectID        string    `theorydb:"attr:objectID" json:"object_id"`     // ID of content being moderated
+	ObjectType      string    `theorydb:"attr:objectType" json:"object_type"` // status, account, media
+	ActorID         string    `theorydb:"attr:actorID" json:"actor_id"`       // Who triggered this event
+	Category        string    `theorydb:"attr:category" json:"category"`
+	Severity        string    `theorydb:"attr:severity" json:"severity"`
+	ConfidenceScore float64   `theorydb:"attr:confidenceScore" json:"confidence_score"` // 0.0-1.0
+	Evidence        []any     `theorydb:"attr:evidence" json:"evidence"`
+	Reason          string    `theorydb:"attr:reason" json:"reason,omitempty"` // Human-provided reason
+	Created         time.Time `theorydb:"attr:created" json:"created"`
+	Updated         time.Time `theorydb:"attr:updated" json:"updated"`
 
 	// DynamoDB TTL
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	TTL       int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -165,31 +165,31 @@ func (m *ModerationEvent) UpdateKeys() error {
 
 // ModerationReview represents a review by a moderator
 type ModerationReview struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - reviews by event
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "REVIEW#{event_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "REVIEWER#{reviewer_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "REVIEW#{event_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "REVIEWER#{reviewer_id}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "REVIEW"
+	Type string `theorydb:"attr:type" json:"type"` // "REVIEW"
 
 	// Review fields (copied to avoid circular import)
-	ID          string                 `dynamorm:"attr:id" json:"id"`
-	EventID     string                 `dynamorm:"attr:eventID" json:"event_id"`
-	ReviewerID  string                 `dynamorm:"attr:reviewerID" json:"reviewer_id"`
-	ReviewerRep float64                `dynamorm:"attr:reviewerRep" json:"reviewer_rep,omitempty"`
-	Action      string                 `dynamorm:"attr:action" json:"action"`     // none, remove, silence, suspend, warning
-	Severity    string                 `dynamorm:"attr:severity" json:"severity"` // low, medium, high, critical
-	Note        string                 `dynamorm:"attr:note" json:"note,omitempty"`
-	Tags        []string               `dynamorm:"attr:tags" json:"tags,omitempty"`
-	Metadata    map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`
-	Confidence  float64                `dynamorm:"attr:confidence" json:"confidence"` // 0.0-1.0
-	Created     time.Time              `dynamorm:"attr:created" json:"created"`
+	ID          string                 `theorydb:"attr:id" json:"id"`
+	EventID     string                 `theorydb:"attr:eventID" json:"event_id"`
+	ReviewerID  string                 `theorydb:"attr:reviewerID" json:"reviewer_id"`
+	ReviewerRep float64                `theorydb:"attr:reviewerRep" json:"reviewer_rep,omitempty"`
+	Action      string                 `theorydb:"attr:action" json:"action"`     // none, remove, silence, suspend, warning
+	Severity    string                 `theorydb:"attr:severity" json:"severity"` // low, medium, high, critical
+	Note        string                 `theorydb:"attr:note" json:"note,omitempty"`
+	Tags        []string               `theorydb:"attr:tags" json:"tags,omitempty"`
+	Metadata    map[string]interface{} `theorydb:"attr:metadata" json:"metadata,omitempty"`
+	Confidence  float64                `theorydb:"attr:confidence" json:"confidence"` // 0.0-1.0
+	Created     time.Time              `theorydb:"attr:created" json:"created"`
 
 	// DynamoDB TTL
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	TTL       int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -212,35 +212,35 @@ func (r *ModerationReview) UpdateKeys() {
 
 // ModerationDecision represents a consensus decision
 type ModerationDecision struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - decisions by object
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "DECISION#{object_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "DECISION#{object_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}"
 
 	// GSI1 - Active decisions lookup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "OBJECT#{object_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "OBJECT#{object_id}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "DECISION"
+	Type string `theorydb:"attr:type" json:"type"` // "DECISION"
 
 	// ModerationDecision fields (copied to avoid circular import)
-	ID               string                 `dynamorm:"attr:id" json:"id"`
-	EventID          string                 `dynamorm:"attr:eventID" json:"event_id"`
-	ObjectID         string                 `dynamorm:"attr:objectID" json:"object_id"`
-	Action           string                 `dynamorm:"attr:action" json:"action"`                  // none, remove, silence, suspend, warning
-	ConsensusScore   float64                `dynamorm:"attr:consensusScore" json:"consensus_score"` // 0.0-1.0
-	ReviewerCount    int                    `dynamorm:"attr:reviewerCount" json:"reviewer_count"`
-	TrustWeightTotal float64                `dynamorm:"attr:trustWeightTotal" json:"trust_weight_total"`
-	Reviews          []interface{}          `dynamorm:"attr:reviews" json:"reviews,omitempty"` // Array of Review objects
-	Metadata         map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`
-	Decided          time.Time              `dynamorm:"attr:decided" json:"decided"`
-	Expires          *time.Time             `dynamorm:"attr:expires" json:"expires,omitempty"`
+	ID               string                 `theorydb:"attr:id" json:"id"`
+	EventID          string                 `theorydb:"attr:eventID" json:"event_id"`
+	ObjectID         string                 `theorydb:"attr:objectID" json:"object_id"`
+	Action           string                 `theorydb:"attr:action" json:"action"`                  // none, remove, silence, suspend, warning
+	ConsensusScore   float64                `theorydb:"attr:consensusScore" json:"consensus_score"` // 0.0-1.0
+	ReviewerCount    int                    `theorydb:"attr:reviewerCount" json:"reviewer_count"`
+	TrustWeightTotal float64                `theorydb:"attr:trustWeightTotal" json:"trust_weight_total"`
+	Reviews          []interface{}          `theorydb:"attr:reviews" json:"reviews,omitempty"` // Array of Review objects
+	Metadata         map[string]interface{} `theorydb:"attr:metadata" json:"metadata,omitempty"`
+	Decided          time.Time              `theorydb:"attr:decided" json:"decided"`
+	Expires          *time.Time             `theorydb:"attr:expires" json:"expires,omitempty"`
 
 	// DynamoDB TTL
-	TTL       int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	TTL       int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -265,37 +265,37 @@ func (d *ModerationDecision) UpdateKeys() {
 
 // ModerationPattern represents a moderation pattern
 type ModerationPattern struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "PATTERN#{pattern_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // "METADATA"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "PATTERN#{pattern_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // "METADATA"
 
 	// GSI1 - Active pattern queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "MODERATION_PATTERNS#ACTIVE" (when active)
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{severity}#{type}#{pattern_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "MODERATION_PATTERNS#ACTIVE" (when active)
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{severity}#{type}#{pattern_id}"
 
 	// GSI2 - Severity-based queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "MODERATION_PATTERNS#{severity}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{updated_at}#{pattern_id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "MODERATION_PATTERNS#{severity}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{updated_at}#{pattern_id}"
 
 	// Pattern data
-	PatternID   string    `dynamorm:"attr:patternID" json:"pattern_id"`
-	Name        string    `dynamorm:"attr:name" json:"name"`
-	Description string    `dynamorm:"attr:description" json:"description"`
-	Type        string    `dynamorm:"attr:type" json:"type"` // "regex", "keyword", "phrase"
-	Pattern     string    `dynamorm:"attr:pattern" json:"pattern"`
-	Category    string    `dynamorm:"attr:category" json:"category"` // "toxicity", "spam", "violence", etc.
-	Severity    float64   `dynamorm:"attr:severity" json:"severity"` // 0.0 to 1.0
-	Active      bool      `dynamorm:"attr:active" json:"active"`
-	Flags       []string  `dynamorm:"attr:flags" json:"flags,omitempty"`
-	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt   time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	HitCount    int64     `dynamorm:"attr:hitCount" json:"hit_count"`
-	LastHit     time.Time `dynamorm:"attr:lastHit" json:"last_hit,omitempty"`
+	PatternID   string    `theorydb:"attr:patternID" json:"pattern_id"`
+	Name        string    `theorydb:"attr:name" json:"name"`
+	Description string    `theorydb:"attr:description" json:"description"`
+	Type        string    `theorydb:"attr:type" json:"type"` // "regex", "keyword", "phrase"
+	Pattern     string    `theorydb:"attr:pattern" json:"pattern"`
+	Category    string    `theorydb:"attr:category" json:"category"` // "toxicity", "spam", "violence", etc.
+	Severity    float64   `theorydb:"attr:severity" json:"severity"` // 0.0 to 1.0
+	Active      bool      `theorydb:"attr:active" json:"active"`
+	Flags       []string  `theorydb:"attr:flags" json:"flags,omitempty"`
+	CreatedAt   time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt   time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	HitCount    int64     `theorydb:"attr:hitCount" json:"hit_count"`
+	LastHit     time.Time `theorydb:"attr:lastHit" json:"last_hit,omitempty"`
 
 	// TTL for auto-cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -468,40 +468,40 @@ func (m *Moderation) GetPrimaryProhibitedWord() string {
 
 // ModerationAnalysisResult stores detailed analysis results for audit/appeals
 type ModerationAnalysisResult struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - analysis results by content
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "ANALYSIS#{content_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "RESULT#{timestamp}#{analysis_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "ANALYSIS#{content_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "RESULT#{timestamp}#{analysis_id}"
 
 	// GSI1 - Author queries (find analyses by content author)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "AUTHOR#{author_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "AUTHOR#{author_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Analysis type queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ANALYSIS_TYPE#{type}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ANALYSIS_TYPE#{type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "ANALYSIS_RESULT"
+	Type string `theorydb:"attr:type" json:"type"` // "ANALYSIS_RESULT"
 
 	// Analysis result data
-	ID              string                 `dynamorm:"attr:id" json:"id"`
-	ContentID       string                 `dynamorm:"attr:contentID" json:"content_id"`
-	ContentType     string                 `dynamorm:"attr:contentType" json:"content_type"` // text, image, video
-	AuthorID        string                 `dynamorm:"attr:authorID" json:"author_id"`
-	AnalysisType    string                 `dynamorm:"attr:analysisType" json:"analysis_type"` // text, image, video, combined
-	Confidence      float64                `dynamorm:"attr:confidence" json:"confidence"`
-	Results         map[string]interface{} `dynamorm:"attr:results" json:"results"` // Full analysis results
-	PatternMatches  []interface{}          `dynamorm:"attr:patternMatches" json:"pattern_matches,omitempty"`
-	ThreatMatches   []interface{}          `dynamorm:"attr:threatMatches" json:"threat_matches,omitempty"`
-	ReputationScore interface{}            `dynamorm:"attr:reputationScore" json:"reputation_score,omitempty"`
-	ProcessingTime  int64                  `dynamorm:"attr:processingTime" json:"processing_time"` // milliseconds
-	AnalyzedAt      time.Time              `dynamorm:"attr:analyzedAt" json:"analyzed_at"`
-	CreatedAt       time.Time              `dynamorm:"attr:createdAt" json:"created_at"`
+	ID              string                 `theorydb:"attr:id" json:"id"`
+	ContentID       string                 `theorydb:"attr:contentID" json:"content_id"`
+	ContentType     string                 `theorydb:"attr:contentType" json:"content_type"` // text, image, video
+	AuthorID        string                 `theorydb:"attr:authorID" json:"author_id"`
+	AnalysisType    string                 `theorydb:"attr:analysisType" json:"analysis_type"` // text, image, video, combined
+	Confidence      float64                `theorydb:"attr:confidence" json:"confidence"`
+	Results         map[string]interface{} `theorydb:"attr:results" json:"results"` // Full analysis results
+	PatternMatches  []interface{}          `theorydb:"attr:patternMatches" json:"pattern_matches,omitempty"`
+	ThreatMatches   []interface{}          `theorydb:"attr:threatMatches" json:"threat_matches,omitempty"`
+	ReputationScore interface{}            `theorydb:"attr:reputationScore" json:"reputation_score,omitempty"`
+	ProcessingTime  int64                  `theorydb:"attr:processingTime" json:"processing_time"` // milliseconds
+	AnalyzedAt      time.Time              `theorydb:"attr:analyzedAt" json:"analyzed_at"`
+	CreatedAt       time.Time              `theorydb:"attr:createdAt" json:"created_at"`
 
 	// DynamoDB TTL (90 days for analysis results)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -536,43 +536,43 @@ func (m *ModerationAnalysisResult) UpdateKeys() {
 
 // ModerationDecisionResult stores enhanced decision results with enforcement tracking
 type ModerationDecisionResult struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - decisions by content
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "DECISION_RESULT#{content_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{decision_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "DECISION_RESULT#{content_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{decision_id}"
 
 	// GSI1 - Active decisions lookup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "CONTENT#{content_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ACTIVE_DECISIONS"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "CONTENT#{content_id}"
 
 	// GSI2 - Action type queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ACTION#{action}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ACTION#{action}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "CONFIDENCE#{confidence}#{RFC3339}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "DECISION_RESULT"
+	Type string `theorydb:"attr:type" json:"type"` // "DECISION_RESULT"
 
 	// Decision data
-	ID                string                 `dynamorm:"attr:id" json:"id"`
-	ContentID         string                 `dynamorm:"attr:contentID" json:"content_id"`
-	AuthorID          string                 `dynamorm:"attr:authorID" json:"author_id"`
-	Action            string                 `dynamorm:"attr:action" json:"action"` // allow, flag, quarantine, remove, shadow_ban
-	Confidence        float64                `dynamorm:"attr:confidence" json:"confidence"`
-	Reasons           []interface{}          `dynamorm:"attr:reasons" json:"reasons"`
-	RequiresReview    bool                   `dynamorm:"attr:requiresReview" json:"requires_review"`
-	ReviewPriority    int                    `dynamorm:"attr:reviewPriority" json:"review_priority"`
-	Recommendations   []string               `dynamorm:"attr:recommendations" json:"recommendations,omitempty"`
-	ExpiresAt         *time.Time             `dynamorm:"attr:expiresAt" json:"expires_at,omitempty"`
-	DecidedAt         time.Time              `dynamorm:"attr:decidedAt" json:"decided_at"`
-	EnforcementStatus string                 `dynamorm:"attr:enforcementStatus" json:"enforcement_status"` // pending, applied, failed, expired
-	EnforcedAt        *time.Time             `dynamorm:"attr:enforcedAt" json:"enforced_at,omitempty"`
-	EnforcementError  string                 `dynamorm:"attr:enforcementError" json:"enforcement_error,omitempty"`
-	Metadata          map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`
-	CreatedAt         time.Time              `dynamorm:"attr:createdAt" json:"created_at"`
+	ID                string                 `theorydb:"attr:id" json:"id"`
+	ContentID         string                 `theorydb:"attr:contentID" json:"content_id"`
+	AuthorID          string                 `theorydb:"attr:authorID" json:"author_id"`
+	Action            string                 `theorydb:"attr:action" json:"action"` // allow, flag, quarantine, remove, shadow_ban
+	Confidence        float64                `theorydb:"attr:confidence" json:"confidence"`
+	Reasons           []interface{}          `theorydb:"attr:reasons" json:"reasons"`
+	RequiresReview    bool                   `theorydb:"attr:requiresReview" json:"requires_review"`
+	ReviewPriority    int                    `theorydb:"attr:reviewPriority" json:"review_priority"`
+	Recommendations   []string               `theorydb:"attr:recommendations" json:"recommendations,omitempty"`
+	ExpiresAt         *time.Time             `theorydb:"attr:expiresAt" json:"expires_at,omitempty"`
+	DecidedAt         time.Time              `theorydb:"attr:decidedAt" json:"decided_at"`
+	EnforcementStatus string                 `theorydb:"attr:enforcementStatus" json:"enforcement_status"` // pending, applied, failed, expired
+	EnforcedAt        *time.Time             `theorydb:"attr:enforcedAt" json:"enforced_at,omitempty"`
+	EnforcementError  string                 `theorydb:"attr:enforcementError" json:"enforcement_error,omitempty"`
+	Metadata          map[string]interface{} `theorydb:"attr:metadata" json:"metadata,omitempty"`
+	CreatedAt         time.Time              `theorydb:"attr:createdAt" json:"created_at"`
 
 	// DynamoDB TTL (90 days for decisions)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -612,44 +612,44 @@ func (m *ModerationDecisionResult) UpdateKeys() {
 
 // ModerationReviewQueue represents items in the review queue
 type ModerationReviewQueue struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - queue items by status and priority
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "REVIEW_QUEUE#{status}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PRIORITY#{priority}#{RFC3339}#{item_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "REVIEW_QUEUE#{status}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "PRIORITY#{priority}#{RFC3339}#{item_id}"
 
 	// GSI1 - Content lookups
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "QUEUE_CONTENT#{content_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "STATUS#{status}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "QUEUE_CONTENT#{content_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "STATUS#{status}"
 
 	// GSI2 - Assignee queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ASSIGNEE#{assignee_id}" (when assigned)
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "PRIORITY#{priority}#{RFC3339}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "ASSIGNEE#{assignee_id}" (when assigned)
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "PRIORITY#{priority}#{RFC3339}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "REVIEW_QUEUE"
+	Type string `theorydb:"attr:type" json:"type"` // "REVIEW_QUEUE"
 
 	// Queue item data
-	ID             string                 `dynamorm:"attr:id" json:"id"`
-	ContentID      string                 `dynamorm:"attr:contentID" json:"content_id"`
-	AuthorID       string                 `dynamorm:"attr:authorID" json:"author_id"`
-	Status         string                 `dynamorm:"attr:status" json:"status"`     // pending, assigned, reviewing, completed, dismissed
-	Priority       int                    `dynamorm:"attr:priority" json:"priority"` // 1-10, higher is more urgent
-	AssignedTo     string                 `dynamorm:"attr:assignedTo" json:"assigned_to,omitempty"`
-	AssignedAt     *time.Time             `dynamorm:"attr:assignedAt" json:"assigned_at,omitempty"`
-	Category       string                 `dynamorm:"attr:category" json:"category"`
-	Severity       string                 `dynamorm:"attr:severity" json:"severity"`
-	Reason         string                 `dynamorm:"attr:reason" json:"reason"`
-	Evidence       map[string]interface{} `dynamorm:"attr:evidence" json:"evidence,omitempty"`
-	Deadline       *time.Time             `dynamorm:"attr:deadline" json:"deadline,omitempty"`
-	CreatedAt      time.Time              `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt      time.Time              `dynamorm:"attr:updatedAt" json:"updated_at"`
-	CompletedAt    *time.Time             `dynamorm:"attr:completedAt" json:"completed_at,omitempty"`
-	ReviewCount    int                    `dynamorm:"attr:reviewCount" json:"review_count"`
-	LastReviewedAt *time.Time             `dynamorm:"attr:lastReviewedAt" json:"last_reviewed_at,omitempty"`
+	ID             string                 `theorydb:"attr:id" json:"id"`
+	ContentID      string                 `theorydb:"attr:contentID" json:"content_id"`
+	AuthorID       string                 `theorydb:"attr:authorID" json:"author_id"`
+	Status         string                 `theorydb:"attr:status" json:"status"`     // pending, assigned, reviewing, completed, dismissed
+	Priority       int                    `theorydb:"attr:priority" json:"priority"` // 1-10, higher is more urgent
+	AssignedTo     string                 `theorydb:"attr:assignedTo" json:"assigned_to,omitempty"`
+	AssignedAt     *time.Time             `theorydb:"attr:assignedAt" json:"assigned_at,omitempty"`
+	Category       string                 `theorydb:"attr:category" json:"category"`
+	Severity       string                 `theorydb:"attr:severity" json:"severity"`
+	Reason         string                 `theorydb:"attr:reason" json:"reason"`
+	Evidence       map[string]interface{} `theorydb:"attr:evidence" json:"evidence,omitempty"`
+	Deadline       *time.Time             `theorydb:"attr:deadline" json:"deadline,omitempty"`
+	CreatedAt      time.Time              `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt      time.Time              `theorydb:"attr:updatedAt" json:"updated_at"`
+	CompletedAt    *time.Time             `theorydb:"attr:completedAt" json:"completed_at,omitempty"`
+	ReviewCount    int                    `theorydb:"attr:reviewCount" json:"review_count"`
+	LastReviewedAt *time.Time             `theorydb:"attr:lastReviewedAt" json:"last_reviewed_at,omitempty"`
 
 	// DynamoDB TTL (30 days for queue items)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -688,40 +688,40 @@ func (m *ModerationReviewQueue) UpdateKeys() {
 
 // AuditLog represents an audit trail entry for admin actions
 type AuditLog struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - audit logs by timestamp
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "AUDIT_LOG"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{log_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "AUDIT_LOG"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TIME#{RFC3339}#{log_id}"
 
 	// GSI1 - Actor queries (find actions by who performed them)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "ADMIN#{admin_id}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "ADMIN#{admin_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "TIME#{RFC3339}"
 
 	// GSI2 - Target queries (find actions on specific targets)
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TARGET#{target_id}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "ACTION#{action}#{RFC3339}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TARGET#{target_id}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "ACTION#{action}#{RFC3339}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "AUDIT_LOG"
+	Type string `theorydb:"attr:type" json:"type"` // "AUDIT_LOG"
 
 	// Audit data
-	ID         string    `dynamorm:"attr:id" json:"id"`
-	AdminID    string    `dynamorm:"attr:adminID" json:"admin_id"`          // Who performed the action
-	AdminRole  string    `dynamorm:"attr:adminRole" json:"admin_role"`      // admin or moderator
-	Action     string    `dynamorm:"attr:action" json:"action"`             // suspend, silence, resolve_report, etc.
-	TargetType string    `dynamorm:"attr:targetType" json:"target_type"`    // account, status, report, domain
-	TargetID   string    `dynamorm:"attr:targetID" json:"target_id"`        // ID of the target
-	Reason     string    `dynamorm:"attr:reason" json:"reason,omitempty"`   // Reason for action
-	Details    any       `dynamorm:"attr:details" json:"details,omitempty"` // Additional details
-	IPAddress  string    `dynamorm:"attr:ipAddress" json:"ip_address,omitempty"`
-	UserAgent  string    `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
-	RequestID  string    `dynamorm:"attr:requestID" json:"request_id,omitempty"`
-	Timestamp  time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	ID         string    `theorydb:"attr:id" json:"id"`
+	AdminID    string    `theorydb:"attr:adminID" json:"admin_id"`          // Who performed the action
+	AdminRole  string    `theorydb:"attr:adminRole" json:"admin_role"`      // admin or moderator
+	Action     string    `theorydb:"attr:action" json:"action"`             // suspend, silence, resolve_report, etc.
+	TargetType string    `theorydb:"attr:targetType" json:"target_type"`    // account, status, report, domain
+	TargetID   string    `theorydb:"attr:targetID" json:"target_id"`        // ID of the target
+	Reason     string    `theorydb:"attr:reason" json:"reason,omitempty"`   // Reason for action
+	Details    any       `theorydb:"attr:details" json:"details,omitempty"` // Additional details
+	IPAddress  string    `theorydb:"attr:ipAddress" json:"ip_address,omitempty"`
+	UserAgent  string    `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
+	RequestID  string    `theorydb:"attr:requestID" json:"request_id,omitempty"`
+	Timestamp  time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	CreatedAt  time.Time `theorydb:"attr:createdAt" json:"created_at"`
 
 	// DynamoDB TTL - audit logs expire after 2 years
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

@@ -15,14 +15,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	pkgtypes "github.com/pay-theory/dynamorm/pkg/types"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -226,7 +225,7 @@ func newInboxTestEnv(t *testing.T) *inboxTestEnv {
 				}
 				storedActivity := storedActivityForID(id, cfg, local, remoteActorID)
 				*out = append(*out, &models.Activity{
-					Activity:   storedActivity,
+					Activity:  storedActivity,
 					CreatedAt: baseTime,
 				})
 			case *[]models.Activity:
@@ -392,13 +391,25 @@ func storedActivityForID(id string, cfg *config.Config, local *activitypub.Actor
 	}
 }
 
-func newLiftContext(method, path string, headers map[string]string, query map[string]string, body []byte) *lift.Context {
-	req := lift.NewRequest(&adapters.Request{
-		Method:      method,
-		Path:        path,
-		Headers:     headers,
-		QueryParams: query,
-		Body:        body,
-	})
-	return lift.NewContext(context.Background(), req)
+func newAppTheoryContext(method, path string, headers map[string]string, query map[string]string, body []byte) *apptheory.Context {
+	canonicalHeaders := make(map[string][]string, len(headers))
+	for k, v := range headers {
+		canonicalHeaders[strings.ToLower(k)] = []string{v}
+	}
+
+	canonicalQuery := make(map[string][]string, len(query))
+	for k, v := range query {
+		canonicalQuery[k] = []string{v}
+	}
+
+	return &apptheory.Context{
+		Request: apptheory.Request{
+			Method:  method,
+			Path:    path,
+			Headers: canonicalHeaders,
+			Query:   canonicalQuery,
+			Body:    body,
+		},
+		Params: map[string]string{},
+	}
 }

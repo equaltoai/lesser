@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	_jsii "github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type eventSourceMapping struct {
@@ -648,45 +648,42 @@ func buildInventoryQueues(stack awscdk.Stack, functions *LambdaFunctions, enviro
 			logical := trigger.Queue
 			primaryName := naming.ResourceName(logical, environment)
 
-			dlqLogical := trigger.DeadLetterQueue
-			if dlqLogical == "" {
-				dlqLogical = fmt.Sprintf("%s-dlq", logical)
-			}
-			dlqName := naming.ResourceName(dlqLogical, environment)
+			queue := apptheorycdk.NewAppTheoryQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), &apptheorycdk.AppTheoryQueueProps{
+				QueueName:              _jsii.String(primaryName),
+				VisibilityTimeout:      defaultVisibility,
+				RetentionPeriod:        defaultRetention,
+				ReceiveMessageWaitTime: awscdk.Duration_Seconds(_jsii.Number(20)),
+				EnableDlq:              _jsii.Bool(true),
+				MaxReceiveCount:        defaultMaxReceive,
+				DlqRetentionPeriod:     awscdk.Duration_Days(_jsii.Number(14)),
+				RemovalPolicy:          awscdk.RemovalPolicy_DESTROY,
+			})
 
-			anchorName := primaryConsumerByQueue[logical]
-			if anchorName == "" {
-				anchorName = "api"
-			}
-			anchor := functions.Must(anchorName)
+			primaryQueue := queue.Queue()
+			deadLetterQueue := queue.DeadLetterQueue()
 
-			queueProps := &liftcdk.LiftSQSQueueProps{
-				Function:                anchor,
-				QueueName:               _jsii.String(primaryName),
-				VisibilityTimeout:       defaultVisibility,
-				MessageRetentionPeriod:  defaultRetention,
-				ReceiveMessageWaitTime:  awscdk.Duration_Seconds(_jsii.Number(20)),
-				EnableDeadLetterQueue:   _jsii.Bool(true),
-				DeadLetterQueueName:     _jsii.String(dlqName),
-				MaxReceiveCount:         defaultMaxReceive,
-				DLQRetentionPeriod:      awscdk.Duration_Days(_jsii.Number(14)),
-				EnableEventSource:       _jsii.Bool(false),
-				ReportBatchItemFailures: _jsii.Bool(false),
-			}
 			if primaryTrig, ok := primaryTriggerByQueue[logical]; ok {
-				queueProps.EnableEventSource = _jsii.Bool(true)
-				queueProps.ReportBatchItemFailures = _jsii.Bool(primaryTrig.EnablePartialFailure)
+				consumerName := primaryConsumerByQueue[logical]
+				if consumerName == "" {
+					panic(fmt.Sprintf("queue %s has trigger but no consumer mapping", logical))
+				}
+				consumer := functions.Must(consumerName)
+
+				consumerProps := &apptheorycdk.AppTheoryQueueConsumerProps{
+					Queue:                   primaryQueue,
+					Consumer:                consumer,
+					ReportBatchItemFailures: _jsii.Bool(primaryTrig.EnablePartialFailure),
+				}
 				if primaryTrig.BatchSize > 0 {
-					queueProps.BatchSize = _jsii.Number(float64(primaryTrig.BatchSize))
+					consumerProps.BatchSize = _jsii.Number(float64(primaryTrig.BatchSize))
 				}
 				if primaryTrig.MaxBatchingWindowSeconds > 0 {
-					queueProps.MaxBatchingWindow = awscdk.Duration_Seconds(_jsii.Number(float64(primaryTrig.MaxBatchingWindowSeconds)))
+					consumerProps.MaxBatchingWindow = awscdk.Duration_Seconds(_jsii.Number(float64(primaryTrig.MaxBatchingWindowSeconds)))
 				}
+				apptheorycdk.NewAppTheoryQueueConsumer(stack, _jsii.String(fmt.Sprintf("%sConsumer", sanitizeQueueLogical(logical))), consumerProps)
 			}
 
-			liftQueue := liftcdk.NewLiftSQSQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), queueProps)
-
-			queuePairs[logical] = QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
+			queuePairs[logical] = QueuePair{Primary: primaryQueue, DLQ: deadLetterQueue}
 		}
 	}
 
@@ -695,27 +692,19 @@ func buildInventoryQueues(stack awscdk.Stack, functions *LambdaFunctions, enviro
 	if _, exists := queuePairs["scheduled-queue"]; !exists {
 		logical := "scheduled-queue"
 		primaryName := naming.ResourceName(logical, environment)
-		dlqLogical := fmt.Sprintf("%s-dlq", logical)
-		dlqName := naming.ResourceName(dlqLogical, environment)
 
-		anchor := functions.Must("api")
-		liftQueue := liftcdk.NewLiftSQSQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), &liftcdk.LiftSQSQueueProps{
-			Function:                anchor,
-			QueueName:               _jsii.String(primaryName),
-			VisibilityTimeout:       defaultVisibility,
-			MessageRetentionPeriod:  defaultRetention,
-			ReceiveMessageWaitTime:  awscdk.Duration_Seconds(_jsii.Number(20)),
-			EnableDeadLetterQueue:   _jsii.Bool(true),
-			DeadLetterQueueName:     _jsii.String(dlqName),
-			MaxReceiveCount:         defaultMaxReceive,
-			DLQRetentionPeriod:      awscdk.Duration_Days(_jsii.Number(14)),
-			EnableEventSource:       _jsii.Bool(false),
-			GrantConsumeMessages:    _jsii.Bool(false),
-			GrantSendMessages:       _jsii.Bool(false),
-			ReportBatchItemFailures: _jsii.Bool(false),
+		queue := apptheorycdk.NewAppTheoryQueue(stack, _jsii.String(fmt.Sprintf("%sQueue", sanitizeQueueLogical(logical))), &apptheorycdk.AppTheoryQueueProps{
+			QueueName:              _jsii.String(primaryName),
+			VisibilityTimeout:      defaultVisibility,
+			RetentionPeriod:        defaultRetention,
+			ReceiveMessageWaitTime: awscdk.Duration_Seconds(_jsii.Number(20)),
+			EnableDlq:              _jsii.Bool(true),
+			MaxReceiveCount:        defaultMaxReceive,
+			DlqRetentionPeriod:     awscdk.Duration_Days(_jsii.Number(14)),
+			RemovalPolicy:          awscdk.RemovalPolicy_DESTROY,
 		})
 
-		queuePairs[logical] = QueuePair{Primary: liftQueue.Queue, DLQ: liftQueue.DeadLetterQueue}
+		queuePairs[logical] = QueuePair{Primary: queue.Queue(), DLQ: queue.DeadLetterQueue()}
 	}
 	return queuePairs
 }

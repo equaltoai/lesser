@@ -32,4 +32,3 @@ func highCostItems[T any](itemsByKey map[string][]T, thresholdMicroCents int64, 
 
 	return results
 }
-

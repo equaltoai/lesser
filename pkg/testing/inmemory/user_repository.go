@@ -34,8 +34,8 @@ type UserRepository struct {
 	reputations map[string][]*storage.Reputation // actorID -> reputation history (newest first)
 
 	// Vouch data
-	vouches        map[string]*storage.Vouch   // vouchID -> vouch
-	vouchesByActor map[string][]*storage.Vouch // actorID -> vouches given
+	vouches         map[string]*storage.Vouch   // vouchID -> vouch
+	vouchesByActor  map[string][]*storage.Vouch // actorID -> vouches given
 	vouchesForActor map[string][]*storage.Vouch // actorID -> vouches received
 
 	// Trust relationships
@@ -293,7 +293,6 @@ func (r *UserRepository) ListUsersByRole(_ context.Context, role string) ([]*sto
 	return users, nil
 }
 
-
 // Count operations
 
 // GetActiveUserCount returns the count of active users
@@ -541,7 +540,6 @@ func (r *UserRepository) DeleteAccountNote(_ context.Context, username, targetAc
 	delete(notes, targetActorID)
 	return nil
 }
-
 
 // Reputation operations
 
@@ -840,7 +838,6 @@ func (r *UserRepository) RecordTrustUpdate(_ context.Context, update *storage.Tr
 	r.trustUpdates = append(r.trustUpdates, &updateCopy)
 	return nil
 }
-
 
 // User preferences operations
 

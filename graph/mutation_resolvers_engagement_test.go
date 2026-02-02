@@ -65,7 +65,7 @@ func TestShareObjectReturnsUpdatedObject(t *testing.T) {
 		Content:     "hello world",
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		Note:        &models.NoteField{Note: &activitypub.Note{}},
+		Note:        &activitypub.Note{},
 		ReblogCount: 42,
 	}
 
@@ -97,7 +97,7 @@ func TestUnshareObjectReturnsUpdatedObject(t *testing.T) {
 		Content:     "goodbye world",
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		Note:        &models.NoteField{Note: &activitypub.Note{}},
+		Note:        &activitypub.Note{},
 		ReblogCount: 7,
 	}
 

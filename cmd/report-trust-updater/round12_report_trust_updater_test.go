@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -12,11 +13,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -240,24 +241,23 @@ func TestReportTrustUpdater_HandleStream_ProcessesAndErrors_Round12(t *testing.T
 	}
 	updater := &ReportTrustUpdater{logger: zap.NewNop(), trustService: service}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.SetRequestID("req")
+	ctx := &apptheory.EventContext{RequestID: "req"}
 
-	event := events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName: "INSERT",
-				Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
-					"PK":      events.NewStringAttribute("MODERATION#1"),
-					"SK":      events.NewStringAttribute("DECISION"),
-					"EventID": events.NewStringAttribute("evt"),
-				}},
-			},
-			{EventName: "REMOVE"},
+	records := []events.DynamoDBEventRecord{
+		{
+			EventName: "INSERT",
+			Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":      events.NewStringAttribute("MODERATION#1"),
+				"SK":      events.NewStringAttribute("DECISION"),
+				"EventID": events.NewStringAttribute("evt"),
+			}},
 		},
+		{EventName: "REMOVE"},
 	}
 
-	require.NoError(t, updater.HandleStream(ctx, event))
+	for _, record := range records {
+		require.NoError(t, updater.HandleDynamoDBRecord(ctx, record))
+	}
 	require.Equal(t, 1, service.updateCalls)
 }
 
@@ -277,7 +277,7 @@ func TestRunReportTrustUpdater_Round12(t *testing.T) {
 		return &common.LambdaContext{
 			Config: &config.Config{
 				Region:          "us-east-1",
-				DynamoTableName: "test-table",
+				DynamoTableName: "lesser-dev-main-table",
 			},
 			Logger: zap.NewNop(),
 		}
@@ -307,30 +307,36 @@ func TestRunReportTrustUpdater_Round12(t *testing.T) {
 	called := false
 	lambdaStartFn = func(handler any) {
 		called = true
-		fn, ok := handler.(func(context.Context, any) (any, error))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
 
-		event := map[string]any{
-			"Records": []any{
-				map[string]any{
-					"eventID":     "1",
-					"eventName":   "INSERT",
-					"eventSource": "aws:dynamodb",
-					"dynamodb": map[string]any{
-						"NewImage": map[string]any{
-							"PK":      map[string]any{"S": "MODERATION#1"},
-							"SK":      map[string]any{"S": "DECISION"},
-							"EventID": map[string]any{"S": "evt"},
-							"Action":  map[string]any{"S": string(moderation.ActionTypeRemove)},
-						},
-					},
-				},
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "1",
+				EventName:      "INSERT",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+				Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+					"PK":      events.NewStringAttribute("MODERATION#1"),
+					"SK":      events.NewStringAttribute("DECISION"),
+					"EventID": events.NewStringAttribute("evt"),
+					"Action":  events.NewStringAttribute(string(moderation.ActionTypeRemove)),
+				}},
 			},
-		}
-
-		_, err := fn(context.Background(), event)
+		}}
+		raw, err := json.Marshal(event)
 		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
 	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	main()
 	require.True(t, called)
@@ -341,7 +347,5 @@ func TestReportTrustUpdater_HandleStream_Round12(t *testing.T) {
 	service := &fakeReportTrustService{eventErr: errors.New("boom")}
 	updater := &ReportTrustUpdater{logger: zap.NewNop(), trustService: service}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.SetRequestID("req")
-	require.NoError(t, updater.HandleStream(ctx, events.DynamoDBEvent{}))
+	require.NoError(t, updater.HandleDynamoDBRecord(&apptheory.EventContext{RequestID: "req"}, events.DynamoDBEventRecord{}))
 }

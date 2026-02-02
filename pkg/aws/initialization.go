@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -46,7 +45,6 @@ type ServiceConfig struct {
 // AWSServices contains initialized AWS service clients
 type AWSServices struct {
 	Config         aws.Config
-	DynamoDB       *dynamodb.Client
 	S3             *s3.Client
 	SQS            *sqs.Client
 	CloudWatch     *cloudwatch.Client
@@ -104,11 +102,6 @@ func InitializeServices(ctx context.Context, serviceConfig ServiceConfig, logger
 	}
 
 	// Initialize only required services
-	if serviceConfig.RequiresDynamoDB {
-		services.DynamoDB = dynamodb.NewFromConfig(awsConfig)
-		logger.Debug("initialized DynamoDB client")
-	}
-
 	if serviceConfig.RequiresS3 {
 		services.S3 = s3.NewFromConfig(awsConfig)
 		logger.Debug("initialized S3 client")
@@ -174,10 +167,6 @@ func InitializeWithConfig(awsConfig aws.Config, serviceConfig ServiceConfig, log
 	}
 
 	// Initialize only required services
-	if serviceConfig.RequiresDynamoDB {
-		services.DynamoDB = dynamodb.NewFromConfig(awsConfig)
-	}
-
 	if serviceConfig.RequiresS3 {
 		services.S3 = s3.NewFromConfig(awsConfig)
 	}

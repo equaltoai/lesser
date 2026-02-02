@@ -33,8 +33,12 @@ func (round12TrustRepoNil) CreateTrustRelationship(context.Context, *storage.Tru
 func (round12TrustRepoNil) GetTrustRelationship(context.Context, string, string, string) (*storage.TrustRelationship, error) {
 	return nil, storage.ErrNotFound
 }
-func (round12TrustRepoNil) UpdateTrustRelationship(context.Context, *storage.TrustRelationship) error { return nil }
-func (round12TrustRepoNil) DeleteTrustRelationship(context.Context, string, string, string) error     { return nil }
+func (round12TrustRepoNil) UpdateTrustRelationship(context.Context, *storage.TrustRelationship) error {
+	return nil
+}
+func (round12TrustRepoNil) DeleteTrustRelationship(context.Context, string, string, string) error {
+	return nil
+}
 func (round12TrustRepoNil) GetTrustRelationships(context.Context, string, int, string) ([]*storage.TrustRelationship, string, error) {
 	return []*storage.TrustRelationship{}, "", nil
 }
@@ -48,7 +52,9 @@ func (round12TrustRepoNil) GetTrustScore(context.Context, string, string) (*stor
 	return nil, nil
 }
 func (round12TrustRepoNil) UpdateTrustScore(context.Context, *storage.TrustScore) error { return nil }
-func (round12TrustRepoNil) GetUserTrustScore(context.Context, string) (float64, error)  { return 0.5, nil }
+func (round12TrustRepoNil) GetUserTrustScore(context.Context, string) (float64, error) {
+	return 0.5, nil
+}
 func (round12TrustRepoNil) RecordTrustUpdate(context.Context, *storage.TrustUpdate) error {
 	return nil
 }
@@ -78,10 +84,10 @@ func TestRound12Dataloader_NewLoadersAndHelpers(t *testing.T) {
 	trustRepo := storageRepo.Trust()
 	require.NotNil(t, trustRepo)
 	require.NoError(t, trustRepo.UpdateTrustScore(ctx, &storage.TrustScore{
-		ActorID:   "alice",
-		Category:  storageModels.TrustCategoryContent,
-		Score:     0.9,
-		CacheTTL:  time.Now().Add(time.Hour),
+		ActorID:  "alice",
+		Category: storageModels.TrustCategoryContent,
+		Score:    0.9,
+		CacheTTL: time.Now().Add(time.Hour),
 	}))
 
 	statusRepo := storageRepo.Status()

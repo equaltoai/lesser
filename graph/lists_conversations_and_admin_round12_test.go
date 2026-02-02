@@ -94,4 +94,3 @@ func TestRound12AdminResolvers_ScheduledStatuses(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, status)
 }
-

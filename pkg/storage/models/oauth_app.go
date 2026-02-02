@@ -7,28 +7,28 @@ import (
 
 // OAuthApp represents an OAuth application stored in DynamoDB
 type OAuthApp struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // OAUTH_APP#{clientID}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // METADATA
+	PK string `theorydb:"pk,attr:PK" json:"-"` // OAUTH_APP#{clientID}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // METADATA
 
 	// GSI for querying by name
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"` // OAUTH_APPS
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {name}#{clientID}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // OAUTH_APPS
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {name}#{clientID}
 
 	// OAuth app data
-	ClientID     string    `dynamorm:"attr:clientID" json:"client_id"`
-	ClientSecret string    `dynamorm:"attr:clientSecret" json:"client_secret"`
-	Name         string    `dynamorm:"attr:name" json:"name"`
-	RedirectURIs []string  `dynamorm:"attr:redirectURIs" json:"redirect_uris"`
-	Scopes       []string  `dynamorm:"attr:scopes" json:"scopes"`
-	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt    time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	CreatedBy    string    `dynamorm:"attr:createdBy" json:"created_by"` // User who created the app
-	Website      string    `dynamorm:"attr:website" json:"website,omitempty"`
-	Description  string    `dynamorm:"attr:description" json:"description,omitempty"`
-	Active       bool      `dynamorm:"attr:active" json:"active"`
+	ClientID     string    `theorydb:"attr:clientID" json:"client_id"`
+	ClientSecret string    `theorydb:"attr:clientSecret" json:"client_secret"`
+	Name         string    `theorydb:"attr:name" json:"name"`
+	RedirectURIs []string  `theorydb:"attr:redirectURIs" json:"redirect_uris"`
+	Scopes       []string  `theorydb:"attr:scopes" json:"scopes"`
+	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt    time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	CreatedBy    string    `theorydb:"attr:createdBy" json:"created_by"` // User who created the app
+	Website      string    `theorydb:"attr:website" json:"website,omitempty"`
+	Description  string    `theorydb:"attr:description" json:"description,omitempty"`
+	Active       bool      `theorydb:"attr:active" json:"active"`
 }
 
 // UpdateKeys updates the GSI keys based on the OAuth app data

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -47,11 +47,11 @@ func TestSearchServiceIntegration_Round09_Coverage(t *testing.T) {
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]models.SearchCostTracking)
 				*out = append(*out, models.SearchCostTracking{
-					UserID:         "user-1",
-					OperationType:  "text_search",
+					UserID:          "user-1",
+					OperationType:   "text_search",
 					TotalCostMicros: 2000,
-					ResultCount:    2,
-					Timestamp:      baseTime,
+					ResultCount:     2,
+					Timestamp:       baseTime,
 				})
 			}).
 			Return(nil).
@@ -63,11 +63,11 @@ func TestSearchServiceIntegration_Round09_Coverage(t *testing.T) {
 				out := args.Get(0).(*[]models.SearchQueryStats)
 				*out = append(*out,
 					models.SearchQueryStats{
-						QueryCount:           10,
-						TotalCostMicros:      100000,
-						TotalResultCount:     1,
+						QueryCount:            10,
+						TotalCostMicros:       100000,
+						TotalResultCount:      1,
 						AverageResponseTimeMs: 10,
-						CacheHitCount:        1,
+						CacheHitCount:         1,
 					},
 				)
 			}).

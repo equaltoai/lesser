@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -104,9 +104,9 @@ func TestActivityProcessor_ProcessMapObject_RemoteFallbackWhenActorLookupFails(t
 	actorRepo.On("GetActor", mock.Anything, mock.Anything).Return(nil, errors.New("boom"))
 
 	ap := &ActivityProcessor{
-		logger:   zap.NewNop(),
+		logger:    zap.NewNop(),
 		actorRepo: actorRepo,
-		baseURL:  "https://example.com",
+		baseURL:   "https://example.com",
 	}
 
 	activity := &activitypub.Activity{

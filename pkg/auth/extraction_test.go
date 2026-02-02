@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
-	lifttest "github.com/equaltoai/lesser/pkg/testing/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 // mockOAuthService is a stub implementation of OAuthServiceInterface for testing
@@ -98,11 +98,11 @@ func TestGetAccountFromContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create mock context with headers
-			ctx := lifttest.MockLiftContext("GET", "/api/test")
+			opts := []apptheoryContextOption{}
 			if tt.authHeader != "" {
-				ctx.Request.Headers["Authorization"] = tt.authHeader
+				opts = append(opts, withHeaders(map[string]string{"Authorization": tt.authHeader}))
 			}
+			ctx := newTestContext("GET", "/api/test", opts...)
 
 			// Setup mock OAuth service
 			mockService := newMockOAuthService()
@@ -131,8 +131,7 @@ func TestGetAccountFromContext(t *testing.T) {
 
 func TestGetUsernameFromContext(t *testing.T) {
 	t.Run("returns username from valid token", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer valid-token"}))
+		ctx := newTestContext("GET", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer valid-token"}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("valid-token", createTestClaims("alice", []string{ScopeRead}))
@@ -143,7 +142,7 @@ func TestGetUsernameFromContext(t *testing.T) {
 	})
 
 	t.Run("returns error on missing auth", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api/test")
+		ctx := newTestContext("GET", "/api/test")
 		mockService := newMockOAuthService()
 
 		username, err := GetUsernameFromContext(ctx, mockService)
@@ -155,8 +154,7 @@ func TestGetUsernameFromContext(t *testing.T) {
 
 func TestRequireAuth(t *testing.T) {
 	t.Run("returns nil for authenticated request", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer token123"}))
+		ctx := newTestContext("GET", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer token123"}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("token123", createTestClaims("bob", []string{ScopeRead}))
@@ -166,7 +164,7 @@ func TestRequireAuth(t *testing.T) {
 	})
 
 	t.Run("returns error for unauthenticated request", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api/test")
+		ctx := newTestContext("GET", "/api/test")
 		mockService := newMockOAuthService()
 
 		err := RequireAuth(ctx, mockService)
@@ -215,8 +213,7 @@ func TestRequireAuthWithScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := lifttest.MockLiftContext("POST", "/api/test",
-				lifttest.WithHeaders(map[string]string{"Authorization": "Bearer scope-token"}))
+			ctx := newTestContext("POST", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer scope-token"}))
 
 			mockService := newMockOAuthService()
 			mockService.addToken("scope-token", createTestClaims("user1", tt.tokenScopes))
@@ -238,7 +235,7 @@ func TestRequireAuthWithScope(t *testing.T) {
 	}
 
 	t.Run("no auth header - unauthorized", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("POST", "/api/test")
+		ctx := newTestContext("POST", "/api/test")
 		mockService := newMockOAuthService()
 
 		account, err := RequireAuthWithScope(ctx, mockService, ScopeWrite)
@@ -290,8 +287,7 @@ func TestRequireAuthWithMultipleScopes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := lifttest.MockLiftContext("PUT", "/api/test",
-				lifttest.WithHeaders(map[string]string{"Authorization": "Bearer multi-scope-token"}))
+			ctx := newTestContext("PUT", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer multi-scope-token"}))
 
 			mockService := newMockOAuthService()
 			mockService.addToken("multi-scope-token", createTestClaims("user2", tt.tokenScopes))
@@ -313,8 +309,7 @@ func TestRequireAuthWithMultipleScopes(t *testing.T) {
 
 func TestConvenienceScopeHelpers(t *testing.T) {
 	t.Run("RequireReadScope", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer read-token"}))
+		ctx := newTestContext("GET", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer read-token"}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("read-token", createTestClaims("reader", []string{ScopeRead}))
@@ -325,8 +320,7 @@ func TestConvenienceScopeHelpers(t *testing.T) {
 
 		// Test failure case
 		mockService.addToken("no-read-token", createTestClaims("noread", []string{ScopeWrite}))
-		ctx2 := lifttest.MockLiftContext("GET", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer no-read-token"}))
+		ctx2 := newTestContext("GET", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer no-read-token"}))
 
 		account, err = RequireReadScope(ctx2, mockService)
 		require.Error(t, err)
@@ -335,8 +329,7 @@ func TestConvenienceScopeHelpers(t *testing.T) {
 	})
 
 	t.Run("RequireWriteScope", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("POST", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer write-token"}))
+		ctx := newTestContext("POST", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer write-token"}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("write-token", createTestClaims("writer", []string{ScopeWrite}))
@@ -347,8 +340,7 @@ func TestConvenienceScopeHelpers(t *testing.T) {
 	})
 
 	t.Run("RequireAdminScope", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("DELETE", "/api/admin",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer admin-token"}))
+		ctx := newTestContext("DELETE", "/api/admin", withHeaders(map[string]string{"Authorization": "Bearer admin-token"}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("admin-token", createTestClaims("admin", []string{ScopeAdmin}))
@@ -359,8 +351,7 @@ func TestConvenienceScopeHelpers(t *testing.T) {
 
 		// Non-admin should fail
 		mockService.addToken("non-admin", createTestClaims("regular", []string{ScopeRead, ScopeWrite}))
-		ctx2 := lifttest.MockLiftContext("DELETE", "/api/admin",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer non-admin"}))
+		ctx2 := newTestContext("DELETE", "/api/admin", withHeaders(map[string]string{"Authorization": "Bearer non-admin"}))
 
 		account, err = RequireAdminScope(ctx2, mockService)
 		require.Error(t, err)
@@ -374,22 +365,19 @@ func TestConvenienceScopeHelpers(t *testing.T) {
 		mockService.addToken("neither", createTestClaims("n", []string{ScopeAdmin}))
 
 		// Read scope should work
-		ctx := lifttest.MockLiftContext("GET", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer reader"}))
+		ctx := newTestContext("GET", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer reader"}))
 		account, err := RequireReadOrWriteScope(ctx, mockService)
 		require.NoError(t, err)
 		assert.Equal(t, "r", account.Username)
 
 		// Write scope should work
-		ctx2 := lifttest.MockLiftContext("POST", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer writer"}))
+		ctx2 := newTestContext("POST", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer writer"}))
 		account, err = RequireReadOrWriteScope(ctx2, mockService)
 		require.NoError(t, err)
 		assert.Equal(t, "w", account.Username)
 
 		// Neither should fail
-		ctx3 := lifttest.MockLiftContext("GET", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer neither"}))
+		ctx3 := newTestContext("GET", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer neither"}))
 		account, err = RequireReadOrWriteScope(ctx3, mockService)
 		require.Error(t, err)
 		assert.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
@@ -439,10 +427,11 @@ func TestExtractOptionalAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := lifttest.MockLiftContext("GET", "/public/endpoint")
+			opts := []apptheoryContextOption{}
 			if tt.authHeader != "" {
-				ctx.Request.Headers["Authorization"] = tt.authHeader
+				opts = append(opts, withHeaders(map[string]string{"Authorization": tt.authHeader}))
 			}
+			ctx := newTestContext("GET", "/public/endpoint", opts...)
 
 			mockService := newMockOAuthService()
 			tt.setupMock(mockService)
@@ -590,31 +579,28 @@ func TestRequireAuthMiddleware(t *testing.T) {
 	t.Run("missing auth - writes 401 response", func(t *testing.T) {
 		mockService := newMockOAuthService()
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.RequireAuthMiddleware()
+		handler := mw.RequireAuthMiddleware()(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("GET", "/protected")
-		err := handler(ctx)
-
-		// The middleware writes a response, so err may be nil
-		// Check the status code instead
-		assert.Equal(t, 401, ctx.Response.StatusCode)
-		assert.NoError(t, err) // Response is written, no error bubbles up
+		ctx := newTestContext("GET", "/protected")
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 401, resp.Status)
 	})
 
 	t.Run("valid auth - passes through", func(t *testing.T) {
 		mockService := newMockOAuthService()
 		mockService.addToken("valid", createTestClaims("user", []string{ScopeRead}))
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.RequireAuthMiddleware()
+		handler := mw.RequireAuthMiddleware()(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("GET", "/protected",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer valid"}))
-
-		err := handler(ctx)
-
-		assert.NoError(t, err)
-		// Status should remain 200 (default)
-		assert.Equal(t, 200, ctx.Response.StatusCode)
+		ctx := newTestContext("GET", "/protected", withHeaders(map[string]string{"Authorization": "Bearer valid"}))
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 200, resp.Status)
 	})
 }
 
@@ -622,43 +608,42 @@ func TestRequireScopeMiddleware(t *testing.T) {
 	t.Run("auth failure - 401 response", func(t *testing.T) {
 		mockService := newMockOAuthService()
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.RequireScopeMiddleware(ScopeWrite)
+		handler := mw.RequireScopeMiddleware(ScopeWrite)(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("POST", "/write-endpoint")
-		err := handler(ctx)
-
-		assert.Equal(t, 401, ctx.Response.StatusCode)
-		assert.NoError(t, err)
+		ctx := newTestContext("POST", "/write-endpoint")
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 401, resp.Status)
 	})
 
 	t.Run("scope failure - 403 response", func(t *testing.T) {
 		mockService := newMockOAuthService()
 		mockService.addToken("read-only", createTestClaims("user", []string{ScopeRead}))
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.RequireScopeMiddleware(ScopeWrite)
+		handler := mw.RequireScopeMiddleware(ScopeWrite)(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("POST", "/write-endpoint",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer read-only"}))
-
-		err := handler(ctx)
-
-		assert.Equal(t, 403, ctx.Response.StatusCode)
-		assert.NoError(t, err)
+		ctx := newTestContext("POST", "/write-endpoint", withHeaders(map[string]string{"Authorization": "Bearer read-only"}))
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 403, resp.Status)
 	})
 
 	t.Run("has scope - passes through", func(t *testing.T) {
 		mockService := newMockOAuthService()
 		mockService.addToken("writer", createTestClaims("writer", []string{ScopeWrite}))
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.RequireScopeMiddleware(ScopeWrite)
+		handler := mw.RequireScopeMiddleware(ScopeWrite)(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("POST", "/write-endpoint",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer writer"}))
-
-		err := handler(ctx)
-
-		assert.NoError(t, err)
-		assert.Equal(t, 200, ctx.Response.StatusCode)
+		ctx := newTestContext("POST", "/write-endpoint", withHeaders(map[string]string{"Authorization": "Bearer writer"}))
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 200, resp.Status)
 	})
 }
 
@@ -667,13 +652,14 @@ func TestOptionalAuthMiddleware(t *testing.T) {
 		mockService := newMockOAuthService()
 		mockService.addToken("opttoken", createTestClaims("optuser", []string{ScopeRead}))
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.OptionalAuthMiddleware()
+		handler := mw.OptionalAuthMiddleware()(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("GET", "/public",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer opttoken"}))
-
-		err := handler(ctx)
-		assert.NoError(t, err)
+		ctx := newTestContext("GET", "/public", withHeaders(map[string]string{"Authorization": "Bearer opttoken"}))
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 200, resp.Status)
 
 		// Verify the account was set in context
 		rawValue := ctx.Get("authenticated_account")
@@ -687,12 +673,14 @@ func TestOptionalAuthMiddleware(t *testing.T) {
 	t.Run("no auth - does not set account", func(t *testing.T) {
 		mockService := newMockOAuthService()
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.OptionalAuthMiddleware()
+		handler := mw.OptionalAuthMiddleware()(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("GET", "/public")
-
-		err := handler(ctx)
-		assert.NoError(t, err)
+		ctx := newTestContext("GET", "/public")
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 200, resp.Status)
 
 		rawValue := ctx.Get("authenticated_account")
 		assert.Nil(t, rawValue)
@@ -701,13 +689,14 @@ func TestOptionalAuthMiddleware(t *testing.T) {
 	t.Run("invalid token - does not set account, no error", func(t *testing.T) {
 		mockService := newMockOAuthService()
 		mw := NewAuthenticationMiddleware(mockService)
-		handler := mw.OptionalAuthMiddleware()
+		handler := mw.OptionalAuthMiddleware()(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
 
-		ctx := lifttest.MockLiftContext("GET", "/public",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer invalid"}))
-
-		err := handler(ctx)
-		assert.NoError(t, err)
+		ctx := newTestContext("GET", "/public", withHeaders(map[string]string{"Authorization": "Bearer invalid"}))
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 200, resp.Status)
 
 		rawValue := ctx.Get("authenticated_account")
 		assert.Nil(t, rawValue)
@@ -716,7 +705,7 @@ func TestOptionalAuthMiddleware(t *testing.T) {
 
 func TestGetAuthenticatedAccountFromContext(t *testing.T) {
 	t.Run("account exists and is correct type - returns account, true", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api")
+		ctx := newTestContext("GET", "/api")
 		expectedAccount := &AuthenticatedAccount{
 			Username: "fromctx",
 			Claims:   createTestClaims("fromctx", []string{ScopeRead}),
@@ -731,7 +720,7 @@ func TestGetAuthenticatedAccountFromContext(t *testing.T) {
 	})
 
 	t.Run("no authenticated_account key - returns nil, false", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api")
+		ctx := newTestContext("GET", "/api")
 
 		account, ok := GetAuthenticatedAccountFromContext(ctx)
 
@@ -740,7 +729,7 @@ func TestGetAuthenticatedAccountFromContext(t *testing.T) {
 	})
 
 	t.Run("wrong type stored - returns nil, false", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api")
+		ctx := newTestContext("GET", "/api")
 		ctx.Set("authenticated_account", "not-an-account") // wrong type
 
 		account, ok := GetAuthenticatedAccountFromContext(ctx)
@@ -750,7 +739,7 @@ func TestGetAuthenticatedAccountFromContext(t *testing.T) {
 	})
 
 	t.Run("nil value stored - returns nil, false", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api")
+		ctx := newTestContext("GET", "/api")
 		ctx.Set("authenticated_account", nil)
 
 		account, ok := GetAuthenticatedAccountFromContext(ctx)
@@ -885,9 +874,9 @@ func TestRequireAuthFromStandardContext(t *testing.T) {
 
 func TestHeaderExtractionFallbacks(t *testing.T) {
 	t.Run("lowercase authorization header", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("GET", "/api/test")
-		// Set lowercase header
-		ctx.Request.Headers["authorization"] = "Bearer lowercasetoken"
+		ctx := newTestContext("GET", "/api/test", withHeaders(map[string]string{
+			"authorization": "Bearer lowercasetoken",
+		}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("lowercasetoken", createTestClaims("loweruser", []string{ScopeRead}))
@@ -917,11 +906,14 @@ func TestMiddlewareChaining(t *testing.T) {
 		mw := NewAuthenticationMiddleware(mockService)
 
 		// Simulate middleware chain: optional auth first
-		ctx := lifttest.MockLiftContext("POST", "/api/resource",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer chaintoken"}))
+		ctx := newTestContext("POST", "/api/resource", withHeaders(map[string]string{
+			"Authorization": "Bearer chaintoken",
+		}))
 
-		optHandler := mw.OptionalAuthMiddleware()
-		err := optHandler(ctx)
+		optHandler := mw.OptionalAuthMiddleware()(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: 200}, nil
+		})
+		_, err := optHandler(ctx)
 		require.NoError(t, err)
 
 		// Now check that the account was set
@@ -936,8 +928,7 @@ func TestMiddlewareChaining(t *testing.T) {
 
 func TestErrorMessages(t *testing.T) {
 	t.Run("scope error message contains required scope", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("POST", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer nowrite"}))
+		ctx := newTestContext("POST", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer nowrite"}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("nowrite", createTestClaims("user", []string{ScopeRead}))
@@ -950,8 +941,7 @@ func TestErrorMessages(t *testing.T) {
 	})
 
 	t.Run("multiple scopes error message shows all required", func(t *testing.T) {
-		ctx := lifttest.MockLiftContext("POST", "/api/test",
-			lifttest.WithHeaders(map[string]string{"Authorization": "Bearer admin"}))
+		ctx := newTestContext("POST", "/api/test", withHeaders(map[string]string{"Authorization": "Bearer admin"}))
 
 		mockService := newMockOAuthService()
 		mockService.addToken("admin", createTestClaims("user", []string{ScopeAdmin}))

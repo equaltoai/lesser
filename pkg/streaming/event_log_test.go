@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 func TestStreamEventLog_Enabled(t *testing.T) {

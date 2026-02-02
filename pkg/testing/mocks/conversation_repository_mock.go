@@ -70,7 +70,6 @@ func (m *MockConversationRepository) GetConversationByParticipants(ctx context.C
 	return args.Get(0).(*models.Conversation), args.Error(1)
 }
 
-
 // GetUnreadConversations mocks the GetUnreadConversations method
 func (m *MockConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	args := m.Called(ctx, userID, opts)
@@ -131,7 +130,6 @@ func (m *MockConversationRepository) RemoveStatusFromConversation(ctx context.Co
 	args := m.Called(ctx, conversationID, statusID)
 	return args.Error(0)
 }
-
 
 // MarkStatusRead mocks the MarkStatusRead method
 func (m *MockConversationRepository) MarkStatusRead(ctx context.Context, conversationID, statusID, username string) error {

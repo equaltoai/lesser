@@ -2,17 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormcore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -163,8 +165,8 @@ func TestTrendAggregator_AggregationAndCleanup_Round12(t *testing.T) {
 	require.NoError(t, err)
 
 	// Exercise: scheduled handler path (includes cleanup).
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	require.NoError(t, h.HandleScheduledEvent(ctx))
+	_, err = h.HandleScheduledEvent(&apptheory.EventContext{}, events.EventBridgeEvent{})
+	require.NoError(t, err)
 
 	require.GreaterOrEqual(t, repo.storedHashtags, 1)
 	require.GreaterOrEqual(t, repo.storedStatuses, 1)
@@ -190,7 +192,7 @@ func TestRunTrendAggregator_Round12(t *testing.T) {
 	lambdaStartFn = func(handler any) {
 		lambdaStartCalled = true
 
-		fn, ok := handler.(func(context.Context, any) (any, error))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
 
 		event := map[string]any{
@@ -200,12 +202,18 @@ func TestRunTrendAggregator_Round12(t *testing.T) {
 			"detail":      map[string]any{},
 			"time":        time.Now().Format(time.RFC3339),
 			"resources": []any{
-				"arn:aws:events:us-east-1:123456789012:rule/lesser-trend-aggregator-schedule-test",
+				"arn:aws:events:us-east-1:123456789012:rule/lesser-dev-trend-aggregator-schedule-0",
 			},
 		}
-		_, err := fn(context.Background(), event)
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+		_, err = fn(context.Background(), raw)
 		require.NoError(t, err)
 	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
 	handler = &TrendAggregatorHandler{logger: zap.NewNop(), trendingRepo: &fakeTrendingRepo{}}

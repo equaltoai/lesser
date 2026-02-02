@@ -17,12 +17,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -162,8 +160,8 @@ func (f *fakeWSClient) PostToConnection(_ context.Context, connectionID string, 
 }
 
 func (f *fakeWSClient) DeleteConnection(context.Context, string) error { return nil }
-func (f *fakeWSClient) GetConnection(_ context.Context, connectionID string) (*streamer.ConnectionInfo, error) {
-	return &streamer.ConnectionInfo{ConnectionID: connectionID}, nil
+func (f *fakeWSClient) GetConnection(_ context.Context, _ string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 func TestInitializeNotificationProcessor_AndMain(t *testing.T) {
@@ -188,15 +186,42 @@ func TestInitializeNotificationProcessor_AndMain(t *testing.T) {
 		return &NotificationProcessor{logger: zap.NewNop()}
 	}
 
-	called := false
-	lambdaStartFn = func(interface{}) { called = true }
+	var startHandler any
+	lambdaStartFn = func(h any) { startHandler = h }
 
 	require.NoError(t, initializeNotificationProcessor())
 	require.NotNil(t, lambdaCtx)
 	require.NotNil(t, processor)
 
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
+
 	main()
-	require.True(t, called)
+	require.NotNil(t, startHandler)
+
+	handlerFn, ok := startHandler.(func(context.Context, json.RawMessage) (any, error))
+	require.True(t, ok)
+
+	event := events.SQSEvent{
+		Records: []events.SQSMessage{
+			{
+				MessageId:      "m1",
+				Body:           "{",
+				EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-notification-processor-queue",
+				EventSource:    "aws:sqs",
+			},
+		},
+	}
+	raw, err := json.Marshal(event)
+	require.NoError(t, err)
+
+	respAny, err := handlerFn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.SQSEventResponse)
+	require.True(t, ok)
+	require.Len(t, resp.BatchItemFailures, 1)
+	require.Equal(t, "m1", resp.BatchItemFailures[0].ItemIdentifier)
 }
 
 func TestRetryableError_Error(t *testing.T) {
@@ -239,129 +264,30 @@ func TestNewNotificationProcessor_Branches(t *testing.T) {
 	t.Setenv("WEBSOCKET_ENDPOINT", "https://ws.example.com")
 	config.ResetForTests()
 
-	streamerNewClientFn = func(context.Context, streamer.ClientConfig) (*streamer.AWSClient, error) {
+	streamerNewClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 		return nil, errors.New("boom")
 	}
 	p = NewNotificationProcessor(ctx)
 	require.Nil(t, p.wsClient)
 
-	streamerNewClientFn = func(context.Context, streamer.ClientConfig) (*streamer.AWSClient, error) {
-		return &streamer.AWSClient{}, nil
+	streamerNewClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
+		return &fakeWSClient{}, nil
 	}
 	p = NewNotificationProcessor(ctx)
 	require.NotNil(t, p.wsClient)
 }
 
-func TestHandleNotificationDeliverySQS_Branches(t *testing.T) {
-	origProcessor := processor
-	t.Cleanup(func() { processor = origProcessor })
-
-	processor = &NotificationProcessor{logger: zap.NewNop()}
-
-	t.Run("missing raw event", func(t *testing.T) {
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		require.Error(t, handleNotificationDeliverySQS(ctx))
-	})
-
-	t.Run("raw event already SQSEvent", func(t *testing.T) {
-		req := lift.NewRequest(&adapters.Request{RawEvent: events.SQSEvent{}})
-		ctx := lift.NewContext(context.Background(), req)
-		require.NoError(t, handleNotificationDeliverySQS(ctx))
-	})
-
-	t.Run("raw event map marshals and unmarshals", func(t *testing.T) {
-		req := lift.NewRequest(&adapters.Request{RawEvent: map[string]any{"Records": []any{}}})
-		ctx := lift.NewContext(context.Background(), req)
-		require.NoError(t, handleNotificationDeliverySQS(ctx))
-	})
-
-	t.Run("marshal failure", func(t *testing.T) {
-		req := lift.NewRequest(&adapters.Request{RawEvent: map[string]any{"bad": make(chan int)}})
-		ctx := lift.NewContext(context.Background(), req)
-		require.Error(t, handleNotificationDeliverySQS(ctx))
-	})
-
-	t.Run("unmarshal failure", func(t *testing.T) {
-		req := lift.NewRequest(&adapters.Request{RawEvent: "not an sqs event"})
-		ctx := lift.NewContext(context.Background(), req)
-		require.Error(t, handleNotificationDeliverySQS(ctx))
-	})
+func TestNotificationProcessor_HandleSQSMessage_ReturnsErrorOnInvalidMessage(t *testing.T) {
+	p := &NotificationProcessor{logger: zap.NewNop()}
+	require.Error(t, p.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1", Body: "not-json"}))
 }
 
-func TestBuildApp_SQSRouting_SuccessAndError(t *testing.T) {
-	origLambdaCtx := lambdaCtx
-	origProcessor := processor
-	t.Cleanup(func() {
-		lambdaCtx = origLambdaCtx
-		processor = origProcessor
-	})
-
-	lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-
-	now := time.Now().UTC()
-	notif := &models.Notification{
-		ID:        "n1",
-		UserID:    "u1",
-		Type:      "mention",
-		Title:     "t",
-		Body:      "b",
-		ActorID:   "a1",
-		TargetID:  "t1",
-		CreatedAt: now,
-		Data:      map[string]any{},
-	}
-
-	nRepo := &fakeNotificationRepo{notifications: map[string]*models.Notification{"n1": notif}}
-	uRepo := &fakeUserRepo{err: errors.New("no prefs")}
-	costRepo := &fakeNotificationCostRepo{budget: nil, dailySpending: 0}
-
-	processor = &NotificationProcessor{
-		logger:                    zap.NewNop(),
-		notificationRepo:          nRepo,
-		userRepo:                  uRepo,
-		costTrackingRepo:          &fakeTrackingRepo{},
-		notificationCostRepo:      costRepo,
-		webSocketSubscriptionRepo: &fakeWebSocketSubRepo{},
-		domain:                    "example.com",
-	}
-
-	app := buildApp()
-
-	sqsEvent := func(body string) map[string]any {
-		return map[string]any{
-			"Records": []any{
-				map[string]any{
-					"messageId":      "m1",
-					"receiptHandle":  "rh",
-					"body":           body,
-					"eventSource":    "aws:sqs",
-					"eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:notification-delivery",
-				},
-			},
-		}
-	}
-
-	// Error path (invalid JSON -> internal error response).
-	result, err := app.HandleRequest(context.Background(), sqsEvent("{"))
-	require.NoError(t, err)
-	resp, ok := result.(*lift.Response)
-	require.True(t, ok)
-	require.Equal(t, 500, resp.StatusCode)
-
-	// Success path (valid request with empty channels).
-	reqBody, err := json.Marshal(NotificationDeliveryRequest{
-		NotificationID: "n1",
-		UserID:         "u1",
-		Channels:       []string{},
-		Priority:       "low",
-	})
+func TestNotificationProcessor_HandleSQSMessage_RecoversPanic(t *testing.T) {
+	p := &NotificationProcessor{logger: zap.NewNop()}
+	body, err := json.Marshal(NotificationDeliveryRequest{NotificationID: "n1", UserID: "u1"})
 	require.NoError(t, err)
 
-	result, err = app.HandleRequest(context.Background(), sqsEvent(string(reqBody)))
-	require.NoError(t, err)
-	resp, ok = result.(*lift.Response)
-	require.True(t, ok)
-	require.Equal(t, 200, resp.StatusCode)
+	require.Error(t, p.HandleSQSMessage(nil, events.SQSMessage{MessageId: "m1", Body: string(body)}))
 }
 
 func TestNotificationProcessor_processMessage_Branches(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -36,9 +36,9 @@ func NewEMFMetricsService(logger *zap.Logger) *EMFMetricsService {
 
 // CreateEMFPerformanceMonitoringMiddleware replaces the polling-based middleware
 // This is a drop-in replacement for createPerformanceMonitoringMiddleware
-func CreateEMFPerformanceMonitoringMiddleware(emfService *EMFMetricsService) lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+func CreateEMFPerformanceMonitoringMiddleware(emfService *EMFMetricsService) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			startTime := time.Now()
 
 			// Add request-specific dimensions
@@ -46,33 +46,42 @@ func CreateEMFPerformanceMonitoringMiddleware(emfService *EMFMetricsService) lif
 			emfService.collector.SetDimension("Path", sanitizePathForMetrics(ctx.Request.Path))
 
 			// Process the request
-			err := next.Handle(ctx)
+			resp, err := next(ctx)
 
 			// Collect performance metrics (no background processing)
 			metrics := GetPerformanceMetrics(startTime, time.Time{})
 
 			// Record all performance metrics using EMF
-			emfService.RecordRequestMetrics(ctx, metrics, err)
+			statusCode := 200
+			if err != nil {
+				statusCode = 500
+			} else if resp != nil && resp.Status != 0 {
+				statusCode = resp.Status
+			}
+			emfService.RecordRequestMetrics(ctx, metrics, statusCode, err)
 
 			// CRITICAL: Flush metrics before Lambda terminates
 			// This ensures all metrics are written to CloudWatch
-			defer func() {
-				if flushErr := emfService.collector.Flush(); flushErr != nil {
-					emfService.logger.Error("failed to flush EMF metrics", zap.Error(flushErr))
-				}
-			}()
+			if flushErr := emfService.collector.Flush(); flushErr != nil {
+				emfService.logger.Error("failed to flush EMF metrics", zap.Error(flushErr))
+			}
 
-			return err
-		})
+			return resp, err
+		}
 	}
 }
 
 // RecordRequestMetrics records comprehensive request metrics using EMF
-func (ems *EMFMetricsService) RecordRequestMetrics(ctx *lift.Context, perfMetrics *PerformanceMetrics, requestErr error) {
+func (ems *EMFMetricsService) RecordRequestMetrics(ctx *apptheory.Context, perfMetrics *PerformanceMetrics, statusCode int, requestErr error) {
+	method := ""
+	if ctx != nil {
+		method = ctx.Request.Method
+	}
+
 	// Record performance metrics with operation context
 	operationDims := map[string]string{
 		"Operation": getOperationName(ctx),
-		"Method":    ctx.Request.Method,
+		"Method":    method,
 	}
 
 	// Record latency
@@ -115,7 +124,7 @@ func (ems *EMFMetricsService) RecordRequestMetrics(ctx *lift.Context, perfMetric
 	for k, v := range operationDims {
 		statusDims[k] = v
 	}
-	statusDims["StatusCode"] = getStatusCodeRange(ctx.Response.StatusCode)
+	statusDims["StatusCode"] = getStatusCodeRange(statusCode)
 
 	ems.collector.recordMetricWithDimensions("HTTPResponses", 1, "Count", statusDims)
 }
@@ -183,8 +192,8 @@ func (ems *EMFMetricsService) Stop() {
 
 // Helper functions for EMF integration
 
-func getOperationName(ctx *lift.Context) string {
-	if ctx.Request.Path != "" && ctx.Request.Method != "" {
+func getOperationName(ctx *apptheory.Context) string {
+	if ctx != nil && ctx.Request.Path != "" && ctx.Request.Method != "" {
 		return ctx.Request.Method + "_" + sanitizePathForMetrics(ctx.Request.Path)
 	}
 	return HealthStatusUnknown

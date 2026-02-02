@@ -1,14 +1,13 @@
 package auth
 
 import (
-	"context"
 	"errors"
 	"os"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -18,39 +17,37 @@ func TestUnifiedAuthMiddleware_OptionalAuth_AuthenticatedBranch(t *testing.T) {
 		claims: testClaims{username: "alice", scopes: map[string]bool{common.ScopeRead: true}},
 	}
 
-	req := lift.NewRequest(nil)
-	req.Headers = map[string]string{"Authorization": "Bearer token"}
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
 
 	mw := OptionalAuth(MiddlewareConfig{OAuthService: stub, Logger: logger, ServiceName: "api"})
 	called := false
-	handler := mw(lift.HandlerFunc(func(c *lift.Context) error {
+	handler := mw(func(c *apptheory.Context) (*apptheory.Response, error) {
 		called = true
 		require.True(t, IsAuthenticated(c))
 		require.Equal(t, "alice", GetAuthenticatedUsername(c))
 		require.NotNil(t, GetJWTClaims(c))
-		return nil
-	}))
+		return &apptheory.Response{Status: 200}, nil
+	})
 
-	require.NoError(t, handler.Handle(ctx))
+	_, err := handler(ctx)
+	require.NoError(t, err)
 	require.True(t, called)
 }
 
 func TestUnifiedAuthMiddleware_RequiredAuth_InvalidTokenBranch(t *testing.T) {
 	stub := oauthServiceStub{err: errors.New("bad token")}
 
-	req := lift.NewRequest(nil)
-	req.Headers = map[string]string{"Authorization": "Bearer token"}
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
 
 	mw := RequiredAuth(MiddlewareConfig{
 		OAuthService:  stub,
 		ServiceName:   "api",
 		RequiredScope: common.ScopeRead,
 	})
-	handler := mw(lift.HandlerFunc(func(*lift.Context) error { return nil }))
-	_ = handler.Handle(ctx)
-	require.Equal(t, 401, ctx.Response.StatusCode)
+	handler := mw(func(*apptheory.Context) (*apptheory.Response, error) { return &apptheory.Response{Status: 200}, nil })
+	resp, err := handler(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 401, resp.Status)
 }
 
 func TestUnifiedAuthMiddleware_WrappersAndTestMode(t *testing.T) {
@@ -59,18 +56,16 @@ func TestUnifiedAuthMiddleware_WrappersAndTestMode(t *testing.T) {
 		claims: testClaims{username: "alice", scopes: map[string]bool{common.ScopeWrite: true, common.AdminRead: true}},
 	}
 
-	req := lift.NewRequest(nil)
-	req.Headers = map[string]string{"Authorization": "Bearer token"}
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
 
 	write := WriteAuth(MiddlewareConfig{OAuthService: stub, Logger: logger, ServiceName: "api"})
-	require.NoError(t, write(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(ctx))
+	_, err := write(func(*apptheory.Context) (*apptheory.Response, error) { return &apptheory.Response{Status: 200}, nil })(ctx)
+	require.NoError(t, err)
 
-	req = lift.NewRequest(nil)
-	req.Headers = map[string]string{"Authorization": "Bearer token"}
-	ctx = lift.NewContext(context.Background(), req)
+	ctx = newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
 	admin := AdminAuth(MiddlewareConfig{OAuthService: stub, Logger: logger, ServiceName: "api"})
-	require.NoError(t, admin(lift.HandlerFunc(func(*lift.Context) error { return nil })).Handle(ctx))
+	_, err = admin(func(*apptheory.Context) (*apptheory.Response, error) { return &apptheory.Response{Status: 200}, nil })(ctx)
+	require.NoError(t, err)
 
 	// IsTestMode environment variable switch.
 	t.Setenv("TEST_MODE", "true")
@@ -80,9 +75,7 @@ func TestUnifiedAuthMiddleware_WrappersAndTestMode(t *testing.T) {
 }
 
 func TestUnifiedAuthMiddleware_GetLegacyAuthContext_WrongType(t *testing.T) {
-	req := lift.NewRequest(nil)
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := &apptheory.Context{}
 	ctx.Set("auth_context", "bad")
 	require.Empty(t, GetLegacyAuthContext(ctx).Username)
 }
-

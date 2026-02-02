@@ -10,61 +10,61 @@ import (
 
 // User represents a user account stored in DynamoDB using DynamORM
 type User struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using username as the primary identifier
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "USER#{username}"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "METADATA"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "USER#{username}"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "METADATA"`
 
 	// GSI1 - User listing and pagination
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERS"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{username}"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERS"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{username}"`
 
 	// GSI2 - REMOVED: Email lookup is obsolete - email is forbidden
 	// Email-based authentication is not supported - wallet/passkey only
 
 	// GSI3 - Role-based queries
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "ROLE#{role}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "ROLE#{role}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
 
 	// GSI4 - Status-based queries (approved, suspended, etc.)
-	GSI4PK string `dynamorm:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "STATUS#{status}"
-	GSI4SK string `dynamorm:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{username}"
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "STATUS#{status}"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{username}"
 
 	// GSI5 - Handle prefix search (optimized begins_with queries)
-	GSI5PK string `dynamorm:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"`
-	GSI5SK string `dynamorm:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"`
+	GSI5PK string `theorydb:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"`
+	GSI5SK string `theorydb:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"`
 
 	// Core user data
-	Username     string              `dynamorm:"attr:username" json:"username"`
-	Email        string              `dynamorm:"attr:email" json:"email,omitempty"`                // Optional - not required for email-free auth
-	PasswordHash string              `dynamorm:"attr:passwordHash" json:"password_hash,omitempty"` // Optional - not required for passkey/wallet auth
-	DisplayName  string              `dynamorm:"attr:displayName" json:"display_name,omitempty"`   // Display name for the user
-	Note         string              `dynamorm:"attr:note" json:"note,omitempty"`                  // Profile bio / summary
-	Avatar       string              `dynamorm:"attr:avatar" json:"avatar,omitempty"`              // Avatar image URL
-	Header       string              `dynamorm:"attr:header" json:"header,omitempty"`              // Header image URL
-	URL          string              `dynamorm:"attr:url" json:"url,omitempty"`                    // Profile URL
-	Locked       bool                `dynamorm:"attr:locked" json:"locked"`
-	Discoverable bool                `dynamorm:"attr:discoverable" json:"discoverable"`
-	Fields       []map[string]string `dynamorm:"attr:fields" json:"fields,omitempty"` // Custom profile metadata fields
-	CreatedAt    time.Time           `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt    time.Time           `dynamorm:"attr:updatedAt" json:"updated_at"`
-	Approved     bool                `dynamorm:"attr:approved" json:"approved"`
-	Suspended    bool                `dynamorm:"attr:suspended" json:"suspended"`
-	Silenced     bool                `dynamorm:"attr:silenced" json:"silenced"`
-	Role         string              `dynamorm:"attr:role" json:"role"` // user, moderator, admin
-	Locale       string              `dynamorm:"attr:locale" json:"locale,omitempty"`
+	Username     string              `theorydb:"attr:username" json:"username"`
+	Email        string              `theorydb:"attr:email" json:"email,omitempty"`                // Optional - not required for email-free auth
+	PasswordHash string              `theorydb:"attr:passwordHash" json:"password_hash,omitempty"` // Optional - not required for passkey/wallet auth
+	DisplayName  string              `theorydb:"attr:displayName" json:"display_name,omitempty"`   // Display name for the user
+	Note         string              `theorydb:"attr:note" json:"note,omitempty"`                  // Profile bio / summary
+	Avatar       string              `theorydb:"attr:avatar" json:"avatar,omitempty"`              // Avatar image URL
+	Header       string              `theorydb:"attr:header" json:"header,omitempty"`              // Header image URL
+	URL          string              `theorydb:"attr:url" json:"url,omitempty"`                    // Profile URL
+	Locked       bool                `theorydb:"attr:locked" json:"locked"`
+	Discoverable bool                `theorydb:"attr:discoverable" json:"discoverable"`
+	Fields       []map[string]string `theorydb:"attr:fields" json:"fields,omitempty"` // Custom profile metadata fields
+	CreatedAt    time.Time           `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt    time.Time           `theorydb:"attr:updatedAt" json:"updated_at"`
+	Approved     bool                `theorydb:"attr:approved" json:"approved"`
+	Suspended    bool                `theorydb:"attr:suspended" json:"suspended"`
+	Silenced     bool                `theorydb:"attr:silenced" json:"silenced"`
+	Role         string              `theorydb:"attr:role" json:"role"` // user, moderator, admin
+	Locale       string              `theorydb:"attr:locale" json:"locale,omitempty"`
 
 	// Recovery options (email-free)
-	RecoveryMethods []string `dynamorm:"attr:recoveryMethods" json:"recovery_methods,omitempty"` // ["passkey", "wallet", "social", "recovery_code"]
+	RecoveryMethods []string `theorydb:"attr:recoveryMethods" json:"recovery_methods,omitempty"` // ["passkey", "wallet", "social", "recovery_code"]
 
 	// NSFW Content Preferences
-	AllowNSFW          bool                   `dynamorm:"attr:allowNSFW" json:"allow_nsfw"`                    // Whether user allows viewing NSFW content
-	RequireNSFWWarning bool                   `dynamorm:"attr:requireNSFWWarning" json:"require_nsfw_warning"` // Whether user wants warnings before showing NSFW content
-	Metadata           map[string]interface{} `dynamorm:"attr:metadata" json:"metadata,omitempty"`
+	AllowNSFW          bool                   `theorydb:"attr:allowNSFW" json:"allow_nsfw"`                    // Whether user allows viewing NSFW content
+	RequireNSFWWarning bool                   `theorydb:"attr:requireNSFWWarning" json:"require_nsfw_warning"` // Whether user wants warnings before showing NSFW content
+	Metadata           map[string]interface{} `theorydb:"attr:metadata" json:"metadata,omitempty"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version,attr:version" json:"version"`
+	Version int `theorydb:"version,attr:version" json:"version"`
 }
 
 // TableName returns the DynamoDB table name for the User model

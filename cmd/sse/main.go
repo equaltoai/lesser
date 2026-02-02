@@ -15,12 +15,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -53,18 +52,18 @@ type streamEventLog interface {
 }
 
 var (
-	mustInitializeLambdaFn      = common.MustInitializeLambda
-	initializeWithDefaultsFn    = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	newLambdaOptimizedClientFn  = dynamorm.NewLambdaOptimizedClient
-	newRepositoryFactoryFn      = factory.NewRepositoryFactory
-	newAuthServiceFn            = func(cfg *config.Config, repos core.RepositoryStorage) (accessTokenValidator, error) {
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = factory.NewRepositoryFactory
+	newAuthServiceFn           = func(cfg *config.Config, repos core.RepositoryStorage) (accessTokenValidator, error) {
 		return auth.NewAuthService(cfg, repos)
 	}
-	newStreamEventLogFn         = func(db dynamormCore.DB, ttl time.Duration) streamEventLog {
+	newStreamEventLogFn = func(db dynamormCore.DB, ttl time.Duration) streamEventLog {
 		return streaming.NewStreamEventLog(db, ttl)
 	}
-	lambdaStartFn               = lambda.Start
-	timeAfterFn                 = time.After
+	lambdaStartFn = lambda.Start
+	timeAfterFn   = time.After
 )
 
 func init() {
@@ -133,117 +132,153 @@ func initializeSSE() {
 }
 
 func runSSE() {
-	app := lift.New()
-	if cfg.DebugMode {
-		app = lift.New(lift.WithDebug())
-	}
+	app := apptheory.New(
+		apptheory.WithCORS(apptheory.CORSConfig{
+			AllowedOrigins:   []string{"*"},
+			AllowCredentials: false,
+			AllowHeaders: []string{
+				"Accept",
+				"Authorization",
+				"Content-Type",
+				"Last-Event-ID",
+				"User-Agent",
+				"X-Forwarded-For",
+				"X-Forwarded-Proto",
+			},
+		}),
+		apptheory.WithLimits(apptheory.Limits{
+			MaxRequestBytes:  64 * 1024,
+			MaxResponseBytes: 0,
+		}),
+	)
 
-	app.Use(liftMiddleware.RequestID())
-	app.Use(liftMiddleware.Logger())
-	app.Use(liftMiddleware.Recover())
+	app.Use(ssePanicRecovery(logger))
+	app.Use(sseLoggingMiddleware(logger))
 
-	_ = app.GET("/api/v1/streaming", handleStreamingRoot)
-	_ = app.GET("/api/v1/streaming/health", handleHealth)
+	app.Get("/api/v1/streaming", handleStreamingRoot)
+	app.Get("/api/v1/streaming/health", handleHealth)
 
-	_ = app.GET("/api/v1/streaming/user", handleUserStream)
-	_ = app.GET("/api/v1/streaming/user/notification", handleUserNotificationStream)
-	_ = app.GET("/api/v1/streaming/public", handlePublicStream(streaming.PublicStream))
-	_ = app.GET("/api/v1/streaming/public/local", handlePublicStream(streaming.PublicLocalStream))
-	_ = app.GET("/api/v1/streaming/public/remote", handlePublicStream(streaming.PublicRemoteStream))
-	_ = app.GET("/api/v1/streaming/hashtag", handleHashtagStream(false))
-	_ = app.GET("/api/v1/streaming/hashtag/local", handleHashtagStream(true))
-	_ = app.GET("/api/v1/streaming/list", handleListStream)
-	_ = app.GET("/api/v1/streaming/direct", handleDirectStream)
+	app.Get("/api/v1/streaming/user", handleUserStream)
+	app.Get("/api/v1/streaming/user/notification", handleUserNotificationStream)
+	app.Get("/api/v1/streaming/public", handlePublicStream(streaming.PublicStream))
+	app.Get("/api/v1/streaming/public/local", handlePublicStream(streaming.PublicLocalStream))
+	app.Get("/api/v1/streaming/public/remote", handlePublicStream(streaming.PublicRemoteStream))
+	app.Get("/api/v1/streaming/hashtag", handleHashtagStream(false))
+	app.Get("/api/v1/streaming/hashtag/local", handleHashtagStream(true))
+	app.Get("/api/v1/streaming/list", handleListStream)
+	app.Get("/api/v1/streaming/direct", handleDirectStream)
 
-	lambdaStartFn(app.HandleRequest)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-func handleStreamingRoot(ctx *lift.Context) error {
-	return ctx.Status(http.StatusNotFound).Text("Not Found")
+func handleStreamingRoot(*apptheory.Context) (*apptheory.Response, error) {
+	return apptheory.Text(http.StatusNotFound, "Not Found"), nil
 }
 
-func handleHealth(ctx *lift.Context) error {
-	return ctx.Text("OK")
+func handleHealth(*apptheory.Context) (*apptheory.Response, error) {
+	return apptheory.Text(http.StatusOK, "OK"), nil
 }
 
-func handleUserStream(ctx *lift.Context) error {
-	claims, err := requireClaims(ctx)
-	if err != nil {
-		return err
+func handleUserStream(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims, resp := requireClaims(ctx)
+	if resp != nil {
+		return resp, nil
 	}
 	return streamSSE(ctx, streaming.UserStreamName(claims.Username), false)
 }
 
-func handleUserNotificationStream(ctx *lift.Context) error {
-	claims, err := requireClaims(ctx)
-	if err != nil {
-		return err
+func handleUserNotificationStream(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims, resp := requireClaims(ctx)
+	if resp != nil {
+		return resp, nil
 	}
 	return streamSSE(ctx, streaming.UserNotificationStreamName(claims.Username), false)
 }
 
-func handlePublicStream(streamName string) lift.Handler {
-	return lift.HandlerFunc(func(ctx *lift.Context) error {
-		if _, err := requireClaims(ctx); err != nil {
-			return err
+func handlePublicStream(streamName string) apptheory.Handler {
+	return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		if _, resp := requireClaims(ctx); resp != nil {
+			return resp, nil
 		}
-		return streamSSE(ctx, streamName, ctx.QueryParam("only_media") == "true")
-	})
+		onlyMedia := false
+		if ctx != nil && sseQueryParam(ctx, "only_media") == "true" {
+			onlyMedia = true
+		}
+		return streamSSE(ctx, streamName, onlyMedia)
+	}
 }
 
-func handleHashtagStream(localOnly bool) lift.Handler {
-	return lift.HandlerFunc(func(ctx *lift.Context) error {
-		if _, err := requireClaims(ctx); err != nil {
-			return err
+func handleHashtagStream(localOnly bool) apptheory.Handler {
+	return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		if _, resp := requireClaims(ctx); resp != nil {
+			return resp, nil
 		}
 
-		tag := strings.TrimSpace(ctx.QueryParam("tag"))
+		tag := ""
+		if ctx != nil {
+			tag = strings.TrimSpace(sseQueryParam(ctx, "tag"))
+		}
 		if tag == "" {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "tag is required"})
+			return apptheory.MustJSON(http.StatusBadRequest, map[string]string{"error": "tag is required"}), nil
 		}
 
 		streamName := streaming.HashtagStreamName(tag)
 		if localOnly {
 			streamName = fmt.Sprintf("hashtag:local:%s", tag)
 		}
-		return streamSSE(ctx, streamName, ctx.QueryParam("only_media") == "true")
-	})
+
+		onlyMedia := false
+		if ctx != nil && sseQueryParam(ctx, "only_media") == "true" {
+			onlyMedia = true
+		}
+		return streamSSE(ctx, streamName, onlyMedia)
+	}
 }
 
-func handleListStream(ctx *lift.Context) error {
-	claims, err := requireClaims(ctx)
-	if err != nil {
-		return err
+func handleListStream(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims, resp := requireClaims(ctx)
+	if resp != nil {
+		return resp, nil
 	}
 
-	listID := strings.TrimSpace(ctx.QueryParam("list"))
+	listID := ""
+	if ctx != nil {
+		listID = strings.TrimSpace(sseQueryParam(ctx, "list"))
+	}
 	if listID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "list is required"})
+		return apptheory.MustJSON(http.StatusBadRequest, map[string]string{"error": "list is required"}), nil
 	}
 
 	_ = claims // placeholder for future list membership validation
 	return streamSSE(ctx, streaming.ListStreamName(listID), false)
 }
 
-func handleDirectStream(ctx *lift.Context) error {
-	claims, err := requireClaims(ctx)
-	if err != nil {
-		return err
+func handleDirectStream(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims, resp := requireClaims(ctx)
+	if resp != nil {
+		return resp, nil
 	}
 	return streamSSE(ctx, streaming.DirectStreamName(claims.Username), false)
 }
 
-func streamSSE(ctx *lift.Context, streamName string, onlyMedia bool) error {
+func streamSSE(ctx *apptheory.Context, streamName string, onlyMedia bool) (*apptheory.Response, error) {
 	if eventLog == nil || !eventLog.Enabled() {
-		return ctx.Status(http.StatusServiceUnavailable).JSON(map[string]string{"error": "streaming unavailable"})
+		return apptheory.MustJSON(http.StatusServiceUnavailable, map[string]string{"error": "streaming unavailable"}), nil
 	}
 
-	lastEventID := strings.TrimSpace(ctx.Header("Last-Event-ID"))
+	lastEventID := strings.TrimSpace(sseHeaderValue(ctx, "last-event-id"))
 
-	eventCh := make(chan lift.SSEEvent, 8)
-	go produceSSEEvents(ctx, eventCh, streamName, onlyMedia, lastEventID)
+	eventCh := make(chan apptheory.SSEEvent, 8)
 
-	return lift.SSEResponse(ctx, eventCh)
+	streamCtx := context.Background()
+	if ctx != nil {
+		streamCtx = ctx.Context()
+	}
+	go produceSSEEvents(streamCtx, eventCh, streamName, onlyMedia, lastEventID)
+
+	return apptheory.SSEStreamResponse(streamCtx, http.StatusOK, eventCh)
 }
 
 type sseStreamState struct {
@@ -255,7 +290,7 @@ func (s sseStreamState) expired() bool {
 	return time.Since(s.start) > streamMaxDuration
 }
 
-func produceSSEEvents(ctx context.Context, eventCh chan<- lift.SSEEvent, streamName string, onlyMedia bool, lastEventID string) {
+func produceSSEEvents(ctx context.Context, eventCh chan<- apptheory.SSEEvent, streamName string, onlyMedia bool, lastEventID string) {
 	defer close(eventCh)
 
 	state := sseStreamState{start: time.Now(), afterID: lastEventID}
@@ -265,7 +300,7 @@ func produceSSEEvents(ctx context.Context, eventCh chan<- lift.SSEEvent, streamN
 	for !state.expired() {
 		items, err := eventLog.Query(ctx, streamName, state.afterID, streamPollLimit)
 		if err != nil {
-			eventCh <- lift.SSEEvent{Event: "error", Data: `{"error":"internal_error"}`}
+			eventCh <- apptheory.SSEEvent{Event: "error", Data: `{"error":"internal_error"}`}
 			return
 		}
 
@@ -280,14 +315,14 @@ func produceSSEEvents(ctx context.Context, eventCh chan<- lift.SSEEvent, streamN
 	}
 }
 
-func emitSSEItems(eventCh chan<- lift.SSEEvent, items []streaming.StreamEventLogItem, onlyMedia bool, afterID string) string {
+func emitSSEItems(eventCh chan<- apptheory.SSEEvent, items []streaming.StreamEventLogItem, onlyMedia bool, afterID string) string {
 	for _, item := range items {
 		afterID = item.ID
 		if shouldSkipSSEItem(onlyMedia, item) {
 			continue
 		}
 
-		eventCh <- lift.SSEEvent{ID: item.ID, Event: item.Event, Data: normalizeDeletePayload(item.Event, item.Data)}
+		eventCh <- apptheory.SSEEvent{ID: item.ID, Event: item.Event, Data: normalizeDeletePayload(item.Event, item.Data)}
 	}
 	return afterID
 }
@@ -302,34 +337,34 @@ func shouldSkipSSEItem(onlyMedia bool, item streaming.StreamEventLogItem) bool {
 	return !payloadHasMedia(item.Data)
 }
 
-func waitForSSEPoll(ctx context.Context, eventCh chan<- lift.SSEEvent, heartbeat *time.Ticker) bool {
+func waitForSSEPoll(ctx context.Context, eventCh chan<- apptheory.SSEEvent, heartbeat *time.Ticker) bool {
 	select {
 	case <-ctx.Done():
 		return true
 	case <-heartbeat.C:
-		eventCh <- lift.SSEEvent{Event: "keepalive", Data: "thump"}
+		eventCh <- apptheory.SSEEvent{Event: "keepalive", Data: "thump"}
 		return false
 	case <-timeAfterFn(streamIdlePollDelay):
 		return false
 	}
 }
 
-func requireClaims(ctx *lift.Context) (*auth.EnhancedClaims, error) {
-	token := strings.TrimSpace(ctx.Header("Authorization"))
+func requireClaims(ctx *apptheory.Context) (*auth.EnhancedClaims, *apptheory.Response) {
+	token := strings.TrimSpace(sseHeaderValue(ctx, "authorization"))
 	if token == "" {
-		return nil, lift.Unauthorized("Authentication required")
+		return nil, apptheory.MustJSON(http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
 	}
 
 	token = strings.TrimPrefix(token, "Bearer ")
 	token = strings.TrimPrefix(token, "bearer ")
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return nil, lift.Unauthorized("Authentication required")
+		return nil, apptheory.MustJSON(http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
 	}
 
 	claims, err := authService.ValidateAccessToken(token)
 	if err != nil {
-		return nil, lift.Unauthorized("Invalid token").WithCause(err)
+		return nil, apptheory.MustJSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
 	}
 
 	return claims, nil
@@ -366,4 +401,82 @@ func normalizeDeletePayload(eventType, data string) string {
 	}
 
 	return data
+}
+
+func ssePanicRecovery(logger *zap.Logger) apptheory.Middleware {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (resp *apptheory.Response, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("panic recovered", zap.Any("panic", r))
+					resp = apptheory.MustJSON(http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+					err = nil
+				}
+			}()
+			return next(ctx)
+		}
+	}
+}
+
+func sseLoggingMiddleware(logger *zap.Logger) apptheory.Middleware {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			start := time.Now()
+			resp, err := next(ctx)
+
+			method := ""
+			path := ""
+			status := 0
+			if ctx != nil {
+				method = ctx.Request.Method
+				path = ctx.Request.Path
+			}
+			if resp != nil {
+				status = resp.Status
+			}
+
+			logger.Info("sse request completed",
+				zap.String("method", method),
+				zap.String("path", path),
+				zap.Int("status", status),
+				zap.Duration("duration", time.Since(start)),
+				zap.Bool("has_error", err != nil),
+			)
+
+			return resp, err
+		}
+	}
+}
+
+func sseHeaderValue(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	values := ctx.Request.Headers[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func sseQueryParam(ctx *apptheory.Context, key string) string {
+	if ctx == nil {
+		return ""
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	values := ctx.Request.Query[key]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }

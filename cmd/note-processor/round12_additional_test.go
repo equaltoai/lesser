@@ -18,9 +18,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -74,8 +74,8 @@ func (r *recordingStreamerClient) PostToConnection(_ context.Context, connection
 }
 
 func (r *recordingStreamerClient) DeleteConnection(_ context.Context, _ string) error { return nil }
-func (r *recordingStreamerClient) GetConnection(_ context.Context, _ string) (*streamer.ConnectionInfo, error) {
-	return nil, nil
+func (r *recordingStreamerClient) GetConnection(_ context.Context, _ string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 type fakeWebSocketSubRepo struct {
@@ -139,12 +139,12 @@ func TestNoteProcessor_ReputationScoring_Factors(t *testing.T) {
 	modRepo.On("GetModerationEventsByObject", mock.Anything, "clean", 100, "").Return([]*storage.ModerationEvent{}, "", nil)
 
 	np := &NoteProcessor{
-		logger:           zap.NewNop(),
-		userRepo:         userRepo,
-		relationshipRepo: relRepo,
-		activityRepo:     actRepo,
+		logger:            zap.NewNop(),
+		userRepo:          userRepo,
+		relationshipRepo:  relRepo,
+		activityRepo:      actRepo,
 		communityNoteRepo: noteRepo,
-		moderationRepo:   modRepo,
+		moderationRepo:    modRepo,
 	}
 
 	require.Equal(t, 1.0, np.calculateAccountAgeScore(context.Background(), "trusted"))
@@ -232,8 +232,8 @@ func TestNoteProcessor_BroadcastNoteUpdate(t *testing.T) {
 	disconnects := make(chan string, 1)
 	wsRepo := &fakeWebSocketSubRepo{
 		subsByType: map[string][]models.WebSocketEventSubscription{
-			"timeline":       {{ConnectionID: "c1"}, {ConnectionID: "c2"}},
-			"notifications":  {{ConnectionID: "c2"}},
+			"timeline":        {{ConnectionID: "c1"}, {ConnectionID: "c2"}},
+			"notifications":   {{ConnectionID: "c2"}},
 			"community_notes": {{ConnectionID: "c3"}},
 		},
 		disconnect: disconnects,
@@ -261,16 +261,16 @@ func TestNoteProcessor_BroadcastNoteUpdate(t *testing.T) {
 	require.Equal(t, "community_note_update", envelope["type"])
 }
 
-func TestNoteProcessor_ProcessNewNoteByID_And_HandleStream(t *testing.T) {
+func TestNoteProcessor_ProcessNewNoteByID_AndProcessRecord(t *testing.T) {
 	note := &storage.CommunityNote{
-		ID:        "n1",
-		ObjectID:  "o1",
+		ID:         "n1",
+		ObjectID:   "o1",
 		ObjectType: "status",
-		AuthorID:  "https://example.com/actors/anon",
-		Content:   "hello",
-		Language:  "en",
-		Sources:   []string{"https://wikipedia.org/wiki/X"},
-		CreatedAt: time.Now(),
+		AuthorID:   "https://example.com/actors/anon",
+		Content:    "hello",
+		Language:   "en",
+		Sources:    []string{"https://wikipedia.org/wiki/X"},
+		CreatedAt:  time.Now(),
 	}
 
 	noteRepo := testingmocks.NewMockCommunityNoteRepository()
@@ -302,51 +302,45 @@ func TestNoteProcessor_ProcessNewNoteByID_And_HandleStream(t *testing.T) {
 	}
 
 	np := &NoteProcessor{
-		logger:           zap.NewNop(),
-		baseURL:          "https://example.com",
+		logger:            zap.NewNop(),
+		baseURL:           "https://example.com",
 		communityNoteRepo: noteRepo,
-		activityRepo:     actRepo,
-		comprehendClient: comprehendClient,
+		activityRepo:      actRepo,
+		comprehendClient:  comprehendClient,
 	}
 
 	require.NoError(t, np.processNewNoteByID(context.Background(), "n1"))
 
-	event := events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName: "INSERT",
-				Change: events.DynamoDBStreamRecord{
-					NewImage: map[string]events.DynamoDBAttributeValue{
-						"PK": events.NewStringAttribute("NOTE#n1"),
-						"SK": events.NewStringAttribute("METADATA"),
-					},
-				},
+	record := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		EventID:   "evt-1",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("NOTE#n1"),
+				"SK": events.NewStringAttribute("METADATA"),
 			},
 		},
 	}
 
-	require.NoError(t, np.HandleStream(context.Background(), event))
+	require.NoError(t, np.processRecord(context.Background(), "req", record))
 
-	// Error collection -> partial failure.
+	// Record failure is returned to AppTheory for partial batch responses.
 	noteRepo2 := testingmocks.NewMockCommunityNoteRepository()
 	noteRepo2.On("GetCommunityNote", mock.Anything, "n2").Return((*storage.CommunityNote)(nil), errors.New("missing"))
 	np2 := &NoteProcessor{logger: zap.NewNop(), communityNoteRepo: noteRepo2}
-	event2 := events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName: "INSERT",
-				Change: events.DynamoDBStreamRecord{
-					NewImage: map[string]events.DynamoDBAttributeValue{
-						"PK": events.NewStringAttribute("NOTE#n2"),
-						"SK": events.NewStringAttribute("METADATA"),
-					},
-				},
+	record2 := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		EventID:   "evt-2",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("NOTE#n2"),
+				"SK": events.NewStringAttribute("METADATA"),
 			},
 		},
 	}
-	err := np2.HandleStream(context.Background(), event2)
+	err := np2.processRecord(context.Background(), "req", record2)
 	require.Error(t, err)
-	require.True(t, pkgErrors.HasCode(err, pkgErrors.CodeSQSProcessingFailed))
+	require.True(t, pkgErrors.HasCode(err, pkgErrors.CodeInternal))
 }
 
 func TestNoteProcessor_PerformAIReputationAnalysis_PopulatesCost(t *testing.T) {

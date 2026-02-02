@@ -11,7 +11,7 @@ import (
 
 // CloudWatchMetricsRepository is a thread-safe in-memory implementation of interfaces.CloudWatchMetricsRepository.
 type CloudWatchMetricsRepository struct {
-	mu            sync.RWMutex
+	mu             sync.RWMutex
 	serviceMetrics map[string]*interfaces.ServiceMetrics // keyed by serviceName
 }
 

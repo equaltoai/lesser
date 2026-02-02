@@ -14,50 +14,50 @@ import (
 
 // Session represents a user session with OAuth tokens
 type Session struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using session ID as partition key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "session#{sessionID}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "session#{sessionID}" (same as PK for simple key)
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "session#{sessionID}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "session#{sessionID}" (same as PK for simple key)
 
 	// GSI1 - User sessions lookup
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
 
 	// GSI2 - Access token lookup
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
 
 	// Core session data
-	SessionID    string   `dynamorm:"attr:sessionID" json:"session_id"`
-	UserID       string   `dynamorm:"attr:userID" json:"user_id"`
-	AccessToken  string   `dynamorm:"attr:accessToken" json:"access_token"`             // Stored encrypted
-	RefreshToken string   `dynamorm:"attr:refreshToken" json:"refresh_token,omitempty"` // Stored encrypted
-	Scopes       []string `dynamorm:"attr:scopes" json:"scopes,omitempty"`
+	SessionID    string   `theorydb:"attr:sessionID" json:"session_id"`
+	UserID       string   `theorydb:"attr:userID" json:"user_id"`
+	AccessToken  string   `theorydb:"attr:accessToken" json:"access_token"`             // Stored encrypted
+	RefreshToken string   `theorydb:"attr:refreshToken" json:"refresh_token,omitempty"` // Stored encrypted
+	Scopes       []string `theorydb:"attr:scopes" json:"scopes,omitempty"`
 
 	// Session metadata
-	IPAddress string `dynamorm:"attr:ipAddress" json:"ip_address,omitempty"`
-	UserAgent string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
-	DeviceID  string `dynamorm:"attr:deviceID" json:"device_id,omitempty"`
+	IPAddress string `theorydb:"attr:ipAddress" json:"ip_address,omitempty"`
+	UserAgent string `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
+	DeviceID  string `theorydb:"attr:deviceID" json:"device_id,omitempty"`
 
 	// Security and tracking
-	IsRevoked    bool       `dynamorm:"attr:isRevoked" json:"is_revoked"`
-	RevokedAt    *time.Time `dynamorm:"attr:revokedAt" json:"revoked_at,omitempty"`
-	RevokeReason string     `dynamorm:"attr:revokeReason" json:"revoke_reason,omitempty"`
+	IsRevoked    bool       `theorydb:"attr:isRevoked" json:"is_revoked"`
+	RevokedAt    *time.Time `theorydb:"attr:revokedAt" json:"revoked_at,omitempty"`
+	RevokeReason string     `theorydb:"attr:revokeReason" json:"revoke_reason,omitempty"`
 
 	// Timestamps
-	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	LastUsedAt time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`
+	CreatedAt  time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	LastUsedAt time.Time `theorydb:"attr:lastUsedAt" json:"last_used_at"`
 
 	// TTL for automatic cleanup
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 
 	// Additional context data
-	Context map[string]interface{} `dynamorm:"attr:context" json:"context,omitempty"`
+	Context map[string]interface{} `theorydb:"attr:context" json:"context,omitempty"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version,attr:version" json:"version"`
+	Version int `theorydb:"version,attr:version" json:"version"`
 }
 
 // TableName returns the DynamoDB table name for the Session model

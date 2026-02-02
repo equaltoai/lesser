@@ -23,11 +23,11 @@ func TestSessionValidator_ConfigNilAndBasicFailurePaths(t *testing.T) {
 
 	// Session not found.
 	resp, err := validator.ValidateSession(context.Background(), &SessionValidationRequest{
-		SessionID:  "missing",
-		IPAddress:  "192.0.2.10",
-		UserAgent:  "Mozilla/5.0",
-		Timestamp:  time.Now(),
-		Headers:    map[string]string{},
+		SessionID:     "missing",
+		IPAddress:     "192.0.2.10",
+		UserAgent:     "Mozilla/5.0",
+		Timestamp:     time.Now(),
+		Headers:       map[string]string{},
 		RequestMethod: "GET",
 	})
 	require.NoError(t, err)
@@ -47,11 +47,11 @@ func TestSessionValidator_ConfigNilAndBasicFailurePaths(t *testing.T) {
 		ExpiresAt:    time.Now().Add(-time.Minute),
 	}
 	resp, err = validator.ValidateSession(context.Background(), &SessionValidationRequest{
-		SessionID:  "expired",
-		IPAddress:  "192.0.2.10",
-		UserAgent:  "Mozilla/5.0",
-		Timestamp:  time.Now(),
-		Headers:    map[string]string{},
+		SessionID:     "expired",
+		IPAddress:     "192.0.2.10",
+		UserAgent:     "Mozilla/5.0",
+		Timestamp:     time.Now(),
+		Headers:       map[string]string{},
 		RequestMethod: "GET",
 	})
 	require.NoError(t, err)
@@ -70,11 +70,11 @@ func TestSessionValidator_ConfigNilAndBasicFailurePaths(t *testing.T) {
 		ExpiresAt:    time.Now().Add(time.Hour),
 	}
 	resp, err = validator.ValidateSession(context.Background(), &SessionValidationRequest{
-		SessionID:  "inactive",
-		IPAddress:  "192.0.2.10",
-		UserAgent:  "Mozilla/5.0",
-		Timestamp:  time.Now(),
-		Headers:    map[string]string{},
+		SessionID:     "inactive",
+		IPAddress:     "192.0.2.10",
+		UserAgent:     "Mozilla/5.0",
+		Timestamp:     time.Now(),
+		Headers:       map[string]string{},
 		RequestMethod: "GET",
 	})
 	require.NoError(t, err)
@@ -111,14 +111,14 @@ func TestSessionValidator_SecurityAndScoringBranches(t *testing.T) {
 	}
 
 	resp, err := validator.ValidateSession(context.Background(), &SessionValidationRequest{
-		SessionID:  "sid",
-		IPAddress:  "203.0.113.5",
-		UserAgent:  "curl/8.0",
-		CSRFToken:  "csrf",
-		Timestamp:  time.Now(),
-		RequestPath: "/api/v1/test",
+		SessionID:     "sid",
+		IPAddress:     "203.0.113.5",
+		UserAgent:     "curl/8.0",
+		CSRFToken:     "csrf",
+		Timestamp:     time.Now(),
+		RequestPath:   "/api/v1/test",
 		RequestMethod: "POST",
-		Headers:    map[string]string{}, // missing security headers
+		Headers:       map[string]string{}, // missing security headers
 	})
 	require.NoError(t, err)
 	require.Contains(t, resp.FailedChecks, "session_too_old")
@@ -131,11 +131,11 @@ func TestSessionValidator_SecurityAndScoringBranches(t *testing.T) {
 	// With required headers present, "security_headers_present" is validated.
 	repo.sessions["sid"].CreatedAt = time.Now() // avoid too old branch to change ratios
 	resp, err = validator.ValidateSession(context.Background(), &SessionValidationRequest{
-		SessionID:  "sid",
-		IPAddress:  "192.0.2.10",
-		UserAgent:  "Mozilla/5.0",
-		CSRFToken:  "csrf",
-		Timestamp:  time.Now(),
+		SessionID:     "sid",
+		IPAddress:     "192.0.2.10",
+		UserAgent:     "Mozilla/5.0",
+		CSRFToken:     "csrf",
+		Timestamp:     time.Now(),
 		RequestMethod: "POST",
 		Headers: map[string]string{
 			"X-Content-Type-Options": "nosniff",
@@ -146,4 +146,3 @@ func TestSessionValidator_SecurityAndScoringBranches(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, resp.ValidatedChecks, "security_headers_present")
 }
-

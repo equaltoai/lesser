@@ -62,4 +62,3 @@ func TestRunSecScan_RunsCDKModuleScanWhenPresent(t *testing.T) {
 	require.NoError(t, runSecScan(nil))
 	require.Equal(t, 2, called)
 }
-

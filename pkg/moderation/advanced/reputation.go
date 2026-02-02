@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -31,45 +32,87 @@ const (
 
 // DynamoDB key constants
 const (
-	skReputation = "REPUTATION"
+	pkActorPrefix = "ACTOR#"
+	skReputation  = "REPUTATION"
+	skEventPrefix = "EVENT#"
 )
 
-// safeIntToInt32 safely converts int to int32, capping at math.MaxInt32
-func safeIntToInt32(n int) int32 {
-	if n > math.MaxInt32 {
-		return math.MaxInt32
-	}
-	if n < math.MinInt32 {
-		return math.MinInt32
-	}
-	return int32(n)
+type reputationScoreRecord struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+
+	Score              float64            `theorydb:"attr:score"`
+	Level              string             `theorydb:"attr:level"`
+	ViolationCount     int                `theorydb:"attr:violationCount"`
+	FalsePositiveCount int                `theorydb:"attr:falsePositiveCount"`
+	ContentCount       int                `theorydb:"attr:contentCount"`
+	LastViolation      time.Time          `theorydb:"attr:lastViolation"`
+	Factors            []ReputationFactor `theorydb:"attr:factors"`
+	UpdatedAt          time.Time          `theorydb:"attr:updatedAt"`
 }
 
-// ReputationScorer manages user reputation scoring
+func (reputationScoreRecord) TableName() string {
+	return appconfig.GetMainTableName()
+}
+
+type reputationEventRecord struct {
+	_ struct{} `theorydb:"naming:camelCase"`
+
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
+
+	EventType   string    `theorydb:"attr:eventType"`
+	Severity    Severity  `theorydb:"attr:severity"`
+	Description string    `theorydb:"attr:description"`
+	Impact      float64   `theorydb:"attr:impact"`
+	Timestamp   time.Time `theorydb:"attr:timestamp"`
+	TTL         int64     `theorydb:"ttl,attr:ttl"`
+}
+
+func (reputationEventRecord) TableName() string {
+	return appconfig.GetMainTableName()
+}
+
+// ReputationScorer manages user reputation scoring.
+//
+// It is intentionally TableTheory-backed: Lesser does not use direct DynamoDB SDK calls.
 type ReputationScorer struct {
-	db        *dynamodb.Client
-	tableName string
-	logger    *zap.Logger
-	config    *ModerationConfig
+	db     core.DB
+	logger *zap.Logger
+	config *ModerationConfig
 
 	// Cache for active scores
 	scoreCache sync.Map
 	cacheTTL   time.Duration
 }
 
-// NewReputationScorer creates a new reputation scorer
-func NewReputationScorer(db *dynamodb.Client, tableName string, logger *zap.Logger, config *ModerationConfig) *ReputationScorer {
+// NewReputationScorer creates a new reputation scorer.
+func NewReputationScorer(db core.DB, logger *zap.Logger, config *ModerationConfig) *ReputationScorer {
+	if config == nil {
+		config = DefaultModerationConfig()
+	}
 	return &ReputationScorer{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
-		config:    config,
-		cacheTTL:  15 * time.Minute,
+		db:       db,
+		logger:   logger,
+		config:   config,
+		cacheTTL: 15 * time.Minute,
 	}
 }
 
-// GetReputationScore retrieves or calculates a user's reputation score
+// GetReputationScore retrieves or calculates a user's reputation score.
 func (rs *ReputationScorer) GetReputationScore(ctx context.Context, actorID string) (*ReputationScore, error) {
+	if rs == nil || rs.db == nil {
+		return nil, fmt.Errorf("reputation scorer is not initialized")
+	}
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, fmt.Errorf("actorID is required")
+	}
+
 	// Check cache first
 	cacheKey := fmt.Sprintf("rep:%s", actorID)
 	if cached, ok := rs.scoreCache.Load(cacheKey); ok {
@@ -78,41 +121,37 @@ func (rs *ReputationScorer) GetReputationScore(ctx context.Context, actorID stri
 		}
 	}
 
-	// Get from DynamoDB
-	getInput := &dynamodb.GetItemInput{
-		TableName: aws.String(rs.tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
-			"SK": &types.AttributeValueMemberS{Value: skReputation},
-		},
-	}
-
-	result, err := rs.db.GetItem(ctx, getInput)
-	if err != nil {
-		return nil, fmt.Errorf("get reputation: %w", err)
-	}
-
-	var score *ReputationScore
-
-	if result.Item == nil {
-		// New user, create default score
-		score = rs.createDefaultScore(actorID)
-		if err := rs.saveScore(ctx, score); err != nil {
-			rs.logger.Warn("failed to save default score", zap.Error(err))
+	var record reputationScoreRecord
+	if err := rs.db.WithContext(ctx).
+		Model(&reputationScoreRecord{}).
+		Where("PK", "=", reputationScorePK(actorID)).
+		Where("SK", "=", skReputation).
+		First(&record); err != nil {
+		if !theorydbErrors.IsNotFound(err) {
+			return nil, fmt.Errorf("get reputation: %w", err)
 		}
-	} else {
-		score, err = rs.parseReputationScore(result.Item)
-		if err != nil {
-			return nil, fmt.Errorf("parse reputation: %w", err)
+
+		score := rs.createDefaultScore(actorID)
+		if saveErr := rs.saveScore(ctx, score); saveErr != nil && rs.logger != nil {
+			rs.logger.Warn("failed to save default reputation score", zap.Error(saveErr))
 		}
+
+		rs.scoreCache.Store(cacheKey, &cachedScore{
+			score:    score,
+			cachedAt: time.Now(),
+		})
+
+		return score, nil
 	}
+
+	score := rs.scoreFromRecord(&record)
 
 	// Apply decay if needed
 	if rs.config.ReputationDecayRate > 0 && time.Since(score.UpdatedAt) > 24*time.Hour {
 		score = rs.applyDecay(score)
 		// Save decayed score asynchronously
 		go func() {
-			if err := rs.saveScore(context.Background(), score); err != nil {
+			if err := rs.saveScore(context.Background(), score); err != nil && rs.logger != nil {
 				rs.logger.Warn("failed to save decayed score", zap.Error(err))
 			}
 		}()
@@ -127,8 +166,12 @@ func (rs *ReputationScorer) GetReputationScore(ctx context.Context, actorID stri
 	return score, nil
 }
 
-// UpdateReputation updates a user's reputation based on an event
+// UpdateReputation updates a user's reputation based on an event.
 func (rs *ReputationScorer) UpdateReputation(ctx context.Context, actorID string, event ReputationEvent) error {
+	if rs == nil || rs.db == nil {
+		return fmt.Errorf("reputation scorer is not initialized")
+	}
+
 	// Get current score
 	score, err := rs.GetReputationScore(ctx, actorID)
 	if err != nil {
@@ -174,7 +217,7 @@ func (rs *ReputationScorer) UpdateReputation(ctx context.Context, actorID string
 	}
 
 	// Log significant changes
-	if math.Abs(oldScore-score.Score) > 5 {
+	if rs.logger != nil && math.Abs(oldScore-score.Score) > 5 {
 		rs.logger.Info("significant reputation change",
 			zap.String("actorID", actorID),
 			zap.Float64("oldScore", oldScore),
@@ -183,7 +226,7 @@ func (rs *ReputationScorer) UpdateReputation(ctx context.Context, actorID string
 	}
 
 	// Record event for history
-	if err := rs.recordEvent(ctx, actorID, event, impact); err != nil {
+	if err := rs.recordEvent(ctx, actorID, event, impact); err != nil && rs.logger != nil {
 		rs.logger.Warn("failed to record reputation event", zap.Error(err))
 	}
 
@@ -193,69 +236,72 @@ func (rs *ReputationScorer) UpdateReputation(ctx context.Context, actorID string
 	return nil
 }
 
-// GetReputationHistory retrieves reputation event history
+// GetReputationHistory retrieves reputation event history.
 func (rs *ReputationScorer) GetReputationHistory(ctx context.Context, actorID string, limit int) ([]ReputationHistoryItem, error) {
-	queryInput := &dynamodb.QueryInput{
-		TableName:              aws.String(rs.tableName),
-		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":     &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
-			":prefix": &types.AttributeValueMemberS{Value: "EVENT#"},
-		},
-		ScanIndexForward: aws.Bool(false), // Most recent first
-		Limit:            aws.Int32(safeIntToInt32(limit)),
+	if rs == nil || rs.db == nil {
+		return nil, fmt.Errorf("reputation scorer is not initialized")
+	}
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, fmt.Errorf("actorID is required")
+	}
+	if limit <= 0 {
+		limit = 50
 	}
 
-	result, err := rs.db.Query(ctx, queryInput)
-	if err != nil {
+	var records []reputationEventRecord
+	if err := rs.db.WithContext(ctx).
+		Model(&reputationEventRecord{}).
+		Where("PK", "=", reputationScorePK(actorID)).
+		Where("SK", "BEGINS_WITH", skEventPrefix).
+		OrderBy("SK", "DESC").
+		Limit(limit).
+		All(&records); err != nil {
 		return nil, fmt.Errorf("query history: %w", err)
 	}
 
-	history := make([]ReputationHistoryItem, 0, len(result.Items))
-	for _, item := range result.Items {
-		histItem, err := rs.parseHistoryItem(item)
-		if err != nil {
-			continue
-		}
-		history = append(history, *histItem)
+	history := make([]ReputationHistoryItem, 0, len(records))
+	for _, record := range records {
+		history = append(history, ReputationHistoryItem{
+			Timestamp:   record.Timestamp,
+			EventType:   record.EventType,
+			Severity:    record.Severity,
+			Description: record.Description,
+			Impact:      record.Impact,
+		})
 	}
 
 	return history, nil
 }
 
-// GetActorsByReputation retrieves actors within a reputation range
+// GetActorsByReputation retrieves actors within a reputation range.
 func (rs *ReputationScorer) GetActorsByReputation(ctx context.Context, minScore, maxScore float64, limit int) ([]*ReputationScore, error) {
-	// This would require a GSI on reputation score
-	// For now, we'll use a scan with filter (not efficient for large datasets)
-	scanInput := &dynamodb.ScanInput{
-		TableName:        aws.String(rs.tableName),
-		FilterExpression: aws.String("SK = :sk AND Score BETWEEN :min AND :max"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":sk":  &types.AttributeValueMemberS{Value: skReputation},
-			":min": &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", minScore)},
-			":max": &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", maxScore)},
-		},
-		Limit: aws.Int32(safeIntToInt32(limit)),
+	if rs == nil || rs.db == nil {
+		return nil, fmt.Errorf("reputation scorer is not initialized")
+	}
+	if limit <= 0 {
+		limit = 100
 	}
 
-	result, err := rs.db.Scan(ctx, scanInput)
-	if err != nil {
+	var records []reputationScoreRecord
+	if err := rs.db.WithContext(ctx).
+		Model(&reputationScoreRecord{}).
+		Filter("SK", "=", skReputation).
+		Filter("Score", "BETWEEN", []any{minScore, maxScore}).
+		Limit(limit).
+		Scan(&records); err != nil {
 		return nil, fmt.Errorf("scan actors: %w", err)
 	}
 
-	scores := make([]*ReputationScore, 0, len(result.Items))
-	for _, item := range result.Items {
-		score, err := rs.parseReputationScore(item)
-		if err != nil {
-			continue
-		}
-		scores = append(scores, score)
+	scores := make([]*ReputationScore, 0, len(records))
+	for i := range records {
+		scores = append(scores, rs.scoreFromRecord(&records[i]))
 	}
 
 	return scores, nil
 }
 
-// CalculateReputationImpact calculates the reputation impact of a moderation decision
+// CalculateReputationImpact calculates the reputation impact of a moderation decision.
 func (rs *ReputationScorer) CalculateReputationImpact(decision *ModerationDecision) float64 {
 	impact := 0.0
 
@@ -393,49 +439,31 @@ func (rs *ReputationScorer) applyDecay(score *ReputationScore) *ReputationScore 
 }
 
 func (rs *ReputationScorer) saveScore(ctx context.Context, score *ReputationScore) error {
-	item := map[string]types.AttributeValue{
-		"PK":                 &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", score.ActorID)},
-		"SK":                 &types.AttributeValueMemberS{Value: skReputation},
-		"Score":              &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", score.Score)},
-		"Level":              &types.AttributeValueMemberS{Value: score.Level},
-		"ViolationCount":     &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", score.ViolationCount)},
-		"FalsePositiveCount": &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", score.FalsePositiveCount)},
-		"ContentCount":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", score.ContentCount)},
-		"UpdatedAt":          &types.AttributeValueMemberS{Value: score.UpdatedAt.Format(time.RFC3339)},
-
-		// GSI for querying by level
-		"gsi1PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("LEVEL#%s", score.Level)},
-		"gsi1SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("SCORE#%06.2f#%s", score.Score, score.ActorID)},
+	if rs == nil || rs.db == nil {
+		return fmt.Errorf("reputation scorer is not initialized")
+	}
+	if score == nil {
+		return fmt.Errorf("reputation score is nil")
 	}
 
-	// Add last violation if exists
-	if !score.LastViolation.IsZero() {
-		item["LastViolation"] = &types.AttributeValueMemberS{Value: score.LastViolation.Format(time.RFC3339)}
+	record := &reputationScoreRecord{
+		PK: reputationScorePK(score.ActorID),
+		SK: skReputation,
+
+		GSI1PK: fmt.Sprintf("LEVEL#%s", score.Level),
+		GSI1SK: fmt.Sprintf("SCORE#%06.2f#%s", score.Score, score.ActorID),
+
+		Score:              score.Score,
+		Level:              score.Level,
+		ViolationCount:     score.ViolationCount,
+		FalsePositiveCount: score.FalsePositiveCount,
+		ContentCount:       score.ContentCount,
+		LastViolation:      score.LastViolation,
+		Factors:            score.Factors,
+		UpdatedAt:          score.UpdatedAt,
 	}
 
-	// Add factors
-	if len(score.Factors) > 0 {
-		factorList := &types.AttributeValueMemberL{
-			Value: make([]types.AttributeValue, len(score.Factors)),
-		}
-		for i, factor := range score.Factors {
-			factorMap := map[string]types.AttributeValue{
-				"Factor":      &types.AttributeValueMemberS{Value: factor.Factor},
-				"Impact":      &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", factor.Impact)},
-				"Description": &types.AttributeValueMemberS{Value: factor.Description},
-			}
-			factorList.Value[i] = &types.AttributeValueMemberM{Value: factorMap}
-		}
-		item["Factors"] = factorList
-	}
-
-	putInput := &dynamodb.PutItemInput{
-		TableName: aws.String(rs.tableName),
-		Item:      item,
-	}
-
-	_, err := rs.db.PutItem(ctx, putInput)
-	if err != nil {
+	if err := rs.db.WithContext(ctx).Model(record).CreateOrUpdate(); err != nil {
 		return fmt.Errorf("save reputation score: %w", err)
 	}
 
@@ -443,177 +471,66 @@ func (rs *ReputationScorer) saveScore(ctx context.Context, score *ReputationScor
 }
 
 func (rs *ReputationScorer) recordEvent(ctx context.Context, actorID string, event ReputationEvent, impact float64) error {
+	if rs == nil || rs.db == nil {
+		return fmt.Errorf("reputation scorer is not initialized")
+	}
 	timestamp := event.Timestamp
 	if timestamp.IsZero() {
 		timestamp = time.Now()
 	}
 
-	item := map[string]types.AttributeValue{
-		"PK":          &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", actorID)},
-		"SK":          &types.AttributeValueMemberS{Value: fmt.Sprintf("EVENT#%d", timestamp.UnixNano())},
-		"EventType":   &types.AttributeValueMemberS{Value: event.EventType},
-		"Severity":    &types.AttributeValueMemberS{Value: string(event.Severity)},
-		"Description": &types.AttributeValueMemberS{Value: event.Description},
-		"Impact":      &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", impact)},
-		"Timestamp":   &types.AttributeValueMemberS{Value: timestamp.Format(time.RFC3339)},
-		"TTL":         &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", timestamp.Add(90*24*time.Hour).Unix())},
+	record := &reputationEventRecord{
+		PK: reputationScorePK(actorID),
+		SK: fmt.Sprintf("%s%d", skEventPrefix, timestamp.UnixNano()),
+
+		EventType:   event.EventType,
+		Severity:    event.Severity,
+		Description: event.Description,
+		Impact:      impact,
+		Timestamp:   timestamp,
+		TTL:         timestamp.Add(90 * 24 * time.Hour).Unix(),
 	}
 
-	putInput := &dynamodb.PutItemInput{
-		TableName: aws.String(rs.tableName),
-		Item:      item,
+	if err := rs.db.WithContext(ctx).Model(record).Create(); err != nil {
+		return fmt.Errorf("record event: %w", err)
 	}
 
-	_, err := rs.db.PutItem(ctx, putInput)
-	return err
+	return nil
 }
 
-func (rs *ReputationScorer) parseReputationScore(item map[string]types.AttributeValue) (*ReputationScore, error) {
-	score := &ReputationScore{
-		Factors: []ReputationFactor{},
-	}
-
-	// Parse all fields
-	rs.parseActorID(item, score)
-	rs.parseNumericFields(item, score)
-	rs.parseStringFields(item, score)
-	rs.parseTimestamps(item, score)
-	rs.parseFactors(item, score)
-
-	return score, nil
-}
-
-// parseActorID extracts the ActorID from the PK field
-func (rs *ReputationScorer) parseActorID(item map[string]types.AttributeValue, score *ReputationScore) {
-	if pk, ok := item["PK"].(*types.AttributeValueMemberS); ok {
-		score.ActorID = pk.Value[6:] // Remove "ACTOR#" prefix
-	}
-}
-
-// parseNumericFields parses all numeric fields from the item
-func (rs *ReputationScorer) parseNumericFields(item map[string]types.AttributeValue, score *ReputationScore) {
-	rs.parseFloatField(item, "Score", &score.Score)
-	rs.parseIntField(item, "ViolationCount", &score.ViolationCount)
-	rs.parseIntField(item, "FalsePositiveCount", &score.FalsePositiveCount)
-	rs.parseIntField(item, "ContentCount", &score.ContentCount)
-}
-
-// parseFloatField parses a single float field
-func (rs *ReputationScorer) parseFloatField(item map[string]types.AttributeValue, key string, target *float64) {
-	if v, ok := item[key].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%f", target); err != nil {
-			rs.logger.Warn(fmt.Sprintf("failed to parse %s", key), zap.String("value", v.Value), zap.Error(err))
-		}
-	}
-}
-
-// parseIntField parses a single integer field
-func (rs *ReputationScorer) parseIntField(item map[string]types.AttributeValue, key string, target *int) {
-	if v, ok := item[key].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%d", target); err != nil {
-			rs.logger.Warn(fmt.Sprintf("failed to parse %s", key), zap.String("value", v.Value), zap.Error(err))
-		}
-	}
-}
-
-// parseStringFields parses all string fields from the item
-func (rs *ReputationScorer) parseStringFields(item map[string]types.AttributeValue, score *ReputationScore) {
-	if v, ok := item["Level"].(*types.AttributeValueMemberS); ok {
-		score.Level = v.Value
-	}
-}
-
-// parseTimestamps parses timestamp fields from the item
-func (rs *ReputationScorer) parseTimestamps(item map[string]types.AttributeValue, score *ReputationScore) {
-	rs.parseTimestamp(item, "UpdatedAt", &score.UpdatedAt)
-	rs.parseTimestamp(item, "LastViolation", &score.LastViolation)
-}
-
-// parseTimestamp parses a single timestamp field
-func (rs *ReputationScorer) parseTimestamp(item map[string]types.AttributeValue, key string, target *time.Time) {
-	if v, ok := item[key].(*types.AttributeValueMemberS); ok {
-		*target, _ = time.Parse(time.RFC3339, v.Value)
-	}
-}
-
-// parseFactors parses the reputation factors from the item
-func (rs *ReputationScorer) parseFactors(item map[string]types.AttributeValue, score *ReputationScore) {
-	v, ok := item["Factors"].(*types.AttributeValueMemberL)
-	if !ok {
-		return
-	}
-
-	for _, factorItem := range v.Value {
-		if factor := rs.parseSingleFactor(factorItem); factor != nil {
-			score.Factors = append(score.Factors, *factor)
-		}
-	}
-}
-
-// parseSingleFactor parses a single reputation factor
-func (rs *ReputationScorer) parseSingleFactor(factorItem types.AttributeValue) *ReputationFactor {
-	factorMap, ok := factorItem.(*types.AttributeValueMemberM)
-	if !ok {
+func (rs *ReputationScorer) scoreFromRecord(record *reputationScoreRecord) *ReputationScore {
+	if record == nil {
 		return nil
 	}
 
-	factor := &ReputationFactor{}
-
-	// Parse factor fields
-	rs.parseFactorString(factorMap.Value, "Factor", &factor.Factor)
-	rs.parseFactorFloat(factorMap.Value, "Impact", &factor.Impact)
-	rs.parseFactorString(factorMap.Value, "Description", &factor.Description)
-
-	return factor
-}
-
-// parseFactorString parses a string field from a factor
-func (rs *ReputationScorer) parseFactorString(factorMap map[string]types.AttributeValue, key string, target *string) {
-	if v, ok := factorMap[key].(*types.AttributeValueMemberS); ok {
-		*target = v.Value
+	score := &ReputationScore{
+		ActorID:            strings.TrimPrefix(record.PK, pkActorPrefix),
+		Score:              record.Score,
+		Level:              record.Level,
+		ViolationCount:     record.ViolationCount,
+		FalsePositiveCount: record.FalsePositiveCount,
+		ContentCount:       record.ContentCount,
+		LastViolation:      record.LastViolation,
+		Factors:            record.Factors,
+		UpdatedAt:          record.UpdatedAt,
 	}
-}
-
-// parseFactorFloat parses a float field from a factor
-func (rs *ReputationScorer) parseFactorFloat(factorMap map[string]types.AttributeValue, key string, target *float64) {
-	if v, ok := factorMap[key].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%f", target); err != nil {
-			rs.logger.Warn(fmt.Sprintf("failed to parse factor %s", key), zap.String("value", v.Value), zap.Error(err))
-		}
+	if score.Factors == nil {
+		score.Factors = []ReputationFactor{}
 	}
+	return score
 }
 
-// ReputationHistoryItem represents a reputation event in history
+func reputationScorePK(actorID string) string {
+	return fmt.Sprintf("%s%s", pkActorPrefix, actorID)
+}
+
+// ReputationHistoryItem represents a reputation event in history.
 type ReputationHistoryItem struct {
 	Timestamp   time.Time
 	EventType   string
 	Severity    Severity
 	Description string
 	Impact      float64
-}
-
-func (rs *ReputationScorer) parseHistoryItem(item map[string]types.AttributeValue) (*ReputationHistoryItem, error) {
-	histItem := &ReputationHistoryItem{}
-
-	if v, ok := item["EventType"].(*types.AttributeValueMemberS); ok {
-		histItem.EventType = v.Value
-	}
-	if v, ok := item["Severity"].(*types.AttributeValueMemberS); ok {
-		histItem.Severity = Severity(v.Value)
-	}
-	if v, ok := item["Description"].(*types.AttributeValueMemberS); ok {
-		histItem.Description = v.Value
-	}
-	if v, ok := item["Impact"].(*types.AttributeValueMemberN); ok {
-		if _, err := fmt.Sscanf(v.Value, "%f", &histItem.Impact); err != nil {
-			rs.logger.Warn("failed to parse Impact", zap.String("value", v.Value), zap.Error(err))
-		}
-	}
-	if v, ok := item["Timestamp"].(*types.AttributeValueMemberS); ok {
-		histItem.Timestamp, _ = time.Parse(time.RFC3339, v.Value)
-	}
-
-	return histItem, nil
 }
 
 type cachedScore struct {

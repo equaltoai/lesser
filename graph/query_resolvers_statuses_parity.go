@@ -117,8 +117,8 @@ func (r *queryResolver) StatusHistory(ctx context.Context, id string, limit *int
 	}
 
 	currentSpoiler := ""
-	if status.Note != nil && status.Note.Get() != nil {
-		currentSpoiler = status.Note.Get().Summary
+	if status.Note != nil {
+		currentSpoiler = status.Note.Summary
 	}
 
 	edits := []*model.StatusEdit{
@@ -280,8 +280,8 @@ func (r *queryResolver) TranslateStatus(ctx context.Context, id string, targetLa
 	}
 
 	spoilerText := ""
-	if status.Note != nil && status.Note.Get() != nil {
-		spoilerText = status.Note.Get().Summary
+	if status.Note != nil {
+		spoilerText = status.Note.Summary
 	}
 
 	sourceLang := strings.TrimSpace(status.Language)

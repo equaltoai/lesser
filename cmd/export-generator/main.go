@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -17,19 +18,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 // ExportProcessor handles data export generation from SQS messages
@@ -210,7 +212,7 @@ func (a exportStorageAdapter) Media() mediaRepo {
 var (
 	processor            *ExportProcessor
 	mustInitializeLambda = common.MustInitializeLambda
-	getDynamormClient    = dynamorm.GetClient
+	getDynamormClient    = theorydb.GetClient
 	newRepoFactory       = factory.NewRepositoryFactory
 	newExportRepo        = repositories.NewExportRepository
 	newTrackingRepo      = repositories.NewTrackingRepository
@@ -283,101 +285,118 @@ func main() {
 		processor.baseURL = "https://example.com" // Default
 	}
 
-	startLambda(func(ctx context.Context, event events.SQSEvent) (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				requestID := fmt.Sprintf("export-%d", time.Now().UnixNano())
-				processor.logger.Error("panic in export generator handler",
-					zap.String("request_id", requestID),
-					zap.Any("panic", r),
-					zap.Stack("stack"))
-				err = fmt.Errorf("panic recovered in export-generator: %v", r)
-			}
-		}()
+	app := apptheory.New()
 
-		liftCtx := &lift.Context{
-			Request:   &lift.Request{},
-			RequestID: fmt.Sprintf("export-%d", time.Now().UnixNano()),
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	queueName := naming.ResourceNameWithApp(appName, "export-processor-queue", stage)
+
+	app.SQS(queueName, func(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+		if processor == nil {
+			return fmt.Errorf("export generator processor not initialized")
 		}
-		return processor.HandleSQSWithContext(ctx, liftCtx, event)
+		return processor.HandleSQSMessage(ctx, msg)
+	})
+
+	startLambda(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
 }
 
-// HandleSQSWithContext implements the SQS handler interface for Lift with explicit context
-func (ep *ExportProcessor) HandleSQSWithContext(ctx context.Context, liftCtx *lift.Context, event events.SQSEvent) error {
+func (ep *ExportProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message events.SQSMessage) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			ep.logger.Error("panic in export generator handler",
+				zap.String("request_id", requestID),
+				zap.String("message_id", message.MessageId),
+				zap.Any("panic", r),
+				zap.Stack("stack"),
+			)
+			err = fmt.Errorf("panic recovered in export-generator: %v", r)
+		}
+	}()
+
 	// Initialize AWS clients
 	if ep.s3Client == nil || ep.s3PresignClient == nil {
-		if err := ep.initializeAWSClients(ctx); err != nil {
-			ep.logger.Error("failed to initialize AWS clients", zap.Error(err))
-			return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
+		if err := ep.initializeAWSClients(runCtx); err != nil {
+			ep.logger.Error("failed to initialize AWS clients",
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
+			return err
 		}
 	}
 
-	ep.logger.Info("processing export generation batch",
-		zap.String("request_id", liftCtx.GetRequestID()),
-		zap.Int("message_count", len(event.Records)))
-
-	// Process each message
-	for _, message := range event.Records {
-		// Try parsing as services.ExportJobMessage first (new format)
-		var exportMsg services.ExportJobMessage
-		if err := common.ParseRequestBody([]byte(message.Body), &exportMsg); err == nil {
-			// Convert to legacy format for processing
-			var dateRange *DateRange
-			if exportMsg.DateRange != nil {
-				dateRange = &DateRange{
-					Start: exportMsg.DateRange.Start,
-					End:   exportMsg.DateRange.End,
-				}
+	// Try parsing as services.ExportJobMessage first (new format)
+	var exportMsg services.ExportJobMessage
+	if err := common.ParseRequestBody([]byte(message.Body), &exportMsg); err == nil {
+		// Convert to legacy format for processing
+		var dateRange *DateRange
+		if exportMsg.DateRange != nil {
+			dateRange = &DateRange{
+				Start: exportMsg.DateRange.Start,
+				End:   exportMsg.DateRange.End,
 			}
-
-			exportEvent := ExportGeneratorEvent{
-				ExportID:     exportMsg.ExportID,
-				Username:     exportMsg.Username,
-				Type:         exportMsg.Type,
-				Format:       exportMsg.Format,
-				Options:      exportMsg.Options,
-				IncludeMedia: exportMsg.IncludeMedia,
-				DateRange:    dateRange,
-			}
-			if err := ep.processExportJob(ctx, exportEvent); err != nil {
-				ep.logger.Error("failed to process export job",
-					zap.String("export_id", exportEvent.ExportID),
-					zap.String("username", exportEvent.Username),
-					zap.String("request_id", liftCtx.GetRequestID()),
-					zap.Error(err))
-				// Update job status as failed
-				if updateErr := ep.exportRepo.UpdateExportStatus(ctx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
-					ep.logger.Error("failed to update export status to failed",
-						zap.String("export_id", exportEvent.ExportID),
-						zap.Error(updateErr))
-				}
-			}
-			continue
 		}
 
-		// Fallback to legacy format
-		var exportEvent ExportGeneratorEvent
-		if err := common.ParseRequestBody([]byte(message.Body), &exportEvent); err != nil {
-			ep.logger.Error("failed to unmarshal event",
-				zap.String("message_id", message.MessageId),
-				zap.String("request_id", liftCtx.GetRequestID()),
-				zap.Error(err))
-			continue
+		exportEvent := ExportGeneratorEvent{
+			ExportID:     exportMsg.ExportID,
+			Username:     exportMsg.Username,
+			Type:         exportMsg.Type,
+			Format:       exportMsg.Format,
+			Options:      exportMsg.Options,
+			IncludeMedia: exportMsg.IncludeMedia,
+			DateRange:    dateRange,
 		}
-
-		if err := ep.processExportJob(ctx, exportEvent); err != nil {
+		if err := ep.processExportJob(runCtx, exportEvent); err != nil {
 			ep.logger.Error("failed to process export job",
 				zap.String("export_id", exportEvent.ExportID),
 				zap.String("username", exportEvent.Username),
-				zap.String("request_id", liftCtx.GetRequestID()),
-				zap.Error(err))
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
 			// Update job status as failed
-			if updateErr := ep.exportRepo.UpdateExportStatus(ctx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+			if updateErr := ep.exportRepo.UpdateExportStatus(runCtx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
 				ep.logger.Error("failed to update export status to failed",
 					zap.String("export_id", exportEvent.ExportID),
-					zap.Error(updateErr))
+					zap.Error(updateErr),
+				)
 			}
+		}
+		return nil
+	}
+
+	// Fallback to legacy format
+	var exportEvent ExportGeneratorEvent
+	if err := common.ParseRequestBody([]byte(message.Body), &exportEvent); err != nil {
+		ep.logger.Error("failed to unmarshal event",
+			zap.String("message_id", message.MessageId),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return nil
+	}
+
+	if err := ep.processExportJob(runCtx, exportEvent); err != nil {
+		ep.logger.Error("failed to process export job",
+			zap.String("export_id", exportEvent.ExportID),
+			zap.String("username", exportEvent.Username),
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		// Update job status as failed
+		if updateErr := ep.exportRepo.UpdateExportStatus(runCtx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+			ep.logger.Error("failed to update export status to failed",
+				zap.String("export_id", exportEvent.ExportID),
+				zap.Error(updateErr),
+			)
 		}
 	}
 

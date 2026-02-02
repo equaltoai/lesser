@@ -7,27 +7,27 @@ import (
 
 // TrendingHashtag tracks trending hashtags with usage statistics
 type TrendingHashtag struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Key fields - EXACT pattern from legacy: PK=`TRENDING#date`, SK=`HASHTAG#score#tag`
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI fields for trending queries
-	GSI8PK string `dynamorm:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK string `dynamorm:"index:gsi8,sk,attr:gsi8SK"`
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"`
 
 	// Business fields from legacy
-	Hashtag   string    `dynamorm:"attr:hashtag" json:"hashtag"`
-	Date      string    `dynamorm:"attr:date" json:"date"`   // YYYY-MM-DD format
-	Score     float64   `dynamorm:"attr:score" json:"score"` // trending score
-	UseCount  int64     `dynamorm:"attr:useCount" json:"use_count"`
-	UserCount int64     `dynamorm:"attr:userCount" json:"user_count"` // unique users
-	History   []float64 `dynamorm:"attr:history" json:"history"`      // 7-day trend
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Hashtag   string    `theorydb:"attr:hashtag" json:"hashtag"`
+	Date      string    `theorydb:"attr:date" json:"date"`   // YYYY-MM-DD format
+	Score     float64   `theorydb:"attr:score" json:"score"` // trending score
+	UseCount  int64     `theorydb:"attr:useCount" json:"use_count"`
+	UserCount int64     `theorydb:"attr:userCount" json:"user_count"` // unique users
+	History   []float64 `theorydb:"attr:history" json:"history"`      // 7-day trend
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL field - 30 days as per legacy
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing TrendingHashtag.

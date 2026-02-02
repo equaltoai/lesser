@@ -21,7 +21,7 @@ rest_api_patterns:
     pattern_name: "REST Endpoint Pattern"
     
     handler_structure:
-      location: "cmd/api/lift/handlers.go"
+      location: "cmd/api/handlers/*.go"
       pattern: |
         func (h *Handler) HandleEndpoint(ctx *lift.Context) error {
             // 1. Parse and validate input

@@ -2,11 +2,11 @@
 package naming
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
-
-	liftnaming "github.com/pay-theory/lift/pkg/naming"
 )
 
 // Stage identifies a deployment stage.
@@ -114,7 +114,68 @@ func GlobalResourceName(app string, stage Stage, resource string, accountID stri
 
 // S3BucketName returns a deterministic S3 bucket name, including account and region for global uniqueness.
 func S3BucketName(app string, stage Stage, bucketPurpose string, accountID string, region string) string {
-	return liftnaming.SanitizeS3BucketName(GlobalResourceName(app, stage, bucketPurpose, accountID, region))
+	return sanitizeS3BucketName(GlobalResourceName(app, stage, bucketPurpose, accountID, region))
+}
+
+const defaultBucketName = "bucket"
+
+// sanitizeS3BucketName converts an arbitrary name into a valid S3 bucket name.
+//
+// The output is intentionally restricted to lowercase letters, numbers, and hyphens
+// to avoid dot-related edge cases (e.g., TLS wildcard and legacy behavior).
+func sanitizeS3BucketName(name string) string {
+	raw := strings.ToLower(strings.TrimSpace(name))
+	if raw == "" {
+		raw = defaultBucketName
+	}
+
+	out := make([]byte, 0, len(raw))
+	lastDash := false
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			out = append(out, byte(r))
+			lastDash = false
+			continue
+		}
+
+		if !lastDash {
+			out = append(out, '-')
+			lastDash = true
+		}
+	}
+
+	safe := strings.Trim(string(out), "-")
+	if safe == "" {
+		safe = defaultBucketName
+	}
+	if len(safe) < 3 {
+		safe += "-bucket"
+	}
+
+	if len(safe) > 63 {
+		sum := sha256.Sum256([]byte(raw))
+		suffix := hex.EncodeToString(sum[:])[:8]
+
+		// Leave room for "-<hash>".
+		maxBase := 63 - 1 - len(suffix)
+		if maxBase < 1 {
+			maxBase = 1
+		}
+		base := strings.Trim(safe[:maxBase], "-")
+		if base == "" {
+			base = defaultBucketName
+		}
+		safe = base + "-" + suffix
+	}
+
+	safe = strings.Trim(safe, "-")
+	if len(safe) < 3 {
+		// Worst-case: if trimming removed everything, fall back to a stable name.
+		sum := sha256.Sum256([]byte(raw))
+		safe = "bucket-" + hex.EncodeToString(sum[:])[:8]
+	}
+
+	return safe
 }
 
 // StageDomain returns the stage domain. Live uses the base domain, other stages use "<stage>.<base-domain>".

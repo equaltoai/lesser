@@ -13,9 +13,9 @@ import (
 func TestErrorVariables(t *testing.T) {
 	// Test that all error variables are properly initialized
 	tests := []struct {
-		name     string
-		err      error
-		notNil   bool
+		name   string
+		err    error
+		notNil bool
 	}{
 		{
 			name:   "ErrBatchProcessingFailed",
@@ -112,9 +112,9 @@ func TestErrorVariables(t *testing.T) {
 func TestErrorMessages(t *testing.T) {
 	// Test that error messages are meaningful
 	tests := []struct {
-		name            string
-		err             error
-		containsSubstr  string
+		name           string
+		err            error
+		containsSubstr string
 	}{
 		{
 			name:           "ErrChannelsMustBeArray message",

@@ -103,4 +103,3 @@ func TestRound12ReputationParity_Mutations_InvalidDocumentsAndValidation(t *test
 	require.NotNil(t, converted.From)
 	require.NotNil(t, converted.To)
 }
-

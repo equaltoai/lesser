@@ -14,9 +14,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -268,7 +268,7 @@ func TestRunInitDeploy_ErrorBranches_Round12(t *testing.T) {
 		getDynamormClientFn = baseDyn
 		newRepositoryFactoryFn = baseFactory
 		hashPasswordFn = baseHash
-}
+	}
 
 	cases := []struct {
 		name  string

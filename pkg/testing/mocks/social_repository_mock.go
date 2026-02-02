@@ -101,7 +101,6 @@ func (m *MockSocialRepository) GetMutedUsers(ctx context.Context, actor string, 
 	return args.Get(0).([]*storage.Mute), args.String(1), args.Error(2)
 }
 
-
 // CreateAnnounce mocks the CreateAnnounce method
 func (m *MockSocialRepository) CreateAnnounce(ctx context.Context, announce *storage.Announce) error {
 	args := m.Called(ctx, announce)

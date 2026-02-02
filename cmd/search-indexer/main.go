@@ -3,24 +3,26 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
 
 type searchCostRecorder interface {
@@ -56,62 +58,11 @@ func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
 	}
 }
 
-// HandleStream processes DynamoDB stream events for search indexing.
-func (si *SearchIndexer) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	requestID := ctx.GetRequestID()
-
-	si.logger.Info("processing search indexer stream event",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Filter and process indexable records
-	indexableRecords := si.filterIndexable(event.Records)
-
-	si.logger.Info("filtered indexable records",
-		zap.String("request_id", requestID),
-		zap.Int("total_records", len(event.Records)),
-		zap.Int("indexable_records", len(indexableRecords)),
-	)
-
-	// Process each indexable record
-	var errors []error
-	for _, record := range indexableRecords {
-		if err := si.processRecord(ctx, record); err != nil {
-			si.logger.Error("failed to process indexable record",
-				zap.String("request_id", requestID),
-				zap.String("event_id", record.EventID),
-				zap.String("event_name", record.EventName),
-				zap.Error(err),
-			)
-			errors = append(errors, err)
-			// Continue processing other records
-		}
+func (si *SearchIndexer) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if !si.isIndexableRecord(record) {
+		return nil
 	}
-
-	// Return error if there were any failures
-	if len(errors) > 0 {
-		si.logger.Error("partial batch failure during search indexing",
-			zap.String("request_id", requestID),
-			zap.Int("failed_records", len(errors)),
-			zap.Int("total_indexable_records", len(indexableRecords)),
-		)
-		return pkgErrors.SearchIndexerPartialBatchFailure()
-	}
-
-	return nil
-}
-
-func (si *SearchIndexer) filterIndexable(records []events.DynamoDBEventRecord) []events.DynamoDBEventRecord {
-	var indexable []events.DynamoDBEventRecord
-
-	for _, record := range records {
-		if si.isIndexableRecord(record) {
-			indexable = append(indexable, record)
-		}
-	}
-
-	return indexable
+	return si.processRecord(ctx, record)
 }
 
 func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bool {
@@ -126,7 +77,7 @@ func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bo
 
 	// Check if this is indexable content
 	var item struct {
-		PK      string `dynamorm:"pk"`
+		PK      string `theorydb:"pk"`
 		Type    string `json:"type"`
 		Content string `json:"content"`
 	}
@@ -149,8 +100,14 @@ func (si *SearchIndexer) isIndexableRecord(record events.DynamoDBEventRecord) bo
 	}
 }
 
-func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (si *SearchIndexer) processRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
 	startTime := time.Now()
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 
 	// Extract indexable content from the record
 	content, err := si.extractIndexableContent(record)
@@ -161,7 +118,7 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	// Initialize cost tracking for indexing operation
 	costData := &models.SearchCostTracking{
 		UserID:        content.ActorID,
-		RequestID:     ctx.GetRequestID(),
+		RequestID:     requestID,
 		OperationType: "search_indexing",
 		SearchType:    "indexing",
 		Query:         content.Text,
@@ -173,9 +130,9 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	var writeCount int64
 
 	// Create search index entry
-	if err := si.createSearchIndex(ctx, content); err != nil {
+	if err := si.createSearchIndex(runCtx, content); err != nil {
 		// Record failed indexing cost
-		si.recordIndexingCost(ctx, costData, startTime, 0, writeCount, err)
+		si.recordIndexingCost(runCtx, costData, startTime, 0, writeCount, err)
 		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to create search index")
 	}
 
@@ -187,7 +144,7 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	writeCount += int64(len(content.Tags)) // Tag indexes
 
 	// Track successful indexing
-	si.recordIndexingCost(ctx, costData, startTime, 1, writeCount, nil)
+	si.recordIndexingCost(runCtx, costData, startTime, 1, writeCount, nil)
 
 	si.logger.Debug("indexed content for search",
 		zap.String("content_id", content.ID),
@@ -212,8 +169,8 @@ type IndexableContent struct {
 
 func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventRecord) (*IndexableContent, error) {
 	var item struct {
-		PK          string   `dynamorm:"pk"`
-		SK          string   `dynamorm:"sk"`
+		PK          string   `theorydb:"pk"`
+		SK          string   `theorydb:"sk"`
 		Type        string   `json:"type"`
 		Content     string   `json:"content"`
 		Summary     string   `json:"summary"`
@@ -284,11 +241,11 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 	}, nil
 }
 
-func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *IndexableContent) error {
+func (si *SearchIndexer) createSearchIndex(ctx context.Context, content *IndexableContent) error {
 	// Create search index record with full-text search capabilities
 	searchRecord := struct {
-		PK          string   `dynamorm:"pk"`
-		SK          string   `dynamorm:"sk"`
+		PK          string   `theorydb:"pk"`
+		SK          string   `theorydb:"sk"`
 		Type        string   `json:"type"`
 		ContentID   string   `json:"content_id"`
 		ContentType string   `json:"content_type"`
@@ -300,7 +257,7 @@ func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *Indexable
 		WordCount   int      `json:"word_count"`
 		CreatedAt   string   `json:"created_at"`
 		IndexedAt   string   `json:"indexed_at"`
-		TTL         int64    `dynamorm:"ttl"`
+		TTL         int64    `theorydb:"ttl"`
 	}{
 		PK:          fmt.Sprintf("SEARCH#%s", content.Type),
 		SK:          fmt.Sprintf("CONTENT#%s#%s", content.CreatedAt.Format(common.DateFormat), content.ID),
@@ -318,7 +275,6 @@ func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *Indexable
 		TTL:         time.Now().Add(365 * 24 * time.Hour).Unix(), // 1 year retention
 	}
 
-	// Store the search index record using Lift context
 	if err := si.db.WithContext(ctx).Model(&searchRecord).Create(); err != nil {
 		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to store search index")
 	}
@@ -335,17 +291,17 @@ func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *Indexable
 	return nil
 }
 
-func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *IndexableContent) error {
+func (si *SearchIndexer) createAdditionalIndexes(ctx context.Context, content *IndexableContent) error {
 	// Create actor-specific index for searching user's content
 	if content.ActorID != "" {
 		actorIndex := struct {
-			PK        string `dynamorm:"pk"`
-			SK        string `dynamorm:"sk"`
+			PK        string `theorydb:"pk"`
+			SK        string `theorydb:"sk"`
 			Type      string `json:"type"`
 			ContentID string `json:"content_id"`
 			Text      string `json:"text"`
 			CreatedAt string `json:"created_at"`
-			TTL       int64  `dynamorm:"ttl"`
+			TTL       int64  `theorydb:"ttl"`
 		}{
 			PK:        fmt.Sprintf("SEARCH#ACTOR#%s", content.ActorID),
 			SK:        fmt.Sprintf("CONTENT#%s", content.ID),
@@ -365,14 +321,14 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *Ind
 	for _, tag := range content.Tags {
 		if tag != "" {
 			tagIndex := struct {
-				PK        string `dynamorm:"pk"`
-				SK        string `dynamorm:"sk"`
+				PK        string `theorydb:"pk"`
+				SK        string `theorydb:"sk"`
 				Type      string `json:"type"`
 				Tag       string `json:"tag"`
 				ContentID string `json:"content_id"`
 				ActorID   string `json:"actor_id"`
 				CreatedAt string `json:"created_at"`
-				TTL       int64  `dynamorm:"ttl"`
+				TTL       int64  `theorydb:"ttl"`
 			}{
 				PK:        fmt.Sprintf("SEARCH#TAG#%s", strings.ToLower(tag)),
 				SK:        fmt.Sprintf("CONTENT#%s", content.ID),
@@ -398,7 +354,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *Ind
 }
 
 // recordIndexingCost records the cost of indexing operations
-func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, writeCount int64, err error) {
+func (si *SearchIndexer) recordIndexingCost(ctx context.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, writeCount int64, err error) {
 	// Complete cost tracking
 	responseTime := time.Since(startTime)
 	costData.ResponseTimeMs = responseTime.Milliseconds()
@@ -407,7 +363,7 @@ func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.
 	costData.DynamoQueries = 1 // Indexing typically involves create operations
 
 	// Track costs using centralized tracker
-	if err := si.unifiedTracker.TrackDynamoWrite(ctx.Request.Context(), si.tableName, writeCount); err != nil {
+	if err := si.unifiedTracker.TrackDynamoWrite(ctx, si.tableName, writeCount); err != nil {
 		si.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
@@ -460,7 +416,7 @@ var (
 
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	lambdaStartFn              = lambda.Start
 	unmarshalItemFn            = stream.UnmarshalItem
 	runAsyncFn                 = func(fn func()) { go fn() }
@@ -503,17 +459,22 @@ func initializeSearchIndexer() {
 }
 
 func runSearchIndexer() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
+
+	app.DynamoDB(tableName, handleSearchIndexerStreamRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
+}
 
-	lambdaStartFn(app.HandleRequest)
+func handleSearchIndexerStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("search indexer not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }

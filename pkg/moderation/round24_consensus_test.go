@@ -134,7 +134,7 @@ func TestConsensusEngine_CalculateConsensus_ErrorsAndSuccess(t *testing.T) {
 	engine := NewConsensusEngine(store, nil)
 
 	event := &ModerationEvent{
-		ID:       "e1",
+		ID:        "e1",
 		ObjectID:  "obj1",
 		Severity:  SeverityHigh,
 		Created:   time.Now(),

@@ -106,4 +106,3 @@ func authUIInlineStyleHashes() []string {
 		"'sha256-Pf213LDBtMPs63dfYF449lKLszal3Ml4UCtfrnNBROE='",
 	}
 }
-

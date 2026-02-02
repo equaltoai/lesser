@@ -16,11 +16,11 @@ import (
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/marshalers"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 

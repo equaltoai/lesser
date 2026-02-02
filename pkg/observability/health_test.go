@@ -10,23 +10,21 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	dynamodbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )
 
-type dynamodbDescribeStub struct {
-	out   *dynamodb.DescribeTableOutput
+type tableExistsStub struct {
+	exists bool
 	err   error
 	calls int
 }
 
-func (s *dynamodbDescribeStub) DescribeTable(_ context.Context, _ *dynamodb.DescribeTableInput, _ ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error) {
+func (s *tableExistsStub) TableExists(_ string) (bool, error) {
 	s.calls++
-	return s.out, s.err
+	return s.exists, s.err
 }
 
 type sqsAttributesStub struct {
@@ -43,19 +41,7 @@ func (s *sqsAttributesStub) GetQueueAttributes(_ context.Context, _ *sqs.GetQueu
 func TestHealthChecker_Handlers(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
-	dynamo := &dynamodbDescribeStub{
-		out: &dynamodb.DescribeTableOutput{
-			Table: &dynamodbTypes.TableDescription{
-				TableStatus:    dynamodbTypes.TableStatusActive,
-				ItemCount:      aws.Int64(10),
-				TableSizeBytes: aws.Int64(1024),
-				ProvisionedThroughput: &dynamodbTypes.ProvisionedThroughputDescription{
-					ReadCapacityUnits:  aws.Int64(1),
-					WriteCapacityUnits: aws.Int64(1),
-				},
-			},
-		},
-	}
+	dynamo := &tableExistsStub{exists: true}
 	sqsStub := &sqsAttributesStub{
 		out: &sqs.GetQueueAttributesOutput{
 			Attributes: map[string]string{
@@ -68,7 +54,7 @@ func TestHealthChecker_Handlers(t *testing.T) {
 
 	hc := &HealthChecker{
 		logger:       logger,
-		dynamoClient: dynamo,
+		tableChecker: dynamo,
 		sqsClient:    sqsStub,
 		service:      "svc",
 		version:      "v1",
@@ -128,17 +114,11 @@ func TestHealthChecker_Handlers(t *testing.T) {
 func TestHealthChecker_CacheAndHelpers(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
-	dynamo := &dynamodbDescribeStub{
-		out: &dynamodb.DescribeTableOutput{
-			Table: &dynamodbTypes.TableDescription{
-				TableStatus: dynamodbTypes.TableStatusActive,
-			},
-		},
-	}
+	dynamo := &tableExistsStub{exists: true}
 
 	hc := &HealthChecker{
 		logger:       logger,
-		dynamoClient: dynamo,
+		tableChecker: dynamo,
 		service:      "svc",
 		version:      "v1",
 		lastChecks:   make(map[string]HealthCheck),

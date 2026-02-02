@@ -11,61 +11,61 @@ import (
 
 // OAuthAuthSession represents an OAuth authorization session during the auth flow
 type OAuthAuthSession struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys for authorization sessions
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // OAUTH_AUTH#sessionID
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // SESSION#sessionID
+	PK string `theorydb:"pk,attr:PK" json:"-"` // OAUTH_AUTH#sessionID
+	SK string `theorydb:"sk,attr:SK" json:"-"` // SESSION#sessionID
 
 	// GSI1 - User sessions lookup (optional - for authenticated users)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // created_at#sessionID
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // USER_OAUTH#username
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // created_at#sessionID
 
 	// GSI2 - State lookup for OAuth flow
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // sessionID
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // OAUTH_STATE#state
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // sessionID
 
 	// Core session data
-	SessionID string `dynamorm:"attr:sessionID" json:"session_id"`
-	State     string `dynamorm:"attr:state" json:"state,omitempty"` // OAuth state parameter
+	SessionID string `theorydb:"attr:sessionID" json:"session_id"`
+	State     string `theorydb:"attr:state" json:"state,omitempty"` // OAuth state parameter
 
 	// OAuth flow data
-	ClientID            string   `dynamorm:"attr:clientID" json:"client_id"`
-	RedirectURI         string   `dynamorm:"attr:redirectURI" json:"redirect_uri"`
-	Scopes              []string `dynamorm:"attr:scopes" json:"scopes,omitempty"`
-	CodeChallenge       string   `dynamorm:"attr:codeChallenge" json:"code_challenge,omitempty"`              // PKCE
-	CodeChallengeMethod string   `dynamorm:"attr:codeChallengeMethod" json:"code_challenge_method,omitempty"` // PKCE method
+	ClientID            string   `theorydb:"attr:clientID" json:"client_id"`
+	RedirectURI         string   `theorydb:"attr:redirectURI" json:"redirect_uri"`
+	Scopes              []string `theorydb:"attr:scopes" json:"scopes,omitempty"`
+	CodeChallenge       string   `theorydb:"attr:codeChallenge" json:"code_challenge,omitempty"`              // PKCE
+	CodeChallengeMethod string   `theorydb:"attr:codeChallengeMethod" json:"code_challenge_method,omitempty"` // PKCE method
 
 	// User data (populated after login)
-	Username     string     `dynamorm:"attr:username" json:"username,omitempty"`          // Set after user authenticates
-	IsAuthorized bool       `dynamorm:"attr:isAuthorized" json:"is_authorized"`           // User has authorized the app
-	AuthorizedAt *time.Time `dynamorm:"attr:authorizedAt" json:"authorized_at,omitempty"` // When user authorized
+	Username     string     `theorydb:"attr:username" json:"username,omitempty"`          // Set after user authenticates
+	IsAuthorized bool       `theorydb:"attr:isAuthorized" json:"is_authorized"`           // User has authorized the app
+	AuthorizedAt *time.Time `theorydb:"attr:authorizedAt" json:"authorized_at,omitempty"` // When user authorized
 
 	// Security and tracking
-	IPAddress string `dynamorm:"attr:ipAddress" json:"ip_address,omitempty"`
-	UserAgent string `dynamorm:"attr:userAgent" json:"user_agent,omitempty"`
-	DeviceID  string `dynamorm:"attr:deviceID" json:"device_id,omitempty"`
+	IPAddress string `theorydb:"attr:ipAddress" json:"ip_address,omitempty"`
+	UserAgent string `theorydb:"attr:userAgent" json:"user_agent,omitempty"`
+	DeviceID  string `theorydb:"attr:deviceID" json:"device_id,omitempty"`
 
 	// Session flow tracking
-	FlowStep  string                 `dynamorm:"attr:flowStep" json:"flow_step"`             // login, consent, authorized, error
-	FlowData  map[string]interface{} `dynamorm:"attr:flowData" json:"flow_data,omitempty"`   // Additional flow context
-	ReturnURL string                 `dynamorm:"attr:returnURL" json:"return_url,omitempty"` // URL to return to after login
+	FlowStep  string                 `theorydb:"attr:flowStep" json:"flow_step"`             // login, consent, authorized, error
+	FlowData  map[string]interface{} `theorydb:"attr:flowData" json:"flow_data,omitempty"`   // Additional flow context
+	ReturnURL string                 `theorydb:"attr:returnURL" json:"return_url,omitempty"` // URL to return to after login
 
 	// Security measures
-	CSRFToken    string `dynamorm:"attr:csrfToken" json:"csrf_token"`                 // CSRF protection
-	SessionNonce string `dynamorm:"attr:sessionNonce" json:"session_nonce,omitempty"` // Additional entropy
-	IsSecure     bool   `dynamorm:"attr:isSecure" json:"is_secure"`                   // Created over HTTPS
+	CSRFToken    string `theorydb:"attr:csrfToken" json:"csrf_token"`                 // CSRF protection
+	SessionNonce string `theorydb:"attr:sessionNonce" json:"session_nonce,omitempty"` // Additional entropy
+	IsSecure     bool   `theorydb:"attr:isSecure" json:"is_secure"`                   // Created over HTTPS
 
 	// Timestamps
-	CreatedAt  time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	LastUsedAt time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at"`
+	CreatedAt  time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	LastUsedAt time.Time `theorydb:"attr:lastUsedAt" json:"last_used_at"`
 
 	// TTL for automatic cleanup (OAuth sessions are short-lived)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp for DynamoDB TTL
 
 	// Session validation
-	Version int `dynamorm:"attr:version" json:"version"` // For optimistic locking
+	Version int `theorydb:"attr:version" json:"version"` // For optimistic locking
 }
 
 // TableName returns the DynamoDB table name

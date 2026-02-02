@@ -14,13 +14,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
-	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftadapters "github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.uber.org/zap"
@@ -43,7 +42,7 @@ type fakeGraphQLExecutor struct {
 	createCalls   int32
 	dispatchCalls int32
 	create        func(ctx context.Context, params *graphql.RawParams) (*graphql.OperationContext, gqlerror.List)
-	dispatch       func(ctx context.Context, opCtx *graphql.OperationContext) (graphql.ResponseHandler, context.Context)
+	dispatch      func(ctx context.Context, opCtx *graphql.OperationContext) (graphql.ResponseHandler, context.Context)
 }
 
 func (f *fakeGraphQLExecutor) CreateOperationContext(ctx context.Context, params *graphql.RawParams) (*graphql.OperationContext, gqlerror.List) {
@@ -63,20 +62,20 @@ func (f *fakeGraphQLExecutor) DispatchOperation(ctx context.Context, opCtx *grap
 }
 
 type fakeConnRepo struct {
-	writeErr          error
-	updateErr         error
-	deleteSubsErr     error
-	deleteConnErr     error
-	getConnErr        error
-	deleteSubErr      error
-	lastUpdated       *models.WebSocketConnection
-	writeCalls        int32
-	updateCalls       int32
-	deleteSubsCalls   int32
-	deleteConnCalls   int32
-	getConnCalls      int32
-	deleteSubCalls    int32
-	lastDeleteSubConn string
+	writeErr            error
+	updateErr           error
+	deleteSubsErr       error
+	deleteConnErr       error
+	getConnErr          error
+	deleteSubErr        error
+	lastUpdated         *models.WebSocketConnection
+	writeCalls          int32
+	updateCalls         int32
+	deleteSubsCalls     int32
+	deleteConnCalls     int32
+	getConnCalls        int32
+	deleteSubCalls      int32
+	lastDeleteSubConn   string
 	lastDeleteSubStream string
 }
 
@@ -134,8 +133,8 @@ func (f *fakeConnRepo) DeleteSubscription(_ context.Context, connectionID string
 }
 
 type fakeSubManager struct {
-	running   bool
-	startErr  error
+	running    bool
+	startErr   error
 	startCalls int32
 }
 
@@ -158,12 +157,12 @@ func (f *fakeInstanceRepo) GetInstanceState(_ context.Context) (*models.Instance
 
 type fakeDynamoDB struct{}
 
-func (fakeDynamoDB) Model(any) dynamormCore.Query { return nil }
+func (fakeDynamoDB) Model(any) dynamormCore.Query                      { return nil }
 func (fakeDynamoDB) Transaction(func(tx *dynamormCore.Tx) error) error { return nil }
-func (fakeDynamoDB) Migrate() error { return nil }
-func (fakeDynamoDB) AutoMigrate(...any) error { return nil }
-func (fakeDynamoDB) Close() error { return nil }
-func (fakeDynamoDB) WithContext(context.Context) dynamormCore.DB { return fakeDynamoDB{} }
+func (fakeDynamoDB) Migrate() error                                    { return nil }
+func (fakeDynamoDB) AutoMigrate(...any) error                          { return nil }
+func (fakeDynamoDB) Close() error                                      { return nil }
+func (fakeDynamoDB) WithContext(context.Context) dynamormCore.DB       { return fakeDynamoDB{} }
 
 func setDummyAWSEnv(t *testing.T) {
 	t.Helper()
@@ -172,26 +171,6 @@ func setDummyAWSEnv(t *testing.T) {
 	t.Setenv("AWS_SESSION_TOKEN", "dummy")
 	t.Setenv("AWS_REGION", "us-east-1")
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
-}
-
-func newLiftWSContext(t *testing.T, endpoint, connectionID, routeKey string, body string, query map[string]string, headers map[string]string) *lift.Context {
-	t.Helper()
-
-	req := lift.NewRequest(&liftadapters.Request{
-		TriggerType: liftadapters.TriggerWebSocket,
-		Metadata: map[string]any{
-			"connectionId":       connectionID,
-			"managementEndpoint": endpoint,
-			"routeKey":           routeKey,
-			"region":             "us-east-1",
-		},
-		Headers:     headers,
-		QueryParams: query,
-		Body:        []byte(body),
-	})
-	ctx := lift.NewContext(context.Background(), req)
-	ctx.SetRequestID("req")
-	return ctx
 }
 
 func TestRegisterConnection_PersistsAndStoresState(t *testing.T) {
@@ -282,38 +261,42 @@ func TestEnsureSubscriptionManagerStarted_StartOnce(t *testing.T) {
 	require.Equal(t, int32(0), atomic.LoadInt32(&alreadyRunning.startCalls))
 }
 
-func TestHandleConnectLift_TokenValidationAndState(t *testing.T) {
+func TestHandleConnect_TokenValidationAndState(t *testing.T) {
 	setDummyAWSEnv(t)
-	endpoint := "https://example.com"
 
 	// Missing token => unauthorized.
 	server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil)
-	err := server.handleConnectLift(newLiftWSContext(t, endpoint, "c1", "$connect", "", map[string]string{}, map[string]string{}))
-	require.Error(t, err)
+	app := newWebSocketApp(server)
+	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{}, map[string]string{}))
+	require.Equal(t, 401, resp.StatusCode)
 
 	// Token present but oauth service missing => internal error.
 	server = newServer(nil, nil, nil, zap.NewNop(), nil, nil)
-	err = server.handleConnectLift(newLiftWSContext(t, endpoint, "c1", "$connect", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Error(t, err)
+	app = newWebSocketApp(server)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
+	require.Equal(t, 500, resp.StatusCode)
 
 	// Invalid token => unauthorized.
 	badValidator := &fakeTokenValidator{err: errors.New("bad")}
 	server = newServer(badValidator, nil, nil, zap.NewNop(), nil, nil)
-	err = server.handleConnectLift(newLiftWSContext(t, endpoint, "c1", "$connect", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Error(t, err)
+	app = newWebSocketApp(server)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
+	require.Equal(t, 401, resp.StatusCode)
 
 	// Missing username => forbidden.
 	noUserValidator := &fakeTokenValidator{claims: &auth.Claims{}}
 	server = newServer(noUserValidator, nil, nil, zap.NewNop(), nil, nil)
-	err = server.handleConnectLift(newLiftWSContext(t, endpoint, "c1", "$connect", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Error(t, err)
+	app = newWebSocketApp(server)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
+	require.Equal(t, 403, resp.StatusCode)
 
 	// Success.
 	connRepo := &fakeConnRepo{}
 	okValidator := &fakeTokenValidator{claims: &auth.Claims{Username: "user"}}
 	server = newServer(okValidator, nil, nil, zap.NewNop(), connRepo, nil)
-	err = server.handleConnectLift(newLiftWSContext(t, endpoint, "c1", "$connect", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.NoError(t, err)
+	app = newWebSocketApp(server)
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
+	require.Equal(t, 200, resp.StatusCode)
 
 	state, err := server.getConnection(context.Background(), "c1")
 	require.NoError(t, err)
@@ -321,34 +304,31 @@ func TestHandleConnectLift_TokenValidationAndState(t *testing.T) {
 	require.NotNil(t, server.wsContexts["c1"])
 }
 
-func TestHandleDisconnectLift_CleansUpAndPersists(t *testing.T) {
+func TestHandleDisconnect_CleansUpAndPersists(t *testing.T) {
 	setDummyAWSEnv(t)
-	endpoint := "https://example.com"
 
 	repo := &fakeConnRepo{}
 	server := newServer(nil, nil, nil, zap.NewNop(), repo, nil)
 	server.connections["c1"] = &connectionState{username: "user", subscriptions: map[string]*subscriptionState{}}
-	server.wsContexts["c1"] = &lift.WebSocketContext{}
+	server.wsContexts["c1"] = &apptheory.WebSocketContext{ConnectionID: "c1"}
 
-	require.NoError(t, server.handleDisconnectLift(newLiftWSContext(t, endpoint, "c1", "$disconnect", "", nil, nil)))
+	app := newWebSocketApp(server)
+	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$disconnect", "c1", "", nil, nil))
+	require.Equal(t, 200, resp.StatusCode)
 	require.Empty(t, server.wsContexts)
 	require.Empty(t, server.connections)
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.deleteSubsCalls))
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.deleteConnCalls))
 }
 
-func TestHandleSubscribeWithLift_ErrorBranches(t *testing.T) {
+func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 	setDummyAWSEnv(t)
 
 	msgs := make(chan []byte, 10)
-	endpoint := "https://example.com"
-
-	ctx := newLiftWSContext(t, endpoint, "c1", "$default", "", map[string]string{}, map[string]string{})
-	wsCtx, err := ctx.AsWebSocket()
-	require.NoError(t, err)
+	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
 	server := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
-	server.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+	server.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
 		msgs <- b
@@ -356,25 +336,25 @@ func TestHandleSubscribeWithLift_ErrorBranches(t *testing.T) {
 	}
 
 	// Missing id.
-	server.handleSubscribeWithLift(context.Background(), wsMessage{Type: "subscribe"}, wsCtx)
+	server.handleSubscribe(context.Background(), wsMessage{Type: "subscribe"}, wsCtx)
 	require.Greater(t, len(msgs), 0)
 	msgs = make(chan []byte, 10)
 
 	// Instance repo missing.
 	server.instanceRepo = nil
-	server.handleSubscribeWithLift(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
+	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
 	require.Equal(t, 2, len(msgs)) // error + complete
 	msgs = make(chan []byte, 10)
 
 	// Instance locked.
 	server.instanceRepo = &fakeInstanceRepo{state: &models.InstanceState{Locked: true}}
-	server.handleSubscribeWithLift(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
+	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe"}, wsCtx)
 	require.Equal(t, 2, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Connection context missing.
 	server.instanceRepo = &fakeInstanceRepo{state: &models.InstanceState{Locked: false}}
-	server.handleSubscribeWithLift(context.Background(), wsMessage{
+	server.handleSubscribe(context.Background(), wsMessage{
 		ID:      "s1",
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"subscription { costUpdates { operationCost dailyTotal monthlyProjection } }"}`),
@@ -385,18 +365,18 @@ func TestHandleSubscribeWithLift_ErrorBranches(t *testing.T) {
 	// Executor missing.
 	server.connections["c1"] = &connectionState{username: "user", claims: &auth.Claims{Username: "user"}, subscriptions: map[string]*subscriptionState{}}
 	server.exec = nil
-	server.handleSubscribeWithLift(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
+	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
 	require.Equal(t, 2, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Payload parse error.
 	server.exec = &fakeGraphQLExecutor{}
-	server.handleSubscribeWithLift(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{`)}, wsCtx)
+	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{`)}, wsCtx)
 	require.Equal(t, 2, len(msgs))
 	msgs = make(chan []byte, 10)
 
 	// Missing query.
-	server.handleSubscribeWithLift(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
+	server.handleSubscribe(context.Background(), wsMessage{ID: "s1", Type: "subscribe", Payload: json.RawMessage(`{}`)}, wsCtx)
 	require.Equal(t, 2, len(msgs))
 	msgs = make(chan []byte, 10)
 
@@ -407,7 +387,7 @@ func TestHandleSubscribeWithLift_ErrorBranches(t *testing.T) {
 		},
 	}
 	server.exec = exec
-	server.handleSubscribeWithLift(context.Background(), wsMessage{
+	server.handleSubscribe(context.Background(), wsMessage{
 		ID:      "s1",
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"subscription { costUpdates { operationCost dailyTotal monthlyProjection } }"}`),
@@ -422,7 +402,7 @@ func TestHandleSubscribeWithLift_ErrorBranches(t *testing.T) {
 		},
 	}
 	server.exec = exec
-	server.handleSubscribeWithLift(context.Background(), wsMessage{
+	server.handleSubscribe(context.Background(), wsMessage{
 		ID:      "s1",
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"query { viewer { id } }"}`),
@@ -430,15 +410,11 @@ func TestHandleSubscribeWithLift_ErrorBranches(t *testing.T) {
 	require.Equal(t, 2, len(msgs))
 }
 
-func TestHandleSubscribeWithLift_SuccessPath(t *testing.T) {
+func TestHandleSubscribe_SuccessPath(t *testing.T) {
 	setDummyAWSEnv(t)
 
 	msgs := make(chan []byte, 10)
-	endpoint := "https://example.com"
-
-	ctx := newLiftWSContext(t, endpoint, "c1", "$default", "", nil, nil)
-	wsCtx, err := ctx.AsWebSocket()
-	require.NoError(t, err)
+	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
 	exec := &fakeGraphQLExecutor{
 		create: func(_ context.Context, _ *graphql.RawParams) (*graphql.OperationContext, gqlerror.List) {
@@ -458,7 +434,7 @@ func TestHandleSubscribeWithLift_SuccessPath(t *testing.T) {
 
 	repo := &fakeConnRepo{}
 	server := newServer(nil, nil, exec, zap.NewNop(), repo, &fakeInstanceRepo{state: &models.InstanceState{Locked: false}})
-	server.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+	server.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
 		msgs <- b
@@ -470,7 +446,7 @@ func TestHandleSubscribeWithLift_SuccessPath(t *testing.T) {
 		subscriptions: make(map[string]*subscriptionState),
 	}
 
-	server.handleSubscribeWithLift(context.Background(), wsMessage{
+	server.handleSubscribe(context.Background(), wsMessage{
 		ID:      "sub1",
 		Type:    "subscribe",
 		Payload: json.RawMessage(`{"query":"subscription { costUpdates { operationCost dailyTotal monthlyProjection } }"}`),
@@ -479,27 +455,23 @@ func TestHandleSubscribeWithLift_SuccessPath(t *testing.T) {
 	require.Eventually(t, func() bool { return len(msgs) >= 2 }, 200*time.Millisecond, 5*time.Millisecond)
 }
 
-func TestSendGraphQLResponseViaLift_FormatsPayload(t *testing.T) {
+func TestSendGraphQLResponse_FormatsPayload(t *testing.T) {
 	setDummyAWSEnv(t)
 
 	msgs := make(chan []byte, 10)
-	endpoint := "https://example.com"
-
-	ctx := newLiftWSContext(t, endpoint, "c1", "$default", "", nil, nil)
-	wsCtx, err := ctx.AsWebSocket()
-	require.NoError(t, err)
+	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
 	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
-	s.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
 		msgs <- b
 		return nil
 	}
-	require.NoError(t, s.sendGraphQLResponseViaLift(wsCtx, "id1", nil))
+	require.NoError(t, s.sendGraphQLResponse(wsCtx, "id1", nil))
 	require.Equal(t, 1, len(msgs))
 
-	err = s.sendGraphQLResponseViaLift(wsCtx, "id2", &graphql.Response{Data: []byte("{")})
+	err := s.sendGraphQLResponse(wsCtx, "id2", &graphql.Response{Data: []byte("{")})
 	require.Error(t, err)
 
 	hasNext := true
@@ -510,19 +482,15 @@ func TestSendGraphQLResponseViaLift_FormatsPayload(t *testing.T) {
 		HasNext:    &hasNext,
 		Label:      "lbl",
 	}
-	require.NoError(t, s.sendGraphQLResponseViaLift(wsCtx, "id3", resp))
+	require.NoError(t, s.sendGraphQLResponse(wsCtx, "id3", resp))
 	require.Equal(t, 2, len(msgs))
 }
 
-func TestExecuteSubscriptionWithLift_SendsNextAndComplete(t *testing.T) {
+func TestExecuteSubscription_SendsNextAndComplete(t *testing.T) {
 	setDummyAWSEnv(t)
 
 	msgs := make(chan []byte, 10)
-	endpoint := "https://example.com"
-
-	ctx := newLiftWSContext(t, endpoint, "c1", "$default", "", nil, nil)
-	wsCtx, err := ctx.AsWebSocket()
-	require.NoError(t, err)
+	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
 	exec := &fakeGraphQLExecutor{
 		dispatch: func(_ context.Context, _ *graphql.OperationContext) (graphql.ResponseHandler, context.Context) {
@@ -539,7 +507,7 @@ func TestExecuteSubscriptionWithLift_SendsNextAndComplete(t *testing.T) {
 
 	repo := &fakeConnRepo{}
 	s := newServer(nil, nil, exec, zap.NewNop(), repo, nil)
-	s.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
 		msgs <- b
@@ -549,22 +517,18 @@ func TestExecuteSubscriptionWithLift_SendsNextAndComplete(t *testing.T) {
 
 	cancelled := 0
 	cancel := func() { cancelled++ }
-	s.executeSubscriptionWithLift(context.Background(), "c1", "sub1", &graphql.OperationContext{}, cancel, wsCtx)
+	s.executeSubscription(context.Background(), "c1", "sub1", &graphql.OperationContext{}, cancel, wsCtx)
 
 	require.GreaterOrEqual(t, cancelled, 1)
 	require.Equal(t, 2, len(msgs)) // next + complete
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.deleteSubCalls))
 }
 
-func TestExecuteSubscriptionWithLift_RecoversPanic(t *testing.T) {
+func TestExecuteSubscription_RecoversPanic(t *testing.T) {
 	setDummyAWSEnv(t)
 
 	msgs := make(chan []byte, 10)
-	endpoint := "https://example.com"
-
-	ctx := newLiftWSContext(t, endpoint, "c1", "$default", "", nil, nil)
-	wsCtx, err := ctx.AsWebSocket()
-	require.NoError(t, err)
+	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
 	exec := &fakeGraphQLExecutor{
 		dispatch: func(_ context.Context, _ *graphql.OperationContext) (graphql.ResponseHandler, context.Context) {
@@ -575,7 +539,7 @@ func TestExecuteSubscriptionWithLift_RecoversPanic(t *testing.T) {
 	}
 
 	s := newServer(nil, nil, exec, zap.NewNop(), nil, nil)
-	s.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
 		msgs <- b
@@ -584,7 +548,7 @@ func TestExecuteSubscriptionWithLift_RecoversPanic(t *testing.T) {
 	s.connections["c1"] = &connectionState{username: "user", subscriptions: map[string]*subscriptionState{"sub1": {cancel: func() {}}}}
 
 	cancel := func() {}
-	s.executeSubscriptionWithLift(context.Background(), "c1", "sub1", &graphql.OperationContext{}, cancel, wsCtx)
+	s.executeSubscription(context.Background(), "c1", "sub1", &graphql.OperationContext{}, cancel, wsCtx)
 
 	require.Equal(t, 2, len(msgs)) // error + complete
 }
@@ -613,10 +577,10 @@ func TestInitializeHelpersAndFallbacks(t *testing.T) {
 	fakeQueue := &struct{ streaming.StreamQueueService }{}
 
 	cfg = &appconfig.Config{
-		Domain:         "example.com",
-		JWTSecret:      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		Domain:          "example.com",
+		JWTSecret:       "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 		DynamoTableName: "tbl",
-		Region:         "us-east-1",
+		Region:          "us-east-1",
 	}
 	logger = zap.NewNop()
 
@@ -679,10 +643,10 @@ func TestInitializeGraphQLWS_SuccessPath(t *testing.T) {
 	queue := &struct{ streaming.StreamQueueService }{}
 
 	cfg = &appconfig.Config{
-		Domain:         "example.com",
-		JWTSecret:      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		Domain:          "example.com",
+		JWTSecret:       "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 		DynamoTableName: "tbl",
-		Region:         "us-east-1",
+		Region:          "us-east-1",
 	}
 	logger = zap.NewNop()
 
@@ -714,7 +678,7 @@ func TestResolveStreamQueue_FallbacksAndErrors(t *testing.T) {
 	logger = zap.NewNop()
 	cfg = &appconfig.Config{
 		DynamoTableName: "tbl",
-		Region:         "us-east-1",
+		Region:          "us-east-1",
 	}
 
 	// Error path when no stream queue, no db, and dynamo client initialization fails.
@@ -746,7 +710,7 @@ func TestInitializeConnectionRepository_CreatesRepoWithOverrides(t *testing.T) {
 	})
 
 	cfg = &appconfig.Config{
-		DynamoTableName:     "main",
+		DynamoTableName:    "main",
 		ConnectionsTable:   "connections",
 		SubscriptionsTable: "subscriptions",
 	}
@@ -823,15 +787,11 @@ func TestMain_InvokesLambdaStart(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
-func TestExecuteSubscriptionWithLift_ReturnsOnSendError(t *testing.T) {
+func TestExecuteSubscription_ReturnsOnSendError(t *testing.T) {
 	setDummyAWSEnv(t)
 
 	msgs := make(chan []byte, 10)
-	endpoint := "https://example.com"
-
-	ctx := newLiftWSContext(t, endpoint, "c1", "$default", "", nil, nil)
-	wsCtx, err := ctx.AsWebSocket()
-	require.NoError(t, err)
+	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
 	exec := &fakeGraphQLExecutor{
 		dispatch: func(_ context.Context, _ *graphql.OperationContext) (graphql.ResponseHandler, context.Context) {
@@ -847,7 +807,7 @@ func TestExecuteSubscriptionWithLift_ReturnsOnSendError(t *testing.T) {
 	}
 
 	s := newServer(nil, nil, exec, zap.NewNop(), nil, nil)
-	s.sendJSONMessage = func(_ *lift.WebSocketContext, payload any) error {
+	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
 		msgs <- b
@@ -855,7 +815,7 @@ func TestExecuteSubscriptionWithLift_ReturnsOnSendError(t *testing.T) {
 	}
 	s.connections["c1"] = &connectionState{username: "user", subscriptions: map[string]*subscriptionState{"sub1": {cancel: func() {}}}}
 
-	s.executeSubscriptionWithLift(context.Background(), "c1", "sub1", &graphql.OperationContext{}, func() {}, wsCtx)
+	s.executeSubscription(context.Background(), "c1", "sub1", &graphql.OperationContext{}, func() {}, wsCtx)
 	require.Equal(t, 1, len(msgs)) // complete only
 }
 
@@ -875,11 +835,6 @@ func TestNewServer_DefaultsLogger(t *testing.T) {
 	s := newServer(nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, s)
 	require.NotNil(t, s.logger)
-}
-
-func TestMapToZapFields_NilInput(t *testing.T) {
-	require.Nil(t, mapToZapFields(nil))
-	require.Nil(t, mergeFieldsToZapFields(nil))
 }
 
 func TestInitializeManualServices_PrefersAWSRegionEnv(t *testing.T) {

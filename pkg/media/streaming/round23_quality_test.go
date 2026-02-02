@@ -81,4 +81,3 @@ func TestAdaptiveQualitySelector_SelectOptimalQualityWithMetrics_UsesSessionSign
 	got := aqs.SelectQualityWithSession("s1", 10000, 0.9, []Quality{Quality480p, Quality720p, Quality1080p})
 	assert.Contains(t, []Quality{Quality480p, Quality720p, Quality1080p}, got)
 }
-

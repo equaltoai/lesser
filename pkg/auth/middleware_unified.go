@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -35,10 +35,10 @@ func NewUnifiedAuthMiddleware(config MiddlewareConfig) *UnifiedAuthMiddleware {
 }
 
 // RequiredAuth creates middleware that requires authentication with a specific scope
-func RequiredAuth(config MiddlewareConfig) lift.Middleware {
+func RequiredAuth(config MiddlewareConfig) apptheory.Middleware {
 
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			// Use consolidated authentication pattern
 			authResult := common.ExtractAndValidateAuth(ctx, config.RequiredScope, config.OAuthService)
 
@@ -58,16 +58,16 @@ func RequiredAuth(config MiddlewareConfig) lift.Middleware {
 					zap.String("service", config.ServiceName))
 			}
 
-			return next.Handle(ctx)
-		})
+			return next(ctx)
+		}
 	}
 }
 
 // RequiredAuthWithMultipleScopes creates middleware that requires one of multiple scopes
-func RequiredAuthWithMultipleScopes(config MiddlewareConfig) lift.Middleware {
+func RequiredAuthWithMultipleScopes(config MiddlewareConfig) apptheory.Middleware {
 
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			// Use consolidated authentication pattern with multiple scopes
 			authResult := common.ExtractAndValidateAuthWithMultipleScopes(ctx, config.AllowedScopes, config.OAuthService)
 
@@ -89,16 +89,16 @@ func RequiredAuthWithMultipleScopes(config MiddlewareConfig) lift.Middleware {
 				)
 			}
 
-			return next.Handle(ctx)
-		})
+			return next(ctx)
+		}
 	}
 }
 
 // OptionalAuth creates middleware that provides optional authentication
-func OptionalAuth(config MiddlewareConfig) lift.Middleware {
+func OptionalAuth(config MiddlewareConfig) apptheory.Middleware {
 
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			// Use consolidated optional authentication pattern
 			authResult := common.ExtractOptionalAuth(ctx, config.OAuthService)
 
@@ -130,34 +130,34 @@ func OptionalAuth(config MiddlewareConfig) lift.Middleware {
 				)
 			}
 
-			return next.Handle(ctx)
-		})
+			return next(ctx)
+		}
 	}
 }
 
 // WriteAuth creates middleware specifically for write operations
-func WriteAuth(config MiddlewareConfig) lift.Middleware {
+func WriteAuth(config MiddlewareConfig) apptheory.Middleware {
 	// Set required scope for write operations
 	config.RequiredScope = common.ScopeWrite
 	return RequiredAuth(config)
 }
 
 // ReadAuth creates middleware specifically for read operations
-func ReadAuth(config MiddlewareConfig) lift.Middleware {
+func ReadAuth(config MiddlewareConfig) apptheory.Middleware {
 	// Set required scope for read operations
 	config.RequiredScope = common.ScopeRead
 	return RequiredAuth(config)
 }
 
 // AdminAuth creates middleware specifically for admin operations
-func AdminAuth(config MiddlewareConfig) lift.Middleware {
+func AdminAuth(config MiddlewareConfig) apptheory.Middleware {
 	// Set allowed scopes for admin operations
 	config.AllowedScopes = common.AdminScopes
 	return RequiredAuthWithMultipleScopes(config)
 }
 
 // FollowAuth creates middleware specifically for follow operations
-func FollowAuth(config MiddlewareConfig) lift.Middleware {
+func FollowAuth(config MiddlewareConfig) apptheory.Middleware {
 	// Set allowed scopes for follow operations
 	config.AllowedScopes = common.FollowScopes
 	return RequiredAuthWithMultipleScopes(config)
@@ -166,7 +166,7 @@ func FollowAuth(config MiddlewareConfig) lift.Middleware {
 // Helper functions for common middleware patterns
 
 // CreateAPIAuthMiddleware creates standard API authentication middleware
-func CreateAPIAuthMiddleware(oauthService common.OAuthServiceInterface, logger *zap.Logger) lift.Middleware {
+func CreateAPIAuthMiddleware(oauthService common.OAuthServiceInterface, logger *zap.Logger) apptheory.Middleware {
 	return OptionalAuth(MiddlewareConfig{
 		OAuthService: oauthService,
 		Logger:       logger,
@@ -175,7 +175,7 @@ func CreateAPIAuthMiddleware(oauthService common.OAuthServiceInterface, logger *
 }
 
 // CreateGraphQLAuthMiddleware creates standard GraphQL authentication middleware
-func CreateGraphQLAuthMiddleware(oauthService common.OAuthServiceInterface, logger *zap.Logger) lift.Middleware {
+func CreateGraphQLAuthMiddleware(oauthService common.OAuthServiceInterface, logger *zap.Logger) apptheory.Middleware {
 	return OptionalAuth(MiddlewareConfig{
 		OAuthService: oauthService,
 		Logger:       logger,
@@ -184,7 +184,7 @@ func CreateGraphQLAuthMiddleware(oauthService common.OAuthServiceInterface, logg
 }
 
 // CreateFederationAuthMiddleware creates federation-specific authentication middleware
-func CreateFederationAuthMiddleware(oauthService common.OAuthServiceInterface, logger *zap.Logger) lift.Middleware {
+func CreateFederationAuthMiddleware(oauthService common.OAuthServiceInterface, logger *zap.Logger) apptheory.Middleware {
 	return OptionalAuth(MiddlewareConfig{
 		OAuthService: oauthService,
 		Logger:       logger,
@@ -194,8 +194,8 @@ func CreateFederationAuthMiddleware(oauthService common.OAuthServiceInterface, l
 
 // Utility functions for accessing authentication context in handlers
 
-// GetLegacyAuthContext retrieves the legacy authentication context from the Lift context
-func GetLegacyAuthContext(ctx *lift.Context) *common.AuthContext {
+// GetLegacyAuthContext retrieves the authentication context from the request context.
+func GetLegacyAuthContext(ctx *apptheory.Context) *common.AuthContext {
 	if authCtx, ok := ctx.Get("auth_context").(*common.AuthContext); ok {
 		return authCtx
 	}
@@ -203,7 +203,7 @@ func GetLegacyAuthContext(ctx *lift.Context) *common.AuthContext {
 }
 
 // GetAuthenticatedUsername retrieves the authenticated username or empty string
-func GetAuthenticatedUsername(ctx *lift.Context) string {
+func GetAuthenticatedUsername(ctx *apptheory.Context) string {
 	if username, ok := ctx.Get("username").(string); ok {
 		return username
 	}
@@ -211,7 +211,7 @@ func GetAuthenticatedUsername(ctx *lift.Context) string {
 }
 
 // GetJWTClaims retrieves the JWT claims from context
-func GetJWTClaims(ctx *lift.Context) common.Claims {
+func GetJWTClaims(ctx *apptheory.Context) common.Claims {
 	if claims, ok := ctx.Get("claims").(common.Claims); ok {
 		return claims
 	}
@@ -219,7 +219,7 @@ func GetJWTClaims(ctx *lift.Context) common.Claims {
 }
 
 // IsAuthenticated returns true if the request is authenticated
-func IsAuthenticated(ctx *lift.Context) bool {
+func IsAuthenticated(ctx *apptheory.Context) bool {
 	if authenticated, ok := ctx.Get("is_authenticated").(bool); ok {
 		return authenticated
 	}
@@ -227,20 +227,20 @@ func IsAuthenticated(ctx *lift.Context) bool {
 }
 
 // IsTestMode determines if the current request is in test mode
-func IsTestMode(_ *lift.Context) bool {
+func IsTestMode(_ *apptheory.Context) bool {
 	// For now, test mode is determined by environment variable
 	return os.Getenv("TEST_MODE") == "true"
 }
 
 // RequireWriteAccess validates that the current request has write access
-func RequireWriteAccess(ctx *lift.Context) error {
+func RequireWriteAccess(ctx *apptheory.Context) error {
 	authCtx := GetLegacyAuthContext(ctx)
 	authResult := &common.AuthenticationResult{Context: authCtx}
 	return common.ValidateWriteAccess(authResult)
 }
 
 // RequireReadAccess validates that the current request has read access
-func RequireReadAccess(ctx *lift.Context) error {
+func RequireReadAccess(ctx *apptheory.Context) error {
 	authCtx := GetLegacyAuthContext(ctx)
 	authResult := &common.AuthenticationResult{Context: authCtx}
 	return common.ValidateReadAccess(authResult)

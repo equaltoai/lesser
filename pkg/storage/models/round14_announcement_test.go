@@ -96,4 +96,3 @@ func TestAnnouncement_KeysStatusAndSubmodels(t *testing.T) {
 		assert.Equal(t, MainTableName, (Mention{}).TableName())
 	})
 }
-

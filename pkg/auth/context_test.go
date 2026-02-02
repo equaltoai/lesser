@@ -1,27 +1,26 @@
 package auth
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestAuthContext_GetSetAndScopeChecks(t *testing.T) {
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
+	ctx := &apptheory.Context{}
 
-	unauth := GetAuthContext(liftCtx)
+	unauth := GetAuthContext(ctx)
 	require.NotNil(t, unauth)
 	assert.False(t, unauth.Authenticated)
 
 	now := time.Now()
 	authCtx := CreateAuthContext("alice", "web", "Bearer", []string{"read"}, now, now.Add(time.Hour))
-	SetAuthContext(liftCtx, authCtx)
+	SetAuthContext(ctx, authCtx)
 
-	got := GetAuthContext(liftCtx)
+	got := GetAuthContext(ctx)
 	require.True(t, got.Authenticated)
 	assert.Equal(t, "alice", got.Username)
 	assert.True(t, got.HasScope("read"))
@@ -46,20 +45,26 @@ func TestAuthContext_RequireAuthAndScope(t *testing.T) {
 }
 
 func TestAuthContext_ResponseHelpers(t *testing.T) {
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
+	ctx := &apptheory.Context{}
 
 	unauth := CreateUnauthenticatedContext()
-	require.NoError(t, unauth.RequireAuthWithResponse(liftCtx))
-	assert.Equal(t, 401, liftCtx.Response.StatusCode)
+	resp, err := unauth.RequireAuthWithResponse(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 401, resp.Status)
 
-	liftCtx = lift.NewContext(context.Background(), lift.NewRequest(nil))
+	ctx = &apptheory.Context{}
 	now := time.Now()
 	authCtx := CreateAuthContext("alice", "web", "Bearer", []string{"read"}, now, now.Add(time.Hour))
-	require.NoError(t, authCtx.RequireScopeWithResponse(liftCtx, "write"))
-	assert.Equal(t, 403, liftCtx.Response.StatusCode)
+	resp, err = authCtx.RequireScopeWithResponse(ctx, "write")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 403, resp.Status)
 
-	liftCtx = lift.NewContext(context.Background(), lift.NewRequest(nil))
-	require.NoError(t, authCtx.RequireScopeWithResponse(liftCtx, "read"))
+	ctx = &apptheory.Context{}
+	resp, err = authCtx.RequireScopeWithResponse(ctx, "read")
+	require.NoError(t, err)
+	assert.Nil(t, resp)
 }
 
 func TestAuthContext_ExpiryHelpersAndToMap(t *testing.T) {

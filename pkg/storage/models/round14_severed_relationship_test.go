@@ -107,4 +107,3 @@ func TestSeveranceReconnectionAttempt_Lifecycle(t *testing.T) {
 		require.NotNil(t, ra.CompletedAt)
 	})
 }
-

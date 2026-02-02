@@ -7,26 +7,26 @@ import (
 
 // OAuthState represents OAuth state data in DynamoDB
 type OAuthState struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Key fields
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// State data fields
-	State               string    `dynamorm:"attr:state" json:"state"`
-	Provider            string    `dynamorm:"attr:provider" json:"provider"`
-	RedirectURI         string    `dynamorm:"attr:redirectURI" json:"redirect_uri"`
-	Username            string    `dynamorm:"attr:username" json:"username,omitempty"`
-	ClientID            string    `dynamorm:"attr:clientID" json:"client_id,omitempty"`
-	Scopes              []string  `dynamorm:"attr:scopes" json:"scopes,omitempty"`
-	CodeChallenge       string    `dynamorm:"attr:codeChallenge" json:"code_challenge,omitempty"`
-	CodeChallengeMethod string    `dynamorm:"attr:codeChallengeMethod" json:"code_challenge_method,omitempty"`
-	CreatedAt           time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	ExpiresAt           time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`
+	State               string    `theorydb:"attr:state" json:"state"`
+	Provider            string    `theorydb:"attr:provider" json:"provider"`
+	RedirectURI         string    `theorydb:"attr:redirectURI" json:"redirect_uri"`
+	Username            string    `theorydb:"attr:username" json:"username,omitempty"`
+	ClientID            string    `theorydb:"attr:clientID" json:"client_id,omitempty"`
+	Scopes              []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
+	CodeChallenge       string    `theorydb:"attr:codeChallenge" json:"code_challenge,omitempty"`
+	CodeChallengeMethod string    `theorydb:"attr:codeChallengeMethod" json:"code_challenge_method,omitempty"`
+	CreatedAt           time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	ExpiresAt           time.Time `theorydb:"attr:expiresAt" json:"expires_at"`
 
 	// DynamoDB TTL field
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // GetPK returns the partition key for BaseModel interface

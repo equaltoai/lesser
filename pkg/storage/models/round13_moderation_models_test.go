@@ -10,13 +10,13 @@ import (
 func TestModerationEvent_UpdateKeys_SetsCompositeKeysAndTTL(t *testing.T) {
 	before := time.Now()
 	event := &ModerationEvent{
-		ID:         "evt-1",
-		ObjectID:   "obj-1",
-		ActorID:    "actor-1",
-		EventType:  "report",
-		Category:   "spam",
-		Severity:   "high",
-		Created:    time.Unix(1700000000, 0).UTC(),
+		ID:              "evt-1",
+		ObjectID:        "obj-1",
+		ActorID:         "actor-1",
+		EventType:       "report",
+		Category:        "spam",
+		Severity:        "high",
+		Created:         time.Unix(1700000000, 0).UTC(),
 		ConfidenceScore: 0.5,
 	}
 	err := event.UpdateKeys()
@@ -89,12 +89,12 @@ func TestModerationDecision_UpdateKeys_SetsKeysAndTTL(t *testing.T) {
 func TestModerationPattern_UpdateKeys_ActiveAndInactive(t *testing.T) {
 	before := time.Now()
 	p := &ModerationPattern{
-		PatternID:  "p1",
-		Type:       "regex",
-		Severity:   0.42,
-		Active:     true,
-		UpdatedAt:  time.Unix(1700000000, 0).UTC(),
-		CreatedAt:  time.Unix(1700000000, 0).UTC(),
+		PatternID: "p1",
+		Type:      "regex",
+		Severity:  0.42,
+		Active:    true,
+		UpdatedAt: time.Unix(1700000000, 0).UTC(),
+		CreatedAt: time.Unix(1700000000, 0).UTC(),
 	}
 	err := p.UpdateKeys()
 	after := time.Now()
@@ -128,9 +128,9 @@ func TestModerationPattern_UpdateKeys_ActiveAndInactive(t *testing.T) {
 func TestModeration_HistoryAndHelpers(t *testing.T) {
 	m := &Moderation{
 		Evidence: ModerationEvidence{
-			ViolationCount:   1,
-			RequestCount:     10,
-			ProhibitedWords:  []string{"bad", "worse"},
+			ViolationCount:  1,
+			RequestCount:    10,
+			ProhibitedWords: []string{"bad", "worse"},
 		},
 	}
 
@@ -185,7 +185,7 @@ func TestModeration_AnalysisDecisionQueueAndAuditKeys(t *testing.T) {
 
 	dr := &ModerationDecisionResult{
 		ID:                "d1",
-		ContentID:          "c1",
+		ContentID:         "c1",
 		Action:            "flag",
 		Confidence:        0.55,
 		DecidedAt:         analyzed,
@@ -201,7 +201,7 @@ func TestModeration_AnalysisDecisionQueueAndAuditKeys(t *testing.T) {
 	// Non-active enforcement clears GSI1.
 	dr2 := &ModerationDecisionResult{
 		ID:                "d2",
-		ContentID:          "c2",
+		ContentID:         "c2",
 		Action:            "allow",
 		Confidence:        0.10,
 		DecidedAt:         analyzed,
@@ -213,7 +213,7 @@ func TestModeration_AnalysisDecisionQueueAndAuditKeys(t *testing.T) {
 
 	rq := &ModerationReviewQueue{
 		ID:        "q1",
-		ContentID:  "c1",
+		ContentID: "c1",
 		Status:    "pending",
 		Priority:  3,
 		CreatedAt: analyzed,
@@ -231,7 +231,7 @@ func TestModeration_AnalysisDecisionQueueAndAuditKeys(t *testing.T) {
 	// Assigned sets GSI2.
 	rq2 := &ModerationReviewQueue{
 		ID:         "q2",
-		ContentID:   "c2",
+		ContentID:  "c2",
 		Status:     "reviewing",
 		Priority:   10,
 		CreatedAt:  analyzed,
@@ -257,4 +257,3 @@ func TestModeration_AnalysisDecisionQueueAndAuditKeys(t *testing.T) {
 	assert.Equal(t, analyzed, al.CreatedAt)
 	assert.True(t, al.TTL > 0)
 }
-

@@ -7,17 +7,17 @@ import (
 
 // SearchClickRate represents click-through rate tracking for search results
 type SearchClickRate struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Fields
-	Query       string    `dynamorm:"attr:query" json:"query"`
-	ActorID     string    `dynamorm:"attr:actorID" json:"actor_id"`
-	ClickCount  int       `dynamorm:"attr:clickCount" json:"click_count"`
-	LastClicked time.Time `dynamorm:"attr:lastClicked" json:"last_clicked"`
+	Query       string    `theorydb:"attr:query" json:"query"`
+	ActorID     string    `theorydb:"attr:actorID" json:"actor_id"`
+	ClickCount  int       `theorydb:"attr:clickCount" json:"click_count"`
+	LastClicked time.Time `theorydb:"attr:lastClicked" json:"last_clicked"`
 }
 
 // TableName returns the DynamoDB table backing SearchClickRate.

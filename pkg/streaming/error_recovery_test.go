@@ -10,10 +10,10 @@ import (
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -29,8 +29,8 @@ func (c *stubStreamerClient) PostToConnection(ctx context.Context, connectionID 
 }
 
 func (c *stubStreamerClient) DeleteConnection(context.Context, string) error { return nil }
-func (c *stubStreamerClient) GetConnection(context.Context, string) (*streamer.ConnectionInfo, error) {
-	return nil, nil
+func (c *stubStreamerClient) GetConnection(context.Context, string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 type stubJobQueue struct {

@@ -9,11 +9,11 @@ import (
 
 func TestTranscodingJob_BeforeCreate_Defaults_Keys_AndValidation(t *testing.T) {
 	tj := &TranscodingJob{
-		JobID:    "job1",
-		MediaID:  "m1",
-		UserID:   "u1",
-		Username: "alice",
-		JobType:  "video",
+		JobID:     "job1",
+		MediaID:   "m1",
+		UserID:    "u1",
+		Username:  "alice",
+		JobType:   "video",
 		StartedAt: time.Unix(1700000000, 0).UTC(),
 	}
 
@@ -72,16 +72,16 @@ func TestTranscodingJob_UpdateKeys_AndValidateErrors(t *testing.T) {
 
 func TestTranscodingJob_BeforeUpdate_EfficiencyAndVariance(t *testing.T) {
 	tj := &TranscodingJob{
-		JobID:             "job1",
-		MediaID:           "m1",
-		UserID:            "u1",
-		JobType:           "video",
-		Status:            "processing",
-		StartedAt:         time.Unix(1700000000, 0).UTC(),
-		InputSize:         10 * 1024 * 1024, // 10MB
-		TotalOutputSize:   5 * 1024 * 1024,
-		ProcessingTimeMs:  1000,
-		TotalCostMicros:   200,
+		JobID:               "job1",
+		MediaID:             "m1",
+		UserID:              "u1",
+		JobType:             "video",
+		Status:              "processing",
+		StartedAt:           time.Unix(1700000000, 0).UTC(),
+		InputSize:           10 * 1024 * 1024, // 10MB
+		TotalOutputSize:     5 * 1024 * 1024,
+		ProcessingTimeMs:    1000,
+		TotalCostMicros:     200,
 		EstimatedCostMicros: 100,
 	}
 
@@ -141,4 +141,3 @@ func TestTranscodingJob_StatusHelpers_Outputs_AndCosts(t *testing.T) {
 	breakdown := tj.GetQualityBreakdown()
 	assert.Equal(t, "hls", breakdown["720p"]["format"])
 }
-

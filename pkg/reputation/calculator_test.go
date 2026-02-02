@@ -56,7 +56,6 @@ func makeModerationEvent(eventType, outcome string, severity int) ModerationEven
 	}
 }
 
-
 // TestNewCalculator verifies the calculator is created with correct fields
 func TestNewCalculator(t *testing.T) {
 	logger := testLogger()
@@ -116,7 +115,6 @@ func TestCalculate(t *testing.T) {
 	// Verify timestamp is recent
 	require.WithinDuration(t, now, rep.CalculatedAt, 5*time.Second)
 }
-
 
 // TestCalculateTrustScore tests the trust score calculation
 func TestCalculateTrustScore(t *testing.T) {
@@ -181,7 +179,6 @@ func TestCalculateTrustScore(t *testing.T) {
 		require.Greater(t, recentScore, oldScore)
 	})
 
-
 	t.Run("diversity bonus calculation", func(t *testing.T) {
 		singleInput := &CalculationInput{
 			ActorID: actorID,
@@ -218,7 +215,6 @@ func TestCalculateTrustScore(t *testing.T) {
 		require.LessOrEqual(t, score, 250)
 	})
 }
-
 
 // TestCalculateActivityScore tests the activity score calculation
 func TestCalculateActivityScore(t *testing.T) {
@@ -281,7 +277,6 @@ func TestCalculateActivityScore(t *testing.T) {
 		require.LessOrEqual(t, overScore, idealScore)
 	})
 
-
 	t.Run("follower count scoring - logarithmic", func(t *testing.T) {
 		accountCreated := now.AddDate(-1, 0, 0)
 
@@ -338,7 +333,6 @@ func TestCalculateActivityScore(t *testing.T) {
 		require.LessOrEqual(t, score, 250)
 	})
 }
-
 
 // TestCalculateModerationScore tests the moderation score calculation
 func TestCalculateModerationScore(t *testing.T) {
@@ -398,7 +392,6 @@ func TestCalculateModerationScore(t *testing.T) {
 		require.GreaterOrEqual(t, dismissedScore, noReportsScore)
 	})
 
-
 	t.Run("suspensions deduct 100 points", func(t *testing.T) {
 		input := &CalculationInput{
 			AccountCreated: now.AddDate(-1, 0, 0),
@@ -445,7 +438,6 @@ func TestCalculateModerationScore(t *testing.T) {
 		require.LessOrEqual(t, score, 250)
 	})
 }
-
 
 // TestCalculateCommunityScore tests the community score calculation
 func TestCalculateCommunityScore(t *testing.T) {
@@ -503,7 +495,6 @@ func TestCalculateCommunityScore(t *testing.T) {
 		require.Greater(t, activeScore, revokedScore)
 		require.Greater(t, activeScore, expiredScore)
 	})
-
 
 	t.Run("vouches given scoring", func(t *testing.T) {
 		noGivenInput := &CalculationInput{
@@ -567,7 +558,6 @@ func TestCalculateCommunityScore(t *testing.T) {
 	})
 }
 
-
 // TestGetBoostFromVouches tests the vouch boost calculation
 func TestGetBoostFromVouches(t *testing.T) {
 	calc := newTestCalculator()
@@ -615,7 +605,6 @@ func TestGetBoostFromVouches(t *testing.T) {
 		require.Equal(t, 0, boost)
 	})
 
-
 	t.Run("boost capping at 200", func(t *testing.T) {
 		vouches := make([]Vouch, 10)
 		for i := 0; i < 10; i++ {
@@ -637,7 +626,6 @@ func TestGetBoostFromVouches(t *testing.T) {
 		require.Equal(t, 70, boost) // Only active vouches counted
 	})
 }
-
 
 // generateRandomCalculationInput creates a random CalculationInput for property testing
 func generateRandomCalculationInput(r *rand.Rand) *CalculationInput {
@@ -710,7 +698,6 @@ func generateRandomCalculationInput(r *rand.Rand) *CalculationInput {
 	}
 }
 
-
 // TestProperty_ScoreBoundsInvariant verifies that all individual scores are within [0, 250]
 // **Property 1: Score Bounds Invariant**
 // **Validates: Requirements 1.4, 1.5, 1.9**
@@ -752,7 +739,6 @@ func TestProperty_ScoreBoundsInvariant(t *testing.T) {
 	}
 }
 
-
 // TestProperty_TotalScoreComposition verifies that TotalScore equals sum of all component scores
 // **Property 2: Total Score Composition**
 // **Validates: Requirements 1.2**
@@ -784,7 +770,6 @@ func TestProperty_TotalScoreComposition(t *testing.T) {
 		t.Errorf("Property failed: %v", err)
 	}
 }
-
 
 // TestProperty_VouchBoostCap verifies that vouch boost never exceeds 200
 // **Property 3: Vouch Boost Cap**

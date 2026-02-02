@@ -10,21 +10,21 @@ import (
 
 // Reputation represents reputation data for an actor
 type Reputation struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key fields - EXACT pattern from legacy
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
 	// Reputation data stored as JSON
-	ReputationData string `dynamorm:"attr:reputationData" json:"reputation_data"`
+	ReputationData string `theorydb:"attr:reputationData" json:"reputation_data"`
 
 	// Indexed fields for queries
-	TotalScore   int    `dynamorm:"attr:totalScore" json:"total_score"`
-	CalculatedAt string `dynamorm:"attr:calculatedAt" json:"calculated_at"`
+	TotalScore   int    `theorydb:"attr:totalScore" json:"total_score"`
+	CalculatedAt string `theorydb:"attr:calculatedAt" json:"calculated_at"`
 
 	// TTL for 90-day expiration
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys updates the PK and SK based on the reputation data

@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -28,7 +28,7 @@ func newMockStorage() *mockStorage {
 
 func (m *mockStorage) Account() *repositories.AccountRepository                         { return nil }
 func (m *mockStorage) Bookmark() *repositories.BookmarkRepository                       { return nil }
-func (m *mockStorage) Actor() interfaces.ActorRepository                             { return nil }
+func (m *mockStorage) Actor() interfaces.ActorRepository                                { return nil }
 func (m *mockStorage) Object() interfaces.ObjectRepository                              { return nil }
 func (m *mockStorage) Activity() interfaces.ActivityRepository                          { return nil }
 func (m *mockStorage) Timeline() interfaces.TimelineRepository                          { return nil }
@@ -50,7 +50,7 @@ func (m *mockStorage) Recovery() *repositories.RecoveryRepository               
 func (m *mockStorage) Analytics() *repositories.TrendingRepository                      { return nil }
 func (m *mockStorage) Social() *repositories.SocialRepository                           { return nil }
 func (m *mockStorage) User() interfaces.UserRepository                                  { return nil }
-func (m *mockStorage) Status() interfaces.StatusRepository                           { return nil }
+func (m *mockStorage) Status() interfaces.StatusRepository                              { return nil }
 func (m *mockStorage) Cost() *repositories.TrackingRepository                           { return nil }
 func (m *mockStorage) WebSocketCost() *repositories.WebSocketCostRepository             { return nil }
 func (m *mockStorage) Trust() interfaces.TrustRepository                                { return nil }

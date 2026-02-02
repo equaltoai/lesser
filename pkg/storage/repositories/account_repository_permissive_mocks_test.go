@@ -7,8 +7,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 func setupPermissiveAccountRepositoryMocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery, mockUpdateBuilder *mocks.MockUpdateBuilder, baseTime time.Time) {

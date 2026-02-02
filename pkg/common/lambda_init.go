@@ -64,7 +64,7 @@ type LambdaContext struct {
 	AWSServices *awsInit.AWSServices
 
 	// Storage (interfaces to avoid import cycles)
-	DynamoDB interface{} // *dynamorm.Client
+	DynamoDB interface{} // *tabletheory.Client
 	Repos    interface{} // core.RepositoryStorage
 
 	// Observability (interfaces to avoid import cycles)

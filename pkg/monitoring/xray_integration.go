@@ -2,21 +2,19 @@ package monitoring
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
-	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-xray-sdk-go/v2/instrumentation/awsv2"
 	"github.com/aws/aws-xray-sdk-go/v2/xray"
-	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
+
+var loadDefaultAWSConfigFn = config.LoadDefaultConfig
 
 // XRayTracer provides comprehensive X-Ray tracing for the Lesser application
 type XRayTracer struct {
@@ -67,60 +65,22 @@ func (xt *XRayTracer) InstrumentAWSConfig(cfg aws.Config) aws.Config {
 	return cfg
 }
 
-// TraceLiftHandler wraps a Lift handler with X-Ray tracing
-func (xt *XRayTracer) TraceLiftHandler(handlerName string, handler func(*lift.Context) error) func(*lift.Context) error {
+// AWSConfigLoadOptions returns AWS SDK v2 load options that enable X-Ray middleware.
+//
+// This is useful for libraries (including TableTheory) that internally call config.LoadDefaultConfig and
+// accept `[]func(*config.LoadOptions) error` as configuration hooks.
+func (xt *XRayTracer) AWSConfigLoadOptions() []func(*config.LoadOptions) error {
 	if !xt.enabled {
-		return handler
+		return nil
 	}
 
-	return func(ctx *lift.Context) error {
-		// Start X-Ray segment for the handler
-		_, seg := xray.BeginSegment(context.Background(), xt.serviceName)
-		defer seg.Close(nil)
-
-		// Add annotations for searchability
-		_ = seg.AddAnnotation("handler", handlerName)
-		_ = seg.AddAnnotation("environment", xt.environment)
-		_ = seg.AddAnnotation("method", ctx.Request.Method)
-		_ = seg.AddAnnotation("path", ctx.Request.Path)
-
-		// Add metadata for detailed tracing
-		_ = seg.AddMetadata("request", map[string]interface{}{
-			"headers":    ctx.Request.Headers,
-			"tenant_id":  ctx.TenantID(),
-			"request_id": ctx.RequestID,
-		})
-
-		// Track cold start
-		if lambdaCtx, ok := lambdacontext.FromContext(ctx.Context); ok {
-			_ = seg.AddAnnotation("cold_start", true)
-			_ = seg.AddMetadata("lambda", map[string]interface{}{
-				"request_id":    lambdaCtx.AwsRequestID,
-				"function_name": lambdaCtx.InvokedFunctionArn,
-			})
-		}
-
-		// Execute handler with X-Ray context
-		start := time.Now()
-		err := handler(ctx)
-		duration := time.Since(start)
-
-		// Record error if present
-		if err != nil {
-			_ = seg.AddError(err)
-			_ = seg.AddMetadata("error", map[string]interface{}{
-				"message": err.Error(),
-				"type":    fmt.Sprintf("%T", err),
-			})
-		}
-
-		// Add response metadata
-		_ = seg.AddMetadata("response", map[string]interface{}{
-			"duration_ms": duration.Milliseconds(),
-			"success":     err == nil,
-		})
-
-		return err
+	return []func(*config.LoadOptions) error{
+		func(o *config.LoadOptions) error {
+			if o != nil {
+				awsv2.AWSV2Instrumentor(&o.APIOptions)
+			}
+			return nil
+		},
 	}
 }
 
@@ -434,26 +394,6 @@ func (xt *XRayTracer) TraceCostOperation(ctx context.Context, service string, co
 	return err
 }
 
-// InstrumentDynamoDBClient instruments a DynamoDB client for X-Ray tracing
-func (xt *XRayTracer) InstrumentDynamoDBClient(client *dynamodb.Client) *dynamodb.Client {
-	if !xt.enabled {
-		return client
-	}
-
-	// Get the client's config
-	cfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		xt.logger.Warn("failed to load config for X-Ray instrumentation", zap.Error(err))
-		return client
-	}
-
-	// Instrument the config
-	cfg = xt.InstrumentAWSConfig(cfg)
-
-	// Return new instrumented client
-	return dynamodb.NewFromConfig(cfg)
-}
-
 // InstrumentS3Client instruments an S3 client for X-Ray tracing
 func (xt *XRayTracer) InstrumentS3Client(client *s3.Client) *s3.Client {
 	if !xt.enabled {
@@ -461,7 +401,7 @@ func (xt *XRayTracer) InstrumentS3Client(client *s3.Client) *s3.Client {
 	}
 
 	// Get the client's config
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	cfg, err := loadDefaultAWSConfigFn(context.Background())
 	if err != nil {
 		xt.logger.Warn("failed to load config for X-Ray instrumentation", zap.Error(err))
 		return client
@@ -481,7 +421,7 @@ func (xt *XRayTracer) InstrumentSQSClient(client *sqs.Client) *sqs.Client {
 	}
 
 	// Get the client's config
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	cfg, err := loadDefaultAWSConfigFn(context.Background())
 	if err != nil {
 		xt.logger.Warn("failed to load config for X-Ray instrumentation", zap.Error(err))
 		return client

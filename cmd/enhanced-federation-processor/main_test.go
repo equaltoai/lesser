@@ -14,8 +14,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -167,13 +167,15 @@ func TestNewHandler_Round12(t *testing.T) {
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return nil, nil }
 	newSQSClientFn = func(aws.Config, ...func(*sqs.Options)) *sqs.Client { return &sqs.Client{} }
 	newFederationStorageFn = func(dynamormCore.DB, string, *zap.Logger) *federation.DynamORMFederationStorage { return nil }
-	newDeliveryServiceFn = func(federation.FederationStorage, *config.Config) *federation.DeliveryService { return &federation.DeliveryService{} }
+	newDeliveryServiceFn = func(federation.FederationStorage, *config.Config) *federation.DeliveryService {
+		return &federation.DeliveryService{}
+	}
 	newEnhancedRetryProcessorFn = func(*federation.DeliveryService, *sqs.Client, string) enhancedRetryProcessor { return processor }
 
 	lambdaCtx := &common.LambdaContext{
 		Config: &config.Config{
-			Region:               "us-east-1",
-			DynamoTableName:      "table",
+			Region:                "us-east-1",
+			DynamoTableName:       "table",
 			EnhancedRetryQueueURL: "https://example.com/queue",
 		},
 		Logger:      zap.NewNop(),
@@ -216,14 +218,16 @@ func TestInitializeAndMainAndPanicRecovery_Round12(t *testing.T) {
 	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return nil, nil }
 	newSQSClientFn = func(aws.Config, ...func(*sqs.Options)) *sqs.Client { return &sqs.Client{} }
 	newFederationStorageFn = func(dynamormCore.DB, string, *zap.Logger) *federation.DynamORMFederationStorage { return nil }
-	newDeliveryServiceFn = func(federation.FederationStorage, *config.Config) *federation.DeliveryService { return &federation.DeliveryService{} }
+	newDeliveryServiceFn = func(federation.FederationStorage, *config.Config) *federation.DeliveryService {
+		return &federation.DeliveryService{}
+	}
 	newEnhancedRetryProcessorFn = func(*federation.DeliveryService, *sqs.Client, string) enhancedRetryProcessor { return processor }
 
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
 			Config: &config.Config{
-				Region:               "us-east-1",
-				DynamoTableName:      "table",
+				Region:                "us-east-1",
+				DynamoTableName:       "table",
 				EnhancedRetryQueueURL: "https://example.com/queue",
 			},
 			Logger:      zap.NewNop(),

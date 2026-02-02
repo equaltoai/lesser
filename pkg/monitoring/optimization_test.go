@@ -24,4 +24,3 @@ func TestOptimizationTracker_BasicAccounting(t *testing.T) {
 	ot.TrackLatency(context.Background(), "op", 10*time.Millisecond)
 	ot.TrackDBQuery(context.Background(), "table", "query", 5*time.Millisecond)
 }
-

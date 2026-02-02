@@ -29,24 +29,24 @@ const (
 // The data payload (Username, ObjectID, CreatedAt, etc.) remains identical across both
 // physical records so that either copy can service downstream reads.
 type Bookmark struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // BOOKMARK#username
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // TIME#timestamp#objectID or OBJECT#objectID
+	PK string `theorydb:"pk,attr:PK" json:"-"` // BOOKMARK#username
+	SK string `theorydb:"sk,attr:SK" json:"-"` // TIME#timestamp#objectID or OBJECT#objectID
 
 	// Core fields
-	Username  string    `dynamorm:"attr:username" json:"username"`
-	ObjectID  string    `dynamorm:"attr:objectID" json:"object_id"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	Username  string    `theorydb:"attr:username" json:"username"`
+	ObjectID  string    `theorydb:"attr:objectID" json:"object_id"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 
 	// Record metadata for dual-write coordination
-	RecordType   string `dynamorm:"attr:recordType" json:"record_type,omitempty"`
-	Locked       bool   `dynamorm:"attr:locked" json:"locked,omitempty"`
-	TimeRecordSK string `dynamorm:"attr:timeRecordSK" json:"time_record_sk,omitempty"` // OBJECT records keep a pointer to the TIME SK
+	RecordType   string `theorydb:"attr:recordType" json:"record_type,omitempty"`
+	Locked       bool   `theorydb:"attr:locked" json:"locked,omitempty"`
+	TimeRecordSK string `theorydb:"attr:timeRecordSK" json:"time_record_sk,omitempty"` // OBJECT records keep a pointer to the TIME SK
 
 	// TTL field for automatic cleanup (optional)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing Bookmark.

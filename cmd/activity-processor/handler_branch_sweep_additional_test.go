@@ -264,4 +264,3 @@ func TestActivityHandler_ProcessMoveActivity_OldAccountAlreadyKnownAs(t *testing
 	require.NoError(t, handler.processMoveActivity(ctx, move, "ignored"))
 	actorRepo.AssertExpectations(t)
 }
-

@@ -140,4 +140,3 @@ func TestLoadAWSConfigFromProfile_WiresAWSCLIAndLoadDefaultConfig(t *testing.T) 
 		require.Equal(t, "us-east-1", cfg.Region)
 	})
 }
-

@@ -9,45 +9,45 @@ import (
 // Draft represents an unpublished content draft
 type Draft struct {
 	// Primary keys: USER#{author_id}#DRAFT / ID#{draft_id}
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI1: Object drafts - OBJECT#{object_id}#DRAFT / TIME#{updated_at}
 	// Allows finding all drafts for a specific published object
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
 	// GSI4: Scheduled publishing + status index - DRAFT#STATUS#{status} / TIME#{timestamp}#AUTHOR#{author_id}#ID#{draft_id}
 	// Allows finding drafts by status, and enables scheduled publishing workers to query due drafts efficiently.
-	GSI4PK string `dynamorm:"index:gsi4,pk,attr:gsi4PK"`
-	GSI4SK string `dynamorm:"index:gsi4,sk,attr:gsi4SK"`
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK"`
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK"`
 
 	// Core fields
-	ID       string  `dynamorm:"attr:id" json:"id"`
-	AuthorID string  `dynamorm:"attr:authorID" json:"author_id"`
-	ObjectID *string `dynamorm:"attr:objectID" json:"object_id,omitempty"` // nil = new, set = editing existing
+	ID       string  `theorydb:"attr:id" json:"id"`
+	AuthorID string  `theorydb:"attr:authorID" json:"author_id"`
+	ObjectID *string `theorydb:"attr:objectID" json:"object_id,omitempty"` // nil = new, set = editing existing
 
 	// Content
-	ContentType   string `dynamorm:"attr:contentType" json:"content_type"` // Note, Article
-	Title         string `dynamorm:"attr:title" json:"title,omitempty"`    // For Article
-	Slug          string `dynamorm:"attr:slug" json:"slug,omitempty"`
-	Content       string `dynamorm:"attr:content" json:"content"`
-	ContentFormat string `dynamorm:"attr:contentFormat" json:"content_format"` // html, markdown
+	ContentType   string `theorydb:"attr:contentType" json:"content_type"` // Note, Article
+	Title         string `theorydb:"attr:title" json:"title,omitempty"`    // For Article
+	Slug          string `theorydb:"attr:slug" json:"slug,omitempty"`
+	Content       string `theorydb:"attr:content" json:"content"`
+	ContentFormat string `theorydb:"attr:contentFormat" json:"content_format"` // html, markdown
 
 	// Draft state
-	Status      string     `dynamorm:"attr:status" json:"status"` // draft, scheduled, publishing, failed
-	ScheduledAt *time.Time `dynamorm:"attr:scheduledAt" json:"scheduled_at,omitempty"`
+	Status      string     `theorydb:"attr:status" json:"status"` // draft, scheduled, publishing, failed
+	ScheduledAt *time.Time `theorydb:"attr:scheduledAt" json:"scheduled_at,omitempty"`
 
 	// Metadata snapshot (full object metadata for preview)
-	MetadataJSON string `dynamorm:"attr:metadataJSON" json:"metadata_json,omitempty"`
+	MetadataJSON string `theorydb:"attr:metadataJSON" json:"metadata_json,omitempty"`
 
 	// Autosave tracking
-	AutosaveVersion int       `dynamorm:"attr:autosaveVersion" json:"autosave_version"`
-	LastSavedAt     time.Time `dynamorm:"attr:lastSavedAt" json:"last_saved_at"`
+	AutosaveVersion int       `theorydb:"attr:autosaveVersion" json:"autosave_version"`
+	LastSavedAt     time.Time `theorydb:"attr:lastSavedAt" json:"last_saved_at"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing Draft.

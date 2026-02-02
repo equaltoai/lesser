@@ -16,10 +16,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend/types"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
-	"github.com/pay-theory/lift/pkg/streamer"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -30,10 +29,10 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	storageInterfaces "github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 )
 
 // Visibility status constants
@@ -83,11 +82,6 @@ const (
 	EngagementSpamThreshold   = 0.1 // Spam ratio threshold
 )
 
-// contextKey is a custom type for context keys to avoid collisions
-type contextKey string
-
-const requestIDKey contextKey = "request_id"
-
 type comprehendAPI interface {
 	DetectSentiment(ctx context.Context, params *comprehend.DetectSentimentInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectSentimentOutput, error)
 	DetectPiiEntities(ctx context.Context, params *comprehend.DetectPiiEntitiesInput, optFns ...func(*comprehend.Options)) (*comprehend.DetectPiiEntitiesOutput, error)
@@ -123,7 +117,7 @@ type NoteProcessor struct {
 
 var (
 	randReadFn          = rand.Read
-	dynamormGetClientFn = dynamorm.GetClient
+	dynamormGetClientFn = theorydb.GetClient
 	newBedrockClientFn  = ai.NewBedrockClient
 	newStreamerClientFn = streamer.NewClient
 	lambdaStartFn       = lambda.Start
@@ -167,10 +161,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	wsEndpoint := cfg.WebSocketEndpoint
 	var wsClient streamer.Client
 	if wsEndpoint != "" && lambdaCtx.AWSServices != nil {
-		client, err := newStreamerClientFn(context.Background(), streamer.ClientConfig{
-			AWSConfig: &lambdaCtx.AWSServices.Config,
-			Endpoint:  wsEndpoint,
-		})
+		client, err := newStreamerClientFn(context.Background(), wsEndpoint, streamer.WithAWSConfig(lambdaCtx.AWSServices.Config))
 		if err != nil {
 			logger.Warn("failed to initialize WebSocket client, broadcasts disabled", zap.Error(err))
 		} else {
@@ -199,60 +190,66 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	}
 }
 
-var (
-	originalProcessor *NoteProcessor //nolint:unused // Reserved for alternative implementation pattern
-)
-
-// HandleStream processes DynamoDB stream events with Lift-style patterns
-func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
-	// Process records with error collection
-	var errors []error
-	for _, record := range event.Records {
-		if record.EventName != "INSERT" {
-			continue
-		}
-
-		pkAttr, ok := record.Change.NewImage["PK"]
-		pk := getStringAttribute(pkAttr)
-		if !ok || common.ValidateRequiredParam("pk", pk) != nil || !strings.HasPrefix(pk, "NOTE#") {
-			continue
-		}
-
-		skAttr, ok := record.Change.NewImage["SK"]
-		sk := getStringAttribute(skAttr)
-		if !ok {
-			continue
-		}
-
-		// Process INSERT events for new notes
-		if sk == "METADATA" {
-			noteID := strings.TrimPrefix(pk, "NOTE#")
-			if err := np.processNewNoteByID(ctx, noteID); err != nil {
-				np.logger.Error("failed to process note",
-					zap.String("note_id", noteID),
-					zap.Error(err))
-				errors = append(errors, err)
-			}
-		}
-
-		// Process INSERT events for new votes
-		if strings.HasPrefix(sk, "VOTE#") {
-			noteID := strings.TrimPrefix(pk, "NOTE#")
-			if err := np.recalculateNoteScore(ctx, noteID); err != nil {
-				np.logger.Error("failed to recalculate note score",
-					zap.String("note_id", noteID),
-					zap.Error(err))
-				errors = append(errors, err)
-			}
-		}
+func (np *NoteProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = strings.TrimSpace(ctx.RequestID)
+		runCtx = ctx.Context()
+	}
+	if requestID == "" {
+		requestID = "unknown"
 	}
 
-	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		np.logger.Error("partial batch failure in stream processing",
-			zap.Int("failed_records", len(errors)),
-			zap.Int("total_records", len(event.Records)),
+	if err := np.processRecord(runCtx, requestID, record); err != nil {
+		np.logger.Error("failed to process note stream record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
 		)
-		return pkgErrors.NoteProcessorPartialBatchFailure()
+		return err
+	}
+
+	return nil
+}
+
+func (np *NoteProcessor) processRecord(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
+	if record.EventName != "INSERT" {
+		return nil
+	}
+
+	pkAttr, ok := record.Change.NewImage["PK"]
+	pk := getStringAttribute(pkAttr)
+	if !ok || common.ValidateRequiredParam("pk", pk) != nil || !strings.HasPrefix(pk, "NOTE#") {
+		return nil
+	}
+
+	skAttr, ok := record.Change.NewImage["SK"]
+	sk := getStringAttribute(skAttr)
+	if !ok {
+		return nil
+	}
+
+	noteID := strings.TrimPrefix(pk, "NOTE#")
+	logger := np.logger.With(
+		zap.String("request_id", requestID),
+		zap.String("note_id", noteID),
+		zap.String("event_name", record.EventName),
+		zap.String("event_id", record.EventID),
+		zap.String("sk", sk),
+	)
+
+	switch {
+	case sk == "METADATA":
+		if err := np.processNewNoteByID(ctx, noteID); err != nil {
+			logger.Error("failed to process note", zap.Error(err))
+			return err
+		}
+	case strings.HasPrefix(sk, "VOTE#"):
+		if err := np.recalculateNoteScore(ctx, noteID); err != nil {
+			logger.Error("failed to recalculate note score", zap.Error(err))
+			return err
+		}
 	}
 
 	return nil
@@ -1397,59 +1394,18 @@ func init() {
 	processor = NewNoteProcessor(lambdaCtx)
 }
 
-func handleDynamoDBStream(ctx *lift.Context) error {
-	start := time.Now()
-	requestID := ctx.GetRequestID()
-	if requestID == "" {
-		requestID = fmt.Sprintf("note-processor-%d", time.Now().UnixNano())
-		ctx.SetRequestID(requestID)
-	}
+func main() {
+	app := apptheory.New()
+	app.DynamoDB(lambdaCtx.Config.DynamoTableName, handleNoteProcessorStreamRecord)
 
-	records, err := ctx.DynamoDBRecords()
-	if err != nil {
-		lambdaCtx.Logger.Error("failed to decode DynamoDB stream records",
-			zap.String("request_id", requestID),
-			zap.Error(err),
-		)
-		return err
-	}
-
-	event := events.DynamoDBEvent{Records: records}
-	processorCtx := context.WithValue(ctx.Request.Context(), requestIDKey, requestID)
-
-	lambdaCtx.Logger.Info("processing note stream batch",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	procErr := processor.HandleStream(processorCtx, event)
-
-	duration := time.Since(start)
-	if procErr != nil {
-		lambdaCtx.Logger.Error("DynamoDB stream processing failed",
-			zap.String("request_id", requestID),
-			zap.Error(procErr),
-			zap.Duration("duration", duration),
-			zap.Int("record_count", len(event.Records)),
-		)
-		return procErr
-	}
-
-	lambdaCtx.Logger.Info("DynamoDB stream processing completed",
-		zap.String("request_id", requestID),
-		zap.Duration("duration", duration),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	return nil
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-func main() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
-
-	_ = app.DynamoDB("*", handleDynamoDBStream)
-
-	lambdaStartFn(app.HandleRequest)
+func handleNoteProcessorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("note processor not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }

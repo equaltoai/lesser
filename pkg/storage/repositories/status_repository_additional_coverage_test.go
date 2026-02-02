@@ -12,11 +12,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -86,8 +86,10 @@ func (r fullRelationshipRepo) GetMutedUsers(context.Context, string, interfaces.
 	return &interfaces.PaginatedResult[*storage.Account]{}, nil
 }
 
-func (r fullRelationshipRepo) GetFollowerCount(context.Context, string) (int64, error)  { return 0, nil }
-func (r fullRelationshipRepo) GetFollowingCount(context.Context, string) (int64, error) { return 0, nil }
+func (r fullRelationshipRepo) GetFollowerCount(context.Context, string) (int64, error) { return 0, nil }
+func (r fullRelationshipRepo) GetFollowingCount(context.Context, string) (int64, error) {
+	return 0, nil
+}
 func (r fullRelationshipRepo) GetMutualFollowCount(context.Context, string, string) (int64, error) {
 	return 0, nil
 }
@@ -251,7 +253,7 @@ func TestStatusRepository_create_update_delete_and_counts(t *testing.T) {
 		Hashtags:        []string{"#Go", " ", "#"},
 		Language:        "en",
 	}
-	status.Note = &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/boost1"}}}
+	status.Note = &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/boost1"}}
 
 	assert.NoError(t, repo.CreateBoostStatus(ctx, status))
 
@@ -340,7 +342,7 @@ func TestStatusRepository_url_queries(t *testing.T) {
 			*dest = []models.Status{
 				{
 					StatusID: "note-match",
-					Note:     &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: url}}},
+					Note:     &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: url}},
 				},
 				{
 					StatusID: "url-match",
@@ -705,7 +707,7 @@ func TestStatusRepository_canonicalize_and_hashtag_index_branches(t *testing.T) 
 		PublishedAt:    time.Time{}, // force timestamp fallback
 		Hashtags:       []string{"Go", "Rust"},
 	}
-	status.Note = &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}}
+	status.Note = &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}
 
 	assert.NoError(t, repo.createHashtagTimelineIndexes(ctx, status))
 	assert.NoError(t, repo.canonicalizeStatusIndexes(ctx, status))
@@ -953,7 +955,7 @@ func TestStatusRepository_more_error_branches_and_helpers(t *testing.T) {
 			Hashtags:       []string{"Go"},
 			PublishedAt:    time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		}
-		status.Note = &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}}
+		status.Note = &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}
 
 		assert.NoError(t, repo.CreateStatus(ctx, status))
 	})

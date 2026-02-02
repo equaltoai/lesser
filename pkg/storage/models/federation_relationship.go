@@ -26,56 +26,56 @@ const (
 
 // FederationRelationship represents a relationship between users or instances with lifecycle tracking
 type FederationRelationship struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // State-based queries
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // Last activity timestamp
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"` // User-based queries
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"` // Target instance + timestamp
-	TTL    int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // State-based queries
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // Last activity timestamp
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"` // User-based queries
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"` // Target instance + timestamp
+	TTL    int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Core relationship data
-	ID               string `dynamorm:"attr:id" json:"id"`
-	UserID           string `dynamorm:"attr:userID" json:"user_id"`                        // Local user ID
-	TargetInstance   string `dynamorm:"attr:targetInstance" json:"target_instance"`        // Remote instance domain
-	TargetUserID     string `dynamorm:"attr:targetUserID" json:"target_user_id,omitempty"` // Remote user ID (if user-level)
-	RelationshipType string `dynamorm:"attr:relationshipType" json:"relationship_type"`    // follow, mention, boost, reply, etc.
+	ID               string `theorydb:"attr:id" json:"id"`
+	UserID           string `theorydb:"attr:userID" json:"user_id"`                        // Local user ID
+	TargetInstance   string `theorydb:"attr:targetInstance" json:"target_instance"`        // Remote instance domain
+	TargetUserID     string `theorydb:"attr:targetUserID" json:"target_user_id,omitempty"` // Remote user ID (if user-level)
+	RelationshipType string `theorydb:"attr:relationshipType" json:"relationship_type"`    // follow, mention, boost, reply, etc.
 
 	// Lifecycle management
-	State          RelationshipState `dynamorm:"attr:state" json:"state"`
-	LastActivity   time.Time         `dynamorm:"attr:lastActivity" json:"last_activity"`
-	FirstSeen      time.Time         `dynamorm:"attr:firstSeen" json:"first_seen"`
-	StateChangedAt time.Time         `dynamorm:"attr:stateChangedAt" json:"state_changed_at"`
+	State          RelationshipState `theorydb:"attr:state" json:"state"`
+	LastActivity   time.Time         `theorydb:"attr:lastActivity" json:"last_activity"`
+	FirstSeen      time.Time         `theorydb:"attr:firstSeen" json:"first_seen"`
+	StateChangedAt time.Time         `theorydb:"attr:stateChangedAt" json:"state_changed_at"`
 
 	// Success rate tracking (15-minute rolling window)
-	SuccessCount15m int64     `dynamorm:"attr:successCount15m" json:"success_count_15m"`
-	FailureCount15m int64     `dynamorm:"attr:failureCount15m" json:"failure_count_15m"`
-	WindowStart15m  time.Time `dynamorm:"attr:windowStart15m" json:"window_start_15m"`
-	SuccessRate     float64   `dynamorm:"attr:successRate" json:"success_rate"`
+	SuccessCount15m int64     `theorydb:"attr:successCount15m" json:"success_count_15m"`
+	FailureCount15m int64     `theorydb:"attr:failureCount15m" json:"failure_count_15m"`
+	WindowStart15m  time.Time `theorydb:"attr:windowStart15m" json:"window_start_15m"`
+	SuccessRate     float64   `theorydb:"attr:successRate" json:"success_rate"`
 
 	// Aggregated metrics
-	TotalSuccesses  int64   `dynamorm:"attr:totalSuccesses" json:"total_successes"`
-	TotalFailures   int64   `dynamorm:"attr:totalFailures" json:"total_failures"`
-	TotalAttempts   int64   `dynamorm:"attr:totalAttempts" json:"total_attempts"`
-	AvgResponseTime float64 `dynamorm:"attr:avgResponseTime" json:"avg_response_time"`
+	TotalSuccesses  int64   `theorydb:"attr:totalSuccesses" json:"total_successes"`
+	TotalFailures   int64   `theorydb:"attr:totalFailures" json:"total_failures"`
+	TotalAttempts   int64   `theorydb:"attr:totalAttempts" json:"total_attempts"`
+	AvgResponseTime float64 `theorydb:"attr:avgResponseTime" json:"avg_response_time"`
 
 	// Reactivation handling
-	WarmupUntil        *time.Time `dynamorm:"attr:warmupUntil" json:"warmup_until,omitempty"`
-	CurrentRate        float64    `dynamorm:"attr:currentRate" json:"current_rate"`               // Traffic rate during warmup (0.0-1.0)
-	HistoricalBaseline float64    `dynamorm:"attr:historicalBaseline" json:"historical_baseline"` // Pre-dormancy success rate
+	WarmupUntil        *time.Time `theorydb:"attr:warmupUntil" json:"warmup_until,omitempty"`
+	CurrentRate        float64    `theorydb:"attr:currentRate" json:"current_rate"`               // Traffic rate during warmup (0.0-1.0)
+	HistoricalBaseline float64    `theorydb:"attr:historicalBaseline" json:"historical_baseline"` // Pre-dormancy success rate
 
 	// Storage optimization
-	ArchiveLocation        string    `dynamorm:"attr:archiveLocation" json:"archive_location,omitempty"`      // S3 key if archived
-	CompressedMetrics      string    `dynamorm:"attr:compressedMetrics" json:"compressed_metrics,omitempty"`  // Compressed historical data
-	LastCompressedAttempts int64     `dynamorm:"attr:lastCompressedAttempts" json:"last_compressed_attempts"` // Baseline for delta compression
-	LastCompressionTime    time.Time `dynamorm:"attr:lastCompressionTime" json:"last_compression_time"`       // When metrics were last compressed
-	IsCompressed           bool      `dynamorm:"attr:isCompressed" json:"is_compressed"`                      // Flag indicating compressed state
+	ArchiveLocation        string    `theorydb:"attr:archiveLocation" json:"archive_location,omitempty"`      // S3 key if archived
+	CompressedMetrics      string    `theorydb:"attr:compressedMetrics" json:"compressed_metrics,omitempty"`  // Compressed historical data
+	LastCompressedAttempts int64     `theorydb:"attr:lastCompressedAttempts" json:"last_compressed_attempts"` // Baseline for delta compression
+	LastCompressionTime    time.Time `theorydb:"attr:lastCompressionTime" json:"last_compression_time"`       // When metrics were last compressed
+	IsCompressed           bool      `theorydb:"attr:isCompressed" json:"is_compressed"`                      // Flag indicating compressed state
 
 	// Metadata
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing FederationRelationship.
@@ -329,13 +329,13 @@ func (fr *FederationRelationship) clearSensitiveData() {
 
 // FederationRelationshipAggregate represents aggregated relationship metrics for an instance
 type FederationRelationshipAggregate struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk"`
-	SK     string `dynamorm:"sk"`
-	GSI1PK string `dynamorm:"index:gsi1,pk"` // Instance-based queries
-	GSI1SK string `dynamorm:"index:gsi1,sk"` // Period + timestamp
-	TTL    int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	PK     string `theorydb:"pk"`
+	SK     string `theorydb:"sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk"` // Instance-based queries
+	GSI1SK string `theorydb:"index:gsi1,sk"` // Period + timestamp
+	TTL    int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Aggregate identification
 	InstanceDomain string    `json:"instance_domain"`
@@ -398,9 +398,9 @@ func (fra *FederationRelationshipAggregate) UpdateKeys() {
 
 // FederationRelationshipIndex represents a minimal index entry for archived relationships
 type FederationRelationshipIndex struct {
-	PK  string `dynamorm:"pk"`
-	SK  string `dynamorm:"sk"`
-	TTL int64  `json:"ttl,omitempty" dynamorm:"ttl"`
+	PK  string `theorydb:"pk"`
+	SK  string `theorydb:"sk"`
+	TTL int64  `json:"ttl,omitempty" theorydb:"ttl"`
 
 	RelationshipID  string            `json:"relationship_id"`
 	UserID          string            `json:"user_id"`

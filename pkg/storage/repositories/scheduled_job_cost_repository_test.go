@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -53,61 +53,61 @@ func populateScheduledJobSliceForCoverage(target any, baseTime time.Time) {
 	case reflect.TypeOf(models.ScheduledJobCostRecord{}):
 		records := []*models.ScheduledJobCostRecord{
 			{
-				ID:                 "run-1",
-				JobName:            "cleanup-expired-data",
-				Schedule:           "daily",
-				Status:             "success",
-				Timestamp:          baseTime.Add(-2 * time.Hour),
-				StartTime:          baseTime.Add(-2 * time.Hour),
-				EndTime:            baseTime.Add(-2*time.Hour + 2*time.Minute),
-				Duration:           2 * 60 * 1000,
+				ID:                  "run-1",
+				JobName:             "cleanup-expired-data",
+				Schedule:            "daily",
+				Status:              "success",
+				Timestamp:           baseTime.Add(-2 * time.Hour),
+				StartTime:           baseTime.Add(-2 * time.Hour),
+				EndTime:             baseTime.Add(-2*time.Hour + 2*time.Minute),
+				Duration:            2 * 60 * 1000,
 				TotalCostMicroCents: 2000,
-				ItemsProcessed:     100,
-				JobCategory:        "maintenance",
-				Environment:        "production",
+				ItemsProcessed:      100,
+				JobCategory:         "maintenance",
+				Environment:         "production",
 			},
 			{
-				ID:                 "run-2",
-				JobName:            "cost-aggregation",
-				Schedule:           "hourly",
-				Status:             "failed",
-				Timestamp:          baseTime.Add(-time.Hour),
-				StartTime:          baseTime.Add(-time.Hour),
-				EndTime:            baseTime.Add(-time.Hour + time.Minute),
-				Duration:           60 * 1000,
+				ID:                  "run-2",
+				JobName:             "cost-aggregation",
+				Schedule:            "hourly",
+				Status:              "failed",
+				Timestamp:           baseTime.Add(-time.Hour),
+				StartTime:           baseTime.Add(-time.Hour),
+				EndTime:             baseTime.Add(-time.Hour + time.Minute),
+				Duration:            60 * 1000,
 				TotalCostMicroCents: 5000,
-				ItemsProcessed:     10,
-				ItemsErrored:       3,
-				JobCategory:        "aggregation",
-				Environment:        "production",
+				ItemsProcessed:      10,
+				ItemsErrored:        3,
+				JobCategory:         "aggregation",
+				Environment:         "production",
 			},
 			{
-				ID:                 "target-id",
-				JobName:            "router-refresh",
-				Schedule:           "daily",
-				Status:             "timeout",
-				Timestamp:          baseTime.Add(-30 * time.Minute),
-				StartTime:          baseTime.Add(-30 * time.Minute),
-				EndTime:            baseTime.Add(-29 * time.Minute),
-				Duration:           60 * 1000,
+				ID:                  "target-id",
+				JobName:             "router-refresh",
+				Schedule:            "daily",
+				Status:              "timeout",
+				Timestamp:           baseTime.Add(-30 * time.Minute),
+				StartTime:           baseTime.Add(-30 * time.Minute),
+				EndTime:             baseTime.Add(-29 * time.Minute),
+				Duration:            60 * 1000,
 				TotalCostMicroCents: 10000,
-				ItemsProcessed:     1,
-				JobCategory:        "cleanup",
-				Environment:        "staging",
+				ItemsProcessed:      1,
+				JobCategory:         "cleanup",
+				Environment:         "staging",
 			},
 			{
-				ID:                 "run-3",
-				JobName:            "router-refresh",
-				Schedule:           "daily",
-				Status:             "cancelled",
-				Timestamp:          baseTime.Add(-15 * time.Minute),
-				StartTime:          baseTime.Add(-15 * time.Minute),
-				EndTime:            baseTime.Add(-14 * time.Minute),
-				Duration:           60 * 1000,
+				ID:                  "run-3",
+				JobName:             "router-refresh",
+				Schedule:            "daily",
+				Status:              "cancelled",
+				Timestamp:           baseTime.Add(-15 * time.Minute),
+				StartTime:           baseTime.Add(-15 * time.Minute),
+				EndTime:             baseTime.Add(-14 * time.Minute),
+				Duration:            60 * 1000,
 				TotalCostMicroCents: 100,
-				ItemsProcessed:     1,
-				JobCategory:        "cleanup",
-				Environment:        "staging",
+				ItemsProcessed:      1,
+				JobCategory:         "cleanup",
+				Environment:         "staging",
 			},
 		}
 		for _, record := range records {
@@ -119,10 +119,10 @@ func populateScheduledJobSliceForCoverage(target any, baseTime time.Time) {
 
 	case reflect.TypeOf(models.ScheduledJobCostAggregation{}):
 		agg := &models.ScheduledJobCostAggregation{
-			JobName:      "router-refresh",
-			Period:       "day",
-			WindowStart:  baseTime.Truncate(24 * time.Hour),
-			WindowEnd:    baseTime.Truncate(24 * time.Hour).Add(24 * time.Hour),
+			JobName:             "router-refresh",
+			Period:              "day",
+			WindowStart:         baseTime.Truncate(24 * time.Hour),
+			WindowEnd:           baseTime.Truncate(24 * time.Hour).Add(24 * time.Hour),
 			TotalCostMicroCents: 10000,
 			TotalCostDollars:    0.01,
 		}
@@ -137,7 +137,7 @@ func populateScheduledJobStructForCoverage(target any, baseTime time.Time) {
 	switch model := target.(type) {
 	case *models.ScheduledJobCostRecord:
 		*model = models.ScheduledJobCostRecord{
-			ID:            "run-1",
+			ID:             "run-1",
 			JobName:        "cleanup-expired-data",
 			Schedule:       "daily",
 			Status:         "success",
@@ -175,7 +175,7 @@ func TestScheduledJobCostRepository_ConstructAndCoverageSweep(t *testing.T) {
 
 	// Create + Update
 	require.NoError(t, repo.Create(ctx, &models.ScheduledJobCostRecord{
-		ID:            "run-1",
+		ID:             "run-1",
 		JobName:        "cleanup-expired-data",
 		Schedule:       "daily",
 		Status:         "success",
@@ -187,7 +187,7 @@ func TestScheduledJobCostRepository_ConstructAndCoverageSweep(t *testing.T) {
 		Environment:    "production",
 	}))
 	require.NoError(t, repo.Update(ctx, &models.ScheduledJobCostRecord{
-		ID:            "run-1",
+		ID:             "run-1",
 		JobName:        "cleanup-expired-data",
 		Schedule:       "daily",
 		Status:         "success",

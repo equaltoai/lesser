@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"testing"
@@ -19,9 +20,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -432,8 +433,8 @@ func TestExportProcessor_ProcessExportJob_And_HandleSQSWithContext_Round12(t *te
 		require.Error(t, err)
 	})
 
-	t.Run("HandleSQSWithContext parses new and legacy formats", func(t *testing.T) {
-		liftCtx := &lift.Context{Request: &lift.Request{}, RequestID: "req-1"}
+	t.Run("HandleSQSMessage parses new and legacy formats", func(t *testing.T) {
+		msgCtx := &apptheory.EventContext{RequestID: "req-1"}
 		event := events.SQSEvent{
 			Records: []events.SQSMessage{
 				{MessageId: "1", Body: `{"export_id":"sqs-1","username":"alice","type":"followers","format":"csv","include_media":false,"timestamp":123}`},
@@ -443,7 +444,9 @@ func TestExportProcessor_ProcessExportJob_And_HandleSQSWithContext_Round12(t *te
 			},
 		}
 
-		require.NoError(t, ep.HandleSQSWithContext(context.Background(), liftCtx, event))
+		for _, record := range event.Records {
+			require.NoError(t, ep.HandleSQSMessage(msgCtx, record))
+		}
 		require.NotEmpty(t, repo.statusCalls)
 	})
 
@@ -754,10 +757,32 @@ func TestExportGenerator_Main_InitializesAndStartsLambda_Round12(t *testing.T) {
 	startLambda = func(handler interface{}) {
 		startCalls++
 
-		h, ok := handler.(func(context.Context, events.SQSEvent) error)
+		h, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
-		require.NoError(t, h(context.Background(), events.SQSEvent{}))
+
+		event := events.SQSEvent{
+			Records: []events.SQSMessage{
+				{
+					MessageId:      "1",
+					Body:           "{bad json",
+					EventSourceARN: "arn:aws:sqs:us-east-1:123456789012:lesser-dev-export-processor-queue",
+					EventSource:    "aws:sqs",
+				},
+			},
+		}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+		respAny, err := h(context.Background(), raw)
+		require.NoError(t, err)
+
+		resp, ok := respAny.(events.SQSEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
 	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	setAWSEnvForS3Test(t, "http://localhost")
 	main()

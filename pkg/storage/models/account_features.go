@@ -9,17 +9,17 @@ import (
 // AccountPin represents a pinned/endorsed account in DynamoDB
 // Key pattern: PK=ACCOUNT_PIN#{username}, SK=PIN#{pinned_actor_id}
 type AccountPin struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key components
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "ACCOUNT_PIN#{username}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PIN#{pinned_actor_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "ACCOUNT_PIN#{username}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "PIN#{pinned_actor_id}"
 
 	// Pin data - matches storage.AccountPin fields
-	Username       string    `dynamorm:"attr:username" json:"username"`              // Who pinned the account
-	PinnedActorID  string    `dynamorm:"attr:pinnedActorID" json:"pinned_actor_id"`  // The actor ID that was pinned
-	PinnedUsername string    `dynamorm:"attr:pinnedUsername" json:"pinned_username"` // The username that was pinned
-	CreatedAt      time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	Username       string    `theorydb:"attr:username" json:"username"`              // Who pinned the account
+	PinnedActorID  string    `theorydb:"attr:pinnedActorID" json:"pinned_actor_id"`  // The actor ID that was pinned
+	PinnedUsername string    `theorydb:"attr:pinnedUsername" json:"pinned_username"` // The username that was pinned
+	CreatedAt      time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
 // TableName returns the DynamoDB table name
@@ -62,18 +62,18 @@ func (p *AccountPin) GetSK() string {
 // AccountNote represents a private note on an account in DynamoDB
 // Key pattern: PK=ACCOUNT_NOTE#{username}, SK=NOTE#{target_actor_id}
 type AccountNote struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key components
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "ACCOUNT_NOTE#{username}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "NOTE#{target_actor_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "ACCOUNT_NOTE#{username}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "NOTE#{target_actor_id}"
 
 	// Note data - matches storage.AccountNote fields
-	Username      string    `dynamorm:"attr:username" json:"username"`             // Who wrote the note
-	TargetActorID string    `dynamorm:"attr:targetActorID" json:"target_actor_id"` // The actor the note is about
-	Note          string    `dynamorm:"attr:note" json:"note"`                     // The note content
-	CreatedAt     time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt     time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Username      string    `theorydb:"attr:username" json:"username"`             // Who wrote the note
+	TargetActorID string    `theorydb:"attr:targetActorID" json:"target_actor_id"` // The actor the note is about
+	Note          string    `theorydb:"attr:note" json:"note"`                     // The note content
+	CreatedAt     time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt     time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table name

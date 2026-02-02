@@ -160,12 +160,6 @@ func TestNotificationProcessorErrors(t *testing.T) {
 			wantCategory: apperrors.CategoryLambda,
 			wantWrapped:  internal,
 		},
-		{
-			name:         "ErrPartialBatchFailure",
-			err:          ErrPartialBatchFailure(),
-			wantCode:     apperrors.CodeSQSProcessingFailed,
-			wantCategory: apperrors.CategoryLambda,
-		},
 	}
 
 	for _, tc := range cases {

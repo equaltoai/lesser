@@ -76,11 +76,11 @@ func TestDynamoDBCostRecord_Validate_InvalidOperationAndPeriod(t *testing.T) {
 
 func TestDynamoDBCostAggregation_Lifecycle_AndValidation(t *testing.T) {
 	act := &DynamoDBCostAggregation{
-		Period:            PeriodMonth,
-		OperationType:     "Query",
-		Table:             "main",
-		WindowStart:       time.Unix(1700000000, 0).UTC(),
-		WindowEnd:         time.Unix(1700003600, 0).UTC(),
+		Period:              PeriodMonth,
+		OperationType:       "Query",
+		Table:               "main",
+		WindowStart:         time.Unix(1700000000, 0).UTC(),
+		WindowEnd:           time.Unix(1700003600, 0).UTC(),
 		TotalCostMicroCents: 1_500_000,
 		TotalOperations:     3,
 	}

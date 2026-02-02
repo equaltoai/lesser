@@ -3,24 +3,26 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/trust"
 )
 
@@ -168,37 +170,23 @@ func NewReportTrustUpdater(db core.DB, tableName string, logger *zap.Logger) *Re
 	}
 }
 
-// HandleStream processes DynamoDB stream events using Lift patterns
-func (rtu *ReportTrustUpdater) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	requestID := ctx.GetRequestID()
-
-	rtu.logger.Info("processing report trust updater stream batch",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Process each record, continuing on individual failures
-	var processedCount, errorCount int
-
-	for _, record := range event.Records {
-		if err := rtu.processRecord(ctx.Request.Context(), record); err != nil {
-			errorCount++
-			rtu.logger.Error("failed to process record",
-				zap.String("request_id", requestID),
-				zap.String("event_id", record.EventID),
-				zap.Error(err))
-			// Continue processing other records - don't fail the entire batch
-		} else {
-			processedCount++
-		}
+func (rtu *ReportTrustUpdater) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
 	}
 
-	rtu.logger.Info("completed stream batch processing",
-		zap.String("request_id", requestID),
-		zap.Int("processed_count", processedCount),
-		zap.Int("error_count", errorCount),
-		zap.Int("total_count", len(event.Records)),
-	)
+	if err := rtu.processRecord(runCtx, record); err != nil {
+		rtu.logger.Error("failed to process record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
+		)
+		// Match previous Lift behavior: log and continue; do not fail the batch.
+		return nil
+	}
 
 	return nil
 }
@@ -403,7 +391,7 @@ func main() {
 
 var (
 	mustInitializeLambdaFn  = common.MustInitializeLambda
-	dynamormGetClientFn     = dynamorm.GetClient
+	dynamormGetClientFn     = theorydb.GetClient
 	lambdaStartFn           = lambda.Start
 	newReportTrustUpdaterFn = func(db core.DB, tableName string, logger *zap.Logger) *ReportTrustUpdater {
 		return NewReportTrustUpdater(db, tableName, logger)
@@ -439,17 +427,15 @@ func runReportTrustUpdater() {
 		zap.String("region", lambdaCtx.Config.Region),
 		zap.String("table", lambdaCtx.Config.DynamoTableName))
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return updater.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
+
+	app.DynamoDB(tableName, updater.HandleDynamoDBRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
-
-	lambdaStartFn(app.HandleRequest)
 }

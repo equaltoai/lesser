@@ -15,12 +15,12 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -221,7 +221,7 @@ func populateStructWithTime(target any, state *permissiveQueryState, at time.Tim
 		model.CcRecipients = []string{"https://example.com/users/alice/followers"}
 
 		if !skipNote {
-			model.Note = &models.NoteField{Note: &activitypub.Note{
+			model.Note = &activitypub.Note{
 				BaseObject: activitypub.BaseObject{
 					Type: "Note",
 					ID:   fmt.Sprintf("https://example.com/users/%s/statuses/%s", model.AuthorUsername, statusID),
@@ -231,7 +231,7 @@ func populateStructWithTime(target any, state *permissiveQueryState, at time.Tim
 				AttributedTo: fmt.Sprintf("https://example.com/users/%s", model.AuthorUsername),
 				Content:      model.Content,
 				Visibility:   model.Visibility,
-			}}
+			}
 		}
 		_ = model.UpdateKeys()
 	case *models.RelationshipRecord:
@@ -386,8 +386,10 @@ func (s *stubSocialRepo) HasUserAnnounced(_ context.Context, _, _ string) (bool,
 func (s *stubSocialRepo) GetActorAnnounces(_ context.Context, _ string, _ int, _ string) ([]*storage.Announce, string, error) {
 	return nil, "", nil
 }
-func (s *stubSocialRepo) CountObjectAnnounces(_ context.Context, _ string) (int, error) { return 0, nil }
-func (s *stubSocialRepo) CascadeDeleteAnnounces(_ context.Context, _ string) error      { return nil }
+func (s *stubSocialRepo) CountObjectAnnounces(_ context.Context, _ string) (int, error) {
+	return 0, nil
+}
+func (s *stubSocialRepo) CascadeDeleteAnnounces(_ context.Context, _ string) error { return nil }
 func (s *stubSocialRepo) CreateAccountPin(_ context.Context, _ *storage.AccountPin) error {
 	return nil
 }
@@ -1098,7 +1100,7 @@ func TestService_round15_validation_hydration_and_delete_branches(t *testing.T) 
 	_, err = serviceNoAccount.ensureStatusHydrated(ctx, &models.Status{
 		StatusID: "missing-author",
 		AuthorID: "",
-		Note:     &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "https://example.com/statuses/1"}}},
+		Note:     &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "https://example.com/statuses/1"}},
 	})
 	assert.Error(t, err)
 
@@ -1121,11 +1123,11 @@ func TestService_round15_federation_boost_and_reblog_branch_coverage(t *testing.
 	// queueFederationDelivery early returns.
 	service.queueFederationDelivery(ctx, &models.Status{}, "Create")
 	service.federation = nil
-	service.queueFederationDelivery(ctx, &models.Status{StatusID: "s1", Note: &models.NoteField{Note: &activitypub.Note{}}}, "Create")
+	service.queueFederationDelivery(ctx, &models.Status{StatusID: "s1", Note: &activitypub.Note{}}, "Create")
 
 	service.federation = &stubFederation{}
 	service.domainName = ""
-	service.queueFederationDelivery(ctx, &models.Status{StatusID: "s1", Note: &models.NoteField{Note: &activitypub.Note{}}}, "Create")
+	service.queueFederationDelivery(ctx, &models.Status{StatusID: "s1", Note: &activitypub.Note{}}, "Create")
 
 	// queueFederationTombstone: ID fallback, nil recipient lists, actor fallback.
 	service.domainName = "example.com"
@@ -1134,10 +1136,10 @@ func TestService_round15_federation_boost_and_reblog_branch_coverage(t *testing.
 		AuthorID:     "https://example.com/users/alice",
 		ToRecipients: nil,
 		CcRecipients: nil,
-		Note: &models.NoteField{Note: &activitypub.Note{
+		Note: &activitypub.Note{
 			BaseObject:   activitypub.BaseObject{ID: ""},
 			AttributedTo: "",
-		}},
+		},
 	})
 
 	// persistBoostStatus early returns.
@@ -1256,7 +1258,7 @@ func TestService_round15_additional_branch_coverage(t *testing.T) {
 		AuthorID:    "alice",
 		InReplyToID: "parent",
 		Hashtags:    []string{"go"},
-		Note:        &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "object-1"}}},
+		Note:        &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "object-1"}},
 	})
 }
 
@@ -1549,11 +1551,11 @@ func TestService_round15_emits_and_federation_error_paths(t *testing.T) {
 
 	// queueFederationTombstone: federation nil / note nil / error on queue.
 	service.federation = nil
-	service.queueFederationTombstone(ctx, &models.Status{StatusID: "status-1", Note: &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "x"}}}})
+	service.queueFederationTombstone(ctx, &models.Status{StatusID: "status-1", Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "x"}}})
 
 	service.federation = failingFederation{}
 	service.queueFederationTombstone(ctx, &models.Status{StatusID: "status-1"})
-	service.queueFederationTombstone(ctx, &models.Status{StatusID: "status-1", Note: &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "x"}}}})
+	service.queueFederationTombstone(ctx, &models.Status{StatusID: "status-1", Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "x"}}})
 }
 
 func TestService_round15_misc_helpers(t *testing.T) {

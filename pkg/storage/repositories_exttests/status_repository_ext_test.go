@@ -13,11 +13,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -270,7 +270,7 @@ func TestStatusRepository_ext_sweep(t *testing.T) {
 		Hashtags:        []string{"Go", " ", "#"},
 		Language:        "en",
 	}
-	status.Note = &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}}
+	status.Note = &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}
 	assert.NoError(t, repo.CreateStatus(ctx, status))
 
 	_ = repo.UpdateStatus(ctx, status)

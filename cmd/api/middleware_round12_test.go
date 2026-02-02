@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -9,10 +10,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -21,24 +22,21 @@ func TestCreateLoggingMiddlewareRound12_LogLevels(t *testing.T) {
 	mw := createLoggingMiddleware(logger)
 
 	t.Run("error from handler logs error level", func(t *testing.T) {
-		ctx := newTestLiftContext(http.MethodGet, "/api/v1/test")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusOK)
-			return errors.New("boom")
-		}))
-
-		require.Error(t, handler.Handle(ctx))
+		ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/test")
+		_, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusOK, ""), errors.New("boom")
+		})(ctx)
+		require.Error(t, err)
 	})
 
 	t.Run("status >=400 logs warn level", func(t *testing.T) {
-		ctx := newTestLiftContext(http.MethodGet, "/api/v1/test")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusBadRequest)
-			return nil
-		}))
+		ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/test")
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusBadRequest, ""), nil
+		})(ctx)
 
-		require.NoError(t, handler.Handle(ctx))
-		require.Equal(t, http.StatusBadRequest, ctx.Response.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 }
 
@@ -52,62 +50,57 @@ func TestInstanceLockMiddlewareRound12_Behavior(t *testing.T) {
 	mw := createInstanceLockMiddleware(repoMock, logger)
 
 	t.Run("OPTIONS passes through", func(t *testing.T) {
-		ctx := newTestLiftContext(http.MethodOptions, "/api/v1/statuses")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusNoContent)
-			return nil
-		}))
+		ctx := newTestAppTheoryContext(http.MethodOptions, "/api/v1/statuses")
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusNoContent, ""), nil
+		})(ctx)
 
-		require.NoError(t, handler.Handle(ctx))
-		require.Equal(t, http.StatusNoContent, ctx.Response.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusNoContent, resp.Status)
 	})
 
 	t.Run("GET non-content path passes through even when locked", func(t *testing.T) {
 		harness.locked = true
-		ctx := newTestLiftContext(http.MethodGet, "/api/v1/instance")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusCreated)
-			return nil
-		}))
+		ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/instance")
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusCreated, ""), nil
+		})(ctx)
 
-		require.NoError(t, handler.Handle(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, resp.Status)
 	})
 
 	t.Run("locked write allowed path passes through", func(t *testing.T) {
 		harness.locked = true
-		ctx := newTestLiftContext(http.MethodPost, "/api/v1/apps")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusCreated)
-			return nil
-		}))
+		ctx := newTestAppTheoryContext(http.MethodPost, "/api/v1/apps")
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusCreated, ""), nil
+		})(ctx)
 
-		require.NoError(t, handler.Handle(ctx))
-		require.Equal(t, http.StatusCreated, ctx.Response.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusCreated, resp.Status)
 	})
 
 	t.Run("locked write disallowed path returns forbidden", func(t *testing.T) {
 		harness.locked = true
-		ctx := newTestLiftContext(http.MethodPost, "/api/v1/statuses")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusOK)
-			return nil
-		}))
+		ctx := newTestAppTheoryContext(http.MethodPost, "/api/v1/statuses")
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusOK, ""), nil
+		})(ctx)
 
-		require.NoError(t, handler.Handle(ctx))
-		require.Equal(t, http.StatusForbidden, ctx.Response.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 	})
 
 	t.Run("locked read suppresses statuses list", func(t *testing.T) {
 		harness.locked = true
-		ctx := newTestLiftContext(http.MethodHead, "/api/v1/statuses/1")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusOK)
-			return nil
-		}))
+		ctx := newTestAppTheoryContext(http.MethodHead, "/api/v1/statuses/1")
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusOK, ""), nil
+		})(ctx)
 
-		require.NoError(t, handler.Handle(ctx))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 }
 
@@ -128,53 +121,61 @@ func TestInstanceLockMiddlewareRound12_InstanceStateError(t *testing.T) {
 
 	mw := createInstanceLockMiddleware(repoMock, logger)
 
-	ctxGet := newTestLiftContext(http.MethodGet, "/api/v1/statuses/1")
-	handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-		ctx.Status(http.StatusOK)
-		return nil
-	}))
-	require.NoError(t, handler.Handle(ctxGet))
-	require.Equal(t, http.StatusNotFound, ctxGet.Response.StatusCode)
+	ctxGet := newTestAppTheoryContext(http.MethodGet, "/api/v1/statuses/1")
+	handler := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+		return apptheory.Text(http.StatusOK, ""), nil
+	})
+	resp, err := handler(ctxGet)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, resp.Status)
 
-	ctxPost := newTestLiftContext(http.MethodPost, "/api/v1/statuses")
-	require.NoError(t, handler.Handle(ctxPost))
-	require.Equal(t, http.StatusForbidden, ctxPost.Response.StatusCode)
+	ctxPost := newTestAppTheoryContext(http.MethodPost, "/api/v1/statuses")
+	resp, err = handler(ctxPost)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusForbidden, resp.Status)
 }
 
 func TestLockedContentResponsesRound12(t *testing.T) {
 	t.Run("status objects become 404", func(t *testing.T) {
-		ctx := newTestLiftContext(http.MethodGet, "/api/v1/statuses/1")
-		require.NoError(t, respondLockedContentRead(ctx, "/api/v1/statuses/1"))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/statuses/1")
+		resp, err := respondLockedContentRead(ctx, "/api/v1/statuses/1")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 
 	t.Run("oembed becomes 404", func(t *testing.T) {
-		ctx := newTestLiftContext(http.MethodGet, "/api/oembed")
-		require.NoError(t, respondLockedContentRead(ctx, "/api/oembed"))
-		require.Equal(t, http.StatusNotFound, ctx.Response.StatusCode)
+		ctx := newTestAppTheoryContext(http.MethodGet, "/api/oembed")
+		resp, err := respondLockedContentRead(ctx, "/api/oembed")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusNotFound, resp.Status)
 	})
 
 	t.Run("search returns empty object", func(t *testing.T) {
-		ctx := newTestLiftContext(http.MethodGet, "/api/v2/search")
-		require.NoError(t, respondLockedContentRead(ctx, "/api/v2/search"))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		body := ctx.Response.Body.(map[string]any)
+		ctx := newTestAppTheoryContext(http.MethodGet, "/api/v2/search")
+		resp, err := respondLockedContentRead(ctx, "/api/v2/search")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.Status)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Equal(t, []any{}, body["accounts"])
 		require.Equal(t, []any{}, body["statuses"])
 		require.Equal(t, []any{}, body["hashtags"])
 	})
 
 	t.Run("timelines return empty list", func(t *testing.T) {
-		ctx := newTestLiftContext(http.MethodGet, "/api/v1/timelines/home")
-		require.NoError(t, respondLockedContentRead(ctx, "/api/v1/timelines/home"))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
-		_, ok := ctx.Response.Body.([]any)
-		require.True(t, ok)
+		ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/timelines/home")
+		resp, err := respondLockedContentRead(ctx, "/api/v1/timelines/home")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.Status)
+
+		var out []any
+		require.NoError(t, json.Unmarshal(resp.Body, &out))
 	})
 }
 
 func TestPermissionAndHelpersRound12(t *testing.T) {
-	ctx := newTestLiftContext(http.MethodGet, "/api/v1/test")
+	ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/test")
 
 	require.False(t, isWriteAllowedWhileLocked("  "))
 	require.False(t, shouldSuppressContentReadWhileLocked(""))
@@ -195,7 +196,7 @@ func TestPermissionAndHelpersRound12(t *testing.T) {
 	require.Nil(t, GetCostTracker(ctx))
 
 	// Logger helpers.
-	require.NotNil(t, GetLogger(newTestLiftContext(http.MethodGet, "/api/v1/test")))
+	require.NotNil(t, GetLogger(newTestAppTheoryContext(http.MethodGet, "/api/v1/test")))
 }
 
 func TestRBACMiddlewareRound12(t *testing.T) {
@@ -205,36 +206,36 @@ func TestRBACMiddlewareRound12(t *testing.T) {
 	repoMock := new(mocks.MockRepositoryStorage)
 	setRepoField(repoMock, "userRepo", userRepo)
 
-	ctx := newTestLiftContext(http.MethodGet, "/api/v1/test")
+	ctx := newTestAppTheoryContext(http.MethodGet, "/api/v1/test")
 	ctx.Set("claims", &auth.Claims{Username: "alice"})
 
 	t.Run("admin allowed", func(t *testing.T) {
 		harness.role = "admin"
-		handler := AdminOnlyMiddleware(repoMock)(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusOK)
-			return nil
-		}))
+		handler := AdminOnlyMiddleware(repoMock)(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusOK, ""), nil
+		})
 
-		require.NoError(t, handler.Handle(ctx))
-		require.Equal(t, http.StatusOK, ctx.Response.StatusCode)
+		resp, err := handler(ctx)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.Status)
 	})
 
 	t.Run("admin forbidden", func(t *testing.T) {
 		harness.role = "user"
-		ctxForbidden := newTestLiftContext(http.MethodGet, "/api/v1/test")
+		ctxForbidden := newTestAppTheoryContext(http.MethodGet, "/api/v1/test")
 		ctxForbidden.Set("claims", &auth.Claims{Username: "alice"})
 
-		handler := AdminOnlyMiddleware(repoMock)(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusOK)
-			return nil
-		}))
+		handler := AdminOnlyMiddleware(repoMock)(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusOK, ""), nil
+		})
 
-		require.NoError(t, handler.Handle(ctxForbidden))
-		require.Equal(t, http.StatusForbidden, ctxForbidden.Response.StatusCode)
+		resp, err := handler(ctxForbidden)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusForbidden, resp.Status)
 	})
 
 	t.Run("unknown permission level errors", func(t *testing.T) {
-		ctxUnknown := newTestLiftContext(http.MethodGet, "/api/v1/test")
+		ctxUnknown := newTestAppTheoryContext(http.MethodGet, "/api/v1/test")
 		ctxUnknown.Set("claims", &auth.Claims{Username: "alice"})
 		harness.role = "admin"
 
@@ -244,12 +245,12 @@ func TestRBACMiddlewareRound12(t *testing.T) {
 
 	t.Run("performance monitoring pass-through", func(t *testing.T) {
 		mw := createPerformanceMonitoringMiddleware(nil)
-		ctxPerf := newTestLiftContext(http.MethodGet, "/api/v1/test")
-		handler := mw(lift.HandlerFunc(func(ctx *lift.Context) error {
-			ctx.Status(http.StatusOK)
-			return nil
-		}))
-		require.NoError(t, handler.Handle(ctxPerf))
-		require.Equal(t, http.StatusOK, ctxPerf.Response.StatusCode)
+		ctxPerf := newTestAppTheoryContext(http.MethodGet, "/api/v1/test")
+		handler := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return apptheory.Text(http.StatusOK, ""), nil
+		})
+		resp, err := handler(ctxPerf)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.Status)
 	})
 }

@@ -33,8 +33,8 @@ func TestMediaMetadata_LifecycleValidationAndHelpers(t *testing.T) {
 
 	t.Run("BeforeUpdate sets ProcessedAt when completing and missing timestamp", func(t *testing.T) {
 		m := &MediaMetadata{
-			MediaID:    "m1",
-			Status:     StatusComplete,
+			MediaID:     "m1",
+			Status:      StatusComplete,
 			ProcessedAt: time.Time{},
 		}
 		require.NoError(t, m.BeforeUpdate())
@@ -101,4 +101,3 @@ func TestMediaMetadata_LifecycleValidationAndHelpers(t *testing.T) {
 		assert.Equal(t, info, got)
 	})
 }
-

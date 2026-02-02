@@ -7,26 +7,26 @@ import (
 
 // InstanceHealthReport represents health metrics for a federated instance
 type InstanceHealthReport struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // INSTANCE#domain
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // HEALTH#{timestamp}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // INSTANCE#domain
+	SK string `theorydb:"sk,attr:SK" json:"-"` // HEALTH#{timestamp}
 
 	// Attributes from interface
-	Domain          string    `dynamorm:"attr:domain" json:"domain"`
-	Status          string    `dynamorm:"attr:status" json:"status"` // healthy/warning/critical
-	ResponseTime    float64   `dynamorm:"attr:responseTime" json:"response_time"`
-	ErrorRate       float64   `dynamorm:"attr:errorRate" json:"error_rate"`
-	FederationDelay float64   `dynamorm:"attr:federationDelay" json:"federation_delay"`
-	QueueDepth      int       `dynamorm:"attr:queueDepth" json:"queue_depth"`
-	Issues          []string  `dynamorm:"attr:issues" json:"issues"`
-	Recommendations []string  `dynamorm:"attr:recommendations" json:"recommendations"`
-	LastChecked     time.Time `dynamorm:"attr:lastChecked" json:"last_checked"`
+	Domain          string    `theorydb:"attr:domain" json:"domain"`
+	Status          string    `theorydb:"attr:status" json:"status"` // healthy/warning/critical
+	ResponseTime    float64   `theorydb:"attr:responseTime" json:"response_time"`
+	ErrorRate       float64   `theorydb:"attr:errorRate" json:"error_rate"`
+	FederationDelay float64   `theorydb:"attr:federationDelay" json:"federation_delay"`
+	QueueDepth      int       `theorydb:"attr:queueDepth" json:"queue_depth"`
+	Issues          []string  `theorydb:"attr:issues" json:"issues"`
+	Recommendations []string  `theorydb:"attr:recommendations" json:"recommendations"`
+	LastChecked     time.Time `theorydb:"attr:lastChecked" json:"last_checked"`
 
 	// Additional metadata
-	Timestamp string `dynamorm:"attr:timestamp" json:"timestamp"`   // ISO timestamp for sorting
-	TTL       int64  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // 30 days retention
+	Timestamp string `theorydb:"attr:timestamp" json:"timestamp"`   // ISO timestamp for sorting
+	TTL       int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // 30 days retention
 }
 
 // TableName returns the DynamoDB table backing InstanceHealthReport.

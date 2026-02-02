@@ -17,7 +17,7 @@ type stubModerationRepo struct {
 	stats    *storage.ReportStats
 	statsErr error
 
-	createdEvent  *storage.ModerationEvent
+	createdEvent   *storage.ModerationEvent
 	createEventErr error
 
 	report    *storage.Report
@@ -239,4 +239,3 @@ func TestEnhancedReportService_UsesTrustConstants(t *testing.T) {
 	// Guardrail: trust package is imported and referenced by this file.
 	assert.Equal(t, "content", string(trust.TrustCategoryContent))
 }
-

@@ -1,7 +1,7 @@
 package cost
 
 import (
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ func ExampleEnhancedUsage() {
 	// - Actual item counts returned
 
 	type ExampleModel struct {
-		ID   string `dynamorm:"pk"`
+		ID   string `theorydb:"pk"`
 		Name string `json:"name"`
 	}
 
@@ -105,7 +105,7 @@ func EnhancedCostAnalysis(tracker *EnhancedOperationTracker) {
 // BatchOperationExample demonstrates enhanced batch operation tracking
 func BatchOperationExample(trackingDB *TrackingDB) {
 	type ExampleItem struct {
-		ID   string `dynamorm:"pk"`
+		ID   string `theorydb:"pk"`
 		Data string `json:"data"`
 	}
 

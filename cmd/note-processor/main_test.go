@@ -11,8 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	comprehendTypes "github.com/aws/aws-sdk-go-v2/service/comprehend/types"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap"
 )
 
@@ -30,13 +30,13 @@ func (f *fakeStreamerClient) PostToConnection(_ context.Context, connectionID st
 
 func (f *fakeStreamerClient) DeleteConnection(_ context.Context, _ string) error { return nil }
 
-func (f *fakeStreamerClient) GetConnection(_ context.Context, _ string) (*streamer.ConnectionInfo, error) {
-	return nil, nil
+func (f *fakeStreamerClient) GetConnection(_ context.Context, _ string) (streamer.Connection, error) {
+	return streamer.Connection{}, nil
 }
 
 func TestNoteProcessor_PureHelpers(t *testing.T) {
 	np := &NoteProcessor{
-		logger: zap.NewNop(),
+		logger:  zap.NewNop(),
 		baseURL: "https://example.com",
 	}
 

@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -26,15 +27,16 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
-	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 )
 
 // Push notification delivery status constants
@@ -83,16 +85,13 @@ func (a repositoryStorageAdapter) Activity() activityRepository {
 
 var (
 	mustInitializeLambdaFn = common.MustInitializeLambda
-	getDynamoClientFn      = dynamorm.GetClient
+	getDynamoClientFn      = theorydb.GetClient
 	newRepositoryFactoryFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (storagecore.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
 	}
 
 	lambdaStartFn              = lambda.Start
 	newPushDeliveryProcessorFn = NewPushDeliveryProcessor
-	handleSQSEventFn           = func(processor *PushDeliveryProcessor, ctx *lift.Context, event events.SQSEvent) error {
-		return processor.HandleSQSBatch(ctx, event)
-	}
 )
 
 // PushMessage represents a message from the SQS queue
@@ -201,66 +200,42 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	}, nil
 }
 
-// HandleSQSBatch processes a batch of SQS messages concurrently
-func (pdp *PushDeliveryProcessor) HandleSQSBatch(ctx *lift.Context, event events.SQSEvent) error {
-	requestID, _ := ctx.Get("requestID").(string)
-	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
-		requestID = fmt.Sprintf("push-%d", time.Now().UnixNano())
-		ctx.Set("requestID", requestID)
+func (pdp *PushDeliveryProcessor) HandleSQSMessage(ctx *apptheory.EventContext, msg events.SQSMessage) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
 	}
 
-	pdp.logger.Info("processing push notification batch",
-		zap.String("request_id", requestID),
-		zap.Int("message_count", len(event.Records)),
-	)
-
-	// Process messages concurrently with error collection
-	results := make(chan error, len(event.Records))
-	failures := make([]error, 0)
-	var failureMutex sync.Mutex
-
-	for _, record := range event.Records {
-		go func(msg events.SQSMessage) {
-			err := pdp.processMessage(ctx, msg)
-			results <- err
-
-			if err != nil {
-				failureMutex.Lock()
-				failures = append(failures, err)
-				failureMutex.Unlock()
-			}
-		}(record)
+	if pdp.logger == nil {
+		pdp.logger = zap.NewNop()
 	}
 
-	// Collect results
-	for i := 0; i < len(event.Records); i++ {
-		<-results
-	}
+	defer func() {
+		if r := recover(); r != nil {
+			pdp.logger.Error("panic processing push message",
+				zap.String("request_id", requestID),
+				zap.String("message_id", msg.MessageId),
+				zap.Any("panic", r),
+			)
+			err = fmt.Errorf("panic recovered: %v", r)
+		}
+	}()
 
-	// Return batch item failures for SQS to retry specific messages
-	if len(failures) > 0 {
-		pdp.logger.Error("batch processing had failures",
+	if err := pdp.processMessage(runCtx, msg); err != nil {
+		pdp.logger.Error("failed to process push message",
 			zap.String("request_id", requestID),
-			zap.Int("failure_count", len(failures)),
-			zap.Int("total_count", len(event.Records)),
+			zap.String("message_id", msg.MessageId),
+			zap.Error(err),
 		)
-
-		// Return a custom batch error for SQS partial failure handling
-		return lift.NewLiftError("PARTIAL_FAILURE", "partial batch failure", 500).
-			WithDetail("failed_count", len(failures)).
-			WithDetail("total_count", len(event.Records))
+		return err
 	}
-
-	pdp.logger.Info("batch processing completed successfully",
-		zap.String("request_id", requestID),
-		zap.Int("processed_count", len(event.Records)),
-	)
-
 	return nil
 }
 
 // processMessage processes a single SQS message
-func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.SQSMessage) error {
+func (pdp *PushDeliveryProcessor) processMessage(ctx context.Context, msg events.SQSMessage) error {
 	start := time.Now()
 
 	// Parse notification
@@ -289,7 +264,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 	}
 
 	// Get user's push subscriptions
-	subscriptions, err := pdp.repos.PushSubscription().GetUserPushSubscriptions(ctx.Context, notification.Username)
+	subscriptions, err := pdp.repos.PushSubscription().GetUserPushSubscriptions(ctx, notification.Username)
 	if err != nil {
 		pdp.logger.Error("failed to get push subscriptions",
 			zap.String("username", notification.Username),
@@ -306,7 +281,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 	}
 
 	// Get VAPID keys
-	vapidKeys, err := pdp.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
+	vapidKeys, err := pdp.repos.PushSubscription().GetVAPIDKeys(ctx)
 	if err != nil {
 		pdp.logger.Error("failed to get VAPID keys", zap.Error(err))
 		return ErrGetVAPIDKeys(err)
@@ -325,11 +300,11 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 		}
 
 		// Send the notification
-		result := pdp.sendWebPush(ctx.Context, sub, &notification, vapidKeys)
+		result := pdp.sendWebPush(ctx, sub, &notification, vapidKeys)
 		deliveryResults = append(deliveryResults, result)
 
 		// Track delivery status
-		if err := pdp.trackDelivery(ctx.Context, notification, result); err != nil {
+		if err := pdp.trackDelivery(ctx, notification, result); err != nil {
 			pdp.logger.Warn("failed to track delivery status",
 				zap.String("subscription_id", sub.ID),
 				zap.Error(err),
@@ -501,7 +476,7 @@ func (pdp *PushDeliveryProcessor) trackDelivery(ctx context.Context, notificatio
 }
 
 // recordMetrics records performance and delivery metrics
-func (pdp *PushDeliveryProcessor) recordMetrics(_ *lift.Context, notificationType string, duration time.Duration, err error, status string) {
+func (pdp *PushDeliveryProcessor) recordMetrics(_ context.Context, notificationType string, duration time.Duration, err error, status string) {
 	// Record push notification metrics to CloudWatch via structured logging
 	// The log aggregation system will parse these and send to CloudWatch
 	pdp.logger.Info("push_delivery_metrics",
@@ -750,30 +725,15 @@ func main() {
 		panic(ErrProcessorInitialization(err))
 	}
 
-	lambdaStartFn(func(baseCtx context.Context, event events.SQSEvent) (err error) {
-		requestID := fmt.Sprintf("push-%d", time.Now().UnixNano())
-		liftCtx := lift.NewContext(baseCtx, nil)
-		liftCtx.RequestID = requestID
-		liftCtx.Set("requestID", requestID)
+	app := apptheory.New()
 
-		defer func() {
-			if r := recover(); r != nil {
-				processor.logger.Error("panic processing push batch",
-					zap.String("request_id", requestID),
-					zap.Any("panic", r),
-				)
-				err = fmt.Errorf("panic recovered: %v", r)
-			}
-		}()
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	queueName := naming.ResourceNameWithApp(appName, "push-delivery-queue", stage)
 
-		processor.logger.Info("received push SQS event",
-			zap.String("request_id", requestID),
-			zap.Int("record_count", len(event.Records)))
+	app.SQS(queueName, processor.HandleSQSMessage)
 
-		if len(event.Records) == 0 {
-			return nil
-		}
-
-		return handleSQSEventFn(processor, liftCtx, event)
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
 }

@@ -10,42 +10,42 @@ import (
 // MediaPopularity tracks aggregated popularity metrics for media items
 // This is maintained by streaming analytics ingestion for efficient trending queries
 type MediaPopularity struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB Keys (STABLE - never change)
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // MEDIA_POPULARITY#{period}
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // MEDIA#{mediaID}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // MEDIA_POPULARITY#{period}
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // MEDIA#{mediaID}
 
 	// GSI1 - Sorted by popularity (UPDATEABLE)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // PERIOD#{period}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {inverted_view_count} for descending sort
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // PERIOD#{period}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {inverted_view_count} for descending sort
 
 	// GSI2 - Query by date
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // DATE#{date}
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // MEDIA#{mediaID}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // DATE#{date}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // MEDIA#{mediaID}
 
 	// Business fields
-	MediaID         string    `dynamorm:"attr:mediaID" json:"media_id"`
-	ViewCount       int64     `dynamorm:"attr:viewCount" json:"view_count"`
-	UniqueViewers   int64     `dynamorm:"attr:uniqueViewers" json:"unique_viewers"`
-	CompletionCount int64     `dynamorm:"attr:completionCount" json:"completion_count"`
-	TotalWatchTime  int64     `dynamorm:"attr:totalWatchTime" json:"total_watch_time"` // seconds
-	BufferingEvents int64     `dynamorm:"attr:bufferingEvents" json:"buffering_events"`
-	LastViewed      time.Time `dynamorm:"attr:lastViewed" json:"last_viewed"`
-	FirstViewed     time.Time `dynamorm:"attr:firstViewed" json:"first_viewed"`
-	Period          string    `dynamorm:"attr:period" json:"period"` // DAY, WEEK, MONTH
-	Date            string    `dynamorm:"attr:date" json:"date"`     // YYYY-MM-DD
-	Timestamp       time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
+	MediaID         string    `theorydb:"attr:mediaID" json:"media_id"`
+	ViewCount       int64     `theorydb:"attr:viewCount" json:"view_count"`
+	UniqueViewers   int64     `theorydb:"attr:uniqueViewers" json:"unique_viewers"`
+	CompletionCount int64     `theorydb:"attr:completionCount" json:"completion_count"`
+	TotalWatchTime  int64     `theorydb:"attr:totalWatchTime" json:"total_watch_time"` // seconds
+	BufferingEvents int64     `theorydb:"attr:bufferingEvents" json:"buffering_events"`
+	LastViewed      time.Time `theorydb:"attr:lastViewed" json:"last_viewed"`
+	FirstViewed     time.Time `theorydb:"attr:firstViewed" json:"first_viewed"`
+	Period          string    `theorydb:"attr:period" json:"period"` // DAY, WEEK, MONTH
+	Date            string    `theorydb:"attr:date" json:"date"`     // YYYY-MM-DD
+	Timestamp       time.Time `theorydb:"attr:timestamp" json:"timestamp"`
 
 	// Quality distribution
-	QualityViews map[string]int64 `dynamorm:"attr:qualityViews" json:"quality_views"` // quality -> view count
+	QualityViews map[string]int64 `theorydb:"attr:qualityViews" json:"quality_views"` // quality -> view count
 
 	// Popularity score (calculated)
-	PopularityScore float64 `dynamorm:"attr:popularityScore" json:"popularity_score"`
-	TrendScore      float64 `dynamorm:"attr:trendScore" json:"trend_score"`
+	PopularityScore float64 `theorydb:"attr:popularityScore" json:"popularity_score"`
+	TrendScore      float64 `theorydb:"attr:trendScore" json:"trend_score"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the keys based on the current values

@@ -27,4 +27,3 @@ func TestRound12MutationResolvers_Threads_SyncThreadAndMissingReplies(t *testing
 	require.True(t, payload.Success)
 	require.Equal(t, 0, payload.SyncedReplies)
 }
-

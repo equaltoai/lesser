@@ -137,4 +137,3 @@ func TestRound12FiltersV2_ErrorCasesAndHelpers(t *testing.T) {
 	require.NotNil(t, results[1].MatchedRules)
 	require.False(t, now.IsZero())
 }
-

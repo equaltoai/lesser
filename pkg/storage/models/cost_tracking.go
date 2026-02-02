@@ -11,130 +11,130 @@ import (
 
 // DynamoDBCostRecord represents detailed cost tracking data from DynamoDB operations
 type DynamoDBCostRecord struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using operation type as partition key with timestamp sort key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "cost#{operation_type}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "cost#{operation_type}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Table queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core cost tracking data
-	ID            string    `dynamorm:"attr:id" json:"id"`
-	OperationType string    `dynamorm:"attr:operationType" json:"operation_type"` // GetItem, PutItem, Query, Scan, BatchWrite, etc.
-	Table         string    `dynamorm:"attr:tableName" json:"table_name"`
-	Timestamp     time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	Period        string    `dynamorm:"attr:period" json:"period"` // minute, hour, day
+	ID            string    `theorydb:"attr:id" json:"id"`
+	OperationType string    `theorydb:"attr:operationType" json:"operation_type"` // GetItem, PutItem, Query, Scan, BatchWrite, etc.
+	Table         string    `theorydb:"attr:tableName" json:"table_name"`
+	Timestamp     time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	Period        string    `theorydb:"attr:period" json:"period"` // minute, hour, day
 
 	// Capacity units consumed
-	ReadCapacityUnits  float64 `dynamorm:"attr:readCapacityUnits" json:"read_capacity_units"`
-	WriteCapacityUnits float64 `dynamorm:"attr:writeCapacityUnits" json:"write_capacity_units"`
+	ReadCapacityUnits  float64 `theorydb:"attr:readCapacityUnits" json:"read_capacity_units"`
+	WriteCapacityUnits float64 `theorydb:"attr:writeCapacityUnits" json:"write_capacity_units"`
 
 	// Cost calculations (in microcents for precision)
-	ReadCostMicroCents  int64 `dynamorm:"attr:readCostMicroCents" json:"read_cost_micro_cents"`
-	WriteCostMicroCents int64 `dynamorm:"attr:writeCostMicroCents" json:"write_cost_micro_cents"`
-	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	ReadCostMicroCents  int64 `theorydb:"attr:readCostMicroCents" json:"read_cost_micro_cents"`
+	WriteCostMicroCents int64 `theorydb:"attr:writeCostMicroCents" json:"write_cost_micro_cents"`
+	TotalCostMicroCents int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
 	// Estimated cost in dollars for easy display
-	EstimatedCostDollars float64 `dynamorm:"attr:estimatedCostDollars" json:"estimated_cost_dollars"`
+	EstimatedCostDollars float64 `theorydb:"attr:estimatedCostDollars" json:"estimated_cost_dollars"`
 
 	// Operation details
-	ItemCount       int    `dynamorm:"attr:itemCount" json:"item_count"`             // Number of items in operation
-	RequestDuration int64  `dynamorm:"attr:requestDuration" json:"request_duration"` // Duration in milliseconds
-	IndexName       string `dynamorm:"attr:indexName" json:"index_name,omitempty"`   // GSI name if used
-	ConsistentRead  bool   `dynamorm:"attr:consistentRead" json:"consistent_read"`
+	ItemCount       int    `theorydb:"attr:itemCount" json:"item_count"`             // Number of items in operation
+	RequestDuration int64  `theorydb:"attr:requestDuration" json:"request_duration"` // Duration in milliseconds
+	IndexName       string `theorydb:"attr:indexName" json:"index_name,omitempty"`   // GSI name if used
+	ConsistentRead  bool   `theorydb:"attr:consistentRead" json:"consistent_read"`
 
 	// Service and function information
-	ServiceName     string `dynamorm:"attr:serviceName" json:"service_name"`         // Lambda function or service
-	RequestID       string `dynamorm:"attr:requestID" json:"request_id"`             // AWS Request ID
-	FunctionName    string `dynamorm:"attr:functionName" json:"function_name"`       // Lambda function name
-	FunctionVersion string `dynamorm:"attr:functionVersion" json:"function_version"` // Lambda function version
+	ServiceName     string `theorydb:"attr:serviceName" json:"service_name"`         // Lambda function or service
+	RequestID       string `theorydb:"attr:requestID" json:"request_id"`             // AWS Request ID
+	FunctionName    string `theorydb:"attr:functionName" json:"function_name"`       // Lambda function name
+	FunctionVersion string `theorydb:"attr:functionVersion" json:"function_version"` // Lambda function version
 
 	// Additional metadata
-	Tags       map[string]string      `dynamorm:"attr:tags" json:"tags,omitempty"`
-	Properties map[string]interface{} `dynamorm:"attr:properties" json:"properties,omitempty"`
+	Tags       map[string]string      `theorydb:"attr:tags" json:"tags,omitempty"`
+	Properties map[string]interface{} `theorydb:"attr:properties" json:"properties,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup (30 days for raw, 90 days for aggregated)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"` // Unix timestamp
 }
 
 // DynamoDBCostAggregation represents pre-computed cost aggregations
 type DynamoDBCostAggregation struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "cost_agg#{period}#{operation_type}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "cost_agg#{period}#{operation_type}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// Aggregation details
-	Period        string    `dynamorm:"attr:period" json:"period"`                // minute, hour, day, week, month
-	OperationType string    `dynamorm:"attr:operationType" json:"operation_type"` // Same as CostTracking.OperationType
-	Table         string    `dynamorm:"attr:tableName" json:"table_name"`         // Specific table or "all" for all tables
-	WindowStart   time.Time `dynamorm:"attr:windowStart" json:"window_start"`     // Start of aggregation window
-	WindowEnd     time.Time `dynamorm:"attr:windowEnd" json:"window_end"`         // End of aggregation window
+	Period        string    `theorydb:"attr:period" json:"period"`                // minute, hour, day, week, month
+	OperationType string    `theorydb:"attr:operationType" json:"operation_type"` // Same as CostTracking.OperationType
+	Table         string    `theorydb:"attr:tableName" json:"table_name"`         // Specific table or "all" for all tables
+	WindowStart   time.Time `theorydb:"attr:windowStart" json:"window_start"`     // Start of aggregation window
+	WindowEnd     time.Time `theorydb:"attr:windowEnd" json:"window_end"`         // End of aggregation window
 
 	// Aggregated capacity units
-	TotalReadCapacityUnits  float64 `dynamorm:"attr:totalReadCapacityUnits" json:"total_read_capacity_units"`
-	TotalWriteCapacityUnits float64 `dynamorm:"attr:totalWriteCapacityUnits" json:"total_write_capacity_units"`
+	TotalReadCapacityUnits  float64 `theorydb:"attr:totalReadCapacityUnits" json:"total_read_capacity_units"`
+	TotalWriteCapacityUnits float64 `theorydb:"attr:totalWriteCapacityUnits" json:"total_write_capacity_units"`
 
 	// Aggregated costs
-	TotalReadCostMicroCents  int64   `dynamorm:"attr:totalReadCostMicroCents" json:"total_read_cost_micro_cents"`
-	TotalWriteCostMicroCents int64   `dynamorm:"attr:totalWriteCostMicroCents" json:"total_write_cost_micro_cents"`
-	TotalCostMicroCents      int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
-	TotalCostDollars         float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
+	TotalReadCostMicroCents  int64   `theorydb:"attr:totalReadCostMicroCents" json:"total_read_cost_micro_cents"`
+	TotalWriteCostMicroCents int64   `theorydb:"attr:totalWriteCostMicroCents" json:"total_write_cost_micro_cents"`
+	TotalCostMicroCents      int64   `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars         float64 `theorydb:"attr:totalCostDollars" json:"total_cost_dollars"`
 
 	// Operation statistics
-	TotalOperations         int64   `dynamorm:"attr:totalOperations" json:"total_operations"`
-	TotalItemCount          int64   `dynamorm:"attr:totalItemCount" json:"total_item_count"`
-	AverageCostPerOperation float64 `dynamorm:"attr:averageCostPerOperation" json:"average_cost_per_operation"`
-	AverageDuration         float64 `dynamorm:"attr:averageDuration" json:"average_duration"` // milliseconds
+	TotalOperations         int64   `theorydb:"attr:totalOperations" json:"total_operations"`
+	TotalItemCount          int64   `theorydb:"attr:totalItemCount" json:"total_item_count"`
+	AverageCostPerOperation float64 `theorydb:"attr:averageCostPerOperation" json:"average_cost_per_operation"`
+	AverageDuration         float64 `theorydb:"attr:averageDuration" json:"average_duration"` // milliseconds
 
 	// Cost breakdown by table
-	TableBreakdown map[string]*DynamoDBTableCostStats `dynamorm:"attr:tableBreakdown" json:"table_breakdown,omitempty"`
+	TableBreakdown map[string]*DynamoDBTableCostStats `theorydb:"attr:tableBreakdown" json:"table_breakdown,omitempty"`
 
 	// Cost breakdown by service
-	ServiceBreakdown map[string]*DynamoDBServiceCostStats `dynamorm:"attr:serviceBreakdown" json:"service_breakdown,omitempty"`
+	ServiceBreakdown map[string]*DynamoDBServiceCostStats `theorydb:"attr:serviceBreakdown" json:"service_breakdown,omitempty"`
 
 	// Percentiles for cost distribution
-	CostPercentiles map[string]float64 `dynamorm:"attr:costPercentiles" json:"cost_percentiles,omitempty"` // p50, p90, p95, p99
+	CostPercentiles map[string]float64 `theorydb:"attr:costPercentiles" json:"cost_percentiles,omitempty"` // p50, p90, p95, p99
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (longer for aggregated data)
-	ExpiresAt int64 `dynamorm:"ttl,attr:ttl" json:"expires_at"`
+	ExpiresAt int64 `theorydb:"ttl,attr:ttl" json:"expires_at"`
 }
 
 // DynamoDBTableCostStats represents cost statistics for a specific table
 type DynamoDBTableCostStats struct {
-	Table               string  `dynamorm:"attr:tableName" json:"table_name"`
-	OperationCount      int64   `dynamorm:"attr:operationCount" json:"operation_count"`
-	ReadCapacityUnits   float64 `dynamorm:"attr:readCapacityUnits" json:"read_capacity_units"`
-	WriteCapacityUnits  float64 `dynamorm:"attr:writeCapacityUnits" json:"write_capacity_units"`
-	TotalCostMicroCents int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
-	UniqueUsers         int64   `dynamorm:"attr:uniqueUsers" json:"unique_users"` // Number of unique users for this table
+	Table               string  `theorydb:"attr:tableName" json:"table_name"`
+	OperationCount      int64   `theorydb:"attr:operationCount" json:"operation_count"`
+	ReadCapacityUnits   float64 `theorydb:"attr:readCapacityUnits" json:"read_capacity_units"`
+	WriteCapacityUnits  float64 `theorydb:"attr:writeCapacityUnits" json:"write_capacity_units"`
+	TotalCostMicroCents int64   `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars    float64 `theorydb:"attr:totalCostDollars" json:"total_cost_dollars"`
+	UniqueUsers         int64   `theorydb:"attr:uniqueUsers" json:"unique_users"` // Number of unique users for this table
 }
 
 // DynamoDBServiceCostStats represents cost statistics for a specific service
 type DynamoDBServiceCostStats struct {
-	ServiceName         string  `dynamorm:"attr:serviceName" json:"service_name"`
-	OperationCount      int64   `dynamorm:"attr:operationCount" json:"operation_count"`
-	TotalCostMicroCents int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
-	TotalCostDollars    float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
-	AverageCostPerOp    float64 `dynamorm:"attr:averageCostPerOp" json:"average_cost_per_op"`
-	DataTransferBytes   int64   `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Data transfer for this service
+	ServiceName         string  `theorydb:"attr:serviceName" json:"service_name"`
+	OperationCount      int64   `theorydb:"attr:operationCount" json:"operation_count"`
+	TotalCostMicroCents int64   `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars    float64 `theorydb:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostPerOp    float64 `theorydb:"attr:averageCostPerOp" json:"average_cost_per_op"`
+	DataTransferBytes   int64   `theorydb:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Data transfer for this service
 }
 
 // TableName returns the DynamoDB table backing DynamoDBCostRecord.

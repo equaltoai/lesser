@@ -10,11 +10,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -72,22 +72,22 @@ func TestFeaturedTagRepository_CreateFeaturedTag_SetsFieldsAndCreatesModel(t *te
 		dest := args.Get(0).(*[]models.Status)
 		*dest = []models.Status{
 			{
-				Note: &models.NoteField{Note: &activitypub.Note{
+				Note: &activitypub.Note{
 					BaseObject: activitypub.BaseObject{Published: &published},
 					Content:    "Hello #GoLang",
-				}},
+				},
 			},
 			{
-				Note: &models.NoteField{Note: &activitypub.Note{
+				Note: &activitypub.Note{
 					BaseObject: activitypub.BaseObject{Published: &published},
 					Content:    "No hashtag here",
-				}},
+				},
 			},
 			{
-				Note: &models.NoteField{Note: &activitypub.Note{
+				Note: &activitypub.Note{
 					BaseObject: activitypub.BaseObject{Published: &published},
 					Content:    "Also contains #golang in lower",
-				}},
+				},
 			},
 		}
 	}).Return(nil).Once()
@@ -237,9 +237,9 @@ func TestFeaturedTagRepository_GetTagSuggestions_ExcludesFeaturedAndSorts(t *tes
 	statusQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]models.Status)
 		*dest = []models.Status{
-			{Note: &models.NoteField{Note: &activitypub.Note{Content: "Tags #rust #rust #zig"}}},
-			{Note: &models.NoteField{Note: &activitypub.Note{Content: "Also #rust and #GOLANG (excluded)"}}},
-			{Note: &models.NoteField{Note: &activitypub.Note{Content: "One #zig"}}},
+			{Note: &activitypub.Note{Content: "Tags #rust #rust #zig"}},
+			{Note: &activitypub.Note{Content: "Also #rust and #GOLANG (excluded)"}},
+			{Note: &activitypub.Note{Content: "One #zig"}},
 			{Note: nil},
 		}
 	}).Return(nil).Once()

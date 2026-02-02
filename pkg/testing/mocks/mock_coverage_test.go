@@ -97,7 +97,7 @@ func TestMockImplementationCoverage(t *testing.T) {
 			for i := 0; i < numMethods; i++ {
 				method := repo.interfaceType.Method(i)
 				mockMethod, found := repo.mockType.MethodByName(method.Name)
-				
+
 				if assert.True(t, found, "Mock %s should have method %s", repo.mockType.Name(), method.Name) {
 					// Verify method signature matches (accounting for receiver)
 					interfaceMethodType := method.Type

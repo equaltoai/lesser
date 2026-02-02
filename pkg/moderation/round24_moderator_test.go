@@ -129,37 +129,37 @@ func TestModerator_evaluateAIAnalysis_Thresholds(t *testing.T) {
 	m := &Moderator{}
 
 	for _, tt := range []struct {
-		name     string
-		analysis  *AIAnalysisResult
-		wantScore float64
+		name       string
+		analysis   *AIAnalysisResult
+		wantScore  float64
 		wantAction string
 	}{
 		{
-			name:      "block",
+			name:       "block",
 			analysis:   &AIAnalysisResult{TextAnalysis: &TextAnalysis{ModerationScore: 80}},
 			wantScore:  80,
 			wantAction: actionBlock,
 		},
 		{
-			name:      "escalate",
+			name:       "escalate",
 			analysis:   &AIAnalysisResult{TextAnalysis: &TextAnalysis{ModerationScore: 60}},
 			wantScore:  60,
 			wantAction: actionEscalate,
 		},
 		{
-			name:      "flag",
+			name:       "flag",
 			analysis:   &AIAnalysisResult{TextAnalysis: &TextAnalysis{ModerationScore: 40}},
 			wantScore:  40,
 			wantAction: actionFlag,
 		},
 		{
-			name:      "allow",
+			name:       "allow",
 			analysis:   &AIAnalysisResult{TextAnalysis: &TextAnalysis{ModerationScore: 10}},
 			wantScore:  10,
 			wantAction: actionAllow,
 		},
 		{
-			name:      "maxScoreFromImage",
+			name:       "maxScoreFromImage",
 			analysis:   &AIAnalysisResult{TextAnalysis: &TextAnalysis{ModerationScore: 10}, ImageAnalysis: &ImageAnalysis{ModerationScore: 70}},
 			wantScore:  70,
 			wantAction: actionEscalate,
@@ -226,10 +226,10 @@ func TestModerator_moderateWithPatterns_GeneratesTextHash(t *testing.T) {
 
 	m := &Moderator{patternManager: pm}
 	matches, err := m.moderateWithPatterns(context.Background(), &ContentSubmission{
-		ID:         "c1",
-		Type:       "post",
-		Text:       text,
-		Author:     "a1",
+		ID:          "c1",
+		Type:        "post",
+		Text:        text,
+		Author:      "a1",
 		SubmittedAt: time.Now(),
 	})
 	require.NoError(t, err)
@@ -249,10 +249,10 @@ func TestModerator_ModerateContent_RecordsDecision(t *testing.T) {
 	}
 
 	result, err := m.ModerateContent(context.Background(), &ContentSubmission{
-		ID:         "c1",
-		Type:       "post",
-		Text:       "",
-		Author:     "a1",
+		ID:          "c1",
+		Type:        "post",
+		Text:        "",
+		Author:      "a1",
 		SubmittedAt: time.Now(),
 	})
 	require.NoError(t, err)

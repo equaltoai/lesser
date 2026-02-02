@@ -15,15 +15,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
 
 // DynamoDB stream event type constants
@@ -153,43 +152,35 @@ func NewMLTrainingProcessor() (*MLTrainingProcessor, error) {
 	}, nil
 }
 
-// HandleStream processes DynamoDB stream events for training jobs.
-func (p *MLTrainingProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	p.logger.Info("processing ML training job batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Process all records, collecting errors but not failing fast
-	var errs []error
-	for _, record := range event.Records {
-		if err := p.processRecord(ctx, record); err != nil {
-			p.logger.Error("failed to process record",
-				zap.String("request_id", ctx.GetRequestID()),
-				zap.String("event_id", record.EventID),
-				zap.Error(err),
-			)
-			errs = append(errs, err)
-			// Continue processing other records
-		}
+func (p *MLTrainingProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		requestID = "unknown"
 	}
 
-	// Log partial failures but don't return error
-	if len(errs) > 0 {
-		p.logger.Warn("partial batch failure",
-			zap.String("request_id", ctx.GetRequestID()),
-			zap.Int("failed_count", len(errs)),
-			zap.Int("total_count", len(event.Records)),
+	if err := p.processRecord(runCtx, requestID, record); err != nil {
+		p.logger.Error("failed to process record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(err),
 		)
+		// Match previous Lift behavior: log and continue; do not fail the batch.
+		return nil
 	}
 
 	return nil
 }
 
 // processRecord processes a single DynamoDB stream record
-func (p *MLTrainingProcessor) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (p *MLTrainingProcessor) processRecord(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	logger := p.logger.With(
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("event_name", record.EventName),
 		zap.String("event_id", record.EventID),
 	)
@@ -207,11 +198,11 @@ func (p *MLTrainingProcessor) processRecord(ctx *lift.Context, record events.Dyn
 	switch entityType {
 	case "MLJOB", "ML_TRAINING_JOB":
 		if record.EventName == eventNameModify {
-			return p.processJobStatusChange(ctx, record)
+			return p.processJobStatusChange(ctx, requestID, record)
 		}
 	case "MLPOLL", "ML_POLL_REQUEST":
 		if record.EventName == eventNameInsert {
-			return p.processPollRequest(ctx, record)
+			return p.processPollRequest(ctx, requestID, record)
 		}
 	default:
 		logger.Debug("ignoring event type")
@@ -222,12 +213,12 @@ func (p *MLTrainingProcessor) processRecord(ctx *lift.Context, record events.Dyn
 }
 
 // processPollRequest handles poll request records
-func (p *MLTrainingProcessor) processPollRequest(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (p *MLTrainingProcessor) processPollRequest(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Unmarshal the poll request from the stream
 	var pollReq models.MLPollRequest
 	if err := stream.UnmarshalItem(record, &pollReq); err != nil {
 		p.logger.Debug("failed to unmarshal poll request from stream",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.Error(err))
 		return nil // Skip records we can't unmarshal
 	}
@@ -243,7 +234,7 @@ func (p *MLTrainingProcessor) processPollRequest(ctx *lift.Context, record event
 	}
 
 	p.logger.Info("processing poll request",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("job_id", pollReq.JobID),
 		zap.String("job_name", pollReq.JobName),
 		zap.Int("attempt", pollReq.Attempt),
@@ -254,7 +245,7 @@ func (p *MLTrainingProcessor) processPollRequest(ctx *lift.Context, record event
 		p.logger.Error("training job polling timed out",
 			zap.String("job_id", pollReq.JobID),
 			zap.Int("attempts", pollReq.Attempt))
-		p.markJobAsTimeout(context.Background(), pollReq.JobID)
+		p.markJobAsTimeout(ctx, pollReq.JobID)
 		return nil
 	}
 
@@ -263,7 +254,7 @@ func (p *MLTrainingProcessor) processPollRequest(ctx *lift.Context, record event
 		JobIdentifier: aws.String(pollReq.JobID),
 	}
 
-	output, err := p.bedrockClient.GetModelCustomizationJob(context.Background(), input)
+	output, err := p.bedrockClient.GetModelCustomizationJob(ctx, input)
 	if err != nil {
 		p.logger.Error("failed to get job status from Bedrock",
 			zap.String("job_id", pollReq.JobID),
@@ -282,19 +273,19 @@ func (p *MLTrainingProcessor) processPollRequest(ctx *lift.Context, record event
 	switch status {
 	case types.ModelCustomizationJobStatusCompleted:
 		// Update job status to COMPLETED
-		return p.updateJobStatus(context.Background(), pollReq.JobID, statusCompleted, output)
+		return p.updateJobStatus(ctx, pollReq.JobID, statusCompleted, output)
 
 	case types.ModelCustomizationJobStatusFailed:
 		// Update job status to FAILED
-		return p.updateJobStatus(context.Background(), pollReq.JobID, statusFailed, output)
+		return p.updateJobStatus(ctx, pollReq.JobID, statusFailed, output)
 
 	case types.ModelCustomizationJobStatusStopped:
 		// Update job status to FAILED (stopped is treated as failure)
-		return p.updateJobStatus(context.Background(), pollReq.JobID, statusFailed, output)
+		return p.updateJobStatus(ctx, pollReq.JobID, statusFailed, output)
 
 	case types.ModelCustomizationJobStatusInProgress:
 		// Update to IN_PROGRESS and continue polling
-		if err := p.updateJobStatus(context.Background(), pollReq.JobID, statusInProgress, output); err != nil {
+		if err := p.updateJobStatus(ctx, pollReq.JobID, statusInProgress, output); err != nil {
 			return err
 		}
 		return p.scheduleNextPoll(pollReq, 60*time.Second)
@@ -335,7 +326,7 @@ func (p *MLTrainingProcessor) scheduleNextPoll(currentPoll models.MLPollRequest,
 }
 
 // processJobStatusChange handles training job status updates
-func (p *MLTrainingProcessor) processJobStatusChange(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (p *MLTrainingProcessor) processJobStatusChange(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	// Extract status from new and old images
 	oldStatus := getStatusFromStreamImage(record.Change.OldImage)
 	newStatus := getStatusFromStreamImage(record.Change.NewImage)
@@ -349,13 +340,13 @@ func (p *MLTrainingProcessor) processJobStatusChange(ctx *lift.Context, record e
 	var job models.ModelTrainingJob
 	if err := stream.UnmarshalItem(record, &job); err != nil {
 		p.logger.Error("failed to unmarshal training job",
-			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("request_id", requestID),
 			zap.Error(err))
 		return nil
 	}
 
 	p.logger.Info("training job status changed",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("job_id", job.JobID),
 		zap.String("old_status", oldStatus),
 		zap.String("new_status", newStatus),
@@ -364,9 +355,9 @@ func (p *MLTrainingProcessor) processJobStatusChange(ctx *lift.Context, record e
 	// Handle completion or failure
 	switch newStatus {
 	case statusCompleted:
-		return p.handleJobCompletion(ctx, &job)
+		return p.handleJobCompletion(ctx, requestID, &job)
 	case statusFailed, statusTimeout:
-		return p.handleJobFailure(ctx, &job)
+		return p.handleJobFailure(ctx, requestID, &job)
 	default:
 		// Other status changes don't require action
 		return nil
@@ -489,9 +480,9 @@ func (p *MLTrainingProcessor) updateJobStatus(ctx context.Context, jobARN, statu
 }
 
 // handleJobCompletion creates a ModerationModelVersion when training completes
-func (p *MLTrainingProcessor) handleJobCompletion(ctx *lift.Context, job *models.ModelTrainingJob) error {
+func (p *MLTrainingProcessor) handleJobCompletion(ctx context.Context, requestID string, job *models.ModelTrainingJob) error {
 	logger := p.logger.With(
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("job_id", job.JobID),
 	)
 
@@ -501,7 +492,7 @@ func (p *MLTrainingProcessor) handleJobCompletion(ctx *lift.Context, job *models
 	modelVersion := extractVersionFromARN(job.ModelARN)
 
 	// Deactivate existing model versions
-	if err := p.deactivateExistingModels(context.Background()); err != nil {
+	if err := p.deactivateExistingModels(ctx); err != nil {
 		logger.Warn("failed to deactivate existing models", zap.Error(err))
 		// Non-fatal - continue with creating new version
 	}
@@ -527,7 +518,7 @@ func (p *MLTrainingProcessor) handleJobCompletion(ctx *lift.Context, job *models
 		},
 	}
 
-	if err := p.moderationMLRepo.CreateModelVersion(context.Background(), modelVersionRecord); err != nil {
+	if err := p.moderationMLRepo.CreateModelVersion(ctx, modelVersionRecord); err != nil {
 		logger.Error("failed to create model version", zap.Error(err))
 		return err
 	}
@@ -542,7 +533,7 @@ func (p *MLTrainingProcessor) handleJobCompletion(ctx *lift.Context, job *models
 	)
 
 	// Emit training completed event
-	if err := p.emitTrainingEvent(context.Background(), job.JobID, "MODEL_TRAINING_COMPLETED", map[string]interface{}{
+	if err := p.emitTrainingEvent(ctx, job.JobID, "MODEL_TRAINING_COMPLETED", map[string]interface{}{
 		"job_id":       job.JobID,
 		"job_name":     job.JobName,
 		"status":       "COMPLETED",
@@ -583,9 +574,9 @@ func (p *MLTrainingProcessor) deactivateExistingModels(ctx context.Context) erro
 }
 
 // handleJobFailure logs training job failures and emits failure event
-func (p *MLTrainingProcessor) handleJobFailure(ctx *lift.Context, job *models.ModelTrainingJob) error {
+func (p *MLTrainingProcessor) handleJobFailure(ctx context.Context, requestID string, job *models.ModelTrainingJob) error {
 	logger := p.logger.With(
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("job_id", job.JobID),
 		zap.String("error", job.ErrorMessage),
 	)
@@ -596,7 +587,7 @@ func (p *MLTrainingProcessor) handleJobFailure(ctx *lift.Context, job *models.Mo
 	)
 
 	// Emit training failed event
-	if err := p.emitTrainingEvent(context.Background(), job.JobID, "MODEL_TRAINING_FAILED", map[string]interface{}{
+	if err := p.emitTrainingEvent(ctx, job.JobID, "MODEL_TRAINING_FAILED", map[string]interface{}{
 		"job_id":    job.JobID,
 		"job_name":  job.JobName,
 		"status":    "FAILED",
@@ -910,17 +901,17 @@ func (p *MLTrainingProcessor) emitTrainingEvent(ctx context.Context, jobID, even
 }
 
 func main() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
+	app.DynamoDB(lambdaCtx.Config.DynamoTableName, handleMLTrainingProcessorStreamRecord)
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
+}
 
-	lambdaStartFn(app.HandleRequest)
+func handleMLTrainingProcessorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("ML training processor not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }

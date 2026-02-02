@@ -9,11 +9,11 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -635,8 +635,8 @@ func TestBaseRepository_ConsolidationHelpers(t *testing.T) {
 		require.Equal(t, "SK#1", cursor)
 
 		gsiCfg := CollectionQueryConfig{
-			IndexName: "gsi1",
-			LogName:   "likes_gsi",
+			IndexName:   "gsi1",
+			LogName:     "likes_gsi",
 			ErrorPrefix: "get likes gsi",
 			GSIConfig: &GSIQueryConfig{
 				PKField:   "gsi1PK",

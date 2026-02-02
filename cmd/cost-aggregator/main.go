@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -20,13 +22,13 @@ import (
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -120,7 +122,7 @@ func init() {
 var (
 	mustInitializeLambdaFn     = common.MustInitializeLambda
 	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	newLambdaOptimizedClientFn = dynamorm.NewLambdaOptimizedClient
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newCostTrackingRepoFn      = func(db dynamormCore.DB, tableName string, logger *zap.Logger) costTrackingStore {
 		return repositories.NewTrackingRepository(db, tableName, logger, nil)
 	}
@@ -187,65 +189,69 @@ func initializeCostAggregator() {
 	}
 }
 
-func handleCostAggregatorStream(ctx *lift.Context) error {
-	if processor == nil {
-		return lift.NewLiftError("MISSING_PROCESSOR", "cost aggregator processor not initialized", 500)
-	}
-
-	records, err := ctx.DynamoDBRecords()
-	if err != nil {
-		return err
-	}
-	return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
-}
-
 func main() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
 
-	_ = app.DynamoDB("*", handleCostAggregatorStream)
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
 
-	lambdaStartFn(app.HandleRequest)
+	app.DynamoDB(tableName, handleCostAggregatorStreamRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-// HandleStream implements the DynamoDBStreamHandler interface for Lift
-func (ca *CostAggregator) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	ca.logger.Info("processing cost tracking stream batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("record_count", len(event.Records)),
-	)
+func handleCostAggregatorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("cost aggregator processor not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
+}
 
-	// Collect cost tracking records from stream
-	var costRecords []*models.DynamoDBCostRecord
+func (ca *CostAggregator) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 
-	for _, record := range event.Records {
-		// Process INSERT and MODIFY events that might contain cost information
-		if record.EventName != "INSERT" && record.EventName != "MODIFY" {
-			continue
-		}
+	if ca.logger == nil {
+		ca.logger = zap.NewNop()
+	}
 
-		// Extract cost information from the stream record
-		costRecord, err := ca.extractCostFromStreamRecord(record)
-		if err != nil {
-			ca.logger.Warn("failed to extract cost from stream record",
-				zap.String("request_id", ctx.GetRequestID()),
+	defer func() {
+		if r := recover(); r != nil {
+			ca.logger.Error("panic processing cost tracking stream record",
+				zap.String("request_id", requestID),
 				zap.String("event_id", record.EventID),
-				zap.Error(err))
-			continue
+				zap.Any("panic", r),
+			)
+			err = fmt.Errorf("panic recovered: %v", r)
 		}
+	}()
 
-		if costRecord != nil {
-			costRecords = append(costRecords, costRecord)
-		}
+	// Process INSERT and MODIFY events that might contain cost information.
+	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
+		return nil
 	}
 
-	// Process real-time cost tracking
-	if len(costRecords) > 0 {
-		return ca.processRealtimeCosts(ctx, costRecords)
+	costRecord, extractErr := ca.extractCostFromStreamRecord(record)
+	if extractErr != nil {
+		ca.logger.Warn("failed to extract cost from stream record",
+			zap.String("request_id", requestID),
+			zap.String("event_id", record.EventID),
+			zap.Error(extractErr),
+		)
+		return nil
+	}
+	if costRecord == nil {
+		return nil
 	}
 
-	return nil
+	return ca.processRealtimeCosts(runCtx, requestID, []*models.DynamoDBCostRecord{costRecord})
 }
 
 // HandleCloudWatchEvent handles scheduled aggregation events
@@ -457,7 +463,7 @@ func (ca *CostAggregator) extractEmbeddedCostInfo(image map[string]events.Dynamo
 	return tracking.Build(), nil
 }
 
-func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*models.DynamoDBCostRecord) error {
+func (ca *CostAggregator) processRealtimeCosts(ctx context.Context, requestID string, costs []*models.DynamoDBCostRecord) error {
 	// Create or update minute-level aggregations in real-time
 	now := time.Now()
 	windowStart := now.Truncate(time.Minute)
@@ -529,9 +535,9 @@ func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*model
 		}
 
 		// Store or update the aggregation
-		if err := ca.costTrackingRepository.CreateAggregated(ctx.Request.Context(), aggregated); err != nil {
+		if err := ca.costTrackingRepository.CreateAggregated(ctx, aggregated); err != nil {
 			ca.logger.Error("failed to create real-time aggregation",
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 				zap.String("operation_type", opType),
 				zap.Error(err))
 		}
@@ -539,9 +545,9 @@ func (ca *CostAggregator) processRealtimeCosts(ctx *lift.Context, costs []*model
 
 	// Store the raw cost tracking records individually
 	for _, cost := range costs {
-		if err := ca.costTrackingRepository.Create(ctx.Request.Context(), cost); err != nil {
+		if err := ca.costTrackingRepository.Create(ctx, cost); err != nil {
 			ca.logger.Error("failed to create cost tracking record",
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 				zap.Error(err))
 		}
 	}

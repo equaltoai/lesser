@@ -3,48 +3,22 @@ package main
 import (
 	"context"
 	"errors"
-	"math"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	dynamotypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	smstypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
+	testifyMock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	theoryMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
-
-type fakeDynamoDB struct {
-	getItemInput  *dynamodb.GetItemInput
-	getItemOutput *dynamodb.GetItemOutput
-	getItemErr    error
-
-	transactInput *dynamodb.TransactWriteItemsInput
-	transactErr   error
-}
-
-func (f *fakeDynamoDB) GetItem(_ context.Context, params *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
-	f.getItemInput = params
-	if f.getItemErr != nil {
-		return nil, f.getItemErr
-	}
-	if f.getItemOutput != nil {
-		return f.getItemOutput, nil
-	}
-	return &dynamodb.GetItemOutput{}, nil
-}
-
-func (f *fakeDynamoDB) TransactWriteItems(_ context.Context, params *dynamodb.TransactWriteItemsInput, _ ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
-	f.transactInput = params
-	if f.transactErr != nil {
-		return nil, f.transactErr
-	}
-	return &dynamodb.TransactWriteItemsOutput{}, nil
-}
 
 type fakeSecretsManager struct {
 	describeErr error
@@ -182,26 +156,72 @@ func TestValidateBootstrapState_Branches(t *testing.T) {
 	require.Equal(t, "force_not_supported", failure.event)
 }
 
-func TestDynamoItemExists(t *testing.T) {
-	ddb := &fakeDynamoDB{
-		getItemOutput: &dynamodb.GetItemOutput{
-			Item: map[string]dynamotypes.AttributeValue{"PK": &dynamotypes.AttributeValueMemberS{Value: "USER#admin"}},
-		},
-	}
+func TestUserMetadataExists(t *testing.T) {
+	ctx := context.Background()
 
-	exists, err := dynamoItemExists(context.Background(), ddb, "tbl", "USER#admin", "METADATA")
-	require.NoError(t, err)
-	require.True(t, exists)
-	require.Equal(t, "tbl", aws.ToString(ddb.getItemInput.TableName))
+	t.Run("exists", func(t *testing.T) {
+		db := theoryMocks.NewMockExtendedDBStrict()
+		q := new(theoryMocks.MockQuery)
 
-	ddb.getItemOutput = &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}
-	exists, err = dynamoItemExists(context.Background(), ddb, "tbl", "USER#admin", "METADATA")
-	require.NoError(t, err)
-	require.False(t, exists)
+		db.On("Model", testifyMock.Anything).Return(q).Once()
+		q.On("WithContext", ctx).Return(q).Once()
+		q.On("Where", "PK", "=", "USER#admin").Return(q).Once()
+		q.On("Where", "SK", "=", storagemodels.SKMetadata).Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", testifyMock.Anything).Return(nil).Once()
 
-	ddb.getItemErr = errors.New("boom")
-	_, err = dynamoItemExists(context.Background(), ddb, "tbl", "USER#admin", "METADATA")
-	require.Error(t, err)
+		exists, err := userMetadataExists(ctx, db, "USER#admin", storagemodels.SKMetadata)
+		require.NoError(t, err)
+		require.True(t, exists)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		db := theoryMocks.NewMockExtendedDBStrict()
+		q := new(theoryMocks.MockQuery)
+
+		db.On("Model", testifyMock.Anything).Return(q).Once()
+		q.On("WithContext", ctx).Return(q).Once()
+		q.On("Where", "PK", "=", "USER#admin").Return(q).Once()
+		q.On("Where", "SK", "=", storagemodels.SKMetadata).Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", testifyMock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+
+		exists, err := userMetadataExists(ctx, db, "USER#admin", storagemodels.SKMetadata)
+		require.NoError(t, err)
+		require.False(t, exists)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
+	})
+
+	t.Run("table not found", func(t *testing.T) {
+		db := theoryMocks.NewMockExtendedDBStrict()
+		q := new(theoryMocks.MockQuery)
+
+		db.On("Model", testifyMock.Anything).Return(q).Once()
+		q.On("WithContext", ctx).Return(q).Once()
+		q.On("Where", "PK", "=", "USER#admin").Return(q).Once()
+		q.On("Where", "SK", "=", storagemodels.SKMetadata).Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", testifyMock.Anything).Return(theorydbErrors.ErrTableNotFound).Once()
+
+		exists, err := userMetadataExists(ctx, db, "USER#admin", storagemodels.SKMetadata)
+		require.Error(t, err)
+		require.False(t, exists)
+		require.ErrorIs(t, err, theorydbErrors.ErrTableNotFound)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
+	})
+
+	t.Run("nil database", func(t *testing.T) {
+		exists, err := userMetadataExists(ctx, nil, "USER#admin", storagemodels.SKMetadata)
+		require.Error(t, err)
+		require.False(t, exists)
+	})
 }
 
 func TestSecretExists_CreateAndDeleteSecret(t *testing.T) {
@@ -266,77 +286,100 @@ func TestKeyAndIDGenerationHelpers(t *testing.T) {
 	require.Contains(t, pub, "PUBLIC KEY")
 }
 
-func TestEncodeDescendingTimestamp_ZeroTimestamp(t *testing.T) {
-	nonZero := time.Unix(1, 0).UTC()
-	value := encodeDescendingTimestamp(nonZero)
-	require.Equal(t, int64(math.MaxInt64-nonZero.UnixNano()), value)
-
-	zeroValue := encodeDescendingTimestamp(time.Time{})
-	require.Greater(t, zeroValue, int64(0))
-	require.Less(t, zeroValue, int64(math.MaxInt64))
-}
-
 func TestCheckBootstrapState_ErrorBranches(t *testing.T) {
 	ctx := context.Background()
 	args := ownerBootstrapArgs{tableName: "tbl", walletSecretName: "wallet", oauthSecretName: "oauth"}
 
-	_, err := checkBootstrapState(ctx, &fakeDynamoDB{getItemErr: errors.New("boom")}, &fakeSecretsManager{}, args, "USER#admin")
+	db := theoryMocks.NewMockExtendedDBStrict()
+	q := new(theoryMocks.MockQuery)
+	db.On("Model", testifyMock.Anything).Return(q).Once()
+	q.On("WithContext", ctx).Return(q).Once()
+	q.On("Where", "PK", "=", "USER#admin").Return(q).Once()
+	q.On("Where", "SK", "=", storagemodels.SKMetadata).Return(q).Once()
+	q.On("ConsistentRead").Return(q).Once()
+	q.On("First", testifyMock.Anything).Return(errors.New("boom")).Once()
+
+	_, err := checkBootstrapState(ctx, db, &fakeSecretsManager{}, args, "USER#admin")
 	require.Error(t, err)
 
-	_, err = checkBootstrapState(ctx, &fakeDynamoDB{getItemOutput: &dynamodb.GetItemOutput{}}, &fakeSecretsManager{describeErr: errors.New("boom")}, args, "USER#admin")
+	db = theoryMocks.NewMockExtendedDBStrict()
+	q = new(theoryMocks.MockQuery)
+	db.On("Model", testifyMock.Anything).Return(q).Once()
+	q.On("WithContext", ctx).Return(q).Once()
+	q.On("Where", "PK", "=", "USER#admin").Return(q).Once()
+	q.On("Where", "SK", "=", storagemodels.SKMetadata).Return(q).Once()
+	q.On("ConsistentRead").Return(q).Once()
+	q.On("First", testifyMock.Anything).Return(nil).Once()
+
+	_, err = checkBootstrapState(ctx, db, &fakeSecretsManager{describeErr: errors.New("boom")}, args, "USER#admin")
 	require.Error(t, err)
 }
 
-func TestTransactWriteAll_BuildsPutRequests(t *testing.T) {
-	ddb := &fakeDynamoDB{}
-
-	puts := []transactPut{
-		{
-			item: map[string]dynamotypes.AttributeValue{"PK": &dynamotypes.AttributeValueMemberS{Value: "1"}},
-			pk:   "1",
-			sk:   "a",
-		},
-		{
-			item: map[string]dynamotypes.AttributeValue{"PK": &dynamotypes.AttributeValueMemberS{Value: "2"}},
-			pk:   "2",
-			sk:   "b",
-		},
-	}
-
-	require.NoError(t, transactWriteAll(context.Background(), ddb, "tbl", puts))
-	require.NotNil(t, ddb.transactInput)
-	require.Len(t, ddb.transactInput.TransactItems, 2)
-	for _, item := range ddb.transactInput.TransactItems {
-		require.NotNil(t, item.Put)
-		require.Equal(t, "tbl", aws.ToString(item.Put.TableName))
-		require.Equal(t, "attribute_not_exists(PK)", aws.ToString(item.Put.ConditionExpression))
-	}
-
-	ddb.transactErr = errors.New("boom")
-	require.Error(t, transactWriteAll(context.Background(), ddb, "tbl", puts))
-}
-
-func TestRollbackSecretsAndDynamo_Branches(t *testing.T) {
+func TestTransactWriteAll_CreatesEachItem(t *testing.T) {
 	ctx := context.Background()
-	ddb := &fakeDynamoDB{}
+
+	t.Run("creates items", func(t *testing.T) {
+		db := theoryMocks.NewMockExtendedDBStrict()
+		builder := new(theoryMocks.MockTransactionBuilder)
+		db.TransactWriteBuilder = builder
+
+		item1 := &storagemodels.User{}
+		item2 := &storagemodels.Actor{}
+
+		db.On("TransactWrite", ctx, testifyMock.Anything).Return(nil).Once()
+		builder.On("Create", item1, testifyMock.Anything).Return(builder).Once()
+		builder.On("Create", item2, testifyMock.Anything).Return(builder).Once()
+		builder.On("Execute").Return(nil).Once()
+
+		require.NoError(t, transactWriteAll(ctx, db, []any{item1, item2}))
+
+		db.AssertExpectations(t)
+		builder.AssertExpectations(t)
+	})
+
+	t.Run("nil item errors", func(t *testing.T) {
+		db := theoryMocks.NewMockExtendedDBStrict()
+		db.On("TransactWrite", ctx, testifyMock.Anything).Return(nil).Once()
+
+		err := transactWriteAll(ctx, db, []any{nil})
+		require.Error(t, err)
+
+		db.AssertExpectations(t)
+	})
+
+	t.Run("transact failure returns error", func(t *testing.T) {
+		db := theoryMocks.NewMockExtendedDBStrict()
+		db.On("TransactWrite", ctx, testifyMock.Anything).Return(errors.New("boom")).Once()
+
+		err := transactWriteAll(ctx, db, []any{&storagemodels.User{}})
+		require.Error(t, err)
+
+		db.AssertExpectations(t)
+	})
+}
+
+func TestRollbackSecretsAndTableTheory_Branches(t *testing.T) {
+	ctx := context.Background()
+
 	sm := &fakeSecretsManager{deleteErrs: []error{nil, errors.New("boom")}}
-
-	rollbackSecretsAndDynamo(ctx, ddb, sm, "tbl", nil, nil)
-	require.Nil(t, ddb.transactInput)
-
-	puts := []transactPut{
-		{
-			pk: "USER#admin",
-			sk: "METADATA",
-		},
-	}
-
-	ddb.transactErr = errors.New("boom")
-	rollbackSecretsAndDynamo(ctx, ddb, sm, "tbl", []string{"s1", "s2"}, puts)
+	rollbackSecretsAndTableTheory(ctx, nil, sm, []string{"s1", "s2"}, nil)
 	require.Len(t, sm.deleteInputs, 2)
-	require.NotNil(t, ddb.transactInput)
-	require.Len(t, ddb.transactInput.TransactItems, 1)
-	require.NotNil(t, ddb.transactInput.TransactItems[0].Delete)
+	require.True(t, aws.ToBool(sm.deleteInputs[0].ForceDeleteWithoutRecovery))
+	require.True(t, aws.ToBool(sm.deleteInputs[1].ForceDeleteWithoutRecovery))
+
+	db := theoryMocks.NewMockExtendedDBStrict()
+	builder := new(theoryMocks.MockTransactionBuilder)
+	db.TransactWriteBuilder = builder
+
+	item := &storagemodels.User{}
+	db.On("TransactWrite", ctx, testifyMock.Anything).Return(nil).Once()
+	builder.On("Delete", item, testifyMock.Anything).Return(builder).Once()
+	builder.On("Execute").Return(nil).Once()
+
+	rollbackSecretsAndTableTheory(ctx, db, &fakeSecretsManager{}, nil, []any{item})
+
+	db.AssertExpectations(t)
+	builder.AssertExpectations(t)
 }
 
 func TestGenerateBootstrapArtifacts_SuccessWithStubs(t *testing.T) {
@@ -382,39 +425,72 @@ func TestGenerateBootstrapArtifacts_SuccessWithStubs(t *testing.T) {
 
 func TestPersistBootstrapArtifacts_SuccessAndRollbackOnSecretFailure(t *testing.T) {
 	originalExitFn := exitFn
+	originalTableName := storagemodels.MainTableName
 	t.Cleanup(func() {
 		exitFn = originalExitFn
+		storagemodels.MainTableName = originalTableName
 	})
 
 	ctx := context.Background()
 
-	successDDB := &fakeDynamoDB{}
+	successDB := theoryMocks.NewMockExtendedDBStrict()
+	successBuilder := new(theoryMocks.MockTransactionBuilder)
+	successDB.TransactWriteBuilder = successBuilder
 	successSM := &fakeSecretsManager{}
 	args := ownerBootstrapArgs{tableName: "tbl", walletSecretName: "wallet", oauthSecretName: "oauth"}
+	storagemodels.MainTableName = args.tableName
+
+	item := &storagemodels.User{}
 	artifacts := bootstrapArtifacts{
-		items: []transactPut{{pk: "USER#admin", sk: "METADATA"}},
+		items:            []any{item},
+		walletSecretJSON: []byte(`{"address":"0xADDR"}`),
+		oauthSecretJSON:  []byte(`{"client_id":"cid"}`),
 	}
-	result := persistBootstrapArtifacts(ctx, successDDB, successSM, args, artifacts)
+
+	successDB.On("TransactWrite", ctx, testifyMock.Anything).Return(nil).Once()
+	successBuilder.On("Create", item, testifyMock.Anything).Return(successBuilder).Once()
+	successBuilder.On("Execute").Return(nil).Once()
+
+	result := persistBootstrapArtifacts(ctx, successDB, successSM, args, artifacts)
 	require.True(t, result.walletCreated)
 	require.True(t, result.oauthCreated)
 	require.Len(t, successSM.createInputs, 2)
 
 	exitFn = func(_ int) { panic("exit") }
 
-	failFirstSecret := &fakeSecretsManager{createErrs: []error{errors.New("boom")}}
+	failFirstDB := theoryMocks.NewMockExtendedDBStrict()
+	failFirstBuilder := new(theoryMocks.MockTransactionBuilder)
+	failFirstDB.TransactWriteBuilder = failFirstBuilder
+	failFirstSM := &fakeSecretsManager{createErrs: []error{errors.New("boom")}}
+
+	failFirstDB.On("TransactWrite", ctx, testifyMock.Anything).Return(nil).Twice()
+	failFirstBuilder.On("Create", item, testifyMock.Anything).Return(failFirstBuilder).Once()
+	failFirstBuilder.On("Delete", item, testifyMock.Anything).Return(failFirstBuilder).Once()
+	failFirstBuilder.On("Execute").Return(nil).Twice()
+
 	require.Panics(t, func() {
-		_ = persistBootstrapArtifacts(ctx, &fakeDynamoDB{}, failFirstSecret, args, artifacts)
+		_ = persistBootstrapArtifacts(ctx, failFirstDB, failFirstSM, args, artifacts)
 	})
 
-	failSecondSecret := &fakeSecretsManager{createErrs: []error{nil, errors.New("boom")}}
+	failSecondDB := theoryMocks.NewMockExtendedDBStrict()
+	failSecondBuilder := new(theoryMocks.MockTransactionBuilder)
+	failSecondDB.TransactWriteBuilder = failSecondBuilder
+	failSecondSM := &fakeSecretsManager{createErrs: []error{nil, errors.New("boom")}, deleteErrs: []error{nil}}
+
+	failSecondDB.On("TransactWrite", ctx, testifyMock.Anything).Return(nil).Twice()
+	failSecondBuilder.On("Create", item, testifyMock.Anything).Return(failSecondBuilder).Once()
+	failSecondBuilder.On("Delete", item, testifyMock.Anything).Return(failSecondBuilder).Once()
+	failSecondBuilder.On("Execute").Return(nil).Twice()
+
 	require.Panics(t, func() {
-		_ = persistBootstrapArtifacts(ctx, &fakeDynamoDB{}, failSecondSecret, args, artifacts)
+		_ = persistBootstrapArtifacts(ctx, failSecondDB, failSecondSM, args, artifacts)
 	})
+	require.Len(t, failSecondSM.deleteInputs, 1)
 }
 
 func TestRunOwnerBootstrap_SkipAndFullFlow(t *testing.T) {
 	originalLoadAWSConfigFn := loadAWSConfigFn
-	originalNewDynamoClientFn := newDynamoClientFn
+	originalNewTableTheoryDBFn := newTableTheoryDBFn
 	originalNewSecretsManagerClientFn := newSecretsManagerClientFn
 	originalNewKMSClientFn := newKMSClientFn
 	originalWalletFn := generateEthereumWalletFn
@@ -422,9 +498,10 @@ func TestRunOwnerBootstrap_SkipAndFullFlow(t *testing.T) {
 	originalEncryptFn := encryptWithKMSFn
 	originalIDFn := generateOAuthClientIDFn
 	originalSecretFn := generateOAuthClientSecretFn
+	originalTableName := storagemodels.MainTableName
 	t.Cleanup(func() {
 		loadAWSConfigFn = originalLoadAWSConfigFn
-		newDynamoClientFn = originalNewDynamoClientFn
+		newTableTheoryDBFn = originalNewTableTheoryDBFn
 		newSecretsManagerClientFn = originalNewSecretsManagerClientFn
 		newKMSClientFn = originalNewKMSClientFn
 		generateEthereumWalletFn = originalWalletFn
@@ -432,20 +509,32 @@ func TestRunOwnerBootstrap_SkipAndFullFlow(t *testing.T) {
 		encryptWithKMSFn = originalEncryptFn
 		generateOAuthClientIDFn = originalIDFn
 		generateOAuthClientSecretFn = originalSecretFn
+		storagemodels.MainTableName = originalTableName
 	})
 
 	loadAWSConfigFn = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
 		return aws.Config{}, nil
 	}
 
-	// Skip path: user exists.
-	skipDDB := &fakeDynamoDB{getItemOutput: &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{"PK": &dynamotypes.AttributeValueMemberS{Value: "USER#admin"}}}}
+	// Skip flow: user exists.
+	ctx := context.Background()
+	skipDB := theoryMocks.NewMockExtendedDBStrict()
+	skipQuery := new(theoryMocks.MockQuery)
+
+	skipDB.On("Model", testifyMock.Anything).Return(skipQuery).Once()
+	skipQuery.On("WithContext", ctx).Return(skipQuery).Once()
+	skipQuery.On("Where", "PK", "=", "USER#admin").Return(skipQuery).Once()
+	skipQuery.On("Where", "SK", "=", storagemodels.SKMetadata).Return(skipQuery).Once()
+	skipQuery.On("ConsistentRead").Return(skipQuery).Once()
+	skipQuery.On("First", testifyMock.Anything).Return(nil).Once()
+	skipDB.On("Close").Return(nil).Once()
+
 	skipSM := &fakeSecretsManager{describeErr: &smstypes.ResourceNotFoundException{}}
-	newDynamoClientFn = func(aws.Config) dynamodbAPI { return skipDDB }
+	newTableTheoryDBFn = func(aws.Config) (tableTheoryAPI, error) { return skipDB, nil }
 	newSecretsManagerClientFn = func(aws.Config) secretsManagerAPI { return skipSM }
 	newKMSClientFn = func(aws.Config) kmsAPI { return &fakeKMS{} }
 
-	runOwnerBootstrap(context.Background(), ownerBootstrapArgs{
+	runOwnerBootstrap(ctx, ownerBootstrapArgs{
 		environment: "dev",
 		domain:      "example.com",
 		tableName:   "tbl",
@@ -453,13 +542,30 @@ func TestRunOwnerBootstrap_SkipAndFullFlow(t *testing.T) {
 		username:    "admin",
 		chainID:     1,
 	})
-	require.Nil(t, skipDDB.transactInput)
+
+	skipDB.AssertNotCalled(t, "TransactWrite", testifyMock.Anything, testifyMock.Anything)
 	require.Len(t, skipSM.createInputs, 0)
 
 	// Full flow: nothing exists.
-	fullDDB := &fakeDynamoDB{getItemOutput: &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}}
+	fullDB := theoryMocks.NewMockExtendedDBStrict()
+	fullQuery := new(theoryMocks.MockQuery)
+	fullBuilder := new(theoryMocks.MockTransactionBuilder)
+	fullDB.TransactWriteBuilder = fullBuilder
+
+	fullDB.On("Model", testifyMock.Anything).Return(fullQuery).Once()
+	fullQuery.On("WithContext", ctx).Return(fullQuery).Once()
+	fullQuery.On("Where", "PK", "=", "USER#admin").Return(fullQuery).Once()
+	fullQuery.On("Where", "SK", "=", storagemodels.SKMetadata).Return(fullQuery).Once()
+	fullQuery.On("ConsistentRead").Return(fullQuery).Once()
+	fullQuery.On("First", testifyMock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+
+	fullDB.On("TransactWrite", ctx, testifyMock.Anything).Return(nil).Once()
+	fullBuilder.On("Create", testifyMock.Anything, testifyMock.Anything).Return(fullBuilder).Times(5)
+	fullBuilder.On("Execute").Return(nil).Once()
+	fullDB.On("Close").Return(nil).Once()
+
 	fullSM := &fakeSecretsManager{describeErr: &smstypes.ResourceNotFoundException{}}
-	newDynamoClientFn = func(aws.Config) dynamodbAPI { return fullDDB }
+	newTableTheoryDBFn = func(aws.Config) (tableTheoryAPI, error) { return fullDB, nil }
 	newSecretsManagerClientFn = func(aws.Config) secretsManagerAPI { return fullSM }
 	newKMSClientFn = func(aws.Config) kmsAPI { return &fakeKMS{} }
 
@@ -469,7 +575,7 @@ func TestRunOwnerBootstrap_SkipAndFullFlow(t *testing.T) {
 	generateOAuthClientIDFn = func() (string, error) { return "cid", nil }
 	generateOAuthClientSecretFn = func() (string, error) { return "csecret", nil }
 
-	runOwnerBootstrap(context.Background(), ownerBootstrapArgs{
+	runOwnerBootstrap(ctx, ownerBootstrapArgs{
 		environment: "dev",
 		domain:      "example.com",
 		tableName:   "tbl",
@@ -477,19 +583,18 @@ func TestRunOwnerBootstrap_SkipAndFullFlow(t *testing.T) {
 		username:    "admin",
 		chainID:     1,
 	})
-	require.NotNil(t, fullDDB.transactInput)
 	require.Len(t, fullSM.createInputs, 2)
 }
 
 func TestRunOwnerBootstrap_FailureBranches(t *testing.T) {
 	originalLoadAWSConfigFn := loadAWSConfigFn
-	originalNewDynamoClientFn := newDynamoClientFn
+	originalNewTableTheoryDBFn := newTableTheoryDBFn
 	originalNewSecretsManagerClientFn := newSecretsManagerClientFn
 	originalNewKMSClientFn := newKMSClientFn
 	originalExitFn := exitFn
 	t.Cleanup(func() {
 		loadAWSConfigFn = originalLoadAWSConfigFn
-		newDynamoClientFn = originalNewDynamoClientFn
+		newTableTheoryDBFn = originalNewTableTheoryDBFn
 		newSecretsManagerClientFn = originalNewSecretsManagerClientFn
 		newKMSClientFn = originalNewKMSClientFn
 		exitFn = originalExitFn
@@ -502,12 +607,20 @@ func TestRunOwnerBootstrap_FailureBranches(t *testing.T) {
 	exitFn = func(_ int) { panic("exit") }
 
 	// Partial state: user missing but secrets exist.
-	newDynamoClientFn = func(aws.Config) dynamodbAPI {
-		return &fakeDynamoDB{getItemOutput: &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}}
-	}
+	partialDB := theoryMocks.NewMockExtendedDBStrict()
+	partialQuery := new(theoryMocks.MockQuery)
+	partialDB.On("Model", testifyMock.Anything).Return(partialQuery).Once()
+	partialQuery.On("WithContext", testifyMock.Anything).Return(partialQuery).Once()
+	partialQuery.On("Where", "PK", "=", "USER#admin").Return(partialQuery).Once()
+	partialQuery.On("Where", "SK", "=", storagemodels.SKMetadata).Return(partialQuery).Once()
+	partialQuery.On("ConsistentRead").Return(partialQuery).Once()
+	partialQuery.On("First", testifyMock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+	partialDB.On("Close").Return(nil).Once()
+	newTableTheoryDBFn = func(aws.Config) (tableTheoryAPI, error) { return partialDB, nil }
 	newSecretsManagerClientFn = func(aws.Config) secretsManagerAPI {
 		return &fakeSecretsManager{describeErr: nil}
 	}
+
 	require.Panics(t, func() {
 		runOwnerBootstrap(context.Background(), ownerBootstrapArgs{
 			environment: "dev",
@@ -520,12 +633,20 @@ func TestRunOwnerBootstrap_FailureBranches(t *testing.T) {
 	})
 
 	// Force mode unsupported when user exists.
-	newDynamoClientFn = func(aws.Config) dynamodbAPI {
-		return &fakeDynamoDB{getItemOutput: &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{"PK": &dynamotypes.AttributeValueMemberS{Value: "USER#admin"}}}}
-	}
+	forceDB := theoryMocks.NewMockExtendedDBStrict()
+	forceQuery := new(theoryMocks.MockQuery)
+	forceDB.On("Model", testifyMock.Anything).Return(forceQuery).Once()
+	forceQuery.On("WithContext", testifyMock.Anything).Return(forceQuery).Once()
+	forceQuery.On("Where", "PK", "=", "USER#admin").Return(forceQuery).Once()
+	forceQuery.On("Where", "SK", "=", storagemodels.SKMetadata).Return(forceQuery).Once()
+	forceQuery.On("ConsistentRead").Return(forceQuery).Once()
+	forceQuery.On("First", testifyMock.Anything).Return(nil).Once()
+	forceDB.On("Close").Return(nil).Once()
+	newTableTheoryDBFn = func(aws.Config) (tableTheoryAPI, error) { return forceDB, nil }
 	newSecretsManagerClientFn = func(aws.Config) secretsManagerAPI {
 		return &fakeSecretsManager{describeErr: &smstypes.ResourceNotFoundException{}}
 	}
+
 	require.Panics(t, func() {
 		runOwnerBootstrap(context.Background(), ownerBootstrapArgs{
 			environment: "dev",
@@ -542,13 +663,13 @@ func TestRunOwnerBootstrap_FailureBranches(t *testing.T) {
 func TestMain_SkipFlow(t *testing.T) {
 	originalArgs := append([]string(nil), os.Args...)
 	originalLoadAWSConfigFn := loadAWSConfigFn
-	originalNewDynamoClientFn := newDynamoClientFn
+	originalNewTableTheoryDBFn := newTableTheoryDBFn
 	originalNewSecretsManagerClientFn := newSecretsManagerClientFn
 	originalNewKMSClientFn := newKMSClientFn
 	t.Cleanup(func() {
 		os.Args = originalArgs
 		loadAWSConfigFn = originalLoadAWSConfigFn
-		newDynamoClientFn = originalNewDynamoClientFn
+		newTableTheoryDBFn = originalNewTableTheoryDBFn
 		newSecretsManagerClientFn = originalNewSecretsManagerClientFn
 		newKMSClientFn = originalNewKMSClientFn
 	})
@@ -558,20 +679,25 @@ func TestMain_SkipFlow(t *testing.T) {
 		return aws.Config{}, nil
 	}
 
-	ddb := &fakeDynamoDB{
-		getItemOutput: &dynamodb.GetItemOutput{
-			Item: map[string]dynamotypes.AttributeValue{"PK": &dynamotypes.AttributeValueMemberS{Value: "USER#admin"}},
-		},
-	}
+	db := theoryMocks.NewMockExtendedDBStrict()
+	q := new(theoryMocks.MockQuery)
+	db.On("Model", testifyMock.Anything).Return(q).Once()
+	q.On("WithContext", testifyMock.Anything).Return(q).Once()
+	q.On("Where", "PK", "=", "USER#admin").Return(q).Once()
+	q.On("Where", "SK", "=", storagemodels.SKMetadata).Return(q).Once()
+	q.On("ConsistentRead").Return(q).Once()
+	q.On("First", testifyMock.Anything).Return(nil).Once()
+	db.On("Close").Return(nil).Once()
+
 	sm := &fakeSecretsManager{describeErr: &smstypes.ResourceNotFoundException{}}
 
-	newDynamoClientFn = func(aws.Config) dynamodbAPI { return ddb }
+	newTableTheoryDBFn = func(aws.Config) (tableTheoryAPI, error) { return db, nil }
 	newSecretsManagerClientFn = func(aws.Config) secretsManagerAPI { return sm }
 	newKMSClientFn = func(aws.Config) kmsAPI { return &fakeKMS{} }
 
 	main()
 
-	require.Nil(t, ddb.transactInput)
+	db.AssertNotCalled(t, "TransactWrite", testifyMock.Anything, testifyMock.Anything)
 	require.Len(t, sm.createInputs, 0)
 }
 

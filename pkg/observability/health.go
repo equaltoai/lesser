@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/theory-cloud/tabletheory/pkg/model"
+	"github.com/theory-cloud/tabletheory/pkg/schema"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 	"go.uber.org/zap"
 )
 
@@ -41,7 +43,7 @@ type HealthResponse struct {
 // HealthChecker manages health checks for various components
 type HealthChecker struct {
 	logger       *zap.Logger
-	dynamoClient dynamodbDescribeTableAPI
+	tableChecker tableExistsChecker
 	sqsClient    sqsGetQueueAttributesAPI
 	service      string
 	version      string
@@ -50,8 +52,8 @@ type HealthChecker struct {
 	config       *HealthConfig
 }
 
-type dynamodbDescribeTableAPI interface {
-	DescribeTable(ctx context.Context, params *dynamodb.DescribeTableInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error)
+type tableExistsChecker interface {
+	TableExists(tableName string) (bool, error)
 }
 
 type sqsGetQueueAttributesAPI interface {
@@ -67,24 +69,54 @@ type HealthConfig struct {
 	DependencyChecks bool
 }
 
+type errorTableExistsChecker struct {
+	err error
+}
+
+func (c errorTableExistsChecker) TableExists(_ string) (bool, error) {
+	return false, c.err
+}
+
+var newTableExistsChecker = func(cfg aws.Config) (tableExistsChecker, error) {
+	sess, err := session.NewSession(&session.Config{
+		Region:              cfg.Region,
+		CredentialsProvider: cfg.Credentials,
+	})
+	if err != nil {
+		return nil, err
+	}
+	registry := model.NewRegistry()
+	return schema.NewManager(sess, registry), nil
+}
+
 // NewHealthChecker creates a new health checker
-func NewHealthChecker(logger *zap.Logger, cfg aws.Config, service, version string, config *HealthConfig) *HealthChecker {
-	if config == nil {
-		config = &HealthConfig{
+func NewHealthChecker(logger *zap.Logger, cfg aws.Config, service, version string, healthConfig *HealthConfig) *HealthChecker {
+	if healthConfig == nil {
+		healthConfig = &HealthConfig{
 			CheckTimeout:     5 * time.Second,
 			CacheTimeout:     30 * time.Second,
 			DependencyChecks: true,
 		}
 	}
 
+	if healthConfig.TableName == "" {
+		healthConfig.TableName = config.GetMainTableName()
+	}
+
+	tableChecker, err := newTableExistsChecker(cfg)
+	if err != nil {
+		logger.Warn("failed to initialize TableTheory DynamoDB client for health checks", zap.Error(err))
+		tableChecker = errorTableExistsChecker{err: err}
+	}
+
 	return &HealthChecker{
 		logger:       logger,
-		dynamoClient: dynamodb.NewFromConfig(cfg),
+		tableChecker: tableChecker,
 		sqsClient:    sqs.NewFromConfig(cfg),
 		service:      service,
 		version:      version,
 		lastChecks:   make(map[string]HealthCheck),
-		config:       config,
+		config:       healthConfig,
 	}
 }
 
@@ -279,27 +311,29 @@ func (hc *HealthChecker) checkDynamoDB(ctx context.Context) HealthCheck {
 		LastCheck: time.Now(),
 	}
 
-	// Describe table to test connectivity
-	input := &dynamodb.DescribeTableInput{
-		TableName: aws.String(hc.config.TableName),
+	select {
+	case <-ctx.Done():
+		check.Status = HealthStatusCritical
+		check.Message = fmt.Sprintf("DynamoDB connectivity failed: %v", ctx.Err())
+		check.Duration = time.Since(start)
+		hc.setCachedCheck("dynamodb", check)
+		return check
+	default:
 	}
 
-	result, err := hc.dynamoClient.DescribeTable(ctx, input)
+	exists, err := hc.tableChecker.TableExists(hc.config.TableName)
 	duration := time.Since(start)
 	check.Duration = duration
 
 	if err != nil {
 		check.Status = HealthStatusCritical
 		check.Message = fmt.Sprintf("DynamoDB connectivity failed: %v", err)
+	} else if !exists {
+		check.Status = HealthStatusCritical
+		check.Message = "DynamoDB table not found"
 	} else {
-		status := string(result.Table.TableStatus)
-		if status == "ACTIVE" {
-			check.Status = HealthStatusHealthy
-			check.Message = "DynamoDB table is active and accessible"
-		} else {
-			check.Status = HealthStatusWarning
-			check.Message = fmt.Sprintf("DynamoDB table status: %s", status)
-		}
+		check.Status = HealthStatusHealthy
+		check.Message = "DynamoDB table is accessible"
 	}
 
 	hc.setCachedCheck("dynamodb", check)
@@ -316,12 +350,16 @@ func (hc *HealthChecker) checkDynamoDBDetailed(ctx context.Context) HealthCheck 
 		Metadata:  make(map[string]interface{}),
 	}
 
-	// Describe table
-	input := &dynamodb.DescribeTableInput{
-		TableName: aws.String(hc.config.TableName),
+	select {
+	case <-ctx.Done():
+		check.Status = HealthStatusCritical
+		check.Message = fmt.Sprintf("DynamoDB detailed check failed: %v", ctx.Err())
+		check.Duration = time.Since(start)
+		return check
+	default:
 	}
 
-	result, err := hc.dynamoClient.DescribeTable(ctx, input)
+	exists, err := hc.tableChecker.TableExists(hc.config.TableName)
 	duration := time.Since(start)
 	check.Duration = duration
 
@@ -331,29 +369,15 @@ func (hc *HealthChecker) checkDynamoDBDetailed(ctx context.Context) HealthCheck 
 		return check
 	}
 
-	table := result.Table
-	check.Metadata["table_status"] = string(table.TableStatus)
-	check.Metadata["item_count"] = *table.ItemCount
-	check.Metadata["table_size_bytes"] = *table.TableSizeBytes
+	check.Metadata["table_name"] = hc.config.TableName
+	check.Metadata["table_exists"] = exists
 
-	if table.ProvisionedThroughput != nil {
-		check.Metadata["read_capacity"] = *table.ProvisionedThroughput.ReadCapacityUnits
-		check.Metadata["write_capacity"] = *table.ProvisionedThroughput.WriteCapacityUnits
-	} else {
-		check.Metadata["billing_mode"] = "PAY_PER_REQUEST"
-	}
-
-	// Determine status
-	switch string(table.TableStatus) {
-	case "ACTIVE":
+	if exists {
 		check.Status = HealthStatusHealthy
 		check.Message = "DynamoDB table is fully operational"
-	case "UPDATING", "CREATING":
-		check.Status = HealthStatusWarning
-		check.Message = fmt.Sprintf("DynamoDB table is %s", string(table.TableStatus))
-	default:
+	} else {
 		check.Status = HealthStatusCritical
-		check.Message = fmt.Sprintf("DynamoDB table in unexpected state: %s", string(table.TableStatus))
+		check.Message = "DynamoDB table not found"
 	}
 
 	return check

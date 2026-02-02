@@ -8,30 +8,30 @@ import (
 
 // OAuthClient represents an OAuth 2.0 client application
 type OAuthClient struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys
-	PK             string  `dynamorm:"pk,attr:PK" json:"-"`                                       // OAUTH_CLIENT#clientID
-	SK             string  `dynamorm:"sk,attr:SK" json:"-"`                                       // CLIENT
-	GSI1PK         *string `dynamorm:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`              // OWNER#ownerID (for owner index)
-	GSI1SK         *string `dynamorm:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`              // CLIENT#clientID
-	OAuthClientsPK string  `dynamorm:"index:oauth-clients-index,pk,attr:oauthClientsPK" json:"-"` // OAUTH_CLIENTS
-	OAuthClientsSK string  `dynamorm:"index:oauth-clients-index,sk,attr:oauthClientsSK" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
+	PK             string  `theorydb:"pk,attr:PK" json:"-"`                                       // OAUTH_CLIENT#clientID
+	SK             string  `theorydb:"sk,attr:SK" json:"-"`                                       // CLIENT
+	GSI1PK         *string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`              // OWNER#ownerID (for owner index)
+	GSI1SK         *string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`              // CLIENT#clientID
+	OAuthClientsPK string  `theorydb:"index:oauth-clients-index,pk,attr:oauthClientsPK" json:"-"` // OAUTH_CLIENTS
+	OAuthClientsSK string  `theorydb:"index:oauth-clients-index,sk,attr:oauthClientsSK" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 
 	// Core fields
-	ID           string    `dynamorm:"attr:id" json:"id,omitempty"`
-	ClientID     string    `dynamorm:"attr:clientID" json:"client_id"`
-	ClientSecret string    `dynamorm:"attr:clientSecret" json:"client_secret"`
-	Name         string    `dynamorm:"attr:name" json:"name"`
-	Description  string    `dynamorm:"attr:description" json:"description,omitempty"`
-	Website      string    `dynamorm:"attr:website" json:"website,omitempty"`
-	RedirectURIs []string  `dynamorm:"attr:redirectURIs" json:"redirect_uris"`
-	GrantTypes   []string  `dynamorm:"attr:grantTypes" json:"grant_types,omitempty"`
-	Scopes       []string  `dynamorm:"attr:scopes" json:"scopes,omitempty"`
-	OwnerID      string    `dynamorm:"attr:ownerID,omitempty" json:"owner_id,omitempty"`
-	Confidential bool      `dynamorm:"attr:confidential" json:"confidential"`
-	CreatedAt    time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt    time.Time `dynamorm:"attr:updatedAt" json:"updated_at,omitempty"`
+	ID           string    `theorydb:"attr:id" json:"id,omitempty"`
+	ClientID     string    `theorydb:"attr:clientID" json:"client_id"`
+	ClientSecret string    `theorydb:"attr:clientSecret" json:"client_secret"`
+	Name         string    `theorydb:"attr:name" json:"name"`
+	Description  string    `theorydb:"attr:description" json:"description,omitempty"`
+	Website      string    `theorydb:"attr:website" json:"website,omitempty"`
+	RedirectURIs []string  `theorydb:"attr:redirectURIs" json:"redirect_uris"`
+	GrantTypes   []string  `theorydb:"attr:grantTypes" json:"grant_types,omitempty"`
+	Scopes       []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
+	OwnerID      string    `theorydb:"attr:ownerID,omitempty" json:"owner_id,omitempty"`
+	Confidential bool      `theorydb:"attr:confidential" json:"confidential"`
+	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt    time.Time `theorydb:"attr:updatedAt" json:"updated_at,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

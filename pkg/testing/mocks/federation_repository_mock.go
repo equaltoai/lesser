@@ -63,7 +63,6 @@ func (m *MockFederationRepository) GetInstanceStats(ctx context.Context, domain 
 	return args.Get(0).(*storage.InstanceStats), args.Error(1)
 }
 
-
 // RecordFederationActivity mocks the RecordFederationActivity method
 func (m *MockFederationRepository) RecordFederationActivity(ctx context.Context, activity *storage.FederationActivity) error {
 	args := m.Called(ctx, activity)

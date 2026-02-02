@@ -5,21 +5,20 @@ import (
 	"testing"
 	"time"
 
-	liftapi "github.com/equaltoai/lesser/cmd/api/lift"
+	apiHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
 type mainTestRepos struct {
-	*liftapi.MockRepositoryStorage
+	*apiHandlers.MockRepositoryStorage
 	account      *repositories.AccountRepository
 	metricRecord *repositories.MetricRecordRepository
 }
@@ -61,18 +60,24 @@ func newMainTestRepos(t *testing.T) *mainTestRepos {
 	metric := repositories.NewMetricRecordRepository(mockDB, "test-table", logger, nil)
 
 	return &mainTestRepos{
-		MockRepositoryStorage: &liftapi.MockRepositoryStorage{},
+		MockRepositoryStorage: &apiHandlers.MockRepositoryStorage{},
 		account:               account,
 		metricRecord:          metric,
 	}
 }
 
 func TestMainHelpers(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:  "GET",
-		Path:    "/health",
-		Headers: map[string]string{"User-Agent": "test", "X-Forwarded-For": "203.0.113.1"},
-	}))
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: "GET",
+			Path:   "/health",
+			Headers: map[string][]string{
+				"user-agent":      {"test"},
+				"x-forwarded-for": {"203.0.113.1"},
+			},
+		},
+		RequestID: "test-request-id",
+	}
 
 	info := extractRequestInfo(ctx)
 	require.Equal(t, "GET", info.method)
@@ -80,7 +85,7 @@ func TestMainHelpers(t *testing.T) {
 
 	start := time.Now().Add(-1 * time.Second)
 	addLatencyContextValues(ctx, info, start)
-	require.NotNil(t, ctx.Context.Value(latencyStartKey))
+	require.NotNil(t, ctx.Get(string(latencyStartKey)))
 
 	p95, p99 := calculatePercentiles(map[string]interface{}{"Percentiles": map[string]float64{"p95": 10, "p99": 20}}, 5*time.Millisecond)
 	require.Equal(t, 10.0, p95)
@@ -107,11 +112,13 @@ func TestMiddlewareHelpers(t *testing.T) {
 	latencyAlerter = nil
 
 	mw := createLatencyTrackingMiddleware()
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: "GET", Path: "/"}))
-	handler := mw(lift.HandlerFunc(func(c *lift.Context) error { return nil }))
-	require.NoError(t, handler.Handle(ctx))
+	ctx := &apptheory.Context{Request: apptheory.Request{Method: "GET", Path: "/"}}
+	handler := mw(func(c *apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })
+	_, err := handler(ctx)
+	require.NoError(t, err)
 
 	emfMW := createEMFMetricsMiddleware()
-	handler = emfMW(lift.HandlerFunc(func(c *lift.Context) error { return nil }))
-	require.NoError(t, handler.Handle(ctx))
+	handler = emfMW(func(c *apptheory.Context) (*apptheory.Response, error) { return apptheory.Text(200, ""), nil })
+	_, err = handler(ctx)
+	require.NoError(t, err)
 }

@@ -17,7 +17,7 @@ feature_addition_patterns:
     pattern_name: "Add REST API Endpoint"
     
     steps:
-      - location: "cmd/api/lift/handlers.go"
+      - location: "cmd/api/handlers/*.go"
         action: "Add handler function"
         example: |
           func (h *Handler) HandleNewFeature(ctx *lift.Context) error {
@@ -37,7 +37,7 @@ feature_addition_patterns:
               return ctx.JSON(200, result)
           }
           
-      - location: "cmd/api/lift/routes.go"
+      - location: "cmd/api/routes.go"
         action: "Register route"
         example: |
           app.POST("/api/v1/new-feature", h.HandleNewFeature)

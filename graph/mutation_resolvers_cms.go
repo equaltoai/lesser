@@ -9,7 +9,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 

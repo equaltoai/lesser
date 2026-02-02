@@ -61,7 +61,6 @@ func (m *MockSearchRepository) SearchStatuses(ctx context.Context, query string,
 	return args.Get(0).([]*storage.StatusSearchResult), args.Error(1)
 }
 
-
 // SearchStatusesWithOptions mocks the SearchStatusesWithOptions method
 func (m *MockSearchRepository) SearchStatusesWithOptions(ctx context.Context, query string, options storage.StatusSearchOptions) ([]*storage.StatusSearchResult, error) {
 	args := m.Called(ctx, query, options)

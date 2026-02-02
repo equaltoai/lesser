@@ -7,74 +7,74 @@ import (
 
 // EnhancedModerationPattern represents an enhanced moderation pattern with advanced matching capabilities
 type EnhancedModerationPattern struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "ENHANCED_PATTERN#{pattern_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // "METADATA"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "ENHANCED_PATTERN#{pattern_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // "METADATA"
 
 	// GSI1 - Active pattern queries with priority
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ENHANCED_PATTERNS#ACTIVE" (when active)
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{priority}#{type}#{severity}#{pattern_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ENHANCED_PATTERNS#ACTIVE" (when active)
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{priority}#{type}#{severity}#{pattern_id}"
 
 	// GSI2 - Type-based queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "ENHANCED_PATTERNS#{type}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{effectiveness}#{updated_at}#{pattern_id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "ENHANCED_PATTERNS#{type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{effectiveness}#{updated_at}#{pattern_id}"
 
 	// GSI3 - Performance metric queries
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // "PATTERN_METRICS#{category}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // "{effectiveness}#{match_count}#{pattern_id}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // "PATTERN_METRICS#{category}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // "{effectiveness}#{match_count}#{pattern_id}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "ENHANCED_PATTERN"
+	Type string `theorydb:"attr:type" json:"type"` // "ENHANCED_PATTERN"
 
 	// Pattern identification
-	PatternID   string `dynamorm:"attr:patternID" json:"pattern_id"`
-	Name        string `dynamorm:"attr:name" json:"name"`
-	Description string `dynamorm:"attr:description" json:"description"`
-	Version     int    `dynamorm:"attr:version" json:"version"`
+	PatternID   string `theorydb:"attr:patternID" json:"pattern_id"`
+	Name        string `theorydb:"attr:name" json:"name"`
+	Description string `theorydb:"attr:description" json:"description"`
+	Version     int    `theorydb:"attr:version" json:"version"`
 
 	// Pattern configuration
-	PatternType     string `dynamorm:"attr:patternType" json:"pattern_type"`       // "url_exact", ...
-	PatternContent  string `dynamorm:"attr:patternContent" json:"pattern_content"` // The actual pattern string
-	Category        string `dynamorm:"attr:category" json:"category"`              // "spam", ...
-	Severity        string `dynamorm:"attr:severity" json:"severity"`              // "low", "medium", etc.
-	Priority        int    `dynamorm:"attr:priority" json:"priority"`              // 1-10, higher is more important
-	Active          bool   `dynamorm:"attr:active" json:"active"`
-	Compiled        bool   `dynamorm:"attr:compiled" json:"compiled"`                // Whether pattern has been compiled successfully
-	CompilationHash string `dynamorm:"attr:compilationHash" json:"compilation_hash"` // Hash of compiled pattern for cache invalidation
+	PatternType     string `theorydb:"attr:patternType" json:"pattern_type"`       // "url_exact", ...
+	PatternContent  string `theorydb:"attr:patternContent" json:"pattern_content"` // The actual pattern string
+	Category        string `theorydb:"attr:category" json:"category"`              // "spam", ...
+	Severity        string `theorydb:"attr:severity" json:"severity"`              // "low", "medium", etc.
+	Priority        int    `theorydb:"attr:priority" json:"priority"`              // 1-10, higher is more important
+	Active          bool   `theorydb:"attr:active" json:"active"`
+	Compiled        bool   `theorydb:"attr:compiled" json:"compiled"`                // Whether pattern has been compiled successfully
+	CompilationHash string `theorydb:"attr:compilationHash" json:"compilation_hash"` // Hash of compiled pattern for cache invalidation
 
 	// Pattern behavior
-	Action              string   `dynamorm:"attr:action" json:"action"`                            // "flag", etc.
-	BlockDuration       int64    `dynamorm:"attr:blockDuration" json:"block_duration"`             // Duration in seconds, 0 for permanent
-	EscalationThreshold int      `dynamorm:"attr:escalationThreshold" json:"escalation_threshold"` // Number of matches before escalation
-	WhitelistOverride   bool     `dynamorm:"attr:whitelistOverride" json:"whitelist_override"`     // Whether this pattern can be overridden by whitelist
-	Tags                []string `dynamorm:"attr:tags" json:"tags,omitempty"`                      // Additional categorization tags
+	Action              string   `theorydb:"attr:action" json:"action"`                            // "flag", etc.
+	BlockDuration       int64    `theorydb:"attr:blockDuration" json:"block_duration"`             // Duration in seconds, 0 for permanent
+	EscalationThreshold int      `theorydb:"attr:escalationThreshold" json:"escalation_threshold"` // Number of matches before escalation
+	WhitelistOverride   bool     `theorydb:"attr:whitelistOverride" json:"whitelist_override"`     // Whether this pattern can be overridden by whitelist
+	Tags                []string `theorydb:"attr:tags" json:"tags,omitempty"`                      // Additional categorization tags
 
 	// Performance metrics
-	MatchCount         int64     `dynamorm:"attr:matchCount" json:"match_count"`
-	FalsePositiveCount int64     `dynamorm:"attr:falsePositiveCount" json:"false_positive_count"`
-	TruePositiveCount  int64     `dynamorm:"attr:truePositiveCount" json:"true_positive_count"`
-	Effectiveness      float64   `dynamorm:"attr:effectiveness" json:"effectiveness"` // Calculated effectiveness score 0.0-1.0
-	ConfidenceScore    float64   `dynamorm:"attr:confidenceScore" json:"confidence_score"`
-	LastMatch          time.Time `dynamorm:"attr:lastMatch" json:"last_match,omitempty"`
-	AverageMatchTime   float64   `dynamorm:"attr:averageMatchTime" json:"average_match_time"` // Average time to match in milliseconds
+	MatchCount         int64     `theorydb:"attr:matchCount" json:"match_count"`
+	FalsePositiveCount int64     `theorydb:"attr:falsePositiveCount" json:"false_positive_count"`
+	TruePositiveCount  int64     `theorydb:"attr:truePositiveCount" json:"true_positive_count"`
+	Effectiveness      float64   `theorydb:"attr:effectiveness" json:"effectiveness"` // Calculated effectiveness score 0.0-1.0
+	ConfidenceScore    float64   `theorydb:"attr:confidenceScore" json:"confidence_score"`
+	LastMatch          time.Time `theorydb:"attr:lastMatch" json:"last_match,omitempty"`
+	AverageMatchTime   float64   `theorydb:"attr:averageMatchTime" json:"average_match_time"` // Average time to match in milliseconds
 
 	// Pattern validation metrics
-	TestResults     map[string]interface{} `dynamorm:"attr:testResults" json:"test_results,omitempty"` // Results from pattern testing
-	ValidationScore float64                `dynamorm:"attr:validationScore" json:"validation_score"`   // 0.0-1.0 based on test results
-	LastValidated   time.Time              `dynamorm:"attr:lastValidated" json:"last_validated,omitempty"`
+	TestResults     map[string]interface{} `theorydb:"attr:testResults" json:"test_results,omitempty"` // Results from pattern testing
+	ValidationScore float64                `theorydb:"attr:validationScore" json:"validation_score"`   // 0.0-1.0 based on test results
+	LastValidated   time.Time              `theorydb:"attr:lastValidated" json:"last_validated,omitempty"`
 
 	// Metadata
-	CreatedBy string    `dynamorm:"attr:createdBy" json:"created_by"`
-	UpdatedBy string    `dynamorm:"attr:updatedBy" json:"updated_by,omitempty"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
-	LastUsed  time.Time `dynamorm:"attr:lastUsed" json:"last_used,omitempty"`
-	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at,omitempty"`
+	CreatedBy string    `theorydb:"attr:createdBy" json:"created_by"`
+	UpdatedBy string    `theorydb:"attr:updatedBy" json:"updated_by,omitempty"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	LastUsed  time.Time `theorydb:"attr:lastUsed" json:"last_used,omitempty"`
+	ExpiresAt time.Time `theorydb:"attr:expiresAt" json:"expires_at,omitempty"`
 
 	// DynamoDB TTL (90 days default)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -177,32 +177,32 @@ func (p *EnhancedModerationPattern) ShouldEscalate() bool {
 
 // PatternCache represents cached compiled patterns for performance
 type PatternCache struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "PATTERN_CACHE#{pattern_type}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "COMPILED#{pattern_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "PATTERN_CACHE#{pattern_type}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "COMPILED#{pattern_id}"
 
 	// GSI1 - Cache invalidation queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "PATTERN_CACHE#ACTIVE"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{last_updated}#{pattern_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "PATTERN_CACHE#ACTIVE"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{last_updated}#{pattern_id}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "PATTERN_CACHE"
+	Type string `theorydb:"attr:type" json:"type"` // "PATTERN_CACHE"
 
 	// Cache data
-	PatternID       string                 `dynamorm:"attr:patternID" json:"pattern_id"`
-	PatternType     string                 `dynamorm:"attr:patternType" json:"pattern_type"`
-	CompilationHash string                 `dynamorm:"attr:compilationHash" json:"compilation_hash"`
-	CompiledData    map[string]interface{} `dynamorm:"attr:compiledData" json:"compiled_data"` // Serialized compiled pattern data
-	CompileTime     float64                `dynamorm:"attr:compileTime" json:"compile_time"`   // Time taken to compile in milliseconds
-	CacheHits       int64                  `dynamorm:"attr:cacheHits" json:"cache_hits"`       // Number of times this cache entry was used
-	LastUsed        time.Time              `dynamorm:"attr:lastUsed" json:"last_used"`
-	CreatedAt       time.Time              `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt       time.Time              `dynamorm:"attr:updatedAt" json:"updated_at"`
+	PatternID       string                 `theorydb:"attr:patternID" json:"pattern_id"`
+	PatternType     string                 `theorydb:"attr:patternType" json:"pattern_type"`
+	CompilationHash string                 `theorydb:"attr:compilationHash" json:"compilation_hash"`
+	CompiledData    map[string]interface{} `theorydb:"attr:compiledData" json:"compiled_data"` // Serialized compiled pattern data
+	CompileTime     float64                `theorydb:"attr:compileTime" json:"compile_time"`   // Time taken to compile in milliseconds
+	CacheHits       int64                  `theorydb:"attr:cacheHits" json:"cache_hits"`       // Number of times this cache entry was used
+	LastUsed        time.Time              `theorydb:"attr:lastUsed" json:"last_used"`
+	CreatedAt       time.Time              `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt       time.Time              `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for cache expiration (24 hours default)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -241,52 +241,52 @@ func (c *PatternCache) UpdateKeys() error {
 
 // PatternPerformanceMetric tracks detailed performance metrics for patterns
 type PatternPerformanceMetric struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "PATTERN_METRICS#{pattern_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TIME#{date}#{hour}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "PATTERN_METRICS#{pattern_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TIME#{date}#{hour}"
 
 	// GSI1 - Pattern performance queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "METRICS#{pattern_type}#{date}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{hour}#{pattern_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "METRICS#{pattern_type}#{date}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{hour}#{pattern_id}"
 
 	// GSI2 - Aggregated metrics queries
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "PATTERN_PERFORMANCE"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{date}#{pattern_type}#{pattern_id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "PATTERN_PERFORMANCE"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{date}#{pattern_type}#{pattern_id}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "PATTERN_METRIC"
+	Type string `theorydb:"attr:type" json:"type"` // "PATTERN_METRIC"
 
 	// Metric data
-	PatternID   string `dynamorm:"attr:patternID" json:"pattern_id"`
-	PatternType string `dynamorm:"attr:patternType" json:"pattern_type"`
-	Date        string `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD
-	Hour        int    `dynamorm:"attr:hour" json:"hour"` // 0-23
+	PatternID   string `theorydb:"attr:patternID" json:"pattern_id"`
+	PatternType string `theorydb:"attr:patternType" json:"pattern_type"`
+	Date        string `theorydb:"attr:date" json:"date"` // YYYY-MM-DD
+	Hour        int    `theorydb:"attr:hour" json:"hour"` // 0-23
 
 	// Performance counters
-	MatchAttempts     int64   `dynamorm:"attr:matchAttempts" json:"match_attempts"`         // Total match attempts
-	SuccessfulMatches int64   `dynamorm:"attr:successfulMatches" json:"successful_matches"` // Actual matches
-	FalsePositives    int64   `dynamorm:"attr:falsePositives" json:"false_positives"`       // Confirmed false positives
-	TruePositives     int64   `dynamorm:"attr:truePositives" json:"true_positives"`         // Confirmed true positives
-	AverageMatchTime  float64 `dynamorm:"attr:averageMatchTime" json:"average_match_time"`  // Average time per match in milliseconds
-	MaxMatchTime      float64 `dynamorm:"attr:maxMatchTime" json:"max_match_time"`          // Maximum time for a single match
-	MinMatchTime      float64 `dynamorm:"attr:minMatchTime" json:"min_match_time"`          // Minimum time for a single match
-	TotalMatchTime    float64 `dynamorm:"attr:totalMatchTime" json:"total_match_time"`      // Total time spent matching
-	MemoryUsage       int64   `dynamorm:"attr:memoryUsage" json:"memory_usage"`             // Memory usage in bytes
-	CPUTime           float64 `dynamorm:"attr:cpuTime" json:"cpu_time"`                     // CPU time used in milliseconds
+	MatchAttempts     int64   `theorydb:"attr:matchAttempts" json:"match_attempts"`         // Total match attempts
+	SuccessfulMatches int64   `theorydb:"attr:successfulMatches" json:"successful_matches"` // Actual matches
+	FalsePositives    int64   `theorydb:"attr:falsePositives" json:"false_positives"`       // Confirmed false positives
+	TruePositives     int64   `theorydb:"attr:truePositives" json:"true_positives"`         // Confirmed true positives
+	AverageMatchTime  float64 `theorydb:"attr:averageMatchTime" json:"average_match_time"`  // Average time per match in milliseconds
+	MaxMatchTime      float64 `theorydb:"attr:maxMatchTime" json:"max_match_time"`          // Maximum time for a single match
+	MinMatchTime      float64 `theorydb:"attr:minMatchTime" json:"min_match_time"`          // Minimum time for a single match
+	TotalMatchTime    float64 `theorydb:"attr:totalMatchTime" json:"total_match_time"`      // Total time spent matching
+	MemoryUsage       int64   `theorydb:"attr:memoryUsage" json:"memory_usage"`             // Memory usage in bytes
+	CPUTime           float64 `theorydb:"attr:cpuTime" json:"cpu_time"`                     // CPU time used in milliseconds
 
 	// Quality metrics
-	Precision float64 `dynamorm:"attr:precision" json:"precision"` // true_positives / ...
-	Recall    float64 `dynamorm:"attr:recall" json:"recall"`       // true_positives / (true_positives + false_negatives)
-	F1Score   float64 `dynamorm:"attr:f1Score" json:"f1_score"`    // 2 * (precision * recall) / (precision + recall)
+	Precision float64 `theorydb:"attr:precision" json:"precision"` // true_positives / ...
+	Recall    float64 `theorydb:"attr:recall" json:"recall"`       // true_positives / (true_positives + false_negatives)
+	F1Score   float64 `theorydb:"attr:f1Score" json:"f1_score"`    // 2 * (precision * recall) / (precision + recall)
 
 	// Metadata
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL (30 days for detailed metrics)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name
@@ -343,49 +343,49 @@ func (m *PatternPerformanceMetric) CalculateQualityMetrics() {
 
 // PatternTestResult stores results from pattern testing and validation
 type PatternTestResult struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "PATTERN_TEST#{pattern_id}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "TEST#{test_id}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "PATTERN_TEST#{pattern_id}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TEST#{test_id}"
 
 	// GSI1 - Test result queries by type
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "PATTERN_TESTS#{test_type}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{score}#{timestamp}#{test_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "PATTERN_TESTS#{test_type}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{score}#{timestamp}#{test_id}"
 
 	// Type marker
-	Type string `dynamorm:"attr:type" json:"type"` // "PATTERN_TEST"
+	Type string `theorydb:"attr:type" json:"type"` // "PATTERN_TEST"
 
 	// Test identification
-	TestID      string `dynamorm:"attr:testID" json:"test_id"`
-	PatternID   string `dynamorm:"attr:patternID" json:"pattern_id"`
-	PatternType string `dynamorm:"attr:patternType" json:"pattern_type"`
-	TestType    string `dynamorm:"attr:testType" json:"test_type"` // "validation", ...
+	TestID      string `theorydb:"attr:testID" json:"test_id"`
+	PatternID   string `theorydb:"attr:patternID" json:"pattern_id"`
+	PatternType string `theorydb:"attr:patternType" json:"pattern_type"`
+	TestType    string `theorydb:"attr:testType" json:"test_type"` // "validation", ...
 
 	// Test configuration
-	TestDescription string                 `dynamorm:"attr:testDescription" json:"test_description"`
-	TestParameters  map[string]interface{} `dynamorm:"attr:testParameters" json:"test_parameters"`
-	TestData        []string               `dynamorm:"attr:testData" json:"test_data,omitempty"` // Test inputs
+	TestDescription string                 `theorydb:"attr:testDescription" json:"test_description"`
+	TestParameters  map[string]interface{} `theorydb:"attr:testParameters" json:"test_parameters"`
+	TestData        []string               `theorydb:"attr:testData" json:"test_data,omitempty"` // Test inputs
 
 	// Test results
-	Passed          bool                   `dynamorm:"attr:passed" json:"passed"`
-	Score           float64                `dynamorm:"attr:score" json:"score"`                  // 0.0-1.0
-	ExecutionTime   float64                `dynamorm:"attr:executionTime" json:"execution_time"` // Time in milliseconds
-	MemoryUsage     int64                  `dynamorm:"attr:memoryUsage" json:"memory_usage"`     // Memory usage in bytes
-	Results         map[string]interface{} `dynamorm:"attr:results" json:"results"`              // Detailed test results
-	ExpectedResults []string               `dynamorm:"attr:expectedResults" json:"expected_results,omitempty"`
-	ActualResults   []string               `dynamorm:"attr:actualResults" json:"actual_results,omitempty"`
-	Errors          []string               `dynamorm:"attr:errors" json:"errors,omitempty"`
+	Passed          bool                   `theorydb:"attr:passed" json:"passed"`
+	Score           float64                `theorydb:"attr:score" json:"score"`                  // 0.0-1.0
+	ExecutionTime   float64                `theorydb:"attr:executionTime" json:"execution_time"` // Time in milliseconds
+	MemoryUsage     int64                  `theorydb:"attr:memoryUsage" json:"memory_usage"`     // Memory usage in bytes
+	Results         map[string]interface{} `theorydb:"attr:results" json:"results"`              // Detailed test results
+	ExpectedResults []string               `theorydb:"attr:expectedResults" json:"expected_results,omitempty"`
+	ActualResults   []string               `theorydb:"attr:actualResults" json:"actual_results,omitempty"`
+	Errors          []string               `theorydb:"attr:errors" json:"errors,omitempty"`
 
 	// Test metadata
-	TestVersion string    `dynamorm:"attr:testVersion" json:"test_version"`
-	RunBy       string    `dynamorm:"attr:runBy" json:"run_by"`
-	RunAt       time.Time `dynamorm:"attr:runAt" json:"run_at"`
-	Environment string    `dynamorm:"attr:environment" json:"environment"` // "development", "staging", "production"
-	CreatedAt   time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	TestVersion string    `theorydb:"attr:testVersion" json:"test_version"`
+	RunBy       string    `theorydb:"attr:runBy" json:"run_by"`
+	RunAt       time.Time `theorydb:"attr:runAt" json:"run_at"`
+	Environment string    `theorydb:"attr:environment" json:"environment"` // "development", "staging", "production"
+	CreatedAt   time.Time `theorydb:"attr:createdAt" json:"created_at"`
 
 	// TTL (90 days for test results)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

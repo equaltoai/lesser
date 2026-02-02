@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/errors"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func errorCodeForHTTPStatus(status int) string {
@@ -27,6 +28,10 @@ func errorCodeForHTTPStatus(status int) string {
 		return string(errors.CodeConflict)
 	case 410:
 		return string(errors.CodeGone)
+	case 408:
+		return string(errors.CodeTimeout)
+	case 413:
+		return string(errors.CodeContentTooLarge)
 	case 422:
 		return string(errors.CodeUnprocessableEntity)
 	case 429:
@@ -42,23 +47,23 @@ func errorCodeForHTTPStatus(status int) string {
 }
 
 // SendError is a convenience function for sending standardized error responses with Lift
-// This consolidates the pattern: return ctx.Status(code).JSON(map[string]string{"error": message})
-func SendError(ctx *lift.Context, code int, message string) error {
-	return ctx.Status(code).JSON(StandardErrorResponse{
+// This consolidates the pattern: return apptheory.JSON(code, map[string]string{"error": message})
+func SendError(ctx *apptheory.Context, code int, message string) (*apptheory.Response, error) {
+	return apptheory.JSON(code, StandardErrorResponse{
 		Error: message,
 		Code:  errorCodeForHTTPStatus(code),
 	})
 }
 
 // SendJSON is a convenience function for sending successful JSON responses with Lift
-// This consolidates the pattern: return ctx.Status(code).JSON(data)
-func SendJSON(ctx *lift.Context, code int, data interface{}) error {
-	return ctx.Status(code).JSON(data)
+// This consolidates the pattern: return apptheory.JSON(code, data)
+func SendJSON(ctx *apptheory.Context, code int, data interface{}) (*apptheory.Response, error) {
+	return apptheory.JSON(code, data)
 }
 
 // SendMastodonError sends Mastodon API-compatible error responses
 // Mastodon clients expect a specific error format for proper error handling
-func SendMastodonError(ctx *lift.Context, code int, errorMsg string) error {
+func SendMastodonError(ctx *apptheory.Context, code int, errorMsg string) (*apptheory.Response, error) {
 	mastodonError := map[string]interface{}{
 		"error":      errorMsg,
 		"error_code": errorCodeForHTTPStatus(code),
@@ -72,29 +77,30 @@ func SendMastodonError(ctx *lift.Context, code int, errorMsg string) error {
 		mastodonError["error_description"] = "Rate limit exceeded"
 	}
 
-	return ctx.Status(code).JSON(mastodonError)
+	return apptheory.JSON(code, mastodonError)
 }
 
 // Success response helpers for Lift contexts
 
 // SendOK sends a 200 OK response with data
-func SendOK(ctx *lift.Context, data interface{}) error {
+func SendOK(ctx *apptheory.Context, data interface{}) (*apptheory.Response, error) {
 	return SendJSON(ctx, 200, data)
 }
 
 // SendCreated sends a 201 Created response with data
-func SendCreated(ctx *lift.Context, data interface{}) error {
+func SendCreated(ctx *apptheory.Context, data interface{}) (*apptheory.Response, error) {
 	return SendJSON(ctx, 201, data)
 }
 
 // SendAccepted sends a 202 Accepted response with data
-func SendAccepted(ctx *lift.Context, data interface{}) error {
+func SendAccepted(ctx *apptheory.Context, data interface{}) (*apptheory.Response, error) {
 	return SendJSON(ctx, 202, data)
 }
 
 // SendNoContent sends a 204 No Content response
-func SendNoContent(ctx *lift.Context) error {
-	return ctx.Status(204).JSON(nil)
+func SendNoContent(ctx *apptheory.Context) (*apptheory.Response, error) {
+	_ = ctx
+	return &apptheory.Response{Status: 204}, nil
 }
 
 // Mastodon-specific response helpers
@@ -143,22 +149,22 @@ type MastodonStatus struct {
 }
 
 // SendMastodonAccount sends a Mastodon-formatted account response
-func SendMastodonAccount(ctx *lift.Context, account MastodonAccount) error {
+func SendMastodonAccount(ctx *apptheory.Context, account MastodonAccount) (*apptheory.Response, error) {
 	return SendOK(ctx, account)
 }
 
 // SendMastodonAccounts sends a Mastodon-formatted accounts array response
-func SendMastodonAccounts(ctx *lift.Context, accounts []MastodonAccount) error {
+func SendMastodonAccounts(ctx *apptheory.Context, accounts []MastodonAccount) (*apptheory.Response, error) {
 	return SendOK(ctx, accounts)
 }
 
 // SendMastodonStatus sends a Mastodon-formatted status response
-func SendMastodonStatus(ctx *lift.Context, status MastodonStatus) error {
+func SendMastodonStatus(ctx *apptheory.Context, status MastodonStatus) (*apptheory.Response, error) {
 	return SendOK(ctx, status)
 }
 
 // SendMastodonStatuses sends a Mastodon-formatted statuses array response
-func SendMastodonStatuses(ctx *lift.Context, statuses []MastodonStatus) error {
+func SendMastodonStatuses(ctx *apptheory.Context, statuses []MastodonStatus) (*apptheory.Response, error) {
 	return SendOK(ctx, statuses)
 }
 
@@ -183,7 +189,7 @@ type Pagination struct {
 }
 
 // SendPaginatedResponse sends a response with pagination metadata
-func SendPaginatedResponse(ctx *lift.Context, data interface{}, pagination *Pagination) error {
+func SendPaginatedResponse(ctx *apptheory.Context, data interface{}, pagination *Pagination) (*apptheory.Response, error) {
 	response := PaginatedResponse{
 		Data:       data,
 		Pagination: pagination,
@@ -193,30 +199,39 @@ func SendPaginatedResponse(ctx *lift.Context, data interface{}, pagination *Pagi
 
 // SendPaginatedMastodonResponse sends Mastodon-compatible paginated response
 // Mastodon uses Link headers for pagination instead of response body metadata
-func SendPaginatedMastodonResponse(ctx *lift.Context, data interface{}, params PaginationParams, hasNext, hasPrev bool, nextCursor, prevCursor string) error {
-	// Set pagination headers
+func SendPaginatedMastodonResponse(ctx *apptheory.Context, data interface{}, params PaginationParams, hasNext, hasPrev bool, nextCursor, prevCursor string) (*apptheory.Response, error) {
+	resp, err := SendOK(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Mastodon uses Link headers for pagination instead of response body metadata.
 	if hasNext || hasPrev {
 		baseURL := GetBaseURL(ctx)
 		linkHeader := BuildLinkHeader(baseURL, params, hasNext, hasPrev, nextCursor, prevCursor)
-		ctx.Response.Header("Link", linkHeader)
+		if resp.Headers == nil {
+			resp.Headers = map[string][]string{}
+		}
+		resp.Headers["link"] = []string{linkHeader}
 	}
 
-	// Send data without pagination metadata in body (Mastodon style)
-	return SendOK(ctx, data)
+	return resp, nil
 }
 
 // GetBaseURL constructs the base URL for the current request
-func GetBaseURL(ctx *lift.Context) string {
-	scheme := "https"
-	if ctx.Request != nil && ctx.Request.Request != nil {
-		if ctx.Request.Request.Headers["X-Forwarded-Proto"] == "http" {
-			scheme = "http"
-		}
+func GetBaseURL(ctx *apptheory.Context) string {
+	if ctx == nil {
+		return ""
 	}
 
-	host := ctx.Request.Headers["Host"]
-	if host == "" && ctx.Request.Request != nil {
-		host = ctx.Request.Request.Headers["Host"]
+	scheme := "https"
+	if proto := firstHeaderValue(ctx.Request.Headers, "x-forwarded-proto"); strings.EqualFold(proto, "http") {
+		scheme = "http"
+	}
+
+	host := firstHeaderValue(ctx.Request.Headers, "host")
+	if host == "" {
+		host = firstHeaderValue(ctx.Request.Headers, "x-forwarded-host")
 	}
 
 	path := ctx.Request.Path
@@ -227,12 +242,12 @@ func GetBaseURL(ctx *lift.Context) string {
 // Enhanced error response helpers that maintain backward compatibility
 
 // RespondWithJSON is an alias for SendJSON for consistency with existing patterns
-func RespondWithJSON(ctx *lift.Context, code int, data interface{}) error {
+func RespondWithJSON(ctx *apptheory.Context, code int, data interface{}) (*apptheory.Response, error) {
 	return SendJSON(ctx, code, data)
 }
 
 // RespondWithError is an alias for SendError for consistency with existing patterns
-func RespondWithError(ctx *lift.Context, code int, message string) error {
+func RespondWithError(ctx *apptheory.Context, code int, message string) (*apptheory.Response, error) {
 	return SendError(ctx, code, message)
 }
 
@@ -245,19 +260,25 @@ type StreamingMessage struct {
 }
 
 // SendStreamingMessage sends a Server-Sent Events formatted message
-func SendStreamingMessage(ctx *lift.Context, event string, data interface{}) error {
-	ctx.Response.Header("Content-Type", "text/plain")
-	ctx.Response.Header("Cache-Control", "no-cache")
-	ctx.Response.Header("Connection", "keep-alive")
+func SendStreamingMessage(ctx *apptheory.Context, event string, data interface{}) (*apptheory.Response, error) {
+	_ = ctx
 
 	// Format as SSE
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	message := fmt.Sprintf("event: %s\ndata: %s\n\n", event, string(jsonData))
-	return ctx.Status(200).JSON(map[string]string{"sse": message})
+	return &apptheory.Response{
+		Status: 200,
+		Headers: map[string][]string{
+			"content-type":  {"text/event-stream; charset=utf-8"},
+			"cache-control": {"no-cache"},
+			"connection":    {"keep-alive"},
+		},
+		Body: []byte(message),
+	}, nil
 }
 
 // WebSocket response helpers
@@ -292,86 +313,123 @@ func ValidateResponseData(data interface{}) interface{} {
 
 // Response header helpers
 
-// SetCORSHeaders sets comprehensive CORS headers for API responses
-func SetCORSHeaders(ctx *lift.Context) {
-	ctx.Response.Header("Access-Control-Allow-Origin", "*")
-	ctx.Response.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD")
-	ctx.Response.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Accept-Encoding, Accept-Language, Date, Digest, Host, Signature, User-Agent, X-Forwarded-For, X-Forwarded-Proto")
-	ctx.Response.Header("Access-Control-Max-Age", "86400")
+// SetCORSHeaders sets comprehensive CORS headers for API responses.
+func SetCORSHeaders(resp *apptheory.Response) {
+	if resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+	resp.Headers["access-control-allow-origin"] = []string{"*"}
+	resp.Headers["access-control-allow-methods"] = []string{"GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD"}
+	resp.Headers["access-control-allow-headers"] = []string{"Content-Type, Authorization, X-Requested-With, Accept, Accept-Encoding, Accept-Language, Date, Digest, Host, Signature, User-Agent, X-Forwarded-For, X-Forwarded-Proto"}
+	resp.Headers["access-control-max-age"] = []string{"86400"}
 }
 
 // SetActivityPubHeaders sets headers for ActivityPub responses
-func SetActivityPubHeaders(ctx *lift.Context) {
-	ctx.Response.Header("Content-Type", "application/activity+json; charset=utf-8")
-	SetCORSHeaders(ctx)
+func SetActivityPubHeaders(resp *apptheory.Response) {
+	if resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+	resp.Headers["content-type"] = []string{"application/activity+json; charset=utf-8"}
+	SetCORSHeaders(resp)
 }
 
 // SetJSONHeaders sets headers for JSON API responses
-func SetJSONHeaders(ctx *lift.Context) {
-	ctx.Response.Header("Content-Type", "application/json; charset=utf-8")
-	SetCORSHeaders(ctx)
+func SetJSONHeaders(resp *apptheory.Response) {
+	if resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+	resp.Headers["content-type"] = []string{"application/json; charset=utf-8"}
+	SetCORSHeaders(resp)
 }
 
 // SetSecurityHeaders sets security-related headers
-func SetSecurityHeaders(ctx *lift.Context) {
-	ctx.Response.Header("X-Frame-Options", "DENY")
-	ctx.Response.Header("X-Content-Type-Options", "nosniff")
-	ctx.Response.Header("X-XSS-Protection", "1; mode=block")
-	ctx.Response.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+func SetSecurityHeaders(resp *apptheory.Response) {
+	if resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+	resp.Headers["x-frame-options"] = []string{"DENY"}
+	resp.Headers["x-content-type-options"] = []string{"nosniff"}
+	resp.Headers["x-xss-protection"] = []string{"1; mode=block"}
+	resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
 }
 
 // Cache control helpers
 
 // SetCacheHeaders sets appropriate cache headers based on content type
-func SetCacheHeaders(ctx *lift.Context, maxAge int) {
+func SetCacheHeaders(resp *apptheory.Response, maxAge int) {
+	if resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+
 	if maxAge > 0 {
-		ctx.Response.Header("Cache-Control", fmt.Sprintf("public, max-age=%d", maxAge))
+		resp.Headers["cache-control"] = []string{fmt.Sprintf("public, max-age=%d", maxAge)}
 	} else {
-		ctx.Response.Header("Cache-Control", "no-cache, no-store, must-revalidate")
-		ctx.Response.Header("Pragma", "no-cache")
-		ctx.Response.Header("Expires", "0")
+		resp.Headers["cache-control"] = []string{"no-cache, no-store, must-revalidate"}
+		resp.Headers["pragma"] = []string{"no-cache"}
+		resp.Headers["expires"] = []string{"0"}
 	}
 }
 
 // SetNoCache sets no-cache headers for sensitive responses
-func SetNoCache(ctx *lift.Context) {
-	SetCacheHeaders(ctx, 0)
+func SetNoCache(resp *apptheory.Response) {
+	SetCacheHeaders(resp, 0)
 }
 
 // Utility response functions
 
 // SendEmpty sends an empty array response (used in many Mastodon endpoints)
-func SendEmpty(ctx *lift.Context) error {
+func SendEmpty(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return SendOK(ctx, []interface{}{})
 }
 
 // SendEmptyObject sends an empty object response
-func SendEmptyObject(ctx *lift.Context) error {
+func SendEmptyObject(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return SendOK(ctx, map[string]interface{}{})
 }
 
 // SendBool sends a boolean response
-func SendBool(ctx *lift.Context, value bool) error {
+func SendBool(ctx *apptheory.Context, value bool) (*apptheory.Response, error) {
 	return SendOK(ctx, map[string]bool{"result": value})
 }
 
 // SendCount sends a count response
-func SendCount(ctx *lift.Context, count int) error {
+func SendCount(ctx *apptheory.Context, count int) (*apptheory.Response, error) {
 	return SendOK(ctx, map[string]int{"count": count})
 }
 
 // SendID sends an ID response
-func SendID(ctx *lift.Context, id string) error {
+func SendID(ctx *apptheory.Context, id string) (*apptheory.Response, error) {
 	return SendOK(ctx, map[string]string{"id": id})
 }
 
 // Rate limiting response helpers
 
 // SendRateLimitHeaders sets rate limit headers
-func SendRateLimitHeaders(ctx *lift.Context, limit, remaining int, resetTime int64) {
-	ctx.Response.Header("X-RateLimit-Limit", strconv.Itoa(limit))
-	ctx.Response.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
-	ctx.Response.Header("X-RateLimit-Reset", strconv.FormatInt(resetTime, 10))
+func SendRateLimitHeaders(resp *apptheory.Response, limit, remaining int, resetTime int64) {
+	if resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+	resp.Headers["x-ratelimit-limit"] = []string{strconv.Itoa(limit)}
+	resp.Headers["x-ratelimit-remaining"] = []string{strconv.Itoa(remaining)}
+	resp.Headers["x-ratelimit-reset"] = []string{strconv.FormatInt(resetTime, 10)}
 }
 
 // Health check response helpers
@@ -385,9 +443,29 @@ type HealthCheckResponse struct {
 }
 
 // SendHealthCheck sends a health check response
-func SendHealthCheck(ctx *lift.Context, health HealthCheckResponse) error {
+func SendHealthCheck(ctx *apptheory.Context, health HealthCheckResponse) (*apptheory.Response, error) {
 	if health.Status == "ok" {
 		return SendOK(ctx, health)
 	}
 	return SendError(ctx, 503, "Service Unavailable")
+}
+
+func firstHeaderValue(headers map[string][]string, key string) string {
+	if headers == nil {
+		return ""
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+
+	// Most AppTheory requests already canonicalize to lowercase keys.
+	keyLower := strings.ToLower(key)
+	if values := headers[keyLower]; len(values) > 0 {
+		return strings.TrimSpace(values[0])
+	}
+	if values := headers[key]; len(values) > 0 {
+		return strings.TrimSpace(values[0])
+	}
+	return ""
 }

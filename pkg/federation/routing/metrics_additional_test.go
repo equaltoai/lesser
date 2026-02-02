@@ -2,40 +2,20 @@ package routing
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	ddbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	fedTypes "github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
-type fakeDynamoClient struct {
-	queryFn func(ctx context.Context, input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error)
-
-	batchWriteFn func(ctx context.Context, input *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error)
-}
-
-func (f fakeDynamoClient) Query(ctx context.Context, input *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
-	if f.queryFn != nil {
-		return f.queryFn(ctx, input)
-	}
-	return &dynamodb.QueryOutput{}, nil
-}
-
-func (f fakeDynamoClient) BatchWriteItem(ctx context.Context, input *dynamodb.BatchWriteItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error) {
-	if f.batchWriteFn != nil {
-		return f.batchWriteFn(ctx, input)
-	}
-	return &dynamodb.BatchWriteItemOutput{}, nil
-}
-
 func TestRoutingMetrics_ProcessEventSyncPaths(t *testing.T) {
-	rm := NewRoutingMetrics(nil, "table", zap.NewNop())
+	rm := NewRoutingMetrics(nil, zap.NewNop())
 
 	rm.RecordRouteSelection("route-1", "example.com", fedTypes.MessageTypeCreate)
 	rm.RecordDelivery(&fedTypes.DeliveryResult{
@@ -78,39 +58,35 @@ func TestRoutingMetrics_ProcessEventSyncPaths(t *testing.T) {
 	assert.GreaterOrEqual(t, rm.aggregator.globalMetrics.TotalCost, 0.0)
 }
 
-func TestRoutingMetrics_GetMetricsAndFlush_DBPaths(t *testing.T) {
-	now := time.Now()
+func TestRoutingMetrics_GetRouteMetrics_IncludesStoredAndCurrentWindow(t *testing.T) {
+	ctx := context.Background()
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
 
-	db := fakeDynamoClient{
-		queryFn: func(_ context.Context, input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
-			// Ensure the query has a PK expression placeholder.
-			require.NotNil(t, input.ExpressionAttributeValues)
-			return &dynamodb.QueryOutput{
-				Items: []map[string]ddbTypes.AttributeValue{
-					{
-						"MessageCount": &ddbTypes.AttributeValueMemberN{Value: "5"},
-						"SuccessCount": &ddbTypes.AttributeValueMemberN{Value: "3"},
-						"FailureCount": &ddbTypes.AttributeValueMemberN{Value: "2"},
-						"TotalBytes":   &ddbTypes.AttributeValueMemberN{Value: "100"},
-						"TotalCost":    &ddbTypes.AttributeValueMemberN{Value: "0.5"},
-					},
+	db.On("WithContext", ctx).Return(db).Once()
+	db.On("Model", mock.Anything).Return(query).Once()
+	query.On("Where", "PK", "=", "METRICS#ROUTE#route-1").Return(query).Once()
+	query.On("Where", "SK", ">", mock.Anything).Return(query).Once()
+	query.On("Limit", 100).Return(query).Once()
+	query.On("All", mock.AnythingOfType("*[]*models.RouteMetricsWindow")).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.RouteMetricsWindow)
+			*dest = []*models.RouteMetricsWindow{
+				{
+					MessageCount: 5,
+					SuccessCount: 3,
+					FailureCount: 2,
+					TotalBytes:   100,
+					TotalCost:    0.5,
+					AvgLatency:   200,
 				},
-			}, nil
-		},
-		batchWriteFn: func(_ context.Context, input *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error) {
-			require.NotNil(t, input.RequestItems)
-			require.NotEmpty(t, input.RequestItems["table"])
-			return &dynamodb.BatchWriteItemOutput{}, nil
-		},
-	}
+			}
+		}).
+		Return(nil).
+		Once()
 
-	rm := NewRoutingMetrics(nil, "table", zap.NewNop())
-	rm.db = db
-
-	// Current window data should be included in query results.
+	rm := NewRoutingMetrics(db, zap.NewNop())
 	rm.aggregator.mu.Lock()
-	rm.aggregator.windowStart = now.Add(-10 * time.Minute)
-	rm.aggregator.windowSize = 1 * time.Millisecond
 	rm.aggregator.routeMetrics["route-1"] = &aggregatedRouteMetrics{
 		RouteID:      "route-1",
 		MessageCount: 2,
@@ -118,90 +94,179 @@ func TestRoutingMetrics_GetMetricsAndFlush_DBPaths(t *testing.T) {
 		FailureCount: 1,
 		TotalBytes:   50,
 		TotalCost:    0.2,
+		TotalLatency: 500 * time.Millisecond,
+	}
+	rm.aggregator.mu.Unlock()
+
+	metrics, err := rm.GetRouteMetrics(ctx, "route-1", 1*time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+
+	assert.Equal(t, int64(7), metrics.TotalMessages)
+	assert.Equal(t, int64(4), metrics.SuccessfulCount)
+	assert.Equal(t, int64(3), metrics.FailedCount)
+	assert.Equal(t, int64(150), metrics.TotalBytes)
+	assert.InDelta(t, 0.7, metrics.TotalCost, 0.0001)
+	assert.Equal(t, 275*time.Millisecond, metrics.AvgLatency)
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+}
+
+func TestRoutingMetrics_GetInstanceMetrics_IncludesStoredAndCurrentWindow(t *testing.T) {
+	ctx := context.Background()
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+
+	db.On("WithContext", ctx).Return(db).Once()
+	db.On("Model", mock.Anything).Return(query).Once()
+	query.On("Where", "PK", "=", "METRICS#INSTANCE#instance-1").Return(query).Once()
+	query.On("Where", "SK", ">", mock.Anything).Return(query).Once()
+	query.On("Limit", 100).Return(query).Once()
+	query.On("OrderBy", "SK", "DESC").Return(query).Once()
+	query.On("All", mock.AnythingOfType("*[]*models.InstanceMetricsWindow")).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.InstanceMetricsWindow)
+			*dest = []*models.InstanceMetricsWindow{
+				{
+					TotalMessages: 10,
+					TotalBytes:    123,
+					TotalCost:     0.01,
+					Availability:  0.9,
+					MessageTypes:  `{"create":2}`,
+				},
+			}
+		}).
+		Return(nil).
+		Once()
+
+	rm := NewRoutingMetrics(db, zap.NewNop())
+	rm.aggregator.mu.Lock()
+	rm.aggregator.instanceMetrics["instance-1"] = &aggregatedInstanceMetrics{
+		InstanceID:    "instance-1",
+		TotalMessages: 3,
+		TotalBytes:    7,
+		TotalCost:     0.02,
+		Availability:  0.5,
+		MessageTypes:  map[fedTypes.MessageType]int64{fedTypes.MessageTypeCreate: 1, fedTypes.MessageTypeUpdate: 1},
+	}
+	rm.aggregator.mu.Unlock()
+
+	metrics, err := rm.GetInstanceMetrics(ctx, "instance-1", 1*time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+
+	assert.Equal(t, "instance-1", metrics.InstanceID)
+	assert.Equal(t, int64(13), metrics.TotalMessages)
+	assert.Equal(t, int64(130), metrics.TotalBytes)
+	assert.InDelta(t, 0.03, metrics.TotalCost, 0.0001)
+	assert.InDelta(t, 0.9, metrics.Availability, 0.0001)
+	assert.Equal(t, int64(3), metrics.MessageTypes[fedTypes.MessageTypeCreate])
+	assert.Equal(t, int64(1), metrics.MessageTypes[fedTypes.MessageTypeUpdate])
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+}
+
+func TestRoutingMetrics_GetGlobalMetrics_IncludesStoredAndCurrentWindow(t *testing.T) {
+	ctx := context.Background()
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
+
+	db.On("WithContext", ctx).Return(db).Once()
+	db.On("Model", mock.Anything).Return(query).Once()
+	query.On("Index", "gsi1").Return(query).Once()
+	query.On("Where", "gsi1PK", "=", "METRICS#GLOBAL").Return(query).Once()
+	query.On("Where", "gsi1SK", ">", mock.Anything).Return(query).Once()
+	query.On("Limit", 100).Return(query).Once()
+	query.On("OrderBy", "gsi1SK", "DESC").Return(query).Once()
+	query.On("All", mock.AnythingOfType("*[]*models.GlobalMetricsWindow")).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.GlobalMetricsWindow)
+			*dest = []*models.GlobalMetricsWindow{
+				{
+					TotalMessages:   100,
+					TotalBytes:      1000,
+					TotalCost:       0.5,
+					UniqueInstances: 3,
+					ActiveRoutes:    4,
+					HourlyVolume:    `[0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]`,
+				},
+			}
+		}).
+		Return(nil).
+		Once()
+
+	rm := NewRoutingMetrics(db, zap.NewNop())
+	rm.aggregator.mu.Lock()
+	rm.aggregator.globalMetrics.TotalMessages = 5
+	rm.aggregator.globalMetrics.TotalBytes = 50
+	rm.aggregator.globalMetrics.TotalCost = 0.1
+	rm.aggregator.globalMetrics.HourlyVolume[1] = 3
+	rm.aggregator.mu.Unlock()
+
+	metrics, err := rm.GetGlobalMetrics(ctx, 1*time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+
+	assert.Equal(t, int64(105), metrics.TotalMessages)
+	assert.Equal(t, int64(1050), metrics.TotalBytes)
+	assert.InDelta(t, 0.6, metrics.TotalCost, 0.0001)
+	assert.Equal(t, int64(4), metrics.ActiveRoutes)
+	assert.Equal(t, int64(3), metrics.ActiveInstances)
+	assert.Equal(t, int64(5), metrics.HourlyVolume[1])
+
+	db.AssertExpectations(t)
+	query.AssertExpectations(t)
+}
+
+func TestRoutingMetrics_Flush_PersistsAndResetsWhenExpired(t *testing.T) {
+	ctx := context.Background()
+
+	db := new(mocks.MockDB)
+	routeQuery := new(mocks.MockQuery)
+	instanceQuery := new(mocks.MockQuery)
+	globalQuery := new(mocks.MockQuery)
+
+	db.On("WithContext", ctx).Return(db).Times(3)
+	db.On("Model", mock.Anything).Return(routeQuery).Once()
+	db.On("Model", mock.Anything).Return(instanceQuery).Once()
+	db.On("Model", mock.Anything).Return(globalQuery).Once()
+
+	routeQuery.On("BatchCreate", mock.Anything).Return(nil).Once()
+	instanceQuery.On("BatchCreate", mock.Anything).Return(nil).Once()
+	globalQuery.On("CreateOrUpdate").Return(nil).Once()
+
+	rm := NewRoutingMetrics(db, zap.NewNop())
+	rm.aggregator.mu.Lock()
+	rm.aggregator.windowStart = time.Now().Add(-10 * time.Minute)
+	rm.aggregator.windowSize = 1 * time.Millisecond
+	rm.aggregator.routeMetrics["route-1"] = &aggregatedRouteMetrics{
+		RouteID:        "route-1",
+		MessageCount:   1,
+		SuccessCount:   1,
+		FailureCount:   0,
+		TotalBytes:     1,
+		TotalCost:      0.01,
+		TotalLatency:   100 * time.Millisecond,
+		LatencyBuckets: map[int]int64{0: 1},
+		ErrorTypes:     make(map[string]int64),
 	}
 	rm.aggregator.instanceMetrics["instance-1"] = &aggregatedInstanceMetrics{
 		InstanceID:   "instance-1",
 		MessageTypes: make(map[fedTypes.MessageType]int64),
 	}
-	rm.aggregator.globalMetrics.TotalMessages = 2
-	rm.aggregator.globalMetrics.TotalBytes = 50
-	rm.aggregator.globalMetrics.TotalCost = 0.2
 	rm.aggregator.mu.Unlock()
 
-	routeMetrics, err := rm.GetRouteMetrics(context.Background(), "route-1", 1*time.Minute)
-	assert.NoError(t, err)
-	assert.GreaterOrEqual(t, routeMetrics.TotalMessages, int64(5))
-	assert.GreaterOrEqual(t, routeMetrics.TotalBytes, int64(100))
-	assert.GreaterOrEqual(t, routeMetrics.TotalCost, 0.5)
+	require.NoError(t, rm.Flush(ctx))
 
-	instanceMetrics, err := rm.GetInstanceMetrics(context.Background(), "instance-1", 1*time.Minute)
-	assert.NoError(t, err)
-	assert.Equal(t, "instance-1", instanceMetrics.InstanceID)
-
-	globalMetrics, err := rm.GetGlobalMetrics(context.Background(), 1*time.Minute)
-	assert.NoError(t, err)
-	assert.GreaterOrEqual(t, globalMetrics.TotalMessages, int64(1))
-
-	// Flush persists and resets window when expired.
-	assert.NoError(t, rm.Flush(context.Background()))
 	rm.aggregator.mu.RLock()
 	assert.Empty(t, rm.aggregator.routeMetrics)
 	assert.Empty(t, rm.aggregator.instanceMetrics)
 	rm.aggregator.mu.RUnlock()
 
-	// Query errors are surfaced with wrapped errors.
-	rm.db = fakeDynamoClient{
-		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
-			return nil, errors.New("query failed")
-		},
-	}
-	_, err = rm.GetRouteMetrics(context.Background(), "route-1", 1*time.Minute)
-	assert.Error(t, err)
-
-	// Batch write errors bubble through Flush.
-	rm.db = fakeDynamoClient{
-		queryFn: db.queryFn,
-		batchWriteFn: func(_ context.Context, _ *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error) {
-			return nil, errors.New("batch write failed")
-		},
-	}
-	rm.aggregator.mu.Lock()
-	rm.aggregator.windowStart = time.Now().Add(-10 * time.Minute)
-	rm.aggregator.windowSize = 1 * time.Millisecond
-	rm.aggregator.routeMetrics["route-2"] = &aggregatedRouteMetrics{
-		RouteID:        "route-2",
-		MessageCount:   1,
-		SuccessCount:   1,
-		FailureCount:   0,
-		TotalBytes:     1,
-		TotalCost:      0,
-		TotalLatency:   100 * time.Millisecond,
-		LatencyBuckets: map[int]int64{0: 1},
-		ErrorTypes:     make(map[string]int64),
-	}
-	rm.aggregator.mu.Unlock()
-	assert.Error(t, rm.Flush(context.Background()))
-}
-
-func TestRoutingMetrics_AggregateParseWarnings(t *testing.T) {
-	rm := NewRoutingMetrics(nil, "table", zap.NewNop())
-
-	route := &fedTypes.RouteMetrics{}
-	rm.aggregateRouteMetric(route, map[string]ddbTypes.AttributeValue{
-		"MessageCount": &ddbTypes.AttributeValueMemberN{Value: "not-a-number"},
-	})
-	assert.Equal(t, int64(0), route.TotalMessages)
-
-	instance := &InstanceMetrics{MessageTypes: make(map[fedTypes.MessageType]int64)}
-	rm.aggregateInstanceMetric(instance, map[string]ddbTypes.AttributeValue{
-		"TotalMessages": &ddbTypes.AttributeValueMemberN{Value: "not-a-number"},
-		"Availability":  &ddbTypes.AttributeValueMemberN{Value: "not-a-number"},
-	})
-	assert.Equal(t, int64(0), instance.TotalMessages)
-
-	global := &GlobalMetrics{HourlyVolume: make(map[int]int64)}
-	rm.aggregateGlobalMetric(global, map[string]ddbTypes.AttributeValue{
-		"TotalCost": &ddbTypes.AttributeValueMemberN{Value: "not-a-number"},
-	})
-	assert.InDelta(t, 0.0, global.TotalCost, 0.0001)
+	db.AssertExpectations(t)
+	routeQuery.AssertExpectations(t)
+	instanceQuery.AssertExpectations(t)
+	globalQuery.AssertExpectations(t)
 }

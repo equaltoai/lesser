@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,64 +61,6 @@ func TestContextValue_CloneAndWith(t *testing.T) {
 	with := original.With("c")
 	assert.Equal(t, ContextValue{"a", "b", "c"}, with)
 	assert.Equal(t, ContextValue{"a", "b"}, original)
-}
-
-func TestContextValue_DynamoDBAttributeValueRoundTrip(t *testing.T) {
-	t.Run("empty marshals to NULL", func(t *testing.T) {
-		av, err := (ContextValue{}).MarshalDynamoDBAttributeValue()
-		require.NoError(t, err)
-		_, ok := av.(*types.AttributeValueMemberNULL)
-		assert.True(t, ok)
-
-		var decoded ContextValue
-		require.NoError(t, decoded.UnmarshalDynamoDBAttributeValue(av))
-		assert.Nil(t, decoded)
-	})
-
-	t.Run("string marshals to list and unmarshals back", func(t *testing.T) {
-		original := ContextValue{"https://www.w3.org/ns/activitystreams"}
-		av, err := original.MarshalDynamoDBAttributeValue()
-		require.NoError(t, err)
-
-		var decoded ContextValue
-		require.NoError(t, decoded.UnmarshalDynamoDBAttributeValue(av))
-		require.Len(t, decoded, 1)
-		assert.Equal(t, "https://www.w3.org/ns/activitystreams", decoded[0])
-	})
-
-	t.Run("legacy string attribute unmarshals", func(t *testing.T) {
-		var decoded ContextValue
-		require.NoError(t, decoded.UnmarshalDynamoDBAttributeValue(&types.AttributeValueMemberS{Value: "ctx"}))
-		assert.Equal(t, ContextValue{"ctx"}, decoded)
-	})
-
-	t.Run("empty list attribute unmarshals to empty slice", func(t *testing.T) {
-		var decoded ContextValue
-		require.NoError(t, decoded.UnmarshalDynamoDBAttributeValue(&types.AttributeValueMemberL{Value: []types.AttributeValue{}}))
-		assert.Equal(t, ContextValue{}, decoded)
-	})
-
-	t.Run("generic attribute unmarshals", func(t *testing.T) {
-		av := &types.AttributeValueMemberM{
-			Value: map[string]types.AttributeValue{
-				"key": &types.AttributeValueMemberS{Value: "value"},
-			},
-		}
-
-		var decoded ContextValue
-		require.NoError(t, decoded.UnmarshalDynamoDBAttributeValue(av))
-		require.Len(t, decoded, 1)
-		_, ok := decoded[0].(map[string]any)
-		assert.True(t, ok)
-	})
-
-	t.Run("numeric attribute falls back to generic decoding", func(t *testing.T) {
-		var decoded ContextValue
-		require.NoError(t, decoded.UnmarshalDynamoDBAttributeValue(&types.AttributeValueMemberN{Value: "123"}))
-		require.Len(t, decoded, 1)
-		_, ok := decoded[0].(float64)
-		assert.True(t, ok)
-	})
 }
 
 func TestNewActorAndActivityHelpers(t *testing.T) {

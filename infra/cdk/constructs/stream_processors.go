@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
-	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type StreamProcessorsProps struct {
@@ -36,9 +36,42 @@ func CreateStreamProcessors(scope constructs.Construct, props *StreamProcessorsP
 			for idx, trig := range spec.StreamTriggers {
 				table := resolveStreamTable(spec, trig, props.Table)
 				eventSourceID := fmt.Sprintf("%sStreamMapping%d", sanitizeStreamMappingID(spec.Name), idx)
-				eventSourceProps := buildStreamEventSourceMappingProps(handler, table, trig)
 				table.GrantStreamRead(handler)
-				_ = liftcdk.NewLiftEventSourceMapping(scope, jsii.String(eventSourceID), eventSourceProps)
+
+				startPos := awslambda.StartingPosition_LATEST
+				if trig.StartingPosition == inventory.StreamStartTrimHorizon {
+					startPos = awslambda.StartingPosition_TRIM_HORIZON
+				}
+
+				eventSourceProps := &apptheorycdk.AppTheoryDynamoDBStreamMappingProps{
+					Consumer:         handler,
+					Table:            table,
+					StartingPosition: startPos,
+				}
+
+				if trig.BatchSize > 0 {
+					eventSourceProps.BatchSize = jsii.Number(float64(trig.BatchSize))
+				}
+				if trig.MaxBatchingWindowSeconds > 0 {
+					eventSourceProps.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxBatchingWindowSeconds)))
+				}
+				if trig.ParallelizationFactor > 0 {
+					eventSourceProps.ParallelizationFactor = jsii.Number(float64(trig.ParallelizationFactor))
+				}
+				if trig.MaxRetryAttempts > 0 {
+					eventSourceProps.RetryAttempts = jsii.Number(float64(trig.MaxRetryAttempts))
+				}
+				if trig.MaxRecordAgeSeconds > 0 {
+					eventSourceProps.MaxRecordAge = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxRecordAgeSeconds)))
+				}
+				if trig.EnableBisectOnError {
+					eventSourceProps.BisectBatchOnError = jsii.Bool(true)
+				}
+				if trig.ReportBatchItemFailures {
+					eventSourceProps.ReportBatchItemFailures = jsii.Bool(true)
+				}
+
+				_ = apptheorycdk.NewAppTheoryDynamoDBStreamMapping(scope, jsii.String(eventSourceID), eventSourceProps)
 			}
 		}
 
@@ -74,81 +107,6 @@ func resolveStreamTable(spec inventory.LambdaSpec, trig inventory.StreamTrigger,
 		return defaultTable
 	}
 	panic(fmt.Sprintf("lambda %s stream trigger references unsupported table %s", spec.Name, trig.SourceTable))
-}
-
-func buildStreamEventSourceProps(trig inventory.StreamTrigger) *awslambdaeventsources.DynamoEventSourceProps {
-	startPos := awslambda.StartingPosition_LATEST
-	if trig.StartingPosition == inventory.StreamStartTrimHorizon {
-		startPos = awslambda.StartingPosition_TRIM_HORIZON
-	}
-
-	props := &awslambdaeventsources.DynamoEventSourceProps{
-		StartingPosition: startPos,
-	}
-
-	if trig.BatchSize > 0 {
-		props.BatchSize = jsii.Number(float64(trig.BatchSize))
-	}
-	if trig.MaxBatchingWindowSeconds > 0 {
-		props.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxBatchingWindowSeconds)))
-	}
-	if trig.ParallelizationFactor > 0 {
-		props.ParallelizationFactor = jsii.Number(float64(trig.ParallelizationFactor))
-	}
-	if trig.MaxRetryAttempts > 0 {
-		props.RetryAttempts = jsii.Number(float64(trig.MaxRetryAttempts))
-	}
-	if trig.MaxRecordAgeSeconds > 0 {
-		props.MaxRecordAge = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxRecordAgeSeconds)))
-	}
-	if trig.EnableBisectOnError {
-		props.BisectBatchOnError = jsii.Bool(true)
-	}
-	if trig.ReportBatchItemFailures {
-		props.ReportBatchItemFailures = jsii.Bool(true)
-	}
-
-	return props
-}
-
-func buildStreamEventSourceMappingProps(handler awslambda.IFunction, table awsdynamodb.Table, trig inventory.StreamTrigger) *liftcdk.LiftEventSourceMappingProps {
-	startPos := awslambda.StartingPosition_LATEST
-	if trig.StartingPosition == inventory.StreamStartTrimHorizon {
-		startPos = awslambda.StartingPosition_TRIM_HORIZON
-	}
-
-	props := &liftcdk.LiftEventSourceMappingProps{
-		TargetFunction:   handler,
-		EventSourceArn:   table.TableStreamArn(),
-		StartingPosition: startPos,
-		ReportBatchItemFailures: func() *bool {
-			if trig.ReportBatchItemFailures {
-				return jsii.Bool(true)
-			}
-			return nil
-		}(),
-	}
-
-	if trig.BatchSize > 0 {
-		props.BatchSize = jsii.Number(float64(trig.BatchSize))
-	}
-	if trig.MaxRetryAttempts > 0 {
-		props.RetryAttempts = jsii.Number(float64(trig.MaxRetryAttempts))
-	}
-	if trig.ParallelizationFactor > 0 {
-		props.ParallelizationFactor = jsii.Number(float64(trig.ParallelizationFactor))
-	}
-	if trig.MaxBatchingWindowSeconds > 0 {
-		props.MaxBatchingWindow = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxBatchingWindowSeconds)))
-	}
-	if trig.MaxRecordAgeSeconds > 0 {
-		props.MaxRecordAge = awscdk.Duration_Seconds(jsii.Number(float64(trig.MaxRecordAgeSeconds)))
-	}
-	if trig.EnableBisectOnError {
-		props.BisectBatchOnError = jsii.Bool(true)
-	}
-
-	return props
 }
 
 func resolveQueue(spec inventory.LambdaSpec, trig inventory.SQSTrigger, queues map[string]QueuePair) awssqs.IQueue {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -14,11 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
-	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
@@ -129,9 +129,10 @@ func (f *fakeModerationMLRepo) UpdateModelVersion(_ context.Context, version *mo
 	return f.updateModelVerErr
 }
 
-func newLiftCtx() *lift.Context {
-	req := lift.NewRequest(nil)
-	return lift.NewContext(context.Background(), req)
+const testRequestID = "req"
+
+func newEventCtx() *apptheory.EventContext {
+	return &apptheory.EventContext{RequestID: testRequestID}
 }
 
 func makePollInsertRecord(poll models.MLPollRequest) events.DynamoDBEventRecord {
@@ -209,7 +210,7 @@ func TestProcessPollRequest_SkipsNonPendingOrNotDue_Round12(t *testing.T) {
 		bedrockClient:    &fakeBedrockClient{err: errors.New("should not be called")},
 		moderationMLRepo: repo,
 	}
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	notPending := makePollInsertRecord(models.MLPollRequest{
 		JobID:         "job-1",
@@ -219,7 +220,7 @@ func TestProcessPollRequest_SkipsNonPendingOrNotDue_Round12(t *testing.T) {
 		MaxAttempts:   3,
 		NextPollAfter: time.Now().Add(-time.Minute),
 	})
-	require.NoError(t, p.processPollRequest(ctx, notPending))
+	require.NoError(t, p.processPollRequest(ctx, testRequestID, notPending))
 	require.Empty(t, repo.createPollRequests)
 
 	notDue := makePollInsertRecord(models.MLPollRequest{
@@ -230,7 +231,7 @@ func TestProcessPollRequest_SkipsNonPendingOrNotDue_Round12(t *testing.T) {
 		MaxAttempts:   3,
 		NextPollAfter: time.Now().Add(time.Hour),
 	})
-	require.NoError(t, p.processPollRequest(ctx, notDue))
+	require.NoError(t, p.processPollRequest(ctx, testRequestID, notDue))
 	require.Empty(t, repo.createPollRequests)
 }
 
@@ -240,7 +241,7 @@ func TestProcessPollRequest_TimesOut_Round12(t *testing.T) {
 		logger:           zaptest.NewLogger(t),
 		moderationMLRepo: repo,
 	}
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	rec := makePollInsertRecord(models.MLPollRequest{
 		JobID:         "job-1",
@@ -250,7 +251,7 @@ func TestProcessPollRequest_TimesOut_Round12(t *testing.T) {
 		MaxAttempts:   3,
 		NextPollAfter: time.Now().Add(-time.Minute),
 	})
-	require.NoError(t, p.processPollRequest(ctx, rec))
+	require.NoError(t, p.processPollRequest(ctx, testRequestID, rec))
 	require.Len(t, repo.updatedTrainingJobs, 1)
 	require.Equal(t, statusTimeout, repo.updatedTrainingJobs[0].Status)
 	require.Contains(t, repo.updatedTrainingJobs[0].ErrorMessage, "timed out")
@@ -265,7 +266,7 @@ func TestProcessPollRequest_BedrockError_SchedulesNextPoll_Round12(t *testing.T)
 		bedrockClient:    bedrockClient,
 		moderationMLRepo: repo,
 	}
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	rec := makePollInsertRecord(models.MLPollRequest{
 		JobID:         "job-1",
@@ -276,7 +277,7 @@ func TestProcessPollRequest_BedrockError_SchedulesNextPoll_Round12(t *testing.T)
 		NextPollAfter: time.Now().Add(-time.Minute),
 	})
 
-	require.NoError(t, p.processPollRequest(ctx, rec))
+	require.NoError(t, p.processPollRequest(ctx, testRequestID, rec))
 	require.Len(t, repo.createPollRequests, 1)
 	require.Equal(t, 1, repo.createPollRequests[0].Attempt)
 	require.Equal(t, "PENDING", repo.createPollRequests[0].Status)
@@ -307,7 +308,7 @@ func TestProcessPollRequest_StatusCompleted_ParsesMetricsFromS3_Round12(t *testi
 		s3Client:         s3Client,
 		moderationMLRepo: repo,
 	}
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	createdAt := time.Now().Add(-2 * time.Minute)
 	modifiedAt := time.Now()
@@ -329,7 +330,7 @@ func TestProcessPollRequest_StatusCompleted_ParsesMetricsFromS3_Round12(t *testi
 		NextPollAfter: time.Now().Add(-time.Minute),
 	})
 
-	require.NoError(t, p.processPollRequest(ctx, rec))
+	require.NoError(t, p.processPollRequest(ctx, testRequestID, rec))
 	require.Len(t, repo.updatedTrainingJobs, 1)
 	require.Equal(t, statusCompleted, repo.updatedTrainingJobs[0].Status)
 	require.Equal(t, "arn:aws:bedrock:us-east-1:123:custom-model/foo/bar/version-123", repo.updatedTrainingJobs[0].ModelARN)
@@ -354,7 +355,7 @@ func TestProcessPollRequest_InProgress_UpdatesAndSchedulesNextPoll_Round12(t *te
 		bedrockClient:    bedrockClient,
 		moderationMLRepo: repo,
 	}
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	rec := makePollInsertRecord(models.MLPollRequest{
 		JobID:         "job-1",
@@ -365,7 +366,7 @@ func TestProcessPollRequest_InProgress_UpdatesAndSchedulesNextPoll_Round12(t *te
 		NextPollAfter: time.Now().Add(-time.Minute),
 	})
 
-	require.NoError(t, p.processPollRequest(ctx, rec))
+	require.NoError(t, p.processPollRequest(ctx, testRequestID, rec))
 	require.Len(t, repo.updatedTrainingJobs, 1)
 	require.Equal(t, statusInProgress, repo.updatedTrainingJobs[0].Status)
 	require.Len(t, repo.createPollRequests, 1)
@@ -382,7 +383,7 @@ func TestProcessPollRequest_UnexpectedStatus_SchedulesNextPoll_Round12(t *testin
 		bedrockClient:    bedrockClient,
 		moderationMLRepo: repo,
 	}
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	rec := makePollInsertRecord(models.MLPollRequest{
 		JobID:         "job-1",
@@ -392,7 +393,7 @@ func TestProcessPollRequest_UnexpectedStatus_SchedulesNextPoll_Round12(t *testin
 		MaxAttempts:   5,
 		NextPollAfter: time.Now().Add(-time.Minute),
 	})
-	require.NoError(t, p.processPollRequest(ctx, rec))
+	require.NoError(t, p.processPollRequest(ctx, testRequestID, rec))
 	require.Len(t, repo.createPollRequests, 1)
 }
 
@@ -441,7 +442,6 @@ func TestHandleJobCompletion_AndFailure_Branches_Round12(t *testing.T) {
 		return errors.New("write failed")
 	}
 
-	ctx := newLiftCtx()
 	job := &models.ModelTrainingJob{
 		JobID:          "job-1",
 		JobName:        "name",
@@ -459,14 +459,14 @@ func TestHandleJobCompletion_AndFailure_Branches_Round12(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, p.handleJobCompletion(ctx, job))
+	require.NoError(t, p.handleJobCompletion(context.Background(), testRequestID, job))
 	require.Len(t, repo.createdModelVersions, 1)
 	require.Equal(t, "version-456", repo.createdModelVersions[0].VersionID)
 	require.True(t, repo.createdModelVersions[0].IsActive)
 	require.Equal(t, statusCompleted, repo.createdModelVersions[0].TrainingStatus)
 
 	failedJob := &models.ModelTrainingJob{JobID: "job-2", JobName: "name2", ErrorMessage: "bad"}
-	require.NoError(t, p.handleJobFailure(ctx, failedJob))
+	require.NoError(t, p.handleJobFailure(context.Background(), testRequestID, failedJob))
 }
 
 func TestProcessRecord_AndHandleStream_Round12(t *testing.T) {
@@ -482,7 +482,7 @@ func TestProcessRecord_AndHandleStream_Round12(t *testing.T) {
 		moderationMLRepo: repo,
 	}
 
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	// Unknown entity type is ignored.
 	ignored := events.DynamoDBEventRecord{
@@ -494,7 +494,7 @@ func TestProcessRecord_AndHandleStream_Round12(t *testing.T) {
 			},
 		},
 	}
-	require.NoError(t, p.processRecord(ctx, ignored))
+	require.NoError(t, p.processRecord(ctx, testRequestID, ignored))
 
 	// Poll insert routes through processPollRequest and schedules next poll.
 	poll := makePollInsertRecord(models.MLPollRequest{
@@ -515,8 +515,8 @@ func TestProcessRecord_AndHandleStream_Round12(t *testing.T) {
 	}
 	jobStatusChange := makeTrainingJobModifyRecord(job, statusInProgress, statusCompleted)
 
-	err := p.HandleStream(ctx, events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{ignored, poll, jobStatusChange}})
-	require.NoError(t, err)
+	require.NoError(t, p.processRecord(ctx, testRequestID, poll))
+	require.NoError(t, p.processRecord(ctx, testRequestID, jobStatusChange))
 	require.NotEmpty(t, repo.createPollRequests)
 }
 
@@ -562,7 +562,7 @@ func TestNewMLTrainingProcessor_AndMain_Round12(t *testing.T) {
 	fakeRepo := &fakeModerationMLRepo{}
 
 	lambdaCtx = &common.LambdaContext{
-		Config: &config.Config{DynamoTableName: "tbl"},
+		Config: &config.Config{DynamoTableName: "test-table"},
 		Logger: zaptest.NewLogger(t),
 		AWSServices: &awsinit.AWSServices{
 			Config: aws.Config{Region: "us-east-1"},
@@ -576,16 +576,42 @@ func TestNewMLTrainingProcessor_AndMain_Round12(t *testing.T) {
 
 	p, err := NewMLTrainingProcessor()
 	require.NoError(t, err)
-	require.Equal(t, "tbl", p.tableName)
+	require.Equal(t, "test-table", p.tableName)
 	require.Same(t, fakeBedrock, p.bedrockClient)
 	require.Same(t, fakeS3, p.s3Client)
 	require.Same(t, fakeRepo, p.moderationMLRepo)
 
-	var started any
-	lambdaStartFn = func(h any) { started = h }
+	called := false
+	lambdaStartFn = func(h any) {
+		called = true
+		fn, ok := h.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
+
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "1",
+				EventName:      "INSERT",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
+				Change: events.DynamoDBStreamRecord{
+					NewImage: map[string]events.DynamoDBAttributeValue{
+						"PK": events.NewStringAttribute("UNKNOWN#1"),
+					},
+				},
+			},
+		}}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
+	}
 	processor = p
 	main()
-	require.NotNil(t, started)
+	require.True(t, called)
 }
 
 func TestInitializeMLTraining_Branches_Round12(t *testing.T) {
@@ -757,7 +783,7 @@ func TestProcessPollRequest_AdditionalStatusAndErrorBranches_Round12(t *testing.
 			moderationMLRepo: repo,
 		}
 		p.bedrockClient.(*fakeBedrockClient).output = &bedrock.GetModelCustomizationJobOutput{Status: types.ModelCustomizationJobStatusFailed}
-		require.NoError(t, p.processPollRequest(newLiftCtx(), makePollInsertRecord(models.MLPollRequest{
+		require.NoError(t, p.processPollRequest(context.Background(), testRequestID, makePollInsertRecord(models.MLPollRequest{
 			JobID:         "job-1",
 			JobName:       "j1",
 			Status:        "PENDING",
@@ -770,7 +796,7 @@ func TestProcessPollRequest_AdditionalStatusAndErrorBranches_Round12(t *testing.
 
 		repo.updatedTrainingJobs = nil
 		p.bedrockClient.(*fakeBedrockClient).output = &bedrock.GetModelCustomizationJobOutput{Status: types.ModelCustomizationJobStatusStopped}
-		require.NoError(t, p.processPollRequest(newLiftCtx(), makePollInsertRecord(models.MLPollRequest{
+		require.NoError(t, p.processPollRequest(context.Background(), testRequestID, makePollInsertRecord(models.MLPollRequest{
 			JobID:         "job-1",
 			JobName:       "j1",
 			Status:        "PENDING",
@@ -789,7 +815,7 @@ func TestProcessPollRequest_AdditionalStatusAndErrorBranches_Round12(t *testing.
 			bedrockClient:    &fakeBedrockClient{output: &bedrock.GetModelCustomizationJobOutput{Status: types.ModelCustomizationJobStatusInProgress}},
 			moderationMLRepo: repo,
 		}
-		err := p.processPollRequest(newLiftCtx(), makePollInsertRecord(models.MLPollRequest{
+		err := p.processPollRequest(context.Background(), testRequestID, makePollInsertRecord(models.MLPollRequest{
 			JobID:         "job-1",
 			JobName:       "j1",
 			Status:        "PENDING",
@@ -818,13 +844,13 @@ func TestHandleStream_PartialFailureStillReturnsNil_Round12(t *testing.T) {
 		NextPollAfter: time.Now().Add(-time.Minute),
 	})
 
-	require.NoError(t, p.HandleStream(newLiftCtx(), events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{rec}}))
+	require.NoError(t, p.HandleDynamoDBRecord(newEventCtx(), rec))
 }
 
 func TestProcessRecord_MissingPK_Skips_Round12(t *testing.T) {
 	p := &MLTrainingProcessor{logger: zaptest.NewLogger(t), moderationMLRepo: &fakeModerationMLRepo{}}
 	rec := events.DynamoDBEventRecord{EventName: eventNameInsert, EventID: "evt", Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{}}}
-	require.NoError(t, p.processRecord(newLiftCtx(), rec))
+	require.NoError(t, p.processRecord(context.Background(), testRequestID, rec))
 }
 
 func TestProcessJobStatusChange_Branches_Round12(t *testing.T) {
@@ -838,7 +864,7 @@ func TestProcessJobStatusChange_Branches_Round12(t *testing.T) {
 		moderationMLRepo: &fakeModerationMLRepo{},
 	}
 
-	ctx := newLiftCtx()
+	ctx := context.Background()
 
 	job := models.ModelTrainingJob{
 		JobID:          "job-1",
@@ -849,17 +875,17 @@ func TestProcessJobStatusChange_Branches_Round12(t *testing.T) {
 
 	t.Run("no_status_change", func(t *testing.T) {
 		rec := makeTrainingJobModifyRecord(job, statusInProgress, statusInProgress)
-		require.NoError(t, p.processJobStatusChange(ctx, rec))
+		require.NoError(t, p.processJobStatusChange(ctx, testRequestID, rec))
 	})
 
 	t.Run("failed_status", func(t *testing.T) {
 		rec := makeTrainingJobModifyRecord(job, statusInProgress, statusFailed)
-		require.NoError(t, p.processJobStatusChange(ctx, rec))
+		require.NoError(t, p.processJobStatusChange(ctx, testRequestID, rec))
 	})
 
 	t.Run("default_status_change", func(t *testing.T) {
 		rec := makeTrainingJobModifyRecord(job, "SUBMITTED", statusInProgress)
-		require.NoError(t, p.processJobStatusChange(ctx, rec))
+		require.NoError(t, p.processJobStatusChange(ctx, testRequestID, rec))
 	})
 }
 
@@ -925,56 +951,4 @@ func TestMetricsExtractionHelpers_Branches_Round12(t *testing.T) {
 		_, err := p.marshalToRawMetrics(&types.TrainingMetrics{TrainingLoss: &nan})
 		require.Error(t, err)
 	})
-}
-
-func convertEventAttributeValue(attr events.DynamoDBAttributeValue) dynamodbtypes.AttributeValue {
-	switch attr.DataType() {
-	case events.DataTypeString:
-		return &dynamodbtypes.AttributeValueMemberS{Value: attr.String()}
-	case events.DataTypeNumber:
-		return &dynamodbtypes.AttributeValueMemberN{Value: attr.Number()}
-	case events.DataTypeBinary:
-		return &dynamodbtypes.AttributeValueMemberB{Value: attr.Binary()}
-	case events.DataTypeBoolean:
-		return &dynamodbtypes.AttributeValueMemberBOOL{Value: attr.Boolean()}
-	case events.DataTypeNull:
-		return &dynamodbtypes.AttributeValueMemberNULL{Value: true}
-	case events.DataTypeStringSet:
-		return &dynamodbtypes.AttributeValueMemberSS{Value: attr.StringSet()}
-	case events.DataTypeNumberSet:
-		return &dynamodbtypes.AttributeValueMemberNS{Value: attr.NumberSet()}
-	case events.DataTypeBinarySet:
-		return &dynamodbtypes.AttributeValueMemberBS{Value: attr.BinarySet()}
-	case events.DataTypeList:
-		list := make([]dynamodbtypes.AttributeValue, 0, len(attr.List()))
-		for _, item := range attr.List() {
-			list = append(list, convertEventAttributeValue(item))
-		}
-		return &dynamodbtypes.AttributeValueMemberL{Value: list}
-	case events.DataTypeMap:
-		m := make(map[string]dynamodbtypes.AttributeValue)
-		for k, v := range attr.Map() {
-			m[k] = convertEventAttributeValue(v)
-		}
-		return &dynamodbtypes.AttributeValueMemberM{Value: m}
-	default:
-		return nil
-	}
-}
-
-func TestConvertEventAttributeValue_Branches_Round12(t *testing.T) {
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberS{}, convertEventAttributeValue(events.NewStringAttribute("s")))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberN{}, convertEventAttributeValue(events.NewNumberAttribute("123")))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberB{}, convertEventAttributeValue(events.NewBinaryAttribute([]byte("x"))))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberBOOL{}, convertEventAttributeValue(events.NewBooleanAttribute(true)))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberNULL{}, convertEventAttributeValue(events.NewNullAttribute()))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberSS{}, convertEventAttributeValue(events.NewStringSetAttribute([]string{"a"})))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberNS{}, convertEventAttributeValue(events.NewNumberSetAttribute([]string{"1"})))
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberBS{}, convertEventAttributeValue(events.NewBinarySetAttribute([][]byte{[]byte("x")})))
-
-	l := events.NewListAttribute([]events.DynamoDBAttributeValue{events.NewStringAttribute("a")})
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberL{}, convertEventAttributeValue(l))
-
-	m := events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{"k": events.NewStringAttribute("v")})
-	require.IsType(t, &dynamodbtypes.AttributeValueMemberM{}, convertEventAttributeValue(m))
 }

@@ -9,21 +9,22 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 // ValidateRequestBody enforces request body presence and size limits.
 func ValidateRequestBody(logger *zap.Logger, body []byte) error {
 	if err := common.ValidateSliceNotEmpty("body", body); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", "request body is required", 400)
+		return pkgErrors.RequiredFieldMissing("body")
 	}
 
 	if err := common.ValidateStringLength("request body", string(body), 0, common.MaxActivitySize); err != nil {
 		if logger != nil {
 			logger.Warn("request body too large", zap.Int("size", len(body)))
 		}
-		return lift.NewLiftError("PAYLOAD_TOO_LARGE", "request body too large", 413)
+		return &apptheory.AppError{Code: "app.too_large", Message: "request body too large"}
 	}
 
 	return nil
@@ -35,7 +36,7 @@ func ParseActivity(logger *zap.Logger, body []byte) (*activitypub.Activity, erro
 		if logger != nil {
 			logger.Warn("invalid JSON format", zap.Error(err))
 		}
-		return nil, lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid JSON: %v", err), 400)
+		return nil, pkgErrors.ValidationFailed("activity", fmt.Sprintf("invalid JSON: %v", err))
 	}
 
 	var activity activitypub.Activity
@@ -43,14 +44,14 @@ func ParseActivity(logger *zap.Logger, body []byte) (*activitypub.Activity, erro
 		if logger != nil {
 			logger.Warn("failed to parse activity", zap.Error(err))
 		}
-		return nil, lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid activity: %v", err), 400)
+		return nil, pkgErrors.ValidationFailed("activity", fmt.Sprintf("invalid activity: %v", err))
 	}
 
 	if err := common.ValidateActivityPubURL(activity.ID, "id"); err != nil {
 		if logger != nil {
 			logger.Warn("invalid activity ID URL", zap.String("id", activity.ID), zap.Error(err))
 		}
-		return nil, lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid activity ID: %v", err), 400)
+		return nil, pkgErrors.ValidationFailed("id", fmt.Sprintf("invalid activity ID: %v", err))
 	}
 
 	if activity.Published != nil && !activity.Published.IsZero() {
@@ -59,7 +60,7 @@ func ParseActivity(logger *zap.Logger, body []byte) (*activitypub.Activity, erro
 			if logger != nil {
 				logger.Warn("invalid activity timestamp", zap.String("published", published), zap.Error(err))
 			}
-			return nil, lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid timestamp: %v", err), 400)
+			return nil, pkgErrors.ValidationFailed("published", fmt.Sprintf("invalid timestamp: %v", err))
 		}
 	}
 
@@ -134,7 +135,7 @@ func ValidateBasicActivity(activity *activitypub.Activity) error {
 		"bcc":      stringSliceToInterfaceSlice(activity.BCC),
 	}
 	if err := common.ValidateActivityPubActivity(activityMap); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid activity: %v", err), 400)
+		return pkgErrors.ValidationFailed("activity", fmt.Sprintf("invalid activity: %v", err))
 	}
 	return nil
 }
@@ -150,7 +151,7 @@ func ValidateBasicActor(actor *activitypub.Actor) error {
 		"outbox":            actor.Outbox,
 	}
 	if err := common.ValidateActivityPubActor(actorMap); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor: %v", err), 400)
+		return pkgErrors.ValidationFailed("actor", fmt.Sprintf("invalid actor: %v", err))
 	}
 	return nil
 }
@@ -169,7 +170,7 @@ func ValidateActivityAddressing(activity *activitypub.Activity) error {
 
 	for _, addr := range addressingFields {
 		if err := common.ValidateActivityPubAddressing(addr.field, addr.name); err != nil {
-			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid '%s' addressing: %v", addr.name, err), 400)
+			return pkgErrors.ValidationFailed(addr.name, fmt.Sprintf("invalid '%s' addressing: %v", addr.name, err))
 		}
 	}
 	return nil
@@ -179,14 +180,14 @@ func ValidateActivityAddressing(activity *activitypub.Activity) error {
 func ValidateActorUsername(actorURL string) error {
 	parsedURL, err := url.Parse(actorURL)
 	if err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor username: %v", err), 400)
+		return pkgErrors.ValidationFailed("actor", fmt.Sprintf("invalid actor username: %v", err))
 	}
 
 	path := strings.Trim(parsedURL.Path, "/")
 	parts := strings.Split(path, "/")
 	username := parts[len(parts)-1]
 	if err := common.ValidateActivityPubUsername(username); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor username: %v", err), 400)
+		return pkgErrors.ValidationFailed("actor", fmt.Sprintf("invalid actor username: %v", err))
 	}
 	return nil
 }
@@ -203,7 +204,7 @@ func ValidateActorPublicKey(actor *activitypub.Actor) error {
 		"publicKeyPem": actor.PublicKey.PublicKeyPem,
 	}
 	if err := common.ValidateActivityPubPublicKey(publicKeyMap); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid public key: %v", err), 400)
+		return pkgErrors.ValidationFailed("public_key", fmt.Sprintf("invalid public key: %v", err))
 	}
 	return nil
 }
@@ -238,7 +239,7 @@ func ValidateCreateActivityObject(activity *activitypub.Activity) error {
 func ValidateObjectAttachments(objMap map[string]interface{}) error {
 	if attachments, exists := objMap["attachment"]; exists {
 		if err := common.ValidateActivityPubAttachments(attachments, "attachment"); err != nil {
-			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid attachments: %v", err), 400)
+			return pkgErrors.ValidationFailed("attachment", fmt.Sprintf("invalid attachments: %v", err))
 		}
 	}
 	return nil
@@ -248,7 +249,7 @@ func ValidateObjectAttachments(objMap map[string]interface{}) error {
 func ValidateObjectTags(objMap map[string]interface{}) error {
 	if tags, exists := objMap["tag"]; exists {
 		if err := common.ValidateActivityPubTags(tags, "tag"); err != nil {
-			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid tags: %v", err), 400)
+			return pkgErrors.ValidationFailed("tag", fmt.Sprintf("invalid tags: %v", err))
 		}
 	}
 	return nil
@@ -258,7 +259,7 @@ func ValidateObjectTags(objMap map[string]interface{}) error {
 func ValidateNoteObject(objMap map[string]interface{}) error {
 	if objType, exists := objMap["type"]; exists && objType == "Note" {
 		if err := common.ValidateActivityPubNote(objMap); err != nil {
-			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid note object: %v", err), 400)
+			return pkgErrors.ValidationFailed("object", fmt.Sprintf("invalid note object: %v", err))
 		}
 	}
 	return nil
@@ -271,7 +272,7 @@ func ValidateComprehensiveAddressing(logger *zap.Logger, activity *activitypub.A
 		if logger != nil {
 			logger.Warn("invalid activity addressing", zap.Error(err))
 		}
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid addressing: %v", err), 400)
+		return pkgErrors.ValidationFailed("addressing", fmt.Sprintf("invalid addressing: %v", err))
 	}
 	return nil
 }
@@ -285,7 +286,7 @@ func ValidateActivityTargeting(logger *zap.Logger, activity *activitypub.Activit
 				zap.Any("to", activity.To),
 				zap.Any("cc", activity.CC))
 		}
-		return lift.NewLiftError("VALIDATION_ERROR", "activity is not addressed to this actor", 400)
+		return pkgErrors.ValidationFailed("addressing", "activity is not addressed to this actor")
 	}
 	return nil
 }

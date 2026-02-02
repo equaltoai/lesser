@@ -376,7 +376,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 func (s *Service) composeStatus(cmd *CreateNoteCommand, author *storage.Account, statusID string, note *activitypub.Note, hashtags []string, attachments []activitypub.Attachment, timestamp time.Time) *models.Status {
 	status := &models.Status{
 		StatusID:            statusID,
-		Note:                &models.NoteField{Note: note}, // Wrap Note in NoteField for proper DynamORM handling
+		Note:                note,
 		AuthorID:            cmd.AuthorID,
 		AuthorUsername:      author.User.Username,
 		Content:             cmd.Content,
@@ -529,12 +529,12 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	status.UpdatedAt = time.Now()
 
 	// Update the ActivityPub Note if present
-	if status.Note != nil && status.Note.Get() != nil {
-		status.Note.Get().Content = cmd.Content
-		status.Note.Get().Sensitive = cmd.Sensitive
-		status.Note.Get().Summary = cmd.SpoilerText
+	if status.Note != nil {
+		status.Note.Content = cmd.Content
+		status.Note.Sensitive = cmd.Sensitive
+		status.Note.Summary = cmd.SpoilerText
 		now := time.Now()
-		status.Note.Get().Updated = &now
+		status.Note.Updated = &now
 	}
 
 	// Store the updated status
@@ -870,14 +870,14 @@ func (s *Service) ensureStatusHydrated(ctx context.Context, status *models.Statu
 	if status.StatusID == "" {
 		status.StatusID = deriveStatusIDFromKeys(status.PK, status.SK)
 	}
-	if status.StatusID == "" && status.Note != nil && status.Note.Get() != nil {
-		status.StatusID = extractStatusIDFromObjectURL(status.Note.Get().ID)
+	if status.StatusID == "" && status.Note != nil {
+		status.StatusID = extractStatusIDFromObjectURL(status.Note.ID)
 	}
 	if status.StatusID == "" {
 		return nil, fmt.Errorf("missing status identifier (pk=%s, sk=%s)", status.PK, status.SK)
 	}
 
-	noteMissing := status.Note == nil || status.Note.Get() == nil
+	noteMissing := status.Note == nil
 	if status.ReblogOfID != "" {
 		noteMissing = false
 	}
@@ -1596,14 +1596,14 @@ func (s *Service) queueFederationDelivery(ctx context.Context, status *models.St
 	}
 
 	// Skip if Note is nil (can happen with deleted/corrupted statuses)
-	if status.Note == nil || status.Note.Get() == nil {
+	if status.Note == nil {
 		s.logger.Debug("status note is nil, skipping federation delivery",
 			zap.String("status_id", status.StatusID))
 		return
 	}
 
 	// Create ActivityPub Create activity
-	note := status.Note.Get() // Get underlying *activitypub.Note for federation
+	note := status.Note
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			Context: activitypub.Context,
@@ -1642,14 +1642,14 @@ func (s *Service) queueFederationTombstone(ctx context.Context, status *models.S
 	}
 
 	// Skip if Note is nil (can happen with deleted/corrupted statuses)
-	if status.Note == nil || status.Note.Get() == nil {
+	if status.Note == nil {
 		s.logger.Debug("status note is nil, skipping federation tombstone",
 			zap.String("status_id", status.StatusID))
 		return
 	}
 
 	// Ensure we have an ID for the tombstone
-	tombstoneID := status.Note.Get().ID
+	tombstoneID := status.Note.ID
 	if tombstoneID == "" {
 		// Fallback to StatusID if Note.ID is empty
 		tombstoneID = status.StatusID
@@ -1675,8 +1675,8 @@ func (s *Service) queueFederationTombstone(ctx context.Context, status *models.S
 
 	// Use Note.AttributedTo if available, otherwise fallback to AuthorID
 	actorID := status.AuthorID
-	if status.Note.Get().AttributedTo != "" {
-		actorID = status.Note.Get().AttributedTo
+	if status.Note.AttributedTo != "" {
+		actorID = status.Note.AttributedTo
 	}
 
 	activity := &activitypub.Activity{

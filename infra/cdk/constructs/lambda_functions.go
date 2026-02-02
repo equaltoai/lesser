@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	liftcdk "github.com/pay-theory/lift/pkg/cdk/constructs"
+	apptheorycdk "github.com/theory-cloud/apptheory/cdk-go/apptheorycdk"
 )
 
 type LambdaFunctionsProps struct {
@@ -200,66 +200,46 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 		if len(spec.ScheduleTriggers) > 0 {
 			validateScheduleCapable(spec)
+		}
 
-			var scheduledFn awslambda.Function
-			for idx, trig := range spec.ScheduleTriggers {
-				ruleID := fmt.Sprintf("%sScheduleRule%d", sanitizeScheduleId(spec.Name), idx)
-				ruleName := naming.ResourceNameWithApp(appName, fmt.Sprintf("%s-schedule-%d", spec.Name, idx), props.Environment)
+		fn := awslambda.NewFunction(stack, jsii.String(spec.Name+"Function"), &fnProps)
+		functions.Functions[spec.Name] = fn
 
-				if idx == 0 {
-					var inputTransformation *awsevents.RuleTargetInput
-					if trig.Input != "" {
-						input := awsevents.RuleTargetInput_FromText(jsii.String(trig.Input))
-						inputTransformation = &input
-					}
-
-					handler, err := liftcdk.NewEventBridgeHandler(stack, jsii.String(ruleID), &liftcdk.EventBridgeHandlerProps{
-						FunctionProps:         fnProps,
-						ScheduleExpression:    jsii.String(trig.Expression),
-						InputTransformation:   inputTransformation,
-						EnableDeadLetterQueue: jsii.Bool(true),
-						RuleProps: &awsevents.RuleProps{
-							RuleName:    jsii.String(ruleName),
-							Enabled:     jsii.Bool(true),
-							Description: jsii.String(fmt.Sprintf("Inventory-driven schedule for %s (%s)", spec.Name, trig.Expression)),
-						},
-					})
-					if err != nil {
-						panic(err)
-					}
-
-					scheduledFn = handler.Function.Function
-					functions.Functions[spec.Name] = scheduledFn
-					continue
-				}
-
-				if scheduledFn == nil {
-					panic(fmt.Sprintf("schedule wiring invariant violated: %s missing primary schedule function", spec.Name))
-				}
-
-				// Lift's EventBridgeHandler currently creates the Lambda function as part of the construct.
-				// For additional schedules, create native rules that target the already-created function.
-				rule := awsevents.NewRule(stack, jsii.String(ruleID), &awsevents.RuleProps{
-					RuleName:    jsii.String(ruleName),
-					Enabled:     jsii.Bool(true),
-					Schedule:    awsevents.Schedule_Expression(jsii.String(trig.Expression)),
-					Description: jsii.String(fmt.Sprintf("Inventory-driven schedule for %s (%s)", spec.Name, trig.Expression)),
-				})
-
-				targetProps := &awseventstargets.LambdaFunctionProps{}
-				if trig.Input != "" {
-					targetProps.Event = awsevents.RuleTargetInput_FromText(jsii.String(trig.Input))
-				}
-				rule.AddTarget(awseventstargets.NewLambdaFunction(scheduledFn, targetProps))
-			}
+		if len(spec.ScheduleTriggers) == 0 {
 			continue
 		}
 
-		liftFn := liftcdk.NewLiftFunction(stack, jsii.String(spec.Name+"Function"), &liftcdk.LiftFunctionProps{
-			FunctionProps: fnProps,
-			EnableTracing: jsii.Bool(true),
-		})
-		functions.Functions[spec.Name] = liftFn.Function
+		for idx, trig := range spec.ScheduleTriggers {
+			ruleID := fmt.Sprintf("%sScheduleRule%d", sanitizeScheduleId(spec.Name), idx)
+			ruleName := naming.ResourceNameWithApp(appName, fmt.Sprintf("%s-schedule-%d", spec.Name, idx), props.Environment)
+
+			// Use an AppTheoryQueue-backed DLQ for scheduled invocations.
+			// This ensures failures are captured without relying on bespoke queue wiring.
+			dlqName := naming.ResourceNameWithApp(appName, fmt.Sprintf("%s-schedule-%d-dlq", spec.Name, idx), props.Environment)
+			dlq := apptheorycdk.NewAppTheoryQueue(stack, jsii.String(fmt.Sprintf("%sScheduleDLQ%d", sanitizeScheduleId(spec.Name), idx)), &apptheorycdk.AppTheoryQueueProps{
+				QueueName:         jsii.String(dlqName),
+				EnableDlq:         jsii.Bool(false), // DLQ itself should not have a DLQ.
+				RetentionPeriod:   awscdk.Duration_Days(jsii.Number(14)),
+				RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
+				VisibilityTimeout: awscdk.Duration_Minutes(jsii.Number(2)),
+			})
+
+			targetProps := &awseventstargets.LambdaFunctionProps{
+				DeadLetterQueue: dlq.Queue(),
+			}
+			if trig.Input != "" {
+				targetProps.Event = awsevents.RuleTargetInput_FromText(jsii.String(trig.Input))
+			}
+
+			apptheorycdk.NewAppTheoryEventBridgeHandler(stack, jsii.String(ruleID), &apptheorycdk.AppTheoryEventBridgeHandlerProps{
+				Handler:     fn,
+				Schedule:    awsevents.Schedule_Expression(jsii.String(trig.Expression)),
+				RuleName:    jsii.String(ruleName),
+				Enabled:     jsii.Bool(true),
+				Description: jsii.String(fmt.Sprintf("Inventory-driven schedule for %s (%s)", spec.Name, trig.Expression)),
+				TargetProps: targetProps,
+			})
+		}
 	}
 
 	return functions

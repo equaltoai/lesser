@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -12,10 +13,9 @@ import (
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -104,7 +104,7 @@ func TestMetricsAggregator_extractMetricFromRecord_Round12(t *testing.T) {
 	require.Equal(t, "api", metric.Service)
 }
 
-func TestMetricsAggregator_HandleStreamWithContext_Round12(t *testing.T) {
+func TestMetricsAggregator_HandleDynamoDBRecord_Round12(t *testing.T) {
 	origUnmarshal := unmarshalItemFn
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
 
@@ -124,8 +124,6 @@ func TestMetricsAggregator_HandleStreamWithContext_Round12(t *testing.T) {
 		m.Max = 15
 		return nil
 	}
-
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 
 	event := events.DynamoDBEvent{
 		Records: []events.DynamoDBEventRecord{
@@ -149,7 +147,9 @@ func TestMetricsAggregator_HandleStreamWithContext_Round12(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, ma.HandleStreamWithContext(context.Background(), liftCtx, event))
+	for _, record := range event.Records {
+		require.NoError(t, ma.HandleDynamoDBRecord(nil, record))
+	}
 	require.Equal(t, 1, repo.createAggregatedCalls)
 }
 
@@ -235,7 +235,7 @@ func TestMetricsAggregator_cleanupOldMetrics_SkipsTooNew_Round12(t *testing.T) {
 	require.Equal(t, 0, repo.cleanupCalls)
 }
 
-func TestMetricsAggregator_HandleStreamWithContext_SkipsNonStringPK_Round12(t *testing.T) {
+func TestMetricsAggregator_HandleDynamoDBRecord_SkipsNonStringPK_Round12(t *testing.T) {
 	origUnmarshal := unmarshalItemFn
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
 
@@ -247,7 +247,6 @@ func TestMetricsAggregator_HandleStreamWithContext_SkipsNonStringPK_Round12(t *t
 
 	unmarshalItemFn = func(events.DynamoDBEventRecord, any) error { return nil }
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	event := events.DynamoDBEvent{
 		Records: []events.DynamoDBEventRecord{
 			{
@@ -267,28 +266,29 @@ func TestMetricsAggregator_HandleStreamWithContext_SkipsNonStringPK_Round12(t *t
 		},
 	}
 
-	require.NoError(t, ma.HandleStreamWithContext(context.Background(), liftCtx, event))
+	for _, record := range event.Records {
+		require.NoError(t, ma.HandleDynamoDBRecord(nil, record))
+	}
 	require.Equal(t, 0, repo.createAggregatedCalls)
 }
 
-func TestMetricsAggregator_processRealtimeMetricsWithContext_CreateError_Round12(t *testing.T) {
+func TestMetricsAggregator_processRealtimeMetrics_CreateError_Round12(t *testing.T) {
 	repo := &fakeMetricsRepository{createAggregatedErr: errors.New("boom")}
 	ma := &MetricsAggregator{
 		logger:            zap.NewNop(),
 		metricsRepository: repo,
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	metrics := []*models.Metrics{
 		{Service: "api", Type: "request", Count: 0, Sum: 0, Min: 0, Max: 0},
 		{Service: "api", Type: "request", Count: 0, Sum: 0, Min: 0, Max: 0},
 	}
 
-	require.NoError(t, ma.processRealtimeMetricsWithContext(context.Background(), liftCtx, metrics))
+	require.NoError(t, ma.processRealtimeMetrics(context.Background(), "req", metrics))
 	require.Equal(t, 1, repo.createAggregatedCalls)
 }
 
-func TestMetricsAggregator_HandleStreamWithContext_SkipsUnmarshalError_Round12(t *testing.T) {
+func TestMetricsAggregator_HandleDynamoDBRecord_SkipsUnmarshalError_Round12(t *testing.T) {
 	origUnmarshal := unmarshalItemFn
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
 
@@ -300,7 +300,6 @@ func TestMetricsAggregator_HandleStreamWithContext_SkipsUnmarshalError_Round12(t
 		metricsRepository: repo,
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	event := events.DynamoDBEvent{
 		Records: []events.DynamoDBEventRecord{
 			{
@@ -314,7 +313,9 @@ func TestMetricsAggregator_HandleStreamWithContext_SkipsUnmarshalError_Round12(t
 		},
 	}
 
-	require.NoError(t, ma.HandleStreamWithContext(context.Background(), liftCtx, event))
+	for _, record := range event.Records {
+		require.NoError(t, ma.HandleDynamoDBRecord(nil, record))
+	}
 	require.Equal(t, 0, repo.createAggregatedCalls)
 }
 
@@ -357,34 +358,41 @@ func TestRunMetricsAggregator_Round12(t *testing.T) {
 
 	repo := &fakeMetricsRepository{}
 
-	called := false
-	lambdaStartFn = func(handler any) {
-		called = true
-		fn, ok := handler.(func(context.Context, any) (any, error))
-		require.True(t, ok)
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
-		// Ensure we don't hit the real metrics repository implementation.
-		processor.metricsRepository = repo
-
-		event := map[string]any{
-			"Records": []any{
-				map[string]any{
-					"eventID":     "1",
-					"eventName":   "INSERT",
-					"eventSource": "aws:dynamodb",
-					"dynamodb": map[string]any{
-						"NewImage": map[string]any{
-							"PK": map[string]any{"S": "metrics#request"},
-						},
-					},
-				},
-			},
-		}
-		_, err := fn(context.Background(), event)
-		require.NoError(t, err)
-	}
+	var startHandler any
+	lambdaStartFn = func(handler any) { startHandler = handler }
 
 	main()
-	require.True(t, called)
+	require.NotNil(t, startHandler)
+
+	// Ensure we don't hit the real metrics repository implementation.
+	processor.metricsRepository = repo
+
+	fn, ok := startHandler.(func(context.Context, json.RawMessage) (any, error))
+	require.True(t, ok)
+
+	event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+		{
+			EventID:        "1",
+			EventName:      "INSERT",
+			EventSource:    "aws:dynamodb",
+			EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+			Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("metrics#request"),
+			}},
+		},
+	}}
+	raw, err := json.Marshal(event)
+	require.NoError(t, err)
+
+	respAny, err := fn(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok := respAny.(events.DynamoDBEventResponse)
+	require.True(t, ok)
+	require.Empty(t, resp.BatchItemFailures)
+
 	require.Equal(t, 1, repo.createAggregatedCalls)
 }

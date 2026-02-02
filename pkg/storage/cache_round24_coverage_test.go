@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	repotesting "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	repotesting "github.com/equaltoai/lesser/pkg/storage/theorydb/repositories/testing"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"

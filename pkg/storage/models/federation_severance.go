@@ -7,19 +7,19 @@ import (
 
 // FederationSeverance represents a severed federation relationship
 type FederationSeverance struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
-	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
-	Domain       string    `dynamorm:"attr:domain" json:"domain"`
-	SeveredAt    time.Time `dynamorm:"attr:severedAt" json:"severed_at"`
-	Acknowledged bool      `dynamorm:"attr:acknowledged" json:"acknowledged"`
-	Reason       string    `dynamorm:"attr:reason" json:"reason"`
-	Type         string    `dynamorm:"attr:type" json:"type"` // "domain_block", "suspension", "defederation"
+	UserID       string    `theorydb:"attr:userID" json:"user_id"`
+	Domain       string    `theorydb:"attr:domain" json:"domain"`
+	SeveredAt    time.Time `theorydb:"attr:severedAt" json:"severed_at"`
+	Acknowledged bool      `theorydb:"attr:acknowledged" json:"acknowledged"`
+	Reason       string    `theorydb:"attr:reason" json:"reason"`
+	Type         string    `theorydb:"attr:type" json:"type"` // "domain_block", "suspension", "defederation"
 }
 
 // TableName returns the DynamoDB table backing FederationSeverance.
@@ -39,18 +39,18 @@ func (f *FederationSeverance) UpdateKeys() {
 
 // FederationIssue tracks federation issues for monitoring
 type FederationIssue struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
-	Domain      string    `dynamorm:"attr:domain" json:"domain"`
-	IssueType   string    `dynamorm:"attr:issueType" json:"issue_type"` // "timeout", "error", "unreachable", "blocked"
-	Timestamp   time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	Description string    `dynamorm:"attr:description" json:"description,omitempty"`
-	Severity    string    `dynamorm:"attr:severity" json:"severity"` // "low", "medium", "high", "critical"
-	Resolved    bool      `dynamorm:"attr:resolved" json:"resolved"`
-	TTL         int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	Domain      string    `theorydb:"attr:domain" json:"domain"`
+	IssueType   string    `theorydb:"attr:issueType" json:"issue_type"` // "timeout", "error", "unreachable", "blocked"
+	Timestamp   time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	Description string    `theorydb:"attr:description" json:"description,omitempty"`
+	Severity    string    `theorydb:"attr:severity" json:"severity"` // "low", "medium", "high", "critical"
+	Resolved    bool      `theorydb:"attr:resolved" json:"resolved"`
+	TTL         int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing FederationIssue.
@@ -71,17 +71,17 @@ func (f *FederationIssue) UpdateKeys() {
 
 // ReconnectionAttempt tracks attempts to reconnect to severed domains
 type ReconnectionAttempt struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
-	UserID       string    `dynamorm:"attr:userID" json:"user_id"`
-	Domain       string    `dynamorm:"attr:domain" json:"domain"`
-	AttemptedAt  time.Time `dynamorm:"attr:attemptedAt" json:"attempted_at"`
-	Success      bool      `dynamorm:"attr:success" json:"success"`
-	ErrorMessage string    `dynamorm:"attr:errorMessage" json:"error_message,omitempty"`
-	Method       string    `dynamorm:"attr:method" json:"method"` // "manual", "automatic", "scheduled"
+	UserID       string    `theorydb:"attr:userID" json:"user_id"`
+	Domain       string    `theorydb:"attr:domain" json:"domain"`
+	AttemptedAt  time.Time `theorydb:"attr:attemptedAt" json:"attempted_at"`
+	Success      bool      `theorydb:"attr:success" json:"success"`
+	ErrorMessage string    `theorydb:"attr:errorMessage" json:"error_message,omitempty"`
+	Method       string    `theorydb:"attr:method" json:"method"` // "manual", "automatic", "scheduled"
 }
 
 // TableName returns the DynamoDB table backing ReconnectionAttempt.
@@ -97,21 +97,21 @@ func (r *ReconnectionAttempt) UpdateKeys() {
 
 // FederationTimeSeries stores time-series federation metrics
 type FederationTimeSeries struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK     string `dynamorm:"pk,attr:PK"`
-	SK     string `dynamorm:"sk,attr:SK"`
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	PK     string `theorydb:"pk,attr:PK"`
+	SK     string `theorydb:"sk,attr:SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
-	Domain         string                 `dynamorm:"attr:domain" json:"domain"`
-	Period         string                 `dynamorm:"attr:period" json:"period"` // "hourly", "daily", "weekly"
-	Timestamp      time.Time              `dynamorm:"attr:timestamp" json:"timestamp"`
-	Metrics        map[string]interface{} `dynamorm:"attr:metrics" json:"metrics"`
-	ActivityVolume int64                  `dynamorm:"attr:activityVolume" json:"activity_volume"`
-	ErrorCount     int64                  `dynamorm:"attr:errorCount" json:"error_count"`
-	SuccessCount   int64                  `dynamorm:"attr:successCount" json:"success_count"`
-	TTL            int64                  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	Domain         string                 `theorydb:"attr:domain" json:"domain"`
+	Period         string                 `theorydb:"attr:period" json:"period"` // "hourly", "daily", "weekly"
+	Timestamp      time.Time              `theorydb:"attr:timestamp" json:"timestamp"`
+	Metrics        map[string]interface{} `theorydb:"attr:metrics" json:"metrics"`
+	ActivityVolume int64                  `theorydb:"attr:activityVolume" json:"activity_volume"`
+	ErrorCount     int64                  `theorydb:"attr:errorCount" json:"error_count"`
+	SuccessCount   int64                  `theorydb:"attr:successCount" json:"success_count"`
+	TTL            int64                  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing FederationTimeSeries.

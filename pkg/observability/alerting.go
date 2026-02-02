@@ -14,7 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 

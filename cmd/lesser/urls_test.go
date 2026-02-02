@@ -19,4 +19,3 @@ func TestPrintStageURLs_NoPanic(t *testing.T) {
 		printStageURLs([]naming.Stage{naming.StageDev}, "example.com")
 	})
 }
-

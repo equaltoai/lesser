@@ -7,17 +7,17 @@ import (
 
 // SearchCache represents cached search results
 type SearchCache struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Fields
-	Query     string                 `dynamorm:"attr:query" json:"query"`     // original query
-	Results   map[string]interface{} `dynamorm:"attr:results" json:"results"` // cached search results
-	CreatedAt time.Time              `dynamorm:"attr:createdAt" json:"created_at"`
-	TTL       int64                  `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // Unix timestamp
+	Query     string                 `theorydb:"attr:query" json:"query"`     // original query
+	Results   map[string]interface{} `theorydb:"attr:results" json:"results"` // cached search results
+	CreatedAt time.Time              `theorydb:"attr:createdAt" json:"created_at"`
+	TTL       int64                  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // Unix timestamp
 }
 
 // TableName returns the DynamoDB table backing SearchCache.

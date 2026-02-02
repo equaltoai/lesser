@@ -25,7 +25,7 @@ type cdkDeployResult struct {
 }
 
 var (
-	cdkBootstrapFn        = cdkBootstrap
+	cdkBootstrapFn         = cdkBootstrap
 	cdkDeployWithOutputsFn = cdkDeployWithOutputs
 )
 

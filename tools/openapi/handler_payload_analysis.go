@@ -12,7 +12,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const packagePathLift = "github.com/equaltoai/lesser/cmd/api/lift"
+const packagePathLift = "github.com/equaltoai/lesser/cmd/api/handlers"
 
 type handlerPayloadInfo struct {
 	Request      types.Type

@@ -23,7 +23,7 @@ import (
 	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -124,7 +124,7 @@ func NewEngine(
 		imageAnalyzer = NewNoOpImageAnalyzer(logger, config)
 	}
 	patternMatcher := NewPatternMatcher(patternRepo, logger)
-	reputationScorer := NewReputationScorer(nil, tableName, logger, config)
+	reputationScorer := NewReputationScorer(dynamoRM, logger, config)
 
 	// Create threat intelligence repository and component
 	threatRepo := repositories.NewThreatIntelRepository(dynamoRM, tableName, logger, nil)

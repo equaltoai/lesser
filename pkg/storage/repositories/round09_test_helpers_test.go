@@ -3,8 +3,8 @@ package repositories
 import (
 	"testing"
 
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 func newMockDBQuery() (*mocks.MockDB, *mocks.MockQuery) {

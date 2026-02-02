@@ -11,52 +11,52 @@ import (
 
 // Actor represents an ActivityPub actor stored in DynamoDB using DynamORM
 type Actor struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using actor username as the primary identifier
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "ACTOR#{username}" - MUST match legacy exactly
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "PROFILE" - MUST match legacy exactly
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "ACTOR#{username}" - MUST match legacy exactly
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "PROFILE" - MUST match legacy exactly
 
 	// GSI1 - Username search with prefix partitioning for efficient queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERNAME_SEARCH#{first_2_chars}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{lowercase_username}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERNAME_SEARCH#{first_2_chars}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{lowercase_username}"
 
 	// GSI2 - Display name search
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "NAME_SEARCH#{first_2_chars}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{lowercase_name}#{username}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "NAME_SEARCH#{first_2_chars}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{lowercase_name}#{username}"
 
 	// GSI3 - Domain-based queries for federation
-	GSI3PK string `dynamorm:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DOMAIN#{domain}"
-	GSI3SK string `dynamorm:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DOMAIN#{domain}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
 
 	// GSI4 - Popularity ranking by follower count
-	GSI4PK string `dynamorm:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "ACTOR_RANK#{bucket}"
-	GSI4SK string `dynamorm:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{padded_count}#{username}"
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "ACTOR_RANK#{bucket}"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{padded_count}#{username}"
 
 	// GSI5 - Recent activity tracking
-	GSI5PK string `dynamorm:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"` // Format: "ACTIVE#{date}"
-	GSI5SK string `dynamorm:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"` // Format: "{timestamp}#{username}"
+	GSI5PK string `theorydb:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"` // Format: "ACTIVE#{date}"
+	GSI5SK string `theorydb:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"` // Format: "{timestamp}#{username}"
 
 	// Core actor data
-	Actor      *activitypub.Actor `dynamorm:"json,attr:actor" json:"actor"`
-	Username   string             `dynamorm:"attr:username" json:"username"`
-	PrivateKey string             `dynamorm:"attr:privateKey" json:"private_key,omitempty"` // Encrypted private key
-	KeyType    string             `dynamorm:"attr:keyType" json:"key_type,omitempty"`       // Key type: RSA, ECDSA, Ed25519
-	NumericID  string             `dynamorm:"attr:numericID" json:"numeric_id"`             // Mastodon-compatible numeric ID
+	Actor      *activitypub.Actor `theorydb:"json,attr:actor" json:"actor"`
+	Username   string             `theorydb:"attr:username" json:"username"`
+	PrivateKey string             `theorydb:"attr:privateKey" json:"private_key,omitempty"` // Encrypted private key
+	KeyType    string             `theorydb:"attr:keyType" json:"key_type,omitempty"`       // Key type: RSA, ECDSA, Ed25519
+	NumericID  string             `theorydb:"attr:numericID" json:"numeric_id"`             // Mastodon-compatible numeric ID
 
 	// Metadata
-	CreatedAt    time.Time    `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt    time.Time    `dynamorm:"attr:updatedAt" json:"updated_at"`
-	LastStatusAt *time.Time   `dynamorm:"attr:lastStatusAt" json:"last_status_at,omitempty"`
-	Fields       []ActorField `dynamorm:"json,attr:fields" json:"fields,omitempty"`
+	CreatedAt    time.Time    `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt    time.Time    `theorydb:"attr:updatedAt" json:"updated_at"`
+	LastStatusAt *time.Time   `theorydb:"attr:lastStatusAt" json:"last_status_at,omitempty"`
+	Fields       []ActorField `theorydb:"json,attr:fields" json:"fields,omitempty"`
 
 	// Counts for efficient access
-	FollowerCount  int `dynamorm:"attr:followerCount" json:"follower_count"`
-	FollowingCount int `dynamorm:"attr:followingCount" json:"following_count"`
-	StatusCount    int `dynamorm:"attr:statusCount" json:"status_count"`
+	FollowerCount  int `theorydb:"attr:followerCount" json:"follower_count"`
+	FollowingCount int `theorydb:"attr:followingCount" json:"following_count"`
+	StatusCount    int `theorydb:"attr:statusCount" json:"status_count"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version,attr:version" json:"version"`
+	Version int `theorydb:"version,attr:version" json:"version"`
 }
 
 // ActorField represents a profile field (like bio fields in Mastodon)

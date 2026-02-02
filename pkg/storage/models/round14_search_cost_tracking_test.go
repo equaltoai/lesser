@@ -63,12 +63,12 @@ func TestSearchCostTracking_UpdateKeys_AndBudgets(t *testing.T) {
 
 	t.Run("SearchBudget CanMakeRequest enforces limits", func(t *testing.T) {
 		sb := &SearchBudget{
-			BudgetLimitMicros:  100,
-			SearchBudgetMicros: 60,
+			BudgetLimitMicros:    100,
+			SearchBudgetMicros:   60,
 			SemanticBudgetMicros: 30,
 			IndexingBudgetMicros: 20,
-			MaxRequestsPerHour: 2,
-			MaxSemanticPerHour: 1,
+			MaxRequestsPerHour:   2,
+			MaxSemanticPerHour:   1,
 		}
 
 		// Overall budget cap.

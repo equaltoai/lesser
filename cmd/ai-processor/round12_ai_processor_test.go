@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -11,11 +12,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -167,13 +166,13 @@ func TestAIProcessor_ProcessRecord_Round12(t *testing.T) {
 
 	analysis := &ai.AIAnalysis{
 		ID:               "analysis-1",
-		ObjectID:          "123",
-		ObjectType:        "Note",
-		ModerationAction:  ai.ActionFlag,
-		OverallRisk:       0.8,
-		SpamAnalysis:      &ai.SpamAnalysis{SpamScore: 0.8},
-		AnalyzedAt:        time.Now().UTC(),
-		Version:           "1.0",
+		ObjectID:         "123",
+		ObjectType:       "Note",
+		ModerationAction: ai.ActionFlag,
+		OverallRisk:      0.8,
+		SpamAnalysis:     &ai.SpamAnalysis{SpamScore: 0.8},
+		AnalyzedAt:       time.Now().UTC(),
+		Version:          "1.0",
 	}
 
 	analyzer := &fakeAnalyzer{analysis: analysis}
@@ -204,30 +203,28 @@ func TestAIProcessor_ProcessRecord_Round12(t *testing.T) {
 		}
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	liftCtx.Set("request_id", "req")
+	requestID := "req"
 
 	record := events.DynamoDBEventRecord{
 		EventName: "INSERT",
 		Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#123")}},
 	}
 
-	require.NoError(t, ap.processRecord(context.Background(), liftCtx, record))
+	require.NoError(t, ap.processRecord(context.Background(), requestID, record))
 	require.Equal(t, 1, analyzer.calls)
 	require.Equal(t, 1, saver.calls)
 	require.Equal(t, "alice", saver.lastUser)
 	require.NotNil(t, saver.lastCmd.Analysis)
 
 	// Non-write event is ignored.
-	require.NoError(t, ap.processRecord(context.Background(), liftCtx, events.DynamoDBEventRecord{EventName: "REMOVE"}))
+	require.NoError(t, ap.processRecord(context.Background(), requestID, events.DynamoDBEventRecord{EventName: "REMOVE"}))
 }
 
 func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 	origUnmarshal := unmarshalItemFn
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	liftCtx.Set("request_id", "req")
+	requestID := "req"
 
 	t.Run("skips non-analyzable", func(t *testing.T) {
 		analyzer := &fakeAnalyzer{analysis: &ai.AIAnalysis{}}
@@ -240,7 +237,7 @@ func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 		}
 
 		record := events.DynamoDBEventRecord{EventName: "INSERT"}
-		require.NoError(t, ap.processRecord(context.Background(), liftCtx, record))
+		require.NoError(t, ap.processRecord(context.Background(), requestID, record))
 		require.Equal(t, 0, analyzer.calls)
 		require.Equal(t, 0, saver.calls)
 	})
@@ -272,7 +269,7 @@ func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 			EventName: "INSERT",
 			Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#123")}},
 		}
-		require.Error(t, ap.processRecord(context.Background(), liftCtx, record))
+		require.Error(t, ap.processRecord(context.Background(), requestID, record))
 		require.Equal(t, 0, analyzer.calls)
 		require.Equal(t, 0, saver.calls)
 	})
@@ -306,7 +303,7 @@ func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 			EventName: "INSERT",
 			Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#123")}},
 		}
-		require.Error(t, ap.processRecord(context.Background(), liftCtx, record))
+		require.Error(t, ap.processRecord(context.Background(), requestID, record))
 		require.Equal(t, 1, analyzer.calls)
 		require.Equal(t, 0, saver.calls)
 	})
@@ -341,7 +338,7 @@ func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 			EventName: "INSERT",
 			Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#123")}},
 		}
-		require.Error(t, ap.processRecord(context.Background(), liftCtx, record))
+		require.Error(t, ap.processRecord(context.Background(), requestID, record))
 		require.Equal(t, 1, analyzer.calls)
 		require.Equal(t, 1, saver.calls)
 	})
@@ -355,13 +352,13 @@ func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 
 		analyzer := &fakeAnalyzer{analysis: &ai.AIAnalysis{
 			ID:               "analysis-1",
-			ObjectID:          "123",
-			ObjectType:        "Note",
-			ModerationAction:  ai.ActionFlag,
-			OverallRisk:       0.8,
-			SpamAnalysis:      &ai.SpamAnalysis{SpamScore: 0.8},
-			AnalyzedAt:        time.Now().UTC(),
-			Version:           "1.0",
+			ObjectID:         "123",
+			ObjectType:       "Note",
+			ModerationAction: ai.ActionFlag,
+			OverallRisk:      0.8,
+			SpamAnalysis:     &ai.SpamAnalysis{SpamScore: 0.8},
+			AnalyzedAt:       time.Now().UTC(),
+			Version:          "1.0",
 		}}
 		saver := &fakeSaver{}
 
@@ -393,13 +390,13 @@ func TestAIProcessor_ProcessRecord_ErrorBranches_Round12(t *testing.T) {
 			Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#123")}},
 		}
 
-		require.NoError(t, ap.processRecord(context.Background(), liftCtx, record))
+		require.NoError(t, ap.processRecord(context.Background(), requestID, record))
 		require.Equal(t, 1, analyzer.calls)
 		require.Equal(t, 1, saver.calls)
 	})
 }
 
-func TestAIProcessor_HandleStreamWithContext_Round12(t *testing.T) {
+func TestAIProcessor_HandleDynamoDBRecord_Round12(t *testing.T) {
 	origUnmarshal := unmarshalItemFn
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
 
@@ -426,14 +423,12 @@ func TestAIProcessor_HandleStreamWithContext_Round12(t *testing.T) {
 		}
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{}))
-	liftCtx.Set("request_id", "req")
+	record := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#123")}},
+	}
 
-	event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
-		{EventName: "INSERT", Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#123")}}},
-	}}
-
-	require.NoError(t, ap.HandleStreamWithContext(context.Background(), liftCtx, event))
+	require.NoError(t, ap.HandleDynamoDBRecord(nil, record))
 }
 
 func TestAIProcessor_Entrypoint_Round12(t *testing.T) {
@@ -443,7 +438,7 @@ func TestAIProcessor_Entrypoint_Round12(t *testing.T) {
 	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
 
 	analysis := &ai.AIAnalysis{
-		ID:              "analysis-1",
+		ID:               "analysis-1",
 		ObjectID:         "123",
 		ObjectType:       "Note",
 		ModerationAction: ai.ActionNone,
@@ -477,26 +472,34 @@ func TestAIProcessor_Entrypoint_Round12(t *testing.T) {
 	called := false
 	lambdaStartFn = func(handler any) {
 		called = true
-		fn, ok := handler.(func(context.Context, any) (any, error))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
 
-		event := map[string]any{
-			"Records": []any{
-				map[string]any{
-					"eventID":     "1",
-					"eventName":   "INSERT",
-					"eventSource": "aws:dynamodb",
-					"dynamodb": map[string]any{
-						"NewImage": map[string]any{
-							"PK": map[string]any{"S": "OBJECT#123"},
-						},
-					},
-				},
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "1",
+				EventName:      "INSERT",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+				Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+					"PK": events.NewStringAttribute("OBJECT#123"),
+				}},
 			},
-		}
-		_, err := fn(context.Background(), event)
+		}}
+		raw, err := json.Marshal(event)
 		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
 	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
+
 	main()
 	require.True(t, called)
 	require.Equal(t, 1, analyzer.calls)
@@ -510,10 +513,10 @@ func TestAIProcessor_Entrypoint_Round12(t *testing.T) {
 	require.NotNil(t, p)
 }
 
-func TestAIProcessor_HandleStream_DynamoDBRecordsError_Round12(t *testing.T) {
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.Request.TriggerType = lift.TriggerEventBus
-	ctx.Request.Records = []any{"bad-record"}
+func TestHandleAIProcessorStreamRecord_MissingProcessor_Round12(t *testing.T) {
+	origProcessor := processor
+	t.Cleanup(func() { processor = origProcessor })
 
-	require.Error(t, handleAIProcessorStream(ctx))
+	processor = nil
+	require.Error(t, handleAIProcessorStreamRecord(nil, events.DynamoDBEventRecord{EventID: "1", EventName: "INSERT"}))
 }

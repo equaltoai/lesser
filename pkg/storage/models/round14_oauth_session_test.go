@@ -11,13 +11,13 @@ import (
 func TestOAuthAuthSession_LifecycleAndHelpers(t *testing.T) {
 	t.Run("BeforeCreate generates IDs/tokens, keys, GSIs, and defaults", func(t *testing.T) {
 		s := &OAuthAuthSession{
-			ClientID:     "client-1",
-			RedirectURI:  "https://app.example/callback",
-			Username:     "alice",
-			State:        "state-123",
-			IsSecure:     true,
-			IPAddress:    "1.2.3.4",
-			UserAgent:    "ua",
+			ClientID:      "client-1",
+			RedirectURI:   "https://app.example/callback",
+			Username:      "alice",
+			State:         "state-123",
+			IsSecure:      true,
+			IPAddress:     "1.2.3.4",
+			UserAgent:     "ua",
 			CodeChallenge: "cc",
 		}
 
@@ -110,4 +110,3 @@ func TestOAuthAuthSession_LifecycleAndHelpers(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
-

@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	appConfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/theory-cloud/tabletheory"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 	"go.uber.org/zap"
 )
 
@@ -32,14 +33,35 @@ var (
 func InitializeCostStorage(cfg *appConfig.Config) {
 	// Initialize cost storage if table name is set
 	if tableName := cfg.CostHistoryTableName; tableName != "" {
-		ctx := context.Background()
-		awsCfg, err := config.LoadDefaultConfig(ctx)
-		if err == nil {
-			client := dynamodb.NewFromConfig(awsCfg)
-			// Create a logger for cost storage
-			logger, _ := zap.NewProduction()
-			globalCostStorage = NewStorage(client, tableName, logger)
+		var db core.DB
+
+		if tabletheory.IsLambdaEnvironment() {
+			lambdaDB, err := tabletheory.NewLambdaOptimized()
+			if err != nil {
+				zap.L().Warn("failed to initialize TableTheory LambdaDB for cost storage", zap.Error(err))
+				return
+			}
+			db = lambdaDB
+		} else {
+			region := cfg.Region
+			if region == "" {
+				region = "us-east-1"
+			}
+			standardDB, err := tabletheory.New(session.Config{Region: region})
+			if err != nil {
+				zap.L().Warn("failed to initialize TableTheory DB for cost storage", zap.Error(err))
+				return
+			}
+			db = standardDB
 		}
+
+		if db == nil {
+			return
+		}
+
+		// Create a logger for cost storage
+		logger, _ := zap.NewProduction()
+		globalCostStorage = NewStorage(db, tableName, logger)
 	}
 }
 

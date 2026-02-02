@@ -7,29 +7,29 @@ import (
 
 // Publication represents a blog/newsletter publication with multiple contributors
 type Publication struct {
-	PK string `dynamorm:"pk,attr:PK"` // PUBLICATION#{id}
-	SK string `dynamorm:"sk,attr:SK"` // METADATA
+	PK string `theorydb:"pk,attr:PK"` // PUBLICATION#{id}
+	SK string `theorydb:"sk,attr:SK"` // METADATA
 
-	ID          string `dynamorm:"attr:id" json:"id"`
-	Name        string `dynamorm:"attr:name" json:"name"`
-	Tagline     string `dynamorm:"attr:tagline" json:"tagline,omitempty"`
-	Description string `dynamorm:"attr:description" json:"description,omitempty"`
-	Slug        string `dynamorm:"attr:slug" json:"slug"`
+	ID          string `theorydb:"attr:id" json:"id"`
+	Name        string `theorydb:"attr:name" json:"name"`
+	Tagline     string `theorydb:"attr:tagline" json:"tagline,omitempty"`
+	Description string `theorydb:"attr:description" json:"description,omitempty"`
+	Slug        string `theorydb:"attr:slug" json:"slug"`
 
 	// Branding
-	LogoURL   string `dynamorm:"attr:logoURL" json:"logo_url,omitempty"`
-	BannerURL string `dynamorm:"attr:bannerURL" json:"banner_url,omitempty"`
-	Theme     string `dynamorm:"attr:theme" json:"theme,omitempty"` // JSON theme config
+	LogoURL   string `theorydb:"attr:logoURL" json:"logo_url,omitempty"`
+	BannerURL string `theorydb:"attr:bannerURL" json:"banner_url,omitempty"`
+	Theme     string `theorydb:"attr:theme" json:"theme,omitempty"` // JSON theme config
 
 	// Configuration
-	CustomDomain string `dynamorm:"attr:customDomain" json:"custom_domain,omitempty"`
+	CustomDomain string `theorydb:"attr:customDomain" json:"custom_domain,omitempty"`
 
 	// ActivityPub
-	ActorID string `dynamorm:"attr:actorID" json:"actor_id"` // The AP Actor for this publication
+	ActorID string `theorydb:"attr:actorID" json:"actor_id"` // The AP Actor for this publication
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing Publication.
@@ -67,25 +67,25 @@ func (p *Publication) GetSK() string {
 
 // PublicationMember represents a contributor to a publication
 type PublicationMember struct {
-	PK string `dynamorm:"pk,attr:PK"` // PUBLICATION#{pub_id}#MEMBER
-	SK string `dynamorm:"sk,attr:SK"` // USER#{user_id}
+	PK string `theorydb:"pk,attr:PK"` // PUBLICATION#{pub_id}#MEMBER
+	SK string `theorydb:"sk,attr:SK"` // USER#{user_id}
 
 	// GSI1: USER#{user_id}#PUBLICATION / PUBLICATION#{pub_id}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"-"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"-"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"`
 
-	PublicationID string `dynamorm:"attr:publicationID" json:"publication_id"`
-	UserID        string `dynamorm:"attr:userID" json:"user_id"`
-	Role          string `dynamorm:"attr:role" json:"role"` // owner, editor, writer, contributor
+	PublicationID string `theorydb:"attr:publicationID" json:"publication_id"`
+	UserID        string `theorydb:"attr:userID" json:"user_id"`
+	Role          string `theorydb:"attr:role" json:"role"` // owner, editor, writer, contributor
 
 	// Display
-	DisplayName string `dynamorm:"attr:displayName" json:"display_name,omitempty"` // Override user's name
-	Bio         string `dynamorm:"attr:bio" json:"bio,omitempty"`                  // Publication-specific bio
+	DisplayName string `theorydb:"attr:displayName" json:"display_name,omitempty"` // Override user's name
+	Bio         string `theorydb:"attr:bio" json:"bio,omitempty"`                  // Publication-specific bio
 
 	// Timestamps
-	JoinedAt  time.Time `dynamorm:"attr:joinedAt" json:"joined_at"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	JoinedAt  time.Time `theorydb:"attr:joinedAt" json:"joined_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TableName returns the DynamoDB table backing PublicationMember.

@@ -3,22 +3,24 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
 
 // TimeseriesProcessor handles time series data for federation metrics
@@ -37,29 +39,42 @@ func NewTimeseriesProcessor(db dynamormCore.DB, tableName string, logger *zap.Lo
 	}
 }
 
-// HandleStream implements the DynamoDBStreamHandler interface for Lift framework
-func (tp *TimeseriesProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	requestID := ctx.GetRequestID()
+func (tp *TimeseriesProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if tp == nil {
+		return fmt.Errorf("timeseries processor is nil")
+	}
+	if tp.logger == nil {
+		tp.logger = zap.NewNop()
+	}
 
-	tp.logger.Info("processing federation timeseries stream event",
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 
-	// Group records by time window for aggregation
-	windows := tp.groupByTimeWindow(event.Records)
+	if !tp.isFederationRecord(record) {
+		return nil
+	}
 
-	// Process each time window
-	for window, records := range windows {
-		if err := tp.processWindow(ctx, window, records); err != nil {
-			tp.logger.Error("failed to process time window",
-				zap.String("request_id", requestID),
-				zap.Time("window", window),
-				zap.Int("record_count", len(records)),
-				zap.Error(err),
-			)
-			// Continue processing other windows
-		}
+	timestamp := tp.extractTimestamp(record)
+	if timestamp.IsZero() {
+		return nil
+	}
+
+	windowSize := 5 * time.Minute
+	window := timestamp.Truncate(windowSize)
+
+	if err := tp.processWindow(runCtx, requestID, window, []events.DynamoDBEventRecord{record}); err != nil {
+		tp.logger.Error("failed to process time window",
+			zap.String("request_id", requestID),
+			zap.Time("window", window),
+			zap.Int("record_count", 1),
+			zap.Error(err),
+		)
+		// Match previous Lift behavior: log and continue; do not fail the batch.
+		return nil
 	}
 
 	return nil
@@ -95,7 +110,7 @@ func (tp *TimeseriesProcessor) isFederationRecord(record events.DynamoDBEventRec
 
 	// Check if this is a federation-related record
 	var item struct {
-		PK   string `dynamorm:"pk"`
+		PK   string `theorydb:"pk"`
 		Type string `json:"type"`
 	}
 
@@ -139,12 +154,12 @@ func (tp *TimeseriesProcessor) extractTimestamp(record events.DynamoDBEventRecor
 	return time.Time{}
 }
 
-func (tp *TimeseriesProcessor) processWindow(ctx *lift.Context, window time.Time, records []events.DynamoDBEventRecord) error {
+func (tp *TimeseriesProcessor) processWindow(ctx context.Context, requestID string, window time.Time, records []events.DynamoDBEventRecord) error {
 	// Aggregate metrics for this time window
 	metrics := tp.aggregateMetrics(records)
 
 	// Store aggregated metrics using DynamORM batch operations
-	return tp.storeMetrics(ctx, window, metrics)
+	return tp.storeMetrics(ctx, requestID, window, metrics)
 }
 
 // FederationMetrics contains aggregated federation metrics
@@ -218,13 +233,13 @@ func (tp *TimeseriesProcessor) extractInstance(actorID string) string {
 	return ""
 }
 
-func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time, metrics *FederationMetrics) error {
+func (tp *TimeseriesProcessor) storeMetrics(ctx context.Context, requestID string, window time.Time, metrics *FederationMetrics) error {
 	windowStr := window.Format(time.RFC3339)
 
 	// Create timeseries record for federation metrics
 	timeseriesRecord := struct {
-		PK                  string `dynamorm:"pk"`
-		SK                  string `dynamorm:"sk"`
+		PK                  string `theorydb:"pk"`
+		SK                  string `theorydb:"sk"`
 		Type                string `json:"type"`
 		Window              string `json:"window"`
 		FollowCount         int    `json:"follow_count"`
@@ -234,7 +249,7 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time,
 		UniqueActorCount    int    `json:"unique_actor_count"`
 		UniqueInstanceCount int    `json:"unique_instance_count"`
 		CreatedAt           string `json:"created_at"`
-		TTL                 int64  `dynamorm:"ttl"`
+		TTL                 int64  `theorydb:"ttl"`
 	}{
 		PK:                  "TIMESERIES#FEDERATION",
 		SK:                  fmt.Sprintf("WINDOW#%s", windowStr),
@@ -250,21 +265,20 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time,
 		TTL:                 time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
 
-	// Store the aggregated metrics with Lift context
-	if err := tp.db.WithContext(ctx.Context).Model(&timeseriesRecord).Create(); err != nil {
-		return lift.NewLiftError("TIMESERIES_STORE_FAILED", "failed to store timeseries metrics", 500).WithCause(err)
+	if err := tp.db.WithContext(ctx).Model(&timeseriesRecord).Create(); err != nil {
+		return fmt.Errorf("store timeseries metrics: %w", err)
 	}
 
 	// Also store per-instance metrics for detailed analytics
 	for instance := range metrics.UniqueInstances {
 		instanceRecord := struct {
-			PK        string `dynamorm:"pk"`
-			SK        string `dynamorm:"sk"`
+			PK        string `theorydb:"pk"`
+			SK        string `theorydb:"sk"`
 			Type      string `json:"type"`
 			Instance  string `json:"instance"`
 			Window    string `json:"window"`
 			CreatedAt string `json:"created_at"`
-			TTL       int64  `dynamorm:"ttl"`
+			TTL       int64  `theorydb:"ttl"`
 		}{
 			PK:        fmt.Sprintf("TIMESERIES#INSTANCE#%s", instance),
 			SK:        fmt.Sprintf("WINDOW#%s", windowStr),
@@ -275,9 +289,9 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time,
 			TTL:       time.Now().Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 		}
 
-		if err := tp.db.WithContext(ctx.Context).Model(&instanceRecord).Create(); err != nil {
+		if err := tp.db.WithContext(ctx).Model(&instanceRecord).Create(); err != nil {
 			tp.logger.Error("failed to store instance metrics",
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", requestID),
 				zap.String("instance", instance),
 				zap.Error(err),
 			)
@@ -286,7 +300,7 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time,
 	}
 
 	tp.logger.Info("stored federation timeseries metrics",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", requestID),
 		zap.String("window", windowStr),
 		zap.Int("follow_count", metrics.FollowCount),
 		zap.Int("like_count", metrics.LikeCount),
@@ -307,10 +321,10 @@ var (
 )
 
 var (
-	mustInitializeLambdaFn    = common.MustInitializeLambda
-	initializeWithDefaultsFn  = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	dynamormGetClientFn       = dynamorm.GetClient
-	lambdaStartFn             = lambda.Start
+	mustInitializeLambdaFn   = common.MustInitializeLambda
+	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	dynamormGetClientFn      = theorydb.GetClient
+	lambdaStartFn            = lambda.Start
 )
 
 func initializeFederationTimeseries() {
@@ -355,20 +369,23 @@ func init() {
 	initializeFederationTimeseries()
 }
 
-func handleDynamoDBStream(ctx *lift.Context) error {
-	records, err := ctx.DynamoDBRecords()
-	if err != nil {
-		return err
-	}
-	return processor.HandleStream(ctx, events.DynamoDBEvent{Records: records})
+func main() {
+	app := apptheory.New()
+
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
+
+	app.DynamoDB(tableName, handleFederationTimeseriesStreamRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
+	})
 }
 
-func main() {
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
-
-	_ = app.DynamoDB("*", handleDynamoDBStream)
-
-	lambdaStartFn(app.HandleRequest)
+func handleFederationTimeseriesStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if processor == nil {
+		return fmt.Errorf("federation timeseries processor not initialized")
+	}
+	return processor.HandleDynamoDBRecord(ctx, record)
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 

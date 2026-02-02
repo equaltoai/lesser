@@ -44,4 +44,3 @@ func TestRound12MutationResolvers_Federation_StubsAndSeveranceGuards(t *testing.
 	_, err = mut.AttemptReconnection(round12AuthContext("alice"), "sev-1")
 	require.Error(t, err)
 }
-

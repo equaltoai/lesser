@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -9,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pay-theory/dynamorm"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
@@ -75,32 +77,22 @@ func TestOAuthMiddlewareAdapter_ValidateAccessToken_Round12(t *testing.T) {
 }
 
 func TestGraphQLResponseWriter_AndBytesReader_Round12(t *testing.T) {
-	req := lift.NewRequest(nil)
-	req.Method = http.MethodPost
-	req.Path = "/graphql"
-	ctx := lift.NewContext(context.Background(), req)
-
-	w := &graphQLResponseWriter{
-		liftCtx: ctx,
-		header:  make(http.Header),
-	}
-
+	w := newGraphQLResponseWriter()
 	w.Header().Set("X-Test", "1")
 	_, err := w.Write([]byte("body"))
 	require.NoError(t, err)
-	require.Equal(t, "1", ctx.Response.Headers["X-Test"])
-	require.Equal(t, 200, ctx.Response.StatusCode)
-	require.Equal(t, "body", ctx.Response.Body)
+	resp := w.Response()
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, []string{"1"}, resp.Headers["x-test"])
+	require.Equal(t, []byte("body"), resp.Body)
 
-	w2 := &graphQLResponseWriter{
-		liftCtx: ctx,
-		header:  make(http.Header),
-	}
+	w2 := newGraphQLResponseWriter()
 	w2.WriteHeader(201)
 	_, err = w2.Write([]byte("created"))
 	require.NoError(t, err)
-	require.Equal(t, 201, ctx.Response.StatusCode)
-	require.Equal(t, "created", ctx.Response.Body)
+	resp2 := w2.Response()
+	require.Equal(t, 201, resp2.Status)
+	require.Equal(t, []byte("created"), resp2.Body)
 
 	r := &bytesReader{data: []byte("abc")}
 	buf := make([]byte, 2)
@@ -140,28 +132,32 @@ func TestCreateMiddlewares_Round12(t *testing.T) {
 	t.Run("data_loader_sets_loaders", func(t *testing.T) {
 		mw := createDataLoaderMiddleware()
 		called := false
-		next := lift.HandlerFunc(func(ctx *lift.Context) error {
+		next := func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			called = true
 			val := ctx.Get("loaders")
 			_, ok := val.(*graph.Loaders)
 			require.True(t, ok)
-			return nil
-		})
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		require.NoError(t, mw(next).Handle(ctx))
+			return &apptheory.Response{Status: 200}, nil
+		}
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/graphql"},
+		}
+		_, err := mw(next)(ctx)
+		require.NoError(t, err)
 		require.True(t, called)
 	})
 
 	t.Run("cost_tracking_sets_tracker", func(t *testing.T) {
 		mw := createCostTrackingMiddleware()
-		next := lift.HandlerFunc(func(ctx *lift.Context) error {
+		next := func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			require.Same(t, costTracker, ctx.Get("cost_tracker"))
-			return nil
-		})
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.Method = http.MethodGet
-		ctx.Request.Path = "/graphql"
-		require.NoError(t, mw(next).Handle(ctx))
+			return &apptheory.Response{Status: 200}, nil
+		}
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/graphql"},
+		}
+		_, err := mw(next)(ctx)
+		require.NoError(t, err)
 	})
 
 	t.Run("auth_middleware_constructs", func(t *testing.T) {
@@ -281,16 +277,13 @@ func TestCreateCostTrackingMiddleware_CentralizedTrackingBranch_Round12(t *testi
 	require.NoError(t, os.Setenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", "256"))
 
 	mw := createCostTrackingMiddleware()
-	next := lift.HandlerFunc(func(ctx *lift.Context) error {
-		ctx.Request.Method = http.MethodGet
-		ctx.Request.Path = "/ready"
-		return nil
-	})
+	next := func(*apptheory.Context) (*apptheory.Response, error) {
+		return &apptheory.Response{Status: 200}, nil
+	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.Request.Method = http.MethodGet
-	ctx.Request.Path = "/ready"
-	require.NoError(t, mw(next).Handle(ctx))
+	ctx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/ready"}}
+	_, err := mw(next)(ctx)
+	require.NoError(t, err)
 
 	select {
 	case op := <-inv.called:
@@ -314,18 +307,21 @@ func TestHandlePlayground_AndHandleGraphQL_Round12(t *testing.T) {
 	logger = zap.NewNop()
 	cfg = &config.Config{EnablePlayground: false}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.Request.Method = http.MethodGet
-	ctx.Request.Path = "/playground"
-	err := handlePlayground(ctx)
-	require.Error(t, err)
+	resp, err := handlePlayground(&apptheory.Context{
+		Request: apptheory.Request{Method: http.MethodGet, Path: "/playground"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 404, resp.Status)
 
 	cfg.EnablePlayground = true
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.Request.Method = http.MethodGet
-	ctx.Request.Path = "/playground"
-	require.NoError(t, handlePlayground(ctx))
-	require.Contains(t, ctx.Response.Body, "graphiql")
+	resp, err = handlePlayground(&apptheory.Context{
+		Request: apptheory.Request{Method: http.MethodGet, Path: "/playground"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 200, resp.Status)
+	require.NotEmpty(t, resp.Body)
 
 	costTracker = cost.New()
 	fakeClaims := &auth.Claims{Username: "claims-user", Scopes: []string{"read"}}
@@ -344,20 +340,27 @@ func TestHandlePlayground_AndHandleGraphQL_Round12(t *testing.T) {
 		_, _ = w.Write([]byte("graphql-ok"))
 	})
 
-	ctx = lift.NewContext(context.Background(), lift.NewRequest(nil))
-	ctx.Request.Method = http.MethodPost
-	ctx.Request.Path = "/graphql"
-	ctx.Request.Body = []byte(`{"query":"{ me { id } }"}`)
-	ctx.Request.Headers["Authorization"] = "Bearer test"
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: http.MethodPost,
+			Path:   "/graphql",
+			Body:   []byte(`{"query":"{ me { id } }"}`),
+			Headers: map[string][]string{
+				"authorization": {"Bearer test"},
+			},
+		},
+	}
 	ctx.Set("user", "ignored")
 	ctx.Set("username", "ignored-too")
 	ctx.Set("claims", fakeClaims)
 	ctx.Set("cost_tracker", "ct")
 	ctx.Set("loaders", &graph.Loaders{})
-	require.NoError(t, handleGraphQL(ctx))
-	require.Equal(t, "ok", ctx.Response.Headers["X-Graphql"])
-	require.Equal(t, 202, ctx.Response.StatusCode)
-	require.Equal(t, "graphql-ok", ctx.Response.Body)
+	resp, err = handleGraphQL(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 202, resp.Status)
+	require.Equal(t, []string{"ok"}, resp.Headers["x-graphql"])
+	require.Equal(t, []byte("graphql-ok"), resp.Body)
 }
 
 func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
@@ -378,14 +381,19 @@ func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
 			_, _ = w.Write([]byte("ok"))
 		})
 
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.Method = http.MethodGet
-		ctx.Request.Path = "/graphql"
-		ctx.Request.Body = []byte(`{}`)
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/graphql",
+				Body:   []byte(`{}`),
+			},
+		}
 		ctx.Set("claims", "not-claims")
 		ctx.Set("loaders", "bad-loaders")
-		require.NoError(t, handleGraphQL(ctx))
-		require.Equal(t, 200, ctx.Response.StatusCode)
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
 	})
 
 	t.Run("claims_empty_username", func(t *testing.T) {
@@ -399,12 +407,12 @@ func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
 			_, _ = w.Write([]byte("ok"))
 		})
 
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.Method = http.MethodGet
-		ctx.Request.Path = "/graphql"
-		ctx.Request.Body = []byte(`{}`)
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/graphql", Body: []byte(`{}`)},
+		}
 		ctx.Set("claims", &auth.Claims{})
-		require.NoError(t, handleGraphQL(ctx))
+		_, err := handleGraphQL(ctx)
+		require.NoError(t, err)
 	})
 
 	t.Run("no_claims_no_loaders", func(t *testing.T) {
@@ -413,11 +421,11 @@ func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
 			_, _ = w.Write([]byte("ok"))
 		})
 
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-		ctx.Request.Method = http.MethodGet
-		ctx.Request.Path = "/graphql"
-		ctx.Request.Body = []byte(`{}`)
-		require.NoError(t, handleGraphQL(ctx))
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/graphql", Body: []byte(`{}`)},
+		}
+		_, err := handleGraphQL(ctx)
+		require.NoError(t, err)
 	})
 }
 
@@ -513,7 +521,7 @@ func TestInitializeManualServices_Round12(t *testing.T) {
 	}
 
 	var gotTable string
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(_ dynamormCore.DB, tableName string, _ *zap.Logger) (storagecore.RepositoryStorage, error) {
 		gotTable = tableName
 		return &testingmocks.MockRepositoryStorage{}, nil
@@ -550,7 +558,7 @@ func TestInitializeManualServices_UsesConfiguredTableName_Round12(t *testing.T) 
 	}
 
 	var gotTable string
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 	newRepositoryFactoryFn = func(_ dynamormCore.DB, tableName string, _ *zap.Logger) (storagecore.RepositoryStorage, error) {
 		gotTable = tableName
 		return &testingmocks.MockRepositoryStorage{}, nil
@@ -601,7 +609,7 @@ func TestResolveStreamQueue_UsesLambdaContextDynamoDB_Round12(t *testing.T) {
 	logger = zap.NewNop()
 	cfg = &config.Config{Region: "us-east-1", DynamoTableName: "tbl"}
 	repos = nil
-	lambdaCtx = &common.LambdaContext{DynamoDB: &dynamorm.LambdaDB{}}
+	lambdaCtx = &common.LambdaContext{DynamoDB: &tabletheory.LambdaDB{}}
 	require.NotNil(t, resolveStreamQueue())
 }
 
@@ -621,7 +629,7 @@ func TestResolveStreamQueue_UsesReposGetDB_Round12(t *testing.T) {
 	cfg = &config.Config{Region: "us-east-1", DynamoTableName: "tbl"}
 
 	mockStorage := &testingmocks.MockRepositoryStorage{}
-	mockStorage.On("GetDB").Return(&dynamorm.LambdaDB{})
+	mockStorage.On("GetDB").Return(&tabletheory.LambdaDB{})
 	repos = mockStorage
 	lambdaCtx = &common.LambdaContext{}
 
@@ -647,7 +655,7 @@ func TestResolveStreamQueue_CreatesClientWhenNoDB_Round12(t *testing.T) {
 	cfg = &config.Config{Region: "us-east-1", DynamoTableName: "tbl"}
 	repos = nil
 	lambdaCtx = &common.LambdaContext{}
-	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &dynamorm.LambdaDB{}, nil }
+	newLambdaOptimizedClientFn = func(context.Context, string) (dynamormCore.DB, error) { return &tabletheory.LambdaDB{}, nil }
 
 	require.NotNil(t, resolveStreamQueue())
 }
@@ -739,75 +747,91 @@ func TestMain_RegistersAndStartsLambda_Round12(t *testing.T) {
 	main()
 	require.NotNil(t, started)
 
-	h, ok := started.(func(context.Context, interface{}) (interface{}, error))
+	h, ok := started.(func(context.Context, json.RawMessage) (any, error))
 	require.True(t, ok)
-	event := map[string]any{
-		"version":  "2.0",
-		"routeKey": "GET /ready",
-		"requestContext": map[string]any{
-			"requestId": "test-request-id",
-			"http": map[string]any{
-				"method": "GET",
-				"path":   "/ready",
+	event := events.APIGatewayV2HTTPRequest{
+		Version:  "2.0",
+		RouteKey: "GET /ready",
+		RawPath:  "/ready",
+		Headers:  map[string]string{"accept": "application/json"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			RequestID: "test-request-id",
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: "GET",
+				Path:   "/ready",
 			},
-			"stage": "$default",
+			Stage: "$default",
 		},
 	}
-	result, err := h(context.Background(), event)
+	raw, err := json.Marshal(event)
 	require.NoError(t, err)
-	resp, ok := result.(*lift.Response)
+	result, err := h(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok := result.(events.APIGatewayV2HTTPResponse)
 	require.True(t, ok)
 	require.Equal(t, 200, resp.StatusCode)
 
-	result, err = h(context.Background(), map[string]any{
-		"version":  "2.0",
-		"routeKey": "GET /health",
-		"requestContext": map[string]any{
-			"requestId": "test-request-id",
-			"http": map[string]any{
-				"method": "GET",
-				"path":   "/health",
+	raw, err = json.Marshal(events.APIGatewayV2HTTPRequest{
+		Version:  "2.0",
+		RouteKey: "GET /health",
+		RawPath:  "/health",
+		Headers:  map[string]string{"accept": "application/json"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			RequestID: "test-request-id",
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: "GET",
+				Path:   "/health",
 			},
-			"stage": "$default",
+			Stage: "$default",
 		},
 	})
 	require.NoError(t, err)
-	resp, ok = result.(*lift.Response)
+	result, err = h(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok = result.(events.APIGatewayV2HTTPResponse)
 	require.True(t, ok)
 	require.Equal(t, 200, resp.StatusCode)
 
-	result, err = h(context.Background(), map[string]any{
-		"version":  "2.0",
-		"routeKey": "OPTIONS /graphql",
-		"requestContext": map[string]any{
-			"requestId": "test-request-id",
-			"http": map[string]any{
-				"method": "OPTIONS",
-				"path":   "/graphql",
+	raw, err = json.Marshal(events.APIGatewayV2HTTPRequest{
+		Version:  "2.0",
+		RouteKey: "OPTIONS /graphql",
+		RawPath:  "/graphql",
+		Headers:  map[string]string{"origin": "https://example.com"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			RequestID: "test-request-id",
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: "OPTIONS",
+				Path:   "/graphql",
 			},
-			"stage": "$default",
+			Stage: "$default",
 		},
 	})
 	require.NoError(t, err)
-	resp, ok = result.(*lift.Response)
+	result, err = h(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok = result.(events.APIGatewayV2HTTPResponse)
 	require.True(t, ok)
 	require.Equal(t, 204, resp.StatusCode)
 
 	graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") })
-	result, err = h(context.Background(), map[string]any{
-		"version":  "2.0",
-		"routeKey": "GET /graphql",
-		"requestContext": map[string]any{
-			"requestId": "test-request-id",
-			"http": map[string]any{
-				"method": "GET",
-				"path":   "/graphql",
+	raw, err = json.Marshal(events.APIGatewayV2HTTPRequest{
+		Version:  "2.0",
+		RouteKey: "GET /graphql",
+		RawPath:  "/graphql",
+		Headers:  map[string]string{"accept": "application/json"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			RequestID: "test-request-id",
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: "GET",
+				Path:   "/graphql",
 			},
-			"stage": "$default",
+			Stage: "$default",
 		},
 	})
 	require.NoError(t, err)
-	resp, ok = result.(*lift.Response)
+	result, err = h(context.Background(), raw)
+	require.NoError(t, err)
+	resp, ok = result.(events.APIGatewayV2HTTPResponse)
 	require.True(t, ok)
 	require.Equal(t, 500, resp.StatusCode)
 

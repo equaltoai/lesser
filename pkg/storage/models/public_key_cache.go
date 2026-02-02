@@ -7,22 +7,22 @@ import (
 
 // PublicKeyCache represents a cached public key for ActivityPub signature verification
 type PublicKeyCache struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Fields
-	ActorURL     string    `dynamorm:"attr:actorURL" json:"actor_url"`          // URL of the actor
-	KeyID        string    `dynamorm:"attr:keyID" json:"key_id"`                // Public key ID
-	PublicKeyPEM string    `dynamorm:"attr:publicKeyPEM" json:"public_key_pem"` // PEM-encoded public key
-	Algorithm    string    `dynamorm:"attr:algorithm" json:"algorithm"`         // Signature algorithm (rsa-sha256, etc.)
-	FetchedAt    time.Time `dynamorm:"attr:fetchedAt" json:"fetched_at"`        // When the key was fetched
-	LastUsed     time.Time `dynamorm:"attr:lastUsed" json:"last_used"`          // Last time this key was used
-	SuccessCount int       `dynamorm:"attr:successCount" json:"success_count"`  // Number of successful verifications
-	FailureCount int       `dynamorm:"attr:failureCount" json:"failure_count"`  // Number of failed verifications
-	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`       // Unix timestamp for DynamoDB TTL
+	ActorURL     string    `theorydb:"attr:actorURL" json:"actor_url"`          // URL of the actor
+	KeyID        string    `theorydb:"attr:keyID" json:"key_id"`                // Public key ID
+	PublicKeyPEM string    `theorydb:"attr:publicKeyPEM" json:"public_key_pem"` // PEM-encoded public key
+	Algorithm    string    `theorydb:"attr:algorithm" json:"algorithm"`         // Signature algorithm (rsa-sha256, etc.)
+	FetchedAt    time.Time `theorydb:"attr:fetchedAt" json:"fetched_at"`        // When the key was fetched
+	LastUsed     time.Time `theorydb:"attr:lastUsed" json:"last_used"`          // Last time this key was used
+	SuccessCount int       `theorydb:"attr:successCount" json:"success_count"`  // Number of successful verifications
+	FailureCount int       `theorydb:"attr:failureCount" json:"failure_count"`  // Number of failed verifications
+	TTL          int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`       // Unix timestamp for DynamoDB TTL
 }
 
 // NewPublicKeyCache creates a new public key cache entry

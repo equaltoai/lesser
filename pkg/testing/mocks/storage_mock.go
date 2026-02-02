@@ -12,9 +12,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -4175,7 +4175,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	statusRepo := repositories.NewStatusRepository(nil, "test-table", logger, nil)
 	costRepo := repositories.NewTrackingRepository(nil, "test-table", logger, nil)
 	trustRepo := repositories.NewTrustRepository(nil, "test-table", logger, nil)
-	searchRepo := repositories.NewSearchRepository(&dynamorm.DB{}, "test-table", logger, nil)
+	searchRepo := repositories.NewSearchRepository(&tabletheory.DB{}, "test-table", logger, nil)
 	relayRepo := repositories.NewRelayRepository(nil, "test-table", logger, nil)
 	markerRepo := repositories.NewMarkerRepository(nil, "test-table", logger, nil)
 	featuredTagRepo := repositories.NewFeaturedTagRepository(nil, "test-table", logger, nil)
@@ -4219,7 +4219,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		trustRepo:            trustRepo,
 		searchRepo:           searchRepo,
 		relayRepo:            relayRepo,
-		communityNoteRepo:    repositories.NewCommunityNoteRepository(&dynamorm.DB{}, "test-table", logger, nil),
+		communityNoteRepo:    repositories.NewCommunityNoteRepository(&tabletheory.DB{}, "test-table", logger, nil),
 		emojiRepo:            emojiRepo,
 		rateLimitRepo:        rateLimitRepo,
 		markerRepo:           markerRepo,

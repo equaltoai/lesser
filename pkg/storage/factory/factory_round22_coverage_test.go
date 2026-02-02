@@ -10,11 +10,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	pkgtypes "github.com/pay-theory/dynamorm/pkg/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
+	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -50,7 +50,7 @@ func (db *extendedMockDB) TransactWrite(_ context.Context, fn func(core.Transact
 }
 
 func TestRegisterStorageConverters_NonExtendedDB_Round22(t *testing.T) {
-	require.Error(t, registerStorageConverters(new(mocks.MockDB)))
+	require.NoError(t, registerStorageConverters(new(mocks.MockDB)))
 }
 
 func TestNewRepositoryFactory_Success_Round22(t *testing.T) {

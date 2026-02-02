@@ -163,8 +163,8 @@ func TestInboxHandler_Round10_FlagAndBlock_MoreErrorBranches(t *testing.T) {
 				ID:      env.cfg.BaseURL() + "/activities/flag-store-error",
 				Summary: "spam",
 			},
-			Actor:      env.remoteActorID,
-			Object:     env.cfg.BaseURL() + "/objects/1",
+			Actor:  env.remoteActorID,
+			Object: env.cfg.BaseURL() + "/objects/1",
 		}
 		require.Error(t, env.handler.processFlagActivity(context.Background(), activity, env.local))
 	})
@@ -232,8 +232,8 @@ func TestInboxHandler_Round10_ValidateActivity_ErrorBranches(t *testing.T) {
 
 	validActor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
-			ID:    env.local.ID,
-			Type:  activitypub.PersonType,
+			ID:   env.local.ID,
+			Type: activitypub.PersonType,
 		},
 		PreferredUsername: env.local.PreferredUsername,
 		Inbox:             env.local.Inbox,

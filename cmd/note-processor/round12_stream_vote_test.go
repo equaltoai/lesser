@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestNoteProcessor_HandleStream_RecalculatesOnVoteInsert(t *testing.T) {
+func TestNoteProcessor_ProcessRecord_RecalculatesOnVoteInsert(t *testing.T) {
 	noteRepo := testingmocks.NewMockCommunityNoteRepository()
 	noteRepo.On("GetCommunityNote", mock.Anything, "n1").Return(&storage.CommunityNote{ID: "n1", Score: 0.2}, nil)
 	noteRepo.On("GetCommunityNoteVotes", mock.Anything, "n1").Return([]*storage.CommunityNoteVote{
@@ -26,21 +26,17 @@ func TestNoteProcessor_HandleStream_RecalculatesOnVoteInsert(t *testing.T) {
 		communityNoteRepo: noteRepo,
 	}
 
-	event := events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{
-				EventName: "INSERT",
-				Change: events.DynamoDBStreamRecord{
-					NewImage: map[string]events.DynamoDBAttributeValue{
-						"PK": events.NewStringAttribute("NOTE#n1"),
-						"SK": events.NewStringAttribute("VOTE#v1"),
-					},
-				},
+	record := events.DynamoDBEventRecord{
+		EventName: "INSERT",
+		EventID:   "evt-1",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("NOTE#n1"),
+				"SK": events.NewStringAttribute("VOTE#v1"),
 			},
 		},
 	}
 
-	require.NoError(t, np.HandleStream(context.Background(), event))
+	require.NoError(t, np.processRecord(context.Background(), "req", record))
 	noteRepo.AssertExpectations(t)
 }
-

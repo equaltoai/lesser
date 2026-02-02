@@ -7,25 +7,25 @@ import (
 
 // Vouch represents a reputation vouch between actors
 type Vouch struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys
-	PK string `dynamorm:"pk,attr:PK"`
-	SK string `dynamorm:"sk,attr:SK"`
+	PK string `theorydb:"pk,attr:PK"`
+	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI1 for vouches given by an actor
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
 
 	// GSI2 for vouches received by an actor
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
 
 	// Data fields
-	VouchData string    `dynamorm:"attr:vouchData" json:"vouch_data"` // JSON encoded vouch
-	Active    bool      `dynamorm:"attr:active" json:"active"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	ExpiresAt int64     `dynamorm:"ttl,attr:ttl" json:"ttl"` // Unix timestamp for TTL
+	VouchData string    `theorydb:"attr:vouchData" json:"vouch_data"` // JSON encoded vouch
+	Active    bool      `theorydb:"attr:active" json:"active"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	ExpiresAt int64     `theorydb:"ttl,attr:ttl" json:"ttl"` // Unix timestamp for TTL
 }
 
 // UpdateKeys sets all the DynamoDB keys based on the vouch data

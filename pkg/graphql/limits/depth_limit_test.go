@@ -100,4 +100,3 @@ func mustParseDoc(t *testing.T, query string) *ast.QueryDocument {
 	require.NoError(t, err)
 	return doc
 }
-

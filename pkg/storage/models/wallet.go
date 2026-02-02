@@ -8,26 +8,26 @@ import (
 
 // WalletChallenge represents a challenge for wallet authentication
 type WalletChallenge struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"-"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
 
 	// Business fields matching storage.WalletChallenge
-	ID        string    `dynamorm:"attr:id" json:"id"`
-	Username  string    `dynamorm:"attr:username" json:"username,omitempty"`
-	Address   string    `dynamorm:"attr:address" json:"address"`
-	ChainID   int       `dynamorm:"attr:chainID" json:"chain_id"`
-	Nonce     string    `dynamorm:"attr:nonce" json:"nonce"`
-	Message   string    `dynamorm:"attr:message" json:"message"`
-	IssuedAt  time.Time `dynamorm:"attr:issuedAt" json:"issued_at"`
-	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at"`
-	Used      bool      `dynamorm:"attr:used" json:"used"`   // Set after first verification (wallet/verify)
-	Spent     bool      `dynamorm:"attr:spent" json:"spent"` // Set after second verification (wallet/link)
+	ID        string    `theorydb:"attr:id" json:"id"`
+	Username  string    `theorydb:"attr:username" json:"username,omitempty"`
+	Address   string    `theorydb:"attr:address" json:"address"`
+	ChainID   int       `theorydb:"attr:chainID" json:"chain_id"`
+	Nonce     string    `theorydb:"attr:nonce" json:"nonce"`
+	Message   string    `theorydb:"attr:message" json:"message"`
+	IssuedAt  time.Time `theorydb:"attr:issuedAt" json:"issued_at"`
+	ExpiresAt time.Time `theorydb:"attr:expiresAt" json:"expires_at"`
+	Used      bool      `theorydb:"attr:used" json:"used"`   // Set after first verification (wallet/verify)
+	Spent     bool      `theorydb:"attr:spent" json:"spent"` // Set after second verification (wallet/link)
 }
 
 // TableName returns the DynamoDB table name
@@ -67,20 +67,20 @@ func (w *WalletChallenge) UpdateKeys() error {
 
 // WalletCredential represents a linked wallet
 type WalletCredential struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys - Primary key is user's credentials
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Business fields matching storage.WalletCredential
-	Username string    `dynamorm:"attr:username" json:"username"`
-	Address  string    `dynamorm:"attr:address" json:"address"`
-	ChainID  int       `dynamorm:"attr:chainID" json:"chain_id"`
-	Type     string    `dynamorm:"attr:type" json:"type"` // ethereum, solana, etc.
-	ENS      string    `dynamorm:"attr:ens" json:"ens,omitempty"`
-	LinkedAt time.Time `dynamorm:"attr:linkedAt" json:"linked_at"`
-	LastUsed time.Time `dynamorm:"attr:lastUsed" json:"last_used"`
+	Username string    `theorydb:"attr:username" json:"username"`
+	Address  string    `theorydb:"attr:address" json:"address"`
+	ChainID  int       `theorydb:"attr:chainID" json:"chain_id"`
+	Type     string    `theorydb:"attr:type" json:"type"` // ethereum, solana, etc.
+	ENS      string    `theorydb:"attr:ens" json:"ens,omitempty"`
+	LinkedAt time.Time `theorydb:"attr:linkedAt" json:"linked_at"`
+	LastUsed time.Time `theorydb:"attr:lastUsed" json:"last_used"`
 }
 
 // TableName returns the DynamoDB table name
@@ -131,16 +131,16 @@ func (w *WalletCredential) UpdateKeys() error {
 
 // WalletIndex represents a reverse index for wallet->user lookup
 type WalletIndex struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"`
-	SK string `dynamorm:"sk,attr:SK" json:"-"`
+	PK string `theorydb:"pk,attr:PK" json:"-"`
+	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// Business fields
-	Username   string `dynamorm:"attr:username" json:"username"`
-	WalletType string `dynamorm:"attr:walletType" json:"wallet_type"` // Need to store these for BeforeCreate
-	Address    string `dynamorm:"attr:address" json:"address"`
+	Username   string `theorydb:"attr:username" json:"username"`
+	WalletType string `theorydb:"attr:walletType" json:"wallet_type"` // Need to store these for BeforeCreate
+	Address    string `theorydb:"attr:address" json:"address"`
 }
 
 // GetPK returns the partition key

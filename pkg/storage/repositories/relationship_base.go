@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -54,15 +54,15 @@ func NewRelationshipBase(db core.DB, tableName string, logger *zap.Logger, relTy
 
 // RelationshipModel represents a generic relationship
 type RelationshipModel struct {
-	PK        string    `dynamorm:"PK,pk"`
-	SK        string    `dynamorm:"SK,sk"`
-	GSI1PK    string    `dynamorm:"GSI1PK,gsi1pk"`
-	GSI1SK    string    `dynamorm:"GSI1SK,gsi1sk"`
-	Actor     string    `dynamorm:"Actor"`
-	Object    string    `dynamorm:"Object"`
-	Type      string    `dynamorm:"Type"`
-	CreatedAt time.Time `dynamorm:"CreatedAt"`
-	ID        string    `dynamorm:"ID"`
+	PK        string    `theorydb:"PK,pk"`
+	SK        string    `theorydb:"SK,sk"`
+	GSI1PK    string    `theorydb:"GSI1PK,gsi1pk"`
+	GSI1SK    string    `theorydb:"GSI1SK,gsi1sk"`
+	Actor     string    `theorydb:"Actor"`
+	Object    string    `theorydb:"Object"`
+	Type      string    `theorydb:"Type"`
+	CreatedAt time.Time `theorydb:"CreatedAt"`
+	ID        string    `theorydb:"ID"`
 }
 
 // CreateRelationship creates a new relationship with idempotency

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -415,7 +415,6 @@ func TestNewTrackingDB(t *testing.T) {
 	assert.Equal(t, tracker, trackingDB.tracker)
 	assert.Equal(t, logger, trackingDB.logger)
 }
-
 
 func TestTrackQuery(t *testing.T) {
 	logger := zap.NewNop()

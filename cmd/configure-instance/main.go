@@ -17,9 +17,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -69,7 +69,7 @@ type appContext struct {
 
 var (
 	mustInitializeLambdaFn = common.MustInitializeLambda
-	getDynamormClientFn    = dynamorm.GetClient
+	getDynamormClientFn    = theorydb.GetClient
 	newRepositoryFactoryFn = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (repositoriesProvider, error) {
 		repos, err := factory.NewRepositoryFactory(db, tableName, logger)
 		if err != nil {

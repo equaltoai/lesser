@@ -12,10 +12,10 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
-	dynamostream "github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	dynamostream "github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -431,8 +431,6 @@ func (s *RealtimeAggregationService) unmarshalDynamoDBRecord(record events.Dynam
 	// Prefer the shared stream unmarshaling logic so types and struct tags match production models.
 	return dynamostream.UnmarshalItem(record, target)
 }
-
-
 
 // updateSummaryCache updates the in-memory cost summary cache
 func (s *RealtimeAggregationService) updateSummaryCache(cacheKey string, costDollars float64, operationType string) {

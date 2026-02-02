@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -12,11 +13,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormmocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -217,7 +218,6 @@ func TestSearchIndexer_createSearchIndex_AndAdditionalIndexes_Round12(t *testing
 		logger:    zap.NewNop(),
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	content := &IndexableContent{
 		ID:        "c1",
 		Type:      "Note",
@@ -228,7 +228,7 @@ func TestSearchIndexer_createSearchIndex_AndAdditionalIndexes_Round12(t *testing
 		CreatedAt: time.Now(),
 	}
 
-	require.NoError(t, si.createSearchIndex(ctx, content))
+	require.NoError(t, si.createSearchIndex(context.Background(), content))
 }
 
 func TestSearchIndexer_createAdditionalIndexes_TagCreateError_Round12(t *testing.T) {
@@ -244,7 +244,6 @@ func TestSearchIndexer_createAdditionalIndexes_TagCreateError_Round12(t *testing
 		logger:    zap.NewNop(),
 	}
 
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(nil))
 	content := &IndexableContent{
 		ID:        "c1",
 		Type:      "Note",
@@ -255,10 +254,10 @@ func TestSearchIndexer_createAdditionalIndexes_TagCreateError_Round12(t *testing
 		CreatedAt: time.Now(),
 	}
 
-	require.NoError(t, si.createAdditionalIndexes(ctx, content))
+	require.NoError(t, si.createAdditionalIndexes(context.Background(), content))
 }
 
-func TestSearchIndexer_HandleStream_PartialFailure_Round12(t *testing.T) {
+func TestSearchIndexer_HandleDynamoDBRecord_ErrorAndSuccess_Round12(t *testing.T) {
 	origUnmarshal := unmarshalItemFn
 	origAsync := runAsyncFn
 	t.Cleanup(func() {
@@ -298,17 +297,21 @@ func TestSearchIndexer_HandleStream_PartialFailure_Round12(t *testing.T) {
 		unifiedTracker: tracker,
 	}
 
-	liftCtx := lift.NewContext(context.Background(), lift.NewRequest(nil))
-	liftCtx.SetRequestID("req")
+	ctx := &apptheory.EventContext{RequestID: "req"}
 
-	err := si.HandleStream(liftCtx, events.DynamoDBEvent{
-		Records: []events.DynamoDBEventRecord{
-			{EventID: "1", EventName: "INSERT", Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#1")}}},
-			{EventID: "2", EventName: "INSERT", Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#2")}}},
-		},
+	err := si.HandleDynamoDBRecord(ctx, events.DynamoDBEventRecord{
+		EventID:   "1",
+		EventName: "INSERT",
+		Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#1")}},
 	})
 	require.Error(t, err)
-	require.True(t, pkgErrors.HasCode(err, pkgErrors.CodeSQSProcessingFailed))
+	require.True(t, pkgErrors.HasCode(err, pkgErrors.CodeInternal))
+
+	require.NoError(t, si.HandleDynamoDBRecord(ctx, events.DynamoDBEventRecord{
+		EventID:   "2",
+		EventName: "INSERT",
+		Change:    events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{"PK": events.NewStringAttribute("OBJECT#2")}},
+	}))
 	require.GreaterOrEqual(t, costRepo.calls, 2)
 	require.GreaterOrEqual(t, tracker.calls, 2)
 }
@@ -323,12 +326,26 @@ func TestSearchIndexer_calculateIndexingCost_Round12(t *testing.T) {
 func TestRunSearchIndexer_Round12(t *testing.T) {
 	origStart := lambdaStartFn
 	origAsync := runAsyncFn
+	origUnmarshal := unmarshalItemFn
 	t.Cleanup(func() {
 		lambdaStartFn = origStart
 		runAsyncFn = origAsync
+		unmarshalItemFn = origUnmarshal
 	})
 
 	runAsyncFn = func(fn func()) { fn() }
+	unmarshalItemFn = func(record events.DynamoDBEventRecord, out any) error {
+		setField(out, "PK", "OBJECT#"+record.EventID)
+		setField(out, "SK", "METADATA")
+		setField(out, "Type", "Note")
+		setField(out, "Content", "hello")
+		setField(out, "Summary", "")
+		setField(out, "Name", "")
+		setField(out, "ActorID", "")
+		setField(out, "Tags", []string{})
+		setField(out, "CreatedAt", "2024-01-01T00:00:00Z")
+		return nil
+	}
 
 	mockDB := new(dynamormmocks.MockDB)
 	mockQuery := new(dynamormmocks.MockQuery)
@@ -347,29 +364,33 @@ func TestRunSearchIndexer_Round12(t *testing.T) {
 	called := false
 	lambdaStartFn = func(handler any) {
 		called = true
-		fn, ok := handler.(func(context.Context, any) (any, error))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
 
-		event := map[string]any{
-			"Records": []any{
-				map[string]any{
-					"eventID":     "1",
-					"eventName":   "INSERT",
-					"eventSource": "aws:dynamodb",
-					"dynamodb": map[string]any{
-						"NewImage": map[string]any{
-							"PK":      map[string]any{"S": "OBJECT#1"},
-							"type":    map[string]any{"S": "Note"},
-							"content": map[string]any{"S": "hello"},
-						},
-					},
-				},
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "1",
+				EventName:      "INSERT",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/lesser-dev-main-table/stream/2024-01-01T00:00:00.000",
+				Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+					"PK": events.NewStringAttribute("OBJECT#1"),
+				}},
 			},
-		}
-
-		_, err := fn(context.Background(), event)
+		}}
+		raw, err := json.Marshal(event)
 		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Empty(t, resp.BatchItemFailures)
 	}
+
+	t.Setenv("APP_NAME", "lesser")
+	t.Setenv("STAGE", "dev")
+	t.Setenv("ENVIRONMENT", "dev")
 
 	main()
 	require.True(t, called)

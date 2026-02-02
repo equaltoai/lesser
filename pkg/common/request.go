@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 const (
@@ -66,56 +66,43 @@ func ReadRequestBodyString(body io.Reader, maxSize int64) (string, error) {
 //	  // Fallback logic for test environments
 //	  ...
 //	}
-func ParseRequestWithFallback(ctx *lift.Context, target interface{}) error {
-	// First try the standard ParseRequest when Lift's underlying request adapter is available.
-	// Some test helpers construct partial contexts where ctx.Request.Request is nil.
-	if ctx != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		if err := ctx.ParseRequest(target); err == nil {
-			return nil
-		}
+func ParseRequestWithFallback(ctx *apptheory.Context, target interface{}) error {
+	if ctx == nil {
+		return fmt.Errorf("failed to parse request body")
 	}
-
-	// Fallback for test environments - try parsing from ctx.Request.Body
-	if ctx != nil && ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-		if err := json.Unmarshal(ctx.Request.Body, target); err == nil {
-			return nil
-		}
+	if len(ctx.Request.Body) == 0 {
+		return fmt.Errorf("failed to parse request body")
 	}
-
-	// Alternative fallback - try parsing from ctx.Request.Request.Body if available
-	if ctx != nil && ctx.Request != nil && ctx.Request.Request != nil && ctx.Request.Request.Body != nil {
-		if err := json.Unmarshal(ctx.Request.Request.Body, target); err == nil {
-			return nil
-		}
+	if err := json.Unmarshal(ctx.Request.Body, target); err != nil {
+		return fmt.Errorf("failed to parse request body")
 	}
-
-	return fmt.Errorf("failed to parse request body")
+	return nil
 }
 
 // ParseRequestWithValidation combines parsing with common validation responses
-func ParseRequestWithValidation(ctx *lift.Context, target interface{}) error {
+func ParseRequestWithValidation(ctx *apptheory.Context, target interface{}) (*apptheory.Response, error) {
 	if err := ParseRequestWithFallback(ctx, target); err != nil {
 		return RespondValidationError(ctx, err)
 	}
-	return nil
+	return nil, nil
 }
 
 // ParseRequestWithCustomError allows custom error handling
-func ParseRequestWithCustomError(ctx *lift.Context, target interface{}, errorMessage string) error {
+func ParseRequestWithCustomError(ctx *apptheory.Context, target interface{}, errorMessage string) (*apptheory.Response, error) {
 	if err := ParseRequestWithFallback(ctx, target); err != nil {
 		return RespondBadRequest(ctx, errorMessage)
 	}
-	return nil
+	return nil, nil
 }
 
 // Common request parsing patterns found in the codebase
 
 // ParseRequestBodyWithValidation parses request body with validation error response
-func ParseRequestBodyWithValidation(ctx *lift.Context, target interface{}, fieldName string) error {
+func ParseRequestBodyWithValidation(ctx *apptheory.Context, target interface{}, fieldName string) (*apptheory.Response, error) {
 	if err := ParseRequestWithFallback(ctx, target); err != nil {
 		return RespondMissingParameter(ctx, fieldName)
 	}
-	return nil
+	return nil, nil
 }
 
 // Specialized parsing functions for common request types
@@ -148,26 +135,9 @@ type FilterParams struct {
 // Helper functions for the common fallback patterns
 
 // ParseRequestWithComplexFallback handles the complex fallback pattern found in quotes.go and other files
-func ParseRequestWithComplexFallback(ctx *lift.Context, target interface{}) error {
-	// First attempt: standard parsing
-	if ctx != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		if err := ctx.ParseRequest(target); err == nil {
-			return nil
-		}
+func ParseRequestWithComplexFallback(ctx *apptheory.Context, target interface{}) error {
+	if err := ParseRequestWithFallback(ctx, target); err != nil {
+		return fmt.Errorf("failed to parse request with complex fallback")
 	}
-
-	// Second attempt: fallback with ValidateSliceNotEmpty pattern
-	if ctx != nil && ctx.Request != nil {
-		bodyBytes := ctx.Request.Body
-		if err := ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil &&
-			ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-
-		if err := ParseRequestBody(bodyBytes, target); err == nil {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("failed to parse request with complex fallback")
+	return nil
 }

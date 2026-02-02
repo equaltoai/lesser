@@ -176,7 +176,6 @@ func (m *MockObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, o
 	return args.Error(0)
 }
 
-
 // ===== Update History Operations =====
 
 // CreateUpdateHistory mocks the CreateUpdateHistory method

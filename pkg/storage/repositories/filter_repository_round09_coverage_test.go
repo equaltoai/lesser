@@ -15,10 +15,10 @@ import (
 
 type failingCreatable struct{}
 
-func (failingCreatable) GetID() string            { return "" }
-func (failingCreatable) SetID(string)             {}
-func (failingCreatable) SetCreatedAt(time.Time)   {}
-func (failingCreatable) UpdateKeys() error        { return errors.New("keys") }
+func (failingCreatable) GetID() string          { return "" }
+func (failingCreatable) SetID(string)           {}
+func (failingCreatable) SetCreatedAt(time.Time) {}
+func (failingCreatable) UpdateKeys() error      { return errors.New("keys") }
 
 func TestFilterRepository_CreateUpdateGetDeleteAndMatching(t *testing.T) {
 	mockDB, mockQuery := newMockDBQuery()

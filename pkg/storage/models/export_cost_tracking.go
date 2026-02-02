@@ -9,64 +9,64 @@ import (
 
 // ExportCostTracking represents cost tracking for export operations
 type ExportCostTracking struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - export cost tracking uses EXPORT_COST#{export_id}#{timestamp} pattern
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for user queries - USER#{username}, COST#{timestamp}
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
 	// GSI2 for date range queries - EXPORT_COSTS#{date}, TS#{timestamp}
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
 
 	// Export metadata
-	ExportID     string `dynamorm:"attr:exportID" json:"export_id"`
-	Username     string `dynamorm:"attr:username" json:"username"`
-	Type         string `dynamorm:"attr:type" json:"type"`     // archive, followers, following, etc.
-	Format       string `dynamorm:"attr:format" json:"format"` // activitypub, mastodon, csv
-	IncludeMedia bool   `dynamorm:"attr:includeMedia" json:"include_media"`
+	ExportID     string `theorydb:"attr:exportID" json:"export_id"`
+	Username     string `theorydb:"attr:username" json:"username"`
+	Type         string `theorydb:"attr:type" json:"type"`     // archive, followers, following, etc.
+	Format       string `theorydb:"attr:format" json:"format"` // activitypub, mastodon, csv
+	IncludeMedia bool   `theorydb:"attr:includeMedia" json:"include_media"`
 
 	// Cost breakdown (all in microcents)
-	LambdaExecutionCost int64 `dynamorm:"attr:lambdaExecutionCost" json:"lambda_execution_cost"` // Lambda compute cost
-	LambdaDurationMs    int64 `dynamorm:"attr:lambdaDurationMs" json:"lambda_duration_ms"`       // Lambda execution time
+	LambdaExecutionCost int64 `theorydb:"attr:lambdaExecutionCost" json:"lambda_execution_cost"` // Lambda compute cost
+	LambdaDurationMs    int64 `theorydb:"attr:lambdaDurationMs" json:"lambda_duration_ms"`       // Lambda execution time
 
-	S3StorageCost      int64 `dynamorm:"attr:s3StorageCost" json:"s3_storage_cost"`            // S3 storage for export file
-	S3PutRequestCost   int64 `dynamorm:"attr:s3PutRequestCost" json:"s3_put_request_cost"`     // S3 PUT operations
-	S3GetRequestCost   int64 `dynamorm:"attr:s3GetRequestCost" json:"s3_get_request_cost"`     // S3 GET operations for media
-	S3DataTransferCost int64 `dynamorm:"attr:s3DataTransferCost" json:"s3_data_transfer_cost"` // Data transfer costs
+	S3StorageCost      int64 `theorydb:"attr:s3StorageCost" json:"s3_storage_cost"`            // S3 storage for export file
+	S3PutRequestCost   int64 `theorydb:"attr:s3PutRequestCost" json:"s3_put_request_cost"`     // S3 PUT operations
+	S3GetRequestCost   int64 `theorydb:"attr:s3GetRequestCost" json:"s3_get_request_cost"`     // S3 GET operations for media
+	S3DataTransferCost int64 `theorydb:"attr:s3DataTransferCost" json:"s3_data_transfer_cost"` // Data transfer costs
 
-	DynamoDBReadCost   int64   `dynamorm:"attr:dynamoDBReadCost" json:"dynamodb_read_cost"`    // DynamoDB read operations
-	DynamoDBReadUnits  float64 `dynamorm:"attr:dynamoDBReadUnits" json:"dynamodb_read_units"`  // Read capacity consumed
-	DynamoDBOperations int64   `dynamorm:"attr:dynamoDBOperations" json:"dynamodb_operations"` // Number of DB operations
+	DynamoDBReadCost   int64   `theorydb:"attr:dynamoDBReadCost" json:"dynamodb_read_cost"`    // DynamoDB read operations
+	DynamoDBReadUnits  float64 `theorydb:"attr:dynamoDBReadUnits" json:"dynamodb_read_units"`  // Read capacity consumed
+	DynamoDBOperations int64   `theorydb:"attr:dynamoDBOperations" json:"dynamodb_operations"` // Number of DB operations
 
-	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost in microcents
+	TotalCostMicroCents int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"` // Total cost in microcents
 
 	// Operation metrics
-	FileSize           int64 `dynamorm:"attr:fileSize" json:"file_size"`                      // Size of exported file in bytes
-	RecordCount        int64 `dynamorm:"attr:recordCount" json:"record_count"`                // Number of records exported
-	MediaFilesIncluded int64 `dynamorm:"attr:mediaFilesIncluded" json:"media_files_included"` // Number of media files included
-	MediaSizeBytes     int64 `dynamorm:"attr:mediaSizeBytes" json:"media_size_bytes"`         // Total size of media files
+	FileSize           int64 `theorydb:"attr:fileSize" json:"file_size"`                      // Size of exported file in bytes
+	RecordCount        int64 `theorydb:"attr:recordCount" json:"record_count"`                // Number of records exported
+	MediaFilesIncluded int64 `theorydb:"attr:mediaFilesIncluded" json:"media_files_included"` // Number of media files included
+	MediaSizeBytes     int64 `theorydb:"attr:mediaSizeBytes" json:"media_size_bytes"`         // Total size of media files
 
-	S3PutRequests     int64 `dynamorm:"attr:s3PutRequests" json:"s3_put_requests"`         // Number of S3 PUT requests
-	S3GetRequests     int64 `dynamorm:"attr:s3GetRequests" json:"s3_get_requests"`         // Number of S3 GET requests
-	DataTransferBytes int64 `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Bytes transferred
+	S3PutRequests     int64 `theorydb:"attr:s3PutRequests" json:"s3_put_requests"`         // Number of S3 PUT requests
+	S3GetRequests     int64 `theorydb:"attr:s3GetRequests" json:"s3_get_requests"`         // Number of S3 GET requests
+	DataTransferBytes int64 `theorydb:"attr:dataTransferBytes" json:"data_transfer_bytes"` // Bytes transferred
 
 	// Status tracking
-	Status      string     `dynamorm:"attr:status" json:"status"`                      // pending, processing, completed, failed
-	StartedAt   time.Time  `dynamorm:"attr:startedAt" json:"started_at"`               // When export processing started
-	CompletedAt *time.Time `dynamorm:"attr:completedAt" json:"completed_at,omitempty"` // When export completed
+	Status      string     `theorydb:"attr:status" json:"status"`                      // pending, processing, completed, failed
+	StartedAt   time.Time  `theorydb:"attr:startedAt" json:"started_at"`               // When export processing started
+	CompletedAt *time.Time `theorydb:"attr:completedAt" json:"completed_at,omitempty"` // When export completed
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Timestamps
-	Timestamp time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	Timestamp time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys sets the primary keys for the ExportCostTracking model
@@ -137,28 +137,28 @@ func (e *ExportCostTracking) TableName() string {
 
 // ExportCostSummary represents aggregated export costs
 type ExportCostSummary struct {
-	Username  string    `dynamorm:"attr:username" json:"username"`
-	Period    string    `dynamorm:"attr:period" json:"period"` // daily, weekly, monthly
-	StartDate time.Time `dynamorm:"attr:startDate" json:"start_date"`
-	EndDate   time.Time `dynamorm:"attr:endDate" json:"end_date"`
+	Username  string    `theorydb:"attr:username" json:"username"`
+	Period    string    `theorydb:"attr:period" json:"period"` // daily, weekly, monthly
+	StartDate time.Time `theorydb:"attr:startDate" json:"start_date"`
+	EndDate   time.Time `theorydb:"attr:endDate" json:"end_date"`
 
-	TotalExports     int64 `dynamorm:"attr:totalExports" json:"total_exports"`
-	CompletedExports int64 `dynamorm:"attr:completedExports" json:"completed_exports"`
-	FailedExports    int64 `dynamorm:"attr:failedExports" json:"failed_exports"`
+	TotalExports     int64 `theorydb:"attr:totalExports" json:"total_exports"`
+	CompletedExports int64 `theorydb:"attr:completedExports" json:"completed_exports"`
+	FailedExports    int64 `theorydb:"attr:failedExports" json:"failed_exports"`
 
-	TotalLambdaCost     int64 `dynamorm:"attr:totalLambdaCost" json:"total_lambda_cost"`
-	TotalS3Cost         int64 `dynamorm:"attr:totalS3Cost" json:"total_s3_cost"`
-	TotalDynamoDBCost   int64 `dynamorm:"attr:totalDynamoDBCost" json:"total_dynamodb_cost"`
-	TotalCostMicroCents int64 `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalLambdaCost     int64 `theorydb:"attr:totalLambdaCost" json:"total_lambda_cost"`
+	TotalS3Cost         int64 `theorydb:"attr:totalS3Cost" json:"total_s3_cost"`
+	TotalDynamoDBCost   int64 `theorydb:"attr:totalDynamoDBCost" json:"total_dynamodb_cost"`
+	TotalCostMicroCents int64 `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
 
-	TotalFileSize    int64 `dynamorm:"attr:totalFileSize" json:"total_file_size"`
-	TotalRecordCount int64 `dynamorm:"attr:totalRecordCount" json:"total_record_count"`
-	TotalMediaFiles  int64 `dynamorm:"attr:totalMediaFiles" json:"total_media_files"`
+	TotalFileSize    int64 `theorydb:"attr:totalFileSize" json:"total_file_size"`
+	TotalRecordCount int64 `theorydb:"attr:totalRecordCount" json:"total_record_count"`
+	TotalMediaFiles  int64 `theorydb:"attr:totalMediaFiles" json:"total_media_files"`
 
-	AverageCostPerExport float64 `dynamorm:"attr:averageCostPerExport" json:"average_cost_per_export"`
-	AverageExportSize    int64   `dynamorm:"attr:averageExportSize" json:"average_export_size"`
+	AverageCostPerExport float64 `theorydb:"attr:averageCostPerExport" json:"average_cost_per_export"`
+	AverageExportSize    int64   `theorydb:"attr:averageExportSize" json:"average_export_size"`
 
-	TypeBreakdown map[string]*ExportTypeCostStats `dynamorm:"attr:typeBreakdown" json:"type_breakdown"`
+	TypeBreakdown map[string]*ExportTypeCostStats `theorydb:"attr:typeBreakdown" json:"type_breakdown"`
 }
 
 // TableName returns the DynamoDB table backing ExportCostSummary.
@@ -168,13 +168,13 @@ func (ExportCostSummary) TableName() string {
 
 // ExportTypeCostStats represents cost statistics for a specific export type
 type ExportTypeCostStats struct {
-	Type                  string  `dynamorm:"attr:type" json:"type"`
-	Count                 int64   `dynamorm:"attr:count" json:"count"`
-	TotalCostMicroCents   int64   `dynamorm:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
-	TotalCostDollars      float64 `dynamorm:"attr:totalCostDollars" json:"total_cost_dollars"`
-	AverageCostMicroCents int64   `dynamorm:"attr:averageCostMicroCents" json:"average_cost_micro_cents"`
-	AverageFileSize       int64   `dynamorm:"attr:averageFileSize" json:"average_file_size"`
-	AverageRecordCount    int64   `dynamorm:"attr:averageRecordCount" json:"average_record_count"`
+	Type                  string  `theorydb:"attr:type" json:"type"`
+	Count                 int64   `theorydb:"attr:count" json:"count"`
+	TotalCostMicroCents   int64   `theorydb:"attr:totalCostMicroCents" json:"total_cost_micro_cents"`
+	TotalCostDollars      float64 `theorydb:"attr:totalCostDollars" json:"total_cost_dollars"`
+	AverageCostMicroCents int64   `theorydb:"attr:averageCostMicroCents" json:"average_cost_micro_cents"`
+	AverageFileSize       int64   `theorydb:"attr:averageFileSize" json:"average_file_size"`
+	AverageRecordCount    int64   `theorydb:"attr:averageRecordCount" json:"average_record_count"`
 }
 
 // TableName returns the DynamoDB table backing ExportTypeCostStats.

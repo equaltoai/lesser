@@ -67,4 +67,3 @@ func cwDimensionsToMap(dimensions []cwTypes.Dimension) map[string]string {
 	}
 	return out
 }
-

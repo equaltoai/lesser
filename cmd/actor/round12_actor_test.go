@@ -2,23 +2,24 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
-	dynamormMocks "github.com/pay-theory/dynamorm/pkg/mocks"
-	pkgtypes "github.com/pay-theory/dynamorm/pkg/types"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormMocks "github.com/theory-cloud/tabletheory/pkg/mocks"
+	pkgtypes "github.com/theory-cloud/tabletheory/pkg/types"
 	"go.uber.org/zap"
 )
 
@@ -79,7 +80,9 @@ func (db *extendedMockDB) WithContext(_ context.Context) dynamormCore.DB { retur
 
 func (db *extendedMockDB) AutoMigrateWithOptions(_ any, _ ...any) error { return nil }
 
-func (db *extendedMockDB) RegisterTypeConverter(_ reflect.Type, _ pkgtypes.CustomConverter) error { return nil }
+func (db *extendedMockDB) RegisterTypeConverter(_ reflect.Type, _ pkgtypes.CustomConverter) error {
+	return nil
+}
 
 func (db *extendedMockDB) CreateTable(_ any, _ ...any) error { return nil }
 
@@ -114,24 +117,26 @@ func TestActorHandler_Round12(t *testing.T) {
 
 	t.Run("missing username", func(t *testing.T) {
 		h := &Handler{}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/users/"}))
-		err := h.HandleActorProfile(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/users/"},
+			Params:  map[string]string{},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 422, resp.Status)
 	})
 
 	t.Run("locked bootstrap actor forbidden", func(t *testing.T) {
 		h := &Handler{
 			instanceRepo: &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: true}},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/users/bootstrap"}))
-		ctx.SetParam("username", storageModels.DefaultBootstrapUsername)
-		err := h.HandleActorProfile(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 403, liftErr.StatusCode)
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/users/bootstrap"},
+			Params:  map[string]string{"username": storageModels.DefaultBootstrapUsername},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 403, resp.Status)
 	})
 
 	t.Run("actor not found returns 404", func(t *testing.T) {
@@ -139,13 +144,13 @@ func TestActorHandler_Round12(t *testing.T) {
 			instanceRepo: &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
 			actorRepo:    &fakeActorRepo{err: common.ActorNotFoundError{Username: "alice"}},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{Method: http.MethodGet, Path: "/users/alice"}))
-		ctx.SetParam("username", "alice")
-		err := h.HandleActorProfile(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 404, liftErr.StatusCode)
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/users/alice"},
+			Params:  map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 404, resp.Status)
 	})
 
 	t.Run("authorized fetch conversion failure returns 400", func(t *testing.T) {
@@ -154,18 +159,20 @@ func TestActorHandler_Round12(t *testing.T) {
 			actorRepo:              &fakeActorRepo{actor: &activitypub.Actor{PreferredUsername: "alice"}},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: true},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:  "bad method",
-			Path:    "/users/alice",
-			Headers: map[string]string{"Accept": "application/activity+json", "Host": "example.com"},
-		}))
-		ctx.SetParam("username", "alice")
-		err := h.HandleActorProfile(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 400, liftErr.StatusCode)
-		require.Equal(t, "REQUEST_CONVERSION_ERROR", liftErr.Code)
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: "bad method",
+				Path:   "/users/alice",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 400, resp.Status)
 	})
 
 	t.Run("authorized fetch missing signature returns 401", func(t *testing.T) {
@@ -174,17 +181,20 @@ func TestActorHandler_Round12(t *testing.T) {
 			actorRepo:              &fakeActorRepo{actor: &activitypub.Actor{PreferredUsername: "alice"}},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: true, verifyErr: errors.New("missing signature")},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:  http.MethodGet,
-			Path:    "/users/alice",
-			Headers: map[string]string{"Accept": "application/activity+json", "Host": "example.com"},
-		}))
-		ctx.SetParam("username", "alice")
-		err := h.HandleActorProfile(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 401, liftErr.StatusCode)
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice",
+				Headers: map[string][]string{
+					"accept": {"application/activity+json"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 401, resp.Status)
 	})
 
 	t.Run("authorized fetch invalid signature returns 403", func(t *testing.T) {
@@ -193,22 +203,26 @@ func TestActorHandler_Round12(t *testing.T) {
 			actorRepo:              &fakeActorRepo{actor: &activitypub.Actor{PreferredUsername: "alice"}},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: true, verifyErr: errors.New("bad signature")},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:  http.MethodGet,
-			Path:    "/users/alice",
-			Headers: map[string]string{"Accept": "application/activity+json", "Host": "example.com", "Signature": "sig"},
-		}))
-		ctx.SetParam("username", "alice")
-		err := h.HandleActorProfile(ctx)
-		require.Error(t, err)
-		var liftErr *lift.LiftError
-		require.ErrorAs(t, err, &liftErr)
-		require.Equal(t, 403, liftErr.StatusCode)
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/users/alice",
+				Headers: map[string][]string{
+					"accept":    {"application/activity+json"},
+					"host":      {"example.com"},
+					"signature": {"sig"},
+				},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 403, resp.Status)
 	})
 
 	t.Run("json response sets activitypub content type", func(t *testing.T) {
 		actor := &activitypub.Actor{
-			BaseObject:         activitypub.BaseObject{ID: cfg.ActorURL("alice")},
+			BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("alice")},
 			PreferredUsername: "alice",
 		}
 		repo := &fakeActorRepo{actor: actor}
@@ -217,14 +231,18 @@ func TestActorHandler_Round12(t *testing.T) {
 			actorRepo:              repo,
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:  http.MethodGet,
-			Path:    "/users/alice",
-			Headers: map[string]string{"accept": "application/activity+json"},
-		}))
-		ctx.SetParam("username", "alice")
-		require.NoError(t, h.HandleActorProfile(ctx))
-		require.Equal(t, "application/activity+json", ctx.Response.Headers["Content-Type"])
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice",
+				Headers: map[string][]string{"accept": {"application/activity+json"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+		require.Equal(t, []string{"application/activity+json"}, resp.Headers["content-type"])
 		require.Equal(t, "alice", repo.gotUsername)
 	})
 
@@ -245,16 +263,19 @@ func TestActorHandler_Round12(t *testing.T) {
 			actorRepo:              &fakeActorRepo{actor: actor},
 			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
 		}
-		ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-			Method:  http.MethodGet,
-			Path:    "/users/alice",
-			Headers: map[string]string{"Accept": "text/html"},
-		}))
-		ctx.SetParam("username", "alice")
-		require.NoError(t, h.HandleActorProfile(ctx))
-		require.Equal(t, "text/html; charset=utf-8", ctx.Response.Headers["Content-Type"])
-		body, ok := ctx.Response.Body.(string)
-		require.True(t, ok)
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+		require.Equal(t, []string{"text/html; charset=utf-8"}, resp.Headers["content-type"])
+		body := string(resp.Body)
 		require.Contains(t, body, "<!DOCTYPE html>")
 		require.Contains(t, body, "@alice@example.com")
 	})
@@ -294,9 +315,9 @@ func TestActorEntrypoint_Round12(t *testing.T) {
 
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
-			Config:   cfg,
-			Logger:   nil,
-			Repos:    repos,
+			Config:    cfg,
+			Logger:    nil,
+			Repos:     repos,
 			StartTime: time.Now(),
 		}
 	}
@@ -314,47 +335,52 @@ func TestActorEntrypoint_Round12(t *testing.T) {
 	called := false
 	lambdaStartFn = func(handler any) {
 		called = true
-		fn, ok := handler.(func(context.Context, interface{}) (interface{}, error))
+		fn, ok := handler.(func(context.Context, json.RawMessage) (any, error))
 		require.True(t, ok)
 
-		event := map[string]any{
-			"version":  "2.0",
-			"routeKey": "GET /users/alice",
-			"rawPath":  "/users/alice",
-			"headers": map[string]any{
-				"accept": "application/activity+json",
-			},
-			"requestContext": map[string]any{
-				"requestId": "req",
-				"http": map[string]any{
-					"method": "GET",
-					"path":   "/users/alice",
+		event := events.APIGatewayV2HTTPRequest{
+			Version:  "2.0",
+			RouteKey: "GET /users/alice",
+			RawPath:  "/users/alice",
+			Headers:  map[string]string{"accept": "application/activity+json"},
+			RequestContext: events.APIGatewayV2HTTPRequestContext{
+				RequestID: "req",
+				HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+					Method: "GET",
+					Path:   "/users/alice",
 				},
 			},
 		}
 
-		resp, err := fn(context.Background(), event)
+		raw, err := json.Marshal(event)
 		require.NoError(t, err)
-		liftResp, ok := resp.(*lift.Response)
+		resp, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		lambdaResp, ok := resp.(events.APIGatewayV2HTTPResponse)
 		require.True(t, ok)
-		require.Equal(t, 200, liftResp.StatusCode)
-		require.Equal(t, "application/activity+json", liftResp.Headers["Content-Type"])
+		require.Equal(t, 200, lambdaResp.StatusCode)
+		require.Equal(t, "application/activity+json", lambdaResp.Headers["content-type"])
 	}
 
 	main()
 	require.True(t, called)
 }
 
-func TestConvertLiftRequest_Round12(t *testing.T) {
+func TestConvertAppTheoryRequest_Round12(t *testing.T) {
 	h := &Handler{}
-	ctx := lift.NewContext(context.Background(), lift.NewRequest(&adapters.Request{
-		Method:      http.MethodGet,
-		Path:        "/users/alice",
-		Headers:     map[string]string{"Host": "example.com", "X-Test": "1"},
-		QueryParams: map[string]string{"q": "1"},
-	}))
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: http.MethodGet,
+			Path:   "/users/alice",
+			Headers: map[string][]string{
+				"host":   {"example.com"},
+				"x-test": {"1"},
+			},
+			Query: map[string][]string{"q": {"1"}},
+		},
+	}
 
-	req, err := h.convertLiftRequest(ctx)
+	req, err := h.convertAppTheoryRequest(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/users/alice?q=1", req.URL.String())
 	require.Equal(t, "1", req.Header.Get("X-Test"))

@@ -31,4 +31,3 @@ func TestFindRepoRoot_ReturnsErrorOutsideRepo(t *testing.T) {
 	_, err = findRepoRoot()
 	require.Error(t, err)
 }
-

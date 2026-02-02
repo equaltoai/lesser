@@ -23,7 +23,7 @@ type fakeModerationRepo struct {
 	sampleSeq       int
 	createSamples   []*models.ModerationSample
 
-	samplesByID map[string]*models.ModerationSample
+	samplesByID  map[string]*models.ModerationSample
 	getSampleErr map[string]error
 
 	activeModel    *models.ModerationModelVersion
@@ -210,11 +210,9 @@ func TestService_QueueSamples_round26_coverage(t *testing.T) {
 		repo := &fakeModerationRepo{}
 		status := &models.Status{
 			Content: "",
-			Note: &models.NoteField{
-				Note: &activitypub.Note{
-					BaseObject: activitypub.BaseObject{Summary: "cw"},
-					Content:    "hello",
-				},
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{Summary: "cw"},
+				Content:    "hello",
 			},
 		}
 		svc := &Service{
@@ -372,8 +370,8 @@ func TestService_TrainModel_round26_coverage(t *testing.T) {
 			samplesByID: map[string]*models.ModerationSample{
 				"s1": {ID: "s1", Label: "spam", Metadata: map[string]interface{}{"content": "hello"}},
 			},
-			createTrainingJobErr:  stderrors.New("ignored"),
-			createPollRequestErr:  stderrors.New("ignored"),
+			createTrainingJobErr: stderrors.New("ignored"),
+			createPollRequestErr: stderrors.New("ignored"),
 		}
 		bedrockClient := &fakeBedrockClient{out: &bedrock.CreateModelCustomizationJobOutput{JobArn: aws.String("arn:job")}}
 		svc := &Service{
@@ -413,10 +411,10 @@ func TestService_ScoreContent_round26_coverage(t *testing.T) {
 		}
 		runtime := &fakeBedrockRuntime{err: stderrors.New("guardrail violation")}
 		svc := &Service{
-			repo:           repo,
-			bedrockRuntime: runtime,
-			logger:         zap.NewNop(),
-			guardrailID:    "gr",
+			repo:             repo,
+			bedrockRuntime:   runtime,
+			logger:           zap.NewNop(),
+			guardrailID:      "gr",
 			guardrailVersion: "DRAFT",
 		}
 
@@ -490,12 +488,12 @@ func TestService_GetEffectiveness_round26_coverage(t *testing.T) {
 		repo := &fakeModerationRepo{
 			effectivenessMetricErr: stderrors.New("not found"),
 			predictionsByModel: []*models.MLPrediction{
-				{Reviewed: true, HumanLabel: "spam", PredictedLabel: "spam"},   // TP
-				{Reviewed: true, HumanLabel: "safe", PredictedLabel: "spam"},   // FP
-				{Reviewed: true, HumanLabel: "safe", PredictedLabel: "safe"},   // TN
-				{Reviewed: true, HumanLabel: "spam", PredictedLabel: "safe"},   // FN
-				{Reviewed: false, HumanLabel: "spam", PredictedLabel: "spam"},  // skipped
-				{Reviewed: true, HumanLabel: "", PredictedLabel: "spam"},       // skipped
+				{Reviewed: true, HumanLabel: "spam", PredictedLabel: "spam"},  // TP
+				{Reviewed: true, HumanLabel: "safe", PredictedLabel: "spam"},  // FP
+				{Reviewed: true, HumanLabel: "safe", PredictedLabel: "safe"},  // TN
+				{Reviewed: true, HumanLabel: "spam", PredictedLabel: "safe"},  // FN
+				{Reviewed: false, HumanLabel: "spam", PredictedLabel: "spam"}, // skipped
+				{Reviewed: true, HumanLabel: "", PredictedLabel: "spam"},      // skipped
 			},
 			createMetricErr: stderrors.New("ignored"),
 		}

@@ -58,7 +58,6 @@ func (m *MockTimelineRepositoryInterface) DeleteTimelineEntry(ctx context.Contex
 	return args.Error(0)
 }
 
-
 // Timeline retrieval by type
 
 // GetHomeTimeline mocks the GetHomeTimeline method
@@ -143,7 +142,6 @@ func (m *MockTimelineRepositoryInterface) GetTimelineEntriesByLanguage(ctx conte
 	}
 	return args.Get(0).([]*models.Timeline), args.String(1), args.Error(2)
 }
-
 
 // Advanced timeline queries
 

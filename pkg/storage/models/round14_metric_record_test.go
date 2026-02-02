@@ -14,11 +14,11 @@ func TestMetricRecord_UpdateKeys_TTL_Buckets_AndBuilders(t *testing.T) {
 
 	t.Run("UpdateKeys populates PK/SK and GSIs for raw aggregation", func(t *testing.T) {
 		rec := &MetricRecord{
-			MetricType:        "request",
-			ServiceName:       "api",
-			Timestamp:         ts,
-			AggregationLevel:  "raw",
-			Dimensions:        map[string]string{},
+			MetricType:       "request",
+			ServiceName:      "api",
+			Timestamp:        ts,
+			AggregationLevel: "raw",
+			Dimensions:       map[string]string{},
 		}
 
 		before := time.Now()
@@ -122,4 +122,3 @@ func TestMetricRecord_UpdateKeys_TTL_Buckets_AndBuilders(t *testing.T) {
 		assert.Equal(t, MainTableName, (MetricRecordBuilder{}).TableName())
 	})
 }
-

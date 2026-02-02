@@ -6,10 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	liftTesting "github.com/equaltoai/lesser/pkg/testing/lift"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestReadRequestBody_SizeLimits(t *testing.T) {
@@ -30,29 +29,16 @@ func TestParseRequestWithFallback_UsesFallbackBodiesWhenParseRequestFails(t *tes
 		Name string `json:"name"`
 	}
 
-	t.Run("ctx.Request.Body", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("POST", "/test", liftTesting.WithBody([]byte(`{"name":"alice"}`)))
-		// Force ctx.ParseRequest to fail by removing the underlying adapter request.
-		ctx.Request.Request = nil
-
+	t.Run("parses request body", func(t *testing.T) {
+		ctx := &apptheory.Context{Request: apptheory.Request{Method: "POST", Path: "/test", Body: []byte(`{"name":"alice"}`)}}
 		var out payload
 		err := ParseRequestWithFallback(ctx, &out)
 		require.NoError(t, err)
 		assert.Equal(t, "alice", out.Name)
 	})
 
-	t.Run("ctx.Request.Request.Body", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("POST", "/test", liftTesting.WithBody([]byte(`{"name":"bob"}`)))
-		ctx.Request.Body = nil
-
-		var out payload
-		err := ParseRequestWithFallback(ctx, &out)
-		require.NoError(t, err)
-		assert.Equal(t, "bob", out.Name)
-	})
-
 	t.Run("failure", func(t *testing.T) {
-		ctx := &lift.Context{Request: &lift.Request{}}
+		ctx := &apptheory.Context{Request: apptheory.Request{Method: "POST", Path: "/test"}}
 		var out payload
 		err := ParseRequestWithFallback(ctx, &out)
 		assert.Error(t, err)
@@ -65,23 +51,26 @@ func TestParseRequestHelpers_ResponseWrapping(t *testing.T) {
 	}
 
 	// ParseRequestWithValidation returns a validation response on failure.
-	ctx := liftTesting.MockLiftContext("POST", "/test")
+	ctx := &apptheory.Context{Request: apptheory.Request{Method: "POST", Path: "/test"}}
 	var out payload
-	err := ParseRequestWithValidation(ctx, &out)
+	resp, err := ParseRequestWithValidation(ctx, &out)
 	assert.NoError(t, err)
-	assert.Equal(t, 400, ctx.Response.StatusCode)
+	require.NotNil(t, resp)
+	assert.Equal(t, 400, resp.Status)
 
 	// ParseRequestWithCustomError returns a bad request response on failure.
-	ctx2 := liftTesting.MockLiftContext("POST", "/test")
-	err = ParseRequestWithCustomError(ctx2, &out, "bad")
+	ctx2 := &apptheory.Context{Request: apptheory.Request{Method: "POST", Path: "/test"}}
+	resp, err = ParseRequestWithCustomError(ctx2, &out, "bad")
 	assert.NoError(t, err)
-	assert.Equal(t, 400, ctx2.Response.StatusCode)
+	require.NotNil(t, resp)
+	assert.Equal(t, 400, resp.Status)
 
 	// ParseRequestBodyWithValidation returns missing parameter response.
-	ctx3 := liftTesting.MockLiftContext("POST", "/test")
-	err = ParseRequestBodyWithValidation(ctx3, &out, "name")
+	ctx3 := &apptheory.Context{Request: apptheory.Request{Method: "POST", Path: "/test"}}
+	resp, err = ParseRequestBodyWithValidation(ctx3, &out, "name")
 	assert.NoError(t, err)
-	assert.Equal(t, 400, ctx3.Response.StatusCode)
+	require.NotNil(t, resp)
+	assert.Equal(t, 400, resp.Status)
 }
 
 func TestParseRequestWithComplexFallback_UsesAlternateBodySource(t *testing.T) {
@@ -89,9 +78,7 @@ func TestParseRequestWithComplexFallback_UsesAlternateBodySource(t *testing.T) {
 		Name string `json:"name"`
 	}
 
-	ctx := liftTesting.MockLiftContext("POST", "/test")
-	ctx.Request.Body = nil
-	ctx.Request.Request.Body = []byte(`{"name":"ok"}`)
+	ctx := &apptheory.Context{Request: apptheory.Request{Method: "POST", Path: "/test", Body: []byte(`{"name":"ok"}`)}}
 
 	var out payload
 	err := ParseRequestWithComplexFallback(ctx, &out)
@@ -113,7 +100,7 @@ func TestParseRequestWithFallback_WhenParseRequestSucceeds(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(payload{Name: "ok"})
-	ctx := liftTesting.MockLiftContext("POST", "/test", liftTesting.WithBody(body), liftTesting.WithHeaders(map[string]string{"Content-Type": "application/json"}))
+	ctx := &apptheory.Context{Request: apptheory.Request{Method: "POST", Path: "/test", Body: body, Headers: map[string][]string{"content-type": {"application/json"}}}}
 
 	var out payload
 	err := ParseRequestWithFallback(ctx, &out)

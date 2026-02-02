@@ -7,24 +7,24 @@ import (
 
 // CostProjection represents projected costs for federation
 type CostProjection struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // COST#PROJECTION
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // {period}#{timestamp}
+	PK string `theorydb:"pk,attr:PK" json:"-"` // COST#PROJECTION
+	SK string `theorydb:"sk,attr:SK" json:"-"` // {period}#{timestamp}
 
 	// Attributes from interface
-	Period          string   `dynamorm:"attr:period" json:"period"`
-	CurrentCost     float64  `dynamorm:"attr:currentCost" json:"current_cost"`
-	ProjectedCost   float64  `dynamorm:"attr:projectedCost" json:"projected_cost"`
-	Variance        float64  `dynamorm:"attr:variance" json:"variance"`
-	TopDrivers      []Driver `dynamorm:"attr:topDrivers" json:"top_drivers"`
-	Recommendations []string `dynamorm:"attr:recommendations" json:"recommendations"`
+	Period          string   `theorydb:"attr:period" json:"period"`
+	CurrentCost     float64  `theorydb:"attr:currentCost" json:"current_cost"`
+	ProjectedCost   float64  `theorydb:"attr:projectedCost" json:"projected_cost"`
+	Variance        float64  `theorydb:"attr:variance" json:"variance"`
+	TopDrivers      []Driver `theorydb:"attr:topDrivers" json:"top_drivers"`
+	Recommendations []string `theorydb:"attr:recommendations" json:"recommendations"`
 
 	// Additional metadata
-	Timestamp    time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	CalculatedAt time.Time `dynamorm:"attr:calculatedAt" json:"calculated_at"`
-	TTL          int64     `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"` // 90 days retention
+	Timestamp    time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	CalculatedAt time.Time `theorydb:"attr:calculatedAt" json:"calculated_at"`
+	TTL          int64     `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"` // 90 days retention
 }
 
 // UpdateKeys updates the partition and sort keys

@@ -198,4 +198,3 @@ func TestGetEnvInt(t *testing.T) {
 	_ = os.Setenv(key, "nope")
 	assert.Equal(t, 7, GetEnvInt(key, 7))
 }
-

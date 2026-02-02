@@ -409,4 +409,3 @@ func TestQuoteService_Round25_WithdrawFromQuotes(t *testing.T) {
 	require.NotNil(t, note)
 	assert.Equal(t, 2, count)
 }
-

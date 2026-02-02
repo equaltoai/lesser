@@ -37,11 +37,9 @@ func TestResolveQuoteMetadata_TargetLoaded(t *testing.T) {
 		AuthorID:       "https://example.com/users/actual-author",
 		AuthorUsername: "actual-author",
 		QuoteCount:     7,
-		Note: &models.NoteField{
-			Note: &activitypub.Note{
-				BaseObject: activitypub.BaseObject{
-					ID: "https://example.com/users/alice/statuses/target-123",
-				},
+		Note: &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID: "https://example.com/users/alice/statuses/target-123",
 			},
 		},
 	}
@@ -59,7 +57,7 @@ func TestResolveQuoteMetadata_TargetLoaded(t *testing.T) {
 
 	quoteURL, quoteCtx := resolver.resolveQuoteMetadata(context.Background(), status)
 	require.NotNil(t, quoteURL)
-	require.Equal(t, target.Note.Get().ID, *quoteURL)
+	require.Equal(t, target.Note.ID, *quoteURL)
 	require.NotNil(t, quoteCtx)
 	require.Equal(t, status.QuoteTargetStatusID, quoteCtx.OriginalNoteID)
 	require.Equal(t, target.AuthorID, quoteCtx.OriginalAuthor)
@@ -137,11 +135,11 @@ func TestConvertStatusToObjectIncludesQuoteMetadata(t *testing.T) {
 		StatusID:   "target-obj",
 		AuthorID:   "target-author",
 		QuoteCount: 2,
-		Note: &models.NoteField{Note: &activitypub.Note{
+		Note: &activitypub.Note{
 			BaseObject: activitypub.BaseObject{
 				ID: "https://example.com/users/bob/statuses/target-obj",
 			},
-		}},
+		},
 	}
 
 	withQuoteLoaderStub(t, func(ctx context.Context, statusID string) (*models.Status, error) {
@@ -157,7 +155,7 @@ func TestConvertStatusToObjectIncludesQuoteMetadata(t *testing.T) {
 		Content:             "quoting status",
 		CreatedAt:           now,
 		UpdatedAt:           now,
-		Note:                &models.NoteField{Note: &activitypub.Note{Quoteable: false}},
+		Note:                &activitypub.Note{Quoteable: false},
 		QuoteTargetStatusID: "target-obj",
 	}
 
@@ -165,7 +163,7 @@ func TestConvertStatusToObjectIncludesQuoteMetadata(t *testing.T) {
 	require.NotNil(t, obj)
 	require.True(t, obj.Quoteable)
 	require.NotNil(t, obj.QuoteURL)
-	require.Equal(t, target.Note.Get().ID, *obj.QuoteURL)
+	require.Equal(t, target.Note.ID, *obj.QuoteURL)
 	require.NotNil(t, obj.QuoteContext)
 	require.Equal(t, status.QuoteTargetStatusID, obj.QuoteContext.OriginalNoteID)
 	require.Equal(t, target.AuthorID, obj.QuoteContext.OriginalAuthor)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -11,15 +12,11 @@ import (
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/storage"
 	testingmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/lift/adapters"
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -36,9 +33,9 @@ func (f *fakeDB) Transaction(fn func(tx *core.Tx) error) error {
 	return fn(tx)
 }
 
-func (f *fakeDB) Migrate() error                    { return nil }
-func (f *fakeDB) AutoMigrate(_ ...any) error        { return nil }
-func (f *fakeDB) Close() error                      { return nil }
+func (f *fakeDB) Migrate() error                        { return nil }
+func (f *fakeDB) AutoMigrate(_ ...any) error            { return nil }
+func (f *fakeDB) Close() error                          { return nil }
 func (f *fakeDB) WithContext(_ context.Context) core.DB { return f }
 
 func TestNewNoteProcessor_InitializationBranches(t *testing.T) {
@@ -58,7 +55,7 @@ func TestNewNoteProcessor_InitializationBranches(t *testing.T) {
 			return &ai.BedrockClient{}, nil
 		}
 
-		newStreamerClientFn = func(_ context.Context, _ streamer.ClientConfig) (*streamer.AWSClient, error) {
+		newStreamerClientFn = func(_ context.Context, _ string, _ ...streamer.Option) (streamer.Client, error) {
 			require.Fail(t, "expected websocket init to be skipped")
 			return nil, nil
 		}
@@ -69,7 +66,7 @@ func TestNewNoteProcessor_InitializationBranches(t *testing.T) {
 				DynamoTableName:   "table",
 				WebSocketEndpoint: "wss://example.com/ws",
 			},
-			Logger:     zap.NewNop(),
+			Logger:      zap.NewNop(),
 			AWSServices: nil,
 		})
 
@@ -84,7 +81,7 @@ func TestNewNoteProcessor_InitializationBranches(t *testing.T) {
 			return nil, errors.New("bedrock init failed")
 		}
 
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (*streamer.AWSClient, error) {
+		newStreamerClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
 			return nil, errors.New("streamer init failed")
 		}
 
@@ -111,8 +108,8 @@ func TestNewNoteProcessor_InitializationBranches(t *testing.T) {
 			return &ai.BedrockClient{}, nil
 		}
 
-		newStreamerClientFn = func(context.Context, streamer.ClientConfig) (*streamer.AWSClient, error) {
-			return &streamer.AWSClient{}, nil
+		newStreamerClientFn = func(context.Context, string, ...streamer.Option) (streamer.Client, error) {
+			return &fakeStreamerClient{}, nil
 		}
 
 		proc := NewNoteProcessor(&common.LambdaContext{
@@ -132,80 +129,53 @@ func TestNewNoteProcessor_InitializationBranches(t *testing.T) {
 	})
 }
 
-func TestHandleDynamoDBStream_RecordsDecodeError(t *testing.T) {
-	origLambdaCtx := lambdaCtx
-	origProcessor := processor
-	t.Cleanup(func() {
-		lambdaCtx = origLambdaCtx
-		processor = origProcessor
-	})
-
-	lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-	processor = &NoteProcessor{logger: zap.NewNop()}
-
-	req := lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerSQS})
-	ctx := lift.NewContext(context.Background(), req)
-
-	err := handleDynamoDBStream(ctx)
-	require.Error(t, err)
-}
-
-func TestHandleDynamoDBStream_SuccessAndFailure(t *testing.T) {
-	origLambdaCtx := lambdaCtx
-	origProcessor := processor
-	t.Cleanup(func() {
-		lambdaCtx = origLambdaCtx
-		processor = origProcessor
-	})
-
-	lambdaCtx = &common.LambdaContext{Logger: zap.NewNop()}
-
-	t.Run("success with empty batch", func(t *testing.T) {
-		processor = &NoteProcessor{logger: zap.NewNop()}
-
-		req := lift.NewRequest(&adapters.Request{TriggerType: lift.TriggerEventBus})
-		ctx := lift.NewContext(context.Background(), req)
-
-		require.NoError(t, handleDynamoDBStream(ctx))
-	})
-
-	t.Run("propagates partial batch failure", func(t *testing.T) {
-		noteRepo := testingmocks.NewMockCommunityNoteRepository()
-		noteRepo.On("GetCommunityNote", mock.Anything, "n1").Return((*storage.CommunityNote)(nil), errors.New("missing"))
-
-		processor = &NoteProcessor{
-			logger:           zap.NewNop(),
-			communityNoteRepo: noteRepo,
-		}
-
-		record := events.DynamoDBEventRecord{
-			EventName: "INSERT",
-			Change: events.DynamoDBStreamRecord{
-				NewImage: map[string]events.DynamoDBAttributeValue{
-					"PK": events.NewStringAttribute("NOTE#n1"),
-					"SK": events.NewStringAttribute("METADATA"),
-				},
-			},
-		}
-
-		req := lift.NewRequest(&adapters.Request{
-			TriggerType: lift.TriggerEventBus,
-			Records:     []any{record},
-		})
-		ctx := lift.NewContext(context.Background(), req)
-
-		err := handleDynamoDBStream(ctx)
-		require.Error(t, err)
-		require.True(t, pkgErrors.HasCode(err, pkgErrors.CodeSQSProcessingFailed))
-	})
-}
-
 func TestMain_InvokesLambdaStart(t *testing.T) {
 	origStart := lambdaStartFn
+	origLambdaCtx := lambdaCtx
+	origProcessor := processor
 	t.Cleanup(func() { lambdaStartFn = origStart })
+	t.Cleanup(func() { lambdaCtx = origLambdaCtx })
+	t.Cleanup(func() { processor = origProcessor })
 
-	var called bool
-	lambdaStartFn = func(_ interface{}) { called = true }
+	lambdaCtx = &common.LambdaContext{Config: &config.Config{DynamoTableName: "test-table"}}
+
+	noteRepo := testingmocks.NewMockCommunityNoteRepository()
+	noteRepo.On("GetCommunityNote", mock.Anything, "n1").Return(nil, errors.New("missing"))
+	processor = &NoteProcessor{
+		logger:            zap.NewNop(),
+		communityNoteRepo: noteRepo,
+	}
+
+	called := false
+	lambdaStartFn = func(h any) {
+		called = true
+		fn, ok := h.(func(context.Context, json.RawMessage) (any, error))
+		require.True(t, ok)
+
+		event := events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{
+			{
+				EventID:        "evt-1",
+				EventName:      "INSERT",
+				EventSource:    "aws:dynamodb",
+				EventSourceArn: "arn:aws:dynamodb:us-east-1:123456789012:table/test-table/stream/2024-01-01T00:00:00.000",
+				Change: events.DynamoDBStreamRecord{
+					NewImage: map[string]events.DynamoDBAttributeValue{
+						"PK": events.NewStringAttribute("NOTE#n1"),
+						"SK": events.NewStringAttribute("METADATA"),
+					},
+				},
+			},
+		}}
+		raw, err := json.Marshal(event)
+		require.NoError(t, err)
+
+		respAny, err := fn(context.Background(), raw)
+		require.NoError(t, err)
+		resp, ok := respAny.(events.DynamoDBEventResponse)
+		require.True(t, ok)
+		require.Len(t, resp.BatchItemFailures, 1)
+		require.Equal(t, "evt-1", resp.BatchItemFailures[0].ItemIdentifier)
+	}
 
 	main()
 	require.True(t, called)

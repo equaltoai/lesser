@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	dynamotypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
+	theorydbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 func TestDetermineBootstrapWallet_ExistingAddress(t *testing.T) {
@@ -63,261 +64,377 @@ func TestTableNotFoundError(t *testing.T) {
 	require.Contains(t, err.Error(), "tbl")
 }
 
-type fakeDynamoDB struct {
-	getItemFn    func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error)
-	updateItemFn func(context.Context, *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error)
-
-	updateCalls int
-	lastUpdate  *dynamodb.UpdateItemInput
-}
-
-func (f *fakeDynamoDB) GetItem(ctx context.Context, input *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
-	if f.getItemFn == nil {
-		return &dynamodb.GetItemOutput{}, nil
-	}
-	return f.getItemFn(ctx, input)
-}
-
-func (f *fakeDynamoDB) UpdateItem(ctx context.Context, input *dynamodb.UpdateItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
-	f.updateCalls++
-	f.lastUpdate = input
-	if f.updateItemFn == nil {
-		return &dynamodb.UpdateItemOutput{}, nil
-	}
-	return f.updateItemFn(ctx, input)
-}
-
 func TestGetInstanceStateItem_ParsesAndHandlesNotFound(t *testing.T) {
 	t.Run("table not found maps to typed error", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return nil, &dynamotypes.ResourceNotFoundException{}
-			},
-		}
+		ctx := context.Background()
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
 
-		_, err := getInstanceStateItem(context.Background(), fake, "tbl")
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Return(theorydbErrors.ErrTableNotFound).Once()
+
+		_, err := getInstanceStateItem(ctx, db, "tbl")
 		require.Error(t, err)
 		var tnf tableNotFoundError
 		require.ErrorAs(t, err, &tnf)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
 	})
 
 	t.Run("missing item locks stage", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-			},
-		}
+		ctx := context.Background()
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
 
-		item, err := getInstanceStateItem(context.Background(), fake, "tbl")
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+
+		item, err := getInstanceStateItem(ctx, db, "tbl")
 		require.NoError(t, err)
 		require.False(t, item.Exists)
 		require.True(t, item.Locked)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
 	})
 
 	t.Run("parses address and unlocked", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return &dynamodb.GetItemOutput{
-					Item: map[string]dynamotypes.AttributeValue{
-						"locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: false},
-						"bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: "0xAbC"},
-					},
-				}, nil
-			},
-		}
+		ctx := context.Background()
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
 
-		item, err := getInstanceStateItem(context.Background(), fake, "tbl")
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*bootstrapInstanceStateRecord)
+			dest.Locked = false
+			dest.BootstrapWalletAddress = "0xAbC"
+		}).Return(nil).Once()
+
+		item, err := getInstanceStateItem(ctx, db, "tbl")
 		require.NoError(t, err)
 		require.True(t, item.Exists)
 		require.False(t, item.Locked)
 		require.Equal(t, "0xabc", item.BootstrapWalletAddress)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
 	})
 }
 
 func TestEnsureStageBootstrapState_HandlesExistingAndUpsert(t *testing.T) {
+	ctx := context.Background()
 	app := "app"
 	stage := naming.StageDev
 	table := stageMainTableName(app, stage)
 
 	t.Run("returns existing unlocked", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return &dynamodb.GetItemOutput{
-					Item: map[string]dynamotypes.AttributeValue{
-						"locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: false},
-						"bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: "0xAbC"},
-					},
-				}, nil
-			},
-		}
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
 
-		state, err := ensureStageBootstrapState(context.Background(), fake, app, stage, "")
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		db.On("Close").Return(nil).Once()
+
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*bootstrapInstanceStateRecord)
+			dest.Locked = false
+			dest.BootstrapWalletAddress = "0xAbC"
+		}).Return(nil).Once()
+
+		newDB := func() (theorydb.DB, error) { return db, nil }
+		state, err := ensureStageBootstrapState(ctx, newDB, app, stage, "")
 		require.NoError(t, err)
 		require.False(t, state.Locked)
 		require.Equal(t, "0xabc", state.Address)
 		require.False(t, state.Updated)
-		require.Equal(t, 0, fake.updateCalls)
+
+		require.Equal(t, table, bootstrapTableName)
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
 	})
 
 	t.Run("locked stage refuses overwrite", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return &dynamodb.GetItemOutput{
-					Item: map[string]dynamotypes.AttributeValue{
-						"locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: true},
-						"bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: "0xAbC"},
-					},
-				}, nil
-			},
-		}
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
 
-		_, err := ensureStageBootstrapState(context.Background(), fake, app, stage, "0xdef")
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		db.On("Close").Return(nil).Once()
+
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*bootstrapInstanceStateRecord)
+			dest.Locked = true
+			dest.BootstrapWalletAddress = "0xAbC"
+		}).Return(nil).Once()
+
+		newDB := func() (theorydb.DB, error) { return db, nil }
+		_, err := ensureStageBootstrapState(ctx, newDB, app, stage, "0xdef")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "refusing to overwrite")
-		require.Equal(t, 0, fake.updateCalls)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
 	})
 
 	t.Run("requires desired address when missing", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(_ context.Context, input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				require.Equal(t, table, aws.ToString(input.TableName))
-				return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-			},
-		}
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
 
-		_, err := ensureStageBootstrapState(context.Background(), fake, app, stage, "   ")
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		db.On("Close").Return(nil).Once()
+
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+
+		newDB := func() (theorydb.DB, error) { return db, nil }
+		_, err := ensureStageBootstrapState(ctx, newDB, app, stage, "   ")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "bootstrap address is empty")
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
 	})
 
 	t.Run("upserts when not configured", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-			},
-			updateItemFn: func(_ context.Context, input *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
-				require.Equal(t, table, aws.ToString(input.TableName))
-				return &dynamodb.UpdateItemOutput{}, nil
-			},
-		}
+		db := new(mocks.MockDB)
+		readQuery := new(mocks.MockQuery)
+		writeQuery := new(mocks.MockQuery)
+		builder := new(mocks.MockUpdateBuilder)
 
-		state, err := ensureStageBootstrapState(context.Background(), fake, app, stage, "0xAbC")
+		db.On("WithContext", ctx).Return(db).Twice()
+		db.On("Model", mock.Anything).Return(readQuery).Once()
+		db.On("Model", mock.Anything).Return(writeQuery).Once()
+		db.On("Close").Return(nil).Once()
+
+		readQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(readQuery).Once()
+		readQuery.On("Where", "SK", "=", "STATE").Return(readQuery).Once()
+		readQuery.On("ConsistentRead").Return(readQuery).Once()
+		readQuery.On("First", mock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+
+		writeQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(writeQuery).Once()
+		writeQuery.On("Where", "SK", "=", "STATE").Return(writeQuery).Once()
+		writeQuery.On("UpdateBuilder").Return(builder).Once()
+
+		builder.On("Set", "Locked", true).Return(builder).Once()
+		builder.On("Set", "BootstrapUsername", "bootstrap").Return(builder).Once()
+		builder.On("Set", "BootstrapWalletAddress", "0xabc").Return(builder).Once()
+		builder.On("Set", "UpdatedAt", mock.Anything).Return(builder).Once()
+		builder.On("SetIfNotExists", "CreatedAt", mock.Anything, mock.Anything).Return(builder).Once()
+		builder.On("Remove", "ActivatedAt").Return(builder).Once()
+		builder.On("Remove", "PrimaryAdminUsername").Return(builder).Once()
+		builder.On("Execute").Return(nil).Once()
+
+		newDB := func() (theorydb.DB, error) { return db, nil }
+		state, err := ensureStageBootstrapState(ctx, newDB, app, stage, "0xAbC")
 		require.NoError(t, err)
 		require.True(t, state.Locked)
 		require.True(t, state.Updated)
 		require.Equal(t, "0xabc", state.Address)
-		require.Equal(t, 1, fake.updateCalls)
+
+		db.AssertExpectations(t)
+		readQuery.AssertExpectations(t)
+		writeQuery.AssertExpectations(t)
+		builder.AssertExpectations(t)
 	})
 
 	t.Run("upsert failure surfaces error", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-			},
-			updateItemFn: func(context.Context, *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
-				return nil, errors.New("update failed")
-			},
-		}
+		db := new(mocks.MockDB)
+		readQuery := new(mocks.MockQuery)
+		writeQuery := new(mocks.MockQuery)
+		builder := new(mocks.MockUpdateBuilder)
 
-		_, err := ensureStageBootstrapState(context.Background(), fake, app, stage, "0xabc")
+		db.On("WithContext", ctx).Return(db).Twice()
+		db.On("Model", mock.Anything).Return(readQuery).Once()
+		db.On("Model", mock.Anything).Return(writeQuery).Once()
+		db.On("Close").Return(nil).Once()
+
+		readQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(readQuery).Once()
+		readQuery.On("Where", "SK", "=", "STATE").Return(readQuery).Once()
+		readQuery.On("ConsistentRead").Return(readQuery).Once()
+		readQuery.On("First", mock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+
+		writeQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(writeQuery).Once()
+		writeQuery.On("Where", "SK", "=", "STATE").Return(writeQuery).Once()
+		writeQuery.On("UpdateBuilder").Return(builder).Once()
+
+		builder.On("Set", mock.Anything, mock.Anything).Return(builder).Maybe()
+		builder.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(builder).Maybe()
+		builder.On("Remove", mock.Anything).Return(builder).Maybe()
+		builder.On("Execute").Return(errors.New("update failed")).Once()
+
+		newDB := func() (theorydb.DB, error) { return db, nil }
+		_, err := ensureStageBootstrapState(ctx, newDB, app, stage, "0xabc")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "update instance state")
-		require.Equal(t, 1, fake.updateCalls)
 	})
 }
 
 func TestInspectBootstrapRequirements_CombinesStages(t *testing.T) {
+	ctx := context.Background()
 	app := "app"
-	devTable := stageMainTableName(app, naming.StageDev)
-	liveTable := stageMainTableName(app, naming.StageLive)
 
 	t.Run("marks required when table missing", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(_ context.Context, input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				switch aws.ToString(input.TableName) {
-				case devTable:
-					return nil, &dynamotypes.ResourceNotFoundException{}
-				case liveTable:
-					return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-				default:
-					return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-				}
-			},
+		devDB := new(mocks.MockDB)
+		devQuery := new(mocks.MockQuery)
+		liveDB := new(mocks.MockDB)
+		liveQuery := new(mocks.MockQuery)
+
+		devDB.On("WithContext", ctx).Return(devDB).Once()
+		devDB.On("Model", mock.Anything).Return(devQuery).Once()
+		devDB.On("Close").Return(nil).Once()
+		devQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(devQuery).Once()
+		devQuery.On("Where", "SK", "=", "STATE").Return(devQuery).Once()
+		devQuery.On("ConsistentRead").Return(devQuery).Once()
+		devQuery.On("First", mock.Anything).Return(theorydbErrors.ErrTableNotFound).Once()
+
+		liveDB.On("WithContext", ctx).Return(liveDB).Once()
+		liveDB.On("Model", mock.Anything).Return(liveQuery).Once()
+		liveDB.On("Close").Return(nil).Once()
+		liveQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(liveQuery).Once()
+		liveQuery.On("Where", "SK", "=", "STATE").Return(liveQuery).Once()
+		liveQuery.On("ConsistentRead").Return(liveQuery).Once()
+		liveQuery.On("First", mock.Anything).Return(theorydbErrors.ErrItemNotFound).Once()
+
+		calls := 0
+		newDB := func() (theorydb.DB, error) {
+			calls++
+			if calls == 1 {
+				return devDB, nil
+			}
+			return liveDB, nil
 		}
 
-		addr, required, err := inspectBootstrapRequirements(context.Background(), fake, app, []naming.Stage{naming.StageDev, naming.StageLive})
+		addr, required, err := inspectBootstrapRequirements(ctx, newDB, app, []naming.Stage{naming.StageDev, naming.StageLive})
 		require.NoError(t, err)
 		require.True(t, required)
 		require.Empty(t, addr)
 	})
 
 	t.Run("returns address and still requires when any stage locked without address", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(_ context.Context, input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				switch aws.ToString(input.TableName) {
-				case devTable:
-					return &dynamodb.GetItemOutput{
-						Item: map[string]dynamotypes.AttributeValue{
-							"locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: true},
-							"bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: ""},
-						},
-					}, nil
-				case liveTable:
-					return &dynamodb.GetItemOutput{
-						Item: map[string]dynamotypes.AttributeValue{
-							"locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: true},
-							"bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: "0xAbC"},
-						},
-					}, nil
-				default:
-					return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-				}
-			},
+		devDB := new(mocks.MockDB)
+		devQuery := new(mocks.MockQuery)
+		liveDB := new(mocks.MockDB)
+		liveQuery := new(mocks.MockQuery)
+
+		devDB.On("WithContext", ctx).Return(devDB).Once()
+		devDB.On("Model", mock.Anything).Return(devQuery).Once()
+		devDB.On("Close").Return(nil).Once()
+		devQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(devQuery).Once()
+		devQuery.On("Where", "SK", "=", "STATE").Return(devQuery).Once()
+		devQuery.On("ConsistentRead").Return(devQuery).Once()
+		devQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*bootstrapInstanceStateRecord)
+			dest.Locked = true
+			dest.BootstrapWalletAddress = ""
+		}).Return(nil).Once()
+
+		liveDB.On("WithContext", ctx).Return(liveDB).Once()
+		liveDB.On("Model", mock.Anything).Return(liveQuery).Once()
+		liveDB.On("Close").Return(nil).Once()
+		liveQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(liveQuery).Once()
+		liveQuery.On("Where", "SK", "=", "STATE").Return(liveQuery).Once()
+		liveQuery.On("ConsistentRead").Return(liveQuery).Once()
+		liveQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*bootstrapInstanceStateRecord)
+			dest.Locked = true
+			dest.BootstrapWalletAddress = "0xAbC"
+		}).Return(nil).Once()
+
+		calls := 0
+		newDB := func() (theorydb.DB, error) {
+			calls++
+			if calls == 1 {
+				return devDB, nil
+			}
+			return liveDB, nil
 		}
 
-		addr, required, err := inspectBootstrapRequirements(context.Background(), fake, app, []naming.Stage{naming.StageDev, naming.StageLive})
+		addr, required, err := inspectBootstrapRequirements(ctx, newDB, app, []naming.Stage{naming.StageDev, naming.StageLive})
 		require.NoError(t, err)
 		require.True(t, required)
 		require.Equal(t, "0xabc", addr)
 	})
 
 	t.Run("errors when multiple addresses", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(_ context.Context, input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				switch aws.ToString(input.TableName) {
-				case devTable:
-					return &dynamodb.GetItemOutput{
-						Item: map[string]dynamotypes.AttributeValue{
-							"locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: true},
-							"bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: "0x1"},
-						},
-					}, nil
-				case liveTable:
-					return &dynamodb.GetItemOutput{
-						Item: map[string]dynamotypes.AttributeValue{
-							"locked":                 &dynamotypes.AttributeValueMemberBOOL{Value: true},
-							"bootstrapWalletAddress": &dynamotypes.AttributeValueMemberS{Value: "0x2"},
-						},
-					}, nil
-				default:
-					return &dynamodb.GetItemOutput{Item: map[string]dynamotypes.AttributeValue{}}, nil
-				}
-			},
+		devDB := new(mocks.MockDB)
+		devQuery := new(mocks.MockQuery)
+		liveDB := new(mocks.MockDB)
+		liveQuery := new(mocks.MockQuery)
+
+		devDB.On("WithContext", ctx).Return(devDB).Once()
+		devDB.On("Model", mock.Anything).Return(devQuery).Once()
+		devDB.On("Close").Return(nil).Once()
+		devQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(devQuery).Once()
+		devQuery.On("Where", "SK", "=", "STATE").Return(devQuery).Once()
+		devQuery.On("ConsistentRead").Return(devQuery).Once()
+		devQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*bootstrapInstanceStateRecord)
+			dest.Locked = true
+			dest.BootstrapWalletAddress = "0x1"
+		}).Return(nil).Once()
+
+		liveDB.On("WithContext", ctx).Return(liveDB).Once()
+		liveDB.On("Model", mock.Anything).Return(liveQuery).Once()
+		liveDB.On("Close").Return(nil).Once()
+		liveQuery.On("Where", "PK", "=", instanceConfigKeyPK).Return(liveQuery).Once()
+		liveQuery.On("Where", "SK", "=", "STATE").Return(liveQuery).Once()
+		liveQuery.On("ConsistentRead").Return(liveQuery).Once()
+		liveQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*bootstrapInstanceStateRecord)
+			dest.Locked = true
+			dest.BootstrapWalletAddress = "0x2"
+		}).Return(nil).Once()
+
+		calls := 0
+		newDB := func() (theorydb.DB, error) {
+			calls++
+			if calls == 1 {
+				return devDB, nil
+			}
+			return liveDB, nil
 		}
 
-		_, _, err := inspectBootstrapRequirements(context.Background(), fake, app, []naming.Stage{naming.StageDev, naming.StageLive})
+		_, _, err := inspectBootstrapRequirements(ctx, newDB, app, []naming.Stage{naming.StageDev, naming.StageLive})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "multiple bootstrap wallet addresses")
 	})
 
-	t.Run("returns error for unexpected GetItem failure", func(t *testing.T) {
-		fake := &fakeDynamoDB{
-			getItemFn: func(context.Context, *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-				return nil, errors.New("boom")
-			},
-		}
+	t.Run("returns error for unexpected query failure", func(t *testing.T) {
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
 
-		_, _, err := inspectBootstrapRequirements(context.Background(), fake, app, []naming.Stage{naming.StageDev})
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		db.On("Close").Return(nil).Once()
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Return(errors.New("boom")).Once()
+
+		newDB := func() (theorydb.DB, error) { return db, nil }
+		_, _, err := inspectBootstrapRequirements(ctx, newDB, app, []naming.Stage{naming.StageDev})
 		require.Error(t, err)
 	})
 }

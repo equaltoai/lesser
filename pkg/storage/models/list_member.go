@@ -7,21 +7,21 @@ import (
 
 // ListMember represents membership of an account in a list
 type ListMember struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys for list membership
-	PK string `dynamorm:"pk,attr:PK" json:"PK"` // LIST_MEMBERS#listID
-	SK string `dynamorm:"sk,attr:SK" json:"SK"` // accountID
+	PK string `theorydb:"pk,attr:PK" json:"PK"` // LIST_MEMBERS#listID
+	SK string `theorydb:"sk,attr:SK" json:"SK"` // accountID
 
 	// GSI1 for reverse lookup (what lists is an account in)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // ACCOUNT_LISTS#accountID
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID#username
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // ACCOUNT_LISTS#accountID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID#username
 
 	// Core fields
-	ListID       string    `dynamorm:"attr:listID" json:"list_id"`
-	AccountID    string    `dynamorm:"attr:accountID" json:"account_id"`
-	ListUsername string    `dynamorm:"attr:listUsername" json:"list_username"` // Owner of the list (for reverse index)
-	AddedAt      time.Time `dynamorm:"attr:addedAt" json:"added_at"`
+	ListID       string    `theorydb:"attr:listID" json:"list_id"`
+	AccountID    string    `theorydb:"attr:accountID" json:"account_id"`
+	ListUsername string    `theorydb:"attr:listUsername" json:"list_username"` // Owner of the list (for reverse index)
+	AddedAt      time.Time `theorydb:"attr:addedAt" json:"added_at"`
 }
 
 // TableName returns the DynamoDB table name

@@ -11,35 +11,35 @@ type Article struct {
 	Object // Embeds standard ActivityPub Object fields
 
 	// CMS-specific metadata
-	Slug            string     `dynamorm:"attr:slug" json:"slug,omitempty"`
-	Subtitle        string     `dynamorm:"attr:subtitle" json:"subtitle,omitempty"`
-	Excerpt         string     `dynamorm:"attr:excerpt" json:"excerpt,omitempty"`
-	FeaturedImage   *Media     `dynamorm:"attr:featuredImage" json:"featured_image,omitempty"`
-	TableOfContents []TOCEntry `dynamorm:"attr:tableOfContents" json:"table_of_contents,omitempty"`
+	Slug            string     `theorydb:"attr:slug" json:"slug,omitempty"`
+	Subtitle        string     `theorydb:"attr:subtitle" json:"subtitle,omitempty"`
+	Excerpt         string     `theorydb:"attr:excerpt" json:"excerpt,omitempty"`
+	FeaturedImage   *Media     `theorydb:"attr:featuredImage" json:"featured_image,omitempty"`
+	TableOfContents []TOCEntry `theorydb:"attr:tableOfContents" json:"table_of_contents,omitempty"`
 
 	// Publishing metadata
-	ReadingTimeMinutes int    `dynamorm:"attr:readingTimeMinutes" json:"reading_time_minutes"`
-	WordCount          int    `dynamorm:"attr:wordCount" json:"word_count"`
-	ContentFormat      string `dynamorm:"attr:contentFormat" json:"content_format"` // html, markdown
+	ReadingTimeMinutes int    `theorydb:"attr:readingTimeMinutes" json:"reading_time_minutes"`
+	WordCount          int    `theorydb:"attr:wordCount" json:"word_count"`
+	ContentFormat      string `theorydb:"attr:contentFormat" json:"content_format"` // html, markdown
 
 	// Organization
-	SeriesID    *string  `dynamorm:"attr:seriesID" json:"series_id,omitempty"`
-	SeriesOrder *int     `dynamorm:"attr:seriesOrder" json:"series_order,omitempty"`
-	CategoryIDs []string `dynamorm:"attr:categoryIDs" json:"category_ids,omitempty"`
+	SeriesID    *string  `theorydb:"attr:seriesID" json:"series_id,omitempty"`
+	SeriesOrder *int     `theorydb:"attr:seriesOrder" json:"series_order,omitempty"`
+	CategoryIDs []string `theorydb:"attr:categoryIDs" json:"category_ids,omitempty"`
 
 	// SEO
-	SEOTitle       string `dynamorm:"attr:seoTitle" json:"seo_title,omitempty"`
-	SEODescription string `dynamorm:"attr:seoDescription" json:"seo_description,omitempty"`
-	CanonicalURL   string `dynamorm:"attr:canonicalURL" json:"canonical_url,omitempty"`
-	OGImage        string `dynamorm:"attr:ogImage" json:"og_image,omitempty"`
+	SEOTitle       string `theorydb:"attr:seoTitle" json:"seo_title,omitempty"`
+	SEODescription string `theorydb:"attr:seoDescription" json:"seo_description,omitempty"`
+	CanonicalURL   string `theorydb:"attr:canonicalURL" json:"canonical_url,omitempty"`
+	OGImage        string `theorydb:"attr:ogImage" json:"og_image,omitempty"`
 
 	// Editorial
-	EditorNotes  string `dynamorm:"attr:editorNotes" json:"editor_notes,omitempty"`
-	ReviewStatus string `dynamorm:"attr:reviewStatus" json:"review_status,omitempty"`
+	EditorNotes  string `theorydb:"attr:editorNotes" json:"editor_notes,omitempty"`
+	ReviewStatus string `theorydb:"attr:reviewStatus" json:"review_status,omitempty"`
 
 	// Timestamps
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // TOCEntry represents a table of contents entry

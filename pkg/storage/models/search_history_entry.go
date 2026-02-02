@@ -11,15 +11,15 @@ import (
 // PK: USER#username
 // SK: SEARCH_HISTORY#{timestamp}#{queryHash}
 type SearchHistoryEntry struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK          string    `dynamorm:"pk,attr:PK" json:"-"`
-	SK          string    `dynamorm:"sk,attr:SK" json:"-"`
-	UserID      string    `dynamorm:"attr:userID" json:"user_id"`
-	Query       string    `dynamorm:"attr:query" json:"query"`
-	ResultCount int       `dynamorm:"attr:resultCount" json:"result_count"`
-	ClickedIDs  []string  `dynamorm:"attr:clickedIDs" json:"clicked_ids"` // IDs of results user clicked
-	SearchedAt  time.Time `dynamorm:"attr:searchedAt" json:"searched_at"`
+	PK          string    `theorydb:"pk,attr:PK" json:"-"`
+	SK          string    `theorydb:"sk,attr:SK" json:"-"`
+	UserID      string    `theorydb:"attr:userID" json:"user_id"`
+	Query       string    `theorydb:"attr:query" json:"query"`
+	ResultCount int       `theorydb:"attr:resultCount" json:"result_count"`
+	ClickedIDs  []string  `theorydb:"attr:clickedIDs" json:"clicked_ids"` // IDs of results user clicked
+	SearchedAt  time.Time `theorydb:"attr:searchedAt" json:"searched_at"`
 }
 
 // TableName returns the DynamoDB table backing SearchHistoryEntry.

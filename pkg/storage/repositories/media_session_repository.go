@@ -12,8 +12,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/types"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 

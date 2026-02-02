@@ -7,22 +7,22 @@ import (
 
 // QueryCacheEntry represents a cached query result in DynamoDB
 type QueryCacheEntry struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - using pattern: PK=CACHE#{cacheKey}, SK=ENTRY
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// Cache data
-	CacheKey  string    `dynamorm:"attr:cacheKey" json:"cache_key"`
-	Value     string    `dynamorm:"attr:value" json:"value"`          // JSON-encoded cached value
-	Size      int       `dynamorm:"attr:size" json:"size"`            // Size for LRU calculations
-	ExpiresAt time.Time `dynamorm:"attr:expiresAt" json:"expires_at"` // Manual expiry tracking
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt time.Time `dynamorm:"attr:updatedAt" json:"updated_at"`
+	CacheKey  string    `theorydb:"attr:cacheKey" json:"cache_key"`
+	Value     string    `theorydb:"attr:value" json:"value"`          // JSON-encoded cached value
+	Size      int       `theorydb:"attr:size" json:"size"`            // Size for LRU calculations
+	ExpiresAt time.Time `theorydb:"attr:expiresAt" json:"expires_at"` // Manual expiry tracking
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// TTL for automatic cleanup
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 }
 
 // UpdateKeys ensures keys are properly set before saving
@@ -62,19 +62,19 @@ func (QueryCacheEntry) TableName() string {
 
 // BatchGetKeys represents batch get keys for instances
 type BatchGetKeys struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - using pattern: PK=BATCH#{batchType}, SK=KEY#{key}
-	PK string `dynamorm:"pk,attr:PK" json:"pk"`
-	SK string `dynamorm:"sk,attr:SK" json:"sk"`
+	PK string `theorydb:"pk,attr:PK" json:"pk"`
+	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// Batch data
-	BatchType string    `dynamorm:"attr:batchType" json:"batch_type"` // "instance", "metrics", etc.
-	Key       string    `dynamorm:"attr:key" json:"key"`              // The actual key being batched
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"created_at"`
+	BatchType string    `theorydb:"attr:batchType" json:"batch_type"` // "instance", "metrics", etc.
+	Key       string    `theorydb:"attr:key" json:"key"`              // The actual key being batched
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"created_at"`
 
 	// TTL for cleanup (short-lived for batching)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 }
 
 // UpdateKeys ensures keys are properly set for batch keys

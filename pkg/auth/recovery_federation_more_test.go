@@ -124,4 +124,3 @@ func TestRecoveryFederationService_SendRecoveryApprovalNotification_ActorErrorAn
 	// Keep notification timestamps deterministic for coverage-only test paths.
 	_ = time.Now()
 }
-

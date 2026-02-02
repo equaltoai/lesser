@@ -8,20 +8,20 @@ import (
 // Marker represents a timeline position marker stored in DynamoDB using DynamORM
 // Tracks user's last read positions for various timelines (home, notifications, etc.)
 type Marker struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - matches legacy pattern exactly
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "USER#{username}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "MARKER#{timeline}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "USER#{username}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "MARKER#{timeline}"
 
 	// Timeline marker data - matches legacy MarkerRecord exactly
-	LastReadID string    `dynamorm:"attr:lastReadID" json:"LastReadID"` // Preserve exact case from legacy
-	UpdatedAt  time.Time `dynamorm:"attr:updatedAt" json:"UpdatedAt"`   // Preserve exact case from legacy
-	Version    int       `dynamorm:"attr:version" json:"Version"`       // Preserve exact case from legacy
+	LastReadID string    `theorydb:"attr:lastReadID" json:"LastReadID"` // Preserve exact case from legacy
+	UpdatedAt  time.Time `theorydb:"attr:updatedAt" json:"UpdatedAt"`   // Preserve exact case from legacy
+	Version    int       `theorydb:"attr:version" json:"Version"`       // Preserve exact case from legacy
 
 	// Internal fields for DynamORM operations
-	Username string `dynamorm:"attr:username" json:"username"` // Extracted from PK for convenience
-	Timeline string `dynamorm:"attr:timeline" json:"timeline"` // Extracted from SK for convenience
+	Username string `theorydb:"attr:username" json:"username"` // Extracted from PK for convenience
+	Timeline string `theorydb:"attr:timeline" json:"timeline"` // Extracted from SK for convenience
 }
 
 // TableName returns the DynamoDB table name for the Marker model

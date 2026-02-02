@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 

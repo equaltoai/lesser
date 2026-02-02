@@ -11,14 +11,16 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/theory-cloud/tabletheory/pkg/model"
+	"github.com/theory-cloud/tabletheory/pkg/schema"
+	"github.com/theory-cloud/tabletheory/pkg/session"
 	"go.uber.org/zap"
 )
 
-type dynamodbClient interface {
-	DescribeTable(ctx context.Context, params *dynamodb.DescribeTableInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DescribeTableOutput, error)
+type tableExistsChecker interface {
+	TableExists(tableName string) (bool, error)
 }
 
 type s3Client interface {
@@ -31,9 +33,19 @@ type secretsManagerClient interface {
 
 var (
 	loadDefaultAWSConfig    = awsconfig.LoadDefaultConfig
-	newDynamoDBClient       = func(cfg aws.Config) dynamodbClient { return dynamodb.NewFromConfig(cfg) }
 	newS3Client             = func(cfg aws.Config) s3Client { return s3.NewFromConfig(cfg) }
 	newSecretsManagerClient = func(cfg aws.Config) secretsManagerClient { return secretsmanager.NewFromConfig(cfg) }
+	newTableExistsChecker   = func(cfg aws.Config) (tableExistsChecker, error) {
+		sess, err := session.NewSession(&session.Config{
+			Region:              cfg.Region,
+			CredentialsProvider: cfg.Credentials,
+		})
+		if err != nil {
+			return nil, err
+		}
+		registry := model.NewRegistry()
+		return schema.NewManager(sess, registry), nil
+	}
 )
 
 // ValidationResult represents the result of configuration validation
@@ -166,7 +178,6 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 	requiredVars := map[string]string{
 		"DOMAIN_NAME":        "The domain name for your Lesser instance",
 		"AWS_REGION":         "AWS region for deploying resources",
-		"DYNAMODB_TABLE":     "DynamoDB table name for data storage",
 		"PRIVATE_KEY_SECRET": "Secret name for ActivityPub signing key",
 	}
 
@@ -193,6 +204,15 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 			// Validate specific formats
 			v.validateEnvironmentVariableFormat(varName, value, result)
 		}
+	}
+
+	if _, err := resolveMainTableNameForValidation(); err != nil {
+		result.Errors = append(result.Errors, ValidationError{
+			Field:       "DYNAMODB_TABLE",
+			Message:     "DynamoDB table name is not configured and cannot be derived",
+			Severity:    "critical",
+			Remediation: "Set DYNAMODB_TABLE/DYNAMO_TABLE_NAME or ENVIRONMENT/STAGE so Lesser can derive the canonical table name",
+		})
 	}
 
 	// JWT secret can come from plaintext or ARN
@@ -451,23 +471,37 @@ func (v *ProductionConfigValidator) validateAWSResources(ctx context.Context, re
 
 // validateDynamoDB validates DynamoDB table availability
 func (v *ProductionConfigValidator) validateDynamoDB(ctx context.Context) ResourceStatus {
-	tableName := os.Getenv("DYNAMODB_TABLE")
-	if tableName == "" {
+	_ = ctx
+
+	tableName, err := resolveMainTableNameForValidation()
+	if err != nil {
 		return ResourceStatus{
 			Available: false,
-			Error:     "DynamoDB table name not configured",
+			Error:     err.Error(),
 		}
 	}
 
-	client := newDynamoDBClient(v.awsConfig)
-	_, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{
-		TableName: aws.String(tableName),
-	})
+	checker, err := newTableExistsChecker(v.awsConfig)
+	if err != nil {
+		return ResourceStatus{
+			Available: false,
+			Error:     fmt.Sprintf("failed to initialize TableTheory DynamoDB client: %v", err),
+		}
+	}
+
+	exists, err := checker.TableExists(tableName)
 
 	if err != nil {
 		return ResourceStatus{
 			Available: false,
 			Error:     fmt.Sprintf("DynamoDB table '%s' not accessible: %v", tableName, err),
+		}
+	}
+
+	if !exists {
+		return ResourceStatus{
+			Available: false,
+			Error:     fmt.Sprintf("DynamoDB table '%s' not found", tableName),
 		}
 	}
 
@@ -648,7 +682,6 @@ func QuickValidateProductionConfig() error {
 	requiredVars := []string{
 		"DOMAIN_NAME",
 		"AWS_REGION",
-		"DYNAMODB_TABLE",
 		"PRIVATE_KEY_SECRET",
 	}
 
@@ -665,9 +698,26 @@ func QuickValidateProductionConfig() error {
 		missingVars = append(missingVars, "JWT_SECRET or JWT_SECRET_ARN")
 	}
 
+	if _, err := resolveMainTableNameForValidation(); err != nil {
+		missingVars = append(missingVars, "DYNAMODB_TABLE/DYNAMO_TABLE_NAME or ENVIRONMENT/STAGE")
+	}
+
 	if len(missingVars) > 0 {
 		return fmt.Errorf("missing required environment variables: %s", strings.Join(missingVars, ", "))
 	}
 
 	return nil
+}
+
+func resolveMainTableNameForValidation() (string, error) {
+	if table := resolveEnvFirst("DYNAMODB_TABLE", "DYNAMO_TABLE_NAME"); table != "" {
+		return table, nil
+	}
+
+	env, envRaw, stage := resolveEnvironmentAndStage()
+	derived := firstNonEmpty(env, envRaw, stage)
+	if derived == "" {
+		return "", fmt.Errorf("DYNAMODB_TABLE/DYNAMO_TABLE_NAME or ENVIRONMENT/STAGE must be set to determine the DynamoDB table name")
+	}
+	return fmt.Sprintf("lesser-%s", strings.ToLower(derived)), nil
 }

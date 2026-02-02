@@ -57,7 +57,6 @@ func (m *MockRelationshipRepository) IsFollowing(ctx context.Context, followerUs
 	return args.Bool(0), args.Error(1)
 }
 
-
 // ===== Follow Request Operations =====
 
 // GetFollowRequest mocks the GetFollowRequest method
@@ -158,7 +157,6 @@ func (m *MockRelationshipRepository) Unfollow(ctx context.Context, followerID, f
 	return args.Error(0)
 }
 
-
 // ===== Block Operations =====
 
 // CreateBlock mocks the CreateBlock method
@@ -236,7 +234,6 @@ func (m *MockRelationshipRepository) CountUsersWhoBlocked(ctx context.Context, b
 	return args.Int(0), args.Error(1)
 }
 
-
 // ===== Mute Operations =====
 
 // CreateMute mocks the CreateMute method
@@ -302,7 +299,6 @@ func (m *MockRelationshipRepository) CountUsersWhoMuted(ctx context.Context, mut
 	return args.Int(0), args.Error(1)
 }
 
-
 // ===== Endorsement Operations =====
 
 // IsEndorsed mocks the IsEndorsed method
@@ -342,7 +338,6 @@ func (m *MockRelationshipRepository) GetRelationshipNote(ctx context.Context, us
 	}
 	return args.Get(0).(*storage.AccountNote), args.Error(1)
 }
-
 
 // ===== Move Operations =====
 
@@ -405,7 +400,6 @@ func (m *MockRelationshipRepository) HasMovedFrom(ctx context.Context, oldActor,
 	args := m.Called(ctx, oldActor, newActor)
 	return args.Bool(0), args.Error(1)
 }
-
 
 // ===== Collection Operations =====
 

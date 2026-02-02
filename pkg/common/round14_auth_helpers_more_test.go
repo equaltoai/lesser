@@ -4,9 +4,9 @@ import (
 	stdErrors "errors"
 	"testing"
 
-	liftTesting "github.com/equaltoai/lesser/pkg/testing/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 type oauthServiceStub struct {
@@ -19,14 +19,14 @@ func (s oauthServiceStub) ValidateAccessToken(token string) (Claims, error) {
 
 func TestAuthHelpers_ExtractAndValidateAuth(t *testing.T) {
 	t.Run("missing header returns 401", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test")
+		ctx := newTestContext("GET", "/test")
 		res := ExtractAndValidateAuth(ctx, ScopeRead, oauthServiceStub{})
 		require.Error(t, res.Error)
 		assert.Equal(t, 401, res.ErrorCode)
 	})
 
 	t.Run("invalid bearer prefix returns 401", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithHeaders(map[string]string{
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
 			"Authorization": "Token abc",
 		}))
 		res := ExtractAndValidateAuth(ctx, ScopeRead, oauthServiceStub{
@@ -37,7 +37,7 @@ func TestAuthHelpers_ExtractAndValidateAuth(t *testing.T) {
 	})
 
 	t.Run("oauth validation failure returns 401", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithHeaders(map[string]string{
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
 			"Authorization": "Bearer token",
 		}))
 		res := ExtractAndValidateAuth(ctx, ScopeRead, oauthServiceStub{
@@ -48,7 +48,7 @@ func TestAuthHelpers_ExtractAndValidateAuth(t *testing.T) {
 	})
 
 	t.Run("missing scope returns 403", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithHeaders(map[string]string{
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
 			"Authorization": "Bearer token",
 		}))
 		res := ExtractAndValidateAuth(ctx, ScopeWrite, oauthServiceStub{
@@ -59,7 +59,7 @@ func TestAuthHelpers_ExtractAndValidateAuth(t *testing.T) {
 	})
 
 	t.Run("success returns context", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithHeaders(map[string]string{
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
 			"Authorization": "Bearer token",
 		}))
 		res := ExtractAndValidateAuth(ctx, "", oauthServiceStub{
@@ -73,7 +73,7 @@ func TestAuthHelpers_ExtractAndValidateAuth(t *testing.T) {
 
 func TestAuthHelpers_MultipleScopesAndOptionalAuth(t *testing.T) {
 	t.Run("multiple scopes requires one match", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithHeaders(map[string]string{
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
 			"Authorization": "Bearer token",
 		}))
 		res := ExtractAndValidateAuthWithMultipleScopes(ctx, []string{AdminRead}, oauthServiceStub{
@@ -84,7 +84,7 @@ func TestAuthHelpers_MultipleScopesAndOptionalAuth(t *testing.T) {
 	})
 
 	t.Run("optional auth with no header returns empty context", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test")
+		ctx := newTestContext("GET", "/test")
 		res := ExtractOptionalAuth(ctx, oauthServiceStub{})
 		require.NoError(t, res.Error)
 		require.NotNil(t, res.Context)
@@ -92,7 +92,7 @@ func TestAuthHelpers_MultipleScopesAndOptionalAuth(t *testing.T) {
 	})
 
 	t.Run("optional auth invalid token returns empty context", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithHeaders(map[string]string{
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
 			"Authorization": "Token x",
 		}))
 		res := ExtractOptionalAuth(ctx, oauthServiceStub{})
@@ -102,7 +102,7 @@ func TestAuthHelpers_MultipleScopesAndOptionalAuth(t *testing.T) {
 	})
 
 	t.Run("optional auth oauth failure returns empty context", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test", liftTesting.WithHeaders(map[string]string{
+		ctx := newTestContext("GET", "/test", withHeaders(map[string]string{
 			"Authorization": "Bearer token",
 		}))
 		res := ExtractOptionalAuth(ctx, oauthServiceStub{
@@ -115,8 +115,9 @@ func TestAuthHelpers_MultipleScopesAndOptionalAuth(t *testing.T) {
 
 func TestAuthHelpers_HeaderExtractionAndAccessValidation(t *testing.T) {
 	t.Run("ExtractAuthHeader fallbacks", func(t *testing.T) {
-		ctx := liftTesting.MockLiftContext("GET", "/test")
-		ctx.Request.Request.Headers["authorization"] = "Bearer token"
+		ctx := newTestContext("GET", "/test", func(ctx *apptheory.Context) {
+			ctx.Request.Headers = map[string][]string{"Authorization": {"Bearer token"}}
+		})
 		assert.Equal(t, "Bearer token", ExtractAuthHeader(ctx))
 	})
 

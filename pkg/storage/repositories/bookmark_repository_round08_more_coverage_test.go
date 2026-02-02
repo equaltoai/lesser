@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -110,12 +110,12 @@ func TestBookmarkRepository_Round08_RepairAndDeleteLegacyHelpers(t *testing.T) {
 
 type fakeTransactionalDB struct{}
 
-func (fakeTransactionalDB) Model(any) core.Query                                         { panic("unused") }
-func (fakeTransactionalDB) Transaction(func(*core.Tx) error) error                        { return nil }
-func (fakeTransactionalDB) Migrate() error                                                { return nil }
-func (fakeTransactionalDB) AutoMigrate(...any) error                                      { return nil }
-func (fakeTransactionalDB) Close() error                                                  { return nil }
-func (fakeTransactionalDB) WithContext(context.Context) core.DB                           { return fakeTransactionalDB{} }
+func (fakeTransactionalDB) Model(any) core.Query                   { panic("unused") }
+func (fakeTransactionalDB) Transaction(func(*core.Tx) error) error { return nil }
+func (fakeTransactionalDB) Migrate() error                         { return nil }
+func (fakeTransactionalDB) AutoMigrate(...any) error               { return nil }
+func (fakeTransactionalDB) Close() error                           { return nil }
+func (fakeTransactionalDB) WithContext(context.Context) core.DB    { return fakeTransactionalDB{} }
 func (fakeTransactionalDB) TransactWrite(_ context.Context, fn func(core.TransactionBuilder) error) error {
 	return fn(nil)
 }

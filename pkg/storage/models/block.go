@@ -9,23 +9,23 @@ import (
 
 // Block represents a block relationship between actors
 type Block struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys - MUST match legacy exactly
-	PK string `dynamorm:"pk,attr:PK" json:"PK"` // ACTOR#{blocker_username}#BLOCKS
-	SK string `dynamorm:"sk,attr:SK" json:"SK"` // BLOCKED#{blocked_username}
+	PK string `theorydb:"pk,attr:PK" json:"PK"` // ACTOR#{blocker_username}#BLOCKS
+	SK string `theorydb:"sk,attr:SK" json:"SK"` // BLOCKED#{blocked_username}
 
 	// GSI5 for reverse lookup
-	GSI5PK string `dynamorm:"index:gsi5,pk,attr:gsi5PK" json:"gsi5PK"` // BLOCKED#{blocked_username}
-	GSI5SK string `dynamorm:"index:gsi5,sk,attr:gsi5SK" json:"gsi5SK"` // BLOCKER#{blocker_username}
+	GSI5PK string `theorydb:"index:gsi5,pk,attr:gsi5PK" json:"gsi5PK"` // BLOCKED#{blocked_username}
+	GSI5SK string `theorydb:"index:gsi5,sk,attr:gsi5SK" json:"gsi5SK"` // BLOCKER#{blocker_username}
 
 	// Core fields from legacy
-	Type      string    `dynamorm:"attr:type" json:"Type"`           // Always "Block"
-	Actor     string    `dynamorm:"attr:actor" json:"Actor"`         // Full actor ID who is blocking
-	Object    string    `dynamorm:"attr:object" json:"Object"`       // Full actor ID being blocked
-	ID        string    `dynamorm:"attr:id" json:"ID"`               // Block activity ID
-	Published time.Time `dynamorm:"attr:published" json:"Published"` // When the block was published
-	CreatedAt time.Time `dynamorm:"attr:createdAt" json:"CreatedAt"` // When stored in DB
+	Type      string    `theorydb:"attr:type" json:"Type"`           // Always "Block"
+	Actor     string    `theorydb:"attr:actor" json:"Actor"`         // Full actor ID who is blocking
+	Object    string    `theorydb:"attr:object" json:"Object"`       // Full actor ID being blocked
+	ID        string    `theorydb:"attr:id" json:"ID"`               // Block activity ID
+	Published time.Time `theorydb:"attr:published" json:"Published"` // When the block was published
+	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"` // When stored in DB
 }
 
 // TableName returns the DynamoDB table name

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pay-theory/lift/pkg/streamer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/theory-cloud/apptheory/pkg/streamer"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -28,12 +28,12 @@ func (m *mockStreamerClient) DeleteConnection(ctx context.Context, connectionID 
 	return args.Error(0)
 }
 
-func (m *mockStreamerClient) GetConnection(ctx context.Context, connectionID string) (*streamer.ConnectionInfo, error) {
+func (m *mockStreamerClient) GetConnection(ctx context.Context, connectionID string) (streamer.Connection, error) {
 	args := m.Called(ctx, connectionID)
-	if info := args.Get(0); info != nil {
-		return info.(*streamer.ConnectionInfo), args.Error(1)
+	if conn := args.Get(0); conn != nil {
+		return conn.(streamer.Connection), args.Error(1)
 	}
-	return nil, args.Error(1)
+	return streamer.Connection{}, args.Error(1)
 }
 
 // Mock connection repository

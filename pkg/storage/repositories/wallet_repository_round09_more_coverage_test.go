@@ -8,10 +8,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -140,29 +140,29 @@ func TestWalletRepository_Round09_MoreCoverage(t *testing.T) {
 			}).
 			Return(nil).
 			Once()
-		mockQuery2.On("Delete").Return(nil).Once()            // wallet credential delete
+		mockQuery2.On("Delete").Return(nil).Once()              // wallet credential delete
 		mockQuery2.On("Delete").Return(ErrTestMockError).Once() // index delete
 		setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
 		repo2 := NewWalletRepository(mockDB2, "test-table", zap.NewNop(), newRound09CostService())
 		require.NoError(t, repo2.DeleteWalletCredential(ctx, "user-1", "0xabc"))
 	})
 
-		t.Run("UpdateWalletLastUsed success and update error", func(t *testing.T) {
-			mockDB := new(mocks.MockDB)
-			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("First", mock.Anything).Return(nil).Once()
-			mockQuery.On("Update", mock.Anything).Return(nil).Once()
-			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+	t.Run("UpdateWalletLastUsed success and update error", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("First", mock.Anything).Return(nil).Once()
+		mockQuery.On("Update", mock.Anything).Return(nil).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewWalletRepository(mockDB, "test-table", zap.NewNop(), newRound09CostService())
 		require.NoError(t, repo.UpdateWalletLastUsed(ctx, "user-1", "0xabc"))
 
-			mockDB2 := new(mocks.MockDB)
-			mockQuery2 := new(mocks.MockQuery)
-			mockQuery2.On("First", mock.Anything).Return(nil).Once()
-			mockQuery2.On("Update", mock.Anything).Return(ErrTestMockError).Once()
-			setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
-			repo2 := NewWalletRepository(mockDB2, "test-table", zap.NewNop(), nil)
-			require.Error(t, repo2.UpdateWalletLastUsed(ctx, "user-1", "0xabc"))
-		})
+		mockDB2 := new(mocks.MockDB)
+		mockQuery2 := new(mocks.MockQuery)
+		mockQuery2.On("First", mock.Anything).Return(nil).Once()
+		mockQuery2.On("Update", mock.Anything).Return(ErrTestMockError).Once()
+		setupPermissiveRound08Mocks(mockDB2, mockQuery2, nil, baseTime)
+		repo2 := NewWalletRepository(mockDB2, "test-table", zap.NewNop(), nil)
+		require.Error(t, repo2.UpdateWalletLastUsed(ctx, "user-1", "0xabc"))
+	})
 }

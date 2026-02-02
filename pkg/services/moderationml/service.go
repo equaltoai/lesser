@@ -17,7 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -200,8 +200,8 @@ func (s *Service) fetchContentForSample(ctx context.Context, objectID, objectTyp
 
 		// Use the cached Content field or extract from Note
 		content := status.Content
-		if content == "" && status.Note != nil && status.Note.Get() != nil {
-			note := status.Note.Get()
+		if content == "" && status.Note != nil {
+			note := status.Note
 			content = note.Content
 			// Add content warning if present
 			if note.Summary != "" {

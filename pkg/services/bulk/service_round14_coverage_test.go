@@ -428,7 +428,7 @@ func TestService_processBulkArchiveRestoreExport_ListAndModeration(t *testing.T)
 				Content:        "hi",
 				Visibility:     "public",
 				PublishedAt:    time.Now(),
-				Note:           &models.NoteField{},
+				Note:           &activitypub.Note{},
 			}, nil
 		}
 

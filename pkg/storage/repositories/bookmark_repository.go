@@ -10,9 +10,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	errors "github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/theory-cloud/tabletheory"
+	"github.com/theory-cloud/tabletheory/pkg/core"
+	errors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -118,14 +118,14 @@ func (r *BookmarkRepository) CreateBookmark(ctx context.Context, username, objec
 
 	writeErr := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
 		if createTimeRecord {
-			tx.Create(timeRecord, dynamorm.IfNotExists())
+			tx.Create(timeRecord, tabletheory.IfNotExists())
 		}
-		tx.Create(objectRecord, dynamorm.IfNotExists())
+		tx.Create(objectRecord, tabletheory.IfNotExists())
 		if unlockExistingTimeRecord {
 			tx.UpdateWithBuilder(newBookmarkKey(timeRecord.PK, timeRecord.SK), func(ub core.UpdateBuilder) error {
 				ub.Set("Locked", false)
 				return nil
-			}, dynamorm.Condition("Locked", "=", true))
+			}, tabletheory.Condition("Locked", "=", true))
 		}
 		return nil
 	})
@@ -293,7 +293,7 @@ func (r *BookmarkRepository) CheckBookmarksForStatuses(ctx context.Context, user
 		batch := uniqueIDs[start:end]
 		keys := make([]any, 0, len(batch))
 		for _, statusID := range batch {
-			keys = append(keys, dynamorm.NewKeyPair(pk, buildObjectSK(statusID)))
+			keys = append(keys, tabletheory.NewKeyPair(pk, buildObjectSK(statusID)))
 		}
 
 		items, err := r.batchGetFn(ctx, keys)
@@ -578,12 +578,12 @@ func (r *BookmarkRepository) repairLegacyBookmark(ctx context.Context, username,
 	}
 
 	recoverErr := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
-		tx.Create(objectRecord, dynamorm.IfNotExists())
+		tx.Create(objectRecord, tabletheory.IfNotExists())
 		if legacy.Locked {
 			tx.UpdateWithBuilder(newBookmarkKey(legacy.PK, legacy.SK), func(ub core.UpdateBuilder) error {
 				ub.Set("Locked", false)
 				return nil
-			}, dynamorm.Condition("Locked", "=", true))
+			}, tabletheory.Condition("Locked", "=", true))
 		}
 		return nil
 	})

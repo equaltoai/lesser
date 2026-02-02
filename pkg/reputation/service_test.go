@@ -14,7 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -35,72 +35,84 @@ func newServiceTestStorage() *serviceTestStorage {
 	return &serviceTestStorage{}
 }
 
-func (s *serviceTestStorage) Account() *repositories.AccountRepository         { return nil }
-func (s *serviceTestStorage) Bookmark() *repositories.BookmarkRepository       { return nil }
-func (s *serviceTestStorage) Actor() interfaces.ActorRepository             { return s.actorRepo }
-func (s *serviceTestStorage) Object() interfaces.ObjectRepository              { return nil }
-func (s *serviceTestStorage) Activity() interfaces.ActivityRepository          { return s.activityRepo }
-func (s *serviceTestStorage) Timeline() interfaces.TimelineRepository          { return nil }
-func (s *serviceTestStorage) Notification() interfaces.NotificationRepository  { return nil }
-func (s *serviceTestStorage) Like() *repositories.LikeRepository               { return nil }
-func (s *serviceTestStorage) Moderation() interfaces.ModerationRepository      { return s.moderationRepo }
-func (s *serviceTestStorage) List() *repositories.ListRepository               { return nil }
-func (s *serviceTestStorage) Media() *repositories.MediaRepository             { return nil }
-func (s *serviceTestStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
-func (s *serviceTestStorage) Poll() *repositories.PollRepository               { return nil }
+func (s *serviceTestStorage) Account() *repositories.AccountRepository                   { return nil }
+func (s *serviceTestStorage) Bookmark() *repositories.BookmarkRepository                 { return nil }
+func (s *serviceTestStorage) Actor() interfaces.ActorRepository                          { return s.actorRepo }
+func (s *serviceTestStorage) Object() interfaces.ObjectRepository                        { return nil }
+func (s *serviceTestStorage) Activity() interfaces.ActivityRepository                    { return s.activityRepo }
+func (s *serviceTestStorage) Timeline() interfaces.TimelineRepository                    { return nil }
+func (s *serviceTestStorage) Notification() interfaces.NotificationRepository            { return nil }
+func (s *serviceTestStorage) Like() *repositories.LikeRepository                         { return nil }
+func (s *serviceTestStorage) Moderation() interfaces.ModerationRepository                { return s.moderationRepo }
+func (s *serviceTestStorage) List() *repositories.ListRepository                         { return nil }
+func (s *serviceTestStorage) Media() *repositories.MediaRepository                       { return nil }
+func (s *serviceTestStorage) MediaMetadata() *repositories.MediaMetadataRepository       { return nil }
+func (s *serviceTestStorage) Poll() *repositories.PollRepository                         { return nil }
 func (s *serviceTestStorage) PushSubscription() *repositories.PushSubscriptionRepository { return nil }
-func (s *serviceTestStorage) Hashtag() *repositories.HashtagRepository         { return nil }
-func (s *serviceTestStorage) ScheduledStatus() *repositories.ScheduledStatusRepository { return nil }
-func (s *serviceTestStorage) Announcement() *repositories.AnnouncementRepository { return nil }
-func (s *serviceTestStorage) DomainBlock() *repositories.DomainBlockRepository { return s.domainBlockRepo }
-func (s *serviceTestStorage) Relationship() interfaces.ConcreteRelationshipRepository { return s.relationshipRepo }
-func (s *serviceTestStorage) Instance() *repositories.InstanceRepository       { return nil }
-func (s *serviceTestStorage) Federation() *repositories.FederationRepository   { return nil }
-func (s *serviceTestStorage) Recovery() *repositories.RecoveryRepository       { return nil }
-func (s *serviceTestStorage) Analytics() *repositories.TrendingRepository      { return nil }
-func (s *serviceTestStorage) Social() *repositories.SocialRepository           { return nil }
-func (s *serviceTestStorage) User() interfaces.UserRepository                  { return s.userRepo }
-func (s *serviceTestStorage) Status() interfaces.StatusRepository           { return s.statusRepo }
-func (s *serviceTestStorage) Cost() *repositories.TrackingRepository           { return nil }
+func (s *serviceTestStorage) Hashtag() *repositories.HashtagRepository                   { return nil }
+func (s *serviceTestStorage) ScheduledStatus() *repositories.ScheduledStatusRepository   { return nil }
+func (s *serviceTestStorage) Announcement() *repositories.AnnouncementRepository         { return nil }
+func (s *serviceTestStorage) DomainBlock() *repositories.DomainBlockRepository {
+	return s.domainBlockRepo
+}
+func (s *serviceTestStorage) Relationship() interfaces.ConcreteRelationshipRepository {
+	return s.relationshipRepo
+}
+func (s *serviceTestStorage) Instance() *repositories.InstanceRepository           { return nil }
+func (s *serviceTestStorage) Federation() *repositories.FederationRepository       { return nil }
+func (s *serviceTestStorage) Recovery() *repositories.RecoveryRepository           { return nil }
+func (s *serviceTestStorage) Analytics() *repositories.TrendingRepository          { return nil }
+func (s *serviceTestStorage) Social() *repositories.SocialRepository               { return nil }
+func (s *serviceTestStorage) User() interfaces.UserRepository                      { return s.userRepo }
+func (s *serviceTestStorage) Status() interfaces.StatusRepository                  { return s.statusRepo }
+func (s *serviceTestStorage) Cost() *repositories.TrackingRepository               { return nil }
 func (s *serviceTestStorage) WebSocketCost() *repositories.WebSocketCostRepository { return nil }
-func (s *serviceTestStorage) Trust() interfaces.TrustRepository                { return s.trustRepo }
-func (s *serviceTestStorage) Search() *repositories.SearchRepository           { return nil }
-func (s *serviceTestStorage) Relay() *repositories.RelayRepository             { return nil }
-func (s *serviceTestStorage) CommunityNote() *repositories.CommunityNoteRepository { return s.communityNoteRepo }
-func (s *serviceTestStorage) Emoji() *repositories.EmojiRepository             { return nil }
-func (s *serviceTestStorage) RateLimit() *repositories.RateLimitRepository     { return nil }
+func (s *serviceTestStorage) Trust() interfaces.TrustRepository                    { return s.trustRepo }
+func (s *serviceTestStorage) Search() *repositories.SearchRepository               { return nil }
+func (s *serviceTestStorage) Relay() *repositories.RelayRepository                 { return nil }
+func (s *serviceTestStorage) CommunityNote() *repositories.CommunityNoteRepository {
+	return s.communityNoteRepo
+}
+func (s *serviceTestStorage) Emoji() *repositories.EmojiRepository               { return nil }
+func (s *serviceTestStorage) RateLimit() *repositories.RateLimitRepository       { return nil }
 func (s *serviceTestStorage) Conversation() *repositories.ConversationRepository { return nil }
-func (s *serviceTestStorage) Marker() *repositories.MarkerRepository           { return nil }
-func (s *serviceTestStorage) FeaturedTag() *repositories.FeaturedTagRepository { return nil }
-func (s *serviceTestStorage) AI() *repositories.AIRepository                   { return nil }
-func (s *serviceTestStorage) Export() *repositories.ExportRepository           { return nil }
-func (s *serviceTestStorage) Import() *repositories.ImportRepository           { return nil }
-func (s *serviceTestStorage) DLQ() *repositories.DLQRepository                 { return nil }
+func (s *serviceTestStorage) Marker() *repositories.MarkerRepository             { return nil }
+func (s *serviceTestStorage) FeaturedTag() *repositories.FeaturedTagRepository   { return nil }
+func (s *serviceTestStorage) AI() *repositories.AIRepository                     { return nil }
+func (s *serviceTestStorage) Export() *repositories.ExportRepository             { return nil }
+func (s *serviceTestStorage) Import() *repositories.ImportRepository             { return nil }
+func (s *serviceTestStorage) DLQ() *repositories.DLQRepository                   { return nil }
 func (s *serviceTestStorage) MetricRecord() *repositories.MetricRecordRepository { return nil }
-func (s *serviceTestStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository { return nil }
-func (s *serviceTestStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository { return nil }
-func (s *serviceTestStorage) Audit() *repositories.AuditRepository             { return nil }
-func (s *serviceTestStorage) OAuth() *repositories.OAuthRepository             { return nil }
-func (s *serviceTestStorage) DNSCache() *repositories.DNSCacheRepository       { return nil }
-func (s *serviceTestStorage) Filter() *repositories.FilterRepository           { return nil }
-func (s *serviceTestStorage) Thread() *repositories.ThreadRepository           { return nil }
-func (s *serviceTestStorage) Severance() *repositories.SeveranceRepository     { return nil }
-func (s *serviceTestStorage) ModerationML() *repositories.ModerationMLRepository { return nil }
-func (s *serviceTestStorage) Quote() *repositories.QuoteRepository             { return nil }
-func (s *serviceTestStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository     { return nil }
-func (s *serviceTestStorage) MediaPopularity() interfaces.MediaPopularityRepository   { return nil }
-func (s *serviceTestStorage) MediaSession() interfaces.MediaSessionRepository         { return nil }
-func (s *serviceTestStorage) StreamingConnection() interfaces.StreamingConnectionRepository { return nil }
-func (s *serviceTestStorage) Article() interfaces.ArticleRepository         { return nil }
-func (s *serviceTestStorage) Draft() interfaces.DraftRepository             { return nil }
-func (s *serviceTestStorage) Revision() interfaces.RevisionRepository       { return nil }
-func (s *serviceTestStorage) Series() interfaces.SeriesRepository           { return nil }
-func (s *serviceTestStorage) Category() interfaces.CategoryRepository       { return nil }
-func (s *serviceTestStorage) Publication() interfaces.PublicationRepository { return nil }
+func (s *serviceTestStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
+	return nil
+}
+func (s *serviceTestStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
+	return nil
+}
+func (s *serviceTestStorage) Audit() *repositories.AuditRepository                  { return nil }
+func (s *serviceTestStorage) OAuth() *repositories.OAuthRepository                  { return nil }
+func (s *serviceTestStorage) DNSCache() *repositories.DNSCacheRepository            { return nil }
+func (s *serviceTestStorage) Filter() *repositories.FilterRepository                { return nil }
+func (s *serviceTestStorage) Thread() *repositories.ThreadRepository                { return nil }
+func (s *serviceTestStorage) Severance() *repositories.SeveranceRepository          { return nil }
+func (s *serviceTestStorage) ModerationML() *repositories.ModerationMLRepository    { return nil }
+func (s *serviceTestStorage) Quote() *repositories.QuoteRepository                  { return nil }
+func (s *serviceTestStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository   { return nil }
+func (s *serviceTestStorage) MediaPopularity() interfaces.MediaPopularityRepository { return nil }
+func (s *serviceTestStorage) MediaSession() interfaces.MediaSessionRepository       { return nil }
+func (s *serviceTestStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
+	return nil
+}
+func (s *serviceTestStorage) Article() interfaces.ArticleRepository                     { return nil }
+func (s *serviceTestStorage) Draft() interfaces.DraftRepository                         { return nil }
+func (s *serviceTestStorage) Revision() interfaces.RevisionRepository                   { return nil }
+func (s *serviceTestStorage) Series() interfaces.SeriesRepository                       { return nil }
+func (s *serviceTestStorage) Category() interfaces.CategoryRepository                   { return nil }
+func (s *serviceTestStorage) Publication() interfaces.PublicationRepository             { return nil }
 func (s *serviceTestStorage) PublicationMember() interfaces.PublicationMemberRepository { return nil }
-func (s *serviceTestStorage) GetDB() dynamormCore.DB                           { return nil }
-func (s *serviceTestStorage) GetTableName() string                             { return "test-table" }
-func (s *serviceTestStorage) GetLogger() *zap.Logger                           { return zap.NewNop() }
+func (s *serviceTestStorage) GetDB() dynamormCore.DB                                    { return nil }
+func (s *serviceTestStorage) GetTableName() string                                      { return "test-table" }
+func (s *serviceTestStorage) GetLogger() *zap.Logger                                    { return zap.NewNop() }
 
 // Ensure serviceTestStorage implements core.RepositoryStorage
 var _ core.RepositoryStorage = (*serviceTestStorage)(nil)
@@ -209,11 +221,11 @@ func TestParseSeverity(t *testing.T) {
 		{"2", 2},
 		{"3", 3},
 		{"4", 4},
-		{"0", 2},      // Invalid - defaults to 2
-		{"5", 2},      // Invalid - defaults to 2
-		{"", 2},       // Empty - defaults to 2
+		{"0", 2},       // Invalid - defaults to 2
+		{"5", 2},       // Invalid - defaults to 2
+		{"", 2},        // Empty - defaults to 2
 		{"invalid", 2}, // Non-numeric - defaults to 2
-		{"-1", 2},     // Negative - defaults to 2
+		{"-1", 2},      // Negative - defaults to 2
 	}
 
 	for _, tc := range testCases {

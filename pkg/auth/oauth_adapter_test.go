@@ -1,18 +1,17 @@
 package auth
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -87,15 +86,15 @@ func TestOAuthServiceAdapter_MiddlewareIntegration_Smoke(t *testing.T) {
 	mw := CreateAPIAuthMiddlewareFromAuthService(as, zap.NewNop())
 	require.NotNil(t, mw)
 
-	req := lift.NewRequest(nil)
-	ctx := lift.NewContext(context.Background(), req)
+	ctx := &apptheory.Context{}
 
 	called := false
-	handler := mw(lift.HandlerFunc(func(*lift.Context) error {
+	handler := mw(func(*apptheory.Context) (*apptheory.Response, error) {
 		called = true
-		return nil
-	}))
+		return &apptheory.Response{Status: 200}, nil
+	})
 
-	require.NoError(t, handler.Handle(ctx))
+	_, err := handler(ctx)
+	require.NoError(t, err)
 	assert.True(t, called)
 }

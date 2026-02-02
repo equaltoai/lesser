@@ -10,48 +10,48 @@ import (
 
 // ProviderAccount represents an OAuth provider account linked to a user
 type ProviderAccount struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary key - using composite key for user + provider relationship
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // Format: "user#{userID}"
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // Format: "provider#{provider}#{providerID}"
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "user#{userID}"
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "provider#{provider}#{providerID}"
 
 	// GSI1 - Provider lookup (find user by provider account)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
 
 	// GSI2 - User's provider accounts
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
 
 	// Core provider data
-	UserID       string `dynamorm:"attr:userID" json:"user_id"`
-	Provider     string `dynamorm:"attr:provider" json:"provider"`                    // "google", "github", "twitter", etc.
-	ProviderID   string `dynamorm:"attr:providerID" json:"provider_id"`               // Provider's unique ID for the user
-	ProviderName string `dynamorm:"attr:providerName" json:"provider_name,omitempty"` // Display name from provider
+	UserID       string `theorydb:"attr:userID" json:"user_id"`
+	Provider     string `theorydb:"attr:provider" json:"provider"`                    // "google", "github", "twitter", etc.
+	ProviderID   string `theorydb:"attr:providerID" json:"provider_id"`               // Provider's unique ID for the user
+	ProviderName string `theorydb:"attr:providerName" json:"provider_name,omitempty"` // Display name from provider
 
 	// OAuth tokens (stored encrypted)
-	AccessToken  string    `dynamorm:"attr:accessToken" json:"access_token,omitempty"`
-	RefreshToken string    `dynamorm:"attr:refreshToken" json:"refresh_token,omitempty"`
-	TokenExpiry  time.Time `dynamorm:"attr:tokenExpiry" json:"token_expiry,omitempty"`
+	AccessToken  string    `theorydb:"attr:accessToken" json:"access_token,omitempty"`
+	RefreshToken string    `theorydb:"attr:refreshToken" json:"refresh_token,omitempty"`
+	TokenExpiry  time.Time `theorydb:"attr:tokenExpiry" json:"token_expiry,omitempty"`
 
 	// Profile data from provider
-	Email       string `dynamorm:"attr:email" json:"email,omitempty"`
-	Username    string `dynamorm:"attr:username" json:"username,omitempty"`
-	DisplayName string `dynamorm:"attr:displayName" json:"display_name,omitempty"`
-	AvatarURL   string `dynamorm:"attr:avatarURL" json:"avatar_url,omitempty"`
+	Email       string `theorydb:"attr:email" json:"email,omitempty"`
+	Username    string `theorydb:"attr:username" json:"username,omitempty"`
+	DisplayName string `theorydb:"attr:displayName" json:"display_name,omitempty"`
+	AvatarURL   string `theorydb:"attr:avatarURL" json:"avatar_url,omitempty"`
 
 	// Status
-	IsActive  bool `dynamorm:"attr:isActive" json:"is_active"`
-	IsPrimary bool `dynamorm:"attr:isPrimary" json:"is_primary"` // Is this the primary auth method?
+	IsActive  bool `theorydb:"attr:isActive" json:"is_active"`
+	IsPrimary bool `theorydb:"attr:isPrimary" json:"is_primary"` // Is this the primary auth method?
 
 	// Metadata
-	CreatedAt  time.Time  `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt  time.Time  `dynamorm:"attr:updatedAt" json:"updated_at"`
-	LastUsedAt *time.Time `dynamorm:"attr:lastUsedAt" json:"last_used_at,omitempty"`
+	CreatedAt  time.Time  `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt  time.Time  `theorydb:"attr:updatedAt" json:"updated_at"`
+	LastUsedAt *time.Time `theorydb:"attr:lastUsedAt" json:"last_used_at,omitempty"`
 
 	// Version for optimistic locking
-	Version int `dynamorm:"version,attr:version" json:"version"`
+	Version int `theorydb:"version,attr:version" json:"version"`
 }
 
 // TableName returns the DynamoDB table name for the ProviderAccount model

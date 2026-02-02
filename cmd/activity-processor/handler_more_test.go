@@ -11,9 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
-	dynamock "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamock "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -118,7 +118,7 @@ func TestActivityHandler_ProcessFollowAcceptCreateLikeAnnounceDeleteBlockFlagMov
 			Type: ActivityTypeCreate,
 			To:   []string{"https://www.w3.org/ns/activitystreams#Public"},
 		},
-		Actor:      "https://example.com/users/alice",
+		Actor: "https://example.com/users/alice",
 		Object: map[string]any{
 			"id":           "https://example.com/objects/1",
 			"type":         ObjectTypeNote,
@@ -144,7 +144,7 @@ func TestActivityHandler_ProcessFollowAcceptCreateLikeAnnounceDeleteBlockFlagMov
 			Type: ActivityTypeCreate,
 			To:   []string{"https://example.com/users/alice/followers"},
 		},
-		Actor:      "https://example.com/users/alice",
+		Actor: "https://example.com/users/alice",
 		Object: map[string]any{
 			"id":           "https://example.com/objects/2",
 			"type":         ObjectTypeNote,

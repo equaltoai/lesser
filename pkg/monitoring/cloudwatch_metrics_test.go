@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -73,7 +72,7 @@ func TestCloudWatchMetricsBuildDimensions(t *testing.T) {
 	t.Parallel()
 
 	cwm := &CloudWatchMetrics{
-		logger:     zap.NewNop(),
+		logger:      zap.NewNop(),
 		environment: "test",
 		dimensions: map[string]string{
 			"Default": "default",
@@ -161,45 +160,6 @@ func TestCloudWatchMetricsFlushToCloudWatchBatchesAndErrors(t *testing.T) {
 	require.Error(t, cwm.flushToCloudWatch(metrics[:1]))
 }
 
-func TestCloudWatchMetricsRecordLiftMetric(t *testing.T) {
-	t.Parallel()
-
-	cwm := &CloudWatchMetrics{
-		logger:      zap.NewNop(),
-		environment: "test",
-		dimensions:  map[string]string{},
-		buffer: &EnhancedMetricBuffer{
-			metrics:   make([]cwTypes.MetricDatum, 0, 10),
-			maxSize:   10,
-			flushSize: 1000,
-			flushFunc: func([]cwTypes.MetricDatum) error { return nil },
-		},
-	}
-
-	ctx := lift.NewContext(context.Background(), &lift.Request{
-		Method:  "GET",
-		Path:    "/notes/{id}",
-		Headers: map[string]string{},
-	})
-	ctx.SetTenantID("tenant-1")
-
-	cwm.RecordLiftMetric(ctx, "Lift.Requests", 1, cwTypes.StandardUnitCount, map[string]string{"Extra": "x"})
-
-	require.Equal(t, 1, cwm.buffer.Size())
-	cwm.buffer.mu.RLock()
-	got := cwm.buffer.metrics[0]
-	cwm.buffer.mu.RUnlock()
-
-	require.NotNil(t, got.MetricName)
-	assert.Equal(t, "Lift.Requests", *got.MetricName)
-	dims := cwDimensionsToMap(got.Dimensions)
-	assert.Equal(t, "GET_notes_id", dims["Operation"])
-	assert.Equal(t, "GET", dims["Method"])
-	assert.Equal(t, "tenant-1", dims["TenantID"])
-	assert.Equal(t, "test", dims["Environment"])
-	assert.Equal(t, "x", dims["Extra"])
-}
-
 func TestCloudWatchMetricsDefaultsNewAndFlush(t *testing.T) {
 	cfg := DefaultMetricConfig()
 	assert.NotEmpty(t, cfg.Namespace)
@@ -231,10 +191,6 @@ func TestCloudWatchMetricsDefaultsNewAndFlush(t *testing.T) {
 	// Cover addMetric flush error path.
 	stub.putMetricDataErr = errors.New("put failed")
 	cwm.RecordBusinessMetrics("Metric", 1, cwTypes.StandardUnitCount, nil)
-
-	// Cover getOperationName default branch.
-	liftCtx := lift.NewContext(context.Background(), &lift.Request{Method: "", Path: ""})
-	assert.Equal(t, StatusUnknown, cwm.getOperationName(liftCtx))
 
 	assert.False(t, containsHelper("abc", "z"))
 }

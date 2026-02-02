@@ -524,9 +524,9 @@ func TestWebSocketCostRecordBuilder(t *testing.T) {
 func TestWebSocketCostRecord_BeforeCreate_AndBeforeUpdate(t *testing.T) {
 	t.Run("BeforeCreate sets timestamps, TTL, keys, and cost dollars", func(t *testing.T) {
 		w := &WebSocketCostRecord{
-			OperationType:      "connect",
-			ConnectionID:       "conn-123",
-			UserID:             "user-456",
+			OperationType:       "connect",
+			ConnectionID:        "conn-123",
+			UserID:              "user-456",
 			TotalCostMicroCents: 2_500_000,
 		}
 
@@ -612,19 +612,19 @@ func TestWebSocketCostAggregation_Lifecycle(t *testing.T) {
 
 	t.Run("BeforeCreate calculates metrics, TTL, and keys", func(t *testing.T) {
 		agg := &WebSocketCostAggregation{
-			Period:              "month",
-			OperationType:       "connect",
-			UserID:              "user-1",
-			WindowStart:         windowStart,
-			WindowEnd:           now,
-			TotalConnections:    2,
-			TotalMessagesIn:     1,
-			TotalMessagesOut:    1,
-			TotalMessageBytes:   300,
+			Period:                 "month",
+			OperationType:          "connect",
+			UserID:                 "user-1",
+			WindowStart:            windowStart,
+			WindowEnd:              now,
+			TotalConnections:       2,
+			TotalMessagesIn:        1,
+			TotalMessagesOut:       1,
+			TotalMessageBytes:      300,
 			TotalConnectionMinutes: 10,
-			UniqueUsers:         2,
-			FailedConnections:   1,
-			TotalCostMicroCents: 1_000_000,
+			UniqueUsers:            2,
+			FailedConnections:      1,
+			TotalCostMicroCents:    1_000_000,
 		}
 
 		before := time.Now()

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -17,14 +18,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dhowden/tag"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/lift/pkg/lift"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/equaltoai/lesser/pkg/media"
-	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
@@ -383,251 +384,91 @@ func NewMediaProcessor(lambdaCtx *common.LambdaContext) *MediaProcessor {
 }
 
 func main() {
-	// Configure and start Lambda
-	app := setupLiftApp()
-	lambdaHandler := createLambdaHandler(app)
-	startLambda(lambdaHandler)
-}
+	app := apptheory.New()
 
-// liftApp interface defines the methods we need from the Lift app
-type liftApp interface {
-	Use(middleware func(lift.Handler) lift.Handler) *lift.App
-	SQS(name string, handler interface{}) error
-	HandleRequest(ctx context.Context, event interface{}) (interface{}, error)
-}
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	queueName := naming.ResourceNameWithApp(appName, "media-processor-queue", stage)
 
-// setupLiftApp configures the Lift application with middleware and handlers
-func setupLiftApp() liftApp {
-	app := lift.New()
+	app.SQS(queueName, func(ctx *apptheory.EventContext, msg events.SQSMessage) error {
+		if processor == nil {
+			return fmt.Errorf("media processor not initialized")
+		}
+		return processor.HandleSQSMessage(ctx, msg)
+	})
 
-	// Panic recovery middleware (MUST be first to catch all panics)
-	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
-
-	// Add all middleware
-	addRequestIDMiddleware(app)
-	addLoggingMetricsMiddleware(app)
-	addErrorHandlingMiddleware(app)
-
-	// Set SQS handler for media processing
-	addSQSHandler(app)
-
-	return app
-}
-
-// addRequestIDMiddleware adds request ID generation middleware
-func addRequestIDMiddleware(app liftApp) {
-	_ = app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("media-processing-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
+	startLambda(func(ctx context.Context, event json.RawMessage) (any, error) {
+		respAny, err := app.HandleLambda(ctx, event)
+		if processor != nil && processor.emfMetrics != nil {
+			processor.emfMetrics.Flush()
+		}
+		return respAny, err
 	})
 }
 
-// addLoggingMetricsMiddleware adds logging and metrics collection middleware
-func addLoggingMetricsMiddleware(app liftApp) {
-	_ = app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			requestID := ctx.Get("requestID").(string)
+func (mp *MediaProcessor) HandleSQSMessage(ctx *apptheory.EventContext, message events.SQSMessage) (err error) {
+	requestID := ""
+	runCtx := context.Background()
+	if ctx != nil {
+		requestID = ctx.RequestID
+		runCtx = ctx.Context()
+	}
 
-			processor.logger.Info("processing SQS batch",
+	if mp.logger == nil {
+		mp.logger = zap.NewNop()
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			mp.logger.Error("panic in media processor handler",
 				zap.String("request_id", requestID),
+				zap.String("message_id", message.MessageId),
+				zap.Any("panic", r),
+				zap.Stack("stack"),
 			)
+			err = fmt.Errorf("panic recovered in media-processor: %v", r)
+		}
+	}()
 
-			// Record SQS processing metrics
-			if processor.emfMetrics != nil {
-				processor.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessing, 1.0, observability.UnitCount, nil)
-			}
-
-			err := next.Handle(ctx)
-			duration := time.Since(start)
-
-			recordProcessingMetrics(err, duration)
-			logProcessingResult(requestID, err, duration)
-
+	// Initialize AWS clients
+	if mp.s3Client == nil || mp.mediaConvertClient == nil {
+		if err := mp.initializeAWSClients(runCtx); err != nil {
+			mp.logger.Error("failed to initialize AWS clients",
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
 			return err
-		})
-	})
-}
-
-// recordProcessingMetrics records processing metrics based on success/failure
-func recordProcessingMetrics(err error, duration time.Duration) {
-	if processor.emfMetrics == nil {
-		return
+		}
 	}
 
-	processor.emfMetrics.RecordLatency("sqs_batch_processing", duration)
-
-	if err != nil {
-		processor.emfMetrics.RecordError("sqs_batch_processing", observability.ErrorTypeInternal)
-	} else {
-		processor.emfMetrics.RecordSuccess("sqs_batch_processing")
-	}
-
-	// Record processing time metric
-	processor.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessingTime,
-		float64(duration.Milliseconds()), observability.UnitMilliseconds, nil)
-}
-
-// logProcessingResult logs the processing result with appropriate level
-func logProcessingResult(requestID string, err error, duration time.Duration) {
-	if err != nil {
-		processor.logger.Error("failed to process SQS batch",
+	var processingEvent MediaProcessingEvent
+	if err := common.ParseRequestBody([]byte(message.Body), &processingEvent); err != nil {
+		mp.logger.Error("failed to unmarshal event",
+			zap.String("message_id", message.MessageId),
 			zap.String("request_id", requestID),
 			zap.Error(err),
-			zap.Duration("duration", duration),
 		)
-	} else {
-		processor.logger.Info("successfully processed SQS batch",
+		return nil
+	}
+
+	if err := mp.processMediaJob(runCtx, processingEvent); err != nil {
+		mp.logger.Error("failed to process media job",
+			zap.String("job_id", processingEvent.JobID),
+			zap.String("media_id", processingEvent.MediaID),
 			zap.String("request_id", requestID),
-			zap.Duration("duration", duration),
+			zap.Error(err),
 		)
-	}
-}
 
-// addErrorHandlingMiddleware adds error handling middleware
-func addErrorHandlingMiddleware(app liftApp) {
-	_ = app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			err := next.Handle(ctx)
-			if err != nil {
-				processor.logger.Error("handler error",
-					zap.String("request_id", ctx.Get("requestID").(string)),
-					zap.Error(err),
-				)
-			}
-			return err
-		})
-	})
-}
-
-// addSQSHandler adds the SQS message handler
-func addSQSHandler(app liftApp) {
-	_ = app.SQS("media-processing", func(ctx *lift.Context) error {
-		event, err := extractSQSEvent(ctx)
-		if err != nil {
-			return err
-		}
-		return processor.HandleSQS(ctx, event)
-	})
-}
-
-// extractSQSEvent extracts and parses the SQS event from the Lift context
-func extractSQSEvent(ctx *lift.Context) (events.SQSEvent, error) {
-	// Extract SQS event from Lift context
-	if ctx.Request.RawEvent == nil {
-		return events.SQSEvent{}, lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
-	}
-
-	// Parse the raw event as SQS event
-	var event events.SQSEvent
-	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-		event = sqsEvent
-	} else {
-		// Try to parse from interface if it's a map
-		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-		if err != nil {
-			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
-		}
-
-		if err := json.Unmarshal(eventBytes, &event); err != nil {
-			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-		}
-	}
-
-	return event, nil
-}
-
-// createLambdaHandler creates the main Lambda handler with observability
-func createLambdaHandler(app liftApp) func(context.Context, interface{}) (interface{}, error) {
-	return func(ctx context.Context, event interface{}) (interface{}, error) {
-		requestStart := time.Now()
-
-		// Record cold start metrics
-		recordColdStartMetrics()
-
-		// Process the request
-		result, err := app.HandleRequest(ctx, event)
-
-		// Record Lambda-level metrics
-		recordLambdaMetrics(requestStart, err)
-
-		// Flush metrics before termination
-		flushMetrics()
-
-		return result, err
-	}
-}
-
-// recordColdStartMetrics records cold start metrics if applicable
-func recordColdStartMetrics() {
-	if time.Since(processor.startTime) < 30*time.Second && processor.emfMetrics != nil {
-		processor.emfMetrics.RecordBusinessMetric(observability.MetricColdStarts, 1.0, observability.UnitCount, nil)
-		coldStartDuration := time.Since(processor.startTime)
-		processor.emfMetrics.RecordBusinessMetric(observability.MetricColdStartDuration, float64(coldStartDuration.Milliseconds()), observability.UnitMilliseconds, nil)
-	}
-}
-
-// recordLambdaMetrics records Lambda-level metrics
-func recordLambdaMetrics(requestStart time.Time, err error) {
-	if processor.emfMetrics == nil {
-		return
-	}
-
-	requestDuration := time.Since(requestStart)
-	processor.emfMetrics.RecordLatency("media_lambda_request", requestDuration)
-	processor.emfMetrics.RecordThroughput("media_lambda_request", 1)
-
-	if err != nil {
-		processor.emfMetrics.RecordError("media_lambda_request", "lambda_error")
-	} else {
-		processor.emfMetrics.RecordSuccess("media_lambda_request")
-	}
-}
-
-// flushMetrics ensures all EMF metrics are written to CloudWatch before Lambda terminates
-func flushMetrics() {
-	if processor.emfMetrics != nil {
-		processor.emfMetrics.Flush()
-	}
-}
-
-// HandleSQS implements the SQS handler interface for Lift
-func (mp *MediaProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
-	// Initialize AWS clients
-	if err := mp.initializeAWSClients(ctx.Request.Context()); err != nil {
-		mp.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
-	}
-
-	mp.logger.Info("processing media processing batch",
-		zap.String("request_id", ctx.GetRequestID()),
-		zap.Int("message_count", len(event.Records)))
-
-	// Process each message
-	for _, message := range event.Records {
-		var processingEvent MediaProcessingEvent
-		if err := common.ParseRequestBody([]byte(message.Body), &processingEvent); err != nil {
-			mp.logger.Error("failed to unmarshal event",
-				zap.String("message_id", message.MessageId),
-				zap.Error(err))
-			continue
-		}
-
-		if err := mp.processMediaJob(ctx.Request.Context(), processingEvent); err != nil {
-			mp.logger.Error("failed to process media job",
-				zap.String("job_id", processingEvent.JobID),
-				zap.String("media_id", processingEvent.MediaID),
-				zap.Error(err))
+		if mp.mediaRepo != nil {
 			// Handle job failure with retry logic
 			// First get the job to update it
-			if job, getErr := mp.mediaRepo.GetMediaJob(ctx.Request.Context(), processingEvent.JobID); getErr == nil {
-				if retryErr := mp.handleJobFailure(ctx.Request.Context(), job, err); retryErr != nil {
-					mp.logger.Error("Failed to handle job failure",
+			if job, getErr := mp.mediaRepo.GetMediaJob(runCtx, processingEvent.JobID); getErr == nil {
+				if retryErr := mp.handleJobFailure(runCtx, job, err); retryErr != nil {
+					mp.logger.Error("failed to handle job failure",
 						zap.String("jobID", processingEvent.JobID),
-						zap.Error(retryErr))
+						zap.String("request_id", requestID),
+						zap.Error(retryErr),
+					)
 				}
 			}
 		}

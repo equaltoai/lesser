@@ -13,10 +13,10 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -289,18 +289,18 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	}
 }
 
-func (m *MockRepositoryStorage) Account() *repositories.AccountRepository           { return nil }
-func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository         { return nil }
+func (m *MockRepositoryStorage) Account() *repositories.AccountRepository        { return nil }
+func (m *MockRepositoryStorage) Bookmark() *repositories.BookmarkRepository      { return nil }
 func (m *MockRepositoryStorage) Actor() interfaces.ActorRepository               { return nil }
-func (m *MockRepositoryStorage) Object() interfaces.ObjectRepository                { return nil }
-func (m *MockRepositoryStorage) Activity() interfaces.ActivityRepository            { return nil }
-func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository            { return nil }
-func (m *MockRepositoryStorage) Notification() interfaces.NotificationRepository    { return nil }
-func (m *MockRepositoryStorage) Like() *repositories.LikeRepository                 { return nil }
-func (m *MockRepositoryStorage) Moderation() interfaces.ModerationRepository        { return nil }
-func (m *MockRepositoryStorage) List() *repositories.ListRepository                 { return nil }
-func (m *MockRepositoryStorage) Media() *repositories.MediaRepository               { return nil }
-func (m *MockRepositoryStorage) Poll() *repositories.PollRepository                 { return nil }
+func (m *MockRepositoryStorage) Object() interfaces.ObjectRepository             { return nil }
+func (m *MockRepositoryStorage) Activity() interfaces.ActivityRepository         { return nil }
+func (m *MockRepositoryStorage) Timeline() interfaces.TimelineRepository         { return nil }
+func (m *MockRepositoryStorage) Notification() interfaces.NotificationRepository { return nil }
+func (m *MockRepositoryStorage) Like() *repositories.LikeRepository              { return nil }
+func (m *MockRepositoryStorage) Moderation() interfaces.ModerationRepository     { return nil }
+func (m *MockRepositoryStorage) List() *repositories.ListRepository              { return nil }
+func (m *MockRepositoryStorage) Media() *repositories.MediaRepository            { return nil }
+func (m *MockRepositoryStorage) Poll() *repositories.PollRepository              { return nil }
 func (m *MockRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository {
 	return nil
 }
@@ -315,7 +315,7 @@ func (m *MockRepositoryStorage) Recovery() *repositories.RecoveryRepository     
 func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository              { return nil }
 func (m *MockRepositoryStorage) Social() *repositories.SocialRepository                   { return nil }
 func (m *MockRepositoryStorage) User() interfaces.UserRepository                          { return nil }
-func (m *MockRepositoryStorage) Status() interfaces.StatusRepository                   { return nil }
+func (m *MockRepositoryStorage) Status() interfaces.StatusRepository                      { return nil }
 func (m *MockRepositoryStorage) Cost() *repositories.TrackingRepository                   { return nil }
 func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository     { return nil }
 func (m *MockRepositoryStorage) Trust() interfaces.TrustRepository                        { return nil }
@@ -341,15 +341,15 @@ func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository           
 func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
 	return nil
 }
-func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository               { return nil }
-func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository                   { return m.threadRepo }
-func (m *MockRepositoryStorage) Severance() *repositories.SeveranceRepository             { return nil }
-func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository                   { return nil }
-func (m *MockRepositoryStorage) ModerationML() *repositories.ModerationMLRepository       { return nil }
-func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository                     { return nil }
-func (m *MockRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository     { return nil }
-func (m *MockRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository   { return nil }
-func (m *MockRepositoryStorage) MediaSession() interfaces.MediaSessionRepository         { return nil }
+func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository            { return nil }
+func (m *MockRepositoryStorage) Thread() *repositories.ThreadRepository                { return m.threadRepo }
+func (m *MockRepositoryStorage) Severance() *repositories.SeveranceRepository          { return nil }
+func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository                { return nil }
+func (m *MockRepositoryStorage) ModerationML() *repositories.ModerationMLRepository    { return nil }
+func (m *MockRepositoryStorage) Quote() *repositories.QuoteRepository                  { return nil }
+func (m *MockRepositoryStorage) MediaAnalytics() interfaces.MediaAnalyticsRepository   { return nil }
+func (m *MockRepositoryStorage) MediaPopularity() interfaces.MediaPopularityRepository { return nil }
+func (m *MockRepositoryStorage) MediaSession() interfaces.MediaSessionRepository       { return nil }
 func (m *MockRepositoryStorage) StreamingConnection() interfaces.StreamingConnectionRepository {
 	return nil
 }

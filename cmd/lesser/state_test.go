@@ -43,4 +43,3 @@ func TestReadReceipt_RejectsMissingFields(t *testing.T) {
 func TestWriteReceipt_RejectsNil(t *testing.T) {
 	require.Error(t, writeReceipt(filepath.Join(t.TempDir(), "state.json"), nil))
 }
-

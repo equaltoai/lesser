@@ -92,9 +92,9 @@ type fakeRelayCostRepo struct {
 	createCalls []*models.RelayCost
 	createErr   error
 
-	budget     *models.RelayBudget
-	getErr     error
-	updateErr  error
+	budget      *models.RelayBudget
+	getErr      error
+	updateErr   error
 	updateCalls []*models.RelayBudget
 }
 
@@ -478,10 +478,10 @@ func TestRelayService_ForwardToRelays_SkipsWhenBudgetExceeded(t *testing.T) {
 	relayRepo := &fakeRelayRepo{activeRelays: []*storage.RelayInfo{relay}}
 	costRepo := &fakeRelayCostRepo{
 		budget: &models.RelayBudget{
-			RelayURL:               relay.URL,
-			Period:                 "daily",
-			LimitMicroCents:        100,
-			CurrentUsageMicroCents: 95,
+			RelayURL:                relay.URL,
+			Period:                  "daily",
+			LimitMicroCents:         100,
+			CurrentUsageMicroCents:  95,
 			WarningThresholdPercent: 75.0,
 		},
 	}

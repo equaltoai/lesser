@@ -23,7 +23,7 @@ func (r *round12ReadSeekCloser) Close() error { return r.closeErr }
 
 type round12BadReadSeeker struct{}
 
-func (round12BadReadSeeker) Read([]byte) (int, error)      { return 0, errors.New("read failed") }
+func (round12BadReadSeeker) Read([]byte) (int, error)       { return 0, errors.New("read failed") }
 func (round12BadReadSeeker) Seek(int64, int) (int64, error) { return 0, nil }
 
 type round12CloudFront struct{}

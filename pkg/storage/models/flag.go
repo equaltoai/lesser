@@ -9,28 +9,28 @@ import (
 
 // Flag represents a content moderation flag with DynamORM tags
 type Flag struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK"` // FLAG#objectID (first object if multiple)
-	SK string `dynamorm:"sk,attr:SK"` // TIME#timestamp#flagID
+	PK string `theorydb:"pk,attr:PK"` // FLAG#objectID (first object if multiple)
+	SK string `theorydb:"sk,attr:SK"` // TIME#timestamp#flagID
 
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // ACTOR#actorID
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // FLAG#timestamp
-	GSI2PK string `dynamorm:"index:gsi2,pk,attr:gsi2PK"` // FLAG_STATUS#status
-	GSI2SK string `dynamorm:"index:gsi2,sk,attr:gsi2SK"` // TIME#timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // ACTOR#actorID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // FLAG#timestamp
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"` // FLAG_STATUS#status
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"` // TIME#timestamp
 
 	// Flag fields
-	ID         string     `dynamorm:"attr:id" json:"id"`                  // The flag activity ID
-	Actor      string     `dynamorm:"attr:actor" json:"actor"`            // Who flagged
-	Object     []string   `dynamorm:"attr:object" json:"object"`          // What was flagged (can be multiple objects)
-	Content    string     `dynamorm:"attr:content" json:"content"`        // Reason/description for the flag
-	Published  time.Time  `dynamorm:"attr:published" json:"published"`    // When it was flagged
-	Status     string     `dynamorm:"attr:status" json:"status"`          // Current status of the flag (pending, reviewed, resolved, dismissed)
-	ReviewedBy string     `dynamorm:"attr:reviewedBy" json:"reviewed_by"` // Moderator who reviewed (if reviewed)
-	ReviewedAt *time.Time `dynamorm:"attr:reviewedAt" json:"reviewed_at"` // When it was reviewed
-	ReviewNote string     `dynamorm:"attr:reviewNote" json:"review_note"` // Note from reviewer
-	CreatedAt  time.Time  `dynamorm:"attr:createdAt" json:"created_at"`   // Database timestamp
+	ID         string     `theorydb:"attr:id" json:"id"`                  // The flag activity ID
+	Actor      string     `theorydb:"attr:actor" json:"actor"`            // Who flagged
+	Object     []string   `theorydb:"attr:object" json:"object"`          // What was flagged (can be multiple objects)
+	Content    string     `theorydb:"attr:content" json:"content"`        // Reason/description for the flag
+	Published  time.Time  `theorydb:"attr:published" json:"published"`    // When it was flagged
+	Status     string     `theorydb:"attr:status" json:"status"`          // Current status of the flag (pending, reviewed, resolved, dismissed)
+	ReviewedBy string     `theorydb:"attr:reviewedBy" json:"reviewed_by"` // Moderator who reviewed (if reviewed)
+	ReviewedAt *time.Time `theorydb:"attr:reviewedAt" json:"reviewed_at"` // When it was reviewed
+	ReviewNote string     `theorydb:"attr:reviewNote" json:"review_note"` // Note from reviewer
+	CreatedAt  time.Time  `theorydb:"attr:createdAt" json:"created_at"`   // Database timestamp
 }
 
 // TableName returns the DynamoDB table name

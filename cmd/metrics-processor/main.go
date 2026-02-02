@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,14 +14,14 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/google/uuid"
-	"github.com/pay-theory/lift/pkg/lift"
-	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
@@ -150,41 +151,33 @@ func NewMetricsStreamProcessor(repos core.RepositoryStorage, logger *zap.Logger)
 	}
 }
 
-// HandleDynamoDBStreamEvent processes DynamoDB stream events in real-time
-func (h *Handler) HandleDynamoDBStreamEvent(ctx context.Context, event events.DynamoDBEvent) error {
-	h.logger.Info("Processing DynamoDB stream event",
-		zap.Int("record_count", len(event.Records)),
-		zap.String("function", "metrics-processor"),
-	)
+func (h *Handler) HandleDynamoDBRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if h == nil {
+		return fmt.Errorf("metrics handler is nil")
+	}
+	if h.logger == nil {
+		h.logger = zap.NewNop()
+	}
 
-	var successCount, errorCount int
+	runCtx := context.Background()
+	if ctx != nil {
+		runCtx = ctx.Context()
+	}
 
-	for _, record := range event.Records {
-		if err := h.processor.ProcessStreamRecord(ctx, &record); err != nil {
-			// DynamoDB-oriented retry strategy
-			// Not critical but impactful if lots of loss (per Architecture Decisions)
-			h.logger.Error("failed to process stream record",
-				zap.Error(err),
-				zap.String("event_name", record.EventName),
-				zap.String("event_source", record.EventSource),
-			)
-			errorCount++
+	if err := h.processor.ProcessStreamRecord(runCtx, &record); err != nil {
+		h.logger.Error("failed to process stream record",
+			zap.Error(err),
+			zap.String("event_name", record.EventName),
+			zap.String("event_source", record.EventSource),
+		)
 
-			// Send to DLQ for investigation
-			if dlqErr := h.processor.dlqHandler.HandleStreamFailure(ctx, &record, err); dlqErr != nil {
-				h.logger.Error("failed to send to DLQ", zap.Error(dlqErr))
-			}
-		} else {
-			successCount++
+		// Send to DLQ for investigation.
+		if dlqErr := h.processor.dlqHandler.HandleStreamFailure(runCtx, &record, err); dlqErr != nil {
+			h.logger.Error("failed to send to DLQ", zap.Error(dlqErr))
 		}
 	}
 
-	h.logger.Info("completed stream processing",
-		zap.Int("success_count", successCount),
-		zap.Int("error_count", errorCount),
-	)
-
-	// Allow partial success - don't fail entire batch for some errors
+	// Allow partial success - don't fail the batch for some errors.
 	return nil
 }
 
@@ -849,17 +842,22 @@ func main() {
 		zap.String("service", "metrics-processor"),
 		zap.String("lambda_type", "processor"))
 
-	app := lift.New()
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.RequestID())))
-	app.Use(lift.MarkGlobalMiddleware(lift.Middleware(liftMiddleware.Recover())))
+	app := apptheory.New()
 
-	_ = app.DynamoDB("*", func(ctx *lift.Context) error {
-		records, err := ctx.DynamoDBRecords()
-		if err != nil {
-			return err
-		}
-		return handler.HandleDynamoDBStreamEvent(ctx.Request.Context(), events.DynamoDBEvent{Records: records})
+	appName := strings.TrimSpace(os.Getenv("APP_NAME"))
+	stage := strings.TrimSpace(os.Getenv("STAGE"))
+	tableName := naming.ResourceNameWithApp(appName, "main-table", stage)
+
+	app.DynamoDB(tableName, handleMetricsProcessorStreamRecord)
+
+	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
+		return app.HandleLambda(ctx, event)
 	})
+}
 
-	lambdaStartFn(app.HandleRequest)
+func handleMetricsProcessorStreamRecord(ctx *apptheory.EventContext, record events.DynamoDBEventRecord) error {
+	if handler == nil {
+		return fmt.Errorf("metrics processor handler not initialized")
+	}
+	return handler.HandleDynamoDBRecord(ctx, record)
 }

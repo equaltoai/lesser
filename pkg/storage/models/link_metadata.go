@@ -10,29 +10,29 @@ import (
 
 // LinkMetadata represents metadata about a link
 type LinkMetadata struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Keys
-	PK string `dynamorm:"pk,attr:PK" json:"-"` // LINK#{url}
-	SK string `dynamorm:"sk,attr:SK" json:"-"` // METADATA
+	PK string `theorydb:"pk,attr:PK" json:"-"` // LINK#{url}
+	SK string `theorydb:"sk,attr:SK" json:"-"` // METADATA
 
 	// Attributes from interface
-	URL         string `dynamorm:"attr:url" json:"url"`
-	Title       string `dynamorm:"attr:title" json:"title"`
-	Description string `dynamorm:"attr:description" json:"description"`
-	Image       string `dynamorm:"attr:image" json:"image"`
-	Domain      string `dynamorm:"attr:domain" json:"domain"`
+	URL         string `theorydb:"attr:url" json:"url"`
+	Title       string `theorydb:"attr:title" json:"title"`
+	Description string `theorydb:"attr:description" json:"description"`
+	Image       string `theorydb:"attr:image" json:"image"`
+	Domain      string `theorydb:"attr:domain" json:"domain"`
 
 	// Additional metadata
-	FetchedAt    time.Time  `dynamorm:"attr:fetchedAt" json:"fetched_at"`
-	LastAccessed time.Time  `dynamorm:"attr:lastAccessed" json:"last_accessed"`
-	AccessCount  int64      `dynamorm:"attr:accessCount" json:"access_count"`
-	ContentType  string     `dynamorm:"attr:contentType" json:"content_type,omitempty"` // MIME type
-	Language     string     `dynamorm:"attr:language" json:"language,omitempty"`        // Detected language
-	Author       string     `dynamorm:"attr:author" json:"author,omitempty"`            // Article author if available
-	PublishedAt  *time.Time `dynamorm:"attr:publishedAt" json:"published_at,omitempty"` // Publication date if available
-	Keywords     []string   `dynamorm:"attr:keywords" json:"keywords,omitempty"`        // SEO keywords
-	TTL          int64      `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`              // 30 days cache
+	FetchedAt    time.Time  `theorydb:"attr:fetchedAt" json:"fetched_at"`
+	LastAccessed time.Time  `theorydb:"attr:lastAccessed" json:"last_accessed"`
+	AccessCount  int64      `theorydb:"attr:accessCount" json:"access_count"`
+	ContentType  string     `theorydb:"attr:contentType" json:"content_type,omitempty"` // MIME type
+	Language     string     `theorydb:"attr:language" json:"language,omitempty"`        // Detected language
+	Author       string     `theorydb:"attr:author" json:"author,omitempty"`            // Article author if available
+	PublishedAt  *time.Time `theorydb:"attr:publishedAt" json:"published_at,omitempty"` // Publication date if available
+	Keywords     []string   `theorydb:"attr:keywords" json:"keywords,omitempty"`        // SEO keywords
+	TTL          int64      `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`              // 30 days cache
 }
 
 // UpdateKeys updates the partition and sort keys

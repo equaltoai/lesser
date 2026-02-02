@@ -7,33 +7,33 @@ import (
 
 // ScheduledStatus represents a scheduled status post in DynamoDB
 type ScheduledStatus struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// Primary keys
-	PK string `dynamorm:"pk,attr:PK"` // USER#{username}#SCHEDULED
-	SK string `dynamorm:"sk,attr:SK"` // ID#{id}
+	PK string `theorydb:"pk,attr:PK"` // USER#{username}#SCHEDULED
+	SK string `theorydb:"sk,attr:SK"` // ID#{id}
 
 	// GSI1 keys for time-based queries (due status queries)
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK"` // SCHEDULED#DUE
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK"` // TIME#{scheduled_at_RFC3339Nano}#ID#{id}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // SCHEDULED#DUE
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // TIME#{scheduled_at_RFC3339Nano}#ID#{id}
 
 	// Business fields - embedded from storage.ScheduledStatus
-	ID            string         `dynamorm:"attr:id" json:"id"`
-	Username      string         `dynamorm:"attr:username" json:"username"` // Who scheduled the status
-	Status        string         `dynamorm:"attr:status" json:"status"`     // The status content
-	MediaIDs      []string       `dynamorm:"attr:mediaIDs" json:"media_ids,omitempty"`
-	Sensitive     bool           `dynamorm:"attr:sensitive" json:"sensitive"`
-	SpoilerText   string         `dynamorm:"attr:spoilerText" json:"spoiler_text,omitempty"`
-	Visibility    string         `dynamorm:"attr:visibility" json:"visibility"` // public, unlisted, private, direct
-	Language      string         `dynamorm:"attr:language" json:"language,omitempty"`
-	InReplyToID   string         `dynamorm:"attr:inReplyToID" json:"in_reply_to_id,omitempty"`
-	Poll          map[string]any `dynamorm:"attr:poll" json:"poll,omitempty"`      // Poll data if any
-	ScheduledAt   time.Time      `dynamorm:"attr:scheduledAt" json:"scheduled_at"` // When to publish
-	CreatedAt     time.Time      `dynamorm:"attr:createdAt" json:"created_at"`
-	UpdatedAt     time.Time      `dynamorm:"attr:updatedAt" json:"updated_at"`
-	Published     bool           `dynamorm:"attr:published" json:"published"` // Whether it has been published
-	PublishedAt   *time.Time     `dynamorm:"attr:publishedAt" json:"published_at,omitempty"`
-	ApplicationID string         `dynamorm:"attr:applicationID" json:"application_id,omitempty"` // OAuth app that created it
+	ID            string         `theorydb:"attr:id" json:"id"`
+	Username      string         `theorydb:"attr:username" json:"username"` // Who scheduled the status
+	Status        string         `theorydb:"attr:status" json:"status"`     // The status content
+	MediaIDs      []string       `theorydb:"attr:mediaIDs" json:"media_ids,omitempty"`
+	Sensitive     bool           `theorydb:"attr:sensitive" json:"sensitive"`
+	SpoilerText   string         `theorydb:"attr:spoilerText" json:"spoiler_text,omitempty"`
+	Visibility    string         `theorydb:"attr:visibility" json:"visibility"` // public, unlisted, private, direct
+	Language      string         `theorydb:"attr:language" json:"language,omitempty"`
+	InReplyToID   string         `theorydb:"attr:inReplyToID" json:"in_reply_to_id,omitempty"`
+	Poll          map[string]any `theorydb:"attr:poll" json:"poll,omitempty"`      // Poll data if any
+	ScheduledAt   time.Time      `theorydb:"attr:scheduledAt" json:"scheduled_at"` // When to publish
+	CreatedAt     time.Time      `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt     time.Time      `theorydb:"attr:updatedAt" json:"updated_at"`
+	Published     bool           `theorydb:"attr:published" json:"published"` // Whether it has been published
+	PublishedAt   *time.Time     `theorydb:"attr:publishedAt" json:"published_at,omitempty"`
+	ApplicationID string         `theorydb:"attr:applicationID" json:"application_id,omitempty"` // OAuth app that created it
 }
 
 // UpdateKeys updates the DynamoDB keys based on the current field values

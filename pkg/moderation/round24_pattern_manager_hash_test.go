@@ -21,4 +21,3 @@ func TestPatternManager_matchHash_TextImageAndMiss(t *testing.T) {
 	assert.False(t, matched)
 	assert.Empty(t, got)
 }
-

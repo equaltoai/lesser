@@ -175,4 +175,3 @@ func TestRound12SubscriptionResolvers_GetConnectionID(t *testing.T) {
 	require.Equal(t, "", sr.getConnectionID(context.Background()))
 	require.Equal(t, "conn-1", sr.getConnectionID(WithConnectionID(context.Background(), "conn-1")))
 }
-

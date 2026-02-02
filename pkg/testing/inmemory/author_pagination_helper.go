@@ -18,4 +18,3 @@ func listByAuthorPaginated[T any](authorID string, limit int, cursor string, key
 
 	return result, nextCursor, nil
 }
-

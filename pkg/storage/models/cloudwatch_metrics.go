@@ -7,40 +7,40 @@ import (
 
 // CloudWatchMetrics represents CloudWatch metrics data cached in DynamoDB
 type CloudWatchMetrics struct {
-	_ struct{} `dynamorm:"naming:camelCase"`
+	_ struct{} `theorydb:"naming:camelCase"`
 
 	// DynamoDB Keys
-	PK string `dynamorm:"pk,attr:PK" json:"pk"` // SERVICE#{serviceName} or INSTANCE#lesser
-	SK string `dynamorm:"sk,attr:SK" json:"sk"` // METRICS#{timestamp}
+	PK string `theorydb:"pk,attr:PK" json:"pk"` // SERVICE#{serviceName} or INSTANCE#lesser
+	SK string `theorydb:"sk,attr:SK" json:"sk"` // METRICS#{timestamp}
 
 	// GSI keys for time-based queries
-	GSI1PK string `dynamorm:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRIC_DATE#{date}
-	GSI1SK string `dynamorm:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {serviceName}#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRIC_DATE#{date}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {serviceName}#{timestamp}
 
 	// Business fields
-	ServiceName string    `dynamorm:"attr:serviceName" json:"service_name"`
-	Timestamp   time.Time `dynamorm:"attr:timestamp" json:"timestamp"`
-	Date        string    `dynamorm:"attr:date" json:"date"` // YYYY-MM-DD for daily queries
+	ServiceName string    `theorydb:"attr:serviceName" json:"service_name"`
+	Timestamp   time.Time `theorydb:"attr:timestamp" json:"timestamp"`
+	Date        string    `theorydb:"attr:date" json:"date"` // YYYY-MM-DD for daily queries
 
 	// Metrics data
-	RequestCount      int64   `dynamorm:"attr:requestCount" json:"request_count"`
-	ErrorCount        int64   `dynamorm:"attr:errorCount" json:"error_count"`
-	LatencyP50Ms      float64 `dynamorm:"attr:latencyP50Ms" json:"latency_p50_ms"`
-	LatencyP90Ms      float64 `dynamorm:"attr:latencyP90Ms" json:"latency_p90_ms"`
-	LatencyP99Ms      float64 `dynamorm:"attr:latencyP99Ms" json:"latency_p99_ms"`
-	DynamoDBReads     int64   `dynamorm:"attr:dynamoDBReads" json:"dynamodb_reads"`
-	DynamoDBWrites    int64   `dynamorm:"attr:dynamoDBWrites" json:"dynamodb_writes"`
-	LambdaInvocations int64   `dynamorm:"attr:lambdaInvocations" json:"lambda_invocations"`
-	S3Requests        int64   `dynamorm:"attr:s3Requests" json:"s3_requests"`
-	DataTransferBytes int64   `dynamorm:"attr:dataTransferBytes" json:"data_transfer_bytes"`
-	EstimatedCostUSD  float64 `dynamorm:"attr:estimatedCostUSD" json:"estimated_cost_usd"`
+	RequestCount      int64   `theorydb:"attr:requestCount" json:"request_count"`
+	ErrorCount        int64   `theorydb:"attr:errorCount" json:"error_count"`
+	LatencyP50Ms      float64 `theorydb:"attr:latencyP50Ms" json:"latency_p50_ms"`
+	LatencyP90Ms      float64 `theorydb:"attr:latencyP90Ms" json:"latency_p90_ms"`
+	LatencyP99Ms      float64 `theorydb:"attr:latencyP99Ms" json:"latency_p99_ms"`
+	DynamoDBReads     int64   `theorydb:"attr:dynamoDBReads" json:"dynamodb_reads"`
+	DynamoDBWrites    int64   `theorydb:"attr:dynamoDBWrites" json:"dynamodb_writes"`
+	LambdaInvocations int64   `theorydb:"attr:lambdaInvocations" json:"lambda_invocations"`
+	S3Requests        int64   `theorydb:"attr:s3Requests" json:"s3_requests"`
+	DataTransferBytes int64   `theorydb:"attr:dataTransferBytes" json:"data_transfer_bytes"`
+	EstimatedCostUSD  float64 `theorydb:"attr:estimatedCostUSD" json:"estimated_cost_usd"`
 
 	// Caching metadata
-	CloudWatchQueryTime time.Time `dynamorm:"attr:cloudWatchQueryTime" json:"cloudwatch_query_time"`
-	CacheExpiry         time.Time `dynamorm:"attr:cacheExpiry" json:"cache_expiry"`
+	CloudWatchQueryTime time.Time `theorydb:"attr:cloudWatchQueryTime" json:"cloudwatch_query_time"`
+	CacheExpiry         time.Time `theorydb:"attr:cacheExpiry" json:"cache_expiry"`
 
 	// TTL for automatic cleanup (24 hours)
-	TTL int64 `dynamorm:"ttl,attr:ttl" json:"ttl,omitempty"`
+	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 }
 
 // UpdateKeys sets the GSI keys based on the current values

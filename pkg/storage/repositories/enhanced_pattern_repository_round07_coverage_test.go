@@ -7,10 +7,10 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -161,12 +161,12 @@ func TestEnhancedPatternRepository_AnalysisAndFeedback(t *testing.T) {
 		content := "https://example.com"
 		patterns := []*models.EnhancedModerationPattern{
 			{
-				PatternID:      "p1",
-				PatternType:    "url_exact",
-				PatternContent: content,
-				Category:       "spam",
-				Active:         true,
-				Effectiveness:  0.9,
+				PatternID:       "p1",
+				PatternType:     "url_exact",
+				PatternContent:  content,
+				Category:        "spam",
+				Active:          true,
+				Effectiveness:   0.9,
 				ConfidenceScore: 0.9,
 			},
 			{PatternID: "p2", Active: false},
@@ -189,12 +189,12 @@ func TestEnhancedPatternRepository_AnalysisAndFeedback(t *testing.T) {
 			dest := args.Get(0).(*[]*models.EnhancedModerationPattern)
 			*dest = []*models.EnhancedModerationPattern{
 				{
-					PatternID:      "p1",
-					PatternType:    "text",
-					PatternContent: "spam",
-					Category:       "spam",
-					Active:         true,
-					Effectiveness:  0.8,
+					PatternID:       "p1",
+					PatternType:     "text",
+					PatternContent:  "spam",
+					Category:        "spam",
+					Active:          true,
+					Effectiveness:   0.8,
 					ConfidenceScore: 0.9,
 				},
 				{PatternID: "p2", Active: true, Effectiveness: 0.6}, // filtered out
@@ -225,11 +225,11 @@ func TestEnhancedPatternRepository_AnalysisAndFeedback(t *testing.T) {
 		mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*models.EnhancedModerationPattern)
 			*dest = models.EnhancedModerationPattern{
-				PatternID:       "p1",
-				Active:          true,
-				ConfidenceScore: 0.5,
-				ValidationScore: 0.1,
-				MatchCount:      10,
+				PatternID:         "p1",
+				Active:            true,
+				ConfidenceScore:   0.5,
+				ValidationScore:   0.1,
+				MatchCount:        10,
 				TruePositiveCount: 5,
 			}
 			_ = dest.UpdateKeys()
@@ -372,9 +372,9 @@ func TestEnhancedPatternRepository_CacheAndMetrics(t *testing.T) {
 		mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*models.PatternPerformanceMetric)
 			*dest = models.PatternPerformanceMetric{
-				PK:            metric.PK,
-				SK:            metric.SK,
-				MatchAttempts: 10,
+				PK:             metric.PK,
+				SK:             metric.SK,
+				MatchAttempts:  10,
 				TotalMatchTime: 10.0,
 			}
 		}).Once()
