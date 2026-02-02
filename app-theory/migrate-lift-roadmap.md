@@ -1,6 +1,7 @@
 # lesser: Lift + DynamORM Sunset → AppTheory + TableTheory Replacement Plan
 
 Generated: 2026-01-31
+Updated: 2026-02-02
 
 This document defines the complete, codebase-wide replacement of:
 
@@ -11,6 +12,18 @@ Lift and DynamORM are being sunsetted and must be removed from this repository. 
 replacements. This migration is **not incremental**: there are no shims, no dual-running, no compatibility wrappers that
 preserve Lift/DynamORM call sites, and no “slice” sequencing driven by production risk. The outcome is a repo that builds
 and tests cleanly with Lift/DynamORM absent.
+
+## Current status (as of 2026-02-02)
+- `go.mod` and `infra/cdk/go.mod` contain **no** `github.com/pay-theory/lift` dependency.
+- `go.mod` contains **no** `github.com/pay-theory/dynamorm` dependency.
+- Grep gates are clean:
+  - `rg -n "github.com/pay-theory/lift" --glob '*.go' -S .` returns 0 results
+  - `rg -n "github.com/pay-theory/dynamorm" --glob '*.go' -S .` returns 0 results
+  - `rg -n "aws-sdk-go-v2/service/dynamodb" --glob '*.go' -S .` returns 0 results
+- Verified locally:
+  - `go test ./...` passes
+  - `./lesser test` passes
+- Not yet run in this branch: `make verify` (run before declaring final “done”).
 
 ## Scope
 - In scope:
@@ -45,16 +58,16 @@ and tests cleanly with Lift/DynamORM absent.
 These are the pinned destination frameworks for this repo. Keep these versions pinned until an intentional upgrade.
 
 ### AppTheory (pinned)
-- Go module: `github.com/theory-cloud/apptheory@v0.5.0`
+- Go module: `github.com/theory-cloud/apptheory@v0.5.0-rc.5`
 - Go runtime import: `github.com/theory-cloud/apptheory/runtime`
 - Docs entrypoints:
   - `docs/getting-started.md`
   - `docs/migration/from-lift.md`
 - Copy/paste:
-  - `go get github.com/theory-cloud/apptheory@v0.5.0`
+  - `go get github.com/theory-cloud/apptheory@v0.5.0-rc.5`
 - Pinned docs:
-  - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0/docs/getting-started.md`
-  - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0/docs/migration/from-lift.md`
+  - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0-rc.5/docs/getting-started.md`
+  - `https://github.com/theory-cloud/AppTheory/blob/v0.5.0-rc.5/docs/migration/from-lift.md`
 
 ### TableTheory (pinned)
 - Go module: `github.com/theory-cloud/tabletheory@v1.3.0`
@@ -71,7 +84,10 @@ These are the pinned destination frameworks for this repo. Keep these versions p
   - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/migration-guide.md`
   - `https://github.com/theory-cloud/TableTheory/blob/v1.3.0/docs/struct-definition-guide.md`
 
-## Repo inventory (current, not optional)
+## Repo inventory (historical snapshot, 2026-01-31)
+
+This inventory was captured before the cutover work began. Keep it for reference/forensics, but use the grep gates in
+“Current status” as the source of truth for what remains.
 
 ### Lift usage (must be fully removed)
 - Dependency evidence:
@@ -181,7 +197,7 @@ These are the pinned destination frameworks for this repo. Keep these versions p
 TableTheory is the only DynamoDB access layer in this repo. Any `.go` file importing
 `github.com/aws/aws-sdk-go-v2/service/dynamodb` must be rewritten to use TableTheory instead.
 
-Known current import sites:
+Known import sites at time of drafting (pre-migration):
 - `cmd/lesser/bootstrap.go`
 - `cmd/lesser/up.go`
 - `cmd/owner-bootstrap/main.go`
@@ -197,6 +213,8 @@ Known current import sites:
 - `pkg/translation/aws_translate.go`
 - plus tests for the above files
 
+Status (as of 2026-02-02): `rg -n "github.com/aws/aws-sdk-go-v2/service/dynamodb" --glob '*.go' -S .` returns 0 results.
+
 ## Execution steps (single branch / single PR)
 
 ### 0) Pre-flight
@@ -211,12 +229,12 @@ Known current import sites:
    - Remove `github.com/pay-theory/lift` from `go.mod`.
    - Remove `github.com/pay-theory/dynamorm` from `go.mod`.
    - Ensure pinned destination deps exist:
-     - `github.com/theory-cloud/apptheory v0.5.0`
+     - `github.com/theory-cloud/apptheory v0.5.0-rc.5`
      - `github.com/theory-cloud/tabletheory v1.3.0`
    - Run: `go mod tidy`
 2. In the CDK module:
    - Remove `github.com/pay-theory/lift` from `infra/cdk/go.mod`.
-   - Add `github.com/theory-cloud/apptheory v0.5.0` to `infra/cdk/go.mod` (for `cdk-go/apptheorycdk`).
+   - Add `github.com/theory-cloud/apptheory v0.5.0-rc.5` to `infra/cdk/go.mod` (for `cdk-go/apptheorycdk`).
    - Run:
      - `cd infra/cdk && go mod tidy`
      - `cd ../..`
