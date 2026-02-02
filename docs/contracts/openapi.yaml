@@ -908,6 +908,83 @@ components:
                 reason:
                     type: string
             type: object
+        AgentMemorySearchContext:
+            additionalProperties: false
+            properties:
+                event_type:
+                    type: string
+                original_id:
+                    type: string
+                reply_count:
+                    type: integer
+                tags:
+                    items:
+                        type: string
+                    type: array
+                thread_root:
+                    type: string
+            type: object
+        AgentMemorySearchRequest:
+            additionalProperties: false
+            properties:
+                date_range:
+                    anyOf:
+                        - $ref: '#/components/schemas/DateRange'
+                        - type: "null"
+                include_threads:
+                    type: boolean
+                limit:
+                    type: integer
+                options:
+                    additionalProperties: {}
+                    type: object
+                query:
+                    type: string
+                tags:
+                    items:
+                        type: string
+                    type: array
+                thread_id:
+                    type: string
+            type: object
+        AgentMemorySearchResponse:
+            additionalProperties: false
+            properties:
+                query_time_ms:
+                    type: integer
+                results:
+                    items:
+                        $ref: '#/components/schemas/AgentMemorySearchResult'
+                    type: array
+                total:
+                    type: integer
+            required:
+                - query_time_ms
+                - results
+                - total
+            type: object
+        AgentMemorySearchResult:
+            additionalProperties: false
+            properties:
+                context:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentMemorySearchContext'
+                        - type: "null"
+                relevance_score:
+                    type: number
+                status:
+                    anyOf:
+                        - $ref: '#/components/schemas/Status'
+                        - type: "null"
+                thread:
+                    items:
+                        anyOf:
+                            - $ref: '#/components/schemas/Status'
+                            - type: "null"
+                    type: array
+            required:
+                - relevance_score
+            type: object
         AgentPostAttribution:
             additionalProperties: false
             properties:
@@ -1582,6 +1659,14 @@ components:
             items:
                 $ref: '#/components/schemas/CustomEmoji'
             type: array
+        DateRange:
+            additionalProperties: false
+            properties:
+                end:
+                    type: string
+                start:
+                    type: string
+            type: object
         DomainBlock:
             additionalProperties: false
             properties:
@@ -9669,6 +9754,68 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /api/v1/agents/memory/search:
+        get:
+            operationId: get_api_v1_agents_memory_search
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentMemorySearchResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentMemorySearchLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+        post:
+            operationId: post_api_v1_agents_memory_search
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentMemorySearchRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentMemorySearchResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentMemorySearchLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements

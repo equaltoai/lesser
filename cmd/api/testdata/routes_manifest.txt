@@ -50,6 +50,7 @@ GET /api/v1/admin/reports/{id}
 GET /api/v1/admin/statuses
 GET /api/v1/admin/statuses/{id}
 GET /api/v1/agents
+GET /api/v1/agents/memory/search
 GET /api/v1/agents/{username}
 GET /api/v1/agents/{username}/activity
 GET /api/v1/announcements
@@ -135,6 +136,7 @@ OPTIONS /api/v1/accounts/update_credentials
 OPTIONS /api/v1/accounts/verify_credentials
 OPTIONS /api/v1/agents
 OPTIONS /api/v1/agents/delegate
+OPTIONS /api/v1/agents/memory/search
 OPTIONS /api/v1/agents/{username}
 OPTIONS /api/v1/agents/{username}/activity
 OPTIONS /api/v1/agents/{username}/suspend
@@ -191,6 +193,7 @@ POST /api/v1/admin/reports/{id}/unassign
 POST /api/v1/admin/statuses/{id}/sensitive
 POST /api/v1/admin/statuses/{id}/unsensitive
 POST /api/v1/agents/delegate
+POST /api/v1/agents/memory/search
 POST /api/v1/agents/{username}/suspend
 POST /api/v1/announcements/{id}/dismiss
 POST /api/v1/apps

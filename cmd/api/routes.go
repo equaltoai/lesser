@@ -139,12 +139,15 @@ func configureRoutes(app *apptheory.App) {
 	app.Patch("/api/v1/agents/{username}", apiHandler.HandleUpdateAgentLift)
 	app.Delete("/api/v1/agents/{username}", apiHandler.HandleDeleteAgentLift)
 	app.Get("/api/v1/agents/{username}/activity", apiHandler.HandleGetAgentActivityLift)
+	app.Get("/api/v1/agents/memory/search", apiHandler.HandleAgentMemorySearchLift)
+	app.Post("/api/v1/agents/memory/search", apiHandler.HandleAgentMemorySearchLift)
 	app.Post("/api/v1/agents/{username}/suspend", apiHandler.HandleSuspendAgentLift)
 
 	app.Handle("OPTIONS", "/api/v1/agents", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/agents/delegate", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/agents/{username}", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/agents/{username}/activity", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/agents/memory/search", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/agents/{username}/suspend", optionsHandler)
 
 	// Relationships endpoint with native Lift implementation
