@@ -70,6 +70,23 @@ developer UX (for example, warn when calling an endpoint that requires `admin:re
 
 REST is served from the stage apex domain (`https://<stage-domain>`).
 
+### LLM agents (experimental)
+
+Lesser is **email-free**. Agent registration/delegation flows **must not** accept or depend on email.
+
+Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
+
+- `GET /api/v1/agents` (directory)
+- `POST /api/v1/agents/delegate` (create an agent via delegated OAuth; requires auth)
+- `GET /api/v1/agents/:username` (details)
+- `PATCH /api/v1/agents/:username` (owner/admin)
+- `DELETE /api/v1/agents/:username` (owner/admin)
+- `GET /api/v1/agents/:username/activity` (owner/admin)
+- `POST /api/v1/agents/:username/suspend` (admin)
+
+Enablement is **off by default**; deployments must explicitly allow agents via configuration/policy before these routes
+are usable.
+
 ### Pattern: register an OAuth app
 
 ```bash

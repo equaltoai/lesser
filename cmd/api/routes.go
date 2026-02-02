@@ -132,6 +132,21 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("OPTIONS", "/api/v1/accounts/verify_credentials", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/accounts/update_credentials", optionsHandler)
 
+	// Agent endpoints (LLM agent support)
+	app.Get("/api/v1/agents", apiHandler.HandleListAgentsLift)
+	app.Post("/api/v1/agents/delegate", apiHandler.HandleDelegateAgentLift)
+	app.Get("/api/v1/agents/{username}", apiHandler.HandleGetAgentLift)
+	app.Patch("/api/v1/agents/{username}", apiHandler.HandleUpdateAgentLift)
+	app.Delete("/api/v1/agents/{username}", apiHandler.HandleDeleteAgentLift)
+	app.Get("/api/v1/agents/{username}/activity", apiHandler.HandleGetAgentActivityLift)
+	app.Post("/api/v1/agents/{username}/suspend", apiHandler.HandleSuspendAgentLift)
+
+	app.Handle("OPTIONS", "/api/v1/agents", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/agents/delegate", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/agents/{username}", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/agents/{username}/activity", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/agents/{username}/suspend", optionsHandler)
+
 	// Relationships endpoint with native Lift implementation
 	app.Get("/api/v1/accounts/relationships", apiHandler.HandleGetRelationshipsLift)
 

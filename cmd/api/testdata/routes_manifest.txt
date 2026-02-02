@@ -3,6 +3,7 @@ DELETE /api/v1/admin/domain_allows/{id}
 DELETE /api/v1/admin/domain_blocks/{id}
 DELETE /api/v1/admin/email_domain_blocks/{id}
 DELETE /api/v1/admin/statuses/{id}
+DELETE /api/v1/agents/{username}
 DELETE /api/v1/announcements/{id}/reactions/{name}
 DELETE /api/v1/auth/webauthn/credentials/{credentialId}
 DELETE /api/v1/conversations/{id}
@@ -48,6 +49,9 @@ GET /api/v1/admin/reports
 GET /api/v1/admin/reports/{id}
 GET /api/v1/admin/statuses
 GET /api/v1/admin/statuses/{id}
+GET /api/v1/agents
+GET /api/v1/agents/{username}
+GET /api/v1/agents/{username}/activity
 GET /api/v1/announcements
 GET /api/v1/auth/webauthn/credentials
 GET /api/v1/blocks
@@ -129,6 +133,11 @@ HEAD /
 OPTIONS /api/v1/accounts
 OPTIONS /api/v1/accounts/update_credentials
 OPTIONS /api/v1/accounts/verify_credentials
+OPTIONS /api/v1/agents
+OPTIONS /api/v1/agents/delegate
+OPTIONS /api/v1/agents/{username}
+OPTIONS /api/v1/agents/{username}/activity
+OPTIONS /api/v1/agents/{username}/suspend
 OPTIONS /api/v1/auth/webauthn/credentials
 OPTIONS /api/v1/auth/webauthn/credentials/{credentialId}
 OPTIONS /api/v1/auth/webauthn/login/begin
@@ -150,6 +159,7 @@ OPTIONS /setup/bootstrap/verify
 OPTIONS /setup/finalize
 OPTIONS /setup/status
 PATCH /api/v1/accounts/update_credentials
+PATCH /api/v1/agents/{username}
 PATCH /api/v1/preferences
 POST /api/v1/accounts
 POST /api/v1/accounts/{id}/block
@@ -180,6 +190,8 @@ POST /api/v1/admin/reports/{id}/resolve
 POST /api/v1/admin/reports/{id}/unassign
 POST /api/v1/admin/statuses/{id}/sensitive
 POST /api/v1/admin/statuses/{id}/unsensitive
+POST /api/v1/agents/delegate
+POST /api/v1/agents/{username}/suspend
 POST /api/v1/announcements/{id}/dismiss
 POST /api/v1/apps
 POST /api/v1/auth/webauthn/login/begin

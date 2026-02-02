@@ -87,4 +87,3 @@ func TestStorage_SaveOperationCost_ReturnsErrorWhenUninitialized(t *testing.T) {
 	err := (&Storage{}).SaveOperationCost(context.Background(), &OperationCost{})
 	require.Error(t, err)
 }
-

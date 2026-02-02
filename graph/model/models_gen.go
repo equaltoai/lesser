@@ -419,6 +419,49 @@ type AffectedRelationshipEdge struct {
 	Cursor Cursor                `json:"cursor"`
 }
 
+type Agent struct {
+	ID            string             `json:"id"`
+	Username      string             `json:"username"`
+	DisplayName   string             `json:"displayName"`
+	Type          AgentType          `json:"type"`
+	Version       string             `json:"version"`
+	Capabilities  *AgentCapabilities `json:"capabilities"`
+	Owner         *activitypub.Actor `json:"owner,omitempty"`
+	CreatedAt     Time               `json:"createdAt"`
+	ActivityCount int                `json:"activityCount"`
+}
+
+type AgentActivityEvent struct {
+	EventID       string  `json:"eventId"`
+	AgentUsername string  `json:"agentUsername"`
+	Action        string  `json:"action"`
+	TargetID      *string `json:"targetId,omitempty"`
+	MetadataJSON  *string `json:"metadataJson,omitempty"`
+	Timestamp     Time    `json:"timestamp"`
+}
+
+type AgentCapabilities struct {
+	CanPost           bool     `json:"canPost"`
+	CanReply          bool     `json:"canReply"`
+	CanBoost          bool     `json:"canBoost"`
+	CanFollow         bool     `json:"canFollow"`
+	CanDm             bool     `json:"canDM"`
+	MaxPostsPerHour   int      `json:"maxPostsPerHour"`
+	RequiresApproval  bool     `json:"requiresApproval"`
+	RestrictedDomains []string `json:"restrictedDomains,omitempty"`
+}
+
+type AgentConnection struct {
+	Edges      []*AgentEdge `json:"edges"`
+	PageInfo   *PageInfo    `json:"pageInfo"`
+	TotalCount int          `json:"totalCount"`
+}
+
+type AgentEdge struct {
+	Node   *Agent `json:"node"`
+	Cursor Cursor `json:"cursor"`
+}
+
 type Announcement struct {
 	ID          string                  `json:"id"`
 	Content     string                  `json:"content"`
@@ -700,6 +743,24 @@ type DatabaseStatus struct {
 type DateRangeInput struct {
 	Start Time `json:"start"`
 	End   Time `json:"end"`
+}
+
+type DelegateToAgentInput struct {
+	AgentUsername string    `json:"agentUsername"`
+	DisplayName   string    `json:"displayName"`
+	Bio           *string   `json:"bio,omitempty"`
+	Scopes        []string  `json:"scopes"`
+	ExpiresIn     *int      `json:"expiresIn,omitempty"`
+	AgentType     AgentType `json:"agentType"`
+	Version       string    `json:"version"`
+}
+
+type DelegationPayload struct {
+	Agent       *Agent `json:"agent"`
+	AccessToken string `json:"accessToken"`
+	TokenType   string `json:"tokenType"`
+	Scope       string `json:"scope"`
+	CreatedAt   Time   `json:"createdAt"`
 }
 
 type DirectoryFiltersInput struct {
@@ -1866,6 +1927,21 @@ type RegisterAccountPayload struct {
 	Created bool               `json:"created"`
 }
 
+type RegisterAgentInput struct {
+	Username    string    `json:"username"`
+	DisplayName string    `json:"displayName"`
+	Bio         *string   `json:"bio,omitempty"`
+	AgentType   AgentType `json:"agentType"`
+	Version     string    `json:"version"`
+	PublicKey   *string   `json:"publicKey,omitempty"`
+	KeyType     *string   `json:"keyType,omitempty"`
+	Purpose     *string   `json:"purpose,omitempty"`
+}
+
+type RegisterAgentPayload struct {
+	Agent *Agent `json:"agent"`
+}
+
 type RegisterPushSubscriptionInput struct {
 	Endpoint string                       `json:"endpoint"`
 	Keys     *PushSubscriptionKeysInput   `json:"keys"`
@@ -2263,6 +2339,14 @@ type UpdateAccountQuotePermissionsInput struct {
 	BlockList      []string `json:"blockList,omitempty"`
 }
 
+type UpdateAgentInput struct {
+	DisplayName *string    `json:"displayName,omitempty"`
+	Bio         *string    `json:"bio,omitempty"`
+	AgentType   *AgentType `json:"agentType,omitempty"`
+	Version     *string    `json:"version,omitempty"`
+	Purpose     *string    `json:"purpose,omitempty"`
+}
+
 type UpdateEmojiInput struct {
 	Category        *string `json:"category,omitempty"`
 	VisibleInPicker *bool   `json:"visibleInPicker,omitempty"`
@@ -2640,6 +2724,69 @@ func (e *AdminReportStatus) UnmarshalJSON(b []byte) error {
 }
 
 func (e AdminReportStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type AgentType string
+
+const (
+	AgentTypeCurator    AgentType = "CURATOR"
+	AgentTypeModerator  AgentType = "MODERATOR"
+	AgentTypeResearcher AgentType = "RESEARCHER"
+	AgentTypeAssistant  AgentType = "ASSISTANT"
+	AgentTypeBridge     AgentType = "BRIDGE"
+	AgentTypeCustom     AgentType = "CUSTOM"
+)
+
+var AllAgentType = []AgentType{
+	AgentTypeCurator,
+	AgentTypeModerator,
+	AgentTypeResearcher,
+	AgentTypeAssistant,
+	AgentTypeBridge,
+	AgentTypeCustom,
+}
+
+func (e AgentType) IsValid() bool {
+	switch e {
+	case AgentTypeCurator, AgentTypeModerator, AgentTypeResearcher, AgentTypeAssistant, AgentTypeBridge, AgentTypeCustom:
+		return true
+	}
+	return false
+}
+
+func (e AgentType) String() string {
+	return string(e)
+}
+
+func (e *AgentType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = AgentType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid AgentType", str)
+	}
+	return nil
+}
+
+func (e AgentType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *AgentType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e AgentType) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

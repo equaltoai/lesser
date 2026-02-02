@@ -18,8 +18,8 @@ import (
 
 type tableExistsStub struct {
 	exists bool
-	err   error
-	calls int
+	err    error
+	calls  int
 }
 
 func (s *tableExistsStub) TableExists(_ string) (bool, error) {

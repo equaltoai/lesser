@@ -27,4 +27,3 @@ type MonthlyCostAggregate struct {
 	LambdaDurationMs        int64
 	DataTransferGB          float64
 }
-

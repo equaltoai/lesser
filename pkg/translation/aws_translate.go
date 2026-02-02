@@ -104,8 +104,8 @@ func NewService(ctx context.Context, cfg *lesserconfig.Config, store storagecore
 	}
 
 	return &Service{
-		client: translate.NewFromConfig(awsCfg),
-		db:     db,
+		client:       translate.NewFromConfig(awsCfg),
+		db:           db,
 		logger:       logger,
 		cacheEnabled: cacheEnabled,
 		cacheTTL:     30 * 24 * time.Hour, // Cache translations for 30 days

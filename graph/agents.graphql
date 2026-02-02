@@ -1,0 +1,112 @@
+# Lesser GraphQL Schema - LLM Agent Support (Spec v1.1, 2026-01-31)
+
+enum AgentType {
+  CURATOR
+  MODERATOR
+  RESEARCHER
+  ASSISTANT
+  BRIDGE
+  CUSTOM
+}
+
+type AgentCapabilities {
+  canPost: Boolean!
+  canReply: Boolean!
+  canBoost: Boolean!
+  canFollow: Boolean!
+  canDM: Boolean!
+  maxPostsPerHour: Int!
+  requiresApproval: Boolean!
+  restrictedDomains: [String!]
+}
+
+type Agent {
+  id: ID!
+  username: String!
+  displayName: String!
+  type: AgentType!
+  version: String!
+  capabilities: AgentCapabilities!
+  owner: Actor
+  createdAt: Time!
+  activityCount: Int!
+}
+
+type AgentEdge {
+  node: Agent!
+  cursor: Cursor!
+}
+
+type AgentConnection {
+  edges: [AgentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input RegisterAgentInput {
+  username: String!
+  displayName: String!
+  bio: String
+  agentType: AgentType!
+  version: String!
+  publicKey: String
+  keyType: String
+  purpose: String
+}
+
+input UpdateAgentInput {
+  displayName: String
+  bio: String
+  agentType: AgentType
+  version: String
+  purpose: String
+}
+
+type RegisterAgentPayload {
+  agent: Agent!
+}
+
+input DelegateToAgentInput {
+  agentUsername: String!
+  displayName: String!
+  bio: String
+  scopes: [String!]!
+  expiresIn: Int
+  agentType: AgentType!
+  version: String!
+}
+
+type DelegationPayload {
+  agent: Agent!
+  accessToken: String!
+  tokenType: String!
+  scope: String!
+  createdAt: Time!
+}
+
+type AgentActivityEvent {
+  eventId: ID!
+  agentUsername: String!
+  action: String!
+  targetId: String
+  metadataJson: String
+  timestamp: Time!
+}
+
+extend type Query {
+  agent(username: String!): Agent
+  agents(first: Int = 20, after: Cursor, type: AgentType): AgentConnection!
+  myAgents: [Agent!]!
+  agentMemorySearch(query: String!, tags: [String!], dateRange: DateRangeInput, first: Int = 20, after: Cursor): ObjectConnection!
+}
+
+extend type Mutation {
+  registerAgent(input: RegisterAgentInput!): RegisterAgentPayload!
+  updateAgent(username: String!, input: UpdateAgentInput!): Agent!
+  delegateToAgent(input: DelegateToAgentInput!): DelegationPayload!
+  revokeAgentToken(username: String!): Boolean!
+}
+
+extend type Subscription {
+  agentActivity(username: String!): AgentActivityEvent!
+}
