@@ -16,6 +16,7 @@ type InstanceRepository struct {
 	mu sync.RWMutex
 
 	state               *models.InstanceState
+	agentConfig         *models.AgentInstanceConfig
 	rules               []storage.InstanceRule
 	extendedDescription string
 	descriptionUpdated  time.Time
@@ -29,6 +30,7 @@ func NewInstanceRepository() *InstanceRepository {
 		state: &models.InstanceState{
 			Locked: false,
 		},
+		agentConfig:      models.NewAgentInstanceConfig(),
 		rules:            []storage.InstanceRule{},
 		weeklyActivities: make(map[int64]*storage.WeeklyActivity),
 		dailyMetrics:     make(map[string]map[string]interface{}),
@@ -77,6 +79,34 @@ func (r *InstanceRepository) SetPrimaryAdminUsername(_ context.Context, username
 	defer r.mu.Unlock()
 
 	r.state.PrimaryAdminUsername = username
+	return nil
+}
+
+// GetAgentInstanceConfig returns the current instance agent policy.
+func (r *InstanceRepository) GetAgentInstanceConfig(_ context.Context) (*models.AgentInstanceConfig, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.agentConfig == nil {
+		return models.NewAgentInstanceConfig(), nil
+	}
+	return r.agentConfig, nil
+}
+
+// EnsureAgentInstanceConfig ensures the instance agent policy record exists and returns it.
+func (r *InstanceRepository) EnsureAgentInstanceConfig(_ context.Context) (*models.AgentInstanceConfig, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.agentConfig == nil {
+		r.agentConfig = models.NewAgentInstanceConfig()
+	}
+	return r.agentConfig, nil
+}
+
+// SetAgentInstanceConfig updates the instance agent policy.
+func (r *InstanceRepository) SetAgentInstanceConfig(_ context.Context, cfg *models.AgentInstanceConfig) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.agentConfig = cfg
 	return nil
 }
 
@@ -225,6 +255,7 @@ func (r *InstanceRepository) Clear() {
 	defer r.mu.Unlock()
 
 	r.state = &models.InstanceState{Locked: false}
+	r.agentConfig = models.NewAgentInstanceConfig()
 	r.rules = []storage.InstanceRule{}
 	r.extendedDescription = ""
 	r.weeklyActivities = make(map[int64]*storage.WeeklyActivity)

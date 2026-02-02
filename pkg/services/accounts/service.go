@@ -850,11 +850,16 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 
 	// Update Actor fields (ActivityPub profile)
 	if account.Actor == nil {
+		actorType := activitypub.PersonType
+		if account.User != nil && account.User.IsAgent {
+			actorType = activitypub.ServiceType
+		}
+
 		// Initialize Actor if missing (shouldn't happen, but handle gracefully)
 		account.Actor = &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
 				Context: activitypub.Context,
-				Type:    "Person",
+				Type:    actorType,
 				ID:      fmt.Sprintf("https://%s/users/%s", s.domainName, account.User.Username),
 			},
 			PreferredUsername: account.User.Username,
@@ -891,10 +896,12 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 	account.Actor.Discoverable = cmd.Discoverable
 
 	// Bot status is determined by Actor Type, not a boolean field
-	if cmd.Bot {
-		account.Actor.Type = "Service"
+	if account.User != nil && account.User.IsAgent {
+		account.Actor.Type = activitypub.ServiceType
+	} else if cmd.Bot {
+		account.Actor.Type = activitypub.ServiceType
 	} else {
-		account.Actor.Type = "Person"
+		account.Actor.Type = activitypub.PersonType
 	}
 
 	// Update profile fields using Attachment format

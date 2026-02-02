@@ -4464,6 +4464,54 @@ components:
                                     - id
                                     - type
                                 type: object
+                            agentManifest:
+                                anyOf:
+                                    - additionalProperties: false
+                                      properties:
+                                        capabilities:
+                                            anyOf:
+                                                - additionalProperties: false
+                                                  properties:
+                                                    canBoost:
+                                                        type: boolean
+                                                    canDM:
+                                                        type: boolean
+                                                    canFollow:
+                                                        type: boolean
+                                                    canPost:
+                                                        type: boolean
+                                                    canReply:
+                                                        type: boolean
+                                                    maxPostsPerHour:
+                                                        type: integer
+                                                    requiresApproval:
+                                                        type: boolean
+                                                    restrictedDomains:
+                                                        items:
+                                                            type: string
+                                                        type: array
+                                                  required:
+                                                    - canBoost
+                                                    - canDM
+                                                    - canFollow
+                                                    - canPost
+                                                    - canReply
+                                                  type: object
+                                                - type: "null"
+                                        operatedBy:
+                                            type: string
+                                        purpose:
+                                            type: string
+                                        source:
+                                            type: string
+                                        type:
+                                            type: string
+                                        version:
+                                            type: string
+                                      required:
+                                        - type
+                                      type: object
+                                    - type: "null"
                             alsoKnownAs:
                                 items:
                                     type: string
@@ -5580,6 +5628,50 @@ components:
         StorageUser:
             additionalProperties: false
             properties:
+                agent_capabilities:
+                    anyOf:
+                        - additionalProperties: false
+                          properties:
+                            can_boost:
+                                type: boolean
+                            can_dm:
+                                type: boolean
+                            can_follow:
+                                type: boolean
+                            can_post:
+                                type: boolean
+                            can_reply:
+                                type: boolean
+                            max_posts_per_hour:
+                                type: integer
+                            requires_approval:
+                                type: boolean
+                            restricted_domains:
+                                items:
+                                    type: string
+                                type: array
+                          required:
+                            - can_boost
+                            - can_dm
+                            - can_follow
+                            - can_post
+                            - can_reply
+                            - max_posts_per_hour
+                            - requires_approval
+                          type: object
+                        - type: "null"
+                agent_created_by:
+                    type: string
+                agent_key_type:
+                    type: string
+                agent_owner:
+                    type: string
+                agent_public_key:
+                    type: string
+                agent_type:
+                    type: string
+                agent_version:
+                    type: string
                 allow_nsfw:
                     type: boolean
                 approved:
@@ -5604,6 +5696,8 @@ components:
                     type: string
                 id:
                     type: string
+                is_agent:
+                    type: boolean
                 locale:
                     type: string
                 locked:
@@ -5641,6 +5735,7 @@ components:
                 - created_at
                 - discoverable
                 - id
+                - is_agent
                 - locked
                 - require_nsfw_warning
                 - role

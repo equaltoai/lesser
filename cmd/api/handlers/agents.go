@@ -21,6 +21,17 @@ func (h *Handler) ensureAgentsEnabled(ctx *apptheory.Context) (*apptheory.Respon
 	if h == nil || h.cfg == nil || !h.cfg.AllowAgents {
 		return common.RespondForbidden(ctx, "agents are disabled")
 	}
+
+	if h.repos != nil && h.repos.Instance() != nil {
+		policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context())
+		if err != nil {
+			return common.RespondInternalServerError(ctx)
+		}
+		if policy == nil || !policy.AllowAgents {
+			return common.RespondForbidden(ctx, "agents are disabled by instance policy")
+		}
+	}
+
 	return nil, nil
 }
 
@@ -31,6 +42,17 @@ func (h *Handler) ensureAgentRegistrationEnabled(ctx *apptheory.Context) (*appth
 	if h.cfg == nil || !h.cfg.AllowAgentRegistration {
 		return common.RespondForbidden(ctx, "agent registration is disabled")
 	}
+
+	if h.repos != nil && h.repos.Instance() != nil {
+		policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context())
+		if err != nil {
+			return common.RespondInternalServerError(ctx)
+		}
+		if policy == nil || !policy.AllowAgentRegistration {
+			return common.RespondForbidden(ctx, "agent registration is disabled by instance policy")
+		}
+	}
+
 	return nil, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -112,18 +113,26 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 
 	// Create the DynamORM model
 	userModel := &models.User{
-		Username:        user.Username,
-		Email:           user.Email,
-		PasswordHash:    user.PasswordHash,
-		DisplayName:     user.DisplayName,
-		Approved:        user.Approved,
-		Suspended:       user.Suspended,
-		Silenced:        user.Silenced,
-		Role:            user.Role,
-		Locale:          user.Locale,
-		RecoveryMethods: user.RecoveryMethods,
-		CreatedAt:       user.CreatedAt,
-		UpdatedAt:       user.UpdatedAt,
+		Username:          user.Username,
+		Email:             user.Email,
+		PasswordHash:      user.PasswordHash,
+		DisplayName:       user.DisplayName,
+		IsAgent:           user.IsAgent,
+		AgentType:         user.AgentType,
+		AgentCapabilities: user.AgentCapabilities,
+		AgentVersion:      user.AgentVersion,
+		AgentOwner:        user.AgentOwner,
+		AgentCreatedBy:    user.AgentCreatedBy,
+		AgentPublicKey:    user.AgentPublicKey,
+		AgentKeyType:      user.AgentKeyType,
+		Approved:          user.Approved,
+		Suspended:         user.Suspended,
+		Silenced:          user.Silenced,
+		Role:              user.Role,
+		Locale:            user.Locale,
+		RecoveryMethods:   user.RecoveryMethods,
+		CreatedAt:         user.CreatedAt,
+		UpdatedAt:         user.UpdatedAt,
 	}
 
 	// Use enhanced validation and creation with automatic permission checking and event emission
@@ -298,6 +307,42 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 	return users, nextCursor, nil
 }
 
+// ListAgents retrieves a paginated list of local agent accounts.
+func (r *UserRepository) ListAgents(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
+	if err := common.ValidateQueryLimit(int(limit), 100, "agent listing"); err != nil {
+		limit = 20
+	}
+
+	var userModels []models.User
+	query := r.GetDB().WithContext(ctx).Model(&models.User{}).
+		Index("gsi6").
+		Where("gsi6PK", "=", "ACCOUNT_TYPE#AGENT").
+		Limit(int(limit) + 1)
+
+	if cursor != "" {
+		query = query.Where("gsi6SK", ">", cursor)
+	}
+
+	if err := query.All(&userModels); err != nil {
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, "list agents")
+	}
+
+	users := make([]*storage.User, 0, len(userModels))
+	for _, userModel := range userModels {
+		users = append(users, r.modelToStorage(&userModel))
+	}
+
+	var nextCursor string
+	if len(userModels) > int(limit) {
+		userModels = userModels[:limit]
+		if len(userModels) > 0 {
+			nextCursor = userModels[len(userModels)-1].GSI6SK
+		}
+	}
+
+	return users, nextCursor, nil
+}
+
 // GetActiveUserCount returns the number of active users
 func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
 	// Calculate cutoff time for activity
@@ -459,18 +504,26 @@ func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string
 // modelToStorage converts a models.User to storage.User
 func (r *UserRepository) modelToStorage(userModel *models.User) *storage.User {
 	return &storage.User{
-		Username:        userModel.Username,
-		Email:           userModel.Email,
-		PasswordHash:    userModel.PasswordHash,
-		DisplayName:     userModel.DisplayName,
-		CreatedAt:       userModel.CreatedAt,
-		UpdatedAt:       userModel.UpdatedAt,
-		Approved:        userModel.Approved,
-		Suspended:       userModel.Suspended,
-		Silenced:        userModel.Silenced,
-		Role:            userModel.Role,
-		Locale:          userModel.Locale,
-		RecoveryMethods: userModel.RecoveryMethods,
+		Username:          userModel.Username,
+		Email:             userModel.Email,
+		PasswordHash:      userModel.PasswordHash,
+		DisplayName:       userModel.DisplayName,
+		IsAgent:           userModel.IsAgent,
+		AgentType:         userModel.AgentType,
+		AgentCapabilities: userModel.AgentCapabilities,
+		AgentVersion:      userModel.AgentVersion,
+		AgentOwner:        userModel.AgentOwner,
+		AgentCreatedBy:    userModel.AgentCreatedBy,
+		AgentPublicKey:    userModel.AgentPublicKey,
+		AgentKeyType:      userModel.AgentKeyType,
+		CreatedAt:         userModel.CreatedAt,
+		UpdatedAt:         userModel.UpdatedAt,
+		Approved:          userModel.Approved,
+		Suspended:         userModel.Suspended,
+		Silenced:          userModel.Silenced,
+		Role:              userModel.Role,
+		Locale:            userModel.Locale,
+		RecoveryMethods:   userModel.RecoveryMethods,
 	}
 }
 
@@ -513,6 +566,41 @@ func (r *UserRepository) applyUpdates(userModel *models.User, updates map[string
 		case "recovery_methods":
 			if v, ok := value.([]string); ok {
 				userModel.RecoveryMethods = v
+			}
+		case "is_agent":
+			if v, ok := value.(bool); ok {
+				userModel.IsAgent = v
+			}
+		case "agent_type":
+			if v, ok := value.(string); ok {
+				userModel.AgentType = v
+			}
+		case "agent_version":
+			if v, ok := value.(string); ok {
+				userModel.AgentVersion = v
+			}
+		case "agent_owner":
+			if v, ok := value.(string); ok {
+				userModel.AgentOwner = v
+			}
+		case "agent_created_by":
+			if v, ok := value.(string); ok {
+				userModel.AgentCreatedBy = v
+			}
+		case "agent_public_key":
+			if v, ok := value.(string); ok {
+				userModel.AgentPublicKey = v
+			}
+		case "agent_key_type":
+			if v, ok := value.(string); ok {
+				userModel.AgentKeyType = v
+			}
+		case "agent_capabilities":
+			if v, ok := value.(*agents.Capabilities); ok {
+				userModel.AgentCapabilities = v
+			} else if v, ok := value.(agents.Capabilities); ok {
+				copy := v
+				userModel.AgentCapabilities = &copy
 			}
 		}
 	}

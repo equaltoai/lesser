@@ -58,6 +58,30 @@ func (m *MockInstanceRepository) SetPrimaryAdminUsername(ctx context.Context, us
 	return args.Error(0)
 }
 
+// GetAgentInstanceConfig mocks the GetAgentInstanceConfig method
+func (m *MockInstanceRepository) GetAgentInstanceConfig(ctx context.Context) (*models.AgentInstanceConfig, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.AgentInstanceConfig), args.Error(1)
+}
+
+// EnsureAgentInstanceConfig mocks the EnsureAgentInstanceConfig method
+func (m *MockInstanceRepository) EnsureAgentInstanceConfig(ctx context.Context) (*models.AgentInstanceConfig, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.AgentInstanceConfig), args.Error(1)
+}
+
+// SetAgentInstanceConfig mocks the SetAgentInstanceConfig method
+func (m *MockInstanceRepository) SetAgentInstanceConfig(ctx context.Context, cfg *models.AgentInstanceConfig) error {
+	args := m.Called(ctx, cfg)
+	return args.Error(0)
+}
+
 // GetInstanceRules mocks the GetInstanceRules method
 func (m *MockInstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error) {
 	args := m.Called(ctx)

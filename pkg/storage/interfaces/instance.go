@@ -29,6 +29,17 @@ type InstanceRepository interface {
 	// SetPrimaryAdminUsername records the primary admin username created during setup
 	SetPrimaryAdminUsername(ctx context.Context, username string) error
 
+	// Agent policy operations
+
+	// GetAgentInstanceConfig returns the current instance agent policy.
+	GetAgentInstanceConfig(ctx context.Context) (*models.AgentInstanceConfig, error)
+
+	// EnsureAgentInstanceConfig ensures the instance agent policy record exists and returns it.
+	EnsureAgentInstanceConfig(ctx context.Context) (*models.AgentInstanceConfig, error)
+
+	// SetAgentInstanceConfig updates the instance agent policy.
+	SetAgentInstanceConfig(ctx context.Context, cfg *models.AgentInstanceConfig) error
+
 	// Instance rules operations
 
 	// GetInstanceRules retrieves the instance rules

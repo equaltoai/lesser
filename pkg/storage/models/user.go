@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
@@ -35,6 +36,10 @@ type User struct {
 	GSI5PK string `theorydb:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"`
 	GSI5SK string `theorydb:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"`
 
+	// GSI6 - Agent directory listing
+	GSI6PK string `theorydb:"index:gsi6,pk,attr:gsi6PK" json:"gsi6_pk"`
+	GSI6SK string `theorydb:"index:gsi6,sk,attr:gsi6SK" json:"gsi6_sk"`
+
 	// Core user data
 	Username     string              `theorydb:"attr:username" json:"username"`
 	Email        string              `theorydb:"attr:email" json:"email,omitempty"`                // Optional - not required for email-free auth
@@ -62,6 +67,16 @@ type User struct {
 	AllowNSFW          bool                   `theorydb:"attr:allowNSFW" json:"allow_nsfw"`                    // Whether user allows viewing NSFW content
 	RequireNSFWWarning bool                   `theorydb:"attr:requireNSFWWarning" json:"require_nsfw_warning"` // Whether user wants warnings before showing NSFW content
 	Metadata           map[string]interface{} `theorydb:"attr:metadata" json:"metadata,omitempty"`
+
+	// Agent fields (LLM agents)
+	IsAgent           bool                 `theorydb:"attr:isAgent" json:"is_agent"`
+	AgentType         string               `theorydb:"attr:agentType" json:"agent_type,omitempty"`
+	AgentCapabilities *agents.Capabilities `theorydb:"json,attr:agentCapabilities" json:"agent_capabilities,omitempty"`
+	AgentVersion      string               `theorydb:"attr:agentVersion" json:"agent_version,omitempty"`
+	AgentOwner        string               `theorydb:"attr:agentOwner" json:"agent_owner,omitempty"`
+	AgentCreatedBy    string               `theorydb:"attr:agentCreatedBy" json:"agent_created_by,omitempty"`
+	AgentPublicKey    string               `theorydb:"attr:agentPublicKey" json:"agent_public_key,omitempty"`
+	AgentKeyType      string               `theorydb:"attr:agentKeyType" json:"agent_key_type,omitempty"`
 
 	// Version for optimistic locking
 	Version int `theorydb:"version,attr:version" json:"version"`
@@ -144,6 +159,13 @@ func (u *User) setupGSIKeys() {
 	}
 	u.GSI5PK = fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)
 	u.GSI5SK = normalizedUsername
+
+	accountType := "HUMAN"
+	if u.IsAgent {
+		accountType = "AGENT"
+	}
+	u.GSI6PK = "ACCOUNT_TYPE#" + accountType
+	u.GSI6SK = fmt.Sprintf("%s#%s", u.CreatedAt.Format(time.RFC3339), username)
 
 }
 
