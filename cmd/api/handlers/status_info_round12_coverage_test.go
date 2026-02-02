@@ -32,7 +32,7 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 	}
 	status := &storagemodels.Status{
 		StatusID: "123",
-		Note:     &storagemodels.NoteField{Note: note},
+		Note:     note,
 	}
 
 	t.Run("status source validation + not found", func(t *testing.T) {

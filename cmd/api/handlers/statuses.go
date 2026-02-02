@@ -326,12 +326,12 @@ func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *apptheory.Context, 
 			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
 			return nil, resp, respErr
 		}
-		if obj.Note == nil || obj.Note.Get() == nil {
+		if obj.Note == nil {
 			h.logger.Error("status missing ActivityPub note", zap.String("status_id", obj.StatusID))
 			resp, respErr := common.RespondInternalServerError(ctx, "failed to load status")
 			return nil, resp, respErr
 		}
-		note := obj.Note.Get()
+		note := obj.Note
 		if note.AttributedTo != "" && note.AttributedTo != actorID {
 			resp, respErr := common.RespondForbidden(ctx, "you can only update your own statuses")
 			return nil, resp, respErr
@@ -768,7 +768,7 @@ func (h *Handler) extractInReplyTo(obj interface{}) string {
 	case *activitypub.Note:
 		return o.InReplyTo
 	case *storageMods.Status:
-		if o.Note != nil && o.Note.Note != nil {
+		if o.Note != nil {
 			return o.Note.InReplyTo
 		}
 		if o.InReplyToID != "" {

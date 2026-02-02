@@ -391,10 +391,10 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 						StatusID:       statusID,
 						AuthorUsername: "alice",
 						AuthorID:       cfg.BaseURL() + "/users/alice",
-						Note: &storagemodels.NoteField{Note: &activitypub.Note{
+						Note: &activitypub.Note{
 							BaseObject: activitypub.BaseObject{ID: statusID, Type: activitypub.NoteType},
 							Content:    "note",
-						}},
+						},
 					}, nil
 				},
 			},

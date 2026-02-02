@@ -32,7 +32,7 @@ func TestHandleOEmbedLift(t *testing.T) {
 
 	status := &storagemodels.Status{
 		StatusID: "123",
-		Note:     &storagemodels.NoteField{Note: note},
+		Note:     note,
 	}
 
 	notesSvc := &NotesServiceStub{

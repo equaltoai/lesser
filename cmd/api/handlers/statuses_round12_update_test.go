@@ -50,7 +50,7 @@ func TestUpdateStatusLift_Round12(t *testing.T) {
 			PublishedAt:    now.Add(-1 * time.Hour),
 			CreatedAt:      now.Add(-1 * time.Hour),
 			UpdatedAt:      now.Add(-30 * time.Minute),
-			Note:           &storagemodels.NoteField{Note: note},
+			Note:           note,
 		}
 	}
 

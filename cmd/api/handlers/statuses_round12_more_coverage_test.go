@@ -30,7 +30,7 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 
 		statusWithEmbeddedNote := &storagemodels.Status{
 			StatusID: "s1",
-			Note:     &storagemodels.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{InReplyTo: cfg.ObjectURL("objects", "p1")}}},
+			Note:     &activitypub.Note{BaseObject: activitypub.BaseObject{InReplyTo: cfg.ObjectURL("objects", "p1")}},
 		}
 		require.Equal(t, cfg.ObjectURL("objects", "p1"), handler.extractInReplyTo(statusWithEmbeddedNote))
 
@@ -95,7 +95,7 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 			StatusID:       "s2",
 			AuthorID:       cfg.ActorURL("bob"),
 			AuthorUsername: "bob",
-			Note:           &storagemodels.NoteField{Note: ownedNote},
+			Note:           ownedNote,
 		}
 		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx3, statusOtherAuthor, actorID)
 		require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 		statusUsernameMismatch := &storagemodels.Status{
 			StatusID:       "s3",
 			AuthorUsername: "bob",
-			Note:           &storagemodels.NoteField{Note: ownedNote},
+			Note:           ownedNote,
 		}
 		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx4, statusUsernameMismatch, actorID)
 		require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestStatusesMoreCoverageHelpers_Round12(t *testing.T) {
 			StatusID:       "s5",
 			AuthorUsername: "alice",
 			AuthorID:       actorID,
-			Note:           &storagemodels.NoteField{Note: &activitypub.Note{AttributedTo: cfg.ActorURL("bob")}},
+			Note:           &activitypub.Note{AttributedTo: cfg.ActorURL("bob")},
 		}
 		note, resp, err = handler.convertObjectToNoteWithOwnershipCheck(ctx6, statusNoteMismatch, actorID)
 		require.NoError(t, err)

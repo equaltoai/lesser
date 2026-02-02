@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 )
@@ -54,26 +55,26 @@ type Status struct {
 	GSI7SK string `theorydb:"index:gsi7,sk,attr:gsi7SK,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
 	// Core status data
-	StatusID            string     `theorydb:"attr:statusID" json:"status_id"`
-	Note                *NoteField `theorydb:"attr:note" json:"note"`                                            // The actual ActivityPub Note (wrapped for proper DynamORM handling)
-	AuthorID            string     `theorydb:"attr:authorID" json:"author_id"`                                   // AttributedTo from the Note
-	AuthorUsername      string     `theorydb:"attr:authorUsername" json:"author_username"`                       // Extracted username for efficient queries
-	Content             string     `theorydb:"attr:content" json:"content"`                                      // Cached content for search
-	ConversationID      string     `theorydb:"attr:conversationID" json:"conversation_id,omitempty"`             // Thread/conversation ID
-	InReplyToID         string     `theorydb:"attr:inReplyToID" json:"in_reply_to_id,omitempty"`                 // Parent status ID
-	ReblogOfID          string     `theorydb:"attr:reblogOfID" json:"reblog_of_id,omitempty"`                    // If this is a reblog, the original status ID
-	BoostOfStatusID     string     `theorydb:"attr:boostOfStatusID" json:"boost_of_status_id,omitempty"`         // Original status ID for boost contexts
-	BoostOfAuthorID     string     `theorydb:"attr:boostOfAuthorID" json:"boost_of_author_id,omitempty"`         // Author ID of the boosted status
-	BoostAnnounceID     string     `theorydb:"attr:boostActivityID" json:"boost_announce_id,omitempty"`          // ActivityPub Announce ID backing this boost (legacy attribute retained)
-	QuoteTargetStatusID string     `theorydb:"attr:quoteTargetStatusID" json:"quote_target_status_id,omitempty"` // If this status quotes another, the original status ID
-	QuoteTargetAuthorID string     `theorydb:"attr:quoteTargetAuthorID" json:"quote_target_author_id,omitempty"` // Author ID of the quoted status
-	Visibility          string     `theorydb:"attr:visibility" json:"visibility"`                                // public, unlisted, private, direct
-	Sensitive           bool       `theorydb:"attr:sensitive" json:"sensitive"`                                  // Content warning flag
-	Language            string     `theorydb:"attr:language" json:"language,omitempty"`                          // Content language
-	Hashtags            []string   `theorydb:"attr:hashtags" json:"hashtags,omitempty"`                          // Extracted hashtags
-	Mentions            []string   `theorydb:"attr:mentions" json:"mentions,omitempty"`                          // Extracted mentions
-	URLs                []string   `theorydb:"attr:urls" json:"urls,omitempty"`                                  // Extracted URLs
-	MediaCount          int        `theorydb:"attr:mediaCount" json:"media_count"`                               // Number of media attachments
+	StatusID            string            `theorydb:"attr:statusID" json:"status_id"`
+	Note                *activitypub.Note `theorydb:"attr:note" json:"note"`                                            // The actual ActivityPub Note
+	AuthorID            string            `theorydb:"attr:authorID" json:"author_id"`                                   // AttributedTo from the Note
+	AuthorUsername      string            `theorydb:"attr:authorUsername" json:"author_username"`                       // Extracted username for efficient queries
+	Content             string            `theorydb:"attr:content" json:"content"`                                      // Cached content for search
+	ConversationID      string            `theorydb:"attr:conversationID" json:"conversation_id,omitempty"`             // Thread/conversation ID
+	InReplyToID         string            `theorydb:"attr:inReplyToID" json:"in_reply_to_id,omitempty"`                 // Parent status ID
+	ReblogOfID          string            `theorydb:"attr:reblogOfID" json:"reblog_of_id,omitempty"`                    // If this is a reblog, the original status ID
+	BoostOfStatusID     string            `theorydb:"attr:boostOfStatusID" json:"boost_of_status_id,omitempty"`         // Original status ID for boost contexts
+	BoostOfAuthorID     string            `theorydb:"attr:boostOfAuthorID" json:"boost_of_author_id,omitempty"`         // Author ID of the boosted status
+	BoostAnnounceID     string            `theorydb:"attr:boostActivityID" json:"boost_announce_id,omitempty"`          // ActivityPub Announce ID backing this boost (legacy attribute retained)
+	QuoteTargetStatusID string            `theorydb:"attr:quoteTargetStatusID" json:"quote_target_status_id,omitempty"` // If this status quotes another, the original status ID
+	QuoteTargetAuthorID string            `theorydb:"attr:quoteTargetAuthorID" json:"quote_target_author_id,omitempty"` // Author ID of the quoted status
+	Visibility          string            `theorydb:"attr:visibility" json:"visibility"`                                // public, unlisted, private, direct
+	Sensitive           bool              `theorydb:"attr:sensitive" json:"sensitive"`                                  // Content warning flag
+	Language            string            `theorydb:"attr:language" json:"language,omitempty"`                          // Content language
+	Hashtags            []string          `theorydb:"attr:hashtags" json:"hashtags,omitempty"`                          // Extracted hashtags
+	Mentions            []string          `theorydb:"attr:mentions" json:"mentions,omitempty"`                          // Extracted mentions
+	URLs                []string          `theorydb:"attr:urls" json:"urls,omitempty"`                                  // Extracted URLs
+	MediaCount          int               `theorydb:"attr:mediaCount" json:"media_count"`                               // Number of media attachments
 
 	// Addressing fields for direct messages and limited visibility
 	ToRecipients  []string `theorydb:"attr:toRecipients" json:"to_recipients,omitempty"`   // Primary recipients (visible to all)
@@ -188,10 +189,7 @@ func (s *Status) extractFromNote() {
 		return
 	}
 
-	note := s.Note.Get()
-	if note == nil {
-		return
-	}
+	note := s.Note
 
 	// Extract basic fields
 	s.Content = note.Content
@@ -245,8 +243,8 @@ func (s *Status) extractTagsFromNote() {
 		return
 	}
 
-	note := s.Note.Get()
-	if note == nil || note.Tag == nil {
+	note := s.Note
+	if note.Tag == nil {
 		return
 	}
 

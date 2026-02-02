@@ -104,7 +104,7 @@ func TestActivityHandler_ErrorBranches(t *testing.T) {
 			StatusID:    "s1",
 			AuthorID:    "https://example.com/users/alice",
 			PublishedAt: time.Now(),
-			Note:        &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
+			Note:        &activitypub.Note{Content: "hi"},
 		}
 		require.Error(t, handler.processStatusForTimelines(ctx, status, VisibilityPublic, "alice"))
 		timelineRepo.AssertExpectations(t)

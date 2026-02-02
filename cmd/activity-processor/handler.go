@@ -674,7 +674,7 @@ func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activi
 	// Create storage model with transformation-derived and specific fields
 	status := &models.Status{
 		StatusID:      statusID,
-		Note:          &models.NoteField{Note: note}, // Wrap Note in NoteField for proper DynamORM handling
+		Note:          note,
 		AuthorID:      note.AttributedTo,
 		Visibility:    visibility,
 		ToRecipients:  note.To,

@@ -230,7 +230,7 @@ func TestConvertStorageStatusToAPI(t *testing.T) {
 		UpdatedAt:      now.Add(-30 * time.Minute),
 		Hashtags:       []string{"Go"},
 		Mentions:       []string{"bob"},
-		Note:           &storagemodels.NoteField{Note: statusNote},
+		Note:           statusNote,
 		ReblogOfID:     "reblog",
 	}
 

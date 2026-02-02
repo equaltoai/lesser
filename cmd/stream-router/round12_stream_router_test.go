@@ -179,25 +179,23 @@ func newNotificationInsertRecord(username string) events.DynamoDBEventRecord {
 func newStatusInsertRecord(eventName string) events.DynamoDBEventRecord {
 	now := time.Now().UTC()
 	noteMap := map[string]events.DynamoDBAttributeValue{
-		"Note": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-			"BaseObject": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-				"id":        events.NewStringAttribute("https://example.com/statuses/1"),
-				"type":      events.NewStringAttribute("Note"),
-				"published": events.NewStringAttribute(now.Format(time.RFC3339)),
-				"summary":   events.NewStringAttribute("cw"),
-				"sensitive": events.NewBooleanAttribute(false),
-			}),
-			"content":      events.NewStringAttribute("<p>Hello</p>"),
-			"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
-			"attachment": events.NewListAttribute([]events.DynamoDBAttributeValue{
-				events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-					"type":      events.NewStringAttribute("Image"),
-					"mediaType": events.NewStringAttribute("image/jpeg"),
-					"url":       events.NewStringAttribute("https://cdn.example.com/media/1.jpg"),
-					"name":      events.NewStringAttribute("alt"),
-					"width":     events.NewNumberAttribute("640"),
-					"height":    events.NewNumberAttribute("480"),
-				}),
+		"BaseObject": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
+			"id":        events.NewStringAttribute("https://example.com/statuses/1"),
+			"type":      events.NewStringAttribute("Note"),
+			"published": events.NewStringAttribute(now.Format(time.RFC3339)),
+			"summary":   events.NewStringAttribute("cw"),
+			"sensitive": events.NewBooleanAttribute(false),
+		}),
+		"content":      events.NewStringAttribute("<p>Hello</p>"),
+		"attributedTo": events.NewStringAttribute("https://example.com/users/alice"),
+		"attachment": events.NewListAttribute([]events.DynamoDBAttributeValue{
+			events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
+				"type":      events.NewStringAttribute("Image"),
+				"mediaType": events.NewStringAttribute("image/jpeg"),
+				"url":       events.NewStringAttribute("https://cdn.example.com/media/1.jpg"),
+				"name":      events.NewStringAttribute("alt"),
+				"width":     events.NewNumberAttribute("640"),
+				"height":    events.NewNumberAttribute("480"),
 			}),
 		}),
 	}

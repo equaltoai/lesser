@@ -29,12 +29,12 @@ func mapStatusVisibility(status *models.Status) model.Visibility {
 }
 
 func cloneNoteAttachments(status *models.Status) []*activitypub.Attachment {
-	if status == nil || status.Note == nil || status.Note.Get() == nil {
+	if status == nil || status.Note == nil {
 		return []*activitypub.Attachment{}
 	}
 
-	attachments := make([]*activitypub.Attachment, 0, len(status.Note.Get().Attachment))
-	for _, att := range status.Note.Get().Attachment {
+	attachments := make([]*activitypub.Attachment, 0, len(status.Note.Attachment))
+	for _, att := range status.Note.Attachment {
 		attachment := att
 		attachments = append(attachments, &attachment)
 	}
@@ -43,12 +43,12 @@ func cloneNoteAttachments(status *models.Status) []*activitypub.Attachment {
 }
 
 func cloneNoteTags(status *models.Status) []*activitypub.Tag {
-	if status == nil || status.Note == nil || status.Note.Get() == nil {
+	if status == nil || status.Note == nil {
 		return []*activitypub.Tag{}
 	}
 
-	tags := make([]*activitypub.Tag, 0, len(status.Note.Get().Tag))
-	for _, tag := range status.Note.Get().Tag {
+	tags := make([]*activitypub.Tag, 0, len(status.Note.Tag))
+	for _, tag := range status.Note.Tag {
 		tagCopy := tag
 		tags = append(tags, &tagCopy)
 	}
@@ -79,23 +79,23 @@ func (r *Resolver) buildMentions(status *models.Status) []*model.Mention {
 }
 
 func determineQuoteable(status *models.Status) bool {
-	if status == nil || status.Note == nil || status.Note.Get() == nil {
+	if status == nil || status.Note == nil {
 		return true
 	}
-	if status.Note.Get().Quoteable {
-		return status.Note.Get().Quoteable
+	if status.Note.Quoteable {
+		return status.Note.Quoteable
 	}
 	return true
 }
 
 func extractStatusSummary(status *models.Status) *string {
-	if status == nil || status.Note == nil || status.Note.Get() == nil {
+	if status == nil || status.Note == nil {
 		return nil
 	}
-	if status.Note.Get().Summary == "" {
+	if status.Note.Summary == "" {
 		return nil
 	}
-	summary := status.Note.Get().Summary
+	summary := status.Note.Summary
 	return &summary
 }
 

@@ -29,7 +29,7 @@ func TestStatusHandlersLift(t *testing.T) {
 		PublishedAt:    now.Add(-1 * time.Hour),
 		CreatedAt:      now.Add(-1 * time.Hour),
 		UpdatedAt:      now.Add(-30 * time.Minute),
-		Note: &storagemodels.NoteField{Note: &activitypub.Note{
+		Note: &activitypub.Note{
 			BaseObject: activitypub.BaseObject{
 				ID:   cfg.BaseURL() + "/objects/s1",
 				Type: activitypub.NoteType,
@@ -37,7 +37,7 @@ func TestStatusHandlersLift(t *testing.T) {
 			},
 			AttributedTo: cfg.ActorURL("alice"),
 			Content:      "hello",
-		}},
+		},
 	}
 
 	state := &round10QueryState{

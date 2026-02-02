@@ -517,12 +517,19 @@ func (h *StreamRouterHandler) processStatusEvent(ctx context.Context, requestID 
 
 	// Create simplified status payload for WebSocket using the DynamORM status model
 	note := status.Note
+	createdAt := status.PublishedAt
+	if note.Published != nil && !note.Published.IsZero() {
+		createdAt = *note.Published
+	}
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
 	statusPayload := map[string]any{
 		"id":           status.StatusID,
 		"uri":          note.ID,
 		"url":          note.ID, // Use ID as URL since Note doesn't have a separate URL field
 		"content":      status.Content,
-		"created_at":   note.Published.Format(time.RFC3339),
+		"created_at":   createdAt.Format(time.RFC3339),
 		"visibility":   status.Visibility,
 		"language":     status.Language,
 		"spoiler_text": note.Summary,

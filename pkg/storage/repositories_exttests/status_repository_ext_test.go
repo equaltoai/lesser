@@ -270,7 +270,7 @@ func TestStatusRepository_ext_sweep(t *testing.T) {
 		Hashtags:        []string{"Go", " ", "#"},
 		Language:        "en",
 	}
-	status.Note = &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}}
+	status.Note = &activitypub.Note{BaseObject: activitypub.BaseObject{Type: "Note", ID: "https://example.com/status/1"}}
 	assert.NoError(t, repo.CreateStatus(ctx, status))
 
 	_ = repo.UpdateStatus(ctx, status)

@@ -25,10 +25,10 @@ func TestStatusesFullHandlers(t *testing.T) {
 		Visibility:     "public",
 		PublishedAt:    time.Now().Add(-1 * time.Hour),
 		CreatedAt:      time.Now().Add(-1 * time.Hour),
-		Note: &storagemodels.NoteField{Note: &activitypub.Note{
+		Note: &activitypub.Note{
 			BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/objects/s1", Type: activitypub.NoteType},
 			Content:    "hello",
-		}},
+		},
 	}
 
 	notesStub := &NotesServiceStub{

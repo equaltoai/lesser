@@ -72,10 +72,10 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 				{
 					StatusID:       "s1",
 					AuthorUsername: "alice",
-					Note: &storagemodels.NoteField{Note: &activitypub.Note{
+					Note: &activitypub.Note{
 						BaseObject: activitypub.BaseObject{Published: &published},
 						Content:    "hello #Go",
-					}},
+					},
 				},
 			},
 		}
@@ -195,18 +195,18 @@ func TestTags_FeaturedTagsCRUDAndSuggestionsRound12(t *testing.T) {
 					{
 						StatusID:       "s1",
 						AuthorUsername: "alice",
-						Note: &storagemodels.NoteField{Note: &activitypub.Note{
+						Note: &activitypub.Note{
 							BaseObject: activitypub.BaseObject{Published: &published},
 							Content:    "hello #Go #AI",
-						}},
+						},
 					},
 					{
 						StatusID:       "s2",
 						AuthorUsername: "alice",
-						Note: &storagemodels.NoteField{Note: &activitypub.Note{
+						Note: &activitypub.Note{
 							BaseObject: activitypub.BaseObject{Published: &published},
 							Content:    "another #Go",
-						}},
+						},
 					},
 				},
 			}

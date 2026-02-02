@@ -149,17 +149,12 @@ func (h *Handler) fetchAndConvertNote(ctx *apptheory.Context, objectID string) (
 		return nil, resp, respErr
 	}
 
-	// Return the Note directly (unwrap from NoteField)
+	// Return the Note directly.
 	if result.Note == nil {
 		resp, respErr := common.RespondStatusNotFound(ctx)
 		return nil, resp, respErr
 	}
-	note := result.Note.Get()
-	if note == nil {
-		resp, respErr := common.RespondStatusNotFound(ctx)
-		return nil, resp, respErr
-	}
-	return note, nil, nil
+	return result.Note, nil, nil
 }
 
 // convertToNote converts an object to an ActivityPub Note
@@ -458,17 +453,12 @@ func (h *Handler) fetchEmbedNote(ctx *apptheory.Context, objectID string) (*acti
 		resp, respErr := common.RespondStatusNotFound(ctx)
 		return nil, resp, respErr
 	}
-	// Return the Note directly (unwrap from NoteField)
+	// Return the Note directly.
 	if result.Note == nil {
 		resp, respErr := common.RespondStatusNotFound(ctx)
 		return nil, resp, respErr
 	}
-	note := result.Note.Get()
-	if note == nil {
-		resp, respErr := common.RespondStatusNotFound(ctx)
-		return nil, resp, respErr
-	}
-	return note, nil, nil
+	return result.Note, nil, nil
 }
 
 // convertObjectToNote converts an object to an ActivityPub Note

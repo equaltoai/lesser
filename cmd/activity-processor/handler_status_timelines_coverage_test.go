@@ -32,7 +32,7 @@ func TestActivityHandler_ProcessStatusForTimelines_CoversVisibilityBranches(t *t
 			StatusID:    "s1",
 			AuthorID:    "https://example.com/users/alice",
 			PublishedAt: time.Now(),
-			Note:        &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
+			Note:        &activitypub.Note{Content: "hi"},
 		}
 
 		require.NoError(t, h.processStatusForTimelines(ctx, status, VisibilityPublic, "alice"))
@@ -50,7 +50,7 @@ func TestActivityHandler_ProcessStatusForTimelines_CoversVisibilityBranches(t *t
 			StatusID:    "s2",
 			AuthorID:    "https://remote.example/users/bob",
 			PublishedAt: time.Now(),
-			Note:        &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
+			Note:        &activitypub.Note{Content: "hi"},
 		}
 
 		require.NoError(t, h.processStatusForTimelines(ctx, status, VisibilityPublic, "bob"))
@@ -67,7 +67,7 @@ func TestActivityHandler_ProcessStatusForTimelines_CoversVisibilityBranches(t *t
 			StatusID:    "s3",
 			AuthorID:    "https://example.com/users/alice",
 			PublishedAt: time.Now(),
-			Note:        &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
+			Note:        &activitypub.Note{Content: "hi"},
 		}
 
 		require.NoError(t, h.processStatusForTimelines(ctx, status, "unlisted", "alice"))
@@ -86,7 +86,7 @@ func TestActivityHandler_ProcessStatusForTimelines_CoversVisibilityBranches(t *t
 			StatusID:    "s4",
 			AuthorID:    "https://example.com/users/alice",
 			PublishedAt: time.Now(),
-			Note:        &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
+			Note:        &activitypub.Note{Content: "hi"},
 		}
 
 		require.NoError(t, h.processStatusForTimelines(ctx, status, "private", "alice"))
@@ -100,7 +100,7 @@ func TestActivityHandler_ProcessStatusForTimelines_CoversVisibilityBranches(t *t
 			StatusID:    "s5",
 			AuthorID:    "https://example.com/users/alice",
 			PublishedAt: time.Now(),
-			Note:        &models.NoteField{Note: &activitypub.Note{Content: "hi"}},
+			Note:        &activitypub.Note{Content: "hi"},
 		}
 
 		require.NoError(t, h.processStatusForTimelines(ctx, status, "something-else", "alice"))

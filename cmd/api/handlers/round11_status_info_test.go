@@ -23,7 +23,7 @@ func TestStatusSourceAndHistory(t *testing.T) {
 		Content:      "hello",
 		AttributedTo: h.cfg.BaseURL() + "/users/alice",
 	}
-	status := &storagemodels.Status{StatusID: "123", Note: &storagemodels.NoteField{Note: note}}
+	status := &storagemodels.Status{StatusID: "123", Note: note}
 
 	notesSvc := &NotesServiceStub{
 		GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {

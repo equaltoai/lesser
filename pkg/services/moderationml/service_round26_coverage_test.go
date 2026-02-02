@@ -210,11 +210,9 @@ func TestService_QueueSamples_round26_coverage(t *testing.T) {
 		repo := &fakeModerationRepo{}
 		status := &models.Status{
 			Content: "",
-			Note: &models.NoteField{
-				Note: &activitypub.Note{
-					BaseObject: activitypub.BaseObject{Summary: "cw"},
-					Content:    "hello",
-				},
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{Summary: "cw"},
+				Content:    "hello",
 			},
 		}
 		svc := &Service{

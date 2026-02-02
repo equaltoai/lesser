@@ -106,7 +106,7 @@ func TestHandleTranslateStatusLift(t *testing.T) {
 				return &storagemodels.Status{
 					StatusID: statusID,
 					Content:  "<p>hello</p>",
-					Note:     &storagemodels.NoteField{Note: note},
+					Note:     note,
 					Language: "en",
 				}, nil
 			},

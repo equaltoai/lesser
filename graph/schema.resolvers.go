@@ -1324,8 +1324,8 @@ func extractQuoteURLFromStatus(status *models.Status) string {
 		return ""
 	}
 
-	note := status.Note.Get()
-	if note == nil || note.ID == "" {
+	note := status.Note
+	if note.ID == "" {
 		return ""
 	}
 

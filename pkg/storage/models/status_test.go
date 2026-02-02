@@ -86,7 +86,7 @@ func (suite *StatusModelTestSuite) TestBeforeCreate_ExtractsFromNote() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	err := status.BeforeCreate()
@@ -135,7 +135,7 @@ func (suite *StatusModelTestSuite) TestBeforeUpdate_ExtractsFromNote() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	err := status.BeforeUpdate()
@@ -313,7 +313,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_BasicFields() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	status.extractFromNote()
@@ -337,7 +337,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_ConversationAndReply() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	status.extractFromNote()
@@ -396,7 +396,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_Visibility() {
 
 			status := &Status{
 				StatusID: "123",
-				Note:     &NoteField{Note: note},
+				Note:     note,
 			}
 
 			status.extractFromNote()
@@ -431,7 +431,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_Tags() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	status.extractFromNote()
@@ -464,7 +464,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_MediaAttachments() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	status.extractFromNote()
@@ -488,7 +488,7 @@ func (suite *StatusModelTestSuite) TestExtractFromNote_Timestamps() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	status.extractFromNote()
@@ -522,7 +522,7 @@ func (suite *StatusModelTestSuite) TestExtractTagsFromNote_NilTags() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	status.extractTagsFromNote()
@@ -568,7 +568,7 @@ func (suite *StatusModelTestSuite) TestExtractTagsFromNote_MixedTags() {
 
 	status := &Status{
 		StatusID: "123",
-		Note:     &NoteField{Note: note},
+		Note:     note,
 	}
 
 	status.extractTagsFromNote()

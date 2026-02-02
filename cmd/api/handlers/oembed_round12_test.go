@@ -51,7 +51,7 @@ func TestOEmbed_Round12(t *testing.T) {
 				}
 				return &storagemodels.Status{
 					StatusID: id,
-					Note:     &storagemodels.NoteField{Note: note},
+					Note:     note,
 				}, nil
 			},
 		}

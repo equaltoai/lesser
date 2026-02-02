@@ -76,7 +76,7 @@ func TestService_queueFederationDelivery_CoversBranches(t *testing.T) {
 			ToRecipients:   []string{"https://remote/users/bob"},
 			CcRecipients:   []string{},
 			ConversationID: "conv",
-			Note:           &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-1", Type: "Note"}}},
+			Note:           &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-1", Type: "Note"}},
 		})
 		require.Len(t, federation.GetQueuedActivities(), 1)
 	})
@@ -86,7 +86,7 @@ func TestService_queueFederationDelivery_CoversBranches(t *testing.T) {
 		service.queueFederationDelivery(ctx, &models.Status{
 			StatusID:     "m4",
 			ToRecipients: []string{"https://remote/users/bob"},
-			Note:         &models.NoteField{Note: &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-2", Type: "Note"}}},
+			Note:         &activitypub.Note{BaseObject: activitypub.BaseObject{ID: "note-2", Type: "Note"}},
 		})
 	})
 }

@@ -135,8 +135,8 @@ func (r *StatusRepository) createHashtagTimelineIndexes(ctx context.Context, sta
 			CreatedAt:    now,
 		}
 
-		if status.Note != nil && status.Note.Get() != nil && status.Note.Get().ID != "" {
-			record.StatusURL = status.Note.Get().ID
+		if status.Note != nil && status.Note.ID != "" {
+			record.StatusURL = status.Note.ID
 		}
 
 		if record.Published.IsZero() {
@@ -311,9 +311,9 @@ func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Stat
 
 	// Only update Note field if it's explicitly provided and valid
 	// This prevents corruption from nil or partially-loaded Note fields
-	if status.Note != nil && status.Note.Get() != nil {
+	if status.Note != nil {
 		// Validate Note has required fields before updating
-		if status.Note.Get().ID != "" && status.Note.Get().Type != "" {
+		if status.Note.ID != "" && status.Note.Type != "" {
 			updateBuilder.Set("Note", status.Note)
 		}
 	}
@@ -816,7 +816,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 
 	// Find exact match by checking the Note.ID field
 	for _, status := range statuses {
-		if status.Note != nil && status.Note.Get() != nil && status.Note.Get().ID == url {
+		if status.Note != nil && status.Note.ID == url {
 			return &status, nil
 		}
 	}

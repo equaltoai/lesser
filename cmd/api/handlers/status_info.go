@@ -160,6 +160,10 @@ func (h *Handler) getHistoryAuthorActor(ctx *apptheory.Context, currentObject an
 		return nil
 	}
 
+	if h.registry == nil || h.registry.Accounts() == nil {
+		return nil
+	}
+
 	// Extract username from actor ID
 	parts := strings.Split(attributedTo, "/")
 	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {

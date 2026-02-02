@@ -42,10 +42,10 @@ func TestConvertStatusToObjectIncludesBoostContext(t *testing.T) {
 		AuthorUsername: "alice",
 		Content:        "hello world",
 		Visibility:     VisibilityPublic,
-		Note: &models.NoteField{Note: &activitypub.Note{
+		Note: &activitypub.Note{
 			BaseObject: activitypub.BaseObject{ID: "https://example.com/users/alice/statuses/orig-1"},
 			Content:    "hello world",
-		}},
+		},
 	}
 
 	boost := &models.Status{
