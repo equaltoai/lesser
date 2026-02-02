@@ -455,7 +455,7 @@ For every `.go` file importing `github.com/aws/aws-sdk-go-v2/service/dynamodb`:
 4. Update repository documentation that instructs using Lift CDK or Lift runtime:
    - `docs/guides/CLIENT_APP_GUIDE.md` (Lift CDK references)
 
-## Final verification commands (required)
+## Final verification commands
 - Dependency hygiene:
   - `go mod tidy`
   - `cd infra/cdk && go mod tidy && cd ../..`
