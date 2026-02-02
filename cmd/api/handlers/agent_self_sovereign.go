@@ -30,6 +30,7 @@ const (
 	agentKeyActionRotateKey = "rotate_key"
 )
 
+// HandleAgentRegisterChallengeLift issues a one-time challenge for self-sovereign agent registration.
 func (h *Handler) HandleAgentRegisterChallengeLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if resp, err := h.ensureAgentRegistrationEnabled(ctx); resp != nil || err != nil {
 		return resp, err
@@ -139,17 +140,31 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 	if agentVersion == "" {
 		agentVersion = "unknown"
 	}
-	if capabilities.MaxPostsPerHour == 0 {
-		capabilities.MaxPostsPerHour = 50
-	}
 
 	now := time.Now().UTC()
 	quarantineDays := 7
+	maxPostsPerHourAllowed := agentDefaultMaxPostsPerHour
 	if h.repos != nil && h.repos.Instance() != nil {
-		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil && policy.DefaultQuarantineDays > 0 {
-			quarantineDays = policy.DefaultQuarantineDays
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
+			if policy.DefaultQuarantineDays > 0 {
+				quarantineDays = policy.DefaultQuarantineDays
+			}
+			if policy.AgentMaxPostsPerHour > 0 {
+				maxPostsPerHourAllowed = policy.AgentMaxPostsPerHour
+			}
 		}
 	}
+
+	if maxPostsPerHourAllowed <= 0 {
+		maxPostsPerHourAllowed = agentDefaultMaxPostsPerHour
+	}
+	if capabilities.MaxPostsPerHour <= 0 {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
+	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
+
 	quarantineEnd := now.AddDate(0, 0, quarantineDays)
 
 	user := &storage.User{

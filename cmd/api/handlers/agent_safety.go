@@ -27,8 +27,9 @@ const (
 	agentRepetitionMax    = 3
 	agentRepetitionWindow = time.Hour
 
-	agentDefaultMaxPostsPerHour = 50
-	agentLockoutDuration        = time.Hour
+	agentDefaultMaxPostsPerHour         = 50
+	agentVerifiedDefaultMaxPostsPerHour = 200
+	agentLockoutDuration                = time.Hour
 )
 
 func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *auth.Claims, req *models.CreateStatusRequest) (*apptheory.Response, error) {
@@ -78,10 +79,7 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 
 	if h.repos != nil && h.repos.RateLimit() != nil {
 		// Enforce per-hour posting cap (capability-driven, conservative default).
-		maxPerHour := agentDefaultMaxPostsPerHour
-		if agentUser.AgentCapabilities != nil && agentUser.AgentCapabilities.MaxPostsPerHour > 0 {
-			maxPerHour = agentUser.AgentCapabilities.MaxPostsPerHour
-		}
+		maxPerHour := h.agentMaxPostsPerHourLimit(ctx.Context(), agentUser)
 		if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), "agent:"+claims.Username, "agent_posts_per_hour", maxPerHour, time.Hour); err != nil {
 			return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
 				"error":             "too_many_requests",
@@ -112,6 +110,36 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 	}
 
 	return nil, nil
+}
+
+func (h *Handler) agentMaxPostsPerHourLimit(ctx context.Context, user *storage.User) int {
+	limit := agentDefaultMaxPostsPerHour
+	verifiedLimit := agentVerifiedDefaultMaxPostsPerHour
+
+	if h != nil && h.repos != nil && h.repos.Instance() != nil {
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx); err == nil && policy != nil {
+			if policy.AgentMaxPostsPerHour > 0 {
+				limit = policy.AgentMaxPostsPerHour
+			}
+			if policy.VerifiedAgentMaxPostsPerHour > 0 {
+				verifiedLimit = policy.VerifiedAgentMaxPostsPerHour
+			}
+		}
+	}
+
+	allowed := limit
+	if agentMetadataBool(user, "agent_verified") {
+		allowed = verifiedLimit
+	}
+
+	if user != nil && user.AgentCapabilities != nil && user.AgentCapabilities.MaxPostsPerHour > 0 {
+		requested := user.AgentCapabilities.MaxPostsPerHour
+		if requested < allowed {
+			return requested
+		}
+	}
+
+	return allowed
 }
 
 func uniqueHashtags(content string) []string {

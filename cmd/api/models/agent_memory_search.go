@@ -10,6 +10,7 @@ type AgentMemorySearchRequest struct {
 	IncludeThreads bool           `json:"include_threads,omitempty"`
 	Limit          int            `json:"limit,omitempty"`
 	ThreadID       string         `json:"thread_id,omitempty"`
+	Mode           string         `json:"mode,omitempty"` // "timeline" (default) or "hybrid"
 	Options        map[string]any `json:"options,omitempty"`
 }
 
@@ -22,16 +23,16 @@ type DateRange struct {
 // AgentMemorySearchResponse is the response payload for /api/v1/agents/memory/search.
 type AgentMemorySearchResponse struct {
 	Results     []AgentMemorySearchResult `json:"results"`
-	Total       int                      `json:"total"`
-	QueryTimeMS int                      `json:"query_time_ms"`
+	Total       int                       `json:"total"`
+	QueryTimeMS int                       `json:"query_time_ms"`
 }
 
 // AgentMemorySearchResult represents a single memory hit with lightweight context.
 type AgentMemorySearchResult struct {
-	Status         *Status                  `json:"status"`
-	RelevanceScore float64                  `json:"relevance_score"`
+	Status         *Status                   `json:"status"`
+	RelevanceScore float64                   `json:"relevance_score"`
 	Context        *AgentMemorySearchContext `json:"context,omitempty"`
-	Thread         []*Status                `json:"thread,omitempty"`
+	Thread         []*Status                 `json:"thread,omitempty"`
 }
 
 // AgentMemorySearchContext provides metadata that helps clients reason about a memory hit.
@@ -44,4 +45,3 @@ type AgentMemorySearchContext struct {
 	EventType  string `json:"event_type,omitempty"`
 	OriginalID string `json:"original_id,omitempty"`
 }
-

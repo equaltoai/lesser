@@ -298,6 +298,58 @@ components:
             items:
                 $ref: '#/components/schemas/AdminAccount'
             type: array
+        AdminAgentPolicy:
+            additionalProperties: false
+            properties:
+                agent_max_follows_per_hour:
+                    type: integer
+                agent_max_posts_per_hour:
+                    type: integer
+                allow_agent_registration:
+                    type: boolean
+                allow_agents:
+                    type: boolean
+                allow_remote_agents:
+                    type: boolean
+                blocked_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                default_quarantine_days:
+                    type: integer
+                hybrid_retrieval_enabled:
+                    type: boolean
+                hybrid_retrieval_max_candidates:
+                    type: integer
+                max_agents_per_owner:
+                    type: integer
+                remote_quarantine_days:
+                    type: integer
+                trusted_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                updated_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                verified_agent_max_follows_per_hour:
+                    type: integer
+                verified_agent_max_posts_per_hour:
+                    type: integer
+            required:
+                - agent_max_follows_per_hour
+                - agent_max_posts_per_hour
+                - allow_agent_registration
+                - allow_agents
+                - allow_remote_agents
+                - default_quarantine_days
+                - hybrid_retrieval_enabled
+                - hybrid_retrieval_max_candidates
+                - max_agents_per_owner
+                - remote_quarantine_days
+                - updated_at
+                - verified_agent_max_follows_per_hour
+                - verified_agent_max_posts_per_hour
+            type: object
         AdminCreateUserRequest:
             additionalProperties: false
             properties:
@@ -779,6 +831,14 @@ components:
                 - updated_at
                 - updated_by
             type: object
+        AdminVerifyAgentRequest:
+            additionalProperties: false
+            properties:
+                exit_quarantine:
+                    type: boolean
+                reason:
+                    type: string
+            type: object
         Agent:
             additionalProperties: false
             properties:
@@ -804,12 +864,19 @@ components:
                     type: string
                 username:
                     type: string
+                verified:
+                    type: boolean
+                verified_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
             required:
                 - agent_capabilities
                 - agent_type
                 - agent_version
                 - display_name
                 - username
+                - verified
             type: object
         AgentActivityLogEntry:
             additionalProperties: false
@@ -966,6 +1033,8 @@ components:
                     type: boolean
                 limit:
                     type: integer
+                mode:
+                    type: string
                 options:
                     additionalProperties: {}
                     type: object
@@ -6281,6 +6350,55 @@ components:
         URI:
             format: uri
             type: string
+        UpdateAdminAgentPolicyRequest:
+            additionalProperties: false
+            properties:
+                agent_max_follows_per_hour:
+                    type: integer
+                agent_max_posts_per_hour:
+                    type: integer
+                allow_agent_registration:
+                    type: boolean
+                allow_agents:
+                    type: boolean
+                allow_remote_agents:
+                    type: boolean
+                blocked_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                default_quarantine_days:
+                    type: integer
+                hybrid_retrieval_enabled:
+                    type: boolean
+                hybrid_retrieval_max_candidates:
+                    type: integer
+                max_agents_per_owner:
+                    type: integer
+                remote_quarantine_days:
+                    type: integer
+                trusted_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                verified_agent_max_follows_per_hour:
+                    type: integer
+                verified_agent_max_posts_per_hour:
+                    type: integer
+            required:
+                - agent_max_follows_per_hour
+                - agent_max_posts_per_hour
+                - allow_agent_registration
+                - allow_agents
+                - allow_remote_agents
+                - default_quarantine_days
+                - hybrid_retrieval_enabled
+                - hybrid_retrieval_max_candidates
+                - max_agents_per_owner
+                - remote_quarantine_days
+                - verified_agent_max_follows_per_hour
+                - verified_agent_max_posts_per_hour
+            type: object
         UpdateAgentRequest:
             additionalProperties: false
             properties:
@@ -8244,6 +8362,154 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
+    /api/v1/admin/agents/{username}/unverify:
+        post:
+            operationId: post_api_v1_admin_agents_by_username_unverify
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AdminVerifyAgentRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminUnverifyAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+    /api/v1/admin/agents/{username}/verify:
+        post:
+            operationId: post_api_v1_admin_agents_by_username_verify
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AdminVerifyAgentRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminVerifyAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+    /api/v1/admin/agents/policy:
+        get:
+            operationId: get_api_v1_admin_agents_policy
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdminAgentPolicy'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminGetAgentPolicyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+        put:
+            operationId: put_api_v1_admin_agents_policy
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateAdminAgentPolicyRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdminAgentPolicy'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminUpdateAgentPolicyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
     /api/v1/admin/announcements:
         post:
             operationId: post_api_v1_admin_announcements

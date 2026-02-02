@@ -183,6 +183,45 @@ func (h *Handler) authenticateWithScope(ctx *apptheory.Context, requiredScope st
 	return claims, nil
 }
 
+// authenticateWithAnyScope authenticates and accepts any one of the provided scopes.
+// This is used for Mastodon-compatible endpoints where tokens may carry either broad
+// (`write`) or narrow (`follow`, `write:follows`, etc.) scopes.
+func (h *Handler) authenticateWithAnyScope(ctx *apptheory.Context, requiredScopes ...string) (*auth.Claims, error) {
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		return nil, apperrors.Unauthorized("authentication required")
+	}
+
+	if len(requiredScopes) == 0 {
+		return nil, apperrors.Internal("no required scopes provided")
+	}
+
+	for _, scope := range requiredScopes {
+		if err := common.ValidateApplicationScopes(scope); err != nil {
+			return nil, apperrors.InternalWithCause(err, fmt.Sprintf("invalid required scope: %v", err))
+		}
+	}
+
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenScopes := strings.Join(claims.Scopes, " ")
+	if err := common.ValidateApplicationScopes(tokenScopes); err != nil {
+		return nil, auth.ErrInvalidToken
+	}
+
+	for _, scope := range requiredScopes {
+		if claims.HasScope(scope) {
+			return claims, nil
+		}
+	}
+
+	return nil, apperrors.NewAuthError(apperrors.CodeInsufficientScope, fmt.Sprintf("insufficient scope: requires one of %s", strings.Join(requiredScopes, ", ")))
+}
+
 // getOptionalAuthenticatedUser extracts user context if authentication is provided and valid
 // Returns empty string if not authenticated or token is invalid (for public content access)
 func (h *Handler) getOptionalAuthenticatedUser(ctx *apptheory.Context) string {

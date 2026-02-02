@@ -22,6 +22,8 @@ type Agent struct {
 	DisplayName       string            `json:"display_name"`
 	Bio               string            `json:"bio,omitempty"`
 	CreatedAt         *time.Time        `json:"created_at,omitempty"`
+	Verified          bool              `json:"verified"`
+	VerifiedAt        *time.Time        `json:"verified_at,omitempty"`
 	AgentType         string            `json:"agent_type"`
 	AgentVersion      string            `json:"agent_version"`
 	AgentOwner        string            `json:"agent_owner,omitempty"`

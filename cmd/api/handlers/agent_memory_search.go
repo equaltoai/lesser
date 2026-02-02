@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ func (h *Handler) HandleAgentMemorySearchLift(ctx *apptheory.Context) (*apptheor
 	req := models.AgentMemorySearchRequest{}
 	if strings.EqualFold(ctx.Request.Method, http.MethodGet) {
 		req.Query = queryValue(ctx, "query")
+		req.Mode = queryValue(ctx, "mode")
 		req.ThreadID = queryValue(ctx, "thread_id")
 		req.IncludeThreads = strings.EqualFold(queryValue(ctx, "include_threads"), "true")
 		if v, parseErr := common.ParseAndValidateIntWithBounds("limit", queryValue(ctx, "limit"), 0, agentMemorySearchMaxLimit, agentMemorySearchDefaultLimit); parseErr == nil {
@@ -75,6 +77,25 @@ func (h *Handler) HandleAgentMemorySearchLift(ctx *apptheory.Context) (*apptheor
 	}
 	if limit > agentMemorySearchMaxLimit {
 		limit = agentMemorySearchMaxLimit
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(req.Mode))
+	if mode == "" {
+		mode = "timeline"
+	}
+	req.Mode = mode
+	switch mode {
+	case "timeline":
+	case "hybrid":
+		if h.repos == nil || h.repos.Instance() == nil {
+			return common.RespondForbidden(ctx, "hybrid retrieval is disabled")
+		}
+		policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context())
+		if err != nil || policy == nil || !policy.HybridRetrievalEnabled {
+			return common.RespondForbidden(ctx, "hybrid retrieval is disabled by instance policy")
+		}
+	default:
+		return common.RespondValidationError(ctx, common.ValidationError{Field: "mode", Message: "must be \"timeline\" or \"hybrid\""})
 	}
 
 	start := time.Now()
@@ -212,10 +233,134 @@ func (h *Handler) searchAgentMemory(ctx *apptheory.Context, agentUsername string
 		}
 	}
 
+	if strings.EqualFold(strings.TrimSpace(req.Mode), "hybrid") && len(out) < limit && strings.TrimSpace(req.Query) != "" {
+		seenStatusIDs := make(map[string]struct{}, len(out))
+		for _, result := range out {
+			if result.Status == nil {
+				continue
+			}
+			seenStatusIDs[strings.TrimSpace(result.Status.ID)] = struct{}{}
+		}
+
+		extra, err := h.searchAgentMemoryHybridFallback(ctx, agentUsername, req.Query, since, until, normalizedTags, limit-len(out), seenStatusIDs, req.IncludeThreads)
+		if err == nil && len(extra) > 0 {
+			out = append(out, extra...)
+			if len(out) > limit {
+				out = out[:limit]
+			}
+		}
+	}
+
 	return out, nil
 }
 
-func (h *Handler) searchAgentMemoryThread(ctx *apptheory.Context, agentUsername string, threadID string, limit int) ([]models.AgentMemorySearchResult, error) {
+func (h *Handler) searchAgentMemoryHybridFallback(
+	ctx *apptheory.Context,
+	agentUsername string,
+	query string,
+	since *time.Time,
+	until *time.Time,
+	requiredTags []string,
+	limit int,
+	seen map[string]struct{},
+	includeThreads bool,
+) ([]models.AgentMemorySearchResult, error) {
+	if h == nil || ctx == nil || h.repos == nil || h.repos.Status() == nil || h.cfg == nil {
+		return nil, fmt.Errorf("storage unavailable")
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	maxCandidates := 200
+	if h.repos.Instance() != nil {
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil && policy.HybridRetrievalMaxCandidates > 0 {
+			maxCandidates = policy.HybridRetrievalMaxCandidates
+		}
+	}
+	if maxCandidates <= 0 {
+		maxCandidates = 200
+	}
+	if maxCandidates > agentMemorySearchEventCap {
+		maxCandidates = agentMemorySearchEventCap
+	}
+
+	actorID := h.cfg.ActorURL(agentUsername)
+	timeline, err := h.repos.Status().GetUserTimeline(ctx.Context(), actorID, interfaces.PaginationOptions{Limit: maxCandidates})
+	if err != nil || timeline == nil || len(timeline.Items) == 0 {
+		return nil, nil
+	}
+
+	type candidate struct {
+		status *storageModels.Status
+		score  float64
+	}
+
+	candidates := make([]candidate, 0, len(timeline.Items))
+	for _, status := range timeline.Items {
+		if status == nil || status.Deleted {
+			continue
+		}
+		if seen != nil {
+			if _, ok := seen[status.StatusID]; ok {
+				continue
+			}
+		}
+		if since != nil && status.PublishedAt.Before(*since) {
+			continue
+		}
+		if until != nil && status.PublishedAt.After(*until) {
+			continue
+		}
+		if len(requiredTags) > 0 && !statusHasAllTags(status.Hashtags, requiredTags) {
+			continue
+		}
+
+		score := relevanceScore(query, status.Content)
+		if score <= 0 {
+			continue
+		}
+		candidates = append(candidates, candidate{status: status, score: score})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return candidates[i].status.PublishedAt.After(candidates[j].status.PublishedAt)
+		}
+		return candidates[i].score > candidates[j].score
+	})
+
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	out := make([]models.AgentMemorySearchResult, 0, len(candidates))
+	for _, entry := range candidates {
+		apiStatus, err := h.convertStorageStatusToAPI(entry.status, agentUsername)
+		if err != nil {
+			continue
+		}
+
+		result := models.AgentMemorySearchResult{
+			Status:         apiStatus,
+			RelevanceScore: entry.score,
+		}
+
+		if includeThreads {
+			result.Thread, _ = h.fetchAgentThread(ctx, agentUsername, entry.status)
+		}
+
+		out = append(out, result)
+	}
+
+	return out, nil
+}
+
+func (h *Handler) searchAgentMemoryThread(ctx *apptheory.Context, agentUsername string, threadID string, _ int) ([]models.AgentMemorySearchResult, error) {
 	if h == nil || ctx == nil || h.repos == nil || h.repos.Status() == nil {
 		return nil, fmt.Errorf("storage unavailable")
 	}

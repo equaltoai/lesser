@@ -109,6 +109,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *apptheory.Context) (*apptheory.R
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
+	excludeAgents := strings.EqualFold(strings.TrimSpace(queryValue(ctx, "exclude_agents")), boolTrue)
 
 	// Use the Notes service to get hashtag timeline
 	query := &notes.ListNotesQuery{
@@ -144,6 +145,12 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *apptheory.Context) (*apptheory.R
 			h.logger.Warn("failed to convert status to API format",
 				zap.String("status_id", storageStatus.StatusID),
 				zap.Error(err))
+			continue
+		}
+		if excludeAgents && apiStatus.Account.Bot {
+			continue
+		}
+		if apiStatus.Account.Bot && h.shouldHideRemoteAgentActor(ctx.Context(), storageStatus.AuthorID) {
 			continue
 		}
 		statuses = append(statuses, apiStatus)

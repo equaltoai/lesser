@@ -109,14 +109,14 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 
 	// Call Notes service
 	result, err := h.registry.Notes().CreateNote(ctx.Context(), &notes.CreateNoteCommand{
-		AuthorID:    claims.Username,
-		Content:     req.Status,
-		Visibility:  req.Visibility,
-		Sensitive:   req.Sensitive,
-		SpoilerText: req.SpoilerText,
-		Language:    req.Language,
-		InReplyToID: req.InReplyToID,
-		MediaIDs:    req.MediaIDs,
+		AuthorID:         claims.Username,
+		Content:          req.Status,
+		Visibility:       req.Visibility,
+		Sensitive:        req.Sensitive,
+		SpoilerText:      req.SpoilerText,
+		Language:         req.Language,
+		InReplyToID:      req.InReplyToID,
+		MediaIDs:         req.MediaIDs,
 		AgentAttribution: agentAttribution,
 	})
 	if err != nil {
@@ -627,6 +627,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *apptheory.Context) (*apptheory.
 	limit, _ := common.ParseStatusTimelineLimit(queryValue(ctx, "limit"))
 
 	cursor := queryValue(ctx, "max_id")
+	excludeAgents := strings.EqualFold(strings.TrimSpace(queryValue(ctx, "exclude_agents")), boolTrue)
 
 	// Get home timeline using Notes service
 	result, err := h.registry.Notes().ListNotes(ctx.Context(), &notes.ListNotesQuery{
@@ -652,6 +653,9 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *apptheory.Context) (*apptheory.
 				zap.Error(err))
 			continue
 		}
+		if excludeAgents && apiStatus.Account.Bot {
+			continue
+		}
 		timeline = append(timeline, apiStatus)
 	}
 
@@ -675,6 +679,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *apptheory.Context) (*apptheor
 
 	cursor := queryValue(ctx, "max_id")
 	local := queryValue(ctx, "local") == "true"
+	excludeAgents := strings.EqualFold(strings.TrimSpace(queryValue(ctx, "exclude_agents")), boolTrue)
 
 	timelineType := VisibilityPublic
 	if local {
@@ -703,6 +708,12 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *apptheory.Context) (*apptheor
 			h.logger.Warn("failed to convert public timeline status",
 				zap.String("status_id", status.StatusID),
 				zap.Error(err))
+			continue
+		}
+		if excludeAgents && apiStatus.Account.Bot {
+			continue
+		}
+		if apiStatus.Account.Bot && h.shouldHideRemoteAgentActor(ctx.Context(), status.AuthorID) {
 			continue
 		}
 		timeline = append(timeline, apiStatus)

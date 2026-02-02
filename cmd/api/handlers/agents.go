@@ -123,9 +123,6 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		derived := deriveAgentCapabilitiesFromScopes(requestedScopes)
 		capabilities = &derived
 	}
-	if capabilities.MaxPostsPerHour == 0 {
-		capabilities.MaxPostsPerHour = 50
-	}
 
 	agentType := strings.TrimSpace(info.AgentType)
 	if agentType == "" {
@@ -140,11 +137,28 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 
 	now := time.Now().UTC()
 	quarantineDays := 7
+	maxPostsPerHourAllowed := agentDefaultMaxPostsPerHour
 	if h.repos != nil && h.repos.Instance() != nil {
-		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil && policy.DefaultQuarantineDays > 0 {
-			quarantineDays = policy.DefaultQuarantineDays
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
+			if policy.DefaultQuarantineDays > 0 {
+				quarantineDays = policy.DefaultQuarantineDays
+			}
+			if policy.AgentMaxPostsPerHour > 0 {
+				maxPostsPerHourAllowed = policy.AgentMaxPostsPerHour
+			}
 		}
 	}
+
+	if maxPostsPerHourAllowed <= 0 {
+		maxPostsPerHourAllowed = agentDefaultMaxPostsPerHour
+	}
+	if capabilities.MaxPostsPerHour <= 0 {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
+	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
+
 	quarantineEnd := now.AddDate(0, 0, quarantineDays)
 	user := &storage.User{
 		Username:          req.AgentUsername,
@@ -360,6 +374,28 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 	}
 	if req.AgentCapabilities != nil {
 		account.User.AgentCapabilities = storageAgentCapabilitiesFromAPI(*req.AgentCapabilities)
+
+		allowed := agentDefaultMaxPostsPerHour
+		verifiedAllowed := agentVerifiedDefaultMaxPostsPerHour
+		if h.repos != nil && h.repos.Instance() != nil {
+			if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
+				if policy.AgentMaxPostsPerHour > 0 {
+					allowed = policy.AgentMaxPostsPerHour
+				}
+				if policy.VerifiedAgentMaxPostsPerHour > 0 {
+					verifiedAllowed = policy.VerifiedAgentMaxPostsPerHour
+				}
+			}
+		}
+
+		maxAllowed := allowed
+		if agentMetadataBool(account.User, "agent_verified") {
+			maxAllowed = verifiedAllowed
+		}
+
+		if account.User.AgentCapabilities != nil && account.User.AgentCapabilities.MaxPostsPerHour > maxAllowed {
+			account.User.AgentCapabilities.MaxPostsPerHour = maxAllowed
+		}
 	}
 	if req.ExitQuarantine {
 		if account.User.Metadata == nil {
@@ -745,6 +781,13 @@ func agentFromStorageUser(user *storage.User) apimodels.Agent {
 		out.CreatedAt = &created
 	}
 
+	out.Verified = agentMetadataBool(user, "agent_verified")
+	if verifiedAt, ok := agentMetadataString(user, "agent_verified_at"); ok {
+		if parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(verifiedAt)); err == nil {
+			out.VerifiedAt = &parsed
+		}
+	}
+
 	out.DelegatedScopes = agentDelegatedScopes(user)
 	out.AgentCapabilities = apiAgentCapabilitiesFromStorage(user.AgentCapabilities)
 	if strings.TrimSpace(out.AgentType) == "" {
@@ -755,6 +798,24 @@ func agentFromStorageUser(user *storage.User) apimodels.Agent {
 	}
 
 	return out
+}
+
+func agentMetadataBool(user *storage.User, key string) bool {
+	if user == nil || user.Metadata == nil {
+		return false
+	}
+	raw, ok := user.Metadata[key]
+	if !ok || raw == nil {
+		return false
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
 }
 
 func agentDelegatedScopes(user *storage.User) []string {

@@ -34,6 +34,7 @@ GET /api/v1/accounts/{id}/quote_permissions
 GET /api/v1/accounts/{id}/statuses
 GET /api/v1/admin/accounts
 GET /api/v1/admin/accounts/{id}
+GET /api/v1/admin/agents/policy
 GET /api/v1/admin/domain_allows
 GET /api/v1/admin/domain_blocks
 GET /api/v1/admin/domain_blocks/{id}
@@ -184,6 +185,8 @@ POST /api/v1/admin/accounts/{id}/reject
 POST /api/v1/admin/accounts/{id}/unsensitive
 POST /api/v1/admin/accounts/{id}/unsilence
 POST /api/v1/admin/accounts/{id}/unsuspend
+POST /api/v1/admin/agents/{username}/unverify
+POST /api/v1/admin/agents/{username}/verify
 POST /api/v1/admin/announcements
 POST /api/v1/admin/custom_emojis
 POST /api/v1/admin/domain_allows
@@ -265,6 +268,7 @@ POST /setup/bootstrap/challenge
 POST /setup/bootstrap/verify
 POST /setup/finalize
 PUT /api/v1/accounts/quote_permissions
+PUT /api/v1/admin/agents/policy
 PUT /api/v1/admin/custom_emojis/{shortcode}
 PUT /api/v1/admin/domain_blocks/{id}
 PUT /api/v1/admin/moderation/trust/{from}/{to}
