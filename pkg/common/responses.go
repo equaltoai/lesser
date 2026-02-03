@@ -1,6 +1,6 @@
 // Package common provides additional standardized response functions that extend
 // the existing error_responses.go with more convenience functions and Mastodon-specific patterns
-package common
+package common //nolint:revive // shared package name by design
 
 import (
 	"encoding/json"
