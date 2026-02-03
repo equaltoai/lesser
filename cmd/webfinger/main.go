@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -342,6 +343,9 @@ func buildApp(handler *WebFingerHandler, lambdaLogger *zap.Logger) *apptheory.Ap
 			return next(ctx)
 		}
 	})
+
+	// Crawler classification middleware (observe-only; configurable via CRAWLER_PROTECTION_MODE).
+	app.Use(crawler.NewMiddleware(lambdaLogger))
 
 	// Security headers middleware (federation-friendly).
 	app.Use(webfingerActivityPubSecurityHeaders())
