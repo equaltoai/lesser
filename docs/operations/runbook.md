@@ -67,6 +67,21 @@ Most endpoints are reachable while locked, but timelines and writes are blocked.
 - Check for DynamoDB throttling and Lambda timeouts in CloudWatch.
 - If errors correlate with a deploy, re-run `./lesser up --app <app> --base-domain <base-domain> --aws-profile <profile> --rebuild-lambdas`.
 
+### Unexpected 403/429 from crawler protection
+
+Several HTTP Lambdas include a crawler protection middleware. Behavior is controlled by Lambda env vars:
+
+- Mode: `CRAWLER_PROTECTION_MODE=off|observe|limit|block`
+- Emergency bypass (skip block + rate limiting for matching client IPs):
+  `CRAWLER_PROTECTION_BYPASS_CIDRS=203.0.113.0/24,2001:db8::/32`
+- Rate limiter kill switch (use only for debugging): `DISABLE_RATE_LIMITING=true`
+
+Triage:
+
+- Look for `crawler classification` log entries (category + reason + client IP).
+- If you see false positives impacting legitimate traffic, switch to `CRAWLER_PROTECTION_MODE=observe` or add the
+  affected client IP/CIDR to `CRAWLER_PROTECTION_BYPASS_CIDRS`, then redeploy.
+
 ### Federation delivery stuck
 
 - Tail `federation-delivery` logs.

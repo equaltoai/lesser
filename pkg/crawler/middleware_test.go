@@ -152,6 +152,70 @@ func TestMiddleware_NilContext(t *testing.T) {
 	require.Equal(t, 1, called)
 }
 
+func TestMiddleware_Block_BlocksAICrawler(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+
+	called := 0
+	next := func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "should not run"), nil
+	}
+
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method:  "GET",
+		Path:    "/users/alice",
+		Headers: map[string][]string{"user-agent": {"GPTBot/1.0"}, "accept": {"application/activity+json"}},
+	}}
+
+	mw := Middleware(protectionModeBlock, zap.NewNop())
+	resp, err := mw(next)(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 403, resp.Status)
+	require.Contains(t, string(resp.Body), "/robots.txt")
+	require.Equal(t, []string{"no-store"}, resp.Headers["cache-control"])
+	require.Equal(t, 0, called)
+}
+
+func TestMiddleware_Block_BypassCIDR_AllowsAICrawler(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", "203.0.113.0/24")
+
+	called := 0
+	next := func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		called++
+		require.Equal(t, "ai_crawler", ctx.Get(contextCrawlerCategoryKey))
+		require.Equal(t, "ua:gptbot", ctx.Get(contextCrawlerReasonKey))
+		return apptheory.Text(200, "ok"), nil
+	}
+
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method: "GET",
+		Path:   "/users/alice",
+		Headers: map[string][]string{
+			"user-agent":      {"GPTBot/1.0"},
+			"accept":          {"application/activity+json"},
+			"x-forwarded-for": {"203.0.113.10"},
+		},
+	}}
+
+	mw := Middleware(protectionModeBlock, zap.NewNop())
+	resp, err := mw(next)(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, 1, called)
+}
+
+func TestParseCIDRAllowlistFromEnv(t *testing.T) {
+	t.Setenv("CRAWLER_PROTECTION_BYPASS_CIDRS", " 203.0.113.0/24, ,not-a-cidr,203.0.113.9,not-an-ip ")
+
+	nets := parseCIDRAllowlistFromEnv(nil)
+	require.NotEmpty(t, nets)
+	require.True(t, isClientIPBypassed("203.0.113.10", nets))
+	require.False(t, isClientIPBypassed(unknownString, nets))
+}
+
 func TestNewLimiterFunc(t *testing.T) {
 	originalLimiterDBOnce := limiterDBOnce
 	originalLimiterDB := limiterDB
@@ -435,4 +499,21 @@ func TestBuildLimiters(t *testing.T) {
 	limiters := buildLimiters(protectionModeLimit, nil)
 	require.Len(t, limiters, 2)
 	require.Equal(t, 2, calls)
+}
+
+func TestBuildLimiters_BlockMode_IncludesSuspicious(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "false")
+
+	orig := newLimiterFunc
+	t.Cleanup(func() { newLimiterFunc = orig })
+
+	calls := 0
+	newLimiterFunc = func(_ string, _ int, _ time.Duration, _ *zap.Logger) (atomicLimiter, error) {
+		calls++
+		return &stubLimiter{decision: &apptheoryLimited.LimitDecision{Allowed: true, Limit: 1}}, nil
+	}
+
+	limiters := buildLimiters(protectionModeBlock, nil)
+	require.Len(t, limiters, 3)
+	require.Equal(t, 3, calls)
 }

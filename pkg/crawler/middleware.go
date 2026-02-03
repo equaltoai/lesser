@@ -3,6 +3,7 @@ package crawler
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -43,6 +44,12 @@ type limiterConfig struct {
 var defaultLimiterConfigs = map[Category]limiterConfig{
 	CategorySearchEngine: {limit: 100, window: time.Hour},
 	CategoryGenericBot:   {limit: 30, window: time.Hour},
+}
+
+var blockModeLimiterConfigs = map[Category]limiterConfig{
+	CategorySearchEngine: {limit: 100, window: time.Hour},
+	CategoryGenericBot:   {limit: 30, window: time.Hour},
+	CategorySuspicious:   {limit: 10, window: time.Hour},
 }
 
 var (
@@ -122,6 +129,71 @@ func isEnforcementMode(mode protectionMode) bool {
 	return mode == protectionModeLimit || mode == protectionModeBlock
 }
 
+func parseCIDRAllowlistFromEnv(logger *zap.Logger) []*net.IPNet {
+	raw := strings.TrimSpace(os.Getenv("CRAWLER_PROTECTION_BYPASS_CIDRS"))
+	if raw == "" {
+		return nil
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	var nets []*net.IPNet
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+
+		if strings.Contains(entry, "/") {
+			_, ipNet, err := net.ParseCIDR(entry)
+			if err != nil || ipNet == nil {
+				logger.Error("invalid crawler bypass CIDR ignored", zap.String("entry", entry), zap.Error(err))
+				continue
+			}
+			nets = append(nets, ipNet)
+			continue
+		}
+
+		ip := net.ParseIP(entry)
+		if ip == nil {
+			logger.Error("invalid crawler bypass IP ignored", zap.String("entry", entry))
+			continue
+		}
+		if ip4 := ip.To4(); ip4 != nil {
+			ip = ip4
+		}
+		maskBits := 128
+		if ip.To4() != nil {
+			maskBits = 32
+		}
+		nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(maskBits, maskBits)})
+	}
+
+	return nets
+}
+
+func isClientIPBypassed(clientIP string, allowlist []*net.IPNet) bool {
+	if len(allowlist) == 0 {
+		return false
+	}
+
+	ip := net.ParseIP(strings.TrimSpace(clientIP))
+	if ip == nil {
+		return false
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+
+	for _, ipNet := range allowlist {
+		if ipNet != nil && ipNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildLimiters(mode protectionMode, logger *zap.Logger) map[Category]atomicLimiter {
 	if !isEnforcementMode(mode) || isRateLimitingDisabled() {
 		return nil
@@ -131,8 +203,13 @@ func buildLimiters(mode protectionMode, logger *zap.Logger) map[Category]atomicL
 	}
 
 	region := resolveAWSRegion()
+	configs := defaultLimiterConfigs
+	if mode == protectionModeBlock {
+		configs = blockModeLimiterConfigs
+	}
+
 	limiters := map[Category]atomicLimiter{}
-	for category, cfg := range defaultLimiterConfigs {
+	for category, cfg := range configs {
 		limiter, err := newLimiterFunc(region, cfg.limit, cfg.window, logger)
 		if err != nil || limiter == nil {
 			logger.Error("failed to create crawler rate limiter (fail-open)",
@@ -156,7 +233,7 @@ func buildLimiters(mode protectionMode, logger *zap.Logger) map[Category]atomicL
 //   - off (default): no classification, no logging
 //   - observe: classify requests, log the classification, do not enforce
 //   - limit: enforce rate limits for search engines + generic bots
-//   - block: reserved for later milestones; currently behaves like limit
+//   - block: enforce limits + block known AI crawlers
 func NewMiddleware(logger *zap.Logger) apptheory.Middleware {
 	return Middleware(protectionModeFromEnv(), logger)
 }
@@ -172,6 +249,7 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
 
+	bypassCIDRs := parseCIDRAllowlistFromEnv(logger)
 	limiters := buildLimiters(mode, logger)
 
 	return func(next apptheory.Handler) apptheory.Handler {
@@ -188,6 +266,7 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 			ctx.Set(contextCrawlerReasonKey, reason)
 
 			clientIP := extractClientIP(ctx)
+			enforcementBypassed := isClientIPBypassed(clientIP, bypassCIDRs)
 			logger.Debug("crawler classification",
 				zap.String("request_id", strings.TrimSpace(ctx.RequestID)),
 				zap.String("method", strings.TrimSpace(ctx.Request.Method)),
@@ -196,7 +275,16 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 				zap.String("reason", reason),
 				zap.String("user_agent", userAgent),
 				zap.String("client_ip", clientIP),
+				zap.Bool("enforcement_bypassed", enforcementBypassed),
 			)
+
+			if enforcementBypassed {
+				return next(ctx)
+			}
+
+			if mode == protectionModeBlock && category == CategoryAICrawler {
+				return blockedResponse(category, reason), nil
+			}
 
 			resp, handled, handlerErr := maybeApplyRateLimit(ctx, next, logger, limiters, category, userAgent, clientIP)
 			if handled {
@@ -386,6 +474,25 @@ func rateLimitedResponse(decision *apptheoryLimited.LimitDecision, headers map[s
 		resp.Headers[k] = append([]string(nil), v...)
 	}
 	resp.Headers["retry-after"] = []string{strconv.Itoa(retryAfter)}
+	return resp
+}
+
+func blockedResponse(category Category, reason string) *apptheory.Response {
+	categoryValue := strings.TrimSpace(category.String())
+	if categoryValue == "" {
+		categoryValue = unknownString
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = unknownString
+	}
+
+	resp := apptheory.Text(403, fmt.Sprintf(
+		"request blocked (category=%s reason=%s); see /robots.txt\n",
+		categoryValue,
+		reason,
+	))
+	resp.Headers["cache-control"] = []string{"no-store"}
 	return resp
 }
 
