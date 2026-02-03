@@ -17,6 +17,8 @@ exemptions:
     - id: protocol_infra
       reason: Protocol and infrastructure endpoints are REST-only by design.
       match:
+        exact:
+            - /robots.txt
         prefixes:
             - /.well-known
             - /nodeinfo
@@ -213,6 +215,22 @@ routes:
       status: covered
       graphql:
         - Mutation.adminAccountAction
+    - method: GET
+      path: /api/v1/admin/agents/policy
+      policy: rest_only
+      exemptedBy: agents
+    - method: PUT
+      path: /api/v1/admin/agents/policy
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/admin/agents/{username}/unverify
+      policy: rest_only
+      exemptedBy: agents
+    - method: POST
+      path: /api/v1/admin/agents/{username}/verify
+      policy: rest_only
+      exemptedBy: agents
     - method: POST
       path: /api/v1/admin/announcements
       policy: graphql_required
@@ -435,22 +453,6 @@ routes:
       status: covered
       graphql:
         - Mutation.adminSetStatusSensitive
-    - method: GET
-      path: /api/v1/admin/agents/policy
-      policy: rest_only
-      exemptedBy: agents
-    - method: PUT
-      path: /api/v1/admin/agents/policy
-      policy: rest_only
-      exemptedBy: agents
-    - method: POST
-      path: /api/v1/admin/agents/{username}/unverify
-      policy: rest_only
-      exemptedBy: agents
-    - method: POST
-      path: /api/v1/admin/agents/{username}/verify
-      policy: rest_only
-      exemptedBy: agents
     - method: GET
       path: /api/v1/agents
       policy: rest_only
@@ -1425,6 +1427,10 @@ routes:
       path: /oauth/token
       policy: rest_only
       exemptedBy: oauth_oidc
+    - method: GET
+      path: /robots.txt
+      policy: rest_only
+      exemptedBy: protocol_infra
     - method: POST
       path: /setup/admin
       policy: rest_only
@@ -1445,3 +1451,4 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
+
