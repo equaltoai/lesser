@@ -28,12 +28,17 @@ const (
 // Metric Names - Business Logic
 const (
 	// Federation metrics
-	MetricFederationSuccess     = "FederationSuccess"
-	MetricFederationError       = "FederationError"
-	MetricFederationLatency     = "FederationLatency"
-	MetricInboxMessages         = "InboxMessages"
-	MetricOutboxMessages        = "OutboxMessages"
-	MetricSignatureVerification = "SignatureVerification"
+	MetricFederationSuccess         = "FederationSuccess"
+	MetricFederationError           = "FederationError"
+	MetricFederationLatency         = "FederationLatency"
+	MetricInboxMessages             = "InboxMessages"
+	MetricOutboxMessages            = "OutboxMessages"
+	MetricSignatureVerification     = "SignatureVerification"
+	MetricCrawlerBlocked            = "CrawlerBlocked"
+	MetricCrawlerBlockedByRoute     = "CrawlerBlockedByRoute"
+	MetricCrawlerRateLimited        = "CrawlerRateLimited"
+	MetricCrawlerRateLimitedByRoute = "CrawlerRateLimitedByRoute"
+	MetricCrawlerBypassed           = "CrawlerBypassed"
 
 	// Queue metrics
 	MetricQueueDepth          = "QueueDepth"
@@ -86,20 +91,22 @@ const (
 
 // Dimension Names
 const (
-	DimensionService     = "Service"
-	DimensionOperation   = "Operation"
-	DimensionEndpoint    = "Endpoint"
-	DimensionMethod      = "Method"
-	DimensionStatusCode  = "StatusCode"
-	DimensionErrorType   = "ErrorType"
-	DimensionEnvironment = "Environment"
-	DimensionRegion      = "Region"
-	DimensionInstance    = "Instance"
-	DimensionQueue       = "Queue"
-	DimensionResource    = "Resource"
-	DimensionComponent   = "Component"
-	DimensionMediaType   = "MediaType"
-	DimensionUserType    = "UserType"
+	DimensionService         = "Service"
+	DimensionOperation       = "Operation"
+	DimensionEndpoint        = "Endpoint"
+	DimensionMethod          = "Method"
+	DimensionStatusCode      = "StatusCode"
+	DimensionErrorType       = "ErrorType"
+	DimensionEnvironment     = "Environment"
+	DimensionRegion          = "Region"
+	DimensionInstance        = "Instance"
+	DimensionQueue           = "Queue"
+	DimensionResource        = "Resource"
+	DimensionComponent       = "Component"
+	DimensionMediaType       = "MediaType"
+	DimensionUserType        = "UserType"
+	DimensionCrawlerCategory = "CrawlerCategory"
+	DimensionRouteClass      = "RouteClass"
 )
 
 // Alert Thresholds - P0 (Critical)

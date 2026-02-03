@@ -95,6 +95,9 @@ func (s *MonitoringStack) populateInventoryDrivenMonitoring(environment string) 
 	s.addSection("DynamoDB")
 	s.addDynamoDBMetrics(naming.ResourceNameWithApp(s.AppName, "main-table", environment))
 	s.addDynamoDBMetrics(naming.ResourceNameWithApp(s.AppName, "rate-limits-table", environment))
+
+	s.addSection("Crawler")
+	s.addCrawlerMetrics(environment)
 }
 
 func (s *MonitoringStack) addSection(title string) {
@@ -105,6 +108,96 @@ func (s *MonitoringStack) addSection(title string) {
 			Height:   jsii.Number(1),
 		}),
 	)
+}
+
+func (s *MonitoringStack) addCrawlerMetrics(environment string) {
+	stage := naming.StageForEnvironment(environment)
+	metricPeriod := awscdk.Duration_Minutes(jsii.Number(5))
+
+	blockedAICrawler := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+		Namespace:  jsii.String("Lesser/Crawler"),
+		MetricName: jsii.String("CrawlerBlocked"),
+		DimensionsMap: &map[string]*string{
+			"Environment":     jsii.String(string(stage)),
+			"CrawlerCategory": jsii.String("ai_crawler"),
+		},
+		Statistic: jsii.String("Sum"),
+		Period:    metricPeriod,
+	})
+
+	rateLimitedSearchEngine := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+		Namespace:  jsii.String("Lesser/Crawler"),
+		MetricName: jsii.String("CrawlerRateLimited"),
+		DimensionsMap: &map[string]*string{
+			"Environment":     jsii.String(string(stage)),
+			"CrawlerCategory": jsii.String("search_engine"),
+		},
+		Statistic: jsii.String("Sum"),
+		Period:    metricPeriod,
+	})
+
+	rateLimitedGenericBot := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+		Namespace:  jsii.String("Lesser/Crawler"),
+		MetricName: jsii.String("CrawlerRateLimited"),
+		DimensionsMap: &map[string]*string{
+			"Environment":     jsii.String(string(stage)),
+			"CrawlerCategory": jsii.String("generic_bot"),
+		},
+		Statistic: jsii.String("Sum"),
+		Period:    metricPeriod,
+	})
+
+	rateLimitedSuspicious := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
+		Namespace:  jsii.String("Lesser/Crawler"),
+		MetricName: jsii.String("CrawlerRateLimited"),
+		DimensionsMap: &map[string]*string{
+			"Environment":     jsii.String(string(stage)),
+			"CrawlerCategory": jsii.String("suspicious"),
+		},
+		Statistic: jsii.String("Sum"),
+		Period:    metricPeriod,
+	})
+
+	s.Dashboard.AddWidgets(
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title:  jsii.String("Crawler - Blocked AI Crawlers"),
+			Left:   &[]awscloudwatch.IMetric{blockedAICrawler},
+			Width:  jsii.Number(12),
+			Height: jsii.Number(6),
+		}),
+		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
+			Title:  jsii.String("Crawler - Rate Limited"),
+			Left:   &[]awscloudwatch.IMetric{rateLimitedSearchEngine, rateLimitedGenericBot, rateLimitedSuspicious},
+			Width:  jsii.Number(12),
+			Height: jsii.Number(6),
+		}),
+	)
+
+	awscloudwatch.NewAlarm(s.Stack, jsii.String("CrawlerBlockedAICrawlerAlarm"), &awscloudwatch.AlarmProps{
+		AlarmName:          jsii.String(naming.ResourceNameWithApp(s.AppName, "crawler-blocked-ai", environment)),
+		Metric:             blockedAICrawler,
+		Threshold:          jsii.Number(1000),
+		EvaluationPeriods:  jsii.Number(1),
+		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
+	}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
+
+	awscloudwatch.NewAlarm(s.Stack, jsii.String("CrawlerRateLimitedAlarm"), &awscloudwatch.AlarmProps{
+		AlarmName: jsii.String(naming.ResourceNameWithApp(s.AppName, "crawler-rate-limited", environment)),
+		Metric: awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
+			Expression: jsii.String("se + gb + sus"),
+			UsingMetrics: &map[string]awscloudwatch.IMetric{
+				"se":  rateLimitedSearchEngine,
+				"gb":  rateLimitedGenericBot,
+				"sus": rateLimitedSuspicious,
+			},
+			Period: metricPeriod,
+		}),
+		Threshold:          jsii.Number(5000),
+		EvaluationPeriods:  jsii.Number(1),
+		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
+	}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 }
 
 func (s *MonitoringStack) addLambdaMetrics(environment string, spec inventory.LambdaSpec) {

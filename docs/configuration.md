@@ -122,6 +122,30 @@ GRAPHQL_PARSER_TOKEN_LIMIT=15000
 GRAPHQL_REQUEST_TIMEOUT=25s
 ```
 
+### Crawler protection
+
+```bash
+# Mode toggle (used by multiple HTTP Lambdas)
+CRAWLER_PROTECTION_MODE=off # off|observe|limit|block
+
+# Emergency bypass (skip block + rate limiting for matching client IPs)
+CRAWLER_PROTECTION_BYPASS_CIDRS="" # comma-separated CIDRs or IPs
+
+# Hard-block toggle (only relevant when CRAWLER_PROTECTION_MODE=block)
+CRAWLER_BLOCK_AI_CRAWLERS=true
+
+# Per-hour limits (used when mode=limit or mode=block)
+CRAWLER_LIMIT_SEARCH_ENGINE_PER_HOUR=100
+CRAWLER_LIMIT_GENERIC_BOT_PER_HOUR=30
+CRAWLER_LIMIT_SUSPICIOUS_PER_HOUR=10
+
+# Optional: extend the known AI crawler UA substrings list (comma-separated)
+CRAWLER_AI_UA_PATTERNS_EXTRA=""
+
+# Optional: emit crawler enforcement EMF metrics
+CRAWLER_METRICS_ENABLED=true
+```
+
 ### Moderation + ML
 
 ```bash

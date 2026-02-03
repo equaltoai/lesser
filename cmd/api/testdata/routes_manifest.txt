@@ -130,6 +130,7 @@ GET /auth/wallet/list
 GET /embed/{id}
 GET /nodeinfo/2.0
 GET /oauth/authorize
+GET /robots.txt
 GET /setup/status
 HEAD /
 OPTIONS /api/v1/accounts
