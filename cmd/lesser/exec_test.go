@@ -33,12 +33,12 @@ func TestCacheDirHelpers(t *testing.T) {
 
 	goCache, err := ensureGoCacheDir(repoRoot)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(repoRoot, "tmp", "go-cache"), goCache)
+	require.Equal(t, filepath.Join(repoRoot, "tmp", "go-cache", cacheDirVersionKey()), goCache)
 	require.DirExists(t, goCache)
 
 	xdgCache, err := ensureXDGCacheDir(repoRoot)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join(repoRoot, "tmp", "xdg-cache"), xdgCache)
+	require.Equal(t, filepath.Join(repoRoot, "tmp", "xdg-cache", cacheDirVersionKey()), xdgCache)
 	require.DirExists(t, xdgCache)
 }
 

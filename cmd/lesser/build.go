@@ -39,9 +39,9 @@ func buildLambdaZips(repoRoot string, force bool) error {
 		return fmt.Errorf("create bin dir: %w", err)
 	}
 
-	cacheDir := filepath.Join(repoRoot, "tmp", "go-cache")
-	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
-		return fmt.Errorf("create go-cache dir: %w", err)
+	cacheDir, err := ensureGoCacheDir(repoRoot)
+	if err != nil {
+		return err
 	}
 
 	built := 0
