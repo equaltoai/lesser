@@ -96,11 +96,10 @@ Allow: /objects/
 // RobotsHandler returns robots.txt with aggressive caching.
 func RobotsHandler(*apptheory.Context) (*apptheory.Response, error) {
 	resp := apptheory.Text(200, RobotsTxt)
-	if resp.Headers == nil {
-		resp.Headers = map[string][]string{}
+	resp.Headers = map[string][]string{
+		"content-type":  {"text/plain; charset=utf-8"},
+		"cache-control": {"public, max-age=86400"}, // 24 hour cache
+		"x-robots-tag":  {"noindex"},
 	}
-	resp.Headers["content-type"] = []string{"text/plain; charset=utf-8"}
-	resp.Headers["cache-control"] = []string{"public, max-age=86400"} // 24 hour cache
-	resp.Headers["x-robots-tag"] = []string{"noindex"}
 	return resp, nil
 }

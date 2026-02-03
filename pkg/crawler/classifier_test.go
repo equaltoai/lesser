@@ -110,3 +110,18 @@ func TestCategoryString(t *testing.T) {
 	require.Equal(t, "suspicious", CategorySuspicious.String())
 	require.Equal(t, "unknown", Category(999).String())
 }
+
+func TestIsActivityPubReadPath(t *testing.T) {
+	require.False(t, isActivityPubReadPath(""))
+	require.True(t, isActivityPubReadPath("/users/alice"))
+	require.True(t, isActivityPubReadPath("/objects/123"))
+	require.False(t, isActivityPubReadPath("/notes/1"))
+}
+
+func TestIsFederationPath(t *testing.T) {
+	require.False(t, isFederationPath(""))
+	require.True(t, isFederationPath("/.well-known/webfinger"))
+	require.True(t, isFederationPath("/users/alice/inbox"))
+	require.True(t, isFederationPath("/users/alice/liked"))
+	require.False(t, isFederationPath("/users/alice"))
+}

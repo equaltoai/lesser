@@ -8,6 +8,8 @@ import (
 // Category represents the classification of a request for crawler controls.
 type Category int
 
+const unknownString = "unknown"
+
 // Classification categories.
 const (
 	CategoryHuman Category = iota
@@ -33,7 +35,7 @@ func (c Category) String() string {
 	case CategorySuspicious:
 		return "suspicious"
 	default:
-		return "unknown"
+		return unknownString
 	}
 }
 
