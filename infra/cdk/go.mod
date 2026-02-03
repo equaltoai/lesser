@@ -7,7 +7,7 @@ require (
 	github.com/aws/constructs-go/constructs/v10 v10.4.5
 	github.com/aws/jsii-runtime-go v1.125.0
 	github.com/equaltoai/lesser v0.0.0
-	github.com/theory-cloud/apptheory v0.5.0-rc.5
+	github.com/theory-cloud/apptheory v0.8.0
 )
 
 require (
