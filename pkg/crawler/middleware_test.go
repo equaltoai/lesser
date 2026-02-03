@@ -517,3 +517,55 @@ func TestBuildLimiters_BlockMode_IncludesSuspicious(t *testing.T) {
 	require.Len(t, limiters, 3)
 	require.Equal(t, 3, calls)
 }
+
+func TestCrawlerLimitFromEnv(t *testing.T) {
+	require.Equal(t, 5, crawlerLimitFromEnv("CRAWLER_LIMIT_TEST", 5, nil))
+
+	t.Setenv("CRAWLER_LIMIT_TEST", "nope")
+	require.Equal(t, 5, crawlerLimitFromEnv("CRAWLER_LIMIT_TEST", 5, nil))
+
+	t.Setenv("CRAWLER_LIMIT_TEST", "0")
+	require.Equal(t, 5, crawlerLimitFromEnv("CRAWLER_LIMIT_TEST", 5, zap.NewNop()))
+
+	t.Setenv("CRAWLER_LIMIT_TEST", "7")
+	require.Equal(t, 7, crawlerLimitFromEnv("CRAWLER_LIMIT_TEST", 5, zap.NewNop()))
+}
+
+func TestLimiterConfigsForMode(t *testing.T) {
+	configs := limiterConfigsForMode(protectionModeLimit, zap.NewNop())
+	require.Len(t, configs, 2)
+	require.Equal(t, defaultSearchEngineLimitPerHour, configs[CategorySearchEngine].limit)
+	require.Equal(t, defaultGenericBotLimitPerHour, configs[CategoryGenericBot].limit)
+
+	configs = limiterConfigsForMode(protectionModeBlock, zap.NewNop())
+	require.Len(t, configs, 3)
+	require.Equal(t, defaultSuspiciousLimitPerHour, configs[CategorySuspicious].limit)
+}
+
+func TestIsCrawlerMetricsDisabled(t *testing.T) {
+	t.Setenv("DISABLE_METRICS", "true")
+	require.True(t, isCrawlerMetricsDisabled())
+
+	t.Setenv("DISABLE_METRICS", "false")
+	t.Setenv("EMF_METRICS_ENABLED", "false")
+	require.True(t, isCrawlerMetricsDisabled())
+
+	t.Setenv("EMF_METRICS_ENABLED", "true")
+	t.Setenv("CRAWLER_METRICS_ENABLED", "false")
+	require.True(t, isCrawlerMetricsDisabled())
+}
+
+func TestNewCrawlerMetrics(t *testing.T) {
+	t.Setenv("DISABLE_METRICS", "true")
+	require.Nil(t, newCrawlerMetrics(zap.NewNop()))
+
+	t.Setenv("DISABLE_METRICS", "false")
+	t.Setenv("EMF_METRICS_ENABLED", "true")
+	t.Setenv("CRAWLER_METRICS_ENABLED", "true")
+	t.Setenv("STAGE", "dev")
+
+	metrics := newCrawlerMetrics(zap.NewNop())
+	require.NotNil(t, metrics)
+	metrics.recordEvent("TestMetric", "TestMetricByRoute", CategoryGenericBot, "")
+	metrics.recordBypassed(CategoryGenericBot)
+}

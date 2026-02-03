@@ -1,8 +1,10 @@
 package crawler
 
 import (
+	"os"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Category represents the classification of a request for crawler controls.
@@ -49,7 +51,7 @@ func ClassifyRequest(userAgent, acceptHeader, path string) (Category, string) {
 	accept := strings.ToLower(strings.TrimSpace(acceptHeader))
 	pathLower := strings.ToLower(strings.TrimSpace(path))
 
-	for _, pattern := range aiCrawlerPatterns {
+	for _, pattern := range aiCrawlerPatternsForClassification() {
 		if ua != "" && strings.Contains(ua, pattern) {
 			return CategoryAICrawler, "ua:" + pattern
 		}
@@ -88,6 +90,40 @@ func ClassifyRequest(userAgent, acceptHeader, path string) (Category, string) {
 	}
 
 	return CategoryHuman, "default"
+}
+
+var (
+	aiCrawlerPatternsOnce   sync.Once
+	aiCrawlerPatternsMerged []string
+)
+
+func aiCrawlerPatternsForClassification() []string {
+	aiCrawlerPatternsOnce.Do(func() {
+		merged := append([]string(nil), aiCrawlerPatterns...)
+
+		extra := strings.TrimSpace(os.Getenv("CRAWLER_AI_UA_PATTERNS_EXTRA"))
+		for _, entry := range strings.Split(extra, ",") {
+			entry = strings.ToLower(strings.TrimSpace(entry))
+			if entry == "" || len(entry) < 3 {
+				continue
+			}
+
+			seen := false
+			for _, existing := range merged {
+				if entry == existing {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				merged = append(merged, entry)
+			}
+		}
+
+		aiCrawlerPatternsMerged = merged
+	})
+
+	return aiCrawlerPatternsMerged
 }
 
 func isActivityPubAccept(accept string) bool {

@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -124,4 +125,14 @@ func TestIsFederationPath(t *testing.T) {
 	require.True(t, isFederationPath("/users/alice/inbox"))
 	require.True(t, isFederationPath("/users/alice/liked"))
 	require.False(t, isFederationPath("/users/alice"))
+}
+
+func TestAICrawlerPatternsExtraFromEnv(t *testing.T) {
+	aiCrawlerPatternsOnce = sync.Once{}
+	aiCrawlerPatternsMerged = nil
+	t.Setenv("CRAWLER_AI_UA_PATTERNS_EXTRA", "gptbot,exampleai")
+
+	category, reason := ClassifyRequest("ExampleAI/1.0", "text/html", "/")
+	require.Equal(t, CategoryAICrawler, category)
+	require.Equal(t, "ua:exampleai", reason)
 }

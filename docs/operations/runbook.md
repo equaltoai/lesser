@@ -75,10 +75,13 @@ Several HTTP Lambdas include a crawler protection middleware. Behavior is contro
 - Emergency bypass (skip block + rate limiting for matching client IPs):
   `CRAWLER_PROTECTION_BYPASS_CIDRS=203.0.113.0/24,2001:db8::/32`
 - Rate limiter kill switch (use only for debugging): `DISABLE_RATE_LIMITING=true`
+- Limit tuning (per hour): `CRAWLER_LIMIT_SEARCH_ENGINE_PER_HOUR`, `CRAWLER_LIMIT_GENERIC_BOT_PER_HOUR`, `CRAWLER_LIMIT_SUSPICIOUS_PER_HOUR`
+- EMF metrics toggle: `CRAWLER_METRICS_ENABLED=true` (also requires `DISABLE_METRICS=false` and `EMF_METRICS_ENABLED=true`)
 
 Triage:
 
 - Look for `crawler classification` log entries (category + reason + client IP).
+- Check the CloudWatch dashboard “Crawler” section for `Lesser/Crawler` metrics (blocked + rate limited).
 - If you see false positives impacting legitimate traffic, switch to `CRAWLER_PROTECTION_MODE=observe` or add the
   affected client IP/CIDR to `CRAWLER_PROTECTION_BYPASS_CIDRS`, then redeploy.
 

@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	cloudwatchTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/observability"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory"
@@ -30,6 +33,7 @@ const (
 const (
 	contextCrawlerCategoryKey = "crawler_category"
 	contextCrawlerReasonKey   = "crawler_reason"
+	routeClassOther           = "other"
 )
 
 type atomicLimiter interface {
@@ -41,16 +45,11 @@ type limiterConfig struct {
 	window time.Duration
 }
 
-var defaultLimiterConfigs = map[Category]limiterConfig{
-	CategorySearchEngine: {limit: 100, window: time.Hour},
-	CategoryGenericBot:   {limit: 30, window: time.Hour},
-}
-
-var blockModeLimiterConfigs = map[Category]limiterConfig{
-	CategorySearchEngine: {limit: 100, window: time.Hour},
-	CategoryGenericBot:   {limit: 30, window: time.Hour},
-	CategorySuspicious:   {limit: 10, window: time.Hour},
-}
+const (
+	defaultSearchEngineLimitPerHour = 100
+	defaultGenericBotLimitPerHour   = 30
+	defaultSuspiciousLimitPerHour   = 10
+)
 
 var (
 	limiterDBOnce sync.Once
@@ -129,6 +128,126 @@ func isEnforcementMode(mode protectionMode) bool {
 	return mode == protectionModeLimit || mode == protectionModeBlock
 }
 
+func crawlerLimitFromEnv(key string, fallback int, logger *zap.Logger) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		if logger == nil {
+			logger = zap.NewNop()
+		}
+		logger.Error("invalid crawler rate limit; using default",
+			zap.String("key", key),
+			zap.String("value", raw),
+			zap.Int("default", fallback),
+			zap.Error(err),
+		)
+		return fallback
+	}
+
+	return value
+}
+
+func limiterConfigsForMode(mode protectionMode, logger *zap.Logger) map[Category]limiterConfig {
+	searchEngineLimit := crawlerLimitFromEnv("CRAWLER_LIMIT_SEARCH_ENGINE_PER_HOUR", defaultSearchEngineLimitPerHour, logger)
+	genericBotLimit := crawlerLimitFromEnv("CRAWLER_LIMIT_GENERIC_BOT_PER_HOUR", defaultGenericBotLimitPerHour, logger)
+
+	configs := map[Category]limiterConfig{
+		CategorySearchEngine: {limit: searchEngineLimit, window: time.Hour},
+		CategoryGenericBot:   {limit: genericBotLimit, window: time.Hour},
+	}
+
+	if mode == protectionModeBlock {
+		suspiciousLimit := crawlerLimitFromEnv("CRAWLER_LIMIT_SUSPICIOUS_PER_HOUR", defaultSuspiciousLimitPerHour, logger)
+		configs[CategorySuspicious] = limiterConfig{limit: suspiciousLimit, window: time.Hour}
+	}
+
+	return configs
+}
+
+func isCrawlerMetricsDisabled() bool {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("DISABLE_METRICS")), "true") {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("EMF_METRICS_ENABLED")), "false") {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("CRAWLER_METRICS_ENABLED")), "false") {
+		return true
+	}
+	return false
+}
+
+type crawlerMetrics struct {
+	collector *observability.EMFMetricsCollector
+}
+
+func newCrawlerMetrics(logger *zap.Logger) *crawlerMetrics {
+	if isCrawlerMetricsDisabled() {
+		return nil
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	collector := observability.NewEMFMetricsCollector("Lesser/Crawler", logger)
+	collector.RemoveDimension("FunctionName")
+	collector.RemoveDimension("Version")
+	if stage := strings.TrimSpace(os.Getenv("STAGE")); stage != "" {
+		collector.SetDimension(observability.DimensionEnvironment, stage)
+	}
+	return &crawlerMetrics{collector: collector}
+}
+
+func (m *crawlerMetrics) recordEvent(totalMetricName, byRouteMetricName string, category Category, routeClass string) {
+	if m == nil || m.collector == nil {
+		return
+	}
+
+	categoryValue := category.String()
+	routeClass = strings.TrimSpace(routeClass)
+	if routeClass == "" {
+		routeClass = routeClassOther
+	}
+
+	m.collector.RecordMetric(totalMetricName, 1.0, cloudwatchTypes.StandardUnitCount,
+		cloudwatchTypes.Dimension{Name: aws.String(observability.DimensionCrawlerCategory), Value: aws.String(categoryValue)},
+	)
+	m.collector.RecordMetric(byRouteMetricName, 1.0, cloudwatchTypes.StandardUnitCount,
+		cloudwatchTypes.Dimension{Name: aws.String(observability.DimensionCrawlerCategory), Value: aws.String(categoryValue)},
+		cloudwatchTypes.Dimension{Name: aws.String(observability.DimensionRouteClass), Value: aws.String(routeClass)},
+	)
+	_ = m.collector.Flush()
+}
+
+func (m *crawlerMetrics) recordBlocked(category Category, routeClass string) {
+	m.recordEvent(observability.MetricCrawlerBlocked, observability.MetricCrawlerBlockedByRoute, category, routeClass)
+}
+
+func (m *crawlerMetrics) recordRateLimited(category Category, routeClass string) {
+	m.recordEvent(observability.MetricCrawlerRateLimited, observability.MetricCrawlerRateLimitedByRoute, category, routeClass)
+}
+
+func (m *crawlerMetrics) recordBypassed(category Category) {
+	if m == nil || m.collector == nil {
+		return
+	}
+
+	categoryValue := category.String()
+
+	m.collector.RecordMetric(observability.MetricCrawlerBypassed, 1.0, cloudwatchTypes.StandardUnitCount,
+		cloudwatchTypes.Dimension{Name: aws.String(observability.DimensionCrawlerCategory), Value: aws.String(categoryValue)},
+	)
+	_ = m.collector.Flush()
+}
+
+func isAICrawlerBlockingDisabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("CRAWLER_BLOCK_AI_CRAWLERS")), "false")
+}
+
 func parseCIDRAllowlistFromEnv(logger *zap.Logger) []*net.IPNet {
 	raw := strings.TrimSpace(os.Getenv("CRAWLER_PROTECTION_BYPASS_CIDRS"))
 	if raw == "" {
@@ -203,10 +322,7 @@ func buildLimiters(mode protectionMode, logger *zap.Logger) map[Category]atomicL
 	}
 
 	region := resolveAWSRegion()
-	configs := defaultLimiterConfigs
-	if mode == protectionModeBlock {
-		configs = blockModeLimiterConfigs
-	}
+	configs := limiterConfigsForMode(mode, logger)
 
 	limiters := map[Category]atomicLimiter{}
 	for category, cfg := range configs {
@@ -249,6 +365,7 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
 
+	metrics := newCrawlerMetrics(logger)
 	bypassCIDRs := parseCIDRAllowlistFromEnv(logger)
 	limiters := buildLimiters(mode, logger)
 
@@ -265,12 +382,14 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 			ctx.Set(contextCrawlerCategoryKey, category.String())
 			ctx.Set(contextCrawlerReasonKey, reason)
 
+			routeClass := routeClassForPath(ctx.Request.Path)
 			clientIP := extractClientIP(ctx)
 			enforcementBypassed := isClientIPBypassed(clientIP, bypassCIDRs)
 			logger.Debug("crawler classification",
 				zap.String("request_id", strings.TrimSpace(ctx.RequestID)),
 				zap.String("method", strings.TrimSpace(ctx.Request.Method)),
 				zap.String("path", strings.TrimSpace(ctx.Request.Path)),
+				zap.String("route_class", routeClass),
 				zap.String("category", category.String()),
 				zap.String("reason", reason),
 				zap.String("user_agent", userAgent),
@@ -279,15 +398,24 @@ func Middleware(mode protectionMode, logger *zap.Logger) apptheory.Middleware {
 			)
 
 			if enforcementBypassed {
+				if metrics != nil {
+					metrics.recordBypassed(category)
+				}
 				return next(ctx)
 			}
 
-			if mode == protectionModeBlock && category == CategoryAICrawler {
+			if mode == protectionModeBlock && category == CategoryAICrawler && !isAICrawlerBlockingDisabled() {
+				if metrics != nil {
+					metrics.recordBlocked(category, routeClass)
+				}
 				return blockedResponse(category, reason), nil
 			}
 
-			resp, handled, handlerErr := maybeApplyRateLimit(ctx, next, logger, limiters, category, userAgent, clientIP)
+			resp, handled, rateLimited, handlerErr := maybeApplyRateLimit(ctx, next, logger, limiters, category, userAgent, clientIP, routeClass)
 			if handled {
+				if rateLimited && metrics != nil {
+					metrics.recordRateLimited(category, routeClass)
+				}
 				return resp, handlerErr
 			}
 
@@ -304,17 +432,20 @@ func maybeApplyRateLimit(
 	category Category,
 	userAgent string,
 	clientIP string,
-) (*apptheory.Response, bool, error) {
+	routeClass string,
+) (*apptheory.Response, bool, bool, error) {
 	if ctx == nil || next == nil || logger == nil || len(limiters) == 0 {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 
 	limiter, ok := limiters[category]
 	if !ok || limiter == nil {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 
-	routeClass := routeClassForPath(ctx.Request.Path)
+	if strings.TrimSpace(routeClass) == "" {
+		routeClass = routeClassForPath(ctx.Request.Path)
+	}
 	key := buildRateLimitKey(category, routeClass, clientIP, userAgent)
 
 	decision, err := limiter.CheckAndIncrement(ctx.Context(), key)
@@ -325,12 +456,12 @@ func maybeApplyRateLimit(
 			zap.String("client_ip", clientIP),
 			zap.Error(err),
 		)
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 
 	headers := rateLimitHeaders(decision)
 	if decision != nil && !decision.Allowed {
-		return rateLimitedResponse(decision, headers), true, nil
+		return rateLimitedResponse(decision, headers), true, true, nil
 	}
 
 	resp, handlerErr := next(ctx)
@@ -342,7 +473,7 @@ func maybeApplyRateLimit(
 			resp.Headers[k] = append([]string(nil), v...)
 		}
 	}
-	return resp, true, handlerErr
+	return resp, true, false, handlerErr
 }
 
 func extractClientIP(ctx *apptheory.Context) string {
@@ -379,14 +510,14 @@ func routeClassForPath(path string) string {
 	case path == "/robots.txt":
 		return "robots"
 	default:
-		return "other"
+		return routeClassOther
 	}
 }
 
 func buildRateLimitKey(category Category, routeClass, clientIP, userAgent string) apptheoryLimited.RateLimitKey {
 	routeClass = strings.TrimSpace(routeClass)
 	if routeClass == "" {
-		routeClass = "other"
+		routeClass = routeClassOther
 	}
 	clientIP = strings.TrimSpace(clientIP)
 	if clientIP == "" {
