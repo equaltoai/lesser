@@ -1,6 +1,6 @@
 // Package common provides centralized pagination functionality for consistent
 // pagination handling across all Lesser APIs and services.
-package common
+package common //nolint:revive // shared package name by design
 
 import (
 	"strconv"
