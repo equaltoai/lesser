@@ -52,20 +52,20 @@ func (h *Handler) HandleTranslateStatusLift(ctx *apptheory.Context) (*apptheory.
 
 	// Get and validate status ID
 	statusID, resp, err := h.getTranslationStatusID(ctx)
-	if err != nil {
+	if resp != nil || err != nil {
 		return resp, err
 	}
 
 	// Authenticate user
 	username, resp, err := h.authenticateTranslationRequest(ctx)
-	if err != nil {
+	if resp != nil || err != nil {
 		return resp, err
 	}
 
 	// Get the status object
 	objectID := h.normalizeTranslationObjectID(statusID)
 	obj, resp, err := h.getStatusForTranslation(ctx, statusID, objectID)
-	if err != nil {
+	if resp != nil || err != nil {
 		return resp, err
 	}
 
@@ -80,7 +80,7 @@ func (h *Handler) HandleTranslateStatusLift(ctx *apptheory.Context) (*apptheory.
 
 	// Perform translation
 	translationResult, resp, err := h.performTranslation(ctx, statusID, content, spoilerText, language, targetLang)
-	if err != nil {
+	if resp != nil || err != nil {
 		return resp, err
 	}
 
@@ -229,13 +229,13 @@ func (h *Handler) performTranslation(ctx *apptheory.Context, statusID, content, 
 
 	// Initialize translation service
 	translationSvc, resp, err := h.initializeTranslationService(ctx)
-	if err != nil {
+	if resp != nil || err != nil {
 		return nil, resp, err
 	}
 
 	// Translate main content
 	translatedContent, detectedLang, resp, err := h.translateContent(ctx, translationSvc, statusID, content, sourceLang, targetLang)
-	if err != nil {
+	if resp != nil || err != nil {
 		return nil, resp, err
 	}
 

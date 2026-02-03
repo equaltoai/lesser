@@ -375,6 +375,12 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	if authService != nil {
 		app.Use(createAPIAuthMiddlewareFromAuthService(authService, lambdaLogger))
 	}
+	// Optional OAuth auth fallback (enables user context for OAuth/agent tokens too).
+	// This allows downstream middleware (rate limits, logging) to key by username for agents.
+	app.Use(createOptionalOAuthAuthMiddleware(cfg, repos, lambdaLogger))
+
+	// Agent safety rails middleware (Phase 1).
+	app.Use(createAgentSafetyRailsMiddleware(cfg, repos, lambdaLogger))
 
 	// Request logging with correlation fields.
 	app.Use(createLoggingMiddleware(lambdaLogger))
@@ -692,7 +698,7 @@ func createEMFMetricsMiddleware() apptheory.Middleware {
 
 func configureHealthRoutes(app *apptheory.App) {
 	// Liveness endpoint
-	app.Get("/health/live", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+	app.Get("/health/live", func(_ *apptheory.Context) (*apptheory.Response, error) {
 		response := map[string]interface{}{
 			"status":    observability.HealthStatusHealthy,
 			"timestamp": time.Now(),
@@ -703,7 +709,7 @@ func configureHealthRoutes(app *apptheory.App) {
 	})
 
 	// Legacy health endpoint (infra + backwards compatibility)
-	app.Get("/health", func(ctx *apptheory.Context) (*apptheory.Response, error) {
+	app.Get("/health", func(_ *apptheory.Context) (*apptheory.Response, error) {
 		response := map[string]interface{}{
 			"status":    observability.HealthStatusHealthy,
 			"timestamp": time.Now(),

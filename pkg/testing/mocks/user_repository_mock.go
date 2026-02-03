@@ -68,6 +68,15 @@ func (m *MockUserRepositoryInterface) ListUsers(ctx context.Context, limit int32
 	return args.Get(0).([]*storage.User), args.String(1), args.Error(2)
 }
 
+// ListAgents mocks the ListAgents method
+func (m *MockUserRepositoryInterface) ListAgents(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
+	args := m.Called(ctx, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.User), args.String(1), args.Error(2)
+}
+
 // ListUsersByRole mocks the ListUsersByRole method
 func (m *MockUserRepositoryInterface) ListUsersByRole(ctx context.Context, role string) ([]*storage.User, error) {
 	args := m.Called(ctx, role)

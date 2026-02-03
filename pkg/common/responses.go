@@ -1,6 +1,6 @@
 // Package common provides additional standardized response functions that extend
 // the existing error_responses.go with more convenience functions and Mastodon-specific patterns
-package common
+package common //nolint:revive // shared package name by design
 
 import (
 	"encoding/json"
@@ -48,7 +48,7 @@ func errorCodeForHTTPStatus(status int) string {
 
 // SendError is a convenience function for sending standardized error responses with Lift
 // This consolidates the pattern: return apptheory.JSON(code, map[string]string{"error": message})
-func SendError(ctx *apptheory.Context, code int, message string) (*apptheory.Response, error) {
+func SendError(_ *apptheory.Context, code int, message string) (*apptheory.Response, error) {
 	return apptheory.JSON(code, StandardErrorResponse{
 		Error: message,
 		Code:  errorCodeForHTTPStatus(code),
@@ -57,13 +57,13 @@ func SendError(ctx *apptheory.Context, code int, message string) (*apptheory.Res
 
 // SendJSON is a convenience function for sending successful JSON responses with Lift
 // This consolidates the pattern: return apptheory.JSON(code, data)
-func SendJSON(ctx *apptheory.Context, code int, data interface{}) (*apptheory.Response, error) {
+func SendJSON(_ *apptheory.Context, code int, data interface{}) (*apptheory.Response, error) {
 	return apptheory.JSON(code, data)
 }
 
 // SendMastodonError sends Mastodon API-compatible error responses
 // Mastodon clients expect a specific error format for proper error handling
-func SendMastodonError(ctx *apptheory.Context, code int, errorMsg string) (*apptheory.Response, error) {
+func SendMastodonError(_ *apptheory.Context, code int, errorMsg string) (*apptheory.Response, error) {
 	mastodonError := map[string]interface{}{
 		"error":      errorMsg,
 		"error_code": errorCodeForHTTPStatus(code),

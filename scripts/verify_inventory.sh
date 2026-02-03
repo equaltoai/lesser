@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if [[ -z "${GOCACHE:-}" ]]; then
-  export GOCACHE="$ROOT_DIR/tmp/go-cache"
+  export GOCACHE="$ROOT_DIR/tmp/go-cache/$(go env GOVERSION)"
 fi
 mkdir -p "$GOCACHE"
 

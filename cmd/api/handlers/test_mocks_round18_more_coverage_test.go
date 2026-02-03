@@ -1,0 +1,83 @@
+package handlers
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestMockRepositoryStorageRound18_NilBranches(t *testing.T) {
+	store := &MockRepositoryStorage{}
+
+	store.On("Account").Return(nil).Once()
+	store.On("Bookmark").Return(nil).Once()
+	store.On("Actor").Return(nil).Once()
+	store.On("Object").Return(nil).Once()
+	store.On("Activity").Return(nil).Once()
+	store.On("Timeline").Return(nil).Once()
+	store.On("Notification").Return(nil).Once()
+	store.On("Like").Return(nil).Once()
+	store.On("Moderation").Return(nil).Once()
+	store.On("List").Return(nil).Once()
+	store.On("Media").Return(nil).Once()
+	store.On("MediaMetadata").Return(nil).Once()
+	store.On("Poll").Return(nil).Once()
+	store.On("PushSubscription").Return(nil).Once()
+	store.On("Hashtag").Return(nil).Once()
+	store.On("ScheduledStatus").Return(nil).Once()
+	store.On("Announcement").Return(nil).Once()
+	store.On("DomainBlock").Return(nil).Once()
+	store.On("Relationship").Return(nil).Once()
+	store.On("Instance").Return(nil).Once()
+	store.On("Federation").Return(nil).Once()
+	store.On("Recovery").Return(nil).Once()
+	store.On("Analytics").Return(nil).Once()
+	store.On("Social").Return(nil).Once()
+	store.On("User").Return(nil).Once()
+	store.On("Status").Return(nil).Once()
+	store.On("GetDB").Return(nil).Once()
+	store.On("GetLogger").Return(nil).Once()
+	store.On("GetTableName").Return("test-table").Once()
+
+	require.Nil(t, store.Account())
+	require.Nil(t, store.Bookmark())
+	require.Nil(t, store.Actor())
+	require.Nil(t, store.Object())
+	require.Nil(t, store.Activity())
+	require.Nil(t, store.Timeline())
+	require.Nil(t, store.Notification())
+	require.Nil(t, store.Like())
+	require.Nil(t, store.Moderation())
+	require.Nil(t, store.List())
+	require.Nil(t, store.Media())
+	require.Nil(t, store.MediaMetadata())
+	require.Nil(t, store.Poll())
+	require.Nil(t, store.PushSubscription())
+	require.Nil(t, store.Hashtag())
+	require.Nil(t, store.ScheduledStatus())
+	require.Nil(t, store.Announcement())
+	require.Nil(t, store.DomainBlock())
+	require.Nil(t, store.Relationship())
+	require.Nil(t, store.Instance())
+	require.Nil(t, store.Federation())
+	require.Nil(t, store.Recovery())
+	require.Nil(t, store.Analytics())
+	require.Nil(t, store.Social())
+	require.Nil(t, store.User())
+	require.Nil(t, store.Status())
+	require.Nil(t, store.GetDB())
+	require.Nil(t, store.GetLogger())
+	require.Equal(t, "test-table", store.GetTableName())
+
+	// CMS repositories are intentionally inert for handler unit tests.
+	require.Nil(t, store.Article())
+	require.Nil(t, store.Draft())
+	require.Nil(t, store.Revision())
+	require.Nil(t, store.Series())
+	require.Nil(t, store.Category())
+	require.Nil(t, store.Publication())
+	require.Nil(t, store.PublicationMember())
+
+	store.AssertExpectations(t)
+}
+

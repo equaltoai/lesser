@@ -206,7 +206,7 @@ func TestCheckBudgetIfRequired_BudgetBranches(t *testing.T) {
 		tracker := &WebSocketCostTracker{costRepo: repo, logger: logger}
 		opCtx := &WebSocketOperationContext{UserID: "user-1"}
 
-		require.NoError(t, checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx))
+		require.NoError(t, checkBudgetIfRequired(context.Background(), tracker, "connect", opCtx))
 	})
 
 	t.Run("budget exceeded returns app error", func(t *testing.T) {
@@ -225,7 +225,7 @@ func TestCheckBudgetIfRequired_BudgetBranches(t *testing.T) {
 
 		opCtx := &WebSocketOperationContext{UserID: "user-1"}
 
-		err := checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx)
+		err := checkBudgetIfRequired(context.Background(), tracker, "connect", opCtx)
 		require.Error(t, err)
 	})
 
@@ -236,6 +236,6 @@ func TestCheckBudgetIfRequired_BudgetBranches(t *testing.T) {
 
 		opCtx := &WebSocketOperationContext{UserID: "user-1"}
 
-		require.NoError(t, checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx))
+		require.NoError(t, checkBudgetIfRequired(context.Background(), tracker, "connect", opCtx))
 	})
 }

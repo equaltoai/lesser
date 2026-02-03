@@ -1,4 +1,4 @@
-package errors
+package errors // nolint:revive // Legacy package name; import with an alias when also using stdlib errors.
 
 // ErrorCode represents standardized error codes across the application
 type ErrorCode string

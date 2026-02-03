@@ -153,9 +153,9 @@ func runBuildSingleLambda(argv []string) error {
 		return err
 	}
 
-	goCache := filepath.Join(repoRoot, "tmp", "go-cache")
-	if err := os.MkdirAll(goCache, 0o750); err != nil {
-		return fmt.Errorf("create go-cache dir: %w", err)
+	goCache, err := ensureGoCacheDir(repoRoot)
+	if err != nil {
+		return err
 	}
 
 	bootstrapPath := filepath.Join(repoRoot, "bin", "bootstrap")

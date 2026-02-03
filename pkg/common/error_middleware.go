@@ -149,22 +149,33 @@ func appTheoryStatusForErrorCode(code string) int {
 
 // handleAppError processes AppError instances with safe user message handling
 func handleAppError(ctx *apptheory.Context, appErr *errors.AppError, config ErrorMiddlewareConfig) (*apptheory.Response, error) {
+	path := ""
+	method := ""
+	requestID := ""
+	var username any
+	if ctx != nil {
+		path = ctx.Request.Path
+		method = ctx.Request.Method
+		requestID = ctx.RequestID
+		username = ctx.Get("username")
+	}
+
 	// Log the internal error details
 	logFields := []zap.Field{
 		zap.String("service", config.ServiceName),
 		zap.String("error_code", string(appErr.Code)),
-		zap.String("path", ctx.Request.Path),
-		zap.String("method", ctx.Request.Method),
+		zap.String("path", path),
+		zap.String("method", method),
 		zap.Int("status_code", appErr.HTTPStatusCode),
 	}
 
 	// Add user context if available
-	if username := ctx.Get("username"); username != nil {
+	if username != nil {
 		logFields = append(logFields, zap.Any("username", username))
 	}
 
-	if ctx != nil && ctx.RequestID != "" {
-		logFields = append(logFields, zap.String("request_id", ctx.RequestID))
+	if requestID != "" {
+		logFields = append(logFields, zap.String("request_id", requestID))
 	}
 
 	// Log internal error (truncated if too long)

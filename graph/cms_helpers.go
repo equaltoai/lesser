@@ -21,6 +21,11 @@ const (
 	cmsDraftStatusPublishing = "publishing"
 	cmsDraftStatusPublished  = "published"
 	cmsDraftStatusFailed     = jobStatusFailed
+
+	cmsPublicationRoleOwner       = "owner"
+	cmsPublicationRoleEditor      = "editor"
+	cmsPublicationRoleWriter      = "writer"
+	cmsPublicationRoleContributor = "contributor"
 )
 
 func cmsSlugify(value string) string {
@@ -158,13 +163,13 @@ func cmsChangeTypeFromStorage(value string) model.ChangeType {
 func cmsPublicationRoleToStorage(role model.PublicationRole) string {
 	switch role {
 	case model.PublicationRoleOwner:
-		return "owner"
+		return cmsPublicationRoleOwner
 	case model.PublicationRoleEditor:
-		return "editor"
+		return cmsPublicationRoleEditor
 	case model.PublicationRoleWriter:
-		return "writer"
+		return cmsPublicationRoleWriter
 	case model.PublicationRoleContributor:
-		return "contributor"
+		return cmsPublicationRoleContributor
 	default:
 		return strings.ToLower(string(role))
 	}
@@ -172,13 +177,13 @@ func cmsPublicationRoleToStorage(role model.PublicationRole) string {
 
 func cmsPublicationRoleFromStorage(role string) model.PublicationRole {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "owner":
+	case cmsPublicationRoleOwner:
 		return model.PublicationRoleOwner
-	case "editor":
+	case cmsPublicationRoleEditor:
 		return model.PublicationRoleEditor
-	case "writer":
+	case cmsPublicationRoleWriter:
 		return model.PublicationRoleWriter
-	case "contributor":
+	case cmsPublicationRoleContributor:
 		return model.PublicationRoleContributor
 	default:
 		return model.PublicationRoleContributor

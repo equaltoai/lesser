@@ -298,6 +298,58 @@ components:
             items:
                 $ref: '#/components/schemas/AdminAccount'
             type: array
+        AdminAgentPolicy:
+            additionalProperties: false
+            properties:
+                agent_max_follows_per_hour:
+                    type: integer
+                agent_max_posts_per_hour:
+                    type: integer
+                allow_agent_registration:
+                    type: boolean
+                allow_agents:
+                    type: boolean
+                allow_remote_agents:
+                    type: boolean
+                blocked_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                default_quarantine_days:
+                    type: integer
+                hybrid_retrieval_enabled:
+                    type: boolean
+                hybrid_retrieval_max_candidates:
+                    type: integer
+                max_agents_per_owner:
+                    type: integer
+                remote_quarantine_days:
+                    type: integer
+                trusted_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                updated_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                verified_agent_max_follows_per_hour:
+                    type: integer
+                verified_agent_max_posts_per_hour:
+                    type: integer
+            required:
+                - agent_max_follows_per_hour
+                - agent_max_posts_per_hour
+                - allow_agent_registration
+                - allow_agents
+                - allow_remote_agents
+                - default_quarantine_days
+                - hybrid_retrieval_enabled
+                - hybrid_retrieval_max_candidates
+                - max_agents_per_owner
+                - remote_quarantine_days
+                - updated_at
+                - verified_agent_max_follows_per_hour
+                - verified_agent_max_posts_per_hour
+            type: object
         AdminCreateUserRequest:
             additionalProperties: false
             properties:
@@ -778,6 +830,356 @@ components:
                 - trust
                 - updated_at
                 - updated_by
+            type: object
+        AdminVerifyAgentRequest:
+            additionalProperties: false
+            properties:
+                exit_quarantine:
+                    type: boolean
+                reason:
+                    type: string
+            type: object
+        Agent:
+            additionalProperties: false
+            properties:
+                agent_capabilities:
+                    $ref: '#/components/schemas/AgentCapabilities'
+                agent_owner:
+                    type: string
+                agent_type:
+                    type: string
+                agent_version:
+                    type: string
+                bio:
+                    type: string
+                created_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                delegated_scopes:
+                    items:
+                        type: string
+                    type: array
+                display_name:
+                    type: string
+                username:
+                    type: string
+                verified:
+                    type: boolean
+                verified_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+            required:
+                - agent_capabilities
+                - agent_type
+                - agent_version
+                - display_name
+                - username
+                - verified
+            type: object
+        AgentActivityLogEntry:
+            additionalProperties: false
+            properties:
+                action:
+                    type: string
+                agent_username:
+                    type: string
+                metadata: {}
+                target_id:
+                    type: string
+                timestamp:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+            required:
+                - action
+                - agent_username
+                - timestamp
+            type: object
+        AgentActivityLogList:
+            items:
+                $ref: '#/components/schemas/AgentActivityLogEntry'
+            type: array
+        AgentCapabilities:
+            additionalProperties: false
+            properties:
+                can_boost:
+                    type: boolean
+                can_dm:
+                    type: boolean
+                can_follow:
+                    type: boolean
+                can_post:
+                    type: boolean
+                can_reply:
+                    type: boolean
+                max_posts_per_hour:
+                    type: integer
+                requires_approval:
+                    type: boolean
+                restricted_domains:
+                    items:
+                        type: string
+                    type: array
+            required:
+                - can_boost
+                - can_dm
+                - can_follow
+                - can_post
+                - can_reply
+                - max_posts_per_hour
+                - requires_approval
+            type: object
+        AgentDelegationRequest:
+            additionalProperties: false
+            properties:
+                agent_info: {}
+                agent_username:
+                    type: string
+                bio:
+                    type: string
+                display_name:
+                    type: string
+                expires_in:
+                    type: integer
+                scopes:
+                    items:
+                        type: string
+                    type: array
+            required:
+                - agent_username
+                - display_name
+                - scopes
+            type: object
+        AgentDelegationResponse:
+            additionalProperties: false
+            properties:
+                account:
+                    $ref: '#/components/schemas/Account'
+                token:
+                    $ref: '#/components/schemas/OAuthTokenResponse'
+            required:
+                - account
+                - token
+            type: object
+        AgentKeyChallengeRequest:
+            additionalProperties: false
+            properties:
+                username:
+                    type: string
+            required:
+                - username
+            type: object
+        AgentKeyChallengeResponse:
+            additionalProperties: false
+            properties:
+                action:
+                    type: string
+                expires_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                id:
+                    type: string
+                issued_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                message:
+                    type: string
+                username:
+                    type: string
+            required:
+                - action
+                - expires_at
+                - id
+                - issued_at
+                - message
+                - username
+            type: object
+        AgentList:
+            items:
+                $ref: '#/components/schemas/Agent'
+            type: array
+        AgentMemoryEventRequest:
+            additionalProperties: false
+            properties:
+                event_type:
+                    type: string
+                original_id:
+                    type: string
+                reason:
+                    type: string
+            type: object
+        AgentMemorySearchContext:
+            additionalProperties: false
+            properties:
+                event_type:
+                    type: string
+                original_id:
+                    type: string
+                reply_count:
+                    type: integer
+                tags:
+                    items:
+                        type: string
+                    type: array
+                thread_root:
+                    type: string
+            type: object
+        AgentMemorySearchRequest:
+            additionalProperties: false
+            properties:
+                date_range:
+                    anyOf:
+                        - $ref: '#/components/schemas/DateRange'
+                        - type: "null"
+                include_threads:
+                    type: boolean
+                limit:
+                    type: integer
+                mode:
+                    type: string
+                options:
+                    additionalProperties: {}
+                    type: object
+                query:
+                    type: string
+                tags:
+                    items:
+                        type: string
+                    type: array
+                thread_id:
+                    type: string
+            type: object
+        AgentMemorySearchResponse:
+            additionalProperties: false
+            properties:
+                query_time_ms:
+                    type: integer
+                results:
+                    items:
+                        $ref: '#/components/schemas/AgentMemorySearchResult'
+                    type: array
+                total:
+                    type: integer
+            required:
+                - query_time_ms
+                - results
+                - total
+            type: object
+        AgentMemorySearchResult:
+            additionalProperties: false
+            properties:
+                context:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentMemorySearchContext'
+                        - type: "null"
+                relevance_score:
+                    type: number
+                status:
+                    anyOf:
+                        - $ref: '#/components/schemas/Status'
+                        - type: "null"
+                thread:
+                    items:
+                        anyOf:
+                            - $ref: '#/components/schemas/Status'
+                            - type: "null"
+                    type: array
+            required:
+                - relevance_score
+            type: object
+        AgentPostAttribution:
+            additionalProperties: false
+            properties:
+                constraints:
+                    items:
+                        type: string
+                    type: array
+                delegated_by:
+                    type: string
+                memory_citations:
+                    items:
+                        type: string
+                    type: array
+                model_version:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                trigger_details:
+                    type: string
+                trigger_type:
+                    type: string
+            type: object
+        AgentRotateKeyRequest:
+            additionalProperties: false
+            properties:
+                challenge_id:
+                    type: string
+                key_type:
+                    type: string
+                public_key:
+                    type: string
+                signature:
+                    type: string
+            required:
+                - challenge_id
+                - key_type
+                - public_key
+                - signature
+            type: object
+        AgentSelfAuthTokenRequest:
+            additionalProperties: false
+            properties:
+                challenge_id:
+                    type: string
+                signature:
+                    type: string
+                username:
+                    type: string
+            required:
+                - challenge_id
+                - signature
+                - username
+            type: object
+        AgentSelfRegistrationRequest:
+            additionalProperties: false
+            properties:
+                agent_info: {}
+                bio:
+                    type: string
+                challenge_id:
+                    type: string
+                display_name:
+                    type: string
+                key_type:
+                    type: string
+                public_key:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                signature:
+                    type: string
+                username:
+                    type: string
+            required:
+                - challenge_id
+                - display_name
+                - key_type
+                - public_key
+                - signature
+                - username
+            type: object
+        AgentSelfRegistrationResponse:
+            additionalProperties: false
+            properties:
+                account:
+                    $ref: '#/components/schemas/Account'
+                token:
+                    $ref: '#/components/schemas/OAuthTokenResponse'
+            required:
+                - account
+                - token
             type: object
         Announcement:
             additionalProperties: false
@@ -1355,6 +1757,10 @@ components:
         CreateStatusRequest:
             additionalProperties: false
             properties:
+                agent_attribution:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentPostAttribution'
+                        - type: "null"
                 in_reply_to_id:
                     type: string
                 language:
@@ -1363,6 +1769,10 @@ components:
                     items:
                         type: string
                     type: array
+                memory_event:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentMemoryEventRequest'
+                        - type: "null"
                 poll:
                     anyOf:
                         - $ref: '#/components/schemas/Poll'
@@ -1421,6 +1831,14 @@ components:
             items:
                 $ref: '#/components/schemas/CustomEmoji'
             type: array
+        DateRange:
+            additionalProperties: false
+            properties:
+                end:
+                    type: string
+                start:
+                    type: string
+            type: object
         DomainBlock:
             additionalProperties: false
             properties:
@@ -4053,6 +4471,10 @@ components:
             properties:
                 account:
                     $ref: '#/components/schemas/Account'
+                agent_attribution:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentPostAttribution'
+                        - type: "null"
                 application:
                     additionalProperties: {}
                     type: object
@@ -4348,6 +4770,54 @@ components:
                                     - id
                                     - type
                                 type: object
+                            agentManifest:
+                                anyOf:
+                                    - additionalProperties: false
+                                      properties:
+                                        capabilities:
+                                            anyOf:
+                                                - additionalProperties: false
+                                                  properties:
+                                                    canBoost:
+                                                        type: boolean
+                                                    canDM:
+                                                        type: boolean
+                                                    canFollow:
+                                                        type: boolean
+                                                    canPost:
+                                                        type: boolean
+                                                    canReply:
+                                                        type: boolean
+                                                    maxPostsPerHour:
+                                                        type: integer
+                                                    requiresApproval:
+                                                        type: boolean
+                                                    restrictedDomains:
+                                                        items:
+                                                            type: string
+                                                        type: array
+                                                  required:
+                                                    - canBoost
+                                                    - canDM
+                                                    - canFollow
+                                                    - canPost
+                                                    - canReply
+                                                  type: object
+                                                - type: "null"
+                                        operatedBy:
+                                            type: string
+                                        purpose:
+                                            type: string
+                                        source:
+                                            type: string
+                                        type:
+                                            type: string
+                                        version:
+                                            type: string
+                                      required:
+                                        - type
+                                      type: object
+                                    - type: "null"
                             alsoKnownAs:
                                 items:
                                     type: string
@@ -5116,7 +5586,162 @@ components:
                     $ref: '#/components/schemas/RFC3339DateTime'
                 note:
                     anyOf:
-                        - $ref: '#/components/schemas/StorageModelsNoteField'
+                        - additionalProperties: false
+                          properties:
+                            _:agentAttribution:
+                                anyOf:
+                                    - additionalProperties: false
+                                      properties:
+                                        constraints:
+                                            items:
+                                                type: string
+                                            type: array
+                                        delegated_by:
+                                            type: string
+                                        memory_citations:
+                                            items:
+                                                type: string
+                                            type: array
+                                        model_version:
+                                            type: string
+                                        scopes:
+                                            items:
+                                                type: string
+                                            type: array
+                                        trigger_details:
+                                            type: string
+                                        trigger_type:
+                                            type: string
+                                      type: object
+                                    - type: "null"
+                            _:quoteContext:
+                                anyOf:
+                                    - additionalProperties: false
+                                      properties:
+                                        allowWithdrawal:
+                                            type: boolean
+                                        originalAuthor:
+                                            type: string
+                                        originalAuthorUsername:
+                                            type: string
+                                        originalNoteId:
+                                            type: string
+                                        quoteAllowed:
+                                            type: boolean
+                                        quoteCount:
+                                            type: integer
+                                        withdrawn:
+                                            type: boolean
+                                      required:
+                                        - allowWithdrawal
+                                        - originalAuthor
+                                        - quoteAllowed
+                                        - quoteCount
+                                        - withdrawn
+                                      type: object
+                                    - type: "null"
+                            _:quoteNotifications:
+                                type: boolean
+                            _:quoteable:
+                                type: boolean
+                            _:visibility:
+                                type: string
+                            BaseObject:
+                                additionalProperties: false
+                                properties:
+                                    '@context':
+                                        items: {}
+                                        type: array
+                                    bcc:
+                                        items:
+                                            type: string
+                                        type: array
+                                    bto:
+                                        items:
+                                            type: string
+                                        type: array
+                                    cc:
+                                        items:
+                                            type: string
+                                        type: array
+                                    id:
+                                        type: string
+                                    inReplyTo:
+                                        type: string
+                                    published:
+                                        anyOf:
+                                            - $ref: '#/components/schemas/RFC3339DateTime'
+                                            - type: "null"
+                                    sensitive:
+                                        type: boolean
+                                    summary:
+                                        type: string
+                                    to:
+                                        items:
+                                            type: string
+                                        type: array
+                                    type:
+                                        type: string
+                                    updated:
+                                        anyOf:
+                                            - $ref: '#/components/schemas/RFC3339DateTime'
+                                            - type: "null"
+                                required:
+                                    - id
+                                    - type
+                                type: object
+                            attachment:
+                                items:
+                                    additionalProperties: false
+                                    properties:
+                                        height:
+                                            type: integer
+                                        mediaType:
+                                            type: string
+                                        name:
+                                            type: string
+                                        type:
+                                            type: string
+                                        url:
+                                            type: string
+                                        value:
+                                            type: string
+                                        width:
+                                            type: integer
+                                    required:
+                                        - mediaType
+                                        - type
+                                        - url
+                                    type: object
+                                type: array
+                            attributedTo:
+                                type: string
+                            content:
+                                type: string
+                            conversationId:
+                                type: string
+                            quoteUrl:
+                                type: string
+                            tag:
+                                items:
+                                    additionalProperties: false
+                                    properties:
+                                        href:
+                                            type: string
+                                        name:
+                                            type: string
+                                        type:
+                                            type: string
+                                    required:
+                                        - name
+                                        - type
+                                    type: object
+                                type: array
+                          required:
+                            - BaseObject
+                            - attributedTo
+                            - content
+                          type: object
                         - type: "null"
                 pk:
                     type: string
@@ -5335,6 +5960,50 @@ components:
         StorageUser:
             additionalProperties: false
             properties:
+                agent_capabilities:
+                    anyOf:
+                        - additionalProperties: false
+                          properties:
+                            can_boost:
+                                type: boolean
+                            can_dm:
+                                type: boolean
+                            can_follow:
+                                type: boolean
+                            can_post:
+                                type: boolean
+                            can_reply:
+                                type: boolean
+                            max_posts_per_hour:
+                                type: integer
+                            requires_approval:
+                                type: boolean
+                            restricted_domains:
+                                items:
+                                    type: string
+                                type: array
+                          required:
+                            - can_boost
+                            - can_dm
+                            - can_follow
+                            - can_post
+                            - can_reply
+                            - max_posts_per_hour
+                            - requires_approval
+                          type: object
+                        - type: "null"
+                agent_created_by:
+                    type: string
+                agent_key_type:
+                    type: string
+                agent_owner:
+                    type: string
+                agent_public_key:
+                    type: string
+                agent_type:
+                    type: string
+                agent_version:
+                    type: string
                 allow_nsfw:
                     type: boolean
                 approved:
@@ -5359,6 +6028,8 @@ components:
                     type: string
                 id:
                     type: string
+                is_agent:
+                    type: boolean
                 locale:
                     type: string
                 locked:
@@ -5396,6 +6067,7 @@ components:
                 - created_at
                 - discoverable
                 - id
+                - is_agent
                 - locked
                 - require_nsfw_warning
                 - role
@@ -5678,6 +6350,73 @@ components:
         URI:
             format: uri
             type: string
+        UpdateAdminAgentPolicyRequest:
+            additionalProperties: false
+            properties:
+                agent_max_follows_per_hour:
+                    type: integer
+                agent_max_posts_per_hour:
+                    type: integer
+                allow_agent_registration:
+                    type: boolean
+                allow_agents:
+                    type: boolean
+                allow_remote_agents:
+                    type: boolean
+                blocked_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                default_quarantine_days:
+                    type: integer
+                hybrid_retrieval_enabled:
+                    type: boolean
+                hybrid_retrieval_max_candidates:
+                    type: integer
+                max_agents_per_owner:
+                    type: integer
+                remote_quarantine_days:
+                    type: integer
+                trusted_agent_domains:
+                    items:
+                        type: string
+                    type: array
+                verified_agent_max_follows_per_hour:
+                    type: integer
+                verified_agent_max_posts_per_hour:
+                    type: integer
+            required:
+                - agent_max_follows_per_hour
+                - agent_max_posts_per_hour
+                - allow_agent_registration
+                - allow_agents
+                - allow_remote_agents
+                - default_quarantine_days
+                - hybrid_retrieval_enabled
+                - hybrid_retrieval_max_candidates
+                - max_agents_per_owner
+                - remote_quarantine_days
+                - verified_agent_max_follows_per_hour
+                - verified_agent_max_posts_per_hour
+            type: object
+        UpdateAgentRequest:
+            additionalProperties: false
+            properties:
+                agent_capabilities:
+                    anyOf:
+                        - $ref: '#/components/schemas/AgentCapabilities'
+                        - type: "null"
+                agent_type:
+                    type: string
+                agent_version:
+                    type: string
+                bio:
+                    type: string
+                display_name:
+                    type: string
+                exit_quarantine:
+                    type: boolean
+            type: object
         UpdateCredentialsRequest:
             additionalProperties: false
             properties:
@@ -7322,12 +8061,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/AdminCreateUserRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "201":
                     description: OK
                     content:
@@ -7405,12 +8138,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/AdminAccountActionRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7445,12 +8172,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7485,12 +8206,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7525,12 +8240,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7565,12 +8274,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7605,12 +8308,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7645,12 +8342,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -7671,6 +8362,154 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
+    /api/v1/admin/agents/{username}/unverify:
+        post:
+            operationId: post_api_v1_admin_agents_by_username_unverify
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AdminVerifyAgentRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminUnverifyAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+    /api/v1/admin/agents/{username}/verify:
+        post:
+            operationId: post_api_v1_admin_agents_by_username_verify
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AdminVerifyAgentRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminVerifyAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+    /api/v1/admin/agents/policy:
+        get:
+            operationId: get_api_v1_admin_agents_policy
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdminAgentPolicy'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminGetAgentPolicyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+        put:
+            operationId: put_api_v1_admin_agents_policy
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateAdminAgentPolicyRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdminAgentPolicy'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminUpdateAgentPolicyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
     /api/v1/admin/announcements:
         post:
             operationId: post_api_v1_admin_announcements
@@ -7684,12 +8523,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateAnnouncementRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "201":
                     description: OK
                     content:
@@ -8970,12 +9803,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
                 "204":
                     description: No Content
                 "400":
@@ -9070,6 +9897,483 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
+    /api/v1/agents:
+        get:
+            operationId: get_api_v1_agents
+            tags:
+                - agents
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentList'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleListAgentsLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}:
+        get:
+            operationId: get_api_v1_agents_by_username
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+        patch:
+            operationId: patch_api_v1_agents_by_username
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateAgentRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleUpdateAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+        delete:
+            operationId: delete_api_v1_agents_by_username
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleDeleteAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/activity:
+        get:
+            operationId: get_api_v1_agents_by_username_activity
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentActivityLogList'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetAgentActivityLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+                - admin:all
+                - admin:write
+                - read
+    /api/v1/agents/{username}/rotate-key:
+        post:
+            operationId: post_api_v1_agents_by_username_rotate_key
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentRotateKeyRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRotateKeyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+    /api/v1/agents/{username}/rotate-key/challenge:
+        post:
+            operationId: post_api_v1_agents_by_username_rotate_key_challenge
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentKeyChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRotateKeyChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/agents/{username}/suspend:
+        post:
+            operationId: post_api_v1_agents_by_username_suspend
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Agent'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleSuspendAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
+    /api/v1/agents/auth/challenge:
+        post:
+            operationId: post_api_v1_agents_auth_challenge
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentKeyChallengeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentKeyChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentAuthChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/auth/token:
+        post:
+            operationId: post_api_v1_agents_auth_token
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentSelfAuthTokenRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OAuthTokenResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentAuthTokenLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/delegate:
+        post:
+            operationId: post_api_v1_agents_delegate
+            tags:
+                - agents
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentDelegationRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentDelegationResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleDelegateAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/memory/search:
+        get:
+            operationId: get_api_v1_agents_memory_search
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentMemorySearchResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentMemorySearchLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+        post:
+            operationId: post_api_v1_agents_memory_search
+            tags:
+                - agents
+            security:
+                - bearerAuth: []
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentMemorySearchRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentMemorySearchResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentMemorySearchLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/agents/register:
+        post:
+            operationId: post_api_v1_agents_register
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentSelfRegistrationRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentSelfRegistrationResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRegisterLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/register/challenge:
+        post:
+            operationId: post_api_v1_agents_register_challenge
+            tags:
+                - agents
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentKeyChallengeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentKeyChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAgentRegisterChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/announcements:
         get:
             operationId: get_api_v1_announcements
@@ -9996,28 +11300,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/ExportRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "202":
                     description: OK
                     content:
@@ -10108,7 +11390,7 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
+                "302":
                     description: OK
                     content:
                         application/json:
@@ -10297,28 +11579,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/ImportRequest'
             responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AnyObject'
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "202":
                     description: OK
                     content:
@@ -10566,8 +11826,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateListRequest'
             responses:
-                "200":
-                    description: OK
                 "201":
                     description: OK
                     content:
@@ -11075,24 +12333,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/FlagRequest'
             responses:
-                "200":
-                    description: OK
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "201":
                     description: OK
                     content:
@@ -11201,24 +12441,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/ReviewRequest'
             responses:
-                "200":
-                    description: OK
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "201":
                     description: OK
                     content:
@@ -11412,24 +12634,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateCommunityNoteRequest'
             responses:
-                "200":
-                    description: OK
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "201":
                     description: OK
                     content:
@@ -11665,8 +12869,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
                 "204":
                     description: No Content
                 "400":
@@ -11695,8 +12897,6 @@ paths:
             security:
                 - bearerAuth: []
             responses:
-                "200":
-                    description: OK
                 "204":
                     description: No Content
                 "400":
@@ -11902,8 +13102,6 @@ paths:
             tags:
                 - push
             responses:
-                "200":
-                    description: OK
                 "204":
                     description: No Content
                 "400":
@@ -12391,24 +13589,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateStatusRequest'
             responses:
-                "200":
-                    description: OK
-                    headers:
-                        X-RateLimit-Limit:
-                            description: Request limit per window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Remaining:
-                            description: Requests remaining in the current window.
-                            schema:
-                                type: integer
-                                format: int32
-                        X-RateLimit-Reset:
-                            description: Unix timestamp (seconds) when the current window resets.
-                            schema:
-                                type: integer
-                                format: int64
                 "201":
                     description: OK
                     content:
@@ -14147,8 +15327,6 @@ paths:
                         schema:
                             $ref: '#/components/schemas/CreateVouchRequest'
             responses:
-                "200":
-                    description: OK
                 "201":
                     description: OK
                     content:
@@ -14221,8 +15399,6 @@ paths:
                   schema:
                     type: string
             responses:
-                "200":
-                    description: OK
                 "204":
                     description: No Content
                 "400":

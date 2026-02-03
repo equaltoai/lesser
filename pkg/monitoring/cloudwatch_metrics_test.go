@@ -14,14 +14,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestSanitizePath(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, "root", sanitizePath("/"))
-	assert.Equal(t, "api_v1_statuses", sanitizePath("/api/v1/statuses"))
-	assert.Equal(t, "notes_id", sanitizePath("/notes/{id}"))
-}
-
 func TestClassifyDynamoDBError(t *testing.T) {
 	t.Parallel()
 

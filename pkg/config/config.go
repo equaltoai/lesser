@@ -90,9 +90,11 @@ type Config struct {
 	FollowingURL string // Following URL pattern
 
 	// Features
-	MaxUploadSize     int64 // Maximum file upload size in bytes
-	PageSize          int   // Default pagination size
-	AllowRegistration bool  // Whether new users can register
+	MaxUploadSize          int64 // Maximum file upload size in bytes
+	PageSize               int   // Default pagination size
+	AllowRegistration      bool  // Whether new users can register
+	AllowAgents            bool  // Whether agent accounts are enabled
+	AllowAgentRegistration bool  // Whether new agent accounts can be registered/delegated
 
 	// CMS Configuration
 	CMSLongFormPublishingEnabled  bool // Enable Article creation and CMS reads
@@ -323,9 +325,11 @@ func loadConfig() *Config {
 		Argon2Threads: getEnvAsUint8OrDefault("ARGON2_THREADS", 4),
 		Argon2KeyLen:  getEnvAsUint32OrDefault("ARGON2_KEY_LENGTH", 32),
 
-		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
-		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),
-		AllowRegistration: getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
+		MaxUploadSize:          getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
+		PageSize:               getEnvAsIntOrDefault("PAGE_SIZE", 20),
+		AllowRegistration:      getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
+		AllowAgents:            getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
+		AllowAgentRegistration: getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
 
 		// CMS Configuration
 		CMSLongFormPublishingEnabled:  getEnvAsBoolOrDefault("CMS_LONG_FORM_PUBLISHING_ENABLED", cmsEnabledByMode),

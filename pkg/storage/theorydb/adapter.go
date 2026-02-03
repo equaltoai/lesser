@@ -1,4 +1,4 @@
-// Package dynamorm provides the critical StorageAdapter bridge that connects the comprehensive
+// Package theorydb provides the critical StorageAdapter bridge that connects the comprehensive
 // storage interface to repository implementations. This adapter is the architectural keystone
 // that enables the Lesser application to work during the DynamORM migration while maintaining
 // compatibility with all existing storage operations.

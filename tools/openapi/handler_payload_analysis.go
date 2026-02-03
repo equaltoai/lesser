@@ -13,6 +13,8 @@ import (
 )
 
 const packagePathLift = "github.com/equaltoai/lesser/cmd/api/handlers"
+const packagePathAppTheory = "github.com/theory-cloud/apptheory/runtime"
+const selectorNameJSON = "JSON"
 
 type handlerPayloadInfo struct {
 	Request      types.Type
@@ -443,14 +445,31 @@ func successStatusFromCall(call *ast.CallExpr, info *types.Info) (int, bool) {
 		return 0, false
 	}
 
+	if isLiftHelperCall(call, info, "noContent") {
+		return 204, true
+	}
+	if isLiftHelperCall(call, info, "okJSON") {
+		return 200, true
+	}
+	if isLiftHelperCall(call, info, "createdJSON") {
+		return 201, true
+	}
+
 	if isHandlerRespondOKCall(call) {
 		return 200, true
 	}
 	if isHandlerRespondCreatedCall(call) {
 		return 201, true
 	}
-	if isLiftJSONCall(call, info) {
-		return 200, true
+	if isAppTheoryJSONCall(call, info) && len(call.Args) >= 1 {
+		code, ok := intValue(call.Args[0], info)
+		if !ok {
+			return 0, false
+		}
+		if code < 200 || code >= 400 {
+			return 0, false
+		}
+		return code, true
 	}
 
 	sel, ok := call.Fun.(*ast.SelectorExpr)
@@ -595,6 +614,15 @@ func responsePayloadFromCall(call *ast.CallExpr, info *types.Info) (types.Type, 
 		return nil, 0
 	}
 
+	if isLiftHelperCall(call, info, "okJSON") && len(call.Args) >= 1 {
+		t := payloadTypeFromExpr(call.Args[0], info)
+		return t, scorePayloadType(t)
+	}
+	if isLiftHelperCall(call, info, "createdJSON") && len(call.Args) >= 1 {
+		t := payloadTypeFromExpr(call.Args[0], info)
+		return t, scorePayloadType(t)
+	}
+
 	if isHandlerRespondOKCall(call) && len(call.Args) >= 2 {
 		t := payloadTypeFromExpr(call.Args[1], info)
 		return t, scorePayloadType(t)
@@ -604,8 +632,12 @@ func responsePayloadFromCall(call *ast.CallExpr, info *types.Info) (types.Type, 
 		return t, scorePayloadType(t)
 	}
 
-	if isLiftJSONCall(call, info) && len(call.Args) >= 1 {
-		t := payloadTypeFromExpr(call.Args[0], info)
+	if isAppTheoryJSONCall(call, info) && len(call.Args) >= 2 {
+		code, ok := intValue(call.Args[0], info)
+		if !ok || code < 200 || code >= 400 {
+			return nil, 0
+		}
+		t := payloadTypeFromExpr(call.Args[1], info)
 		return t, scorePayloadType(t)
 	}
 
@@ -734,23 +766,18 @@ func commonParseTargetArgIndex(call *ast.CallExpr, info *types.Info) (int, bool)
 	}
 }
 
+//nolint:unused // Deprecated: retained to keep older analysis helpers available during migration.
 func isLiftJSONCall(call *ast.CallExpr, info *types.Info) bool {
+	// Deprecated: legacy matcher. Prefer isAppTheoryJSONCall.
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel == nil || sel.Sel == nil {
 		return false
 	}
-	if sel.Sel.Name != "JSON" {
+	if sel.Sel.Name != selectorNameJSON {
 		return false
 	}
 
-	obj, ok := info.Selections[sel]
-	if ok && obj != nil && obj.Obj() != nil {
-		if fn, ok := obj.Obj().(*types.Func); ok && fn.Pkg() != nil && fn.Pkg().Path() == packagePathLift {
-			return true
-		}
-	}
-
-	return true
+	return isAppTheoryJSONCall(call, info)
 }
 
 func scorePayloadType(t types.Type) int {
@@ -779,4 +806,45 @@ func scorePayloadType(t types.Type) int {
 	default:
 		return 10
 	}
+}
+
+func isLiftHelperCall(call *ast.CallExpr, info *types.Info, name string) bool {
+	if call == nil {
+		return false
+	}
+	ident, ok := call.Fun.(*ast.Ident)
+	if !ok || ident == nil {
+		return false
+	}
+	if strings.TrimSpace(ident.Name) != name {
+		return false
+	}
+	if info == nil {
+		return true
+	}
+	fn, ok := info.Uses[ident].(*types.Func)
+	if !ok || fn == nil || fn.Pkg() == nil {
+		return false
+	}
+	return fn.Pkg().Path() == packagePathLift && strings.TrimSpace(fn.Name()) == name
+}
+
+func isAppTheoryJSONCall(call *ast.CallExpr, info *types.Info) bool {
+	if call == nil || info == nil {
+		return false
+	}
+
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel == nil || sel.Sel == nil {
+		return false
+	}
+	if strings.TrimSpace(sel.Sel.Name) != selectorNameJSON {
+		return false
+	}
+
+	fn, ok := info.Uses[sel.Sel].(*types.Func)
+	if !ok || fn == nil || fn.Pkg() == nil {
+		return false
+	}
+	return fn.Pkg().Path() == packagePathAppTheory && strings.TrimSpace(fn.Name()) == selectorNameJSON
 }

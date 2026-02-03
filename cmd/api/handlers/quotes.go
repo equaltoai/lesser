@@ -244,26 +244,11 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *apptheory.Context) (*app
 	})
 }
 
-// Helper methods
+	// Helper methods
 
-func (h *Handler) authenticateQuoteRequest(ctx *apptheory.Context) (*auth.Claims, error) {
-	token := h.getBearerTokenLift(ctx)
-	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, helperUnauthorized()
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return nil, helperUnauthorized()
-	}
-
-	return claims, nil
-}
-
-func (h *Handler) checkQuotePermissions(_ *apptheory.Context, _ string, _ interface{}) (bool, error) {
-	// For now, return a simple implementation
-	// In a full implementation, this would:
+	func (h *Handler) checkQuotePermissions(_ *apptheory.Context, _ string, _ interface{}) (bool, error) {
+		// For now, return a simple implementation
+		// In a full implementation, this would:
 	// 1. Get the original status author
 	// 2. Get their quote permissions
 	// 3. Check if quoter is allowed based on relationship and permissions

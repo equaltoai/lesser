@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -47,7 +48,18 @@ type User struct {
 	Locale             string                 `json:"locale,omitempty"`
 	RecoveryMethods    []string               `json:"recovery_methods,omitempty"`
 	Metadata           map[string]interface{} `json:"metadata,omitempty"`
-	Version            int                    `json:"version"`
+
+	// Agent fields (LLM agents)
+	IsAgent           bool                 `json:"is_agent"`
+	AgentType         string               `json:"agent_type,omitempty"`
+	AgentCapabilities *agents.Capabilities `json:"agent_capabilities,omitempty"`
+	AgentVersion      string               `json:"agent_version,omitempty"`
+	AgentOwner        string               `json:"agent_owner,omitempty"`
+	AgentCreatedBy    string               `json:"agent_created_by,omitempty"`
+	AgentPublicKey    string               `json:"agent_public_key,omitempty"`
+	AgentKeyType      string               `json:"agent_key_type,omitempty"`
+
+	Version int `json:"version"`
 }
 
 // AccountPin represents a pinned account relationship

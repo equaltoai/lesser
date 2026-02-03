@@ -1,4 +1,4 @@
-// Package dynamorm provides DynamORM repository interfaces for unified account and user management operations.
+// Package theorydb provides repository interfaces and implementations backed by the TheoryDB adapter layer.
 package theorydb
 
 import (

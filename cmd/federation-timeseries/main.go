@@ -18,7 +18,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
-	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/stream"
 )
@@ -78,29 +77,6 @@ func (tp *TimeseriesProcessor) HandleDynamoDBRecord(ctx *apptheory.EventContext,
 	}
 
 	return nil
-}
-
-func (tp *TimeseriesProcessor) groupByTimeWindow(records []events.DynamoDBEventRecord) map[time.Time][]events.DynamoDBEventRecord {
-	windows := make(map[time.Time][]events.DynamoDBEventRecord)
-	windowSize := 5 * time.Minute // 5-minute aggregation windows
-
-	for _, record := range records {
-		if !tp.isFederationRecord(record) {
-			continue
-		}
-
-		// Extract timestamp from the record
-		timestamp := tp.extractTimestamp(record)
-		if timestamp.IsZero() {
-			continue
-		}
-
-		// Round down to the nearest window boundary
-		window := timestamp.Truncate(windowSize)
-		windows[window] = append(windows[window], record)
-	}
-
-	return windows
 }
 
 func (tp *TimeseriesProcessor) isFederationRecord(record events.DynamoDBEventRecord) bool {
@@ -316,7 +292,6 @@ var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
 	logger    *zap.Logger
-	repos     core.RepositoryStorage //nolint:unused // dependency injection pattern - available for processor extensions
 	processor *TimeseriesProcessor
 )
 
@@ -340,12 +315,6 @@ func initializeFederationTimeseries() {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	if lambdaCtx.Repos != nil {
-		if repoStorage, ok := lambdaCtx.Repos.(core.RepositoryStorage); ok {
-			repos = repoStorage
-		}
-	}
-
 	// Initialize with processor-specific defaults
 	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))

@@ -709,7 +709,7 @@ func TestCheckBudgetIfRequired(t *testing.T) {
 			UserID: "user-123",
 		}
 
-		err := checkBudgetIfRequired(tracker, context.Background(), WSEventDisconnect, opCtx)
+		err := checkBudgetIfRequired(context.Background(), tracker, WSEventDisconnect, opCtx)
 		require.NoError(t, err)
 	})
 
@@ -718,7 +718,7 @@ func TestCheckBudgetIfRequired(t *testing.T) {
 			UserID: "",
 		}
 
-		err := checkBudgetIfRequired(tracker, context.Background(), "connect", opCtx)
+		err := checkBudgetIfRequired(context.Background(), tracker, "connect", opCtx)
 		require.NoError(t, err)
 	})
 }

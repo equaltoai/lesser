@@ -682,6 +682,7 @@ type UserRepository interface {
 	DeleteUser(ctx context.Context, username string) error
 
 	ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error)
+	ListAgents(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error)
 	ListUsersByRole(ctx context.Context, role string) ([]*storage.User, error)
 
 	// Count operations

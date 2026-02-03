@@ -242,6 +242,9 @@ type CreateNoteCommand struct {
 	BccRecipients       []string `json:"bcc_recipients"`
 	QuoteTargetStatusID string   `json:"quote_target_status_id"`
 	QuoteTargetAuthorID string   `json:"quote_target_author_id"`
+
+	// Lesser extension: per-status agent transparency metadata (stored on the underlying Note).
+	AgentAttribution *activitypub.AgentPostAttribution `json:"agent_attribution,omitempty"`
 }
 
 // UpdateNoteCommand contains all data needed to update an existing note
@@ -1089,6 +1092,7 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 		Content:      cmd.Content,
 		AttributedTo: fmt.Sprintf("https://%s/users/%s", s.domainName, author.User.Username),
 		Visibility:   cmd.Visibility,
+		AgentAttribution: cmd.AgentAttribution,
 	}
 
 	// Set conversation ID

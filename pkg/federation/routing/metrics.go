@@ -317,7 +317,6 @@ func (rm *RoutingMetrics) GetInstanceMetrics(ctx context.Context, instanceID str
 		metrics.TotalCost += current.TotalCost
 		if !availabilitySet {
 			metrics.Availability = current.Availability
-			availabilitySet = true
 		}
 		for mt, count := range current.MessageTypes {
 			metrics.MessageTypes[mt] += count
@@ -542,6 +541,37 @@ func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 	windowStart := rm.aggregator.windowStart
 	windowSizeMinutes := int64(rm.aggregator.windowSize / time.Minute)
 
+	routeWindows, err := rm.buildRouteWindows(windowStart, windowSizeMinutes)
+	if err != nil {
+		return err
+	}
+
+	instanceWindows, err := rm.buildInstanceWindows(windowStart, windowSizeMinutes)
+	if err != nil {
+		return err
+	}
+
+	globalWindow, err := rm.buildGlobalWindow(windowStart, windowSizeMinutes)
+	if err != nil {
+		return err
+	}
+
+	if err := rm.persistMetricWindows(ctx, routeWindows, instanceWindows, globalWindow); err != nil {
+		return err
+	}
+
+	if rm.logger != nil {
+		rm.logger.Info("flushed metrics window",
+			zap.Time("windowStart", rm.aggregator.windowStart),
+			zap.Int("routeMetrics", len(rm.aggregator.routeMetrics)),
+			zap.Int("instanceMetrics", len(rm.aggregator.instanceMetrics)),
+		)
+	}
+
+	return nil
+}
+
+func (rm *RoutingMetrics) buildRouteWindows(windowStart time.Time, windowSizeMinutes int64) ([]*storagemodels.RouteMetricsWindow, error) {
 	routeWindows := make([]*storagemodels.RouteMetricsWindow, 0, len(rm.aggregator.routeMetrics))
 	for _, m := range rm.aggregator.routeMetrics {
 		if m == nil {
@@ -580,11 +610,15 @@ func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 			ErrorTypes:       string(errorTypes),
 		}
 		if err := window.UpdateKeys(); err != nil {
-			return err
+			return nil, err
 		}
 		routeWindows = append(routeWindows, window)
 	}
 
+	return routeWindows, nil
+}
+
+func (rm *RoutingMetrics) buildInstanceWindows(windowStart time.Time, windowSizeMinutes int64) ([]*storagemodels.InstanceMetricsWindow, error) {
 	instanceWindows := make([]*storagemodels.InstanceMetricsWindow, 0, len(rm.aggregator.instanceMetrics))
 	for _, m := range rm.aggregator.instanceMetrics {
 		if m == nil {
@@ -610,11 +644,15 @@ func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 			MessageTypes: string(messageTypes),
 		}
 		if err := window.UpdateKeys(); err != nil {
-			return err
+			return nil, err
 		}
 		instanceWindows = append(instanceWindows, window)
 	}
 
+	return instanceWindows, nil
+}
+
+func (rm *RoutingMetrics) buildGlobalWindow(windowStart time.Time, windowSizeMinutes int64) (*storagemodels.GlobalMetricsWindow, error) {
 	hourlyVolume, err := json.Marshal(rm.aggregator.globalMetrics.HourlyVolume)
 	if err != nil && rm.logger != nil {
 		rm.logger.Warn("failed to encode hourly volume", zap.Error(err))
@@ -633,9 +671,18 @@ func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 		HourlyVolume: string(hourlyVolume),
 	}
 	if err := globalWindow.UpdateKeys(); err != nil {
-		return err
+		return nil, err
 	}
 
+	return globalWindow, nil
+}
+
+func (rm *RoutingMetrics) persistMetricWindows(
+	ctx context.Context,
+	routeWindows []*storagemodels.RouteMetricsWindow,
+	instanceWindows []*storagemodels.InstanceMetricsWindow,
+	globalWindow *storagemodels.GlobalMetricsWindow,
+) error {
 	if len(routeWindows) > 0 {
 		if err := rm.db.WithContext(ctx).Model(&storagemodels.RouteMetricsWindow{}).BatchCreate(routeWindows); err != nil {
 			return errors.Join(ErrBatchWriteMetricsFailed, err)
@@ -650,14 +697,6 @@ func (rm *RoutingMetrics) persistWindow(ctx context.Context) error {
 
 	if err := rm.db.WithContext(ctx).Model(globalWindow).CreateOrUpdate(); err != nil {
 		return errors.Join(ErrBatchWriteMetricsFailed, err)
-	}
-
-	if rm.logger != nil {
-		rm.logger.Info("flushed metrics window",
-			zap.Time("windowStart", rm.aggregator.windowStart),
-			zap.Int("routeMetrics", len(rm.aggregator.routeMetrics)),
-			zap.Int("instanceMetrics", len(rm.aggregator.instanceMetrics)),
-		)
 	}
 
 	return nil

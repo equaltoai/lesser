@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -14,6 +16,14 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	agentDefaultMaxFollowsPerHour         = 20
+	agentVerifiedDefaultMaxFollowsPerHour = 100
+
+	relationshipOpFollow   = "follow"
+	relationshipOpUnfollow = "unfollow"
+)
+
 // relationshipOperation performs common relationship operations (follow/unfollow/block/unblock)
 func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string) (*apptheory.Response, error) {
 	accountID := ctx.Param("id")
@@ -21,7 +31,18 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	var (
+		claims *auth.Claims
+		err    error
+	)
+	switch operation {
+	case relationshipOpFollow, relationshipOpUnfollow:
+		claims, err = h.authenticateWithAnyScope(ctx, relationshipOpFollow, "write:follows", auth.ScopeWrite)
+	case "block", "unblock":
+		claims, err = h.authenticateWithAnyScope(ctx, "write:blocks", auth.ScopeWrite)
+	default:
+		claims, err = h.authenticateWithScope(ctx, auth.ScopeWrite)
+	}
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
@@ -35,9 +56,16 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	}
 
 	switch operation {
-	case "follow":
+	case relationshipOpFollow:
 		var req models.FollowRequest
 		_ = common.ParseRequestWithFallback(ctx, &req)
+
+		if claims.IsAgent {
+			if resp, err := h.enforceAgentFollowRails(ctx, claims.Username); resp != nil || err != nil {
+				return resp, err
+			}
+		}
+
 		r, err := h.registry.Relationships().Follow(ctx.Context(), &relationships.FollowCommand{
 			FollowerID:  claims.Username,
 			FollowingID: accountID,
@@ -48,7 +76,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
 		return okJSON(h.relationshipFromService(r.Relationship))
-	case "unfollow":
+	case relationshipOpUnfollow:
 		r, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
 			FollowerID:  claims.Username,
 			FollowingID: accountID,
@@ -78,6 +106,51 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	default:
 		return common.RespondBadRequest(ctx, "invalid operation")
 	}
+}
+
+func (h *Handler) enforceAgentFollowRails(ctx *apptheory.Context, username string) (*apptheory.Response, error) {
+	if h == nil || ctx == nil {
+		return nil, nil
+	}
+	if h.repos == nil || h.repos.RateLimit() == nil || h.repos.User() == nil {
+		return nil, nil
+	}
+
+	agentUser, _ := h.repos.User().GetUser(ctx.Context(), username)
+	if agentUser == nil || !agentUser.IsAgent {
+		return nil, nil
+	}
+
+	limit := agentDefaultMaxFollowsPerHour
+	verifiedLimit := agentVerifiedDefaultMaxFollowsPerHour
+	if h.repos.Instance() != nil {
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
+			if policy.AgentMaxFollowsPerHour > 0 {
+				limit = policy.AgentMaxFollowsPerHour
+			}
+			if policy.VerifiedAgentMaxFollowsPerHour > 0 {
+				verifiedLimit = policy.VerifiedAgentMaxFollowsPerHour
+			}
+		}
+	}
+
+	allowed := limit
+	if agentMetadataBool(agentUser, "agent_verified") {
+		allowed = verifiedLimit
+	}
+
+	if allowed <= 0 {
+		return nil, nil
+	}
+
+	if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), "agent:"+username, "agent_follows_per_hour", allowed, time.Hour); err != nil {
+		return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
+			"error":             "too_many_requests",
+			"error_description": "agent follow limit exceeded",
+		})
+	}
+
+	return nil, nil
 }
 
 // HandleFollowLift handles POST /api/v1/accounts/:id/follow

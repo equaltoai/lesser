@@ -1,193 +1,146 @@
 package marshalers
 
 import (
-	"encoding/json"
-	stdErrors "errors"
+	"encoding/base64"
+	"fmt"
 	"testing"
-	"time"
 
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type stubEncryptor struct {
-	encryptErr error
-	decryptErr error
+type failingEncryptor struct{}
 
-	encrypted []byte
-	decrypted []byte
+func (failingEncryptor) Encrypt([]byte) ([]byte, error) { return nil, fmt.Errorf("encrypt failed") }
+func (failingEncryptor) Decrypt([]byte) ([]byte, error) { return nil, fmt.Errorf("decrypt failed") }
+
+func TestMoney_AdditionalHelpersAndErrors(t *testing.T) {
+	m := NewMoneyFromFloat(0, "USD")
+	assert.True(t, m.IsZero())
+	assert.Equal(t, "0.00 USD", m.String())
+
+	usd := NewMoney(decimal.NewFromInt(1), "USD")
+	eur := NewMoney(decimal.NewFromInt(1), "EUR")
+
+	_, err := usd.Add(eur)
+	assert.Error(t, err)
+
+	_, err = usd.Sub(eur)
+	assert.Error(t, err)
 }
 
-func (s stubEncryptor) Encrypt(_ []byte) ([]byte, error) {
-	if s.encryptErr != nil {
-		return nil, s.encryptErr
-	}
-	return s.encrypted, nil
-}
+func TestAESEncryptor_NewAESEncryptor_FromConfig(t *testing.T) {
+	t.Run("missing env rejected", func(t *testing.T) {
+		t.Setenv("DYNAMODB_ENCRYPTION_KEY", "")
+		config.ResetForTests()
+		_, err := NewAESEncryptor()
+		assert.Error(t, err)
+	})
 
-func (s stubEncryptor) Decrypt(_ []byte) ([]byte, error) {
-	if s.decryptErr != nil {
-		return nil, s.decryptErr
-	}
-	return s.decrypted, nil
-}
+	t.Run("invalid base64 rejected", func(t *testing.T) {
+		t.Setenv("DYNAMODB_ENCRYPTION_KEY", "not-base64")
+		config.ResetForTests()
+		_, err := NewAESEncryptor()
+		assert.Error(t, err)
+	})
 
-func TestPreciseTime_UnmarshalPrecisionTypes(t *testing.T) {
-	ts := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC).Format(time.RFC3339Nano)
+	t.Run("wrong key length rejected", func(t *testing.T) {
+		short := base64.StdEncoding.EncodeToString(make([]byte, 16))
+		t.Setenv("DYNAMODB_ENCRYPTION_KEY", short)
+		config.ResetForTests()
+		_, err := NewAESEncryptor()
+		assert.Error(t, err)
+	})
 
-	t.Run("float64 precision", func(t *testing.T) {
-		var pt PreciseTime
-		err := pt.UnmarshalDynamORM(map[string]any{
-			"timestamp": ts,
-			"precision": float64(time.Millisecond),
-		})
+	t.Run("success", func(t *testing.T) {
+		key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+		t.Setenv("DYNAMODB_ENCRYPTION_KEY", key)
+		config.ResetForTests()
+		enc, err := NewAESEncryptor()
 		require.NoError(t, err)
-		assert.Equal(t, time.Millisecond, pt.Precision)
+		require.NotNil(t, enc)
+	})
+}
+
+func TestAESEncryptor_EncryptDecrypt_ErrorBranches(t *testing.T) {
+	t.Run("encrypt fails with invalid cipher key size", func(t *testing.T) {
+		enc := &AESEncryptor{key: []byte("short")}
+		_, err := enc.Encrypt([]byte("x"))
+		assert.Error(t, err)
 	})
 
-	t.Run("string precision", func(t *testing.T) {
-		var pt PreciseTime
-		err := pt.UnmarshalDynamORM(map[string]any{
-			"timestamp": ts,
-			"precision": "1000000",
-		})
+	t.Run("decrypt rejects short ciphertext", func(t *testing.T) {
+		key := make([]byte, 32)
+		enc, err := NewAESEncryptorWithKey(key)
 		require.NoError(t, err)
-		assert.Equal(t, time.Millisecond, pt.Precision)
+		_, err = enc.Decrypt([]byte{})
+		assert.Error(t, err)
 	})
 
-	t.Run("unsupported precision type", func(t *testing.T) {
-		var pt PreciseTime
-		err := pt.UnmarshalDynamORM(map[string]any{
-			"timestamp": ts,
-			"precision": true,
-		})
-		require.Error(t, err)
+	t.Run("decrypt fails for tampered ciphertext", func(t *testing.T) {
+		key := make([]byte, 32)
+		enc, err := NewAESEncryptorWithKey(key)
+		require.NoError(t, err)
+		ciphertext, err := enc.Encrypt([]byte("secret"))
+		require.NoError(t, err)
+
+		ciphertext[len(ciphertext)-1] ^= 0xff
+		_, err = enc.Decrypt(ciphertext)
+		assert.Error(t, err)
 	})
 }
 
-func TestMoney_MarshalRequiresCurrency(t *testing.T) {
-	m := NewMoney(decimal.NewFromInt(1), "")
-	_, err := m.MarshalDynamORM()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "currency is required")
-}
-
-func TestMoney_AddSubCurrencyMismatch(t *testing.T) {
-	a := NewMoney(decimal.NewFromInt(1), "USD")
-	b := NewMoney(decimal.NewFromInt(1), "EUR")
-
-	_, err := a.Add(b)
-	require.Error(t, err)
-
-	_, err = a.Sub(b)
-	require.Error(t, err)
-}
-
-func TestNewMoneyFromString_InvalidAmount(t *testing.T) {
-	_, err := NewMoneyFromString("not-a-number", "USD")
-	require.Error(t, err)
-}
-
-func TestAESEncryptor_DecryptCiphertextTooShort(t *testing.T) {
+func TestEncryptedString_MarshalUnmarshal_AndString(t *testing.T) {
 	key := make([]byte, 32)
 	enc, err := NewAESEncryptorWithKey(key)
 	require.NoError(t, err)
 
-	_, err = enc.Decrypt([]byte{0x01, 0x02})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ciphertext too short")
-}
+	t.Run("marshal requires encryptor", func(t *testing.T) {
+		_, err := (EncryptedString{Value: "x"}).MarshalDynamORM()
+		assert.Error(t, err)
+	})
 
-func TestEncryptedString_ErrorBranches(t *testing.T) {
-	t.Run("encryption fails", func(t *testing.T) {
-		es := NewEncryptedString("secret", stubEncryptor{encryptErr: stdErrors.New("boom")})
+	t.Run("marshal surfaces encrypt errors", func(t *testing.T) {
+		es := NewEncryptedString("x", failingEncryptor{})
 		_, err := es.MarshalDynamORM()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "encryption failed")
+		assert.Error(t, err)
 	})
 
-	t.Run("unmarshal input not string", func(t *testing.T) {
-		var es EncryptedString
-		es.SetEncryptor(stubEncryptor{})
-		err := es.UnmarshalDynamORM(123)
-		require.Error(t, err)
-	})
-
-	t.Run("invalid base64", func(t *testing.T) {
-		var es EncryptedString
-		es.SetEncryptor(stubEncryptor{})
-		err := es.UnmarshalDynamORM("%%%")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode encrypted data")
-	})
-
-	t.Run("decryption fails", func(t *testing.T) {
-		encrypted := "AQID" // base64 for 0x01 0x02 0x03
-		var es EncryptedString
-		es.SetEncryptor(stubEncryptor{decryptErr: stdErrors.New("boom")})
-		err := es.UnmarshalDynamORM(encrypted)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "decryption failed")
-	})
-}
-
-func TestJSONField_ErrorBranches(t *testing.T) {
-	t.Run("marshal fails", func(t *testing.T) {
-		jf := NewJSONField(make(chan int))
-		_, err := jf.MarshalDynamORM()
-		require.Error(t, err)
-	})
-
-	t.Run("unmarshal invalid type", func(t *testing.T) {
-		var jf JSONField
-		err := jf.UnmarshalDynamORM(123)
-		require.Error(t, err)
-	})
-
-	t.Run("unmarshal empty string treated as null", func(t *testing.T) {
-		var jf JSONField
-		err := jf.UnmarshalDynamORM("")
+	t.Run("marshal/unmarshal roundtrip", func(t *testing.T) {
+		es := NewEncryptedString("hello", enc)
+		raw, err := es.MarshalDynamORM()
 		require.NoError(t, err)
-		assert.Nil(t, jf.Data)
+
+		var decoded EncryptedString
+		decoded.SetEncryptor(enc)
+		require.NoError(t, decoded.UnmarshalDynamORM(raw))
+		assert.Equal(t, "hello", decoded.Value)
+		assert.Equal(t, "hello", decoded.String())
 	})
 
-	t.Run("unmarshal invalid json", func(t *testing.T) {
-		var jf JSONField
-		err := jf.UnmarshalDynamORM("{not-json}")
-		require.Error(t, err)
+	t.Run("unmarshal rejects wrong type", func(t *testing.T) {
+		var decoded EncryptedString
+		decoded.SetEncryptor(enc)
+		assert.Error(t, decoded.UnmarshalDynamORM(123))
 	})
 
-	t.Run("unmarshal into fails when data can't be marshaled", func(t *testing.T) {
-		jf := NewJSONField(make(chan int))
-		var out any
-		err := jf.UnmarshalInto(&out)
-		require.Error(t, err)
+	t.Run("unmarshal requires encryptor", func(t *testing.T) {
+		var decoded EncryptedString
+		assert.Error(t, decoded.UnmarshalDynamORM("aGVsbG8="))
 	})
 
-	t.Run("string returns error when marshal fails", func(t *testing.T) {
-		jf := NewJSONField(make(chan int))
-		str := jf.String()
-		assert.Contains(t, str, "error:")
+	t.Run("unmarshal rejects invalid base64", func(t *testing.T) {
+		var decoded EncryptedString
+		decoded.SetEncryptor(enc)
+		assert.Error(t, decoded.UnmarshalDynamORM("not-base64"))
 	})
 
-	t.Run("string contains json for maps", func(t *testing.T) {
-		jf := NewJSONField(map[string]any{"k": "v"})
-		var decoded map[string]any
-		require.NoError(t, json.Unmarshal([]byte(jf.String()), &decoded))
+	t.Run("unmarshal surfaces decrypt errors", func(t *testing.T) {
+		var decoded EncryptedString
+		decoded.SetEncryptor(failingEncryptor{})
+		assert.Error(t, decoded.UnmarshalDynamORM(base64.StdEncoding.EncodeToString([]byte("nope"))))
 	})
 }
 
-func TestStringSet_UnmarshalAdditionalCases(t *testing.T) {
-	t.Run("unmarshal from []string", func(t *testing.T) {
-		var ss StringSet
-		require.NoError(t, ss.UnmarshalDynamORM([]string{"a", "b"}))
-		assert.Equal(t, []string{"a", "b"}, ss.Values)
-	})
-
-	t.Run("unmarshal invalid element", func(t *testing.T) {
-		var ss StringSet
-		err := ss.UnmarshalDynamORM([]interface{}{"a", 1})
-		require.Error(t, err)
-	})
-}

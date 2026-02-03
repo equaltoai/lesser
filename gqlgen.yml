@@ -4,6 +4,7 @@ schema:
   - graph/phase1.graphql
   - graph/phase2.graphql
   - graph/phase3.graphql
+  - graph/agents.graphql
 
 # Where should the generated server code go?
 exec:

@@ -3,6 +3,7 @@ DELETE /api/v1/admin/domain_allows/{id}
 DELETE /api/v1/admin/domain_blocks/{id}
 DELETE /api/v1/admin/email_domain_blocks/{id}
 DELETE /api/v1/admin/statuses/{id}
+DELETE /api/v1/agents/{username}
 DELETE /api/v1/announcements/{id}/reactions/{name}
 DELETE /api/v1/auth/webauthn/credentials/{credentialId}
 DELETE /api/v1/conversations/{id}
@@ -33,6 +34,7 @@ GET /api/v1/accounts/{id}/quote_permissions
 GET /api/v1/accounts/{id}/statuses
 GET /api/v1/admin/accounts
 GET /api/v1/admin/accounts/{id}
+GET /api/v1/admin/agents/policy
 GET /api/v1/admin/domain_allows
 GET /api/v1/admin/domain_blocks
 GET /api/v1/admin/domain_blocks/{id}
@@ -48,6 +50,10 @@ GET /api/v1/admin/reports
 GET /api/v1/admin/reports/{id}
 GET /api/v1/admin/statuses
 GET /api/v1/admin/statuses/{id}
+GET /api/v1/agents
+GET /api/v1/agents/memory/search
+GET /api/v1/agents/{username}
+GET /api/v1/agents/{username}/activity
 GET /api/v1/announcements
 GET /api/v1/auth/webauthn/credentials
 GET /api/v1/blocks
@@ -129,6 +135,18 @@ HEAD /
 OPTIONS /api/v1/accounts
 OPTIONS /api/v1/accounts/update_credentials
 OPTIONS /api/v1/accounts/verify_credentials
+OPTIONS /api/v1/agents
+OPTIONS /api/v1/agents/auth/challenge
+OPTIONS /api/v1/agents/auth/token
+OPTIONS /api/v1/agents/delegate
+OPTIONS /api/v1/agents/memory/search
+OPTIONS /api/v1/agents/register
+OPTIONS /api/v1/agents/register/challenge
+OPTIONS /api/v1/agents/{username}
+OPTIONS /api/v1/agents/{username}/activity
+OPTIONS /api/v1/agents/{username}/rotate-key
+OPTIONS /api/v1/agents/{username}/rotate-key/challenge
+OPTIONS /api/v1/agents/{username}/suspend
 OPTIONS /api/v1/auth/webauthn/credentials
 OPTIONS /api/v1/auth/webauthn/credentials/{credentialId}
 OPTIONS /api/v1/auth/webauthn/login/begin
@@ -150,6 +168,7 @@ OPTIONS /setup/bootstrap/verify
 OPTIONS /setup/finalize
 OPTIONS /setup/status
 PATCH /api/v1/accounts/update_credentials
+PATCH /api/v1/agents/{username}
 PATCH /api/v1/preferences
 POST /api/v1/accounts
 POST /api/v1/accounts/{id}/block
@@ -166,6 +185,8 @@ POST /api/v1/admin/accounts/{id}/reject
 POST /api/v1/admin/accounts/{id}/unsensitive
 POST /api/v1/admin/accounts/{id}/unsilence
 POST /api/v1/admin/accounts/{id}/unsuspend
+POST /api/v1/admin/agents/{username}/unverify
+POST /api/v1/admin/agents/{username}/verify
 POST /api/v1/admin/announcements
 POST /api/v1/admin/custom_emojis
 POST /api/v1/admin/domain_allows
@@ -180,6 +201,15 @@ POST /api/v1/admin/reports/{id}/resolve
 POST /api/v1/admin/reports/{id}/unassign
 POST /api/v1/admin/statuses/{id}/sensitive
 POST /api/v1/admin/statuses/{id}/unsensitive
+POST /api/v1/agents/auth/challenge
+POST /api/v1/agents/auth/token
+POST /api/v1/agents/delegate
+POST /api/v1/agents/memory/search
+POST /api/v1/agents/register
+POST /api/v1/agents/register/challenge
+POST /api/v1/agents/{username}/rotate-key
+POST /api/v1/agents/{username}/rotate-key/challenge
+POST /api/v1/agents/{username}/suspend
 POST /api/v1/announcements/{id}/dismiss
 POST /api/v1/apps
 POST /api/v1/auth/webauthn/login/begin
@@ -238,6 +268,7 @@ POST /setup/bootstrap/challenge
 POST /setup/bootstrap/verify
 POST /setup/finalize
 PUT /api/v1/accounts/quote_permissions
+PUT /api/v1/admin/agents/policy
 PUT /api/v1/admin/custom_emojis/{shortcode}
 PUT /api/v1/admin/domain_blocks/{id}
 PUT /api/v1/admin/moderation/trust/{from}/{to}

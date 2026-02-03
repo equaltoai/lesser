@@ -277,6 +277,44 @@ func (r *UserRepository) ListUsers(_ context.Context, limit int32, cursor string
 	return result, nextCursor, nil
 }
 
+// ListAgents lists agent accounts with pagination.
+func (r *UserRepository) ListAgents(_ context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	agents := make([]*storage.User, 0)
+	for _, user := range r.users {
+		if !user.IsAgent {
+			continue
+		}
+		userCopy := *user
+		agents = append(agents, &userCopy)
+	}
+
+	start := 0
+	if cursor != "" {
+		for i, u := range agents {
+			if u.Username == cursor {
+				start = i + 1
+				break
+			}
+		}
+	}
+
+	end := start + int(limit)
+	if end > len(agents) {
+		end = len(agents)
+	}
+
+	result := agents[start:end]
+	nextCursor := ""
+	if end < len(agents) && len(result) > 0 {
+		nextCursor = result[len(result)-1].Username
+	}
+
+	return result, nextCursor, nil
+}
+
 // ListUsersByRole lists users by role
 func (r *UserRepository) ListUsersByRole(_ context.Context, role string) ([]*storage.User, error) {
 	r.mu.RLock()

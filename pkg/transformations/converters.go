@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -120,6 +121,8 @@ func ObjectToStatusBase(obj map[string]interface{}, actor *activitypub.Actor, ba
 		Language:           language,
 	}
 
+	status.AgentAttribution = buildAgentPostAttribution(actor)
+
 	return status
 }
 
@@ -156,6 +159,51 @@ func getHeaderURL(image interface{}, baseURL string) string {
 func isBot(actorType string) bool {
 	botTypes := []string{"Service", "Application"}
 	return common.ValidateEnumField(actorType, botTypes, "actor_type") == nil
+}
+
+func buildAgentPostAttribution(actor *activitypub.Actor) *models.AgentPostAttribution {
+	if actor == nil {
+		return nil
+	}
+
+	if !isBot(actor.Type) && actor.AgentManifest == nil {
+		return nil
+	}
+
+	attribution := &models.AgentPostAttribution{
+		ModelVersion: "unknown",
+	}
+
+	if actor.AgentManifest != nil {
+		if v := strings.TrimSpace(actor.AgentManifest.Version); v != "" {
+			attribution.ModelVersion = v
+		}
+		if operatedBy := strings.TrimSpace(actor.AgentManifest.OperatedBy); operatedBy != "" {
+			attribution.DelegatedBy = operatedBy
+		}
+		attribution.Constraints = buildAgentConstraints(actor.AgentManifest.Capabilities)
+	}
+
+	return attribution
+}
+
+func buildAgentConstraints(caps *activitypub.AgentCapabilities) []string {
+	if caps == nil {
+		return nil
+	}
+
+	constraints := make([]string, 0, 4)
+	if caps.MaxPostsPerHour > 0 {
+		constraints = append(constraints, fmt.Sprintf("max_posts_per_hour:%d", caps.MaxPostsPerHour))
+	}
+	if caps.RequiresApproval {
+		constraints = append(constraints, "requires_approval")
+	}
+	if len(caps.RestrictedDomains) > 0 {
+		constraints = append(constraints, fmt.Sprintf("restricted_domains:%s", strings.Join(caps.RestrictedDomains, ",")))
+	}
+
+	return constraints
 }
 
 func transformAttachments(attachment interface{}) []any {
@@ -385,11 +433,9 @@ func processMentionTag(tag interface{}) interface{} {
 
 	// Extract domain from href if it's a remote mention
 	var domain *string
-	if strings.Contains(href, "://") {
-		// Parse the URL to extract domain
-		if idx := strings.Index(href[8:], "/"); idx != -1 {
-			domainStr := href[8 : 8+idx]
-			domain = &domainStr
+	if parsed, err := url.Parse(href); err == nil {
+		if host := strings.TrimSpace(parsed.Hostname()); host != "" {
+			domain = &host
 		}
 	}
 

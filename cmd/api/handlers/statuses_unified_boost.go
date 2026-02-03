@@ -392,16 +392,6 @@ func (h *Handler) authenticateUndoBoostRequest(ctx *apptheory.Context) (string, 
 	return claims.Username, nil, nil
 }
 
-// extractAuthHeaderForBoost extracts authorization header from various sources
-func (h *Handler) extractAuthHeaderForBoost(ctx *apptheory.Context) string {
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	return authHeader
-}
-
 // normalizeBoostObjectID converts a status ID to a full URL if needed
 func (h *Handler) normalizeBoostObjectID(statusID string) string {
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {

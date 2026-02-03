@@ -100,6 +100,7 @@ var Context = ContextValue{
 		"schema":                    "http://schema.org#",
 		"PropertyValue":             "schema:PropertyValue",
 		"value":                     "schema:value",
+		"agentManifest":             "https://lesser.social/ns/agentManifest",
 	},
 }
 
@@ -147,6 +148,9 @@ type Actor struct {
 	LastStatusAt              *time.Time   `json:"lastStatusAt,omitempty"`
 	CreatedAt                 *time.Time   `json:"createdAt,omitempty"`
 	Attachment                []Attachment `json:"attachment,omitempty"`
+
+	// Lesser extension: optional agent metadata for Service actors.
+	AgentManifest *AgentManifest `json:"agentManifest,omitempty"`
 }
 
 // PublicKey represents an actor's public key for HTTP signatures
@@ -184,6 +188,9 @@ type Note struct {
 	Quoteable          bool          `json:"_:quoteable,omitempty"`
 	QuoteNotifications bool          `json:"_:quoteNotifications,omitempty"`
 	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
+
+	// Lesser extension: per-status attribution for agent-authored content.
+	AgentAttribution *AgentPostAttribution `json:"_:agentAttribution,omitempty"`
 }
 
 // QuoteNote is retained for backwards compatibility; it now simply aliases Note.

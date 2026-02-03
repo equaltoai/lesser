@@ -20,7 +20,7 @@ func BuildLocalActor(username string, baseURL string, user *storage.User, existi
 	resolvedUsername := resolveUsername(clone, user, username)
 	normalizedBase := chooseBaseURL(baseURL, user)
 
-	ensureActorType(clone)
+	ensureActorType(clone, user)
 	applyActorIdentifiers(clone, normalizedBase, resolvedUsername)
 
 	if user != nil {
@@ -250,10 +250,73 @@ func chooseBaseURL(baseURL string, user *storage.User) string {
 	return normalizeBaseURL(user.URL)
 }
 
-func ensureActorType(actor *activitypub.Actor) {
-	if actor.Type == "" {
+func ensureActorType(actor *activitypub.Actor, user *storage.User) {
+	if actor == nil {
+		return
+	}
+
+	if actor.Context == nil {
+		actor.Context = activitypub.Context.Clone()
+	}
+
+	if strings.TrimSpace(actor.Type) == "" {
 		actor.Type = activitypub.PersonType
 	}
+
+	if user != nil && user.IsAgent {
+		actor.Type = activitypub.ServiceType
+		applyAgentManifest(actor, user)
+	}
+}
+
+func applyAgentManifest(actor *activitypub.Actor, user *storage.User) {
+	if actor == nil || user == nil {
+		return
+	}
+
+	manifest := actor.AgentManifest
+	if manifest == nil {
+		manifest = &activitypub.AgentManifest{Type: "Agent"}
+	}
+	if strings.TrimSpace(manifest.Type) == "" {
+		manifest.Type = "Agent"
+	}
+
+	if v := strings.TrimSpace(user.AgentVersion); v != "" {
+		manifest.Version = v
+	}
+	if v := strings.TrimSpace(user.AgentType); v != "" {
+		manifest.Purpose = v
+	}
+	if v := normalizeOperatedBy(user.AgentOwner); v != "" {
+		manifest.OperatedBy = v
+	}
+
+	if user.AgentCapabilities != nil {
+		manifest.Capabilities = &activitypub.AgentCapabilities{
+			CanPost:           user.AgentCapabilities.CanPost,
+			CanReply:          user.AgentCapabilities.CanReply,
+			CanBoost:          user.AgentCapabilities.CanBoost,
+			CanFollow:         user.AgentCapabilities.CanFollow,
+			CanDM:             user.AgentCapabilities.CanDM,
+			RestrictedDomains: append([]string(nil), user.AgentCapabilities.RestrictedDomains...),
+			MaxPostsPerHour:   user.AgentCapabilities.MaxPostsPerHour,
+			RequiresApproval:  user.AgentCapabilities.RequiresApproval,
+		}
+	}
+
+	actor.AgentManifest = manifest
+}
+
+func normalizeOperatedBy(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "@") {
+		return trimmed
+	}
+	return "@" + trimmed
 }
 
 func applyActorIdentifiers(actor *activitypub.Actor, base, username string) {

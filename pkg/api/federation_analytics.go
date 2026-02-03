@@ -1,4 +1,6 @@
 // Package api provides federation analytics API endpoints and handlers.
+//
+//revive:disable-next-line:var-naming
 package api
 
 import (

@@ -118,6 +118,12 @@ func (h *Handler) parseSearchLimit(ctx *apptheory.Context) int {
 		h.logger.Debug("invalid limit parameter", zap.Error(err))
 		return 40 // Return default on validation error
 	}
+
+	// Hard limit for agents (Phase 1 safety rail).
+	if claims, ok := ctx.Get("claims").(*auth.Claims); ok && claims != nil && claims.IsAgent && limit > 50 {
+		limit = 50
+	}
+
 	return limit
 }
 

@@ -218,11 +218,11 @@ func (h *Handler) handleTagFollowAction(ctx *apptheory.Context, action tagFollow
 	case tagFollow:
 		err = h.repos.Hashtag().FollowHashtag(ctx.Context(), username, tagName)
 		following = true
-		logAction = "follow"
+		logAction = relationshipOpFollow
 	case tagUnfollow:
 		err = h.repos.Hashtag().UnfollowHashtag(ctx.Context(), username, tagName)
 		following = false
-		logAction = "unfollow"
+		logAction = relationshipOpUnfollow
 	}
 
 	if err != nil {

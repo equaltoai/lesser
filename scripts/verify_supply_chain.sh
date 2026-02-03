@@ -12,7 +12,7 @@ fi
 mkdir -p report
 
 if [[ -z "${GOCACHE:-}" ]]; then
-  export GOCACHE="$ROOT_DIR/tmp/go-cache"
+  export GOCACHE="$ROOT_DIR/tmp/go-cache/$(go env GOVERSION)"
 fi
 mkdir -p "$GOCACHE"
 

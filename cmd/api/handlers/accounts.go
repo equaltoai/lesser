@@ -921,8 +921,8 @@ func (h *Handler) buildCollectionPage(actor *activitypub.Actor, collectionType, 
 	return page
 }
 
-// returnEmptyCollection returns an empty ActivityPub collection for privacy protection
-func (h *Handler) returnEmptyCollection(ctx *apptheory.Context, actor *activitypub.Actor, collectionType string) (*apptheory.Response, error) {
+// returnEmptyCollection returns an empty ActivityPub collection for privacy protection.
+func (h *Handler) returnEmptyCollection(_ *apptheory.Context, actor *activitypub.Actor, collectionType string) (*apptheory.Response, error) {
 	// Build collection URL
 	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
 

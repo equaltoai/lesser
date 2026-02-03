@@ -1,4 +1,4 @@
-package errors
+package errors // nolint:revive // Legacy package name; import with an alias when also using stdlib errors.
 
 // Storage domain errors
 // Consolidates errors from pkg/storage/errors.go, database-related errors, and repository operations

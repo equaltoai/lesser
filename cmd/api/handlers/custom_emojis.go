@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -213,29 +212,6 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *apptheory.Context) (*apptheor
 }
 
 // Helper methods
-
-// authenticateAdminRequest handles authentication for admin endpoints
-func (h *Handler) authenticateAdminRequest(ctx *apptheory.Context) (string, error) {
-	// Extract token from Authorization header
-	authHeader := headerValue(ctx, "Authorization")
-	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-		authHeader = headerValue(ctx, "authorization")
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", err
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", err
-	}
-
-	return claims.Username, nil
-}
 
 // parseEmojiRequest parses emoji request with fallback for test environments
 func (h *Handler) parseEmojiRequest(ctx *apptheory.Context, req interface{}) error {

@@ -26,9 +26,11 @@ type InstanceRepository struct {
 	metricsRepo  *BaseRepository[*models.InstanceMetrics]
 	activityRepo *BaseRepository[*models.WeeklyActivity]
 	stateRepo    *BaseRepository[*models.InstanceState]
+	agentRepo    *BaseRepository[*models.AgentInstanceConfig]
 	logger       *zap.Logger
 
 	stateCache instanceStateCache
+	agentCache agentInstanceConfigCache
 }
 
 type instanceStateCache struct {
@@ -38,6 +40,14 @@ type instanceStateCache struct {
 }
 
 const instanceStateCacheTTL = 5 * time.Second
+
+type agentInstanceConfigCache struct {
+	mu        sync.RWMutex
+	cfg       *models.AgentInstanceConfig
+	expiresAt time.Time
+}
+
+const agentConfigCacheTTL = 5 * time.Second
 
 // NewInstanceRepository creates a new instance repository with enhanced functionality
 func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceRepository {
@@ -56,6 +66,7 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 		metricsRepo:            NewBaseRepository[*models.InstanceMetrics](db, tableName, logger),
 		activityRepo:           NewBaseRepository[*models.WeeklyActivity](db, tableName, logger),
 		stateRepo:              NewBaseRepository[*models.InstanceState](db, tableName, logger),
+		agentRepo:              NewBaseRepository[*models.AgentInstanceConfig](db, tableName, logger),
 		logger:                 logger,
 	}
 }
@@ -77,6 +88,7 @@ func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger 
 		metricsRepo:            NewBaseRepositoryWithCostTracking[*models.InstanceMetrics](db, tableName, logger, costService, "instance_metrics"),
 		activityRepo:           NewBaseRepositoryWithCostTracking[*models.WeeklyActivity](db, tableName, logger, costService, "instance_activity"),
 		stateRepo:              NewBaseRepositoryWithCostTracking[*models.InstanceState](db, tableName, logger, costService, "instance_state"),
+		agentRepo:              NewBaseRepositoryWithCostTracking[*models.AgentInstanceConfig](db, tableName, logger, costService, "agent_instance_config"),
 		logger:                 logger,
 	}
 }
@@ -107,6 +119,33 @@ func (r *InstanceRepository) invalidateStateCache() {
 	r.stateCache.mu.Unlock()
 }
 
+func (r *InstanceRepository) getCachedAgentConfig() (*models.AgentInstanceConfig, bool) {
+	r.agentCache.mu.RLock()
+	cfg := r.agentCache.cfg
+	expiresAt := r.agentCache.expiresAt
+	r.agentCache.mu.RUnlock()
+
+	if cfg == nil || time.Now().After(expiresAt) {
+		return nil, false
+	}
+	return cfg, true
+}
+
+func (r *InstanceRepository) setCachedAgentConfig(cfg *models.AgentInstanceConfig) {
+	r.agentCache.mu.Lock()
+	r.agentCache.cfg = cfg
+	r.agentCache.expiresAt = time.Now().Add(agentConfigCacheTTL)
+	r.agentCache.mu.Unlock()
+}
+
+//nolint:unused // Reserved for future cache invalidation hooks.
+func (r *InstanceRepository) invalidateAgentConfigCache() {
+	r.agentCache.mu.Lock()
+	r.agentCache.cfg = nil
+	r.agentCache.expiresAt = time.Time{}
+	r.agentCache.mu.Unlock()
+}
+
 // GetInstanceState returns the current instance activation state.
 // If no state exists yet, it defaults to a locked state without persisting.
 func (r *InstanceRepository) GetInstanceState(ctx context.Context) (*models.InstanceState, error) {
@@ -127,6 +166,84 @@ func (r *InstanceRepository) GetInstanceState(ctx context.Context) (*models.Inst
 
 	r.setCachedState(state)
 	return state, nil
+}
+
+// GetAgentInstanceConfig returns the current instance agent policy.
+// If no record exists yet, it returns conservative defaults without persisting.
+func (r *InstanceRepository) GetAgentInstanceConfig(ctx context.Context) (*models.AgentInstanceConfig, error) {
+	if cached, ok := r.getCachedAgentConfig(); ok {
+		return cached, nil
+	}
+
+	cfg := &models.AgentInstanceConfig{}
+	err := r.agentRepo.Get(ctx, storage.InstanceConfigKey, "AGENT_CONFIG", cfg)
+	if err != nil {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
+			defaultCfg := models.NewAgentInstanceConfig()
+			r.setCachedAgentConfig(defaultCfg)
+			return defaultCfg, nil
+		}
+		return nil, err
+	}
+
+	r.setCachedAgentConfig(cfg)
+	return cfg, nil
+}
+
+// EnsureAgentInstanceConfig ensures the instance agent policy record exists and returns it.
+func (r *InstanceRepository) EnsureAgentInstanceConfig(ctx context.Context) (*models.AgentInstanceConfig, error) {
+	cfg := &models.AgentInstanceConfig{}
+	err := r.agentRepo.Get(ctx, storage.InstanceConfigKey, "AGENT_CONFIG", cfg)
+	if err == nil {
+		r.setCachedAgentConfig(cfg)
+		return cfg, nil
+	}
+
+	if !appErrors.HasCode(err, appErrors.CodeNotFound) {
+		return nil, err
+	}
+
+	cfg = models.NewAgentInstanceConfig()
+	if createErr := r.agentRepo.Create(ctx, cfg); createErr != nil {
+		// If another writer created it concurrently, read it back.
+		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) || appErrors.HasCode(createErr, appErrors.CodeConflict) {
+			cfg = &models.AgentInstanceConfig{}
+			if err := r.agentRepo.Get(ctx, storage.InstanceConfigKey, "AGENT_CONFIG", cfg); err != nil {
+				return nil, err
+			}
+			r.setCachedAgentConfig(cfg)
+			return cfg, nil
+		}
+		return nil, createErr
+	}
+
+	r.setCachedAgentConfig(cfg)
+	return cfg, nil
+}
+
+// SetAgentInstanceConfig updates the instance agent policy.
+func (r *InstanceRepository) SetAgentInstanceConfig(ctx context.Context, cfg *models.AgentInstanceConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("agent config is nil")
+	}
+
+	cfg.UpdatedAt = time.Now()
+	if err := cfg.UpdateKeys(); err != nil {
+		return err
+	}
+
+	if err := r.agentRepo.Update(ctx, cfg); err != nil {
+		if appErrors.HasCode(err, appErrors.CodeNotFound) {
+			if err := r.agentRepo.Create(ctx, cfg); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	r.setCachedAgentConfig(cfg)
+	return nil
 }
 
 // EnsureInstanceState ensures the instance state record exists and returns it.

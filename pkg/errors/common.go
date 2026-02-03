@@ -1,4 +1,4 @@
-package errors
+package errors // nolint:revive // Legacy package name; import with an alias when also using stdlib errors.
 
 // Common errors and helper functions for frequently used error patterns
 // This consolidates the most common error creation patterns across the application
