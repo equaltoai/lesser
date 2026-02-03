@@ -26,6 +26,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -367,6 +368,9 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	app.Use(apptheory.TimeoutMiddleware(apptheory.TimeoutConfig{
 		DefaultTimeout: 30 * time.Second,
 	}))
+
+	// Crawler classification middleware (observe-only; configurable via CRAWLER_PROTECTION_MODE).
+	app.Use(crawler.NewMiddleware(lambdaLogger))
 
 	// Block publishing/signups until instance activation completes.
 	app.Use(createInstanceLockMiddlewareFn(repos, lambdaLogger))

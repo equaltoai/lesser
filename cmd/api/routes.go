@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
@@ -15,6 +16,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("HEAD", "/", func(*apptheory.Context) (*apptheory.Response, error) {
 		return redirectResponse("/l/", false), nil
 	})
+	app.Get("/robots.txt", crawler.RobotsHandler)
 
 	// OAuth app registration (public, no auth required)
 	app.Post("/api/v1/apps", apiHandler.HandleAppRegistrationLift)

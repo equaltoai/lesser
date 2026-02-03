@@ -63,6 +63,7 @@ var LambdaInventory = Inventory{
 				{Method: "ANY", Path: "/api/v1/{proxy+}"},
 				{Method: "ANY", Path: "/api/v2/{proxy+}"},
 				{Method: "GET", Path: "/.well-known/nodeinfo"},
+				{Method: "GET", Path: "/robots.txt"},
 			},
 		},
 		{

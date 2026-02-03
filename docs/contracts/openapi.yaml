@@ -16715,6 +16715,23 @@ paths:
             x-lesser-lambda: objects
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:objects
+    /robots.txt:
+        get:
+            operationId: get_robots_txt
+            tags:
+                - robots.txt
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: RobotsHandler
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+                - infra/cdk/inventory/lambdas.go:api
     /setup/admin:
         post:
             operationId: post_setup_admin
