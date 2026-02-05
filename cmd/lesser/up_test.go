@@ -20,6 +20,51 @@ func TestParseUpArgs(t *testing.T) {
 	args, err := parseUpArgs([]string{"--app", "app", "--base-domain", "example.com", "--aws-profile", "profile"})
 	require.NoError(t, err)
 	require.Equal(t, "app", args.App)
+
+	t.Run("normalizes bootstrap wallet flag", func(t *testing.T) {
+		args, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--bootstrap-wallet-address", "0x1111111111111111111111111111111111111111",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "0x1111111111111111111111111111111111111111", args.BootstrapWalletAddress)
+	})
+
+	t.Run("reads bootstrap wallet from env", func(t *testing.T) {
+		t.Setenv("LESSER_BOOTSTRAP_WALLET_ADDRESS", "0x2222222222222222222222222222222222222222")
+		args, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "0x2222222222222222222222222222222222222222", args.BootstrapWalletAddress)
+	})
+
+	t.Run("flag overrides env", func(t *testing.T) {
+		t.Setenv("LESSER_BOOTSTRAP_WALLET_ADDRESS", "0x2222222222222222222222222222222222222222")
+		args, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--bootstrap-wallet-address", "0x1111111111111111111111111111111111111111",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "0x1111111111111111111111111111111111111111", args.BootstrapWalletAddress)
+	})
+
+	t.Run("invalid bootstrap wallet errors", func(t *testing.T) {
+		_, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--bootstrap-wallet-address", "not-an-address",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid bootstrap wallet address")
+	})
 }
 
 func TestUpStages(t *testing.T) {
@@ -63,6 +108,87 @@ func TestPrepareUpEnv_RequiresOutWhenBootstrapGenerated(t *testing.T) {
 
 	_, err := prepareUpEnv(context.Background(), upArgs{App: "app", BaseDomain: "example.com", AWSProfile: "profile"})
 	require.Error(t, err)
+}
+
+func TestPrepareUpEnv_UsesProvidedBootstrapWalletAddress(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	previousWallet := determineBootstrapWalletFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+		determineBootstrapWalletFn = previousWallet
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
+		return "", true, nil
+	}
+	determineBootstrapWalletFn = func(string) (bootstrapWallet, error) {
+		t.Fatal("determineBootstrapWallet should not be called when --bootstrap-wallet-address is set")
+		return bootstrapWallet{}, nil
+	}
+
+	env, err := prepareUpEnv(context.Background(), upArgs{
+		App:                    "app",
+		BaseDomain:             "example.com",
+		AWSProfile:             "profile",
+		BootstrapWalletAddress: "0x1111111111111111111111111111111111111111",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0x1111111111111111111111111111111111111111", env.bootstrap.Address)
+	require.Empty(t, env.bootstrap.Mnemonic)
+}
+
+func TestPrepareUpEnv_ProvidedBootstrapWalletMustMatchDeployed(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousHome := userHomeDirFn
+	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousAccount := resolveAWSAccountIDFn
+	previousZone := resolveHostedZoneFn
+	previousInspect := inspectBootstrapRequirementsFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		userHomeDirFn = previousHome
+		loadAWSConfigFromProfileFn = previousLoadAWS
+		resolveAWSAccountIDFn = previousAccount
+		resolveHostedZoneFn = previousZone
+		inspectBootstrapRequirementsFn = previousInspect
+	})
+
+	findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+	userHomeDirFn = func() (string, error) { return t.TempDir(), nil }
+	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{Region: "us-east-1"}, nil }
+	resolveAWSAccountIDFn = func(context.Context, aws.Config) (string, error) { return "123456789012", nil }
+	resolveHostedZoneFn = func(context.Context, aws.Config, string) (hostedZone, error) {
+		return hostedZone{ID: "Z1", Name: "example.com"}, nil
+	}
+	inspectBootstrapRequirementsFn = func(context.Context, bootstrapDBFactory, string, []naming.Stage) (string, bool, error) {
+		return "0x2222222222222222222222222222222222222222", false, nil
+	}
+
+	_, err := prepareUpEnv(context.Background(), upArgs{
+		App:                    "app",
+		BaseDomain:             "example.com",
+		AWSProfile:             "profile",
+		BootstrapWalletAddress: "0x1111111111111111111111111111111111111111",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not match deployed bootstrap address")
 }
 
 func TestRunUp_HappyPathWithStubs(t *testing.T) {

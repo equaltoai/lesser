@@ -97,6 +97,7 @@ func TestRunCLI_DispatchAndExitCodes(t *testing.T) {
 
 func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevUp := runUpFn
+	prevDown := runDownFn
 	prevClientDeploy := runClientDeployFn
 	prevBuild := runBuildFn
 	prevGenerate := runGenerateFn
@@ -119,6 +120,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevSmoke := runSmokeFn
 	t.Cleanup(func() {
 		runUpFn = prevUp
+		runDownFn = prevDown
 		runClientDeployFn = prevClientDeploy
 		runBuildFn = prevBuild
 		runGenerateFn = prevGenerate
@@ -153,6 +155,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	}
 
 	runUpFn = stub("up")
+	runDownFn = stub("down")
 	runClientDeployFn = stub("client deploy")
 	runBuildFn = stub("build")
 	runGenerateFn = stub("generate")
@@ -180,6 +183,10 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "up", "--arg"}, &buf))
 	require.Equal(t, []string{"--arg"}, calls["up"].argv)
+	require.Equal(t, 0, runCLI([]string{"lesser", "down", "--app", "x"}, &buf))
+	require.Equal(t, []string{"--app", "x"}, calls["down"].argv)
+	require.Equal(t, 0, runCLI([]string{"lesser", "destroy", "--app", "x"}, &buf))
+	require.Equal(t, []string{"--app", "x"}, calls["down"].argv)
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "client", helpFlagLong}, &buf))
 	require.Equal(t, 0, runCLI([]string{"lesser", "client", helpCommand}, &buf))

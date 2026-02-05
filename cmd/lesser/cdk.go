@@ -19,6 +19,16 @@ type cdkDeployRequest struct {
 	WithStaging  bool
 }
 
+type cdkDestroyRequest struct {
+	StackName    string
+	App          string
+	BaseDomain   string
+	HostedZoneID string
+	Region       string
+	StageFilter  string
+	WithStaging  bool
+}
+
 type cdkDeployResult struct {
 	StackName string
 	Outputs   map[string]string
@@ -27,6 +37,7 @@ type cdkDeployResult struct {
 var (
 	cdkBootstrapFn         = cdkBootstrap
 	cdkDeployWithOutputsFn = cdkDeployWithOutputs
+	cdkDestroyStackFn      = cdkDestroyStack
 )
 
 func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accountID string, region string) error {
@@ -105,6 +116,43 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		StackName: req.StackName,
 		Outputs:   out[req.StackName],
 	}, nil
+}
+
+func cdkDestroyStack(ctx context.Context, repoRoot string, awsProfile string, req cdkDestroyRequest) error {
+	cdkDir := filepath.Join(repoRoot, "infra", "cdk")
+
+	args := []string{
+		"destroy",
+		req.StackName,
+		"--force",
+		"--context",
+		fmt.Sprintf("app=%s", req.App),
+		"--context",
+		fmt.Sprintf("baseDomain=%s", req.BaseDomain),
+	}
+	if strings.TrimSpace(req.HostedZoneID) != "" {
+		args = append(args, "--context", fmt.Sprintf("hostedZoneId=%s", req.HostedZoneID))
+	}
+
+	stage := strings.TrimSpace(strings.ToLower(req.StageFilter))
+	if stage != "" {
+		args = append(args, "--context", fmt.Sprintf("stage=%s", stage))
+	}
+	if req.WithStaging {
+		args = append(args, "--context", "withStaging=true")
+	}
+
+	if err := runCommandFn(ctx, "cdk", args, execOptions{
+		Dir: cdkDir,
+		Env: map[string]string{
+			"AWS_PROFILE":        awsProfile,
+			"AWS_REGION":         req.Region,
+			"AWS_DEFAULT_REGION": req.Region,
+		},
+	}); err != nil {
+		return fmt.Errorf("cdk destroy %s: %w", req.StackName, err)
+	}
+	return nil
 }
 
 func parseCdkOutputs(path string) (map[string]map[string]string, error) {

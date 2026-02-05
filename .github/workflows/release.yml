@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.7"
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            infra/cdk/go.sum
+
+      - name: Build release assets
+        run: bash scripts/build_release_assets.sh "${GITHUB_REF_NAME}" dist/release
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/release/lesser-linux-amd64
+            dist/release/lesser-linux-arm64
+            dist/release/lesser-darwin-amd64
+            dist/release/lesser-darwin-arm64
+            dist/release/checksums.txt
+            dist/release/lesser-release.json

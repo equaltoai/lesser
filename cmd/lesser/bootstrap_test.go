@@ -86,6 +86,48 @@ func TestGetInstanceStateItem_ParsesAndHandlesNotFound(t *testing.T) {
 		q.AssertExpectations(t)
 	})
 
+	t.Run("dynamodb ResourceNotFoundException maps to typed error", func(t *testing.T) {
+		ctx := context.Background()
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
+
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Return(fakeSmithyAPIError{code: "ResourceNotFoundException"}).Once()
+
+		_, err := getInstanceStateItem(ctx, db, "tbl")
+		require.Error(t, err)
+		var tnf tableNotFoundError
+		require.ErrorAs(t, err, &tnf)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
+	})
+
+	t.Run("dynamodb ResourceNotFoundException message maps to typed error", func(t *testing.T) {
+		ctx := context.Background()
+		db := new(mocks.MockDB)
+		q := new(mocks.MockQuery)
+
+		db.On("WithContext", ctx).Return(db).Once()
+		db.On("Model", mock.Anything).Return(q).Once()
+		q.On("Where", "PK", "=", instanceConfigKeyPK).Return(q).Once()
+		q.On("Where", "SK", "=", "STATE").Return(q).Once()
+		q.On("ConsistentRead").Return(q).Once()
+		q.On("First", mock.Anything).Return(errors.New("operation error DynamoDB: GetItem, ResourceNotFoundException: Requested resource not found")).Once()
+
+		_, err := getInstanceStateItem(ctx, db, "tbl")
+		require.Error(t, err)
+		var tnf tableNotFoundError
+		require.ErrorAs(t, err, &tnf)
+
+		db.AssertExpectations(t)
+		q.AssertExpectations(t)
+	})
+
 	t.Run("missing item locks stage", func(t *testing.T) {
 		ctx := context.Background()
 		db := new(mocks.MockDB)

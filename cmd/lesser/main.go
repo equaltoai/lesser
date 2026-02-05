@@ -12,6 +12,7 @@ func main() {
 
 var (
 	runUpFn           = runUp
+	runDownFn         = runDown
 	runClientDeployFn = runClientDeploy
 	runBuildFn        = runBuild
 	runGenerateFn     = runGenerate
@@ -43,6 +44,8 @@ func runCLI(args []string, stderr io.Writer) int {
 	switch args[1] {
 	case "up":
 		return exitCodeFromErr(runUpFn(args[2:]), stderr)
+	case "down", "destroy":
+		return exitCodeFromErr(runDownFn(args[2:]), stderr)
 	case "client":
 		if len(args) < 3 {
 			printUsageTo(stderr)
@@ -113,7 +116,8 @@ func printUsage() {
 
 func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Usage:")
-	_, _ = fmt.Fprintln(w, "  lesser up --app <slug> --base-domain <example.com> --aws-profile <profile> [--with-staging] [--out <path>] [--rebuild-lambdas]")
+	_, _ = fmt.Fprintln(w, "  lesser up --app <slug> --base-domain <example.com> --aws-profile <profile> [--bootstrap-wallet-address <0x...>] [--with-staging] [--out <path>] [--rebuild-lambdas]")
+	_, _ = fmt.Fprintln(w, "  lesser down --app <slug> --base-domain <example.com> --aws-profile <profile> [--state <path>] [--purge-artifacts]")
 	_, _ = fmt.Fprintln(w, "  lesser client deploy --app <slug> --base-domain <example.com> --aws-profile <profile> --dist <dir> [--stage dev|live|staging|both|all] [--state <path>]")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "  lesser build [--rebuild-lambdas]                # rebuild deployment artifacts (lambdas, auth-ui, go build)")

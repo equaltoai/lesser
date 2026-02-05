@@ -135,3 +135,52 @@ func TestCdkBootstrap_RunsCdkBootstrap(t *testing.T) {
 	require.Contains(t, gotArgs, "aws://123/us-east-1")
 	require.Equal(t, "profile", gotEnv["AWS_PROFILE"])
 }
+
+func TestCdkDestroyStack_IncludesContexts(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	var gotArgs []string
+	var gotEnv map[string]string
+	runCommandFn = func(_ context.Context, name string, args []string, opts execOptions) error {
+		require.Equal(t, "cdk", name)
+		gotArgs = append([]string(nil), args...)
+		gotEnv = opts.Env
+		return nil
+	}
+
+	err := cdkDestroyStack(context.Background(), t.TempDir(), "profile", cdkDestroyRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+		StageFilter:  "LIVE",
+		WithStaging:  true,
+	})
+	require.NoError(t, err)
+	require.Contains(t, gotArgs, "destroy")
+	require.Contains(t, gotArgs, "--force")
+	require.Contains(t, gotArgs, "hostedZoneId=Z1")
+	require.Contains(t, gotArgs, "stage=live")
+	require.Contains(t, gotArgs, "withStaging=true")
+	require.Equal(t, "profile", gotEnv["AWS_PROFILE"])
+}
+
+func TestCdkDestroyStack_WrapsError(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	runCommandFn = func(context.Context, string, []string, execOptions) error {
+		return os.ErrPermission
+	}
+
+	err := cdkDestroyStack(context.Background(), t.TempDir(), "profile", cdkDestroyRequest{
+		StackName:  "demo",
+		App:        "app",
+		BaseDomain: "example.com",
+		Region:     "us-east-1",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cdk destroy demo")
+}

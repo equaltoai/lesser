@@ -11,6 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 )
 
+const receiptSchemaVersion = 1
+
 type upReceipt struct {
 	Version       int                      `json:"version"`
 	App           string                   `json:"app"`
@@ -53,7 +55,7 @@ func newUpReceipt(app, baseDomain, awsProfile, accountID, region string, stages 
 	}
 
 	return &upReceipt{
-		Version:     1,
+		Version:     receiptSchemaVersion,
 		App:         app,
 		BaseDomain:  baseDomain,
 		AWSProfile:  awsProfile,

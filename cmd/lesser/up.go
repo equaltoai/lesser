@@ -12,18 +12,20 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/theory-cloud/tabletheory"
 	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/session"
 )
 
 type upArgs struct {
-	App            string
-	BaseDomain     string
-	AWSProfile     string
-	WithStaging    bool
-	OutPath        string
-	RebuildLambdas bool
+	App                    string
+	BaseDomain             string
+	AWSProfile             string
+	BootstrapWalletAddress string
+	WithStaging            bool
+	OutPath                string
+	RebuildLambdas         bool
 }
 
 func runUp(argv []string) error {
@@ -108,6 +110,10 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 	if err != nil {
 		return nil, err
 	}
+	desiredBootstrapAddr := strings.ToLower(strings.TrimSpace(args.BootstrapWalletAddress))
+	if desiredBootstrapAddr != "" && existingBootstrapAddr != "" && !strings.EqualFold(existingBootstrapAddr, desiredBootstrapAddr) {
+		return nil, fmt.Errorf("--bootstrap-wallet-address %s does not match deployed bootstrap address %s", desiredBootstrapAddr, existingBootstrapAddr)
+	}
 
 	stateDir, err := ensureLocalStateDir(app, baseDomain)
 	if err != nil {
@@ -119,7 +125,10 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		DerivationPath: defaultBootstrapDerivationPath,
 		ChainID:        1,
 	}
-	if bootstrapRequired {
+	if desiredBootstrapAddr != "" {
+		bootstrap.Address = desiredBootstrapAddr
+	}
+	if bootstrapRequired && desiredBootstrapAddr == "" {
 		bootstrap, err = determineBootstrapWalletFn(existingBootstrapAddr)
 		if err != nil {
 			return nil, err
@@ -321,6 +330,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.App, "app", "", "app name slug (e.g. my-lesser)")
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
 	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
+	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
 	fs.BoolVar(&args.RebuildLambdas, "rebuild-lambdas", false, "force rebuild Lambda zip artifacts")
@@ -332,6 +342,24 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" || strings.TrimSpace(args.AWSProfile) == "" {
 		return upArgs{}, errors.New("required flags: --app, --base-domain, --aws-profile")
 	}
+	if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
+		args.BootstrapWalletAddress = strings.TrimSpace(os.Getenv("LESSER_BOOTSTRAP_WALLET_ADDRESS"))
+	}
+	if strings.TrimSpace(args.BootstrapWalletAddress) != "" {
+		normalized, err := normalizeBootstrapWalletAddress(args.BootstrapWalletAddress)
+		if err != nil {
+			return upArgs{}, err
+		}
+		args.BootstrapWalletAddress = normalized
+	}
 
 	return args, nil
+}
+
+func normalizeBootstrapWalletAddress(input string) (string, error) {
+	addr := strings.TrimSpace(input)
+	if !ethcommon.IsHexAddress(addr) {
+		return "", fmt.Errorf("invalid bootstrap wallet address %q", input)
+	}
+	return strings.ToLower(ethcommon.HexToAddress(addr).Hex()), nil
 }
