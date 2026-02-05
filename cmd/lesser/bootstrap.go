@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/smithy-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -272,7 +273,7 @@ func getInstanceStateItem(ctx context.Context, db theorydb.DB, tableName string)
 		ConsistentRead().
 		First(&record)
 	if err != nil {
-		if errors.Is(err, theorydbErrors.ErrTableNotFound) {
+		if isDynamoTableNotFoundError(err) {
 			return instanceStateItem{}, tableNotFoundError{TableName: tableName}
 		}
 		if theorydbErrors.IsNotFound(err) {
@@ -286,6 +287,25 @@ func getInstanceStateItem(ctx context.Context, db theorydb.DB, tableName string)
 		Locked:                 record.Locked,
 		BootstrapWalletAddress: strings.ToLower(strings.TrimSpace(record.BootstrapWalletAddress)),
 	}, nil
+}
+
+func isDynamoTableNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, theorydbErrors.ErrTableNotFound) {
+		return true
+	}
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) && strings.EqualFold(apiErr.ErrorCode(), "ResourceNotFoundException") {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "resourcenotfoundexception") &&
+		strings.Contains(msg, "requested resource not found")
 }
 
 func upsertInstanceState(ctx context.Context, db theorydb.DB, tableName string, now time.Time, bootstrapAddress string) error {
