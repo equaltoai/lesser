@@ -224,6 +224,25 @@ comment are now aligned.
 
 ---
 
+## P0 — Authorization bypass: inbox collection authorization uses substring matching
+
+**Status:** fixed (2026-02-07)  
+**Confidence:** 8/10  
+
+`verifyCollectionAuthorization` previously used a substring check (`strings.Contains`) between an actor handle and the
+collection owner username. This allowed cross-domain impersonation (e.g., `@alice@attacker.com` matching `alice`) and
+returned early, bypassing subsequent guards (including the stricter featured-collection check).
+
+**Primary location:**
+- `cmd/inbox/internal/routing/inbox.go` (`verifyCollectionAuthorization`)
+
+**Fix summary:**
+- Authorization now requires **exact** username equality and requires the actor’s domain to match the collection’s
+  domain.
+- Regression tests cover cross-domain same-username attempts and prevent substring-based bypass.
+
+---
+
 ## P0 — Account takeover: unauthenticated wallet linking can target arbitrary usernames
 
 **Status:** confirmed  

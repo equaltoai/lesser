@@ -96,6 +96,8 @@ oEmbed height messaging), use a nonce-based CSP or eliminate inline scripts.
 - Add shared helpers/packages (naming TBD) for:
   - Role/auth checks (reusable across REST + GraphQL).
   - Safe HTML construction (template-first) and HTML sanitization for “HTML-by-contract” fields.
+- ActivityPub inbox: enforce exact actor identity for collection modification (exact username + same-domain match) and add
+  regression tests to prevent substring-based authorization bypass.
 - Provide small, easy-to-use APIs so call sites stop doing `fmt.Sprintf("<div>%s</div>", userValue)`.
 - Apply the authz primitives to passwordless registration flows:
   - Require a verified wallet/WebAuthn proof before allowing `POST /api/v1/accounts`.

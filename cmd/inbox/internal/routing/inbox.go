@@ -3168,6 +3168,47 @@ func (ih *InboxHandler) notifyFollowersOfMove(ctx context.Context, oldAccountID,
 	return nil
 }
 
+func actorMatchesCollectionOwner(actorID, targetCollectionURL, collectionOwnerUsername string) bool {
+	actorURL, err := url.Parse(actorID)
+	if err != nil || actorURL.Host == "" {
+		return false
+	}
+
+	targetURL, err := url.Parse(targetCollectionURL)
+	if err != nil || targetURL.Host == "" {
+		return false
+	}
+
+	actorDomain := strings.ToLower(actorURL.Host)
+	targetDomain := strings.ToLower(targetURL.Host)
+	if actorDomain != targetDomain {
+		return false
+	}
+
+	actorLocalUsername := extractLocalUsernameFromURLPath(actorURL.Path)
+	if actorLocalUsername == "" {
+		return false
+	}
+
+	return actorLocalUsername == strings.TrimPrefix(collectionOwnerUsername, "@")
+}
+
+func extractLocalUsernameFromURLPath(path string) string {
+	path = strings.Trim(path, "/")
+	if path == "" {
+		return ""
+	}
+
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if part == "users" && i+1 < len(parts) {
+			return strings.TrimPrefix(parts[i+1], "@")
+		}
+	}
+
+	return strings.TrimPrefix(parts[len(parts)-1], "@")
+}
+
 // verifyCollectionAuthorization verifies that the actor is authorized to modify the collection
 func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activity *activitypub.Activity, collectionType string, targetActor *activitypub.Actor) error {
 	// Basic rule: Only the collection owner can add/remove items
@@ -3197,19 +3238,17 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 		return nil // Actor is modifying their own collection
 	}
 
-	// For cross-domain scenarios, check if usernames match
-	actorUsername := ih.extractHandleFromActorID(activity.Actor)
-	if strings.Contains(actorUsername, collectionOwnerUsername) {
-		return nil // Username matches
+	// For non-canonical actor IDs, allow same-username only on the same domain.
+	// Never use substring matching here: it allows cross-domain impersonation (e.g., "@alice@attacker.com" matching "alice").
+	if actorMatchesCollectionOwner(activity.Actor, activity.Target, collectionOwnerUsername) {
+		return nil
 	}
 
 	// Special case: allow certain actors to manage specific collection types
 	// This could be extended for admin actions, moderation, etc.
 	if collectionType == "featured" {
 		// Only the actor themselves can manage their featured posts
-		if activity.Actor != targetActor.ID {
-			return unauthorizedCollectionError()
-		}
+		return unauthorizedCollectionError()
 	}
 
 	return unauthorizedCollectionModifyError()
