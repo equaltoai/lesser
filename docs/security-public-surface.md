@@ -125,6 +125,17 @@ Notes:
 
 ## Streaming SSE (`cmd/sse`)
 
-- **Public** `GET /api/v1/streaming/public*`, `GET /api/v1/streaming/hashtag*`
-- **Auth** `GET /api/v1/streaming/user*`, `GET /api/v1/streaming/direct`, `GET /api/v1/streaming/list`
-  - List stream additionally requires list membership validation (see Milestone 6).
+- **Auth** `GET /api/v1/streaming/*` (all SSE streaming endpoints currently require auth)
+  - `GET /api/v1/streaming/list` additionally enforces list ownership/membership (Milestone 6).
+
+---
+
+## Streaming WebSocket (`cmd/streaming`)
+
+- **Public** WebSocket connect is allowed without auth so clients can subscribe to public streams (e.g. `public*`,
+  `hashtag:*`).
+- **Auth** user-scoped streams:
+  - `user`, `user:notification`, `direct`
+  - `list:<id>` (requires list ownership/membership; Milestone 6)
+  - Canonical forms (`user:<username>`, `user:notification:<username>`, `direct:<username>`) are restricted to the
+    authenticated user’s own username.

@@ -269,19 +269,47 @@ WebAuthn/wallet proof.
 
 ## P1 — Authorization gap: SSE list stream lacks list membership validation
 
-**Status:** confirmed  
+**Status:** fixed (Milestone 6)  
 **Confidence:** 7/10  
 
-The SSE “list” stream requires authentication, but does not validate that the authenticated user is allowed to subscribe
-to the requested list ID. This can allow an authenticated user to subscribe to another user’s list stream if list IDs are
-guessable/enumerable.
+The SSE “list” stream requires authentication and now validates that the authenticated user is allowed to subscribe to
+the requested list ID (list ownership/membership), preventing authenticated users from subscribing to other users’ list
+streams even if list IDs are guessable/enumerable.
 
 **Location:**
-- `cmd/sse/main.go:234` (`handleListStream`) has `claims` available but does not validate membership.
-- `cmd/sse/main.go:248` explicitly notes this is a placeholder (“future list membership validation”).
+- `cmd/sse/main.go:236` (`handleListStream`)
 
-**Recommendation:** enforce list ownership/membership before subscribing, and add tests that a non-member cannot access a
-list stream.
+**Fix summary:**
+- `handleListStream` now enforces list ownership/membership before streaming.
+- A regression test exists proving a non-member cannot subscribe.
+
+---
+
+## P0 — Authorization bypass: WebSocket streaming can subscribe to other users’ private streams
+
+**Status:** fixed (Milestone 6)  
+**Confidence:** 9/10  
+
+The WebSocket streaming “subscribe” handler accepted arbitrary stream names for user-scoped streams and did not ensure
+that the stream’s target matched the authenticated user. In addition, `direct:<username>` was previously not treated as
+an authenticated stream (only the exact `direct` alias required auth).
+
+This enabled:
+- unauthenticated subscription attempts to `direct:<victim>`
+- authenticated subscription to `user:<victim>` / `user:notification:<victim>`
+- authenticated subscription to `list:<id>` without list ownership validation
+
+These streams can carry private/direct statuses and notifications; subscribing to another user’s stream can leak private
+content.
+
+**Primary location:**
+- `cmd/streaming/main.go` (`handleSubscribe`)
+
+**Fix summary:**
+- Stream aliases (`user`, `user:notification`, `direct`) are canonicalized to user-scoped stream names.
+- User/direct streams are restricted to the authenticated user’s own username.
+- List streams require list ownership/membership validation before subscribing.
+- Unit tests cover the enforced behavior and prevent regressions.
 
 ---
 

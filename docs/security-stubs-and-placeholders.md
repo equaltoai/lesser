@@ -68,10 +68,10 @@ Columns:
 
 | Item | Location | Why it matters | Risk | Status | Next step |
 | --- | --- | --- | ---: | --- | --- |
-| Unauth + stub federation control mutations | `graph/mutation_resolvers_federation.go:16` `:42` `:59` `:71` `:83` | Sensitive “control plane” style operations (limits/budgets/pause) must never be callable without admin gating, even if currently stubbed. | P0 | open | Gate behind `requireAdmin` (or operator role) and add tests proving unauth/non-admin cannot call. |
-| Public placeholder instance metrics | `graph/query_resolvers_federation.go:23` | Returns internal-ish operational/cost info; currently callable without auth and uses placeholder values (“In production…”). | P1 | open | Decide intended exposure (likely admin-only), gate accordingly, and implement real metrics or remove until implemented. |
-| Public placeholder federation health/limits | `graph/query_resolvers_federation.go:128` `:137` | Placeholder “return empty” responses are easy to ship unintentionally; combined with missing auth they create an unaudited public surface. | P1 | open | Gate per public-surface policy; implement or remove/disable until real. |
-| List-stream membership validation missing | `cmd/sse/main.go:234` (placeholder at `:248`) | Any authenticated user can subscribe to any list stream by list ID unless membership is checked; lists often imply private curation and can leak content. | P0 | open | Validate list membership/ownership before subscribing; add tests for non-member access denied. |
+| Unauth + stub federation control mutations | `graph/mutation_resolvers_federation.go:16` `:42` `:59` `:71` `:83` | Sensitive “control plane” style operations (limits/budgets/pause) must never be callable without admin gating, even if currently stubbed. | P0 | gated | Keep `requireAdmin` gating + tests; implement real persistence or remove/disable placeholder behavior before expanding exposure. |
+| Public placeholder instance metrics | `graph/query_resolvers_federation.go:23` | Returns internal-ish operational/cost info; currently callable without auth and uses placeholder values (“In production…”). | P1 | gated | Keep admin-only; implement real metrics or remove until implemented. |
+| Public placeholder federation health/limits | `graph/query_resolvers_federation.go:128` `:137` | Placeholder “return empty” responses are easy to ship unintentionally; combined with missing auth they create an unaudited public surface. | P1 | gated | Keep admin-only; implement real health/limits or remove/disable until real. |
+| List-stream membership validation missing | `cmd/sse/main.go:236` | Any authenticated user can subscribe to any list stream by list ID unless membership is checked; lists often imply private curation and can leak content. | P0 | fixed | — |
 | VPN detection placeholder (device fingerprinting) | `pkg/auth/device_fingerprinting.go:581` | Weakens anomaly detection; not an auth bypass by itself, but can reduce effectiveness of security controls built on device risk scoring. | P2 | open | Either implement real detection (or integrate a service) or remove the “signal” from enforcement decisions until reliable. |
 | Session extension count + cleanup placeholders | `pkg/auth/session_lifecycle.go:267` `:274` | Session lifetime enforcement may drift from intended policy if extension count/cleanup is never implemented; can unintentionally increase session persistence. | P2 | open | Implement extension-count persistence (or remove the config knob) and ensure cleanup semantics are covered by tests. |
 
@@ -84,4 +84,3 @@ An item can be marked **fixed** only if:
 - access is gated appropriately (auth/role/visibility), and
 - there is a regression test that would fail if the stub returns or gating is removed, and
 - any public surface changes are reflected in the public-surface policy (see roadmap Milestone 0).
-
