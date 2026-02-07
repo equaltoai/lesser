@@ -23,17 +23,16 @@ Related:
 
 ## P0 — Stored XSS: Actor profile HTML rendering
 
-**Status:** confirmed  
+**Status:** fixed (Milestone 2)  
 **Confidence:** 9/10  
 
-The actor HTML profile renderer interpolates actor-controlled fields directly into HTML without escaping, and the actor
-service does not set a CSP header.
+The actor HTML profile renderer previously interpolated actor-controlled fields directly into HTML without escaping, and
+the actor service did not set a CSP header.
 
 **Primary locations:**
-- `cmd/actor/main.go:242` (`generateHTMLProfile`) renders unescaped `actor.Name`, `actor.BaseObject.Summary`, `actor.Icon.URL`,
-  `actor.PreferredUsername`, `actor.ID` into HTML and HTML attributes.
-- `cmd/actor/main.go:236` sets `content-type: text/html; charset=utf-8`.
-- `cmd/actor/main.go:540` actor security headers middleware does **not** set `Content-Security-Policy`.
+- `cmd/actor/main.go` now renders the profile via `html/template` (`generateHTMLProfile` uses `pkg/security/htmlsafe.RenderTemplate`)
+  and sanitizes the bio via `common.SanitizeContent`.
+- `cmd/actor/main.go` now emits a restrictive `Content-Security-Policy` for HTML responses in `actorActivityPubSecurityHeaders`.
 
 **Write path (stored source):**
 - `pkg/services/accounts/service.go:872` stores `cmd.DisplayName` into `account.Actor.Name` without sanitization.
@@ -44,6 +43,8 @@ reachable whenever the client negotiates HTML.
 
 **Notes:**
 - The objects HTML renderer shows the intended pattern (escape everything): `cmd/objects/main.go:404`.
+- Write-time sanitization remains a goal for “HTML-by-contract” fields and will be addressed in Milestone 3; the Milestone
+  2 fix makes the browser-facing profile page safe even with legacy stored values.
 
 ---
 
@@ -92,9 +93,8 @@ sanitization/escaping.
 - `pkg/transformations/converters.go:104` maps `obj["content"]` directly into API status `Content` without sanitization.
 
 **Additional HTML surface:**
-- `cmd/api/handlers/oembed.go:633` embeds `note.Content` directly into an HTML document (comment says “Already HTML”).
-- `cmd/api/handlers/oembed.go:660` writes `attachment.URL` into an `<img src="...">` attribute without escaping (attribute
-  injection if an attacker can influence attachment URLs).
+- `cmd/api/handlers/oembed.go` now sanitizes `note.Content` when rendering the `/embed/:id` HTML page and validates/escapes
+  attachment URLs (Milestone 2). This mitigates browser-facing XSS on that surface.
 
 ### Account bio + profile fields (`/api/v1/accounts/*`)
 
@@ -317,15 +317,16 @@ configuration including `blockList` (a user preference that is typically private
 
 ## P1 — Defense-in-depth: No CSP on HTML responses
 
-**Status:** confirmed  
+**Status:** fixed (Milestone 2)  
 **Confidence:** 7/10 (defense-in-depth; most valuable once XSS surfaces are addressed)  
 
-HTML is served by multiple handlers/services, but `Content-Security-Policy` is not set anywhere in the repo.
+HTML is served by multiple handlers/services, and a restrictive `Content-Security-Policy` is now emitted for the
+browser-facing HTML surfaces in-scope for this remediation (actor, objects, oEmbed embed page).
 
 **Examples:**
-- Actor HTML profile response: `cmd/actor/main.go:236` + headers middleware `cmd/actor/main.go:540`
-- Object HTML response: `cmd/objects/main.go:245`
-- oEmbed HTML response: `cmd/api/handlers/oembed.go:399`
+- Actor HTML profile response: `cmd/actor/main.go` (`actorActivityPubSecurityHeaders`)
+- Object HTML response: `cmd/objects/main.go` (`objectsActivityPubSecurityHeaders`)
+- oEmbed embed HTML response: `cmd/api/handlers/oembed.go` (`HandleEmbedPageLift`)
 
 Given current HTML injection surfaces (above), CSP would significantly reduce blast radius.
 

@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/federation"
+	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -818,6 +819,10 @@ func objectsActivityPubSecurityHeaders() apptheory.Middleware {
 			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
 			resp.Headers["cross-origin-resource-policy"] = []string{"cross-origin"}
 			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			contentTypes := strings.Join(resp.Headers["content-type"], ",")
+			if strings.Contains(strings.ToLower(contentTypes), "text/html") {
+				resp.Headers["content-security-policy"] = []string{securityheaders.StaticHTMLPageCSP()}
+			}
 			return resp, err
 		}
 	}
