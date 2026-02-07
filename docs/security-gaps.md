@@ -236,6 +236,49 @@ checks beyond `Deleted` filtering (`pkg/services/notes/service.go:623`).
 
 ---
 
+## P0 — Account takeover: unauthenticated wallet linking can target arbitrary usernames
+
+**Status:** confirmed  
+**Confidence:** 9/10  
+
+`POST /auth/wallet/link` accepts a `username` in the request body when no bearer token is present (“registration flow”).
+Without a registration-only gate, this allows an unauthenticated caller to attempt linking a wallet to **any existing**
+username (including a victim’s account), enabling account takeover if the attacker can complete the wallet signature
+steps.
+
+**Primary location:**
+- `cmd/api/handlers/wallet.go` (`HandleLinkWalletLift`)
+  - Uses `req.Username` when unauthenticated
+  - Historically, signature verification was conditional (linking could proceed without enforcing proof)
+  - No check that unauth linking was limited to *new* accounts created by that caller
+
+**Impact model:** a wallet link is an authentication factor. Allowing unauthenticated linking against arbitrary usernames
+turns “link wallet” into an account-takeover vector.
+
+**Recommendation (implemented as part of remediation):**
+- Require signature-based proof for wallet linking, even for authenticated users (wallet ownership).
+- For unauthenticated linking (“registration flow”), require a registration-only gate (e.g., a challenge ID stored in
+  user metadata during registration) so unauth linking cannot be used against existing accounts.
+
+---
+
+## P1 — Registration proof missing: `/api/v1/accounts` does not require wallet/WebAuthn verification
+
+**Status:** confirmed  
+**Confidence:** 8/10  
+
+Registration currently accepts a username + agreement without requiring a passwordless proof-of-control step (wallet
+signature or WebAuthn attestation). This makes “registration” a remotely callable operation without the intended
+WebAuthn/wallet proof.
+
+**Primary location:**
+- `cmd/api/handlers/accounts.go` (`HandleRegistrationLift`)
+
+**Recommendation (implemented as part of remediation):**
+- Require a verified wallet challenge (or WebAuthn flow) as a precondition to account creation.
+
+---
+
 ## P1 — Authorization gap: SSE list stream lacks list membership validation
 
 **Status:** confirmed  

@@ -3,8 +3,8 @@ package graph
 import (
 	"context"
 	"errors"
-	"strings"
 
+	"github.com/equaltoai/lesser/pkg/security/authz"
 	"go.uber.org/zap"
 )
 
@@ -30,10 +30,10 @@ func (r *Resolver) requireModeratorOrAdmin(ctx context.Context) (string, error) 
 
 	role := ""
 	if account != nil && account.User != nil {
-		role = strings.ToLower(account.User.Role)
+		role = authz.NormalizeRole(account.User.Role)
 	}
 
-	if role != adminRoleAdmin && role != adminRoleModerator {
+	if !authz.IsModeratorOrAdmin(role) {
 		r.Logger.Warn("Non-moderator attempted moderator operation",
 			zap.String("username", username),
 			zap.String("role", role))

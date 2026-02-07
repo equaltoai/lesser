@@ -59,6 +59,7 @@ Notes:
   - `POST /api/v1/auth/webauthn/login/finish`
 - **Public** Registration (Auth UI only; wallet/WebAuthn only):
   - `POST /api/v1/accounts`
+    - Requires a verified wallet/WebAuthn proof (e.g., a verified wallet challenge) and must not allow bare username-only signup.
 - **Public** Instance + trends:
   - `GET /api/v1/instance` + related `GET /api/v1/instance/*`
   - `GET /api/v2/instance`

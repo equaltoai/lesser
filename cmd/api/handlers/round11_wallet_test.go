@@ -87,7 +87,14 @@ func TestWalletHandlers_FullFlow(t *testing.T) {
 	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite, auth.ScopeRead})
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
-	ctxLink, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", headers, nil, apimodels.WalletLinkRequest{Address: address, ChainID: 1, WalletType: "ethereum"})
+	ctxLink, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", headers, nil, apimodels.WalletLinkRequest{
+		Address:     address,
+		ChainID:     1,
+		WalletType:  "ethereum",
+		ChallengeID: challenge.ID,
+		Signature:   signature,
+		Message:     challenge.Message,
+	})
 	require.NoError(t, err)
 	requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxLink))
 
@@ -118,6 +125,13 @@ func TestWalletHandlers_CreateAndLinkRegistration(t *testing.T) {
 
 	challenge, err := authService.CreateWalletChallenge(context.Background(), address, 1, "alice")
 	require.NoError(t, err)
+
+	// Registration flow: wallet linking without an auth token must match the
+	// challenge ID that registration stored on the user record.
+	user := state.usersByUsername["alice"]
+	user.Metadata = map[string]interface{}{"registration_challenge_id": challenge.ID}
+	state.usersByUsername["alice"] = user
+
 	state.walletChallengesByID = map[string]storagemodels.WalletChallenge{
 		challenge.ID: {
 			ID:        challenge.ID,

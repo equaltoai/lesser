@@ -14,6 +14,7 @@ Related tracking:
 - Gaps inventory: `docs/security-gaps.md`
 - Public surface matrix: `docs/security-public-surface.md`
 - Security-sensitive placeholders/stubs: `docs/security-stubs-and-placeholders.md`
+- Review checklist: `docs/security-review-checklist.md`
 
 ---
 
@@ -96,6 +97,9 @@ oEmbed height messaging), use a nonce-based CSP or eliminate inline scripts.
   - Role/auth checks (reusable across REST + GraphQL).
   - Safe HTML construction (template-first) and HTML sanitization for “HTML-by-contract” fields.
 - Provide small, easy-to-use APIs so call sites stop doing `fmt.Sprintf("<div>%s</div>", userValue)`.
+- Apply the authz primitives to passwordless registration flows:
+  - Require a verified wallet/WebAuthn proof before allowing `POST /api/v1/accounts`.
+  - Ensure unauthenticated `POST /auth/wallet/link` is registration-only and cannot target existing accounts.
 
 **Acceptance criteria:**
 - New primitives exist and are used by at least one HTML surface and one GraphQL/REST surface.

@@ -15,7 +15,7 @@ func requireStatus(t *testing.T, expected int) func(*apptheory.Response, error) 
 
 		require.NoError(t, err)
 		require.NotNil(t, resp)
-		require.Equal(t, expected, resp.Status)
+		require.Equal(t, expected, resp.Status, "response body: %s", string(resp.Body))
 		return resp
 	}
 }

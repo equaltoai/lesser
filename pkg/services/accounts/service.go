@@ -305,6 +305,10 @@ type RegisterAccountCommand struct {
 	Reason                   string `json:"reason"` // Registration reason (for approval)
 	InviteCode               string `json:"invite_code"`
 	DefaultPostingVisibility string `json:"default_posting_visibility"`
+
+	// RegistrationChallengeID is a registration-time proof reference (e.g. wallet challenge ID).
+	// It is stored temporarily in user metadata to allow completion of passwordless registration flows.
+	RegistrationChallengeID string `json:"registration_challenge_id,omitempty"`
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
@@ -1815,6 +1819,13 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		Role:         "user",
 		Locale:       cmd.Locale,
 		CreatedAt:    time.Now(),
+	}
+
+	if strings.TrimSpace(cmd.RegistrationChallengeID) != "" {
+		if user.Metadata == nil {
+			user.Metadata = map[string]interface{}{}
+		}
+		user.Metadata["registration_challenge_id"] = strings.TrimSpace(cmd.RegistrationChallengeID)
 	}
 
 	// Hash password if provided
