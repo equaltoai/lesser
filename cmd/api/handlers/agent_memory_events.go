@@ -93,4 +93,3 @@ func (h *Handler) recordAgentMemoryTombstone(ctx context.Context, agentUsername 
 		h.logger.Debug("failed to store agent tombstone memory event", zap.Error(err))
 	}
 }
-

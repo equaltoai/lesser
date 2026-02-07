@@ -31,15 +31,39 @@ func TestRunCommand_SuccessAndFailure(t *testing.T) {
 func TestCacheDirHelpers(t *testing.T) {
 	repoRoot := t.TempDir()
 
-	goCache, err := ensureGoCacheDir(repoRoot)
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(repoRoot, "tmp", "go-cache", cacheDirVersionKey()), goCache)
-	require.DirExists(t, goCache)
+	t.Run("defaults", func(t *testing.T) {
+		t.Setenv("GOCACHE", "")
+		t.Setenv("XDG_CACHE_HOME", "")
 
-	xdgCache, err := ensureXDGCacheDir(repoRoot)
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(repoRoot, "tmp", "xdg-cache", cacheDirVersionKey()), xdgCache)
-	require.DirExists(t, xdgCache)
+		goCache, err := ensureGoCacheDir(repoRoot)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(repoRoot, "tmp", "go-cache", cacheDirVersionKey()), goCache)
+		require.DirExists(t, goCache)
+
+		xdgCache, err := ensureXDGCacheDir(repoRoot)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(repoRoot, "tmp", "xdg-cache", cacheDirVersionKey()), xdgCache)
+		require.DirExists(t, xdgCache)
+	})
+
+	t.Run("overrides", func(t *testing.T) {
+		goCacheOverride := filepath.Join(repoRoot, "go-cache-override")
+		xdgCacheOverride := filepath.Join(repoRoot, "xdg-cache-override")
+		t.Setenv("GOCACHE", goCacheOverride)
+		t.Setenv("XDG_CACHE_HOME", xdgCacheOverride)
+
+		otherRoot := t.TempDir()
+
+		goCache, err := ensureGoCacheDir(otherRoot)
+		require.NoError(t, err)
+		require.Equal(t, goCacheOverride, goCache)
+		require.DirExists(t, goCache)
+
+		xdgCache, err := ensureXDGCacheDir(otherRoot)
+		require.NoError(t, err)
+		require.Equal(t, xdgCacheOverride, xdgCache)
+		require.DirExists(t, xdgCache)
+	})
 }
 
 func TestEnvOrDefault(t *testing.T) {

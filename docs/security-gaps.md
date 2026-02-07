@@ -367,6 +367,32 @@ Given current HTML injection surfaces (above), CSP would significantly reduce bl
 
 ---
 
+## P2 — OAuth authorization code TOCTOU: non-atomic code consumption on exchange
+
+**Status:** fixed (2026-02-07)  
+**Confidence:** 7/10  
+
+The OAuth `authorization_code` exchange previously read the authorization code, generated tokens, and then deleted the
+code in a non-atomic sequence. Deletion failure was treated as non-critical. This created a theoretical race window where
+the same code could be exchanged twice via concurrent requests (duplicate session/token issuance for the same user
+context).
+
+**Practical exploitation requires:**
+- Intercepting a non-PKCE-protected authorization code, and
+- Racing two concurrent exchange requests within the 5-minute TTL window.
+
+**Impact:** limited to duplicate session/token creation for the same user context.
+
+**Fix summary:**
+- Consume (delete) the authorization code **before** issuing tokens, and treat consumption failures as `invalid_grant`.
+- Make authorization code deletion conditional (`IfExists`) so only one concurrent exchange can succeed.
+
+**Primary locations:**
+- `cmd/api/handlers/oauth.go` (`exchangeAuthorizationCode`)
+- `pkg/storage/repositories/oauth_helpers.go` / `pkg/storage/repositories/account_repository_oauth.go` (`DeleteAuthorizationCode*`)
+
+---
+
 ## P2 — Weak HTML sanitization: instance extended description
 
 **Status:** confirmed (admin-controlled today, but still a footgun)  

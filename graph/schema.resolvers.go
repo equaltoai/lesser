@@ -315,23 +315,9 @@ func (r *Resolver) requireAdmin(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	if r.Registry == nil {
-		return "", errors.New("service registry is not available")
-	}
-
-	accountsService := r.Registry.Accounts()
-	if accountsService == nil {
-		return "", errors.New("accounts service is not available")
-	}
-
-	account, err := accountsService.GetAccount(ctx, username)
+	role, err := r.normalizedRole(ctx, username)
 	if err != nil {
 		return "", errors.Join(errors.New("failed to verify admin status"), err)
-	}
-
-	role := ""
-	if account != nil && account.User != nil {
-		role = authz.NormalizeRole(account.User.Role)
 	}
 
 	if !authz.IsAdmin(role) {

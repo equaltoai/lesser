@@ -849,6 +849,7 @@ func (h *Handler) getStatusAncestors(ctx context.Context, root *storageMods.Stat
 }
 
 // getParentStatusID gets the parent status ID from an object
+//nolint:unused // Used by tests and retained for future thread/context refactors.
 func (h *Handler) getParentStatusID(ctx context.Context, objectID string) string {
 	obj, err := h.registry.Notes().GetNote(ctx, objectID)
 	if err != nil {
@@ -870,6 +871,7 @@ func (h *Handler) getParentStatusID(ctx context.Context, objectID string) string
 }
 
 // extractInReplyTo extracts the InReplyTo field from various object types
+//nolint:unused // Used by tests and retained for future thread/context refactors.
 func (h *Handler) extractInReplyTo(obj interface{}) string {
 	switch o := obj.(type) {
 	case *activitypub.Note:
@@ -892,6 +894,7 @@ func (h *Handler) extractInReplyTo(obj interface{}) string {
 }
 
 // extractInReplyToViaReflection uses reflection to extract InReplyTo field
+//nolint:unused // Used by tests and retained for future thread/context refactors.
 func (h *Handler) extractInReplyToViaReflection(obj interface{}) string {
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {
@@ -920,6 +923,7 @@ func (h *Handler) extractInReplyToViaReflection(obj interface{}) string {
 }
 
 // loadStatusWithActor loads a status object and its associated actor
+//nolint:unused // Used by tests and retained for future thread/context refactors.
 func (h *Handler) loadStatusWithActor(ctx context.Context, objectID string) *models.Status {
 	obj, err := h.registry.Notes().GetNote(ctx, objectID)
 	if err != nil {
@@ -991,6 +995,7 @@ func (h *Handler) getStatusDescendants(ctx context.Context, root *storageMods.St
 }
 
 // convertReplyToStatus converts a reply object to a status
+//nolint:unused // Retained for future thread/context refactors.
 func (h *Handler) convertReplyToStatus(ctx context.Context, reply interface{}) *models.Status {
 	actor := h.getActorForObject(ctx, reply)
 	status := transformations.ObjectToStatusAny(reply, actor, h.cfg.BaseURL())

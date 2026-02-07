@@ -102,6 +102,9 @@ func (r *OAuthRepository) DeleteAuthorizationCode(_ context.Context, code string
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if _, exists := r.authCodes[code]; !exists {
+		return storage.ErrNotFound
+	}
 	delete(r.authCodes, code)
 	return nil
 }

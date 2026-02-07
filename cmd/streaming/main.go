@@ -719,6 +719,7 @@ func authorizeListStreamSubscription(ctx context.Context, repos core.RepositoryS
 	return nil
 }
 
+//nolint:gocognit,gocyclo // Stream resolution handles many protocol variants and edge cases.
 func (sh *StreamingHandler) resolveCanonicalStreamSubscription(ctx context.Context, connection *models.WebSocketConnection, requestedStream string) (string, *pkgErrors.AppError) {
 	stream := strings.TrimSpace(requestedStream)
 	if stream == "" {

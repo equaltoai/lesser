@@ -27,18 +27,23 @@ jobs:
             go.sum
             infra/cdk/go.sum
 
+      - name: Disk usage (post setup-go)
+        run: bash scripts/ci_disk_usage.sh "post setup-go"
+
       - name: Install Go tools
         run: bash scripts/install_ci_tools.sh
 
-      - name: Cache Lesser tool caches
+      - name: Cache Lesser XDG caches
         uses: actions/cache@v4
         with:
           path: |
-            tmp/go-cache
-            tmp/xdg-cache
-          key: ${{ runner.os }}-lesser-tmp-go1.25.7-${{ hashFiles('go.mod', 'go.sum', 'infra/cdk/go.mod', 'infra/cdk/go.sum', '.golangci.yml') }}
+            tmp/xdg-cache/go1.25.7
+          key: ${{ runner.os }}-lesser-xdg-go1.25.7-${{ hashFiles('go.mod', 'go.sum', 'infra/cdk/go.mod', 'infra/cdk/go.sum', '.golangci.yml') }}
           restore-keys: |
-            ${{ runner.os }}-lesser-tmp-go1.25.7-
+            ${{ runner.os }}-lesser-xdg-go1.25.7-
+
+      - name: Disk usage (post xdg cache restore)
+        run: bash scripts/ci_disk_usage.sh "post xdg cache restore"
 
       - name: Build lesser CLI
         run: go build -o lesser ./cmd/lesser
@@ -46,8 +51,15 @@ jobs:
       - name: Build lambda artifacts
         run: ./lesser build lambdas
 
+      - name: Disk usage (post lambda build)
+        run: bash scripts/ci_disk_usage.sh "post lambda build"
+
       - name: Verify (CI gate)
         run: ./lesser verify ci
+
+      - name: Disk usage (post verify)
+        if: always()
+        run: bash scripts/ci_disk_usage.sh "post verify"
 
       - name: Upload reports
         if: always()

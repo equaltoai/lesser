@@ -115,4 +115,3 @@ func TestInstanceRepository_SetAgentInstanceConfig_NilRejected(t *testing.T) {
 	repo := &InstanceRepository{}
 	assert.Error(t, repo.SetAgentInstanceConfig(context.Background(), nil))
 }
-

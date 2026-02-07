@@ -609,6 +609,7 @@ func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo,
 
 // generateWarningHTML creates content warning HTML if needed.
 // Deprecated: prefer template-first rendering via objectHTMLTemplate.
+//nolint:unused // Used by tests to validate legacy behavior during the template migration.
 func (h *Handler) generateWarningHTML(sensitive bool, summary string) string {
 	if sensitive && strings.TrimSpace(summary) != "" {
 		return fmt.Sprintf(`<div class="warning">
@@ -620,6 +621,7 @@ func (h *Handler) generateWarningHTML(sensitive bool, summary string) string {
 
 // generateUpdatedHTML creates updated date HTML if object was updated.
 // Deprecated: prefer template-first rendering via objectHTMLTemplate.
+//nolint:unused // Used by tests to validate legacy behavior during the template migration.
 func (h *Handler) generateUpdatedHTML(updated time.Time) string {
 	if !updated.IsZero() {
 		return fmt.Sprintf(`<p>Updated: %s</p>`, updated.Format("January 2, 2006 at 3:04 PM"))

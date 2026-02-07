@@ -149,6 +149,7 @@ func (h *Handler) extractStatusIDForHistory(ctx *apptheory.Context) (string, err
 }
 
 // performOptionalHistoryAuth performs authentication for history endpoints if required
+//nolint:unused // Retained for future history access policy toggles; current handler inlines optional auth.
 func (h *Handler) performOptionalHistoryAuth(ctx *apptheory.Context, _ string) {
 	// If public history is allowed, no auth is needed
 	if h.cfg.AllowPublicStatusHistory {
@@ -185,6 +186,7 @@ func (h *Handler) normalizeStatusIDForHistory(statusID string) string {
 }
 
 // fetchObjectForHistory fetches the current object
+//nolint:unused // Retained for future history refactors; current handler loads via Notes service directly.
 func (h *Handler) fetchObjectForHistory(ctx *apptheory.Context, objectID string) (any, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")

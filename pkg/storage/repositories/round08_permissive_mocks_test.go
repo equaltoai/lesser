@@ -28,6 +28,7 @@ func setupPermissiveRound08Mocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuer
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
 	mockQuery.On("Select", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
+	mockQuery.On("IfExists").Return(mockQuery).Maybe()
 
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		populateRound08SliceForCoverage(args.Get(0), baseTime)
