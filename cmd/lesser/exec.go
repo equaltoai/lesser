@@ -52,6 +52,13 @@ func setEnv(env []string, key string, value string) []string {
 }
 
 func ensureGoCacheDir(repoRoot string) (string, error) {
+	if override := strings.TrimSpace(os.Getenv("GOCACHE")); override != "" && override != "off" {
+		if err := os.MkdirAll(override, 0o750); err != nil {
+			return "", fmt.Errorf("create go-cache dir: %w", err)
+		}
+		return override, nil
+	}
+
 	path := filepath.Join(repoRoot, "tmp", "go-cache", cacheDirVersionKey())
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return "", fmt.Errorf("create go-cache dir: %w", err)
@@ -60,6 +67,13 @@ func ensureGoCacheDir(repoRoot string) (string, error) {
 }
 
 func ensureXDGCacheDir(repoRoot string) (string, error) {
+	if override := strings.TrimSpace(os.Getenv("XDG_CACHE_HOME")); override != "" {
+		if err := os.MkdirAll(override, 0o750); err != nil {
+			return "", fmt.Errorf("create xdg-cache dir: %w", err)
+		}
+		return override, nil
+	}
+
 	path := filepath.Join(repoRoot, "tmp", "xdg-cache", cacheDirVersionKey())
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return "", fmt.Errorf("create xdg-cache dir: %w", err)
