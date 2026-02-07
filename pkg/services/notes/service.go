@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	svcErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -311,10 +312,17 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		zap.String("visibility", cmd.Visibility),
 		zap.Int("content_length", len(cmd.Content)))
 
+	rawContent := cmd.Content
+
 	// Validate the command
 	if err := s.validateCreateCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
+
+	// Enforce "HTML-by-contract" invariants at write time. (Mastodon-compatible clients render `content` as HTML.)
+	sanitizedCmd := *cmd
+	sanitizedCmd.Content = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Content))
+	sanitizedCmd.SpoilerText = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.SpoilerText))
 
 	// Get author account
 	author, err := s.accountRepo.GetAccount(ctx, cmd.AuthorID)
@@ -326,19 +334,19 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	statusID := uuid.New().String()
 
 	// Create ActivityPub Note
-	note := s.buildActivityPubNote(cmd, statusID, author)
+	note := s.buildActivityPubNote(&sanitizedCmd, statusID, author)
 
 	publishedAt := time.Now()
 	note.Published = &publishedAt
 
 	// Enrich note with hashtags
-	hashtagTags, normalizedHashtags := s.buildHashtagTags(cmd.Content)
+	hashtagTags, normalizedHashtags := s.buildHashtagTags(rawContent)
 	if len(hashtagTags) > 0 {
 		note.Tag = append(note.Tag, hashtagTags...)
 	}
 
 	// Attach media if provided
-	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, cmd.MediaIDs)
+	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, sanitizedCmd.MediaIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +354,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		note.Attachment = attachments
 	}
 
-	status := s.composeStatus(cmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
+	status := s.composeStatus(&sanitizedCmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
 	status.ConversationID = resolveConversationID(ctx, status, s.lookupParentStatus)
 
 	// Store the status
@@ -525,17 +533,21 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 		return nil, err
 	}
 
+	// Enforce "HTML-by-contract" invariants at write time.
+	sanitizedContent := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Content))
+	sanitizedSpoiler := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.SpoilerText))
+
 	// Update status fields
-	status.Content = cmd.Content
+	status.Content = sanitizedContent
 	status.Sensitive = cmd.Sensitive
 	status.Language = cmd.Language
 	status.UpdatedAt = time.Now()
 
 	// Update the ActivityPub Note if present
 	if status.Note != nil {
-		status.Note.Content = cmd.Content
+		status.Note.Content = sanitizedContent
 		status.Note.Sensitive = cmd.Sensitive
-		status.Note.Summary = cmd.SpoilerText
+		status.Note.Summary = sanitizedSpoiler
 		now := time.Now()
 		status.Note.Updated = &now
 	}
@@ -1098,9 +1110,9 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 			Sensitive: cmd.Sensitive,
 			Summary:   cmd.SpoilerText,
 		},
-		Content:      cmd.Content,
-		AttributedTo: fmt.Sprintf("https://%s/users/%s", s.domainName, author.User.Username),
-		Visibility:   cmd.Visibility,
+		Content:          cmd.Content,
+		AttributedTo:     fmt.Sprintf("https://%s/users/%s", s.domainName, author.User.Username),
+		Visibility:       cmd.Visibility,
 		AgentAttribution: cmd.AgentAttribution,
 	}
 
@@ -3398,6 +3410,12 @@ type CreateCommunityNoteResult struct {
 
 // CreateCommunityNote creates a new community note
 func (s *Service) CreateCommunityNote(ctx context.Context, cmd *CreateCommunityNoteCommand) (*CreateCommunityNoteResult, error) {
+	if cmd != nil && cmd.Note != nil {
+		// Community notes are surfaced via an HTML-by-contract field in Mastodon-compatible responses.
+		// Treat stored note content as plain text and escape so it is always safe to embed.
+		cmd.Note.Content = htmlsafe.Escape(strings.TrimSpace(cmd.Note.Content))
+	}
+
 	// Create community note through repository
 	if err := s.communityNoteRepo.CreateCommunityNote(ctx, cmd.Note); err != nil {
 		return nil, ErrCreateCommunityNote

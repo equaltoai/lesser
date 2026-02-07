@@ -134,13 +134,14 @@ oEmbed height messaging), use a nonce-based CSP or eliminate inline scripts.
   - Profile fields values
   - Community notes content
 - Ensure read/transform paths do not reintroduce unsanitized content (converters should assume the invariant holds).
-- Add a one-time backfill/migration path to sanitize already-stored content, since write-time fixes do not remediate
-  existing stored payloads.
+- If legacy stored content exists, add a one-time backfill/migration path to sanitize already-stored content (write-time
+  fixes do not remediate existing payloads). If there is no legacy content to remediate, document that and skip.
 
 **Acceptance criteria:**
 - Stored content satisfies “sanitized HTML” policy; tests cover scripts, event handlers, `javascript:` URLs, and attribute
   injection patterns.
-- Existing stored content is remediated (backfill/migration) or clearly gated/disabled until remediated.
+- Either there is no legacy stored content to remediate, or existing stored content is remediated (backfill/migration),
+  or the relevant surfaces are clearly gated/disabled until remediation is complete.
 
 ---
 

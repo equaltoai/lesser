@@ -773,6 +773,77 @@ func TestService_round15_create_update_delete_smoke(t *testing.T) {
 	}))
 }
 
+func TestService_round15_html_by_contract_is_sanitized_at_write_time(t *testing.T) {
+	service, _, _, _, _ := newNotesServiceHarness(t)
+	ctx := context.Background()
+
+	payload := `<script>alert(1)</script>` +
+		`<img src=x onerror=alert(1)>` +
+		`<a href="javascript:alert(1)">x</a>` +
+		`<a href="https://example.com" onclick="alert(1)">ok</a>` +
+		`<b>bold</b>`
+
+	created, err := service.CreateNote(ctx, &CreateNoteCommand{
+		AuthorID:     "alice",
+		Content:      payload,
+		Visibility:   VisibilityPublic,
+		ToRecipients: []string{activitypub.PublicAddress},
+		CcRecipients: []string{"https://example.com/users/alice/followers"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, created.Note)
+	require.NotNil(t, created.Note.Note)
+
+	require.NotContains(t, created.Note.Content, "<script")
+	require.NotContains(t, created.Note.Content, "onerror=")
+	require.NotContains(t, created.Note.Content, "onclick=")
+	require.NotContains(t, created.Note.Content, "javascript:")
+
+	require.NotContains(t, created.Note.Note.Content, "<script")
+	require.NotContains(t, created.Note.Note.Content, "onerror=")
+	require.NotContains(t, created.Note.Note.Content, "onclick=")
+	require.NotContains(t, created.Note.Note.Content, "javascript:")
+
+	updated, err := service.UpdateNote(ctx, &UpdateNoteCommand{
+		StatusID:  created.Note.StatusID,
+		Content:   payload,
+		Sensitive: true,
+		Language:  "en",
+		UpdaterID: "alice",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.NotNil(t, updated.Note)
+
+	require.NotContains(t, updated.Note.Content, "<script")
+	require.NotContains(t, updated.Note.Content, "onerror=")
+	require.NotContains(t, updated.Note.Content, "onclick=")
+	require.NotContains(t, updated.Note.Content, "javascript:")
+}
+
+func TestService_round15_community_note_content_is_escaped_at_write_time(t *testing.T) {
+	service, _, _, _, _ := newNotesServiceHarness(t)
+	ctx := context.Background()
+
+	note := &storage.CommunityNote{
+		ObjectID:   "obj-1",
+		ObjectType: "Note",
+		AuthorID:   "https://example.com/users/alice",
+		Content:    `<img src=x onerror=alert(1)>hello`,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+
+	created, err := service.CreateCommunityNote(ctx, &CreateCommunityNoteCommand{Note: note})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, created.Note)
+
+	require.Contains(t, created.Note.Content, "&lt;img")
+	require.NotContains(t, created.Note.Content, "<img")
+}
+
 func TestService_round15_view_permissions_and_timelines(t *testing.T) {
 	service, _, _, _, _ := newNotesServiceHarness(t)
 

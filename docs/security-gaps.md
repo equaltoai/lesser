@@ -35,28 +35,31 @@ the actor service did not set a CSP header.
 - `cmd/actor/main.go` now emits a restrictive `Content-Security-Policy` for HTML responses in `actorActivityPubSecurityHeaders`.
 
 **Write path (stored source):**
-- `pkg/services/accounts/service.go:872` stores `cmd.DisplayName` into `account.Actor.Name` without sanitization.
-- `pkg/services/accounts/service.go:876` stores `cmd.Bio` into `account.Actor.Summary` without sanitization.
+- `pkg/services/accounts/service.go` now sanitizes `cmd.Bio` into `account.User.Note` and `account.Actor.Summary`
+  (Milestone 3).
+- `pkg/services/accounts/service.go` stores `cmd.DisplayName` verbatim into `account.Actor.Name` (plain-text field); HTML
+  surfaces escape at render time.
 
 **Why this matters even in ActivityPub:** the HTML profile page is a browser-facing surface (`/users/:username`) and is
 reachable whenever the client negotiates HTML.
 
 **Notes:**
 - The objects HTML renderer shows the intended pattern (escape everything): `cmd/objects/main.go:404`.
-- Write-time sanitization remains a goal for “HTML-by-contract” fields and will be addressed in Milestone 3; the Milestone
-  2 fix makes the browser-facing profile page safe even with legacy stored values.
+- Write-time sanitization for the bio and profile fields is enforced in Milestone 3; Milestone 2 ensures the
+  browser-facing profile page is safe even if legacy stored values exist.
 
 ---
 
 ## P0 — Stored HTML injection / client-XSS: Community notes content in Mastodon-compatible fields
 
-**Status:** confirmed  
+**Status:** fixed (Milestone 3)  
 **Confidence:** 8/10  
 
 Community note `Content` is stored verbatim and later embedded into an HTML string returned in a Mastodon-style response.
 
 **Write path:**
-- `cmd/api/handlers/notes.go:89` stores `req.Content` directly into `storage.CommunityNote.Content`.
+- `pkg/services/notes/service.go` now escapes `storage.CommunityNote.Content` at write time (`CreateCommunityNote`),
+  ensuring it is always safe to embed in HTML-by-contract output.
 
 **Read/response shaping path:**
 - `cmd/api/handlers/notes.go:371` returns `Content: fmt.Sprintf("<p>Community Note: %s</p>", note.Content)` without
@@ -75,7 +78,7 @@ Mastodon-compatible clients. This becomes stored client-side XSS if unsafe HTML 
 
 ## P0 — Stored HTML injection / client-XSS: Status content + profile bio/fields returned as HTML without sanitization
 
-**Status:** confirmed (systemic)  
+**Status:** fixed (Milestone 3)  
 **Confidence:** 8/10  
 
 Multiple user-controlled fields that Mastodon clients treat as server-sanitized HTML are stored and returned without
@@ -84,9 +87,9 @@ sanitization/escaping.
 ### Status content (`/api/v1/statuses`, timelines, status fetch)
 
 **Write path:**
-- `cmd/api/handlers/statuses.go:111` passes `Content: req.Status` directly to `Notes.CreateNote`.
-- `pkg/services/notes/service.go:1092` stores the content into ActivityPub `Note.Content` verbatim.
-- `pkg/services/notes/service.go:385` stores `models.Status.Content = cmd.Content` verbatim.
+- `pkg/services/notes/service.go` now sanitizes status `Content` (and `SpoilerText`) at write time (`CreateNote` /
+  `UpdateNote`) using the shared ActivityPub/Mastodon bluemonday policy.
+- `cmd/api/handlers/statuses.go` now sanitizes status edits at write time (`applyStatusUpdates`).
 
 **Read/response shaping path:**
 - `cmd/api/handlers/helpers.go:403` maps `storageStatus.Content` directly into the API status `content` field.
@@ -99,8 +102,10 @@ sanitization/escaping.
 ### Account bio + profile fields (`/api/v1/accounts/*`)
 
 **Write path:**
-- `pkg/services/accounts/service.go:876` stores `cmd.Bio` into `account.Actor.Summary` without sanitization.
-- `pkg/services/accounts/service.go:844` / `pkg/services/accounts/service.go:914` store profile field `Name`/`Value` verbatim.
+- `pkg/services/accounts/service.go` now sanitizes `cmd.Bio` at write time into both the Mastodon-compatible user record
+  (`account.User.Note`) and the ActivityPub actor summary (`account.Actor.Summary`).
+- `pkg/services/accounts/service.go` now sanitizes profile field values at write time for both the user record and actor
+  attachments (Mastodon “fields”).
 
 **Read/response shaping path:**
 - `pkg/transformations/converters.go:50` maps `actor.Summary` into Mastodon `Account.Note` (HTML field by Mastodon contract).

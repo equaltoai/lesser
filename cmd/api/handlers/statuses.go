@@ -470,10 +470,10 @@ func (h *Handler) convertUnknownObjectToNote(ctx *apptheory.Context, object any,
 // applyStatusUpdates applies the requested updates to the note
 func (h *Handler) applyStatusUpdates(note *activitypub.Note, req *models.UpdateStatusRequest) {
 	if req.Status != "" {
-		note.Content = req.Status
+		note.Content = common.SanitizeContent(req.Status)
 	}
 	if req.SpoilerText != "" {
-		note.Summary = req.SpoilerText
+		note.Summary = common.SanitizeContent(req.SpoilerText)
 	}
 	note.Sensitive = req.Sensitive
 
