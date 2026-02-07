@@ -126,4 +126,3 @@ func TestAgentMemorySearchRound14_ValidateModeAndHybridCandidates(t *testing.T) 
 		require.Greater(t, score, 0.0)
 	})
 }
-

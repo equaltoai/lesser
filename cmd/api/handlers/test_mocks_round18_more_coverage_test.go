@@ -80,4 +80,3 @@ func TestMockRepositoryStorageRound18_NilBranches(t *testing.T) {
 
 	store.AssertExpectations(t)
 }
-

@@ -91,4 +91,3 @@ func TestAgentMemorySearchRound13_AuthAndValidationBranches(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(h.HandleAgentMemorySearchLift(ctx))
 	})
 }
-

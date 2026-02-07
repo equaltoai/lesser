@@ -152,4 +152,3 @@ func TestResponses_HealthCheck(t *testing.T) {
 	assert.Equal(t, 503, status)
 	assert.Equal(t, "Service Unavailable", parsed.Error)
 }
-

@@ -119,4 +119,3 @@ func TestUserRepository_ListAgents_QueryError(t *testing.T) {
 	assert.Nil(t, users)
 	assert.Empty(t, nextCursor)
 }
-

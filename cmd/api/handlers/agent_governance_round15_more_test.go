@@ -60,4 +60,3 @@ func TestAgentGovernance_AdminPolicy_ErrorBranches_Round15(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(h.HandleAdminUpdateAgentPolicyLift(ctx))
 	})
 }
-

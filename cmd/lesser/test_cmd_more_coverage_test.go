@@ -90,4 +90,3 @@ func TestListPackagesForPkgCoverage_FiltersPkgTesting(t *testing.T) {
 		"github.com/equaltoai/lesser/pkg/z",
 	}, pkgs)
 }
-

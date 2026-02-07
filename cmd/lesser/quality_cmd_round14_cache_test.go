@@ -44,4 +44,3 @@ func TestEnsureGolangCILintCacheFresh_Round14_StampReuseAndWriteErrors(t *testin
 	require.NoError(t, os.WriteFile(xdgCacheFile, []byte("x"), 0o644))
 	require.Error(t, ensureGolangCILintCacheFresh(repoRoot, xdgCacheFile))
 }
-

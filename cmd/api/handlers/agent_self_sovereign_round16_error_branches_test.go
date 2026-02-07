@@ -354,4 +354,3 @@ func TestAgentSelfSovereignRound16_AgentKeyChallengeResponseNil(t *testing.T) {
 	require.Empty(t, out.ID)
 	require.Empty(t, out.Username)
 }
-

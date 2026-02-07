@@ -19,13 +19,13 @@ func TestAgentSafetyRound13_EnforceRails_AndLockout(t *testing.T) {
 	state := &round10QueryState{
 		usersByUsername: map[string]storagemodels.User{
 			"agent": {
-				PK:        "USER#agent",
-				SK:        storagemodels.SKMetadata,
-				Username:  "agent",
-				Role:      "user",
-				Approved:  true,
-				Version:   1,
-				IsAgent:   true,
+				PK:       "USER#agent",
+				SK:       storagemodels.SKMetadata,
+				Username: "agent",
+				Role:     "user",
+				Approved: true,
+				Version:  1,
+				IsAgent:  true,
 			},
 		},
 	}

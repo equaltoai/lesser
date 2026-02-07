@@ -16,4 +16,3 @@ func TestRedirectResponse_Round15(t *testing.T) {
 	require.Equal(t, http.StatusMovedPermanently, resp.Status)
 	require.Equal(t, []string{"https://example.com"}, resp.Headers["location"])
 }
-

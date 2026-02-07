@@ -244,11 +244,11 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *apptheory.Context) (*app
 	})
 }
 
-	// Helper methods
+// Helper methods
 
-	func (h *Handler) checkQuotePermissions(_ *apptheory.Context, _ string, _ interface{}) (bool, error) {
-		// For now, return a simple implementation
-		// In a full implementation, this would:
+func (h *Handler) checkQuotePermissions(_ *apptheory.Context, _ string, _ interface{}) (bool, error) {
+	// For now, return a simple implementation
+	// In a full implementation, this would:
 	// 1. Get the original status author
 	// 2. Get their quote permissions
 	// 3. Check if quoter is allowed based on relationship and permissions

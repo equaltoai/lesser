@@ -39,11 +39,11 @@ func TestAgentKeyChallenge_BeforeCreate_AndKeys(t *testing.T) {
 	t.Run("happy path derives keys and ttl", func(t *testing.T) {
 		expiresAt := time.Now().Add(5 * time.Minute)
 		c := &AgentKeyChallenge{
-			ID:       "  challenge-1 ",
-			Username: " alice ",
-			Action:   " register ",
-			Nonce:    "n",
-			Message:  "hello",
+			ID:        "  challenge-1 ",
+			Username:  " alice ",
+			Action:    " register ",
+			Nonce:     "n",
+			Message:   "hello",
 			ExpiresAt: expiresAt,
 		}
 		require.NoError(t, c.BeforeCreate())
@@ -113,4 +113,3 @@ func TestAgentConcurrencySlot_BeforeCreate_AndTTL(t *testing.T) {
 		assert.Equal(t, exp.UTC().Unix(), s.TTL)
 	})
 }
-

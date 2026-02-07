@@ -143,4 +143,3 @@ func TestEncryptedString_MarshalUnmarshal_AndString(t *testing.T) {
 		assert.Error(t, decoded.UnmarshalDynamORM(base64.StdEncoding.EncodeToString([]byte("nope"))))
 	})
 }
-

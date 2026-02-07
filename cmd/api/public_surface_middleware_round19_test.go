@@ -58,4 +58,3 @@ func TestPublicSurfaceMiddlewareRound19_Policy(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 }
-
