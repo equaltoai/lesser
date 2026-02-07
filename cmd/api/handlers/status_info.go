@@ -73,15 +73,35 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *apptheory.Context) (*apptheory
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Perform optional authentication
-	h.performOptionalHistoryAuth(ctx, statusID)
+	// Determine viewer context (used for both access control and shaping).
+	viewerUsername := ""
+	authHeader := h.extractHistoryAuthHeader(ctx)
+	if strings.TrimSpace(authHeader) != "" {
+		if token, err := auth.ExtractBearerToken(authHeader); err == nil && strings.TrimSpace(token) != "" {
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil {
+				viewerUsername = claims.Username
+			}
+		}
+	}
+
+	// If public history is not allowed, require authentication.
+	if !h.cfg.AllowPublicStatusHistory && strings.TrimSpace(viewerUsername) == "" {
+		return common.RespondUnauthorized(ctx, "authentication required")
+	}
+
+	// Enforce viewer privacy on the underlying status itself (public/unlisted for unauth).
+	status, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
+	if err != nil || status == nil {
+		return common.RespondNotFound(ctx, "status not found")
+	}
 
 	// Normalize and fetch the current object
 	objectID := h.normalizeStatusIDForHistory(statusID)
-	currentObject, err := h.fetchObjectForHistory(ctx, objectID)
-	if err != nil {
-		return common.RespondNotFound(ctx, "status not found")
-	}
+	currentObject := any(status.Note)
 
 	// Get the author actor
 	actor := h.getHistoryAuthorActor(ctx, currentObject)

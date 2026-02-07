@@ -571,7 +571,10 @@ func (h *Handler) HandleGetStatusLift(ctx *apptheory.Context) (*apptheory.Respon
 	}
 
 	// Get status using Notes service
-	status, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
+	status, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "status not found")
@@ -724,28 +727,29 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *apptheory.Context) (*apptheor
 
 // HandleGetStatusContextLift retrieves the context (ancestors and descendants) of a status
 func (h *Handler) HandleGetStatusContextLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Validate and normalize status ID
-	objectID, resp, err := h.validateStatusIDForContext(ctx)
+	// Optional authentication (public statuses can be viewed without auth).
+	var viewerUsername string
+	isAgent := false
+	if token := h.getBearerTokenLift(ctx); token != "" {
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil {
+			viewerUsername = claims.Username
+			isAgent = claims.IsAgent
+		}
+	}
+
+	root, resp, err := h.validateStatusIDForContext(ctx, viewerUsername)
 	if resp != nil || err != nil {
 		return resp, err
 	}
 
-	// Optional auth: agent tokens receive stricter context shaping.
-	isAgent := false
-	if token := h.getBearerTokenLift(ctx); token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil && claims.IsAgent {
-			isAgent = true
-		}
-	}
-
 	// Get ancestors and descendants
-	ancestors := h.getStatusAncestors(ctx.Context(), objectID, 200)
+	ancestors := h.getStatusAncestors(ctx.Context(), root, viewerUsername, 200)
 	if isAgent && len(ancestors) > 20 {
 		// Root + last 20 to cap agent context expansion.
 		ancestors = append([]models.Status{ancestors[0]}, ancestors[len(ancestors)-20:]...)
 	}
-	descendants := h.getStatusDescendants(ctx.Context(), objectID)
+	descendants := h.getStatusDescendants(ctx.Context(), root, viewerUsername)
 
 	// Return context response
 	payload := models.StatusContext{
@@ -756,22 +760,21 @@ func (h *Handler) HandleGetStatusContextLift(ctx *apptheory.Context) (*apptheory
 	return okJSON(payload)
 }
 
-// validateStatusIDForContext validates the status ID and checks it exists
-func (h *Handler) validateStatusIDForContext(ctx *apptheory.Context) (string, *apptheory.Response, error) {
+// validateStatusIDForContext validates the status ID, checks it exists, and enforces viewer privacy.
+func (h *Handler) validateStatusIDForContext(ctx *apptheory.Context, viewerUsername string) (*storageMods.Status, *apptheory.Response, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
 		resp, respErr := common.RespondBadRequest(ctx, err.Error())
-		return "", resp, respErr
+		return nil, resp, respErr
 	}
 
-	// Normalize and validate the status ID
-	objectID := statusID
-	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
-	}
+	objectID := fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 
-	// Get the object to check it exists
-	_, err := h.registry.Notes().GetNote(ctx.Context(), objectID)
+	// Get the status with viewer-aware privacy enforcement.
+	status, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil {
 		// Check if this is a tombstoned object (should return 410 Gone)
 		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context(), objectID); tombErr == nil && isTombstoned {
@@ -783,48 +786,57 @@ func (h *Handler) validateStatusIDForContext(ctx *apptheory.Context) (string, *a
 					"deleted_at":        tombstone.Deleted.Format(time.RFC3339),
 					"former_type":       tombstone.FormerType,
 				})
-				return "", resp, respErr
+				return nil, resp, respErr
 			}
 			// Fallback if we can't get tombstone details
 			resp, respErr := apptheory.JSON(http.StatusGone, map[string]string{
 				"error":             "status deleted",
 				"error_description": "This status has been deleted and its context is no longer available",
 			})
-			return "", resp, respErr
+			return nil, resp, respErr
 		}
 		// Regular 404 for genuinely missing objects
 		resp, respErr := common.RespondNotFound(ctx, "status not found")
-		return "", resp, respErr
+		return nil, resp, respErr
 	}
 
-	return objectID, nil, nil
+	return status, nil, nil
 }
 
-// getStatusAncestors retrieves the ancestors (parent statuses) of a status
-func (h *Handler) getStatusAncestors(ctx context.Context, objectID string, maxDepth int) []models.Status {
+// getStatusAncestors retrieves the ancestors (parent statuses) of a status, enforcing viewer privacy.
+func (h *Handler) getStatusAncestors(ctx context.Context, root *storageMods.Status, viewerUsername string, maxDepth int) []models.Status {
 	if maxDepth <= 0 {
 		maxDepth = 10
 	}
-
-	parentIDs := make([]string, 0, maxDepth)
-	currentID := objectID
-
-	for i := 0; i < maxDepth; i++ {
-		parentID := h.getParentStatusID(ctx, currentID)
-		if err := common.ValidateRequiredParam("parentID", parentID); err != nil {
-			break
-		}
-		parentIDs = append(parentIDs, parentID)
-		currentID = parentID
+	if root == nil {
+		return []models.Status{}
 	}
 
-	ancestors := make([]models.Status, 0, len(parentIDs))
-	for i := len(parentIDs) - 1; i >= 0; i-- {
-		parentStatus := h.loadStatusWithActor(ctx, parentIDs[i])
-		if parentStatus == nil {
-			continue
+	parents := make([]*storageMods.Status, 0, maxDepth)
+	currentID := strings.TrimSpace(root.InReplyToID)
+
+	for i := 0; i < maxDepth; i++ {
+		if currentID == "" {
+			break
 		}
-		ancestors = append(ancestors, *parentStatus)
+
+		parent, err := h.registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: currentID,
+			ViewerID: viewerUsername,
+		})
+		if err != nil || parent == nil {
+			break
+		}
+
+		parents = append(parents, parent)
+		currentID = strings.TrimSpace(parent.InReplyToID)
+	}
+
+	ancestors := make([]models.Status, 0, len(parents))
+	for i := len(parents) - 1; i >= 0; i-- {
+		actor := h.getActorForObject(ctx, parents[i])
+		status := transformations.ObjectToStatusAny(parents[i], actor, h.cfg.BaseURL())
+		ancestors = append(ancestors, status)
 	}
 
 	return ancestors
@@ -932,27 +944,41 @@ func (h *Handler) getActorForObject(ctx context.Context, obj interface{}) *activ
 	return account.Actor
 }
 
-// getStatusDescendants retrieves the descendants (replies) of a status
-func (h *Handler) getStatusDescendants(ctx context.Context, objectID string) []models.Status {
+// getStatusDescendants retrieves the descendants (replies) of a status, enforcing viewer privacy.
+func (h *Handler) getStatusDescendants(ctx context.Context, root *storageMods.Status, viewerUsername string) []models.Status {
 	descendants := []models.Status{}
+	if root == nil || strings.TrimSpace(root.StatusID) == "" {
+		return descendants
+	}
 
-	// Fetch replies to this status
-	replies, _, err := h.repos.Object().GetReplies(ctx, objectID, 100, "") // Get up to 100 replies
-	if err != nil {
+	replies, err := h.repos.Status().GetReplies(ctx, root.StatusID, interfaces.PaginationOptions{Limit: 100})
+	if err != nil || replies == nil {
 		h.logger.Warn("failed to get replies for context",
-			zap.String("object_id", objectID),
+			zap.String("status_id", root.StatusID),
 			zap.Error(err))
 		return descendants
 	}
 
-	for _, reply := range replies {
-		if status := h.convertReplyToStatus(ctx, reply); status != nil {
-			descendants = append(descendants, *status)
+	for _, reply := range replies.Items {
+		if reply == nil || strings.TrimSpace(reply.StatusID) == "" {
+			continue
 		}
+
+		status, err := h.registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: reply.StatusID,
+			ViewerID: viewerUsername,
+		})
+		if err != nil || status == nil {
+			continue
+		}
+
+		actor := h.getActorForObject(ctx, status)
+		apiStatus := transformations.ObjectToStatusAny(status, actor, h.cfg.BaseURL())
+		descendants = append(descendants, apiStatus)
 	}
 
 	h.logger.Debug("fetched descendants for context",
-		zap.String("object_id", objectID),
+		zap.String("status_id", root.StatusID),
 		zap.Int("count", len(descendants)))
 
 	return descendants
@@ -993,22 +1019,42 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *apptheory.Context) (*apptheo
 	// Parse query parameters
 	params := h.parseAccountStatusesParams(ctx)
 
-	// Get objects by this actor
-	userTimeline, err := h.registry.Notes().GetUserTimeline(ctx.Context(), actor.ID, interfaces.PaginationOptions{
-		Limit:  params.limit,
-		Cursor: params.maxID,
+	// Optional authentication (user timeline can be viewed without auth, but visibility must be enforced).
+	var viewerUsername string
+	if token := h.getBearerTokenLift(ctx); token != "" {
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil {
+			viewerUsername = claims.Username
+		}
+	}
+
+	// Get user timeline with viewer-aware privacy enforcement.
+	result, err := h.registry.Notes().ListNotes(ctx.Context(), &notes.ListNotesQuery{
+		ViewerID:       viewerUsername,
+		TimelineType:   "user",
+		AuthorID:       actor.ID,
+		Pagination:     interfaces.PaginationOptions{Limit: params.limit, Cursor: params.maxID},
+		OnlyMedia:      params.onlyMedia,
+		ExcludeReplies: params.excludeReplies,
+		ExcludeReblogs: params.excludeReblogs,
 	})
 	if err != nil {
 		h.logger.Error("failed to get objects by actor", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
-	statusItems := userTimeline.Items
-	cursor := userTimeline.NextCursor
+	if result == nil {
+		return common.RespondInternalServerError(ctx, "Internal server error")
+	}
+
+	cursor := ""
+	if result != nil && result.Pagination != nil {
+		cursor = result.Pagination.NextCursor
+	}
 
 	// Convert status models to interface{} for compatibility
-	objects := make([]any, len(statusItems))
-	for i, s := range statusItems {
-		objects[i] = s
+	objects := make([]any, 0, len(result.Notes))
+	for _, s := range result.Notes {
+		objects = append(objects, s)
 	}
 
 	// Convert and filter objects to statuses

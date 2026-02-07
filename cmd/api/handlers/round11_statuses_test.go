@@ -87,6 +87,12 @@ func TestStatusHandlersLift(t *testing.T) {
 			}
 			return status, nil
 		},
+		GetNoteWithViewerFunc: func(_ context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+			if query.StatusID == "missing" {
+				return nil, errors.New("not found")
+			}
+			return status, nil
+		},
 		DeleteNoteFunc: func(_ context.Context, cmd *notes.DeleteNoteCommand) error {
 			require.Equal(t, "s1", cmd.StatusID)
 			return nil

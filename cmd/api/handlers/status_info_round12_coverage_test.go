@@ -59,6 +59,9 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 			GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) {
 				return nil, errors.New("missing")
 			},
+			GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
+				return nil, errors.New("missing")
+			},
 		}
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{NotesSvc: notesSvc})
 
@@ -67,7 +70,9 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 		ctxBad.Params["id"] = "bad id"
 		requireStatus(t, http.StatusBadRequest)(h.HandleGetStatusHistoryLift(ctxBad))
 
-		ctxNF, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/history", nil, nil, nil)
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+		headers := map[string]string{"authorization": "Bearer " + token}
+		ctxNF, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/history", headers, nil, nil)
 		require.NoError(t, err)
 		ctxNF.Params["id"] = "123"
 		requireStatus(t, http.StatusNotFound)(h.HandleGetStatusHistoryLift(ctxNF))
@@ -76,6 +81,9 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 	t.Run("history optional auth paths + edit history failure", func(t *testing.T) {
 		notesSvc := &NotesServiceStub{
 			GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) {
+				return status, nil
+			},
+			GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
 				return status, nil
 			},
 			GetUpdateHistoryFunc: func(_ context.Context, _ *notes.GetUpdateHistoryQuery) (*notes.GetUpdateHistoryResult, error) {

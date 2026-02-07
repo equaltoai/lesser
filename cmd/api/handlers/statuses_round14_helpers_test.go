@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -114,24 +115,25 @@ func TestStatusesRound14_ValidateStatusIDForContext(t *testing.T) {
 	t.Run("success returns normalized object id", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(_ context.Context, statusID string) (*models.Status, error) {
-					return &models.Status{StatusID: statusID}, nil
+				GetNoteWithViewerFunc: func(_ context.Context, query *notes.GetNoteQuery) (*models.Status, error) {
+					return &models.Status{StatusID: query.StatusID}, nil
 				},
 			},
 		}
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, reg)
 
 		ctx := &apptheory.Context{Params: map[string]string{"id": "abc"}}
-		objectID, resp, err := h.validateStatusIDForContext(ctx)
+		status, resp, err := h.validateStatusIDForContext(ctx, "")
 		require.NoError(t, err)
 		require.Nil(t, resp)
-		require.Contains(t, objectID, "/objects/abc")
+		require.NotNil(t, status)
+		require.Equal(t, "abc", status.StatusID)
 	})
 
 	t.Run("not found returns 404 when tombstone missing", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(context.Context, string) (*models.Status, error) {
+				GetNoteWithViewerFunc: func(context.Context, *notes.GetNoteQuery) (*models.Status, error) {
 					return nil, errors.New("missing")
 				},
 			},
@@ -146,7 +148,7 @@ func TestStatusesRound14_ValidateStatusIDForContext(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, state, reg)
 
 		ctx := &apptheory.Context{Params: map[string]string{"id": "missing"}}
-		_, resp, err := h.validateStatusIDForContext(ctx)
+		_, resp, err := h.validateStatusIDForContext(ctx, "")
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusNotFound, resp.Status)
@@ -155,7 +157,7 @@ func TestStatusesRound14_ValidateStatusIDForContext(t *testing.T) {
 	t.Run("tombstoned status returns 410 gone with details", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(context.Context, string) (*models.Status, error) {
+				GetNoteWithViewerFunc: func(context.Context, *notes.GetNoteQuery) (*models.Status, error) {
 					return nil, errors.New("gone")
 				},
 			},
@@ -174,10 +176,9 @@ func TestStatusesRound14_ValidateStatusIDForContext(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, state, reg)
 
 		ctx := &apptheory.Context{Params: map[string]string{"id": "dead"}}
-		_, resp, err := h.validateStatusIDForContext(ctx)
+		_, resp, err := h.validateStatusIDForContext(ctx, "")
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusGone, resp.Status)
 	})
 }
-

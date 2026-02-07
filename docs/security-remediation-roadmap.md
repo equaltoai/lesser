@@ -12,6 +12,7 @@ This roadmap turns the findings in `docs/security-gaps.md` into an implementatio
 
 Related tracking:
 - Gaps inventory: `docs/security-gaps.md`
+- Public surface matrix: `docs/security-public-surface.md`
 - Security-sensitive placeholders/stubs: `docs/security-stubs-and-placeholders.md`
 
 ---
@@ -205,4 +206,3 @@ oEmbed height messaging), use a nonce-based CSP or eliminate inline scripts.
 **Acceptance criteria:**
 - CI fails when new high-risk placeholder/auth bypass is introduced without updating the relevant docs/tests.
 - The stubs inventory is maintained and used to drive closure of security-sensitive incomplete implementations.
-

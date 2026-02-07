@@ -761,7 +761,7 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		zap.Int("items_count", len(result.Items)))
 
 	hydratedItems := s.hydrateTimelineStatuses(ctx, result.Items)
-	filteredNotes := s.filterNotesForViewer(hydratedItems, query)
+	filteredNotes := s.filterNotesForViewer(ctx, hydratedItems, query)
 
 	return s.buildNotesResult(filteredNotes, result), nil
 }
@@ -827,12 +827,12 @@ func (s *Service) routeTimelineQuery(ctx context.Context, query *ListNotesQuery)
 }
 
 // filterNotesForViewer filters notes based on privacy, visibility, and query filters
-func (s *Service) filterNotesForViewer(notes []*models.Status, query *ListNotesQuery) []*models.Status {
+func (s *Service) filterNotesForViewer(ctx context.Context, notes []*models.Status, query *ListNotesQuery) []*models.Status {
 	filteredNotes := make([]*models.Status, 0, len(notes))
 	isPublicTimeline := query.TimelineType == VisibilityPublic || query.TimelineType == "local"
 
 	for _, status := range notes {
-		if !s.shouldIncludeStatus(status, query, isPublicTimeline) {
+		if !s.shouldIncludeStatus(ctx, status, query, isPublicTimeline) {
 			continue
 		}
 
@@ -943,7 +943,7 @@ func safeKey(status *models.Status, isPK bool) string {
 }
 
 // shouldIncludeStatus determines if a status should be included based on filters
-func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQuery, isPublicTimeline bool) bool {
+func (s *Service) shouldIncludeStatus(ctx context.Context, status *models.Status, query *ListNotesQuery, isPublicTimeline bool) bool {
 	// Skip deleted posts
 	if status.Deleted {
 		s.logger.Debug("skipping deleted status",
@@ -954,7 +954,16 @@ func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQue
 	// For public/local timelines, skip visibility check since repository already filtered
 	// For other timelines (home, user, etc.), check visibility
 	if !isPublicTimeline {
-		if !status.IsVisibleTo(query.ViewerID) {
+		canView, err := s.checkViewPermissions(ctx, status, query.ViewerID)
+		if err != nil {
+			s.logger.Error("failed to check view permissions for timeline status",
+				zap.String("status_id", status.StatusID),
+				zap.String("visibility", status.Visibility),
+				zap.String("viewer_id", query.ViewerID),
+				zap.Error(err))
+			return false
+		}
+		if !canView {
 			s.logger.Debug("skipping status not visible to viewer",
 				zap.String("status_id", status.StatusID),
 				zap.String("visibility", status.Visibility),

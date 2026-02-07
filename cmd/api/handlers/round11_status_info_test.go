@@ -29,6 +29,9 @@ func TestStatusSourceAndHistory(t *testing.T) {
 		GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
 			return status, nil
 		},
+		GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+			return status, nil
+		},
 		GetUpdateHistoryFunc: func(ctx context.Context, query *notes.GetUpdateHistoryQuery) (*notes.GetUpdateHistoryResult, error) {
 			return &notes.GetUpdateHistoryResult{History: []*storage.UpdateHistory{
 				{
