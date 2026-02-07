@@ -122,94 +122,68 @@ clients.
 
 ## P0 — Authorization bypass: Moderation GraphQL resolvers lack role checks
 
-**Status:** confirmed  
+**Status:** fixed (Milestone 5)  
 **Confidence:** 9/10  
 
-GraphQL auth is optional at middleware level (`cmd/graphql/main.go:797`), so resolvers must enforce authorization.
-`graph/query_resolvers_moderation.go` contains moderation data resolvers with **no** authz checks, and several moderation
-mutations/subscriptions require only authentication instead of moderator/admin role.
+GraphQL requests are authenticated at the HTTP boundary (`cmd/graphql/main.go` `handleGraphQL`), but moderation surfaces
+must still be role-gated so that regular users cannot read or control moderation state.
 
-**Unauthenticated moderation queries (no `requireAuth` / `requireModeratorOrAdmin`):**
-- `graph/query_resolvers_moderation.go:20` (`ModerationQueue`)
-- `graph/query_resolvers_moderation.go:86` (`ModerationDashboard`)
-- `graph/query_resolvers_moderation.go:156` (`ModerationEffectiveness`)
-- `graph/query_resolvers_moderation.go:207` (`ModerationPatterns`)
-- `graph/query_resolvers_moderation.go:280` (`ModeratorActivity`)
-- `graph/query_resolvers_moderation.go:387` (`PatternEffectiveness`)
+**Fix summary:**
+- Moderation queries in `graph/query_resolvers_moderation.go` now require `requireModeratorOrAdmin`.
+- Pattern management mutations now require `requireModeratorOrAdmin`.
+- Moderation subscriptions now require `requireModeratorOrAdmin`.
 
-**Pattern management mutations only require login:**
-- `graph/mutation_resolvers_moderation.go:420` (`DeleteModerationPattern`)
-- `graph/mutation_resolvers_moderation.go:446` (`UpdateModerationPattern`)
-- `graph/mutation_resolvers_moderation.go:470` (`CreateModerationPattern`)
+**Pre-fix locations (for audit context):**
+- `graph/query_resolvers_moderation.go` (`ModerationQueue`, `ModerationDashboard`, `ModerationEffectiveness`,
+  `ModerationPatterns`, `ModeratorActivity`, `PatternEffectiveness`)
+- `graph/mutation_resolvers_moderation.go` (`DeleteModerationPattern`, `UpdateModerationPattern`,
+  `CreateModerationPattern`)
+- `graph/subscription_resolvers_moderation.go` (`ModerationEvents`, `ModerationAlerts`, `ModerationQueueUpdate`)
 
-**Moderation subscriptions only require login:**
-- `graph/subscription_resolvers_moderation.go:15` (`ModerationEvents`)
-- `graph/subscription_resolvers_moderation.go:52` (`ModerationAlerts`)
-- `graph/subscription_resolvers_moderation.go:90` (`ModerationQueueUpdate`)
-
-**Correct pattern exists (role gating):**
-- `graph/auth_helpers_roles.go:11` (`requireModeratorOrAdmin`)
-- `graph/query_resolvers_moderation_parity.go:63` shows `requireModeratorOrAdmin` use for moderation queries.
+**Implementation note:** the parity moderation resolvers already used the correct role gate
+(`graph/auth_helpers_roles.go:11` / `requireModeratorOrAdmin`).
 
 ---
 
 ## P1 — Missing authorization: GraphQL “ops/insights” queries are publicly callable
 
-**Status:** confirmed  
-**Confidence:** 7/10  
+**Status:** fixed (Milestone 5)  
+**Confidence:** 8/10  
 
-Because GraphQL authentication is optional at middleware level (`cmd/graphql/main.go:797`), any query resolver that does not
-call `requireAuth` / `requireAdmin` is callable by unauthenticated clients.
+GraphQL is authenticated at the HTTP boundary, but several “ops/insights” resolvers were callable by any authenticated
+user. These are now admin-only (`requireAdmin`) to avoid leaking internal analytics/budgets/health data to regular users.
 
-Several “operations/insights” resolvers currently have no auth checks, which likely exposes internal analytics, budgets,
-and system performance data to the public internet.
-
-**Examples (not exhaustive):**
+**Pre-fix examples (not exhaustive):**
 - Cost + performance:
-  - `graph/query_resolvers_cost.go:15` (`CostBreakdown`) — no auth
-  - `graph/query_resolvers_cost.go:103` (`InfrastructureHealth`) — no auth
-  - `graph/query_resolvers_cost.go:121` (`SlowQueries`) — no auth
-  - `graph/query_resolvers_cost.go:140` (`PerformanceMetrics`) — no auth
+  - `graph/query_resolvers_cost.go` (`CostBreakdown`, `InfrastructureHealth`, `SlowQueries`, `PerformanceMetrics`)
 - Federation management:
-  - `graph/query_resolvers_federation.go:148` (`InstanceRelationships`) — no auth
-  - `graph/query_resolvers_federation.go:168` (`InstanceBudgets`) — no auth
-  - `graph/query_resolvers_federation.go:188` (`InstanceHealthReport`) — no auth
-  - `graph/query_resolvers_federation.go:208` (`FederationMap`) — no auth
+  - `graph/query_resolvers_federation.go` (`InstanceRelationships`, `InstanceBudgets`, `InstanceHealthReport`,
+    `FederationMap`)
 - AI analysis / object introspection:
-  - `graph/query_resolvers_ai.go:18` (`ExplainObject`) — no auth
-  - `graph/query_resolvers_ai.go:95` (`AiAnalysis`) — no auth
-  - `graph/query_resolvers_ai.go:216` (`AiCapabilities`) — no auth
+  - `graph/query_resolvers_ai.go` (`ExplainObject`, `AiAnalysis`, `AiCapabilities`)
 
-**Recommendation:** decide per-field intended exposure (public vs authenticated vs admin), then apply `requireAuth` /
-`requireAdmin` consistently and add regression tests.
-
-**Note:** Round12 tests currently call several of these “ops/insights” resolvers without auth (suggesting this exposure may
-be intentional today). If so, document that policy explicitly and ensure any genuinely-sensitive fields are gated.
-- `graph/cost_resolvers_round12_test.go:70` calls `CostBreakdown` unauthenticated.
-- `graph/query_resolvers_federation_round12_test.go:15` calls `InstanceMetrics` unauthenticated.
+**Fix summary:**
+- Ops/insights queries now use `requireAdmin`.
+- Ops/insights subscriptions now use `requireAdmin`.
 
 ---
 
 ## P0 — Missing authorization: federation control GraphQL mutations are unauthenticated
 
-**Status:** confirmed  
-**Confidence:** 8/10  
+**Status:** fixed (Milestone 5)  
+**Confidence:** 9/10  
 
-Several federation-cost/budget/limit mutations do not authenticate or authorize the caller at all (they ignore `ctx` and
-do not call `requireAuth`/`requireAdmin`). Even where implementations are currently stubbed, these are high-risk footguns
-once backed by real persistence.
+Several federation-cost/budget/limit mutations did not authenticate or authorize the caller at all (they ignored `ctx`
+and did not call `requireAuth`/`requireAdmin`). Even where implementations are stubbed, these are high-risk footguns once
+backed by real persistence.
 
-**Locations:**
-- `graph/mutation_resolvers_federation.go:16` (`OptimizeFederationCosts`)
-- `graph/mutation_resolvers_federation.go:42` (`SetFederationLimit`)
-- `graph/mutation_resolvers_federation.go:59` (`PauseFederation`)
-- `graph/mutation_resolvers_federation.go:71` (`ResumeFederation`)
-- `graph/mutation_resolvers_federation.go:83` (`SetInstanceBudget`)
+**Fix summary:**
+- Federation control mutations now require `requireAdmin` and accept a real `ctx`.
+- Severance/operator mutations (`acknowledgeSeverance`, `attemptReconnection`) are also admin-only.
 
-**Recommendation:** gate these behind `requireAdmin` (or a dedicated operator role) before enabling real behavior.
-
-**Note:** the current implementations ignore `ctx` entirely (e.g., `OptimizeFederationCosts(_ context.Context, ...)`), so
-even an auth middleware change won’t help unless resolvers themselves enforce authorization.
+**Pre-fix locations (for audit context):**
+- `graph/mutation_resolvers_federation.go` (`OptimizeFederationCosts`, `SetFederationLimit`, `PauseFederation`,
+  `ResumeFederation`, `SetInstanceBudget`)
 
 ---
 

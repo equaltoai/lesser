@@ -12,7 +12,7 @@ import (
 
 // BudgetAlerts implements SubscriptionResolver
 func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string) (<-chan *model.BudgetAlert, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 
 // CostAlerts implements SubscriptionResolver
 func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD float64) (<-chan *model.CostAlert, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 
 // CostUpdates implements SubscriptionResolver
 func (r *subscriptionResolver) CostUpdates(ctx context.Context, threshold *int) (<-chan *model.CostUpdate, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (r *subscriptionResolver) CostUpdates(ctx context.Context, threshold *int) 
 
 // MetricsUpdates implements SubscriptionResolver
 func (r *subscriptionResolver) MetricsUpdates(ctx context.Context, categories []string, services []string, threshold *float64) (<-chan *model.MetricsUpdate, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (r *subscriptionResolver) MetricsUpdates(ctx context.Context, categories []
 
 // PerformanceAlert implements SubscriptionResolver
 func (r *subscriptionResolver) PerformanceAlert(ctx context.Context, severity model.AlertSeverity) (<-chan *model.PerformanceAlert, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

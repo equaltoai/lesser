@@ -56,6 +56,7 @@ func TestRound12DriverResolver_Behavior(t *testing.T) {
 func TestRound12QueryResolvers_CostQueries(t *testing.T) {
 	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
 	query := &queryResolver{resolver}
+	adminCtx := round12AuthContext("admin")
 
 	tracker := cost.New()
 	require.NoError(t, tracker.TrackDynamoRead(1))
@@ -67,14 +68,17 @@ func TestRound12QueryResolvers_CostQueries(t *testing.T) {
 
 	resolver.CostTracker = tracker
 
-	breakdown, err := query.CostBreakdown(context.Background(), nil)
+	_, err := query.CostBreakdown(round12AuthContext("alice"), nil)
+	require.Error(t, err)
+
+	breakdown, err := query.CostBreakdown(adminCtx, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.PeriodDay, breakdown.Period)
 	require.Greater(t, breakdown.TotalCost, 0.0)
 	require.NotEmpty(t, breakdown.Breakdown)
 
 	// Infrastructure health uses real adapter-backed logic; just ensure it runs.
-	health, err := query.InfrastructureHealth(context.Background())
+	health, err := query.InfrastructureHealth(adminCtx)
 	require.NoError(t, err)
 	require.NotNil(t, health)
 
@@ -82,7 +86,7 @@ func TestRound12QueryResolvers_CostQueries(t *testing.T) {
 	qTracker := resolver.Registry.QueryTracker()
 	qTracker.RecordQuery(context.Background(), "Query1", 2*time.Second, false)
 
-	slow, err := query.SlowQueries(context.Background(), model.Duration(1*time.Second))
+	slow, err := query.SlowQueries(adminCtx, model.Duration(1*time.Second))
 	require.NoError(t, err)
 	require.NotEmpty(t, slow)
 
@@ -90,11 +94,11 @@ func TestRound12QueryResolvers_CostQueries(t *testing.T) {
 	_, err = query.BandwidthUsage(context.Background(), model.TimePeriodDay)
 	require.Error(t, err)
 
-	report, err := query.BandwidthUsage(round12AuthContext("alice"), model.TimePeriodDay)
+	report, err := query.BandwidthUsage(adminCtx, model.TimePeriodDay)
 	require.NoError(t, err)
 	require.NotNil(t, report)
 	require.Equal(t, model.TimePeriodDay, report.Period)
 
 	// Cost projections may rely on storage state; ensure it doesn't panic in unit mode.
-	_, _ = query.CostProjections(round12AuthContext("alice"), model.PeriodDay)
+	_, _ = query.CostProjections(adminCtx, model.PeriodDay)
 }

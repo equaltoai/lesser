@@ -20,7 +20,12 @@ import (
 // ====================================================================
 
 // InstanceMetrics is the resolver for the instanceMetrics field.
-func (r *queryResolver) InstanceMetrics(_ context.Context) (*model.InstanceMetrics, error) {
+func (r *queryResolver) InstanceMetrics(ctx context.Context) (*model.InstanceMetrics, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get actual metrics from storage
 	var activeUsers int
 	var storageUsed float64
@@ -58,6 +63,11 @@ func (r *queryResolver) InstanceMetrics(_ context.Context) (*model.InstanceMetri
 
 // FederationStatus is the resolver for the federationStatus field.
 func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*model.FederationStatus, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get federation repository for metrics and analytics
 	federationRepo := r.Registry.GetStorage().Federation()
 	if federationRepo == nil {
@@ -100,6 +110,11 @@ func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*m
 
 // FederationFlow implements QueryResolver.
 func (r *queryResolver) FederationFlow(ctx context.Context, period model.TimePeriod) (*model.FederationFlow, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get federation graph service
 	federationGraph := r.Registry.FederationGraph()
 	if federationGraph == nil {
@@ -125,7 +140,12 @@ func (r *queryResolver) FederationFlow(ctx context.Context, period model.TimePer
 }
 
 // FederationHealth implements QueryResolver.
-func (r *queryResolver) FederationHealth(_ context.Context, _ *float64) ([]*model.FederationManagementStatus, error) {
+func (r *queryResolver) FederationHealth(ctx context.Context, _ *float64) ([]*model.FederationManagementStatus, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check health of federated instances
 	// This would monitor federation connectivity and performance
 
@@ -134,7 +154,12 @@ func (r *queryResolver) FederationHealth(_ context.Context, _ *float64) ([]*mode
 }
 
 // FederationLimits implements QueryResolver.
-func (r *queryResolver) FederationLimits(_ context.Context, _ *bool, first *int, after *string) ([]*model.FederationLimit, error) {
+func (r *queryResolver) FederationLimits(ctx context.Context, _ *bool, first *int, after *string) ([]*model.FederationLimit, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get federation limits for all domains
 	// This would retrieve configured limits with pagination
 	_ = first
@@ -146,6 +171,11 @@ func (r *queryResolver) FederationLimits(_ context.Context, _ *bool, first *int,
 
 // InstanceRelationships implements QueryResolver.
 func (r *queryResolver) InstanceRelationships(ctx context.Context, domain string) (*model.InstanceRelations, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Use federation graph service to get real instance relationships
 	federationGraph := r.Registry.FederationGraph()
 	if federationGraph == nil {
@@ -166,6 +196,11 @@ func (r *queryResolver) InstanceRelationships(ctx context.Context, domain string
 
 // InstanceBudgets implements QueryResolver.
 func (r *queryResolver) InstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Use analytics service to get real budget data
 	analytics := r.Registry.Analytics()
 	if analytics == nil {
@@ -186,6 +221,11 @@ func (r *queryResolver) InstanceBudgets(ctx context.Context, exceeded *bool) ([]
 
 // InstanceHealthReport implements QueryResolver.
 func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Use analytics service to get real health report
 	analytics := r.Registry.Analytics()
 	if analytics == nil {
@@ -206,6 +246,11 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 
 // FederationMap implements QueryResolver.
 func (r *queryResolver) FederationMap(ctx context.Context, depth *int) (*model.FederationGraph, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get federation graph service
 	federationGraph := r.Registry.FederationGraph()
 	if federationGraph == nil {
@@ -238,6 +283,11 @@ func (r *queryResolver) FederationMap(ctx context.Context, depth *int) (*model.F
 
 // SeveredRelationships returns severed federation relationships
 func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *string, first *int, after *string) (*model.SeveredRelationshipConnection, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get severance service from registry
 	severanceService := r.Registry.Severance()
 	if severanceService == nil {
@@ -312,6 +362,11 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 
 // AffectedRelationships implements QueryResolver
 func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelationshipID string) (*model.AffectedRelationshipConnection, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get severance service from registry
 	severanceService := r.Registry.Severance()
 	if severanceService == nil {
@@ -362,7 +417,7 @@ func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelati
 }
 
 func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *string, _ *model.CostOrderBy) (*model.FederationCostConnection, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

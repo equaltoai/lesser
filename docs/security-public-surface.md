@@ -116,6 +116,7 @@ Notes:
 - **Auth** `POST/GET /graphql`, `POST/GET /api/graphql`, `GET /subscriptions`
   - No GraphQL operations are intended to be publicly callable.
 - **Mod/Admin** moderation queries/mutations/subscriptions (role-gated in resolvers; see Milestone 5)
+- **Admin** ops/insights + operator controls (cost/perf, federation management, AI analysis/debug)
 - **Public/Internal** health endpoints:
   - `GET /health`, `GET /ready`
   - `GET /playground` is dev-only (requires `EnablePlayground`)

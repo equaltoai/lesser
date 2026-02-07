@@ -427,7 +427,7 @@ func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*
 
 // DeleteModerationPattern implements MutationResolver
 func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id string) (bool, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -453,7 +453,7 @@ func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id strin
 
 // UpdateModerationPattern implements MutationResolver
 func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id string, input model.ModerationPatternInput) (*moderation.ModerationPattern, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +477,7 @@ func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id strin
 
 // CreateModerationPattern implements MutationResolver
 func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input model.ModerationPatternInput) (*moderation.ModerationPattern, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

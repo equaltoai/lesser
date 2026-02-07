@@ -24,6 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/security/authz"
 	services_ai "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/media"
@@ -314,15 +315,29 @@ func (r *Resolver) requireAdmin(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// Check admin status using accounts service
-	account, err := r.Registry.Accounts().GetAccount(ctx, username)
+	if r.Registry == nil {
+		return "", errors.New("service registry is not available")
+	}
+
+	accountsService := r.Registry.Accounts()
+	if accountsService == nil {
+		return "", errors.New("accounts service is not available")
+	}
+
+	account, err := accountsService.GetAccount(ctx, username)
 	if err != nil {
 		return "", errors.Join(errors.New("failed to verify admin status"), err)
 	}
 
-	if !strings.EqualFold(account.User.Role, adminRoleAdmin) {
+	role := ""
+	if account != nil && account.User != nil {
+		role = authz.NormalizeRole(account.User.Role)
+	}
+
+	if !authz.IsAdmin(role) {
 		r.Logger.Warn("Non-admin attempted admin operation",
-			zap.String("username", username))
+			zap.String("username", username),
+			zap.String("role", role))
 		return "", ErrAdminPrivilegesRequired
 	}
 

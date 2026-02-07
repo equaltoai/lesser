@@ -16,6 +16,11 @@ import (
 
 // ExplainObject is the resolver for the explainObject field.
 func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.ObjectExplanation, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get object repository from storage
 	objectRepo := r.Registry.GetStorage().Object()
 	if objectRepo == nil {
@@ -93,6 +98,11 @@ func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.Ob
 
 // AIAnalysis is the resolver for the aiAnalysis field.
 func (r *queryResolver) AiAnalysis(ctx context.Context, objectID string) (*model.AIAnalysis, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get AI service from registry
 	aiSvc := r.Registry.AI()
 	if aiSvc == nil {
@@ -131,7 +141,7 @@ func (r *queryResolver) AiAnalysis(ctx context.Context, objectID string) (*model
 
 // AIStats is the resolver for the aiStats field.
 func (r *queryResolver) AiStats(ctx context.Context, period model.Period) (*model.AIStats, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +223,12 @@ func (r *queryResolver) AiStats(ctx context.Context, period model.Period) (*mode
 }
 
 // AiCapabilities is the resolver for the aiCapabilities field.
-func (r *queryResolver) AiCapabilities(_ context.Context) (*model.AICapabilities, error) {
+func (r *queryResolver) AiCapabilities(ctx context.Context) (*model.AICapabilities, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Return the AI capabilities of this instance
 	return &model.AICapabilities{
 		TextAnalysis: &model.TextAnalysisCapabilities{
