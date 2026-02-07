@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/translation"
@@ -98,7 +99,11 @@ func TestHandleTranslateStatusLift(t *testing.T) {
 			},
 		},
 		NotesSvc: &NotesServiceStub{
-			GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+			GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+				statusID := ""
+				if query != nil {
+					statusID = query.StatusID
+				}
 				note := &activitypub.Note{
 					BaseObject: activitypub.BaseObject{Summary: "spoiler"},
 					Content:    "<p>hello</p>",

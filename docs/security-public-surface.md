@@ -95,7 +95,7 @@ Notes:
   - bookmarks/favourites, notifications, preferences, markers, push subscriptions
   - conversations, scheduled statuses, follow requests, lists, domain blocks, exports/imports
 - **Auth** sensitive status endpoints:
-  - `GET /api/v1/statuses/{id}/source`
+  - `GET /api/v1/statuses/{id}/source` (author-only)
   - `GET /api/v1/statuses/{id}/favourited_by`, `GET /api/v1/statuses/{id}/reblogged_by`
   - all status write/interaction endpoints (`POST/PUT/DELETE /api/v1/statuses*`, favourite/reblog/etc.)
 

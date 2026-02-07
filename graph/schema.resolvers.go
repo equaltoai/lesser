@@ -27,6 +27,7 @@ import (
 	services_ai "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -423,7 +424,11 @@ func (r *Resolver) loadNotificationStatus(ctx context.Context, notif *models.Not
 		return nil
 	}
 
-	result, err := notesService.GetNote(ctx, notif.TargetID)
+	viewerUsername := getUsernameFromContext(ctx)
+	result, err := notesService.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: notif.TargetID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil || result == nil {
 		return nil
 	}
@@ -529,7 +534,11 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 
 	var lastStatus *model.Object
 	if conv.LastStatusID != "" {
-		result, err := r.Registry.Notes().GetNote(ctx, conv.LastStatusID)
+		viewerUsername := getUsernameFromContext(ctx)
+		result, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: conv.LastStatusID,
+			ViewerID: viewerUsername,
+		})
 		if err == nil && result != nil {
 			lastStatus = r.convertStatusToObject(ctx, result)
 		}
@@ -858,7 +867,11 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 	var inReplyToObj *model.Object
 	if note.InReplyTo != "" {
 		// Fetch the actual reply object using Notes service
-		replyNote, err := r.Registry.Notes().GetNote(ctx, note.InReplyTo)
+		viewerUsername := getUsernameFromContext(ctx)
+		replyNote, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: note.InReplyTo,
+			ViewerID: viewerUsername,
+		})
 		if err != nil {
 			r.Logger.Debug("failed to fetch reply object",
 				zap.String("reply_id", note.InReplyTo),
@@ -1311,7 +1324,11 @@ func (r *Resolver) loadQuoteTargetStatus(ctx context.Context, statusID string) (
 	// If loaders aren't available, fall back to direct Notes service lookup.
 	if errors.Is(err, errLoadersNotFound) || errors.Is(err, errQuoteTargetLoaderUnavailable) {
 		if r.Registry != nil && r.Registry.Notes() != nil {
-			return r.Registry.Notes().GetNote(ctx, statusID)
+			viewerUsername := getUsernameFromContext(ctx)
+			return r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+				StatusID: statusID,
+				ViewerID: viewerUsername,
+			})
 		}
 		return nil, err
 	}

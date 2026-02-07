@@ -172,7 +172,10 @@ func (h *Handler) HandleDeleteStatusLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 
 	// Get the status first to return it (Mastodon API returns deleted status)
-	status, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
+	status, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: claims.Username,
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondNotFound(ctx, "status not found")
@@ -246,7 +249,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 
 	// Get and verify object ownership
 	objectID := h.normalizeStatusIDForUpdate(statusID)
-	object, resp, err := h.getAndVerifyStatusOwnership(ctx, objectID, actor.ID)
+	object, resp, err := h.getAndVerifyStatusOwnership(ctx, objectID, claims.Username)
 	if resp != nil || err != nil {
 		return resp, err
 	}
@@ -325,9 +328,12 @@ func (h *Handler) normalizeStatusIDForUpdate(statusID string) string {
 	return statusID
 }
 
-// getAndVerifyStatusOwnership retrieves the object and initial ownership check
-func (h *Handler) getAndVerifyStatusOwnership(ctx *apptheory.Context, objectID, _ string) (any, *apptheory.Response, error) {
-	object, err := h.registry.Notes().GetNote(ctx.Context(), objectID)
+// getAndVerifyStatusOwnership retrieves the object for update and ensures the viewer can access it.
+func (h *Handler) getAndVerifyStatusOwnership(ctx *apptheory.Context, objectID, viewerUsername string) (any, *apptheory.Response, error) {
+	object, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: objectID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil {
 		// Check if this is a tombstoned object (should return 410 Gone)
 		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context(), objectID); tombErr == nil && isTombstoned {

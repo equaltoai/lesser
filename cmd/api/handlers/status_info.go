@@ -24,6 +24,15 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondValidationError(ctx, err)
 	}
 
+	// This is a sensitive endpoint (returns source/inputs), so require authentication.
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
+	}
+
 	// Normalize the status ID to a full URL if it's not already
 	objectID := statusID
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
@@ -35,11 +44,26 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *apptheory.Context) (*apptheory.
 	statusID = strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
 
 	// Get the note using Notes service
-	result, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
-	if err != nil {
+	result, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: claims.Username,
+	})
+	if err != nil || result == nil {
 		return common.RespondNotFound(ctx, "status not found")
 	}
+
+	authorUsername := strings.TrimSpace(result.AuthorUsername)
+	if authorUsername == "" {
+		authorUsername = transformations.ExtractUsernameFromActorID(result.AuthorID)
+	}
+	if authorUsername != claims.Username {
+		return common.RespondNotFound(ctx, "status not found")
+	}
+
 	object := result.Note
+	if object == nil {
+		return common.RespondNotFound(ctx, "status not found")
+	}
 
 	// Debug logging to see what type we're getting
 	h.logger.Info("GetStatusSource: object type info",

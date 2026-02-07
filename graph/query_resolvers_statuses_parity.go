@@ -101,7 +101,11 @@ func (r *queryResolver) StatusHistory(ctx context.Context, id string, limit *int
 		return nil, errors.New("notes service is not available")
 	}
 
-	status, err := service.GetNote(ctx, statusID)
+	viewerUsername := r.optionalAuth(ctx)
+	status, err := service.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil || status == nil {
 		r.Logger.Error("Failed to get status for history",
 			zap.String("status_id", statusID),
@@ -266,7 +270,10 @@ func (r *queryResolver) TranslateStatus(ctx context.Context, id string, targetLa
 		return nil, errors.New("notes service is not available")
 	}
 
-	status, err := notesService.GetNote(ctx, statusID)
+	status, err := notesService.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: username,
+	})
 	if err != nil || status == nil {
 		r.Logger.Error("Failed to get status for translation",
 			zap.String("status_id", statusID),

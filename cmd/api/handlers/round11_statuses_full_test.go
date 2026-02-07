@@ -41,6 +41,9 @@ func TestStatusesFullHandlers(t *testing.T) {
 		GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) {
 			return status, nil
 		},
+		GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
+			return status, nil
+		},
 		DeleteNoteFunc: func(_ context.Context, _ *notes.DeleteNoteCommand) error {
 			return nil
 		},

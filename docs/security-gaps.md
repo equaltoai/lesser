@@ -60,6 +60,9 @@ Community note `Content` is stored verbatim and later embedded into an HTML stri
 **Write path:**
 - `pkg/services/notes/service.go` now escapes `storage.CommunityNote.Content` at write time (`CreateCommunityNote`),
   ensuring it is always safe to embed in HTML-by-contract output.
+  - **Additional fix:** GraphQL `addCommunityNote` previously wrote community notes directly via storage
+    (`r.Storage.CommunityNote().CreateCommunityNote`), bypassing the write-time invariant. It now uses
+    `Registry.Notes().CreateCommunityNote` so escaping is enforced consistently.
 
 **Read/response shaping path:**
 - `cmd/api/handlers/notes.go:371` returns `Content: fmt.Sprintf("<p>Community Note: %s</p>", note.Content)` without
@@ -212,32 +215,38 @@ even an auth middleware change won’t help unless resolvers themselves enforce 
 
 ## P0 — Privacy/authorization bypass: `Notes.GetNote` skips visibility checks and is used in public+auth endpoints
 
-**Status:** confirmed  
-**Confidence:** 8/10  
+**Status:** fixed (Milestone 4)  
+**Confidence:** 9/10  
 
 The notes service exposes two getters:
 
-- `pkg/services/notes/service.go:624` (`GetNote`) — **does not** enforce visibility/view-permissions.
-- `pkg/services/notes/service.go:644` (`GetNoteWithViewer`) — enforces privacy via `checkViewPermissions`.
+- `pkg/services/notes/service.go` (`GetNote`) — enforces visibility as an unauthenticated viewer (public/unlisted only).
+- `pkg/services/notes/service.go` (`GetNoteWithViewer`) — enforces privacy via `checkViewPermissions`.
 
-Multiple endpoints and resolvers call `GetNote` even when the request is unauthenticated or the viewer is only optionally
-authenticated. This enables fetching private/direct content by ID (and related derivatives like context, oEmbed, and
-translation), bypassing intended privacy rules.
+Previously, multiple endpoints and resolvers called `GetNote` even when the request was unauthenticated or the viewer was
+only optionally authenticated. That enabled fetching private/direct content by ID (and related derivatives like context,
+oEmbed, and translation), bypassing intended privacy rules.
 
-**Representative call sites (non-exhaustive):**
-- REST status fetch: `cmd/api/handlers/statuses.go:574` (`HandleGetStatusLift`)
-- REST status context: `cmd/api/handlers/statuses.go:774` + `cmd/api/handlers/statuses.go:835` (`HandleGetStatusContextLift`)
-- REST oEmbed: `cmd/api/handlers/oembed.go:145` + `cmd/api/handlers/oembed.go:450`
-- REST translation: `cmd/api/handlers/translation.go:150`
-- GraphQL object lookup: `graph/query_resolvers_notes.go:22`
-- GraphQL status history: `graph/query_resolvers_statuses_parity.go:104`
+**Fix summary:**
+- `GetNote` now performs a service-layer visibility check as if the viewer is unauthenticated (public/unlisted only).
+- Viewer-aware access for authenticated flows uses `GetNoteWithViewer`.
+- REST + GraphQL call sites were updated to use `GetNoteWithViewer` when viewer context exists/should exist (status
+  update/delete, translation, notifications, GraphQL object/status conversion, etc.).
+
+**Representative call sites (pre-fix, non-exhaustive):**
+- REST status fetch: `cmd/api/handlers/statuses.go` (`HandleGetStatusLift`)
+- REST status context: `cmd/api/handlers/statuses.go` (`HandleGetStatusContextLift`)
+- REST oEmbed: `cmd/api/handlers/oembed.go`
+- REST translation: `cmd/api/handlers/translation.go`
+- GraphQL object lookup: `graph/query_resolvers_notes.go`
+- GraphQL status history: `graph/query_resolvers_statuses_parity.go`
 
 **Why this is a gap:** the `checkViewPermissions` logic clearly exists and appears to encode the intended privacy model
 (`pkg/services/notes/service.go:678`). The issue is that the “no-check” getter is used in places that should be
 privacy-aware.
 
-**Note:** the comment on `GetNote` is misleading (“with privacy checks”), but the function currently performs no privacy
-checks beyond `Deleted` filtering (`pkg/services/notes/service.go:623`).
+**Note:** the comment on `GetNote` previously claimed it performed privacy checks, but it did not. The implementation and
+comment are now aligned.
 
 ---
 

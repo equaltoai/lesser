@@ -8,6 +8,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -23,7 +24,12 @@ func TestStatusSourceAndHistory(t *testing.T) {
 		Content:      "hello",
 		AttributedTo: h.cfg.BaseURL() + "/users/alice",
 	}
-	status := &storagemodels.Status{StatusID: "123", Note: note}
+	status := &storagemodels.Status{
+		StatusID:       "123",
+		AuthorUsername: "alice",
+		AuthorID:       h.cfg.BaseURL() + "/users/alice",
+		Note:           note,
+	}
 
 	notesSvc := &NotesServiceStub{
 		GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
@@ -53,7 +59,10 @@ func TestStatusSourceAndHistory(t *testing.T) {
 
 	h.registry = &RegistryStub{NotesSvc: notesSvc, AccountsSvc: accountsSvc}
 
-	ctxSource, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/source", nil, nil, nil)
+	readToken := round11SignAccessToken(t, h.cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+	readHeaders := map[string]string{"Authorization": "Bearer " + readToken}
+
+	ctxSource, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/source", readHeaders, nil, nil)
 	require.NoError(t, err)
 	ctxSource.Params["id"] = "123"
 	requireStatus(t, http.StatusOK)(h.HandleGetStatusSourceLift(ctxSource))

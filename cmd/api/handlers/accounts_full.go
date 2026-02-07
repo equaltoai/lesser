@@ -463,7 +463,7 @@ func (h *Handler) convertStatusToMastodonAPI(status *storageModels.Status, viewe
 		"poll":                   nil,
 		"application":            nil,
 		"in_reply_to_id":         status.InReplyToID,
-		"in_reply_to_account_id": h.getReplyToAccountID(context.Background(), status),
+		"in_reply_to_account_id": h.getReplyToAccountID(context.Background(), viewerID, status),
 		"sensitive":              status.Sensitive,
 		"spoiler_text":           "",
 		"language":               status.Language,
@@ -548,13 +548,16 @@ func (h *Handler) hasUserReblogged(viewerID, statusID string) bool {
 }
 
 // getReplyToAccountID gets the account ID of the status being replied to
-func (h *Handler) getReplyToAccountID(ctx context.Context, status *storageModels.Status) *string {
+func (h *Handler) getReplyToAccountID(ctx context.Context, viewerID string, status *storageModels.Status) *string {
 	if err := common.ValidateRequiredParam("inReplyToID", status.InReplyToID); err != nil {
 		return nil
 	}
 
 	// Get the replied-to status
-	replyStatus, err := h.registry.Notes().GetNote(ctx, status.InReplyToID)
+	replyStatus, err := h.registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: status.InReplyToID,
+		ViewerID: viewerID,
+	})
 	if err != nil {
 		h.logger.Debug("failed to get reply-to status",
 			zap.String("status_id", status.InReplyToID),
@@ -582,7 +585,10 @@ func (h *Handler) hasUserMutedStatus(ctx context.Context, viewerID, statusID str
 	}
 
 	// Check if user has muted the status author
-	status, err := h.registry.Notes().GetNote(ctx, statusID)
+	status, err := h.registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerID,
+	})
 	if err != nil {
 		return false
 	}
@@ -623,7 +629,10 @@ func (h *Handler) hasUserPinned(ctx context.Context, viewerID, statusID string) 
 	}
 
 	// Get the status to check its author
-	status, err := h.registry.Notes().GetNote(ctx, statusID)
+	status, err := h.registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerID,
+	})
 	if err != nil {
 		return false
 	}

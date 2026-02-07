@@ -37,7 +37,7 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 
 	t.Run("status source validation + not found", func(t *testing.T) {
 		notesSvc := &NotesServiceStub{
-			GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) {
+			GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
 				return nil, errors.New("missing")
 			},
 		}
@@ -48,7 +48,9 @@ func TestStatusInfoRound12_Coverage(t *testing.T) {
 		ctxBad.Params["id"] = "bad id"
 		requireStatus(t, http.StatusBadRequest)(h.HandleGetStatusSourceLift(ctxBad))
 
-		ctxNF, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/source", nil, nil, nil)
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+		headers := map[string]string{"authorization": "Bearer " + token}
+		ctxNF, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/123/source", headers, nil, nil)
 		require.NoError(t, err)
 		ctxNF.Params["id"] = "123"
 		requireStatus(t, http.StatusNotFound)(h.HandleGetStatusSourceLift(ctxNF))

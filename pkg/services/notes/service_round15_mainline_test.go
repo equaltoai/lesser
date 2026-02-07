@@ -860,6 +860,10 @@ func TestService_round15_view_permissions_and_timelines(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, note)
 
+	// Private note is hidden from unauthenticated viewers.
+	_, err = service.GetNote(ctx, "private-status")
+	assert.ErrorIs(t, err, ErrStatusNotFound)
+
 	// Direct note visible when mentioned.
 	note, err = service.GetNoteWithViewer(ctx, &GetNoteQuery{
 		StatusID: "direct-mentionbob",
@@ -867,6 +871,10 @@ func TestService_round15_view_permissions_and_timelines(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, note)
+
+	// Direct note is hidden from unauthenticated viewers (even if it mentions a user).
+	_, err = service.GetNote(ctx, "direct-mentionbob")
+	assert.ErrorIs(t, err, ErrStatusNotFound)
 
 	// Direct note hidden from non-recipients.
 	_, err = service.GetNoteWithViewer(ctx, &GetNoteQuery{

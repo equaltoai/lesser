@@ -632,7 +632,10 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 	return nil
 }
 
-// GetNote retrieves a single note with privacy checks
+// GetNote retrieves a single note for public contexts.
+//
+// It enforces visibility as if the viewer is unauthenticated (public/unlisted only).
+// Use GetNoteWithViewer for viewer-aware access to private/direct content.
 func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status, error) {
 	s.logger.Debug("getting note",
 		zap.String("status_id", statusID))
@@ -648,7 +651,14 @@ func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status,
 		return nil, ErrStatusNotFound // Don't reveal it was deleted
 	}
 
-	// Return the status directly since we simplified the method
+	canView, err := s.checkViewPermissions(ctx, status, "")
+	if err != nil {
+		return nil, ErrCheckViewPermissions
+	}
+	if !canView {
+		return nil, ErrStatusNotFound
+	}
+
 	return status, nil
 }
 

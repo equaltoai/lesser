@@ -18,6 +18,7 @@ type notesService interface {
 	ReblogNote(context.Context, *notes.ReblogNoteCommand) (*notes.LikeResult, error)
 	UnreblogNote(context.Context, *notes.UnreblogNoteCommand) (*notes.LikeResult, error)
 	GetNote(context.Context, string) (*models.Status, error)
+	GetNoteWithViewer(context.Context, *notes.GetNoteQuery) (*models.Status, error)
 	HasReblogged(context.Context, string, string) (bool, error)
 }
 
