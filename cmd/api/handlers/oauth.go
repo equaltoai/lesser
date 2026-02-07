@@ -564,18 +564,18 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", auth.ErrInvalidGrant
 	}
 
-	// Check expiration
-	if time.Now().After(authCode.ExpiresAt) {
-		// Clean up expired code
-		_ = h.repos.Account().DeleteAuthorizationCode(ctx, code)
-		return "", "", auth.ErrInvalidGrant
-	}
-
 	// Verify PKCE if used
 	if authCode.CodeChallenge != "" || codeVerifier != "" {
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
 			return "", "", err
 		}
+	}
+
+	// Consume the authorization code before issuing tokens. This prevents code reuse via
+	// concurrent exchanges in the (small) TOCTOU window between read and delete.
+	if err := h.repos.Account().DeleteAuthorizationCode(ctx, code); err != nil {
+		h.logger.Warn("failed to consume authorization code", zap.Error(err))
+		return "", "", auth.ErrInvalidGrant
 	}
 
 	// Generate tokens
@@ -597,12 +597,6 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
 		h.logger.Error("failed to store refresh token", zap.Error(err))
 		// Continue - access token is still valid
-	}
-
-	// Delete the used authorization code
-	if err := h.repos.Account().DeleteAuthorizationCode(ctx, code); err != nil {
-		h.logger.Error("failed to delete authorization code", zap.Error(err))
-		// Non-critical error, continue
 	}
 
 	return accessToken, refreshToken, nil

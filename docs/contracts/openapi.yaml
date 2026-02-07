@@ -136,6 +136,8 @@ components:
                     type: string
                 username:
                     type: string
+                wallet_challenge_id:
+                    type: string
             required:
                 - agreement
                 - username
@@ -14317,6 +14319,8 @@ paths:
             operationId: get_api_v1_statuses_by_id_source
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -14332,6 +14336,10 @@ paths:
                                 $ref: '#/components/schemas/StatusSource'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -14340,6 +14348,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/statuses/{id}/translate:
         post:
             operationId: post_api_v1_statuses_by_id_translate

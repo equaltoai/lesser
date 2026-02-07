@@ -1,3 +1,4 @@
+// Package htmlsafe provides small helpers for producing safe HTML output.
 package htmlsafe
 
 import (

@@ -386,6 +386,7 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) (string, error) 
 		data.IconURL = strings.TrimSpace(actor.Icon.URL)
 	}
 	if sanitizedSummary != "" {
+		// #nosec G203 -- sanitizedSummary is sanitized HTML-by-contract and is intentionally rendered as HTML.
 		data.BioHTML = template.HTML(sanitizedSummary)
 	}
 

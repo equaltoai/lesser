@@ -213,3 +213,19 @@ oEmbed height messaging), use a nonce-based CSP or eliminate inline scripts.
 **Acceptance criteria:**
 - CI fails when new high-risk placeholder/auth bypass is introduced without updating the relevant docs/tests.
 - The stubs inventory is maintained and used to drive closure of security-sensitive incomplete implementations.
+
+---
+
+### Milestone 8 — OAuth token endpoint hardening (auth code single-use)
+
+**Goal:** authorization codes are single-use even under concurrent exchange attempts.
+
+**Work:**
+- Consume (delete or mark-used) the authorization code **before** issuing tokens, using a conditional write guard
+  (`IfExists` / attribute-not-exists) to guarantee only one successful exchange.
+- Treat code-consumption failure as `invalid_grant` (do not issue tokens).
+- Add regression tests covering concurrent exchanges of the same code.
+
+**Acceptance criteria:**
+- Two concurrent exchanges of the same authorization code result in at most one successful token response.
+- Token issuance is gated on successful code consumption.

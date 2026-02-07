@@ -41,6 +41,7 @@ func createPublicSurfaceMiddleware() apptheory.Middleware {
 	}
 }
 
+//nolint:gocognit // Public surface allowlist requires many explicit method/path checks.
 func apiRequestIsPublic(method, path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false

@@ -1,3 +1,4 @@
+// Package headers provides helpers for security-related HTTP headers.
 package headers
 
 import (
