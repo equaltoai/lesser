@@ -4533,7 +4533,12 @@ func (r *queryResolver) addVarianceRecommendations(recommendations []string, var
 
 // FederationCosts implements QueryResolver
 // estimateFederationCostCount provides efficient count estimation for pagination
-func (r *queryResolver) estimateFederationCostCount(_ context.Context, _ string, startTime, endTime time.Time, currentPageSize, offset, limit int) int {
+func (r *queryResolver) estimateFederationCostCount(ctx context.Context, username string, startTime, endTime time.Time, currentPageSize, offset, limit int) int {
+	if err := ctx.Err(); err != nil {
+		r.Logger.Debug("estimateFederationCostCount canceled", zap.String("username", username), zap.Error(err))
+		return 0
+	}
+
 	// Strategy 1: If this is the first page and we got a full page, estimate based on extrapolation
 	if offset == 0 && currentPageSize == limit {
 		// For first page, we can estimate based on the pattern
