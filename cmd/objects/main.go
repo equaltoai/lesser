@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,6 +17,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/federation"
+	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -396,51 +397,12 @@ func (h *Handler) extractComplexFields(objMap map[string]any, data *objectData) 
 	}
 }
 
-// generateHTML creates the actual HTML content
-func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo, _ string, published, updated time.Time, sensitive bool, attachments []activitypub.Attachment, tags []activitypub.Tag) string {
-	// Generate content based on object type and available fields
-	var htmlContent string
-	if content != "" {
-		htmlContent = html.EscapeString(content)
-	} else if name != "" && objectType == "Article" {
-		htmlContent = fmt.Sprintf("<h1>%s</h1>", html.EscapeString(name))
-		if summary != "" {
-			htmlContent += fmt.Sprintf("<p class=\"summary\">%s</p>", html.EscapeString(summary))
-		}
-	}
-
-	// Handle attachments
-	var attachmentsHTML string
-	if len(attachments) > 0 {
-		attachmentsHTML = `<div class="attachments">`
-		for _, att := range attachments {
-			if att.Type == "Image" {
-				attachmentsHTML += fmt.Sprintf(`<img src="%s" alt="%s" class="attachment-image">`,
-					html.EscapeString(att.URL), html.EscapeString(att.Name))
-			}
-		}
-		attachmentsHTML += `</div>`
-	}
-
-	// Handle tags
-	var tagsHTML string
-	if len(tags) > 0 {
-		tagsHTML = `<div class="tags">`
-		for _, tag := range tags {
-			if tag.Type == "Hashtag" {
-				tagsHTML += fmt.Sprintf(`<a href="%s" class="hashtag">%s</a> `,
-					html.EscapeString(tag.Href), html.EscapeString(tag.Name))
-			}
-		}
-		tagsHTML += `</div>`
-	}
-
-	return fmt.Sprintf(`<!DOCTYPE html>
+const objectHTMLTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>%s - Lesser</title>
+    <title>{{.Title}} - Lesser</title>
     <style>
         * {
             box-sizing: border-box;
@@ -498,7 +460,7 @@ func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo,
         }
         
         .attachment-image {
-            max-width: 100%%;
+            max-width: 100%;
             height: auto;
             border-radius: 4px;
             margin-bottom: 10px;
@@ -550,51 +512,114 @@ func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo,
 <body>
     <div class="container">
         <div class="object-header">
-            <div class="object-type">%s</div>
+            <div class="object-type">{{.ObjectType}}</div>
         </div>
         
-        %s
+        {{if and .Sensitive .Summary}}
+        <div class="warning">
+            <strong>Content Warning:</strong> {{.Summary}}
+        </div>
+        {{end}}
         
         <div class="object-content">
-            %s
+            {{if .Content}}
+            {{.Content}}
+            {{else if and .IsArticle .Name}}
+            <h1>{{.Name}}</h1>
+            {{if .Summary}}
+            <p class="summary">{{.Summary}}</p>
+            {{end}}
+            {{end}}
         </div>
         
-        %s
+        {{if .Attachments}}
+        <div class="attachments">
+            {{range .Attachments}}
+            {{if eq .Type "Image"}}
+            <img src="{{.URL}}" alt="{{.Name}}" class="attachment-image">
+            {{end}}
+            {{end}}
+        </div>
+        {{end}}
         
-        %s
+        {{if .Tags}}
+        <div class="tags">
+            {{range .Tags}}
+            {{if eq .Type "Hashtag"}}
+            <a href="{{.Href}}" class="hashtag">{{.Name}}</a>
+            {{end}}
+            {{end}}
+        </div>
+        {{end}}
         
         <div class="object-meta">
-            <p>Published: %s</p>
-            <p>By: <a href="%s">%s</a></p>
-            %s
+            <p>Published: {{.Published}}</p>
+            <p>By: <a href="{{.AttributedTo}}">{{.AttributedUsername}}</a></p>
+            {{if .Updated}}
+            <p>Updated: {{.Updated}}</p>
+            {{end}}
         </div>
     </div>
 </body>
-</html>`,
-		html.EscapeString(objectType),
-		objectType,
-		h.generateWarningHTML(sensitive, summary),
-		htmlContent,
-		attachmentsHTML,
-		tagsHTML,
-		published.Format("January 2, 2006 at 3:04 PM"),
-		html.EscapeString(attributedTo),
-		html.EscapeString(h.extractUsernameFromURL(attributedTo)),
-		h.generateUpdatedHTML(updated),
-	)
+</html>`
+
+type objectHTMLTemplateData struct {
+	Title              string
+	ObjectType         string
+	Content            string
+	IsArticle          bool
+	Name               string
+	Sensitive          bool
+	Summary            string
+	Attachments        []activitypub.Attachment
+	Tags               []activitypub.Tag
+	Published          string
+	Updated            string
+	AttributedTo       string
+	AttributedUsername string
 }
 
-// generateWarningHTML creates content warning HTML if needed
+// generateHTML creates the actual HTML content
+func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo, _ string, published, updated time.Time, sensitive bool, attachments []activitypub.Attachment, tags []activitypub.Tag) string {
+	data := objectHTMLTemplateData{
+		Title:              objectType,
+		ObjectType:         objectType,
+		Content:            content,
+		IsArticle:          objectType == "Article",
+		Name:               name,
+		Sensitive:          sensitive,
+		Summary:            summary,
+		Attachments:        attachments,
+		Tags:               tags,
+		Published:          published.Format("January 2, 2006 at 3:04 PM"),
+		AttributedTo:       attributedTo,
+		AttributedUsername: h.extractUsernameFromURL(attributedTo),
+	}
+	if !updated.IsZero() {
+		data.Updated = updated.Format("January 2, 2006 at 3:04 PM")
+	}
+
+	out, err := htmlsafe.RenderTemplate("object", objectHTMLTemplate, data)
+	if err != nil {
+		logger.Warn("failed to render object HTML template", zap.Error(err))
+		return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Lesser</title></head><body>Failed to render object</body></html>"
+	}
+	return out
+}
+
+// generateWarningHTML creates content warning HTML if needed.
+// Deprecated: prefer template-first rendering via objectHTMLTemplate.
 func (h *Handler) generateWarningHTML(sensitive bool, summary string) string {
-	if sensitive && summary != "" {
+	if sensitive && strings.TrimSpace(summary) != "" {
 		return fmt.Sprintf(`<div class="warning">
             <strong>Content Warning:</strong> %s
-        </div>`, html.EscapeString(summary))
+        </div>`, htmlsafe.Escape(summary))
 	}
 	return ""
 }
 
-// generateUpdatedHTML creates updated date HTML if object was updated
+// generateUpdatedHTML creates updated date HTML if object was updated.
+// Deprecated: prefer template-first rendering via objectHTMLTemplate.
 func (h *Handler) generateUpdatedHTML(updated time.Time) string {
 	if !updated.IsZero() {
 		return fmt.Sprintf(`<p>Updated: %s</p>`, updated.Format("January 2, 2006 at 3:04 PM"))
@@ -794,6 +819,10 @@ func objectsActivityPubSecurityHeaders() apptheory.Middleware {
 			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
 			resp.Headers["cross-origin-resource-policy"] = []string{"cross-origin"}
 			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			contentTypes := strings.Join(resp.Headers["content-type"], ",")
+			if strings.Contains(strings.ToLower(contentTypes), "text/html") {
+				resp.Headers["content-security-policy"] = []string{securityheaders.StaticHTMLPageCSP()}
+			}
 			return resp, err
 		}
 	}

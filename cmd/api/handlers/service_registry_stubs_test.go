@@ -434,6 +434,7 @@ type NotesServiceStub struct {
 	GetLikeCountFunc              func(ctx context.Context, statusID string) (int64, error)
 	GetLikersFunc                 func(ctx context.Context, query *notes.GetLikersQuery) (*notes.UsersResult, error)
 	GetNoteFunc                   func(ctx context.Context, statusID string) (*storagemodels.Status, error)
+	GetNoteWithViewerFunc         func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error)
 	GetRebloggersFunc             func(ctx context.Context, query *notes.GetRebloggersQuery) (*notes.UsersResult, error)
 	GetSearchSuggestionsFunc      func(ctx context.Context, query *notes.GetSearchSuggestionsQuery) (*notes.GetSearchSuggestionsResult, error)
 	GetUpdateHistoryFunc          func(ctx context.Context, query *notes.GetUpdateHistoryQuery) (*notes.GetUpdateHistoryResult, error)
@@ -555,6 +556,13 @@ func (s *NotesServiceStub) GetNote(ctx context.Context, statusID string) (*stora
 		return s.GetNoteFunc(ctx, statusID)
 	}
 	return nil, missingStub("NotesService.GetNote")
+}
+
+func (s *NotesServiceStub) GetNoteWithViewer(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+	if s != nil && s.GetNoteWithViewerFunc != nil {
+		return s.GetNoteWithViewerFunc(ctx, query)
+	}
+	return nil, missingStub("NotesService.GetNoteWithViewer")
 }
 
 func (s *NotesServiceStub) GetRebloggers(ctx context.Context, query *notes.GetRebloggersQuery) (*notes.UsersResult, error) {

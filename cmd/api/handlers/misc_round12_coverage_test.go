@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -386,7 +387,11 @@ func TestMisc_NotificationHandlers_ErrorBranches_Round12(t *testing.T) {
 		// Also cover HandleGetNotificationLift status attach path.
 		handler.registry = &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					statusID := ""
+					if query != nil {
+						statusID = query.StatusID
+					}
 					return &storagemodels.Status{
 						StatusID:       statusID,
 						AuthorUsername: "alice",

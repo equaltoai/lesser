@@ -203,8 +203,26 @@ func TestOEmbed_Round12(t *testing.T) {
 			resp := requireStatus(t, http.StatusOK)(h.HandleEmbedPageLift(ctx))
 			require.Equal(t, "text/html; charset=utf-8", firstStringValue(resp.Headers, "content-type"))
 			require.Equal(t, "ALLOWALL", firstStringValue(resp.Headers, "x-frame-options"))
+			require.Contains(t, firstStringValue(resp.Headers, "content-security-policy"), "frame-ancestors *")
+			require.Contains(t, firstStringValue(resp.Headers, "content-security-policy"), "script-src 'nonce-")
 			require.Contains(t, string(resp.Body), "<article")
 			require.Contains(t, string(resp.Body), "hello")
+			require.Contains(t, string(resp.Body), "nonce=\"")
+		})
+
+		t.Run("embed html sanitizes note content", func(t *testing.T) {
+			malicious := makeNote(t, cfg.BaseURL()+"/objects/123", true)
+			malicious.Content = `<img src=x onerror=alert(1)>hello`
+
+			h := makeHandler(t, malicious, nil, nil, "")
+			ctx, err := round10NewLiftContext(http.MethodGet, "/embed/123", nil, nil, nil)
+			require.NoError(t, err)
+			ctx.Params["id"] = "123"
+
+			resp := requireStatus(t, http.StatusOK)(h.HandleEmbedPageLift(ctx))
+			body := string(resp.Body)
+			require.NotContains(t, body, "onerror=")
+			require.Contains(t, body, "hello")
 		})
 
 		t.Run("path fallback extracts id", func(t *testing.T) {

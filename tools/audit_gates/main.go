@@ -2,9 +2,13 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -74,6 +78,22 @@ func run(opts options) error {
 	}
 
 	if err := checkInfraCdkCspUnsafe(b); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkGraphQLResolverRoleGates(); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkGraphQLResolverIgnoredContext(); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkHTMLResponsesHaveCSP(); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkSecurityStubInventory(); err != nil {
 		problems = append(problems, err.Error())
 	}
 
@@ -265,6 +285,252 @@ func checkInfraCdkCspUnsafe(b baseline) error {
 	return nil
 }
 
+type gqlRoleGateRule struct {
+	File     string
+	Receiver string
+	Gate     string
+	Methods  []string
+}
+
+func checkGraphQLResolverRoleGates() error {
+	rules := []gqlRoleGateRule{
+		// Moderation: mod/admin only.
+		{File: "graph/query_resolvers_moderation.go", Receiver: "queryResolver", Gate: "requireModeratorOrAdmin"},
+		{File: "graph/subscription_resolvers_moderation.go", Receiver: "subscriptionResolver", Gate: "requireModeratorOrAdmin"},
+		{File: "graph/mutation_resolvers_moderation.go", Receiver: "mutationResolver", Gate: "requireModeratorOrAdmin", Methods: []string{
+			"CreateModerationPattern",
+			"UpdateModerationPattern",
+			"DeleteModerationPattern",
+		}},
+
+		// Admin-only ops/insights.
+		{File: "graph/query_resolvers_cost.go", Receiver: "queryResolver", Gate: "requireAdmin"},
+		{File: "graph/subscription_resolvers_cost.go", Receiver: "subscriptionResolver", Gate: "requireAdmin"},
+		{File: "graph/query_resolvers_federation.go", Receiver: "queryResolver", Gate: "requireAdmin"},
+		{File: "graph/subscription_resolvers_federation.go", Receiver: "subscriptionResolver", Gate: "requireAdmin"},
+		{File: "graph/query_resolvers_ai.go", Receiver: "queryResolver", Gate: "requireAdmin"},
+		{File: "graph/subscription_resolvers_ai.go", Receiver: "subscriptionResolver", Gate: "requireAdmin"},
+
+		// Admin-only control plane (even when partially stubbed).
+		{File: "graph/mutation_resolvers_federation.go", Receiver: "mutationResolver", Gate: "requireAdmin"},
+	}
+
+	var problems []string
+	for _, rule := range rules {
+		missing, err := resolverMethodsMissingGate(rule)
+		if err != nil {
+			problems = append(problems, err.Error())
+			continue
+		}
+		for _, method := range missing {
+			problems = append(problems, fmt.Sprintf("graphql role gate missing: %s %s.%s should call %s", rule.File, rule.Receiver, method, rule.Gate))
+		}
+	}
+
+	sort.Strings(problems)
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "; "))
+}
+
+func resolverMethodsMissingGate(rule gqlRoleGateRule) ([]string, error) {
+	if rule.File == "" || rule.Receiver == "" || rule.Gate == "" {
+		return nil, fmt.Errorf("internal error: invalid gql role gate rule: %+v", rule)
+	}
+
+	content, err := os.ReadFile(rule.File) // #nosec G304 -- repo-local file path (audit scan)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read %q: %w", rule.File, err)
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, rule.File, content, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %q: %w", rule.File, err)
+	}
+
+	methodAllow := make(map[string]struct{}, len(rule.Methods))
+	for _, name := range rule.Methods {
+		methodAllow[name] = struct{}{}
+	}
+
+	var missing []string
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || fn.Body == nil || fn.Name == nil {
+			continue
+		}
+		if receiverTypeName(fn) != rule.Receiver {
+			continue
+		}
+
+		if !ast.IsExported(fn.Name.Name) {
+			continue
+		}
+
+		if len(methodAllow) > 0 {
+			if _, ok := methodAllow[fn.Name.Name]; !ok {
+				continue
+			}
+		}
+
+		if !funcDeclHasGateCall(fn, rule.Gate) {
+			missing = append(missing, fn.Name.Name)
+		}
+	}
+
+	sort.Strings(missing)
+	return missing, nil
+}
+
+func receiverTypeName(fn *ast.FuncDecl) string {
+	if fn == nil || fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return ""
+	}
+
+	receiverType := fn.Recv.List[0].Type
+	switch t := receiverType.(type) {
+	case *ast.StarExpr:
+		if ident, ok := t.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	case *ast.Ident:
+		return t.Name
+	}
+
+	return ""
+}
+
+func funcDeclHasGateCall(fn *ast.FuncDecl, gateName string) bool {
+	if fn == nil || fn.Body == nil {
+		return false
+	}
+
+	found := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		switch fun := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			if fun.Sel != nil && fun.Sel.Name == gateName {
+				found = true
+				return false
+			}
+		case *ast.Ident:
+			if fun.Name == gateName {
+				found = true
+				return false
+			}
+		}
+
+		return true
+	})
+
+	return found
+}
+
+func checkGraphQLResolverIgnoredContext() error {
+	re := regexp.MustCompile(`func\s+\(r\s+\*(queryResolver|mutationResolver|subscriptionResolver)\)\s+\w+\(_\s+context\.Context`)
+	actual, err := countRegexpOccurrences([]string{"graph"}, re, scanOptions{
+		IncludeTests: false,
+		Skips:        defaultSkips(),
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(actual) == 0 {
+		return nil
+	}
+
+	var problems []string
+	for path, count := range actual {
+		problems = append(problems, fmt.Sprintf("graphql resolver ignores context: %s (%d)", path, count))
+	}
+	sort.Strings(problems)
+	return errors.New(strings.Join(problems, "; "))
+}
+
+func checkHTMLResponsesHaveCSP() error {
+	const htmlContentTypeHeader = `"content-type": {"text/html`
+	const cspHeaderKey = "content-security-policy"
+
+	var offenders []string
+	err := walkGoFiles("cmd", scanOptions{IncludeTests: false, Skips: defaultSkips()}, func(path string) error {
+		data, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+		if err != nil {
+			return err
+		}
+
+		content := string(data)
+		if !strings.Contains(content, htmlContentTypeHeader) {
+			return nil
+		}
+
+		if !strings.Contains(strings.ToLower(content), cspHeaderKey) {
+			offenders = append(offenders, normalizePath(path))
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	sort.Strings(offenders)
+	if len(offenders) == 0 {
+		return nil
+	}
+
+	return errors.New("html responses missing CSP header: " + strings.Join(offenders, ", "))
+}
+
+func checkSecurityStubInventory() error {
+	const needle = "This is a placeholder"
+
+	docPath := filepath.FromSlash("docs/security-stubs-and-placeholders.md")
+	docContent, err := os.ReadFile(docPath) // #nosec G304 -- repo-local doc path
+	if err != nil {
+		return fmt.Errorf("failed to read %q: %w", docPath, err)
+	}
+
+	docText := string(docContent)
+	var offenders []string
+	for _, root := range []string{"cmd", "graph", "pkg/auth", "pkg/security"} {
+		err := walkGoFiles(root, scanOptions{IncludeTests: false, Skips: defaultSkips()}, func(path string) error {
+			data, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+			if err != nil {
+				return err
+			}
+			if !bytes.Contains(data, []byte(needle)) {
+				return nil
+			}
+
+			normalized := normalizePath(path)
+			if !strings.Contains(docText, normalized) {
+				offenders = append(offenders, normalized)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	sort.Strings(offenders)
+	if len(offenders) == 0 {
+		return nil
+	}
+
+	return errors.New("placeholder inventory missing entries in docs/security-stubs-and-placeholders.md: " + strings.Join(offenders, ", "))
+}
+
 type scanOptions struct {
 	IncludeTests bool
 	Skips        map[string]struct{}
@@ -282,6 +548,33 @@ func countSubstringOccurrences(roots []string, needle string, opts scanOptions) 
 			if err != nil {
 				return err
 			}
+			if n == 0 {
+				return nil
+			}
+			counts[normalizePath(path)] = n
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	return counts, nil
+}
+
+func countRegexpOccurrences(roots []string, needle *regexp.Regexp, opts scanOptions) (map[string]int, error) {
+	counts := make(map[string]int)
+	if needle == nil {
+		return counts, fmt.Errorf("internal error: nil regexp")
+	}
+
+	for _, root := range roots {
+		if err := walkGoFiles(root, opts, func(path string) error {
+			data, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+			if err != nil {
+				return err
+			}
+
+			n := len(needle.FindAllIndex(data, -1))
 			if n == 0 {
 				return nil
 			}

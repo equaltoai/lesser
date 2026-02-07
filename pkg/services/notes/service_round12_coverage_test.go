@@ -564,20 +564,20 @@ func TestService_shouldIncludeStatus(t *testing.T) {
 	service := &Service{logger: zap.NewNop()}
 
 	status := &models.Status{StatusID: "1", Deleted: true}
-	assert.False(t, service.shouldIncludeStatus(status, &ListNotesQuery{ViewerID: "viewer"}, false))
+	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer"}, false))
 
 	status = &models.Status{StatusID: "2", Visibility: models.VisibilityDirect, AuthorID: "author"}
-	assert.False(t, service.shouldIncludeStatus(status, &ListNotesQuery{ViewerID: "viewer"}, false))
-	assert.True(t, service.shouldIncludeStatus(status, &ListNotesQuery{ViewerID: "viewer"}, true))
+	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer"}, false))
+	assert.True(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer"}, true))
 
 	status = &models.Status{StatusID: "3", Visibility: models.VisibilityPublic, MediaCount: 0}
-	assert.False(t, service.shouldIncludeStatus(status, &ListNotesQuery{ViewerID: "viewer", OnlyMedia: true}, true))
+	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer", OnlyMedia: true}, true))
 
 	status = &models.Status{StatusID: "4", Visibility: models.VisibilityPublic, InReplyToID: "x"}
-	assert.False(t, service.shouldIncludeStatus(status, &ListNotesQuery{ViewerID: "viewer", ExcludeReplies: true}, true))
+	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer", ExcludeReplies: true}, true))
 
 	status = &models.Status{StatusID: "5", Visibility: models.VisibilityPublic, ReblogOfID: "x"}
-	assert.False(t, service.shouldIncludeStatus(status, &ListNotesQuery{ViewerID: "viewer", ExcludeReblogs: true}, true))
+	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer", ExcludeReblogs: true}, true))
 }
 
 func Test_buildNotesResult_trimStatusKey_safeKey_buildStatusURL(t *testing.T) {

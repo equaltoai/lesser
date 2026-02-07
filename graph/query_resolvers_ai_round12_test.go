@@ -5,16 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 func TestRound12QueryResolvers_AI_ExplainObject_ObjectAndStatusFallback(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
-	ctx := round12AuthContext("alice")
+	ctx := round12AuthContext("admin")
 
 	// Avoid pulling in boosted-state checks inside convertStatusToObject.
 	originalBoostFn := viewerBoostStateResolverFunc
@@ -63,25 +61,24 @@ func TestRound12QueryResolvers_AI_ExplainObject_ObjectAndStatusFallback(t *testi
 func TestRound12QueryResolvers_AI_StatsAnalysisAndCapabilities(t *testing.T) {
 	t.Parallel()
 
-	// Exercise the "AI service not available" branch by using an unconfigured registry.
-	minimal := &Resolver{
-		Registry: &services.Registry{},
-		Logger:   zap.NewNop(),
-	}
-	stats, err := minimal.Query().AiStats(round12AuthContext("alice"), "DAY")
-	require.NoError(t, err)
-	require.NotNil(t, stats)
-	require.Equal(t, 0, stats.TotalAnalyses)
-
 	// With the full test registry, AiAnalysis/AiStats should surface "repository not configured" errors.
 	full, _ := newRound12GraphResolver(t)
-	_, err = full.Query().AiAnalysis(round12AuthContext("alice"), "obj-1")
+	_, err := full.Query().AiAnalysis(round12AuthContext("alice"), "obj-1")
+	require.Error(t, err)
+
+	_, err = full.Query().AiAnalysis(round12AuthContext("admin"), "obj-1")
 	require.Error(t, err)
 
 	_, err = full.Query().AiStats(round12AuthContext("alice"), "DAY")
 	require.Error(t, err)
 
-	caps, err := full.Query().AiCapabilities(context.Background())
+	_, err = full.Query().AiStats(round12AuthContext("admin"), "DAY")
+	require.Error(t, err)
+
+	_, err = full.Query().AiCapabilities(round12AuthContext("alice"))
+	require.Error(t, err)
+
+	caps, err := full.Query().AiCapabilities(round12AuthContext("admin"))
 	require.NoError(t, err)
 	require.NotNil(t, caps)
 	require.NotNil(t, caps.TextAnalysis)

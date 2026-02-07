@@ -403,7 +403,8 @@
         body: JSON.stringify({
           username: usernameValue,
           agreement: true,
-          locale: 'en'
+          locale: 'en',
+          wallet_challenge_id: challengeId
         })
       });
       

@@ -28,7 +28,10 @@ func (r *mutationResolver) UpdateStatus(ctx context.Context, id string, input mo
 		return nil, errors.New("notes service is not available")
 	}
 
-	current, err := service.GetNote(ctx, statusID)
+	current, err := service.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: username,
+	})
 	if err != nil || current == nil {
 		r.Logger.Error("Failed to load status for update",
 			zap.String("status_id", statusID),

@@ -34,7 +34,7 @@ func TestStatusesRound12_CreateStatusAsAgent(t *testing.T) {
 				CreatedAt: now.Add(-24 * time.Hour),
 				IsAgent:   true,
 				AgentCapabilities: &agents.Capabilities{
-					CanPost:        true,
+					CanPost:         true,
 					MaxPostsPerHour: 10,
 				},
 			},
@@ -174,7 +174,7 @@ func TestStatusesRound12_DeleteStatusRecordsAgentTombstone(t *testing.T) {
 
 	reg := &RegistryStub{
 		NotesSvc: &NotesServiceStub{
-			GetNoteFunc: func(context.Context, string) (*storagemodels.Status, error) {
+			GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
 				return &storagemodels.Status{
 					StatusID:       "s1",
 					AuthorUsername: "agent",

@@ -383,6 +383,9 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	// This allows downstream middleware (rate limits, logging) to key by username for agents.
 	app.Use(createOptionalOAuthAuthMiddleware(cfg, repos, lambdaLogger))
 
+	// Enforce default-deny public surface policy.
+	app.Use(createPublicSurfaceMiddleware())
+
 	// Agent safety rails middleware (Phase 1).
 	app.Use(createAgentSafetyRailsMiddleware(cfg, repos, lambdaLogger))
 

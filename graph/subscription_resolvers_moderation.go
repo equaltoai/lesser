@@ -13,7 +13,7 @@ import (
 
 // ModerationEvents implements SubscriptionResolver
 func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *string) (<-chan *moderation.ModerationDecision, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *st
 
 // ModerationAlerts implements SubscriptionResolver
 func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *model.ModerationSeverity) (<-chan *model.ModerationAlert, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 
 // ModerationQueueUpdate implements SubscriptionResolver
 func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priority *model.Priority) (<-chan *model.ModerationItem, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

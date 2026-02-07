@@ -31,6 +31,13 @@ func (s *stubNotesService) GetNote(ctx context.Context, statusID string) (*model
 	return s.getNoteFunc(ctx, statusID)
 }
 
+func (s *stubNotesService) GetNoteWithViewer(ctx context.Context, query *notes.GetNoteQuery) (*models.Status, error) {
+	if query == nil {
+		return nil, nil
+	}
+	return s.GetNote(ctx, query.StatusID)
+}
+
 func (s *stubNotesService) HasReblogged(context.Context, string, string) (bool, error) {
 	return false, nil
 }

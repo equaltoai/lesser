@@ -24,9 +24,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/security/authz"
 	services_ai "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -313,15 +315,29 @@ func (r *Resolver) requireAdmin(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// Check admin status using accounts service
-	account, err := r.Registry.Accounts().GetAccount(ctx, username)
+	if r.Registry == nil {
+		return "", errors.New("service registry is not available")
+	}
+
+	accountsService := r.Registry.Accounts()
+	if accountsService == nil {
+		return "", errors.New("accounts service is not available")
+	}
+
+	account, err := accountsService.GetAccount(ctx, username)
 	if err != nil {
 		return "", errors.Join(errors.New("failed to verify admin status"), err)
 	}
 
-	if !strings.EqualFold(account.User.Role, adminRoleAdmin) {
+	role := ""
+	if account != nil && account.User != nil {
+		role = authz.NormalizeRole(account.User.Role)
+	}
+
+	if !authz.IsAdmin(role) {
 		r.Logger.Warn("Non-admin attempted admin operation",
-			zap.String("username", username))
+			zap.String("username", username),
+			zap.String("role", role))
 		return "", ErrAdminPrivilegesRequired
 	}
 
@@ -423,7 +439,11 @@ func (r *Resolver) loadNotificationStatus(ctx context.Context, notif *models.Not
 		return nil
 	}
 
-	result, err := notesService.GetNote(ctx, notif.TargetID)
+	viewerUsername := getUsernameFromContext(ctx)
+	result, err := notesService.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: notif.TargetID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil || result == nil {
 		return nil
 	}
@@ -529,7 +549,11 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 
 	var lastStatus *model.Object
 	if conv.LastStatusID != "" {
-		result, err := r.Registry.Notes().GetNote(ctx, conv.LastStatusID)
+		viewerUsername := getUsernameFromContext(ctx)
+		result, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: conv.LastStatusID,
+			ViewerID: viewerUsername,
+		})
 		if err == nil && result != nil {
 			lastStatus = r.convertStatusToObject(ctx, result)
 		}
@@ -858,7 +882,11 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 	var inReplyToObj *model.Object
 	if note.InReplyTo != "" {
 		// Fetch the actual reply object using Notes service
-		replyNote, err := r.Registry.Notes().GetNote(ctx, note.InReplyTo)
+		viewerUsername := getUsernameFromContext(ctx)
+		replyNote, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+			StatusID: note.InReplyTo,
+			ViewerID: viewerUsername,
+		})
 		if err != nil {
 			r.Logger.Debug("failed to fetch reply object",
 				zap.String("reply_id", note.InReplyTo),
@@ -1311,7 +1339,11 @@ func (r *Resolver) loadQuoteTargetStatus(ctx context.Context, statusID string) (
 	// If loaders aren't available, fall back to direct Notes service lookup.
 	if errors.Is(err, errLoadersNotFound) || errors.Is(err, errQuoteTargetLoaderUnavailable) {
 		if r.Registry != nil && r.Registry.Notes() != nil {
-			return r.Registry.Notes().GetNote(ctx, statusID)
+			viewerUsername := getUsernameFromContext(ctx)
+			return r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+				StatusID: statusID,
+				ViewerID: viewerUsername,
+			})
 		}
 		return nil, err
 	}
@@ -4501,7 +4533,12 @@ func (r *queryResolver) addVarianceRecommendations(recommendations []string, var
 
 // FederationCosts implements QueryResolver
 // estimateFederationCostCount provides efficient count estimation for pagination
-func (r *queryResolver) estimateFederationCostCount(_ context.Context, _ string, startTime, endTime time.Time, currentPageSize, offset, limit int) int {
+func (r *queryResolver) estimateFederationCostCount(ctx context.Context, username string, startTime, endTime time.Time, currentPageSize, offset, limit int) int {
+	if err := ctx.Err(); err != nil {
+		r.Logger.Debug("estimateFederationCostCount canceled", zap.String("username", username), zap.Error(err))
+		return 0
+	}
+
 	// Strategy 1: If this is the first page and we got a full page, estimate based on extrapolation
 	if offset == 0 && currentPageSize == limit {
 		// For first page, we can estimate based on the pattern

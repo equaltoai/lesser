@@ -93,11 +93,19 @@ func apiSecurityHeaders() apptheory.Middleware {
 			if resp.Headers == nil {
 				resp.Headers = map[string][]string{}
 			}
-			resp.Headers["x-content-type-options"] = []string{"nosniff"}
-			resp.Headers["x-frame-options"] = []string{"DENY"}
-			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
-			resp.Headers["cross-origin-resource-policy"] = []string{"same-origin"}
-			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+
+			setDefault := func(key string, value []string) {
+				if existing := resp.Headers[key]; len(existing) > 0 {
+					return
+				}
+				resp.Headers[key] = value
+			}
+
+			setDefault("x-content-type-options", []string{"nosniff"})
+			setDefault("x-frame-options", []string{"DENY"})
+			setDefault("referrer-policy", []string{"strict-origin-when-cross-origin"})
+			setDefault("cross-origin-resource-policy", []string{"same-origin"})
+			setDefault("x-robots-tag", []string{"noindex, nofollow"})
 			return resp, err
 		}
 	}

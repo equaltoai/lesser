@@ -18,6 +18,11 @@ import (
 
 // ModerationQueue is the resolver for the moderationQueue field.
 func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *model.Cursor) ([]*moderation.ModerationDecision, error) {
+	_, err := r.requireModeratorOrAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get moderation repository from service registry
 	moderationRepo := r.Registry.GetStorage().Moderation()
 	if moderationRepo == nil {
@@ -84,6 +89,11 @@ func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *
 
 // ModerationDashboard returns the moderation dashboard data
 func (r *queryResolver) ModerationDashboard(ctx context.Context, _ *moderation.ModerationFilter) (*model.ModerationDashboard, error) {
+	_, err := r.requireModeratorOrAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get moderation repository from storage
 	storage := r.Storage
 	if storage == nil {
@@ -154,6 +164,11 @@ func (r *queryResolver) ModerationDashboard(ctx context.Context, _ *moderation.M
 
 // ModerationEffectiveness returns moderation pattern effectiveness data
 func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID string, period model.ModerationPeriod) (*model.ModerationEffectiveness, error) {
+	_, err := r.requireModeratorOrAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get moderation repository from storage
 	storage := r.Storage
 	if storage == nil {
@@ -205,6 +220,11 @@ func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID s
 
 // ModerationPatterns returns moderation patterns
 func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool, severity *model.ModerationSeverity, limit *int, _ *string) ([]*moderation.ModerationPattern, error) {
+	_, err := r.requireModeratorOrAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Set defaults
 	isActiveOnly := true
 	if activeOnly != nil {
@@ -278,6 +298,11 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool
 
 // ModeratorActivity returns moderator activity statistics
 func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID string, period model.TimePeriod) (*model.ModeratorStats, error) {
+	_, err := r.requireModeratorOrAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
@@ -385,6 +410,11 @@ func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID strin
 
 // PatternEffectiveness returns pattern effectiveness statistics
 func (r *queryResolver) PatternEffectiveness(ctx context.Context, patternID string) (*model.PatternStats, error) {
+	_, err := r.requireModeratorOrAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {

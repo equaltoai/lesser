@@ -422,7 +422,7 @@ func TestMainRound12(t *testing.T) {
 		return func(next apptheory.Handler) apptheory.Handler { return next }
 	}
 	configureRoutesFn = func(app *apptheory.App) {
-		app.Get("/ping", func(*apptheory.Context) (*apptheory.Response, error) {
+		app.Get("/api/v1/instance", func(*apptheory.Context) (*apptheory.Response, error) {
 			return apptheory.JSON(200, map[string]string{"ok": "true"})
 		})
 	}
@@ -437,12 +437,12 @@ func TestMainRound12(t *testing.T) {
 
 	payload, err := json.Marshal(map[string]any{
 		"version":  "2.0",
-		"routeKey": "GET /ping",
+		"routeKey": "GET /api/v1/instance",
 		"requestContext": map[string]any{
 			"requestId": "test-request-id",
 			"http": map[string]any{
 				"method": "GET",
-				"path":   "/ping",
+				"path":   "/api/v1/instance",
 			},
 		},
 	})

@@ -111,29 +111,15 @@ func (h *Handler) HandleGetStatusFull(ctx *apptheory.Context) (*apptheory.Respon
 	viewerID := h.getOptionalAuthenticatedUser(ctx)
 
 	// Call Notes service to get the note
-	note, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
+	note, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerID,
+	})
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return common.RespondNotFound(ctx, "status not found")
-		}
-		if strings.Contains(err.Error(), "access denied") {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "access denied") {
 			return common.RespondNotFound(ctx, "status not found")
 		}
 		return common.RespondInternalServerError(ctx, "Internal server error")
-	}
-
-	// Check privacy permissions for the viewer using robust authorization
-	canView, err := h.checkStatusViewPermission(ctx.Context(), note, viewerID)
-	if err != nil {
-		h.logger.Error("failed to check status view permissions",
-			zap.String("status_id", statusID),
-			zap.String("viewer_id", viewerID),
-			zap.Error(err))
-		return common.RespondInternalServerError(ctx, "Internal server error")
-	}
-
-	if !canView {
-		return common.RespondNotFound(ctx, "status not found")
 	}
 
 	// Convert to Mastodon API format using converter

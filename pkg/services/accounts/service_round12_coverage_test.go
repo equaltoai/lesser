@@ -167,6 +167,48 @@ func TestService_updateAccountProfile_InitializesActorAndSetsFields(t *testing.T
 	}
 }
 
+func TestService_updateAccountProfile_SanitizesBioAndFieldValues(t *testing.T) {
+	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+	account := &storage.Account{
+		User: &storage.User{
+			Username: "alice",
+		},
+	}
+
+	cmd := &UpdateProfileCommand{
+		Username:    "alice",
+		UpdaterID:   "alice",
+		DisplayName: "Alice",
+		Bio:         `<script>alert(1)</script><img src=x onerror=alert(1)>bio<a href="javascript:alert(1)" onclick="alert(1)">x</a>`,
+		Fields: []ProfileField{
+			{Name: "Website", Value: `<a href="javascript:alert(1)" onclick="alert(1)">click</a>`},
+		},
+	}
+
+	err := svc.updateAccountProfile(account, cmd)
+	assert.NoError(t, err)
+
+	assert.NotContains(t, account.User.Note, "<script")
+	assert.NotContains(t, account.User.Note, "onerror=")
+	assert.NotContains(t, account.User.Note, "onclick=")
+	assert.NotContains(t, account.User.Note, "javascript:")
+
+	assert.NotContains(t, account.Actor.Summary, "<script")
+	assert.NotContains(t, account.Actor.Summary, "onerror=")
+	assert.NotContains(t, account.Actor.Summary, "onclick=")
+	assert.NotContains(t, account.Actor.Summary, "javascript:")
+
+	if assert.Len(t, account.User.Fields, 1) {
+		assert.NotContains(t, account.User.Fields[0]["value"], "javascript:")
+		assert.NotContains(t, account.User.Fields[0]["value"], "onclick=")
+	}
+	if assert.Len(t, account.Actor.Attachment, 1) {
+		assert.NotContains(t, account.Actor.Attachment[0].Value, "javascript:")
+		assert.NotContains(t, account.Actor.Attachment[0].Value, "onclick=")
+	}
+}
+
 func TestService_sanitizeAccountForViewer(t *testing.T) {
 	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
 
