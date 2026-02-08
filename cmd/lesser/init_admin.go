@@ -51,6 +51,16 @@ var reservedAdminWallets = map[string]string{
 	"0x1e14865a53a994b01b9ccfef42669dc0bfe98805": "Safe + 1% recipient (TipSplitter.lesserWallet)",
 }
 
+var (
+	tabletheoryNewFn                 = func(cfg session.Config) (theorydb.DB, error) { return tabletheory.New(cfg) }
+	ensureWalletNotLinkedElsewhereFn = ensureWalletNotLinkedElsewhere
+	ensureAdminUserFn                = ensureAdminUser
+	ensureActorFn                    = ensureActor
+	ensureWalletCredentialFn         = ensureWalletCredential
+	ensureWalletIndexFn              = ensureWalletIndex
+	ensureInstanceActivatedFn        = ensureInstanceActivated
+)
+
 func runInitAdmin(argv []string) error {
 	args, err := parseInitAdminArgs(argv)
 	if err != nil {
@@ -136,7 +146,7 @@ func runInitAdmin(argv []string) error {
 		return err
 	}
 
-	db, err := tabletheory.New(session.Config{
+	db, err := tabletheoryNewFn(session.Config{
 		Region:              awsCfg.Region,
 		CredentialsProvider: awsCfg.Credentials,
 	})
@@ -154,28 +164,28 @@ func runInitAdmin(argv []string) error {
 	}
 	kmsClient := kms.NewFromConfig(awsCfg)
 
-	if err := ensureWalletNotLinkedElsewhere(ctx, db, walletAddr, username); err != nil {
+	if err := ensureWalletNotLinkedElsewhereFn(ctx, db, walletAddr, username); err != nil {
 		return err
 	}
 
 	now := time.Now().UTC()
 
-	if err := ensureAdminUser(ctx, db, username, now); err != nil {
+	if err := ensureAdminUserFn(ctx, db, username, now); err != nil {
 		return err
 	}
 
-	if err := ensureActor(ctx, db, kmsClient, kmsKeyID, username, stageDomain, now); err != nil {
+	if err := ensureActorFn(ctx, db, kmsClient, kmsKeyID, username, stageDomain, now); err != nil {
 		return err
 	}
 
-	if err := ensureWalletCredential(ctx, db, username, walletAddr, args.ChainID, now); err != nil {
+	if err := ensureWalletCredentialFn(ctx, db, username, walletAddr, args.ChainID, now); err != nil {
 		return err
 	}
-	if err := ensureWalletIndex(ctx, db, username, walletAddr); err != nil {
+	if err := ensureWalletIndexFn(ctx, db, username, walletAddr); err != nil {
 		return err
 	}
 
-	if err := ensureInstanceActivated(ctx, db, tableName, username, now); err != nil {
+	if err := ensureInstanceActivatedFn(ctx, db, tableName, username, now); err != nil {
 		return err
 	}
 

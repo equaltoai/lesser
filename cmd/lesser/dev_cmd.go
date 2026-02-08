@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -255,7 +256,8 @@ func runDevSeedAndValidate(argv []string) error {
 
 func randomBase64(size int) (string, error) {
 	b := make([]byte, size)
-	if _, err := rand.Read(b); err != nil {
+	// Avoid crypto/rand.Read which can panic on failure in newer Go versions.
+	if _, err := io.ReadFull(rand.Reader, b); err != nil {
 		return "", fmt.Errorf("generate random secret: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(b), nil

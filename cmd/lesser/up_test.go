@@ -125,6 +125,36 @@ func TestUpStages(t *testing.T) {
 	require.Equal(t, []naming.Stage{naming.StageDev, naming.StageStaging, naming.StageLive}, upStages(true))
 }
 
+func TestSelectUpStages(t *testing.T) {
+	t.Run("defaults when stage empty", func(t *testing.T) {
+		got, err := selectUpStages(false, "")
+		require.NoError(t, err)
+		require.Equal(t, []naming.Stage{naming.StageDev, naming.StageLive}, got)
+	})
+
+	t.Run("stage cannot combine with with-staging", func(t *testing.T) {
+		_, err := selectUpStages(true, "dev")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot be combined")
+	})
+
+	got, err := selectUpStages(false, "dev")
+	require.NoError(t, err)
+	require.Equal(t, []naming.Stage{naming.StageDev}, got)
+
+	got, err = selectUpStages(false, "staging")
+	require.NoError(t, err)
+	require.Equal(t, []naming.Stage{naming.StageStaging}, got)
+
+	got, err = selectUpStages(false, "live")
+	require.NoError(t, err)
+	require.Equal(t, []naming.Stage{naming.StageLive}, got)
+
+	_, err = selectUpStages(false, "wat")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid --stage")
+}
+
 func TestPrepareUpEnv_RequiresOutWhenBootstrapGenerated(t *testing.T) {
 	previousRepoRoot := findRepoRootFn
 	previousHome := userHomeDirFn
