@@ -122,14 +122,21 @@
   const setupUrl = $derived(`${apiOrigin}/auth/setup`);
   const setupStatusUrl = $derived(`${apiOrigin}/setup/status`);
 
-  const steps = $derived([
-    { key: 'status' as const, label: 'Status' },
-    { key: 'bootstrap_login' as const, label: 'Bootstrap Login' },
-    { key: 'create_admin' as const, label: 'Create Admin' },
-    { key: 'admin_login' as const, label: 'Admin Login' },
-    { key: 'passkey' as const, label: 'Passkey' },
-    { key: 'finalize' as const, label: 'Finalize' },
-  ]);
+  const steps = $derived(
+    status?.locked === false
+      ? [
+          { key: 'admin_login' as const, label: 'Admin Login' },
+          { key: 'passkey' as const, label: 'Passkey' },
+        ]
+      : [
+          { key: 'status' as const, label: 'Status' },
+          { key: 'bootstrap_login' as const, label: 'Bootstrap Login' },
+          { key: 'create_admin' as const, label: 'Create Admin' },
+          { key: 'admin_login' as const, label: 'Admin Login' },
+          { key: 'passkey' as const, label: 'Passkey' },
+          { key: 'finalize' as const, label: 'Finalize' },
+        ]
+  );
 
   function stepIndex(key: WizardStep): number {
     const idx = steps.findIndex((s) => s.key === key);
@@ -573,7 +580,14 @@
       });
 
       passkeyRegistered = true;
-      setStep('finalize');
+      if (status?.locked === false) {
+        // Managed provisioning: activation is already complete.
+        clearWizardStorage();
+        adminJwt = '';
+        setStep('done');
+      } else {
+        setStep('finalize');
+      }
     } catch (err) {
       error = normalizeError(err);
     } finally {
@@ -584,6 +598,12 @@
   function skipPasskey() {
     if (!skipPasskeyAcknowledged) {
       setLocalError('Acknowledge the recovery warning to continue without a passkey.');
+      return;
+    }
+    if (status?.locked === false) {
+      clearWizardStorage();
+      adminJwt = '';
+      setStep('done');
       return;
     }
     setStep('finalize');
@@ -646,12 +666,21 @@
     const storedSetupToken = readStorage('setupToken');
     const storedAdminJwt = readStorage('adminJwt');
 
-    if (!data.locked) return 'done';
-
     const primaryAdmin = (data.bootstrap?.primary_admin || '').trim();
     if (primaryAdmin && !adminUsername.trim()) {
       adminUsername = primaryAdmin;
       writeStorage('adminUsername', primaryAdmin);
+    }
+
+    if (!data.locked) {
+      // Instance is already activated. Recommend (optional) passkey enrollment.
+      if (storedAdminJwt) {
+        return stored === 'admin_login' || stored === 'passkey' ? stored : 'passkey';
+      }
+      if (stored === 'admin_login' || stored === 'passkey') {
+        return stored;
+      }
+      return 'done';
     }
 
     if (storedAdminJwt) {
@@ -773,7 +802,7 @@
   {#if loading && !status}
     <div class="loading">Loading setup status…</div>
   {:else if status}
-    {#if step === 'done' || status.locked === false}
+    {#if step === 'done'}
       <Alert variant="success" title="Instance is active">
         This Lesser instance is already activated.
       </Alert>
@@ -784,6 +813,9 @@
           {#snippet actions()}
             <CopyButton text={stageDomain} />
           {/snippet}
+        </DefinitionItem>
+        <DefinitionItem label="Primary Admin" monospace>
+          {status.bootstrap?.primary_admin || 'missing'}
         </DefinitionItem>
         <DefinitionItem label="Client" monospace wrap={false}>
           {truncateMiddle(clientUrl, { head: 24, tail: 12 })}
@@ -797,7 +829,24 @@
             <CopyButton text={authBase} />
           {/snippet}
         </DefinitionItem>
+        <DefinitionItem label="Setup Status" monospace wrap={false}>
+          {truncateMiddle(setupStatusUrl, { head: 24, tail: 12 })}
+          {#snippet actions()}
+            <CopyButton text={setupStatusUrl} />
+          {/snippet}
+        </DefinitionItem>
       </DefinitionList>
+
+      <Alert variant="info" title="Add a passkey (recommended)">
+        Passkeys are optional, but strongly recommended. You can enroll a passkey after signing in with your admin wallet.
+      </Alert>
+
+      <div class="actions">
+        <Button variant="solid" onclick={() => setStep('admin_login')}>
+          Set up passkey
+        </Button>
+        <Button variant="outline" onclick={refreshStatus} disabled={loading}>Refresh</Button>
+      </div>
     {:else if step === 'status'}
       <Alert variant="info" title="Instance is locked">
         Complete setup to enable publishing and signups. The bootstrap actor exists only for initialization and will be
@@ -929,8 +978,12 @@
         </Button>
       </div>
     {:else if step === 'admin_login'}
-      <Alert variant="info" title="Log in as the real admin (wallet)">
-        This creates an admin session used for passkey enrollment (optional) and final activation.
+      <Alert variant="info" title="Log in as admin (wallet)">
+        {#if status.locked}
+          This creates an admin session used for passkey enrollment (optional) and final activation.
+        {:else}
+          This creates an admin session used for passkey enrollment.
+        {/if}
       </Alert>
 
       <DefinitionList density="sm" dividers>
@@ -954,7 +1007,11 @@
         <Button variant="outline" onclick={connectAdminWallet} disabled={actionBusy}>
           Connect wallet
         </Button>
-        <Button variant="ghost" onclick={() => setStep(status.bootstrap?.primary_admin_set ? 'status' : 'create_admin')} disabled={actionBusy}>
+        <Button
+          variant="ghost"
+          onclick={() => setStep(status.locked ? (status.bootstrap?.primary_admin_set ? 'status' : 'create_admin') : 'done')}
+          disabled={actionBusy}
+        >
           Back
         </Button>
       </div>
@@ -1042,31 +1099,6 @@
           </div>
         {/snippet}
       </Modal>
-    {:else if step === 'done'}
-      <Alert variant="success" title="Setup complete">
-        Activation is finalized. You can now publish content and accept signups.
-      </Alert>
-
-      <DefinitionList density="sm" dividers>
-        <DefinitionItem label="Client" monospace>
-          {clientUrl}
-          {#snippet actions()}
-            <CopyButton text={clientUrl} />
-          {/snippet}
-        </DefinitionItem>
-        <DefinitionItem label="Auth" monospace>
-          {authBase}
-          {#snippet actions()}
-            <CopyButton text={authBase} />
-          {/snippet}
-        </DefinitionItem>
-        <DefinitionItem label="Setup Status" monospace>
-          {setupStatusUrl}
-          {#snippet actions()}
-            <CopyButton text={setupStatusUrl} />
-          {/snippet}
-        </DefinitionItem>
-      </DefinitionList>
     {:else}
       <Alert variant="warning" title="Unknown setup step">
         Current step: <code>{step}</code>
