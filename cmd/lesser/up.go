@@ -22,6 +22,7 @@ type upArgs struct {
 	App                    string
 	BaseDomain             string
 	AWSProfile             string
+	Stage                  string
 	BootstrapWalletAddress string
 	WithStaging            bool
 	OutPath                string
@@ -94,7 +95,10 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, err
 	}
 
-	stages := upStages(args.WithStaging)
+	stages, err := selectUpStages(args.WithStaging, args.Stage)
+	if err != nil {
+		return nil, err
+	}
 	newDB := bootstrapDBFactory(func() (theorydb.DB, error) {
 		db, dbErr := tabletheory.New(session.Config{
 			Region:              awsCfg.Region,
@@ -177,6 +181,27 @@ func upStages(withStaging bool) []naming.Stage {
 		return []naming.Stage{naming.StageDev, naming.StageStaging, naming.StageLive}
 	}
 	return []naming.Stage{naming.StageDev, naming.StageLive}
+}
+
+func selectUpStages(withStaging bool, stage string) ([]naming.Stage, error) {
+	value := strings.TrimSpace(strings.ToLower(stage))
+	if value == "" {
+		return upStages(withStaging), nil
+	}
+	if withStaging {
+		return nil, errors.New("--stage cannot be combined with --with-staging")
+	}
+
+	switch value {
+	case string(naming.StageDev):
+		return []naming.Stage{naming.StageDev}, nil
+	case string(naming.StageStaging):
+		return []naming.Stage{naming.StageStaging}, nil
+	case string(naming.StageLive):
+		return []naming.Stage{naming.StageLive}, nil
+	default:
+		return nil, fmt.Errorf("invalid --stage %q (expected dev|staging|live)", stage)
+	}
 }
 
 func (e *upEnv) run(ctx context.Context) error {
@@ -330,6 +355,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.App, "app", "", "app name slug (e.g. my-lesser)")
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
 	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
+	fs.StringVar(&args.Stage, "stage", "", "deploy a single stage (dev|staging|live); default deploys dev+live")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
