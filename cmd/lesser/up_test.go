@@ -66,6 +66,17 @@ func TestParseUpArgs(t *testing.T) {
 		require.Contains(t, err.Error(), "invalid bootstrap wallet address")
 	})
 
+	t.Run("rejects reserved bootstrap wallet", func(t *testing.T) {
+		_, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--bootstrap-wallet-address", "0x80189edb676d51b2fb2257b2ad38e018b20ca46e",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "reserved")
+	})
+
 	t.Run("uses provisioning input when provided", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "provision.json")
 		require.NoError(t, os.WriteFile(path, []byte(`{
@@ -86,6 +97,26 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "app", args.App)
 		require.Equal(t, "dev", args.Stage)
 		require.Equal(t, "0x3333333333333333333333333333333333333333", args.BootstrapWalletAddress)
+	})
+
+	t.Run("rejects reserved wallet via provisioning input", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "provision.json")
+		require.NoError(t, os.WriteFile(path, []byte(`{
+  "schema": 1,
+  "slug": "app",
+  "stage": "dev",
+  "admin_wallet_address": "0x1e14865a53a994b01b9ccfef42669dc0bfe98805",
+  "admin_username": "app"
+}
+`), 0o600))
+
+		_, err := parseUpArgs([]string{
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--provisioning-input", path,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "reserved")
 	})
 }
 
