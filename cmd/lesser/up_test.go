@@ -65,6 +65,28 @@ func TestParseUpArgs(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid bootstrap wallet address")
 	})
+
+	t.Run("uses provisioning input when provided", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "provision.json")
+		require.NoError(t, os.WriteFile(path, []byte(`{
+  "schema": 1,
+  "slug": "app",
+  "stage": "dev",
+  "admin_wallet_address": "0x3333333333333333333333333333333333333333",
+  "admin_username": "app"
+}
+`), 0o600))
+
+		args, err := parseUpArgs([]string{
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--provisioning-input", path,
+		})
+		require.NoError(t, err)
+		require.Equal(t, "app", args.App)
+		require.Equal(t, "dev", args.Stage)
+		require.Equal(t, "0x3333333333333333333333333333333333333333", args.BootstrapWalletAddress)
+	})
 }
 
 func TestUpStages(t *testing.T) {

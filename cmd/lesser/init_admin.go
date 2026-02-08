@@ -31,18 +31,19 @@ import (
 )
 
 type initAdminArgs struct {
-	App          string
-	BaseDomain   string
-	AWSProfile   string
-	Stage        string
-	Username     string
-	WalletAddr   string
-	ChainID      int
-	Signature    string
-	Message      string
-	MessageFile  string
-	KMSKeyID     string
-	ReservedList string
+	App                   string
+	BaseDomain            string
+	AWSProfile            string
+	Stage                 string
+	ProvisioningInputPath string
+	Username              string
+	WalletAddr            string
+	ChainID               int
+	Signature             string
+	Message               string
+	MessageFile           string
+	KMSKeyID              string
+	ReservedList          string
 }
 
 var reservedAdminWallets = map[string]string{
@@ -195,6 +196,7 @@ func parseInitAdminArgs(argv []string) (initAdminArgs, error) {
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
 	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
 	fs.StringVar(&args.Stage, "stage", "", "target stage (dev|staging|live)")
+	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1)")
 	fs.StringVar(&args.Username, "username", "", "admin username (default: exactly to --app)")
 	fs.StringVar(&args.WalletAddr, "wallet-address", "", "admin wallet address (0x...)")
 	fs.IntVar(&args.ChainID, "chain-id", 1, "wallet chain id (default: 1)")
@@ -208,13 +210,32 @@ func parseInitAdminArgs(argv []string) (initAdminArgs, error) {
 		return initAdminArgs{}, err
 	}
 
+	if strings.TrimSpace(args.ProvisioningInputPath) != "" {
+		in, err := readManagedProvisioningInput(args.ProvisioningInputPath)
+		if err != nil {
+			return initAdminArgs{}, err
+		}
+		if strings.TrimSpace(args.App) == "" {
+			args.App = in.Slug
+		}
+		if strings.TrimSpace(args.Stage) == "" {
+			args.Stage = in.Stage
+		}
+		if strings.TrimSpace(args.Username) == "" {
+			args.Username = in.AdminUsername
+		}
+		if strings.TrimSpace(args.WalletAddr) == "" {
+			args.WalletAddr = in.AdminWalletAddress
+		}
+	}
+
 	if strings.TrimSpace(args.App) == "" ||
 		strings.TrimSpace(args.BaseDomain) == "" ||
 		strings.TrimSpace(args.AWSProfile) == "" ||
 		strings.TrimSpace(args.Stage) == "" ||
 		strings.TrimSpace(args.WalletAddr) == "" ||
 		strings.TrimSpace(args.Signature) == "" {
-		return initAdminArgs{}, errors.New("required flags: --app, --base-domain, --aws-profile, --stage, --wallet-address, --signature, and (--message or --message-file)")
+		return initAdminArgs{}, errors.New("required flags: --base-domain, --aws-profile, --signature, --app/--stage/--wallet-address (or --provisioning-input), and (--message or --message-file)")
 	}
 	if strings.TrimSpace(args.Message) == "" && strings.TrimSpace(args.MessageFile) == "" {
 		return initAdminArgs{}, errors.New("required flags: --message or --message-file")
@@ -613,4 +634,3 @@ func buildActorModel(username, domain, publicKeyPEM, encryptedPrivateKeyB64 stri
 
 	return model, nil
 }
-

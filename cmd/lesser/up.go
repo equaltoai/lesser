@@ -23,6 +23,7 @@ type upArgs struct {
 	BaseDomain             string
 	AWSProfile             string
 	Stage                  string
+	ProvisioningInputPath  string
 	BootstrapWalletAddress string
 	WithStaging            bool
 	OutPath                string
@@ -356,6 +357,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
 	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
 	fs.StringVar(&args.Stage, "stage", "", "deploy a single stage (dev|staging|live); default deploys dev+live")
+	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1)")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
@@ -365,8 +367,24 @@ func parseUpArgs(argv []string) (upArgs, error) {
 		return upArgs{}, err
 	}
 
+	if strings.TrimSpace(args.ProvisioningInputPath) != "" {
+		in, err := readManagedProvisioningInput(args.ProvisioningInputPath)
+		if err != nil {
+			return upArgs{}, err
+		}
+		if strings.TrimSpace(args.App) == "" {
+			args.App = in.Slug
+		}
+		if strings.TrimSpace(args.Stage) == "" {
+			args.Stage = in.Stage
+		}
+		if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
+			args.BootstrapWalletAddress = in.AdminWalletAddress
+		}
+	}
+
 	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" || strings.TrimSpace(args.AWSProfile) == "" {
-		return upArgs{}, errors.New("required flags: --app, --base-domain, --aws-profile")
+		return upArgs{}, errors.New("required flags: --base-domain, --aws-profile, and --app (or --provisioning-input)")
 	}
 	if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
 		args.BootstrapWalletAddress = strings.TrimSpace(os.Getenv("LESSER_BOOTSTRAP_WALLET_ADDRESS"))
@@ -377,6 +395,9 @@ func parseUpArgs(argv []string) (upArgs, error) {
 			return upArgs{}, err
 		}
 		args.BootstrapWalletAddress = normalized
+		if err := rejectReservedWallet(args.BootstrapWalletAddress, ""); err != nil {
+			return upArgs{}, err
+		}
 	}
 
 	return args, nil
