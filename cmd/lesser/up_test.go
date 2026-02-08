@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,6 +21,13 @@ func TestParseUpArgs(t *testing.T) {
 	args, err := parseUpArgs([]string{"--app", "app", "--base-domain", "example.com", "--aws-profile", "profile"})
 	require.NoError(t, err)
 	require.Equal(t, "app", args.App)
+
+	t.Run("allows ambient credentials when aws-profile omitted", func(t *testing.T) {
+		t.Setenv("AWS_PROFILE", "")
+		args, err := parseUpArgs([]string{"--app", "app", "--base-domain", "example.com"})
+		require.NoError(t, err)
+		require.Empty(t, args.AWSProfile)
+	})
 
 	t.Run("normalizes bootstrap wallet flag", func(t *testing.T) {
 		args, err := parseUpArgs([]string{
@@ -493,6 +501,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 	previousHome := userHomeDirFn
 	previousMkdir := mkdirAllFn
 	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousLoadAWSCLI := loadAWSConfigForCLIFn
 	previousAccount := resolveAWSAccountIDFn
 	previousZone := resolveHostedZoneFn
 	previousInspect := inspectBootstrapRequirementsFn
@@ -502,6 +511,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 		userHomeDirFn = previousHome
 		mkdirAllFn = previousMkdir
 		loadAWSConfigFromProfileFn = previousLoadAWS
+		loadAWSConfigForCLIFn = previousLoadAWSCLI
 		resolveAWSAccountIDFn = previousAccount
 		resolveHostedZoneFn = previousZone
 		inspectBootstrapRequirementsFn = previousInspect
@@ -540,9 +550,14 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("aws profile required", func(t *testing.T) {
+	t.Run("allows ambient credentials when profile empty", func(t *testing.T) {
+		loadAWSConfigForCLIFn = func(_ context.Context, profile string) (aws.Config, string, error) {
+			require.Empty(t, strings.TrimSpace(profile))
+			return aws.Config{Region: "us-east-1"}, "", nil
+		}
 		_, err := prepareUpEnv(context.Background(), upArgs{App: "app", BaseDomain: "example.com", AWSProfile: " "})
-		require.Error(t, err)
+		require.NoError(t, err)
+		loadAWSConfigForCLIFn = previousLoadAWSCLI
 	})
 
 	t.Run("load aws config error", func(t *testing.T) {
@@ -672,5 +687,43 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 		env := baseEnv()
 		env.bootstrap = bootstrapWallet{Mnemonic: "mnemonic"}
 		env.printSummary(filepath.Join(t.TempDir(), "state.json"))
+	})
+}
+
+func TestUpEnv_PrintSummary_ManagedProvisioning(t *testing.T) {
+	env := &upEnv{
+		args:       upArgs{ProvisioningInputPath: "provision.json"},
+		baseDomain: "example.com",
+		stages:     []naming.Stage{naming.StageDev},
+	}
+	env.printSummary("/tmp/state.json")
+}
+
+func TestUpEnv_PrintSummary_BootstrapMnemonic(t *testing.T) {
+	env := &upEnv{
+		baseDomain: "example.com",
+		stages:     []naming.Stage{naming.StageDev},
+		bootstrap: bootstrapWallet{
+			Address:        "0xabc",
+			Mnemonic:       "mnemonic",
+			DerivationPath: defaultBootstrapDerivationPath,
+			ChainID:        1,
+		},
+	}
+	env.printSummary("/tmp/state.json")
+}
+
+func TestRunUp_Errors(t *testing.T) {
+	t.Run("parse args error", func(t *testing.T) {
+		require.Error(t, runUp(nil))
+	})
+
+	t.Run("prepare env error", func(t *testing.T) {
+		previousRepoRoot := findRepoRootFn
+		t.Cleanup(func() { findRepoRootFn = previousRepoRoot })
+		findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+
+		err := runUp([]string{"--app", "app", "--base-domain", "example.com/", "--aws-profile", "profile"})
+		require.Error(t, err)
 	})
 }

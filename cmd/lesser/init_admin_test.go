@@ -43,11 +43,13 @@ func TestRunInitAdmin_ReadsMessageFileAndVerifiesSignatureBeforeAWS(t *testing.T
 	path := filepath.Join(t.TempDir(), "message.txt")
 	require.NoError(t, os.WriteFile(path, []byte(message), 0o600))
 
-	previousLoadAWS := loadAWSConfigFromProfileFn
-	t.Cleanup(func() { loadAWSConfigFromProfileFn = previousLoadAWS })
+	previousLoadAWS := loadAWSConfigForCLIFn
+	t.Cleanup(func() { loadAWSConfigForCLIFn = previousLoadAWS })
 
 	errSentinel := errors.New("load aws called")
-	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) { return aws.Config{}, errSentinel }
+	loadAWSConfigForCLIFn = func(context.Context, string) (aws.Config, string, error) {
+		return aws.Config{}, "", errSentinel
+	}
 
 	runErr := runInitAdmin([]string{
 		"--app", "app",
@@ -106,20 +108,23 @@ func TestParseInitAdminArgs_ProvisioningInputSuppliesDefaults(t *testing.T) {
   "slug": "app",
   "stage": "dev",
   "admin_wallet_address": "0x4444444444444444444444444444444444444444",
-  "admin_username": "alice"
+  "admin_username": "alice",
+  "admin_wallet_chain_id": 11155111,
+  "consent_message": "consent",
+  "consent_signature": "0xdeadbeef"
 }
 `), 0o600))
 
 	args, err := parseInitAdminArgs([]string{
 		"--provisioning-input", path,
 		"--base-domain", "example.com",
-		"--aws-profile", "profile",
-		"--signature", "0xdeadbeef",
-		"--message", "consent",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "app", args.App)
 	require.Equal(t, "dev", args.Stage)
 	require.Equal(t, "alice", args.Username)
 	require.Equal(t, "0x4444444444444444444444444444444444444444", args.WalletAddr)
+	require.Equal(t, 11155111, args.ChainID)
+	require.Equal(t, "consent", args.Message)
+	require.Equal(t, "0xdeadbeef", args.Signature)
 }

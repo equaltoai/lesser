@@ -16,6 +16,9 @@ type managedProvisioningInput struct {
 	Stage              string `json:"stage"`
 	AdminWalletAddress string `json:"admin_wallet_address"`
 	AdminUsername      string `json:"admin_username"`
+	AdminWalletChainID int    `json:"admin_wallet_chain_id,omitempty"`
+	ConsentMessage     string `json:"consent_message,omitempty"`
+	ConsentSignature   string `json:"consent_signature,omitempty"`
 }
 
 func readManagedProvisioningInput(path string) (managedProvisioningInput, error) {
@@ -49,6 +52,8 @@ func readManagedProvisioningInput(path string) (managedProvisioningInput, error)
 	in.Stage = strings.TrimSpace(in.Stage)
 	in.AdminWalletAddress = strings.TrimSpace(in.AdminWalletAddress)
 	in.AdminUsername = strings.TrimSpace(in.AdminUsername)
+	in.ConsentMessage = strings.TrimSpace(in.ConsentMessage)
+	in.ConsentSignature = strings.TrimSpace(in.ConsentSignature)
 	if in.AdminUsername == "" {
 		in.AdminUsername = in.Slug
 	}

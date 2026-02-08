@@ -28,20 +28,25 @@ Example:
   "slug": "my-instance",
   "stage": "dev",
   "admin_wallet_address": "0x4444444444444444444444444444444444444444",
-  "admin_username": "my-instance"
+  "admin_username": "my-instance",
+  "admin_wallet_chain_id": 1,
+  "consent_message": "lesser.host requests your consent to provision a managed instance...\n",
+  "consent_signature": "0x..."
 }
 ```
 
 Notes:
 - `admin_username` defaults to `slug` when omitted.
 - `stage` supports `dev|staging|live` (managed runners typically use `dev` and `live`).
-- Chain ID is supplied to `init-admin` via `--chain-id` (default: `1`).
+- `admin_wallet_chain_id` overrides `--chain-id` for `init-admin` when supplied.
+- `consent_message` and `consent_signature` can satisfy `init-admin` without extra flags.
+- `--aws-profile` is optional when AWS ambient credentials are available.
 
 ## Runner Commands
 
 1. Deploy a single stage without generating a bootstrap mnemonic (managed provisioning):
 ```bash
-./lesser up --base-domain example.com --aws-profile <profile> --provisioning-input provision.json
+./lesser up --base-domain example.com [--aws-profile <profile>] --provisioning-input provision.json
 ```
 
 `admin_wallet_address` is mapped to the deployment bootstrap wallet address so the deploy does not emit or require a
@@ -49,7 +54,7 @@ mnemonic.
 
 2. Seed the initial admin (wallet-only) and unlock the instance:
 ```bash
-./lesser init-admin --base-domain example.com --aws-profile <profile> --provisioning-input provision.json \\
+./lesser init-admin --base-domain example.com [--aws-profile <profile>] --provisioning-input provision.json \\
   --signature <0x...> --message-file <path> [--chain-id 1] [--reserved-wallets <csv>]
 ```
 

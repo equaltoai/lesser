@@ -140,3 +140,72 @@ func TestLoadAWSConfigFromProfile_WiresAWSCLIAndLoadDefaultConfig(t *testing.T) 
 		require.Equal(t, "us-east-1", cfg.Region)
 	})
 }
+
+func TestLoadAWSConfigForCLI_ChoosesProfileOrAmbient(t *testing.T) {
+	prevProfile := loadAWSConfigFromProfileFn
+	prevLoad := awsLoadDefaultConfigFn
+	t.Cleanup(func() {
+		loadAWSConfigFromProfileFn = prevProfile
+		awsLoadDefaultConfigFn = prevLoad
+	})
+
+	t.Run("uses explicit profile", func(t *testing.T) {
+		loadAWSConfigFromProfileFn = func(_ context.Context, profile string) (aws.Config, error) {
+			require.Equal(t, "explicit", profile)
+			return aws.Config{Region: "us-west-2"}, nil
+		}
+		awsLoadDefaultConfigFn = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+			return aws.Config{}, errors.New("should not call ambient")
+		}
+
+		cfg, profile, err := loadAWSConfigForCLI(context.Background(), "explicit")
+		require.NoError(t, err)
+		require.Equal(t, "explicit", profile)
+		require.Equal(t, "us-west-2", cfg.Region)
+	})
+
+	t.Run("uses env profile when explicit missing", func(t *testing.T) {
+		t.Setenv("AWS_PROFILE", "from-env")
+		loadAWSConfigFromProfileFn = func(_ context.Context, profile string) (aws.Config, error) {
+			require.Equal(t, "from-env", profile)
+			return aws.Config{Region: "us-east-2"}, nil
+		}
+		awsLoadDefaultConfigFn = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+			return aws.Config{}, errors.New("should not call ambient")
+		}
+
+		cfg, profile, err := loadAWSConfigForCLI(context.Background(), "")
+		require.NoError(t, err)
+		require.Equal(t, "from-env", profile)
+		require.Equal(t, "us-east-2", cfg.Region)
+	})
+
+	t.Run("uses ambient when no profile", func(t *testing.T) {
+		t.Setenv("AWS_PROFILE", "")
+		loadAWSConfigFromProfileFn = func(_ context.Context, _ string) (aws.Config, error) {
+			return aws.Config{}, errors.New("should not call profile")
+		}
+		awsLoadDefaultConfigFn = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+			return aws.Config{Region: "us-east-1"}, nil
+		}
+
+		cfg, profile, err := loadAWSConfigForCLI(context.Background(), "")
+		require.NoError(t, err)
+		require.Empty(t, profile)
+		require.Equal(t, "us-east-1", cfg.Region)
+	})
+
+	t.Run("ambient requires region", func(t *testing.T) {
+		t.Setenv("AWS_PROFILE", "")
+		loadAWSConfigFromProfileFn = func(_ context.Context, _ string) (aws.Config, error) {
+			return aws.Config{}, errors.New("should not call profile")
+		}
+		awsLoadDefaultConfigFn = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+			return aws.Config{Region: ""}, nil
+		}
+
+		_, _, err := loadAWSConfigForCLI(context.Background(), "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "AWS region is required")
+	})
+}

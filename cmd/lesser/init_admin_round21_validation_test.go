@@ -135,7 +135,7 @@ func TestRunInitAdmin_InvalidSignatureErrors(t *testing.T) {
 }
 
 func TestRunInitAdmin_SuccessPath_WithDependencyStubs(t *testing.T) {
-	prevLoadAWS := loadAWSConfigFromProfileFn
+	prevLoadAWS := loadAWSConfigForCLIFn
 	prevNewDB := tabletheoryNewFn
 	prevEnsureWalletNotLinked := ensureWalletNotLinkedElsewhereFn
 	prevEnsureUser := ensureAdminUserFn
@@ -144,7 +144,7 @@ func TestRunInitAdmin_SuccessPath_WithDependencyStubs(t *testing.T) {
 	prevEnsureIndex := ensureWalletIndexFn
 	prevEnsureActivated := ensureInstanceActivatedFn
 	t.Cleanup(func() {
-		loadAWSConfigFromProfileFn = prevLoadAWS
+		loadAWSConfigForCLIFn = prevLoadAWS
 		tabletheoryNewFn = prevNewDB
 		ensureWalletNotLinkedElsewhereFn = prevEnsureWalletNotLinked
 		ensureAdminUserFn = prevEnsureUser
@@ -154,11 +154,11 @@ func TestRunInitAdmin_SuccessPath_WithDependencyStubs(t *testing.T) {
 		ensureInstanceActivatedFn = prevEnsureActivated
 	})
 
-	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
+	loadAWSConfigForCLIFn = func(context.Context, string) (aws.Config, string, error) {
 		return aws.Config{
 			Region:      "us-east-1",
 			Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "TOKEN")),
-		}, nil
+		}, "", nil
 	}
 
 	db := new(theorymocks.MockDB)
@@ -196,11 +196,11 @@ func TestRunInitAdmin_SuccessPath_WithDependencyStubs(t *testing.T) {
 }
 
 func TestRunInitAdmin_LoadAWSConfigFailureSurfaces(t *testing.T) {
-	prevLoadAWS := loadAWSConfigFromProfileFn
-	t.Cleanup(func() { loadAWSConfigFromProfileFn = prevLoadAWS })
+	prevLoadAWS := loadAWSConfigForCLIFn
+	t.Cleanup(func() { loadAWSConfigForCLIFn = prevLoadAWS })
 
-	loadAWSConfigFromProfileFn = func(context.Context, string) (aws.Config, error) {
-		return aws.Config{}, errors.New("aws boom")
+	loadAWSConfigForCLIFn = func(context.Context, string) (aws.Config, string, error) {
+		return aws.Config{}, "", errors.New("aws boom")
 	}
 
 	priv, err := crypto.GenerateKey()

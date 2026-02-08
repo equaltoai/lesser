@@ -76,12 +76,7 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, err
 	}
 
-	awsProfile := strings.TrimSpace(args.AWSProfile)
-	if awsProfile == "" {
-		return nil, errors.New("aws profile is required")
-	}
-
-	awsCfg, err := loadAWSConfigFromProfileFn(ctx, awsProfile)
+	awsCfg, awsProfile, err := loadAWSConfigForCLIFn(ctx, args.AWSProfile)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +212,11 @@ func (e *upEnv) run(ctx context.Context) error {
 	}
 
 	fmt.Println("\nAWS environment:")
-	fmt.Println("  profile:", e.awsProfile)
+	profileLabel := e.awsProfile
+	if strings.TrimSpace(profileLabel) == "" {
+		profileLabel = "(ambient)"
+	}
+	fmt.Println("  profile:", profileLabel)
 	fmt.Println("  account:", e.accountID)
 	fmt.Println("  region:", e.awsCfg.Region)
 	fmt.Println("  hosted_zone:", e.hostedZone.Name, e.hostedZone.ID)
@@ -339,6 +338,11 @@ func (e *upEnv) printSummary(statePath string) {
 	fmt.Println("\nDeployment receipt:", statePath)
 	printStageURLs(e.stages, e.baseDomain)
 	fmt.Println("\nNext steps:")
+	if strings.TrimSpace(e.args.ProvisioningInputPath) != "" {
+		fmt.Println("  1) Seed the initial admin wallet with `lesser init-admin` using the provisioning input.")
+		fmt.Println("  2) Log in with the admin wallet and optionally enroll a passkey.")
+		return
+	}
 	if e.bootstrap.Mnemonic != "" {
 		fmt.Println("  1) Import the bootstrap mnemonic into a wallet (e.g. MetaMask).")
 	} else {
@@ -355,7 +359,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	var args upArgs
 	fs.StringVar(&args.App, "app", "", "app name slug (e.g. my-lesser)")
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
-	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
+	fs.StringVar(&args.AWSProfile, "aws-profile", os.Getenv("AWS_PROFILE"), "AWS profile name to use (sets AWS_PROFILE)")
 	fs.StringVar(&args.Stage, "stage", "", "deploy a single stage (dev|staging|live); default deploys dev+live")
 	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1)")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
@@ -383,8 +387,8 @@ func parseUpArgs(argv []string) (upArgs, error) {
 		}
 	}
 
-	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" || strings.TrimSpace(args.AWSProfile) == "" {
-		return upArgs{}, errors.New("required flags: --base-domain, --aws-profile, and --app (or --provisioning-input)")
+	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" {
+		return upArgs{}, errors.New("required flags: --base-domain and --app (or --provisioning-input)")
 	}
 	if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
 		args.BootstrapWalletAddress = strings.TrimSpace(os.Getenv("LESSER_BOOTSTRAP_WALLET_ADDRESS"))

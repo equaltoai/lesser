@@ -61,5 +61,22 @@ func TestReadManagedProvisioningInput_ValidationAndDefaults(t *testing.T) {
 		require.Equal(t, 1, in.Schema)
 		require.Equal(t, "app", in.AdminUsername)
 	})
-}
 
+	t.Run("captures consent fields when provided", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "in.json")
+		require.NoError(t, os.WriteFile(path, []byte(`{
+  "schema": 1,
+  "slug": "app",
+  "stage": "dev",
+  "admin_wallet_address": "0x1111111111111111111111111111111111111111",
+  "admin_wallet_chain_id": 11155111,
+  "consent_message": " consent ",
+  "consent_signature": " 0xdeadbeef "
+}`), 0o600))
+		in, err := readManagedProvisioningInput(path)
+		require.NoError(t, err)
+		require.Equal(t, 11155111, in.AdminWalletChainID)
+		require.Equal(t, "consent", in.ConsentMessage)
+		require.Equal(t, "0xdeadbeef", in.ConsentSignature)
+	})
+}

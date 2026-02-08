@@ -77,11 +77,6 @@ func runInitAdmin(argv []string) error {
 		return err
 	}
 
-	awsProfile := strings.TrimSpace(args.AWSProfile)
-	if awsProfile == "" {
-		return errors.New("aws profile is required")
-	}
-
 	stageValue := strings.TrimSpace(args.Stage)
 	if stageValue == "" {
 		return errors.New("stage is required")
@@ -141,7 +136,7 @@ func runInitAdmin(argv []string) error {
 
 	ctx := context.Background()
 
-	awsCfg, err := loadAWSConfigFromProfileFn(ctx, awsProfile)
+	awsCfg, _, err := loadAWSConfigForCLIFn(ctx, args.AWSProfile)
 	if err != nil {
 		return err
 	}
@@ -220,6 +215,13 @@ func parseInitAdminArgs(argv []string) (initAdminArgs, error) {
 		return initAdminArgs{}, err
 	}
 
+	chainIDSet := false
+	fs.Visit(func(flag *flag.Flag) {
+		if flag.Name == "chain-id" {
+			chainIDSet = true
+		}
+	})
+
 	if strings.TrimSpace(args.ProvisioningInputPath) != "" {
 		in, err := readManagedProvisioningInput(args.ProvisioningInputPath)
 		if err != nil {
@@ -237,15 +239,23 @@ func parseInitAdminArgs(argv []string) (initAdminArgs, error) {
 		if strings.TrimSpace(args.WalletAddr) == "" {
 			args.WalletAddr = in.AdminWalletAddress
 		}
+		if !chainIDSet && in.AdminWalletChainID > 0 {
+			args.ChainID = in.AdminWalletChainID
+		}
+		if strings.TrimSpace(args.Message) == "" && strings.TrimSpace(args.MessageFile) == "" {
+			args.Message = in.ConsentMessage
+		}
+		if strings.TrimSpace(args.Signature) == "" {
+			args.Signature = in.ConsentSignature
+		}
 	}
 
 	if strings.TrimSpace(args.App) == "" ||
 		strings.TrimSpace(args.BaseDomain) == "" ||
-		strings.TrimSpace(args.AWSProfile) == "" ||
 		strings.TrimSpace(args.Stage) == "" ||
 		strings.TrimSpace(args.WalletAddr) == "" ||
 		strings.TrimSpace(args.Signature) == "" {
-		return initAdminArgs{}, errors.New("required flags: --base-domain, --aws-profile, --signature, --app/--stage/--wallet-address (or --provisioning-input), and (--message or --message-file)")
+		return initAdminArgs{}, errors.New("required flags: --base-domain, --signature, --app/--stage/--wallet-address (or --provisioning-input), and (--message or --message-file)")
 	}
 	if strings.TrimSpace(args.Message) == "" && strings.TrimSpace(args.MessageFile) == "" {
 		return initAdminArgs{}, errors.New("required flags: --message or --message-file")
