@@ -38,16 +38,17 @@ Top-level paths are reserved for system endpoints (examples):
 - `/media/*` (media CDN/origin)
 - `/l/*` (client UI)
 
-## How the stage apex domain works today (Lift CDK)
+## How the stage apex domain works today (CDK)
 
-Lesser stage stacks provision a single distribution for the stage apex domain using Lift CDK:
+Lesser stage stacks provision a single distribution for the stage apex domain via CDK:
 
-- Construct: `liftcdk.NewPathRoutedFrontendDistribution(...)`
+- Construct: `apptheorycdk.NewAppTheoryPathRoutedFrontend(...)` (see `infra/cdk/stacks/lesser_api_stack.go`)
 - Default origin: API origin (typically `api.<stage-domain>`)
 - Additional behaviors:
   - `/l` and `/l/*` → client S3 bucket
   - `/auth` and `/auth/*` → auth S3 bucket
   - `/auth/wallet/*` → API origin (bypass auth UI routing)
+- API origin request policy: forwards **query strings** (required for OAuth+PKCE)
 
 ### Important: how `/l/` is served from S3
 
@@ -68,12 +69,35 @@ dist/
 
 …and the browser must request all client assets under `/l/…` so those requests hit the client bucket behavior.
 
+### Important: how `/auth/*` is served from S3 (multi-page static)
+
+`auth-ui/` is a **multi-page** static site (e.g. `login/index.html`), not a SPA.
+
+The distribution rewrites extensionless auth routes using **directory-index semantics** so deep links work:
+
+- `GET /auth` or `GET /auth/` → S3 key `/index.html` (auth-ui root)
+- `GET /auth/login` or `GET /auth/login/` → S3 key `/login/index.html`
+- `GET /auth/static/app.js` → S3 key `/static/app.js` (prefix is stripped)
+
+If you provision your own distribution, implement equivalent rewrites (CloudFront Function or Lambda@Edge) or deep links
+like `/auth/login` will return 403 from S3.
+
 ## Root redirect (`/` → `/l/`)
 
 Because the stage apex distribution’s default behavior routes to the API origin, Lesser implements the redirect in the
 **Lesser API**:
 
 - `GET /` returns `302` with `Location: /l/`
+- Ensure your API Gateway routing includes an explicit `GET /` and `HEAD /` integration to the API Lambda (the proxy
+  route `/{proxy+}` does not match the empty path). See `infra/cdk/constructs/api_routes.go`.
+
+## OAuth behind CloudFront: query strings are required
+
+OAuth+PKCE authorization depends on query string parameters (example: `client_id`, `redirect_uri`, `response_type=code`,
+`code_challenge`, `state`, …).
+
+If CloudFront sits in front of your API origin, the behavior(s) that route `/oauth/*` (or the default API behavior)
+must **forward query strings** to the origin via an Origin Request Policy. Otherwise `/oauth/authorize` will fail.
 
 If you move ownership of the stage apex distribution into the client project, you can instead implement the redirect at
 CloudFront (viewer-request function) so the request never reaches the origin.

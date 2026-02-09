@@ -267,6 +267,9 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 
 	frontend := apptheorycdk.NewAppTheoryPathRoutedFrontend(s.Stack, jsii.String("ClientFrontend"), &apptheorycdk.AppTheoryPathRoutedFrontendProps{
 		ApiOriginUrl: jsii.String(apiOrigin),
+		// Forward all query strings to the API origin (required for OAuth /oauth/authorize PKCE params).
+		// Exclude Host to avoid origin domain mismatch issues.
+		ApiOriginRequestPolicy: awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
 		Domain: &apptheorycdk.PathRoutedFrontendDomainConfig{
 			DomainName:       jsii.String(domain),
 			Certificate:      s.CDNCertificate,
@@ -313,9 +316,97 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 		PriceClass:               awscloudfront.PriceClass_PRICE_CLASS_100,
 	})
 
+	overridePathRoutedFrontendRewriteFunction(frontend)
+
 	s.FrontendDistribution = frontend.Distribution()
 	s.ClientBucket = clientAssetsBucket
 	s.AuthUIBucket = authAssetsBucket
+}
+
+func overridePathRoutedFrontendRewriteFunction(frontend apptheorycdk.AppTheoryPathRoutedFrontend) {
+	if frontend == nil {
+		return
+	}
+
+	// The upstream rewrite function doesn't handle exact-prefix paths (e.g. "/l" and "/auth") and doesn't
+	// support directory-index semantics for multi-page static sites (e.g. "/auth/login" → "/auth/login/index.html").
+	// We override the function code so:
+	// - "/l" redirects/rewrites consistently with "/l/" and extensionless routes fall back to "/l/index.html" (SPA)
+	// - "/auth" serves "/auth/index.html" and extensionless routes map to "/auth/<path>/index.html" (directory index)
+	rewriteFn := frontend.SpaRewriteFunction()
+	if rewriteFn == nil {
+		return
+	}
+
+	raw := rewriteFn.Node().DefaultChild()
+	cfnFn, ok := raw.(awscloudfront.CfnFunction)
+	if !ok || cfnFn == nil {
+		return
+	}
+
+	// NOTE: Keep this function CSP-safe: it only rewrites the request URI at CloudFront and does not inject content.
+	cfnFn.SetFunctionCode(jsii.String(strings.TrimSpace(`
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  var prefixes = [
+    { cleanPrefix: '/auth', prefix: '/auth/', rewriteMode: 'dir', stripPrefixBeforeOrigin: true, indexPath: '/auth/index.html' },
+    { cleanPrefix: '/l', prefix: '/l/', rewriteMode: 'spa', stripPrefixBeforeOrigin: true, indexPath: '/l/index.html' }
+  ];
+
+  for (var i = 0; i < prefixes.length; i++) {
+    var cfg = prefixes[i];
+
+    // Normalize "/prefix" → "/prefix/" so the rest of the logic can treat it uniformly.
+    if (uri === cfg.cleanPrefix) {
+      uri = cfg.prefix;
+    }
+
+    if (uri.indexOf(cfg.prefix) !== 0) {
+      continue;
+    }
+
+    var uriWithoutPrefix = uri.substring(cfg.prefix.length);
+    var lastSlash = uriWithoutPrefix.lastIndexOf('/');
+    var lastSegment = lastSlash >= 0 ? uriWithoutPrefix.substring(lastSlash + 1) : uriWithoutPrefix;
+
+    if (cfg.rewriteMode === 'spa') {
+      // SPA behavior: any extensionless route falls back to the SPA index.
+      if (lastSegment.indexOf('.') === -1) {
+        request.uri = cfg.indexPath;
+      } else {
+        request.uri = uri;
+      }
+    } else {
+      // Directory-index behavior (multi-page static site):
+      // - "/auth" or "/auth/" → "/auth/index.html"
+      // - "/auth/login" → "/auth/login/index.html"
+      // - "/auth/login/" → "/auth/login/index.html"
+      if (uriWithoutPrefix === '') {
+        request.uri = cfg.indexPath;
+      } else if (lastSegment === '') {
+        request.uri = uri + 'index.html';
+      } else if (lastSegment.indexOf('.') === -1) {
+        request.uri = uri + '/index.html';
+      } else {
+        request.uri = uri;
+      }
+    }
+
+    if (cfg.stripPrefixBeforeOrigin) {
+      var cleanPrefixWithSlash = cfg.cleanPrefix + '/';
+      if (request.uri.indexOf(cleanPrefixWithSlash) === 0) {
+        request.uri = request.uri.substring(cfg.cleanPrefix.length);
+      }
+    }
+
+    break;
+  }
+
+  return request;
+}
+`)))
 }
 
 func (s *LesserApiStack) createSharedResources() {
