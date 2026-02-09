@@ -32,9 +32,12 @@ import (
 	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -50,6 +53,10 @@ var (
 	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	lambdaStartFn            = lambda.Start
 	newHandlerFn             = NewHandler
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
 )
 
 func init() {
@@ -114,16 +121,49 @@ func initializeActor() {
 		logger = zap.NewNop()
 	}
 
+	// Initialize with default options for API Lambda type (best-effort; some lambdas still do manual wiring).
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+
 	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
 	if !ok || storage == nil {
-		logger.Fatal("lambda context repository is not core.RepositoryStorage")
+		logger.Warn("lambda context repository missing after initialization, attempting manual storage initialization",
+			zap.Any("repos_type", fmt.Sprintf("%T", lambdaCtx.Repos)),
+		)
+		initializeManualStorage()
+		storage, ok = lambdaCtx.Repos.(core.RepositoryStorage)
+	}
+	if !ok || storage == nil {
+		logger.Fatal("lambda context repository is not core.RepositoryStorage",
+			zap.Any("repos_type", fmt.Sprintf("%T", lambdaCtx.Repos)),
+		)
 	}
 	repos = storage
+}
 
-	// Initialize with default options for API Lambda type
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
+func initializeManualStorage() {
+	if lambdaCtx == nil {
+		logger.Fatal("manual storage initialization requires lambda context")
 	}
+
+	tableName := strings.TrimSpace(cfg.DynamoTableName)
+	if tableName == "" {
+		logger.Fatal("DYNAMODB_TABLE environment variable is required for actor lambda")
+	}
+
+	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
+	if err != nil {
+		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+	}
+
+	storage, err := newRepositoryFactoryFn(db, tableName, logger)
+	if err != nil {
+		logger.Fatal("failed to initialize repository factory", zap.Error(err))
+	}
+
+	lambdaCtx.DynamoDB = db
+	lambdaCtx.Repos = storage
 }
 
 // HandleActorProfile handles ActivityPub actor profile requests
