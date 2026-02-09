@@ -2,6 +2,7 @@ package theorydb
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -30,6 +31,27 @@ var (
 	newDynamormLambdaOptimized = tabletheory.NewLambdaOptimized
 )
 
+func registerDefaultTypeConverters(db core.DB) error {
+	if db == nil {
+		return fmt.Errorf("db is nil")
+	}
+
+	extended, ok := db.(core.ExtendedDB)
+	if !ok {
+		// Non-fatal: tests may use mocked core.DB without ExtendedDB support.
+		return nil
+	}
+
+	if err := extended.RegisterTypeConverter(mapStringAnyType, mapStringAnyConverter{}); err != nil {
+		return fmt.Errorf("register map[string]any converter: %w", err)
+	}
+	if err := extended.RegisterTypeConverter(sliceAnyType, sliceAnyConverter{}); err != nil {
+		return fmt.Errorf("register []any converter: %w", err)
+	}
+
+	return nil
+}
+
 // GetClient returns a singleton DynamORM client instance
 // This ensures that the client is only initialized once per Lambda container
 func GetClient(_ context.Context) (core.DB, error) {
@@ -57,6 +79,12 @@ func GetClient(_ context.Context) (core.DB, error) {
 
 		// Initialize with standard client creation
 		client, clientErr = newDynamormStandardClient(sessionConfig)
+		if clientErr != nil {
+			return
+		}
+		if err := registerDefaultTypeConverters(client); err != nil {
+			clientErr = err
+		}
 	})
 
 	return client, clientErr
@@ -80,6 +108,11 @@ func GetLambdaClient(ctx context.Context) (*tabletheory.LambdaDB, error) {
 		}
 
 		// Store the standard client interface for compatibility
+		if err := registerDefaultTypeConverters(lambdaDB); err != nil {
+			clientErr = err
+			zap.L().Error("failed to register type converters", zap.Error(err))
+			return
+		}
 		client = lambdaDB.WithLambdaTimeoutBuffer(defaultTimeoutBuffer)
 
 		zap.L().Info("DynamORM initialized", zap.Duration("duration", time.Since(startTime)))
