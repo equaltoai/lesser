@@ -234,6 +234,11 @@ type Config struct {
 	ApprovalRequired    bool     // Whether new registrations require approval
 	InvitesEnabled      bool     // Whether invites are enabled
 	FederationEnabled   bool     // Whether federation is enabled
+
+	// Tips (TipSplitter integration; non-secret public config)
+	TipEnabled         bool   // Whether on-chain tipping is enabled for this instance
+	TipChainID         int    // EVM chain ID (e.g. 8453)
+	TipContractAddress string // TipSplitter contract address
 }
 
 var config *Config
@@ -468,6 +473,11 @@ func loadConfig() *Config {
 		InvitesEnabled:           getEnvAsBoolOrDefault("INVITES_ENABLED", false),
 		FederationEnabled:        getEnvAsBoolOrDefault("FEDERATION_ENABLED", true),
 		AllowPublicStatusHistory: getEnvAsBoolOrDefault("ALLOW_PUBLIC_STATUS_HISTORY", false),
+
+		// Tips (TipSplitter integration; public config)
+		TipEnabled:         getEnvAsBoolOrDefault("TIP_ENABLED", false),
+		TipChainID:         getEnvAsIntOrDefault("TIP_CHAIN_ID", 0),
+		TipContractAddress: strings.TrimSpace(getEnvOrDefault("TIP_CONTRACT_ADDRESS", "")),
 	}
 
 	return cfg

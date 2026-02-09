@@ -914,6 +914,7 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		RepliesCount:   r.getReplyCount(ctx, note.ID), // Use efficient count method
 		LikesCount:     0,
 		SharesCount:    0,
+		ContentHash:    contentHashForObjectID(note.ID),
 		EstimatedCost:  0,
 		CommunityNotes: r.getCommunityNotesForObject(ctx, note.ID),
 	}
@@ -1197,6 +1198,7 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 			PageInfo:   &model.PageInfo{HasNextPage: false, HasPreviousPage: false},
 			TotalCount: status.QuoteCount,
 		},
+		ContentHash:   contentHashForObjectID(status.StatusID),
 		EstimatedCost: 1,
 		Boosted:       viewerBoosted,
 	}
@@ -1516,30 +1518,34 @@ func (r *queryResolver) convertObjectToModel(obj any) *model.Object {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return &model.Object{
-			ID:         o.ID,
-			Type:       model.ObjectTypeNote,
-			Content:    o.Content,
-			CreatedAt:  model.Time(*o.Published),
-			UpdatedAt:  model.Time(time.Now()),
-			Sensitive:  o.Sensitive,
-			Visibility: r.mapActivityPubVisibility(o.Visibility),
+			ID:          o.ID,
+			Type:        model.ObjectTypeNote,
+			Content:     o.Content,
+			CreatedAt:   model.Time(*o.Published),
+			UpdatedAt:   model.Time(time.Now()),
+			Sensitive:   o.Sensitive,
+			Visibility:  r.mapActivityPubVisibility(o.Visibility),
+			ContentHash: contentHashForObjectID(o.ID),
 		}
 	case *activitypub.Article:
 		return &model.Object{
-			ID:        o.ID,
-			Type:      model.ObjectTypeArticle,
-			Content:   o.Content,
-			CreatedAt: model.Time(*o.Published),
-			UpdatedAt: model.Time(time.Now()),
+			ID:          o.ID,
+			Type:        model.ObjectTypeArticle,
+			Content:     o.Content,
+			CreatedAt:   model.Time(*o.Published),
+			UpdatedAt:   model.Time(time.Now()),
+			ContentHash: contentHashForObjectID(o.ID),
 		}
 	case map[string]interface{}:
 		// Handle generic ActivityPub objects stored as maps
 		if objType, ok := o["type"].(string); ok {
+			id := getStringFromMap(o, "id")
 			modelObj := &model.Object{
-				ID:        getStringFromMap(o, "id"),
-				Content:   getStringFromMap(o, "content"),
-				CreatedAt: model.Time(time.Now()),
-				UpdatedAt: model.Time(time.Now()),
+				ID:          id,
+				Content:     getStringFromMap(o, "content"),
+				CreatedAt:   model.Time(time.Now()),
+				UpdatedAt:   model.Time(time.Now()),
+				ContentHash: contentHashForObjectID(id),
 			}
 
 			// Map ActivityPub types to GraphQL types
@@ -3381,10 +3387,11 @@ func (r *moderationDecisionResolver) Object(ctx context.Context, obj *moderation
 					}
 
 					return &model.Object{
-						ID:      id,
-						Type:    objectType,
-						Content: content,
-						Actor:   nil, // Would need to extract actor info
+						ID:          id,
+						Type:        objectType,
+						Content:     content,
+						Actor:       nil, // Would need to extract actor info
+						ContentHash: contentHashForObjectID(id),
 					}, nil
 				}
 			}
@@ -3393,10 +3400,11 @@ func (r *moderationDecisionResolver) Object(ctx context.Context, obj *moderation
 
 	// Return minimal object if fetch fails
 	return &model.Object{
-		ID:      obj.ObjectID,
-		Type:    "Note",
-		Content: "",  // Content not available
-		Actor:   nil, // Actor not available
+		ID:          obj.ObjectID,
+		Type:        "Note",
+		Content:     "",  // Content not available
+		Actor:       nil, // Actor not available
+		ContentHash: contentHashForObjectID(obj.ObjectID),
 	}, nil
 }
 
@@ -4866,6 +4874,7 @@ func (r *Resolver) convertActorActivityObject(actor *activitypub.Actor) *model.O
 		RepliesCount:     0,
 		LikesCount:       0,
 		SharesCount:      0,
+		ContentHash:      contentHashForObjectID(objectID),
 		EstimatedCost:    0,
 		ModerationScore:  nil,
 		CommunityNotes:   []*model.CommunityNote{},
@@ -4906,13 +4915,14 @@ func (r *Resolver) convertActivityPubObjectToModel(obj interface{}) *model.Objec
 		}
 
 		return &model.Object{
-			ID:         baseObj.ID,
-			Type:       model.ObjectTypeNote, // Default to Note
-			Content:    "",                   // BaseObject doesn't have content
-			Sensitive:  false,
-			CreatedAt:  model.Time(createdAt),
-			UpdatedAt:  model.Time(updatedAt),
-			Visibility: model.VisibilityPublic, // Default visibility
+			ID:          baseObj.ID,
+			Type:        model.ObjectTypeNote, // Default to Note
+			Content:     "",                   // BaseObject doesn't have content
+			Sensitive:   false,
+			CreatedAt:   model.Time(createdAt),
+			UpdatedAt:   model.Time(updatedAt),
+			Visibility:  model.VisibilityPublic, // Default visibility
+			ContentHash: contentHashForObjectID(baseObj.ID),
 		}
 	}
 
@@ -4921,13 +4931,14 @@ func (r *Resolver) convertActivityPubObjectToModel(obj interface{}) *model.Objec
 	updatedAt := storageObj.Updated
 
 	modelObj := &model.Object{
-		ID:         storageObj.ID,
-		Type:       model.ObjectTypeNote, // Default to Note
-		Content:    storageObj.Content,
-		Sensitive:  storageObj.Sensitive,
-		CreatedAt:  model.Time(createdAt),
-		UpdatedAt:  model.Time(updatedAt),
-		Visibility: model.VisibilityPublic, // Default visibility
+		ID:          storageObj.ID,
+		Type:        model.ObjectTypeNote, // Default to Note
+		Content:     storageObj.Content,
+		Sensitive:   storageObj.Sensitive,
+		CreatedAt:   model.Time(createdAt),
+		UpdatedAt:   model.Time(updatedAt),
+		Visibility:  model.VisibilityPublic, // Default visibility
+		ContentHash: contentHashForObjectID(storageObj.ID),
 	}
 
 	// Set type based on storage Object type

@@ -112,6 +112,17 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"KMS_KEY_ID":         jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys
 	}
 
+	// Tips (TipSplitter integration). These are public, non-secret values and are only set when configured.
+	if v := getConfigString("tipEnabled"); v != "" {
+		commonEnv["TIP_ENABLED"] = jsii.String(v)
+	}
+	if v := getConfigString("tipChainId"); v != "" {
+		commonEnv["TIP_CHAIN_ID"] = jsii.String(v)
+	}
+	if v := getConfigString("tipContractAddress"); v != "" {
+		commonEnv["TIP_CONTRACT_ADDRESS"] = jsii.String(v)
+	}
+
 	// Optional tables
 	if props.StreamEventsTable != nil {
 		commonEnv["STREAM_EVENTS_TABLE_NAME"] = props.StreamEventsTable.TableName()
