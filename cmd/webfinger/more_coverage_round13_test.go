@@ -73,4 +73,3 @@ func TestWebFingerHelperFunctions_Round13(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 }
-

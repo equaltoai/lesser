@@ -54,4 +54,3 @@ func TestTimelines_DirectTimeline_ErrorBranches_Round15(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(h.HandleGetDirectTimelineLift(ctx))
 	})
 }
-

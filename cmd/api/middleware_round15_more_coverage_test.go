@@ -82,4 +82,3 @@ func TestRBACWrappers_Round15(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, resp.Status)
 	})
 }
-

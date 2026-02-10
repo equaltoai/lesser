@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,6 +21,13 @@ func TestParseUpArgs(t *testing.T) {
 	args, err := parseUpArgs([]string{"--app", "app", "--base-domain", "example.com", "--aws-profile", "profile"})
 	require.NoError(t, err)
 	require.Equal(t, "app", args.App)
+
+	t.Run("allows ambient credentials when aws-profile omitted", func(t *testing.T) {
+		t.Setenv("AWS_PROFILE", "")
+		args, err := parseUpArgs([]string{"--app", "app", "--base-domain", "example.com"})
+		require.NoError(t, err)
+		require.Empty(t, args.AWSProfile)
+	})
 
 	t.Run("normalizes bootstrap wallet flag", func(t *testing.T) {
 		args, err := parseUpArgs([]string{
@@ -65,11 +73,94 @@ func TestParseUpArgs(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid bootstrap wallet address")
 	})
+
+	t.Run("rejects reserved bootstrap wallet", func(t *testing.T) {
+		_, err := parseUpArgs([]string{
+			"--app", "app",
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--bootstrap-wallet-address", "0x80189edb676d51b2fb2257b2ad38e018b20ca46e",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "reserved")
+	})
+
+	t.Run("uses provisioning input when provided", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "provision.json")
+		require.NoError(t, os.WriteFile(path, []byte(`{
+  "schema": 1,
+  "slug": "app",
+  "stage": "dev",
+  "admin_wallet_address": "0x3333333333333333333333333333333333333333",
+  "admin_username": "app"
+}
+`), 0o600))
+
+		args, err := parseUpArgs([]string{
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--provisioning-input", path,
+		})
+		require.NoError(t, err)
+		require.Equal(t, "app", args.App)
+		require.Equal(t, "dev", args.Stage)
+		require.Equal(t, "0x3333333333333333333333333333333333333333", args.BootstrapWalletAddress)
+	})
+
+	t.Run("rejects reserved wallet via provisioning input", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "provision.json")
+		require.NoError(t, os.WriteFile(path, []byte(`{
+  "schema": 1,
+  "slug": "app",
+  "stage": "dev",
+  "admin_wallet_address": "0x1e14865a53a994b01b9ccfef42669dc0bfe98805",
+  "admin_username": "app"
+}
+`), 0o600))
+
+		_, err := parseUpArgs([]string{
+			"--base-domain", "example.com",
+			"--aws-profile", "profile",
+			"--provisioning-input", path,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "reserved")
+	})
 }
 
 func TestUpStages(t *testing.T) {
 	require.Equal(t, []naming.Stage{naming.StageDev, naming.StageLive}, upStages(false))
 	require.Equal(t, []naming.Stage{naming.StageDev, naming.StageStaging, naming.StageLive}, upStages(true))
+}
+
+func TestSelectUpStages(t *testing.T) {
+	t.Run("defaults when stage empty", func(t *testing.T) {
+		got, err := selectUpStages(false, "")
+		require.NoError(t, err)
+		require.Equal(t, []naming.Stage{naming.StageDev, naming.StageLive}, got)
+	})
+
+	t.Run("stage cannot combine with with-staging", func(t *testing.T) {
+		_, err := selectUpStages(true, "dev")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot be combined")
+	})
+
+	got, err := selectUpStages(false, "dev")
+	require.NoError(t, err)
+	require.Equal(t, []naming.Stage{naming.StageDev}, got)
+
+	got, err = selectUpStages(false, "staging")
+	require.NoError(t, err)
+	require.Equal(t, []naming.Stage{naming.StageStaging}, got)
+
+	got, err = selectUpStages(false, "live")
+	require.NoError(t, err)
+	require.Equal(t, []naming.Stage{naming.StageLive}, got)
+
+	_, err = selectUpStages(false, "wat")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid --stage")
 }
 
 func TestPrepareUpEnv_RequiresOutWhenBootstrapGenerated(t *testing.T) {
@@ -410,6 +501,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 	previousHome := userHomeDirFn
 	previousMkdir := mkdirAllFn
 	previousLoadAWS := loadAWSConfigFromProfileFn
+	previousLoadAWSCLI := loadAWSConfigForCLIFn
 	previousAccount := resolveAWSAccountIDFn
 	previousZone := resolveHostedZoneFn
 	previousInspect := inspectBootstrapRequirementsFn
@@ -419,6 +511,7 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 		userHomeDirFn = previousHome
 		mkdirAllFn = previousMkdir
 		loadAWSConfigFromProfileFn = previousLoadAWS
+		loadAWSConfigForCLIFn = previousLoadAWSCLI
 		resolveAWSAccountIDFn = previousAccount
 		resolveHostedZoneFn = previousZone
 		inspectBootstrapRequirementsFn = previousInspect
@@ -457,9 +550,14 @@ func TestPrepareUpEnv_PropagatesDependencyErrors(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("aws profile required", func(t *testing.T) {
+	t.Run("allows ambient credentials when profile empty", func(t *testing.T) {
+		loadAWSConfigForCLIFn = func(_ context.Context, profile string) (aws.Config, string, error) {
+			require.Empty(t, strings.TrimSpace(profile))
+			return aws.Config{Region: "us-east-1"}, "", nil
+		}
 		_, err := prepareUpEnv(context.Background(), upArgs{App: "app", BaseDomain: "example.com", AWSProfile: " "})
-		require.Error(t, err)
+		require.NoError(t, err)
+		loadAWSConfigForCLIFn = previousLoadAWSCLI
 	})
 
 	t.Run("load aws config error", func(t *testing.T) {
@@ -589,5 +687,43 @@ func TestUpEnv_Run_ErrorPropagation(t *testing.T) {
 		env := baseEnv()
 		env.bootstrap = bootstrapWallet{Mnemonic: "mnemonic"}
 		env.printSummary(filepath.Join(t.TempDir(), "state.json"))
+	})
+}
+
+func TestUpEnv_PrintSummary_ManagedProvisioning(t *testing.T) {
+	env := &upEnv{
+		args:       upArgs{ProvisioningInputPath: "provision.json"},
+		baseDomain: "example.com",
+		stages:     []naming.Stage{naming.StageDev},
+	}
+	env.printSummary("/tmp/state.json")
+}
+
+func TestUpEnv_PrintSummary_BootstrapMnemonic(t *testing.T) {
+	env := &upEnv{
+		baseDomain: "example.com",
+		stages:     []naming.Stage{naming.StageDev},
+		bootstrap: bootstrapWallet{
+			Address:        "0xabc",
+			Mnemonic:       "mnemonic",
+			DerivationPath: defaultBootstrapDerivationPath,
+			ChainID:        1,
+		},
+	}
+	env.printSummary("/tmp/state.json")
+}
+
+func TestRunUp_Errors(t *testing.T) {
+	t.Run("parse args error", func(t *testing.T) {
+		require.Error(t, runUp(nil))
+	})
+
+	t.Run("prepare env error", func(t *testing.T) {
+		previousRepoRoot := findRepoRootFn
+		t.Cleanup(func() { findRepoRootFn = previousRepoRoot })
+		findRepoRootFn = func() (string, error) { return t.TempDir(), nil }
+
+		err := runUp([]string{"--app", "app", "--base-domain", "example.com/", "--aws-profile", "profile"})
+		require.Error(t, err)
 	})
 }

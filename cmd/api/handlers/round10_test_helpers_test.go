@@ -265,6 +265,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
+	mockQuery.On("IfExists").Return(mockQuery).Maybe()
 
 	// UpdateBuilder support
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()

@@ -109,4 +109,3 @@ func TestParseHTTPResponse_AndFormValues(t *testing.T) {
 	assert.Equal(t, "b", values.Get("a"))
 	assert.Equal(t, "d", values.Get("c"))
 }
-

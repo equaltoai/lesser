@@ -3,8 +3,8 @@ package graph
 import (
 	"context"
 	"errors"
-	"strings"
 
+	"github.com/equaltoai/lesser/pkg/security/authz"
 	"go.uber.org/zap"
 )
 
@@ -14,6 +14,22 @@ func (r *Resolver) requireModeratorOrAdmin(ctx context.Context) (string, error) 
 		return "", err
 	}
 
+	role, err := r.normalizedRole(ctx, username)
+	if err != nil {
+		return "", errors.Join(errors.New("failed to verify role"), err)
+	}
+
+	if !authz.IsModeratorOrAdmin(role) {
+		r.Logger.Warn("Non-moderator attempted moderator operation",
+			zap.String("username", username),
+			zap.String("role", role))
+		return "", ErrModeratorPrivilegesRequired
+	}
+
+	return username, nil
+}
+
+func (r *Resolver) normalizedRole(ctx context.Context, username string) (string, error) {
 	if r.Registry == nil {
 		return "", errors.New("service registry is not available")
 	}
@@ -25,20 +41,12 @@ func (r *Resolver) requireModeratorOrAdmin(ctx context.Context) (string, error) 
 
 	account, err := accountsService.GetAccount(ctx, username)
 	if err != nil {
-		return "", errors.Join(errors.New("failed to verify role"), err)
+		return "", err
 	}
 
-	role := ""
-	if account != nil && account.User != nil {
-		role = strings.ToLower(account.User.Role)
+	if account == nil || account.User == nil {
+		return "", nil
 	}
 
-	if role != adminRoleAdmin && role != adminRoleModerator {
-		r.Logger.Warn("Non-moderator attempted moderator operation",
-			zap.String("username", username),
-			zap.String("role", role))
-		return "", ErrModeratorPrivilegesRequired
-	}
-
-	return username, nil
+	return authz.NormalizeRole(account.User.Role), nil
 }

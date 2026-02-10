@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -712,6 +713,32 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 			"translation": map[string]any{
 				"enabled": false,
 			},
+			"tips": func() map[string]any {
+				enabled := false
+				chainID := 0
+				contractAddress := ""
+				if h.cfg != nil {
+					enabled = h.cfg.TipEnabled
+					chainID = h.cfg.TipChainID
+					contractAddress = strings.TrimSpace(h.cfg.TipContractAddress)
+				}
+
+				if enabled && (chainID == 0 || contractAddress == "") {
+					h.logger.Warn("tips enabled but missing chain ID or contract address; disabling tips in instance config",
+						zap.Int("chain_id", chainID),
+						zap.String("contract_address", contractAddress))
+					enabled = false
+				}
+
+				out := map[string]any{
+					"enabled": enabled,
+				}
+				if enabled {
+					out["chain_id"] = chainID
+					out["contract_address"] = contractAddress
+				}
+				return out
+			}(),
 			"limited_federation": false,
 		},
 		Registrations: map[string]any{
@@ -790,7 +817,10 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 	if notification.TargetID != "" && notification.TargetType == "status" && (notification.Type == models.NotificationTypeMention ||
 		notification.Type == models.NotificationTypeFavourite ||
 		notification.Type == models.NotificationTypeReblog) {
-		statusModel, err := h.registry.Notes().GetNote(ctx.Context(), notification.TargetID)
+		statusModel, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+			StatusID: notification.TargetID,
+			ViewerID: username,
+		})
 		if err == nil && statusModel != nil && statusModel.Note != nil {
 			// Convert note to status format
 			var statusActor *activitypub.Actor

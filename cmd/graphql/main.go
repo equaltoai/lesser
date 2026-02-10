@@ -555,8 +555,32 @@ func graphqlLogQuoteLoaderMetrics(requestCtx context.Context) {
 		zap.Int64("misses", misses))
 }
 
+func graphqlRequestAuthenticated(ctx *apptheory.Context) bool {
+	if ctx == nil {
+		return false
+	}
+
+	if authenticated, ok := ctx.Get("is_authenticated").(bool); ok {
+		return authenticated
+	}
+
+	if username, ok := ctx.Get("username").(string); ok && strings.TrimSpace(username) != "" {
+		return true
+	}
+
+	if claims, ok := ctx.Get("claims").(common.Claims); ok && claims != nil && strings.TrimSpace(claims.GetUsername()) != "" {
+		return true
+	}
+
+	return false
+}
+
 // handleGraphQL processes GraphQL requests with proper context and DataLoader
 func handleGraphQL(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if !graphqlRequestAuthenticated(ctx) {
+		return graphqlErrorResponse(http.StatusUnauthorized, "authentication required"), nil
+	}
+
 	requestCtx, cancel := graphqlWithTimeout(ctx)
 	defer cancel()
 

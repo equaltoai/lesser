@@ -271,7 +271,7 @@ func TestAnnouncementsRound19_ExtractMentionsAndStatuses_NotFoundBranches(t *tes
 	cfg := round11TestConfig()
 	state := &round10QueryState{
 		notFoundPKSK: map[string]bool{
-			"USER#missing#METADATA":           true,
+			"USER#missing#METADATA":                       true,
 			"status#missing-status#status#missing-status": true,
 		},
 	}

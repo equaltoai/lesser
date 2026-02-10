@@ -42,4 +42,3 @@ func TestInstanceV1_VAPIDMissingBranches_Round15(t *testing.T) {
 		require.Equal(t, "", out.VAPIDKey)
 	})
 }
-

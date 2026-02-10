@@ -72,6 +72,15 @@ func TestStatusesCRUDAndContext_Round12(t *testing.T) {
 			}
 			return nil, errors.New("not found")
 		},
+		GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+			if query == nil {
+				return nil, errors.New("not found")
+			}
+			if note, ok := notesByID[query.StatusID]; ok {
+				return note, nil
+			}
+			return nil, errors.New("not found")
+		},
 		DeleteNoteFunc: func(ctx context.Context, cmd *notes.DeleteNoteCommand) error {
 			if cmd != nil && cmd.StatusID == "forbidden" {
 				return errors.New("not authorized")
@@ -189,7 +198,7 @@ func TestStatusesCRUDAndContext_Round12(t *testing.T) {
 	})
 
 	t.Run("context_descendants_and_helpers", func(t *testing.T) {
-		notesByID[cfg.BaseURL()+"/objects/parent"] = &storagemodels.Status{
+		notesByID["parent"] = &storagemodels.Status{
 			StatusID:       "parent",
 			AuthorUsername: "alice",
 			AuthorID:       cfg.ActorURL("alice"),

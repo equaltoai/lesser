@@ -494,3 +494,24 @@ func TestObjectHelpers_UncoveredBranches_Round12(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/objects/123?q=1", req.URL.String())
 }
+
+func TestObjectsSecurityHeaders_Round12(t *testing.T) {
+	mw := objectsActivityPubSecurityHeaders()
+	wrapped := mw(func(_ *apptheory.Context) (*apptheory.Response, error) {
+		return &apptheory.Response{
+			Status: 200,
+			Headers: map[string][]string{
+				"content-type": {"text/html; charset=utf-8"},
+			},
+			Body: []byte("<!DOCTYPE html><html></html>"),
+		}, nil
+	})
+
+	resp, err := wrapped(&apptheory.Context{
+		Request: apptheory.Request{Method: http.MethodGet, Path: "/objects/123"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotEmpty(t, resp.Headers["content-security-policy"])
+	require.Contains(t, resp.Headers["content-security-policy"][0], "script-src 'none'")
+}

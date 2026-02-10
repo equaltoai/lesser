@@ -336,7 +336,7 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 			tt := tt
 			t.Run(tt.name, func(t *testing.T) {
 				notesStub := &NotesServiceStub{
-					GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) {
+					GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
 						return nil, tt.noteErr
 					},
 				}
@@ -352,12 +352,8 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 	t.Run("get_status_denied_by_privacy_returns_404", func(t *testing.T) {
 		notesStub := &NotesServiceStub{
-			GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) {
-				return &storagemodels.Status{
-					StatusID:       "s1",
-					Visibility:     "private",
-					AuthorUsername: "bob",
-				}, nil
+			GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
+				return nil, stdErrors.New("not found")
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{NotesSvc: notesStub})
@@ -370,18 +366,11 @@ func TestStatusesFull_Round12_HandlerErrorBranches_Coverage(t *testing.T) {
 
 	t.Run("get_status_permission_check_error_returns_500", func(t *testing.T) {
 		notesStub := &NotesServiceStub{
-			GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) {
-				return &storagemodels.Status{
-					StatusID:       "s1",
-					Visibility:     "private",
-					AuthorUsername: "bob",
-				}, nil
+			GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
+				return nil, stdErrors.New("view permissions check failed")
 			},
 		}
-		state := &round10QueryState{
-			firstErrorPK: map[string]error{"FOLLOW#alice": stdErrors.New("db down")},
-		}
-		handler, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{NotesSvc: notesStub})
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{NotesSvc: notesStub})
 
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/s1", headers, nil, nil)
 		require.NoError(t, err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -21,10 +22,31 @@ type exportedCredentials struct {
 }
 
 var loadAWSConfigFromProfileFn = loadAWSConfigFromProfile
+var loadAWSConfigForCLIFn = loadAWSConfigForCLI
 var awsLoadDefaultConfigFn = awsconfig.LoadDefaultConfig
 var execCommandCombinedOutputFn = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- tool invocation, args are not interpreted by a shell
 	return cmd.CombinedOutput()
+}
+
+func loadAWSConfigForCLI(ctx context.Context, awsProfile string) (aws.Config, string, error) {
+	profile := strings.TrimSpace(awsProfile)
+	if profile == "" {
+		profile = strings.TrimSpace(os.Getenv("AWS_PROFILE"))
+	}
+	if profile != "" {
+		cfg, err := loadAWSConfigFromProfileFn(ctx, profile)
+		return cfg, profile, err
+	}
+
+	cfg, err := awsLoadDefaultConfigFn(ctx)
+	if err != nil {
+		return aws.Config{}, "", fmt.Errorf("load AWS config: %w", err)
+	}
+	if strings.TrimSpace(cfg.Region) == "" {
+		return aws.Config{}, "", fmt.Errorf("AWS region is required (set AWS_REGION or configure a profile)")
+	}
+	return cfg, "", nil
 }
 
 func loadAWSConfigFromProfile(ctx context.Context, awsProfile string) (aws.Config, error) {

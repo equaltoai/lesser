@@ -15,4 +15,3 @@ type AgentMemoryEventRequest struct {
 	// Reason is an optional short justification (for auditability).
 	Reason string `json:"reason,omitempty"`
 }
-

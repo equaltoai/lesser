@@ -186,7 +186,7 @@ func TestStatusesRound18_ValidateStatusIDForContext_InvalidID(t *testing.T) {
 	})
 
 	ctx := &apptheory.Context{Params: map[string]string{"id": "%"}}
-	_, resp, err := h.validateStatusIDForContext(ctx)
+	_, resp, err := h.validateStatusIDForContext(ctx, "")
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Equal(t, http.StatusBadRequest, resp.Status)

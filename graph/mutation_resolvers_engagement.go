@@ -66,7 +66,10 @@ func (r *mutationResolver) executeShareOperation(ctx context.Context, id string,
 		return nil, err
 	}
 
-	updatedStatus, err := notesService.GetNote(ctx, id)
+	updatedStatus, err := notesService.GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: id,
+		ViewerID: username,
+	})
 	if err != nil {
 		r.Logger.Error("Failed to load updated object after "+opts.logAction,
 			zap.String("user", username),

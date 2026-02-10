@@ -85,16 +85,16 @@ func TestAgentSelfSovereignRound13_Flows(t *testing.T) {
 			agentKeyChallengesByID: map[string]storagemodels.AgentKeyChallenge{},
 			usersByUsername: map[string]storagemodels.User{
 				"agent": {
-					PK:           "USER#agent",
-					SK:           storagemodels.SKMetadata,
-					Username:     "agent",
-					Role:         "user",
-					Approved:     true,
-					Version:      1,
-					CreatedAt:    time.Now().Add(-24 * time.Hour),
-					IsAgent:      true,
-					AgentType:    agentTypeCustom,
-					AgentKeyType: "ed25519",
+					PK:             "USER#agent",
+					SK:             storagemodels.SKMetadata,
+					Username:       "agent",
+					Role:           "user",
+					Approved:       true,
+					Version:        1,
+					CreatedAt:      time.Now().Add(-24 * time.Hour),
+					IsAgent:        true,
+					AgentType:      agentTypeCustom,
+					AgentKeyType:   "ed25519",
 					AgentPublicKey: pubB64,
 				},
 			},
@@ -142,16 +142,16 @@ func TestAgentSelfSovereignRound13_Flows(t *testing.T) {
 			agentKeyChallengesByID: map[string]storagemodels.AgentKeyChallenge{},
 			usersByUsername: map[string]storagemodels.User{
 				"agent": {
-					PK:            "USER#agent",
-					SK:            storagemodels.SKMetadata,
-					Username:      "agent",
-					Role:          "user",
-					Approved:      true,
-					Version:       1,
-					CreatedAt:     time.Now().Add(-24 * time.Hour),
-					IsAgent:       true,
-					AgentType:     agentTypeCustom,
-					AgentKeyType:  "ed25519",
+					PK:             "USER#agent",
+					SK:             storagemodels.SKMetadata,
+					Username:       "agent",
+					Role:           "user",
+					Approved:       true,
+					Version:        1,
+					CreatedAt:      time.Now().Add(-24 * time.Hour),
+					IsAgent:        true,
+					AgentType:      agentTypeCustom,
+					AgentKeyType:   "ed25519",
 					AgentPublicKey: pubB64,
 				},
 			},
@@ -206,4 +206,3 @@ func TestAgentSelfSovereignRound13_Flows(t *testing.T) {
 		_ = newPriv
 	})
 }
-

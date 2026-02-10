@@ -54,6 +54,7 @@ func TestRound12SubscriptionResolvers_SuccessPaths(t *testing.T) {
 	t.Cleanup(func() { _ = sm.Stop() })
 
 	authCtx := WithConnectionID(round12AuthContext("alice"), "conn-1")
+	adminCtx := WithConnectionID(round12AuthContext("admin"), "conn-admin")
 
 	_, err := resolver.Subscription().ActivityStream(authCtx, nil)
 	require.NoError(t, err)
@@ -70,10 +71,10 @@ func TestRound12SubscriptionResolvers_SuccessPaths(t *testing.T) {
 	_, err = resolver.Subscription().NotificationStream(authCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().AiAnalysisUpdates(authCtx, nil)
+	_, err = resolver.Subscription().AiAnalysisUpdates(adminCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().ThreatIntelligence(authCtx)
+	_, err = resolver.Subscription().ThreatIntelligence(adminCtx)
 	require.NoError(t, err)
 
 	_, err = resolver.Subscription().ListUpdates(authCtx, "list-1")
@@ -85,35 +86,35 @@ func TestRound12SubscriptionResolvers_SuccessPaths(t *testing.T) {
 	_, err = resolver.Subscription().QuoteActivity(authCtx, "note-1")
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().ModerationEvents(authCtx, nil)
+	_, err = resolver.Subscription().ModerationEvents(adminCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().ModerationAlerts(authCtx, nil)
+	_, err = resolver.Subscription().ModerationAlerts(adminCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().ModerationQueueUpdate(authCtx, nil)
+	_, err = resolver.Subscription().ModerationQueueUpdate(adminCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().FederationHealthUpdates(authCtx, nil)
+	_, err = resolver.Subscription().FederationHealthUpdates(adminCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().InfrastructureEvent(authCtx)
+	_, err = resolver.Subscription().InfrastructureEvent(adminCtx)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().BudgetAlerts(authCtx, nil)
+	_, err = resolver.Subscription().BudgetAlerts(adminCtx, nil)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().CostAlerts(authCtx, 1.23)
+	_, err = resolver.Subscription().CostAlerts(adminCtx, 1.23)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().CostUpdates(authCtx, nil)
+	_, err = resolver.Subscription().CostUpdates(adminCtx, nil)
 	require.NoError(t, err)
 
 	metricsThreshold := 0.5
-	_, err = resolver.Subscription().MetricsUpdates(authCtx, []string{"cost"}, []string{"timeline"}, &metricsThreshold)
+	_, err = resolver.Subscription().MetricsUpdates(adminCtx, []string{"cost"}, []string{"timeline"}, &metricsThreshold)
 	require.NoError(t, err)
 
-	_, err = resolver.Subscription().PerformanceAlert(authCtx, model.AlertSeverityCritical)
+	_, err = resolver.Subscription().PerformanceAlert(adminCtx, model.AlertSeverityCritical)
 	require.NoError(t, err)
 
 	_, err = resolver.Subscription().HashtagActivity(authCtx, []string{"go"})

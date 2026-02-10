@@ -17,9 +17,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
-
 	"strings"
 	"time"
 
@@ -29,10 +29,15 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/crawler"
 	"github.com/equaltoai/lesser/pkg/federation"
+	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/storage/theorydb"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -48,6 +53,10 @@ var (
 	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
 	lambdaStartFn            = lambda.Start
 	newHandlerFn             = NewHandler
+	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
+	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
+		return factory.NewRepositoryFactory(db, tableName, logger)
+	}
 )
 
 func init() {
@@ -112,16 +121,49 @@ func initializeActor() {
 		logger = zap.NewNop()
 	}
 
+	// Initialize with default options for API Lambda type (best-effort; some lambdas still do manual wiring).
+	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+
 	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
 	if !ok || storage == nil {
-		logger.Fatal("lambda context repository is not core.RepositoryStorage")
+		logger.Warn("lambda context repository missing after initialization, attempting manual storage initialization",
+			zap.Any("repos_type", fmt.Sprintf("%T", lambdaCtx.Repos)),
+		)
+		initializeManualStorage()
+		storage, ok = lambdaCtx.Repos.(core.RepositoryStorage)
+	}
+	if !ok || storage == nil {
+		logger.Fatal("lambda context repository is not core.RepositoryStorage",
+			zap.Any("repos_type", fmt.Sprintf("%T", lambdaCtx.Repos)),
+		)
 	}
 	repos = storage
+}
 
-	// Initialize with default options for API Lambda type
-	if err := initializeWithDefaultsFn(lambdaCtx); err != nil {
-		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
+func initializeManualStorage() {
+	if lambdaCtx == nil {
+		logger.Fatal("manual storage initialization requires lambda context")
 	}
+
+	tableName := strings.TrimSpace(cfg.DynamoTableName)
+	if tableName == "" {
+		logger.Fatal("DYNAMODB_TABLE environment variable is required for actor lambda")
+	}
+
+	db, err := newLambdaOptimizedClientFn(context.Background(), cfg.Region)
+	if err != nil {
+		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+	}
+
+	storage, err := newRepositoryFactoryFn(db, tableName, logger)
+	if err != nil {
+		logger.Fatal("failed to initialize repository factory", zap.Error(err))
+	}
+
+	lambdaCtx.DynamoDB = db
+	lambdaCtx.Repos = storage
 }
 
 // HandleActorProfile handles ActivityPub actor profile requests
@@ -229,7 +271,15 @@ func (h *Handler) HandleActorProfile(ctx *apptheory.Context) (*apptheory.Respons
 	}
 
 	// Return HTML for browsers
-	html := h.generateHTMLProfile(actor)
+	html, renderErr := h.generateHTMLProfile(actor)
+	if renderErr != nil {
+		logger.Error("failed to render actor html profile",
+			zap.String("username", username),
+			zap.String("request_id", requestID),
+			zap.Error(renderErr),
+		)
+		html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Lesser</title></head><body>Failed to render profile</body></html>"
+	}
 	return &apptheory.Response{
 		Status: http.StatusOK,
 		Headers: map[string][]string{
@@ -239,46 +289,22 @@ func (h *Handler) HandleActorProfile(ctx *apptheory.Context) (*apptheory.Respons
 	}, nil
 }
 
-func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
-	// Extract display name or fall back to username
-	displayName := actor.Name
-	if err := common.ValidateRequiredParam("displayName", displayName); err != nil {
-		displayName = actor.PreferredUsername
-	}
-
-	// Build social media meta tags for better sharing
-	metaTags := fmt.Sprintf(`
-		<meta property="og:type" content="profile">
-		<meta property="og:title" content="%s">
-		<meta property="og:description" content="%s">
-		<meta property="og:url" content="%s">`,
-		displayName,
-		actor.BaseObject.Summary,
-		actor.ID)
-
-	if actor.Icon != nil && actor.Icon.URL != "" {
-		metaTags += fmt.Sprintf(`
-		<meta property="og:image" content="%s">`, actor.Icon.URL)
-	}
-
-	// Generate followers/following counts if available
-	statsHTML := ""
-	if actor.Followers != "" && actor.Following != "" {
-		statsHTML = fmt.Sprintf(`
-		<div class="stats">
-			<p><a href="%s">Followers</a> | <a href="%s">Following</a></p>
-		</div>`, actor.Followers, actor.Following)
-	}
-
-	// Build the HTML page
-	html := fmt.Sprintf(`<!DOCTYPE html>
+const actorProfileHTMLTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>%s (@%s@%s)</title>
-	%s
-	<link rel="alternate" type="application/activity+json" href="%s">
+	<title>{{.DisplayName}} (@{{.Username}}@{{.Domain}})</title>
+
+	<meta property="og:type" content="profile">
+	<meta property="og:title" content="{{.DisplayName}}">
+	<meta property="og:description" content="{{.SummaryText}}">
+	<meta property="og:url" content="{{.ActorID}}">
+	{{- if .IconURL }}
+	<meta property="og:image" content="{{.IconURL}}">
+	{{- end }}
+
+	<link rel="alternate" type="application/activity+json" href="{{.ActorID}}">
 	<style>
 		body {
 			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -298,7 +324,7 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 		.avatar {
 			width: 100px;
 			height: 100px;
-			border-radius: 50%%;
+			border-radius: 50%;
 			margin-bottom: 20px;
 		}
 		h1 {
@@ -340,44 +366,71 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 	</style>
 </head>
 <body>
-	<div class="profile">`,
-		displayName, actor.PreferredUsername, cfg.Domain,
-		metaTags,
-		actor.ID)
+	<div class="profile">
+		{{- if .IconURL }}
+		<img src="{{.IconURL}}" alt="{{.DisplayName}}" class="avatar">
+		{{- end }}
 
-	// Add avatar if available
-	if actor.Icon != nil && actor.Icon.URL != "" {
-		html += fmt.Sprintf(`
-		<img src="%s" alt="%s" class="avatar">`, actor.Icon.URL, displayName)
-	}
+		<h1>{{.DisplayName}}</h1>
+		<div class="username">@{{.Username}}@{{.Domain}}</div>
 
-	// Add profile content
-	html += fmt.Sprintf(`
-		<h1>%s</h1>
-		<div class="username">@%s@%s</div>`, displayName, actor.PreferredUsername, cfg.Domain)
+		{{- if .BioHTML }}
+		<div class="bio">{{.BioHTML}}</div>
+		{{- end }}
 
-	// Add bio if available
-	if actor.BaseObject.Summary != "" {
-		html += fmt.Sprintf(`
-		<div class="bio">%s</div>`, actor.BaseObject.Summary)
-	}
+		{{- if and .FollowersURL .FollowingURL }}
+		<div class="stats">
+			<p><a href="{{.FollowersURL}}">Followers</a> | <a href="{{.FollowingURL}}">Following</a></p>
+		</div>
+		{{- end }}
 
-	// Add stats if available
-	html += statsHTML
-
-	// Add ActivityPub discovery info
-	html += fmt.Sprintf(`
 		<div class="meta">
-			<p>This is an ActivityPub profile. You can follow @%s@%s from any compatible server.</p>
-			<p><a href="%s" type="application/activity+json">View ActivityPub data</a></p>
-		</div>`, actor.PreferredUsername, cfg.Domain, actor.ID)
-
-	html += `
+			<p>This is an ActivityPub profile. You can follow @{{.Username}}@{{.Domain}} from any compatible server.</p>
+			<p><a href="{{.ActorID}}" type="application/activity+json">View ActivityPub data</a></p>
+		</div>
 	</div>
 </body>
 </html>`
 
-	return html
+type actorProfileTemplateData struct {
+	DisplayName  string
+	Username     string
+	Domain       string
+	ActorID      string
+	SummaryText  string
+	BioHTML      template.HTML
+	IconURL      string
+	FollowersURL string
+	FollowingURL string
+}
+
+func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) (string, error) {
+	displayName := strings.TrimSpace(actor.Name)
+	if err := common.ValidateRequiredParam("displayName", displayName); err != nil {
+		displayName = strings.TrimSpace(actor.PreferredUsername)
+	}
+
+	sanitizedSummary := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(actor.BaseObject.Summary))
+
+	data := actorProfileTemplateData{
+		DisplayName:  displayName,
+		Username:     strings.TrimSpace(actor.PreferredUsername),
+		Domain:       strings.TrimSpace(cfg.Domain),
+		ActorID:      strings.TrimSpace(actor.ID),
+		SummaryText:  sanitizedSummary,
+		FollowersURL: strings.TrimSpace(actor.Followers),
+		FollowingURL: strings.TrimSpace(actor.Following),
+	}
+
+	if actor.Icon != nil {
+		data.IconURL = strings.TrimSpace(actor.Icon.URL)
+	}
+	if sanitizedSummary != "" {
+		// #nosec G203 -- sanitizedSummary is sanitized HTML-by-contract and is intentionally rendered as HTML.
+		data.BioHTML = template.HTML(sanitizedSummary)
+	}
+
+	return htmlsafe.RenderTemplate("actor_profile", actorProfileHTMLTemplate, data)
 }
 
 // convertAppTheoryRequest converts an AppTheory request to an http.Request for signature verification.
@@ -552,6 +605,10 @@ func actorActivityPubSecurityHeaders() apptheory.Middleware {
 			resp.Headers["referrer-policy"] = []string{"strict-origin-when-cross-origin"}
 			resp.Headers["cross-origin-resource-policy"] = []string{"cross-origin"}
 			resp.Headers["x-robots-tag"] = []string{"noindex, nofollow"}
+			contentTypes := strings.Join(resp.Headers["content-type"], ",")
+			if strings.Contains(strings.ToLower(contentTypes), "text/html") {
+				resp.Headers["content-security-policy"] = []string{securityheaders.StaticHTMLPageCSP()}
+			}
 			return resp, err
 		}
 	}

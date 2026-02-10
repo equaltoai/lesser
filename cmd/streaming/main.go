@@ -148,6 +148,7 @@ var (
 			services.WithConfig(serviceConfig),
 		)
 	}
+	authorizeListStreamSubscriptionFn = authorizeListStreamSubscription
 )
 
 func init() {
@@ -555,40 +556,29 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 }
 
 func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *models.WebSocketConnection, message StreamMessage) error {
+	requestedStream := strings.TrimSpace(message.Stream)
+	canonicalStream, appErr := sh.resolveCanonicalStreamSubscription(ctx, connection, requestedStream)
+	if appErr != nil {
+		sh.logger.Info("stream subscription rejected",
+			zap.String("connectionID", connection.ConnectionID),
+			zap.String("requested_stream", requestedStream),
+			zap.String("user_id", connection.UserID),
+			zap.String("username", connection.Username),
+			zap.String("reason", appErr.Message),
+		)
+		return sh.sendError(connection.ConnectionID, appErr.Error())
+	}
+
 	logger := sh.logger.With(
 		zap.String("connectionID", connection.ConnectionID),
 		zap.String("operation", "subscribe"),
-		zap.String("stream", message.Stream),
+		zap.String("stream", canonicalStream),
+		zap.String("requested_stream", requestedStream),
 	)
 
-	// Validate stream name
-	validStreams := []string{"public", "public:local", "public:remote", "user", "user:notification", "list", "direct", "hashtag"}
-	isValid := false
-	for _, valid := range validStreams {
-		if message.Stream == valid || strings.HasPrefix(message.Stream, valid+":") {
-			isValid = true
-			break
-		}
-	}
-
-	if !isValid {
-		logger.Error("invalid stream name", zap.String("stream", message.Stream))
-		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingInvalidStream().Error())
-	}
-
-	// Check authorization for stream
-	if message.Stream == "user" || strings.HasPrefix(message.Stream, "user:") ||
-		message.Stream == "direct" || strings.HasPrefix(message.Stream, "list:") {
-		// These streams require authentication
-		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
-			logger.Error("authentication required for stream", zap.String("stream", message.Stream))
-			return sh.sendError(connection.ConnectionID, pkgErrors.StreamingAuthenticationRequired().Error())
-		}
-	}
-
 	// Add stream to connection's subscriptions
-	if !contains(connection.Streams, message.Stream) {
-		connection.Streams = append(connection.Streams, message.Stream)
+	if !contains(connection.Streams, canonicalStream) {
+		connection.Streams = append(connection.Streams, canonicalStream)
 		if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
 			logger.Error("failed to update connection streams", zap.Error(err))
 			return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToSubscribe().Error())
@@ -596,7 +586,7 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 	}
 
 	// Store subscription using DynamORM repository
-	if err := sh.connectionRepo.WriteSubscription(ctx, connection.ConnectionID, connection.UserID, message.Stream); err != nil {
+	if err := sh.connectionRepo.WriteSubscription(ctx, connection.ConnectionID, connection.UserID, canonicalStream); err != nil {
 		logger.Error("failed to write subscription", zap.Error(err))
 		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToSubscribe().Error())
 	}
@@ -604,9 +594,10 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 	// Send confirmation
 	confirmMsg := StreamMessage{
 		Type:   "subscribed",
-		Stream: message.Stream,
+		Stream: requestedStream,
 		Payload: map[string]any{
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"timestamp":        time.Now().UTC().Format(time.RFC3339),
+			"canonical_stream": canonicalStream,
 		},
 	}
 
@@ -620,16 +611,28 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 }
 
 func (sh *StreamingHandler) handleUnsubscribe(ctx context.Context, connection *models.WebSocketConnection, message StreamMessage) error {
+	requestedStream := strings.TrimSpace(message.Stream)
+	canonicalStream := canonicalizeStreamAlias(connection, requestedStream)
+
 	logger := sh.logger.With(
 		zap.String("connectionID", connection.ConnectionID),
 		zap.String("operation", "unsubscribe"),
-		zap.String("stream", message.Stream),
+		zap.String("stream", canonicalStream),
+		zap.String("requested_stream", requestedStream),
 	)
+
+	streamsToRemove := map[string]struct{}{}
+	if requestedStream != "" {
+		streamsToRemove[requestedStream] = struct{}{}
+	}
+	if canonicalStream != "" {
+		streamsToRemove[canonicalStream] = struct{}{}
+	}
 
 	// Remove stream from connection's subscriptions
 	newStreams := []string{}
 	for _, s := range connection.Streams {
-		if s != message.Stream {
+		if _, remove := streamsToRemove[s]; !remove {
 			newStreams = append(newStreams, s)
 		}
 	}
@@ -641,17 +644,20 @@ func (sh *StreamingHandler) handleUnsubscribe(ctx context.Context, connection *m
 	}
 
 	// Remove subscription using DynamORM repository
-	if err := sh.connectionRepo.DeleteSubscription(ctx, connection.ConnectionID, message.Stream); err != nil {
-		logger.Error("failed to delete subscription", zap.Error(err))
-		// Don't fail the unsubscribe
+	for streamName := range streamsToRemove {
+		if err := sh.connectionRepo.DeleteSubscription(ctx, connection.ConnectionID, streamName); err != nil {
+			logger.Error("failed to delete subscription", zap.Error(err))
+			// Don't fail the unsubscribe
+		}
 	}
 
 	// Send confirmation
 	confirmMsg := StreamMessage{
 		Type:   "unsubscribed",
-		Stream: message.Stream,
+		Stream: requestedStream,
 		Payload: map[string]any{
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"timestamp":        time.Now().UTC().Format(time.RFC3339),
+			"canonical_stream": canonicalStream,
 		},
 	}
 
@@ -662,6 +668,161 @@ func (sh *StreamingHandler) handleUnsubscribe(ctx context.Context, connection *m
 
 	logger.Info("unsubscribed from stream")
 	return nil
+}
+
+func canonicalizeStreamAlias(connection *models.WebSocketConnection, requestedStream string) string {
+	if connection == nil {
+		return requestedStream
+	}
+
+	stream := strings.TrimSpace(requestedStream)
+	if stream == "" {
+		return ""
+	}
+
+	username := strings.TrimSpace(connection.Username)
+	if username == "" {
+		return stream
+	}
+
+	switch stream {
+	case streaming.UserStream:
+		return streaming.UserStreamName(username)
+	case streaming.UserNotificationStream:
+		return streaming.UserNotificationStreamName(username)
+	case streaming.DirectStream:
+		return streaming.DirectStreamName(username)
+	default:
+		return stream
+	}
+}
+
+func authorizeListStreamSubscription(ctx context.Context, repos core.RepositoryStorage, listID, username string) error {
+	if repos == nil {
+		return pkgErrors.Internal("repositories not initialized")
+	}
+
+	listRepo := repos.List()
+	if listRepo == nil {
+		return pkgErrors.Internal("list repository not initialized")
+	}
+
+	list, err := listRepo.GetList(ctx, listID)
+	if err != nil {
+		return err
+	}
+
+	if list == nil || list.Username != username {
+		return pkgErrors.NotFound("list")
+	}
+
+	return nil
+}
+
+//nolint:gocognit,gocyclo // Stream resolution handles many protocol variants and edge cases.
+func (sh *StreamingHandler) resolveCanonicalStreamSubscription(ctx context.Context, connection *models.WebSocketConnection, requestedStream string) (string, *pkgErrors.AppError) {
+	stream := strings.TrimSpace(requestedStream)
+	if stream == "" {
+		return "", pkgErrors.StreamingInvalidStream()
+	}
+
+	parts := strings.Split(stream, ":")
+	root := parts[0]
+	switch root {
+	case "public":
+		if stream == streaming.PublicStream || stream == streaming.PublicLocalStream || stream == streaming.PublicRemoteStream {
+			return stream, nil
+		}
+		return "", pkgErrors.StreamingInvalidStream()
+	case streaming.HashtagStreamPrefix:
+		if len(parts) < 2 {
+			return "", pkgErrors.StreamingInvalidStream()
+		}
+
+		tag := strings.TrimSpace(strings.Join(parts[1:], ":"))
+		if tag == "" {
+			return "", pkgErrors.StreamingInvalidStream()
+		}
+		return streaming.HashtagStreamName(tag), nil
+	case streaming.UserStream:
+		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
+			return "", pkgErrors.StreamingAuthenticationRequired()
+		}
+		if strings.TrimSpace(connection.Username) == "" {
+			return "", pkgErrors.StreamingFailedToSubscribe()
+		}
+
+		username := strings.TrimSpace(connection.Username)
+		switch len(parts) {
+		case 1:
+			return streaming.UserStreamName(username), nil
+		case 2:
+			if parts[1] == "notification" {
+				return streaming.UserNotificationStreamName(username), nil
+			}
+			if parts[1] != username {
+				return "", pkgErrors.StreamingInvalidStream()
+			}
+			return streaming.UserStreamName(username), nil
+		case 3:
+			if parts[1] != "notification" {
+				return "", pkgErrors.StreamingInvalidStream()
+			}
+			if parts[2] != username {
+				return "", pkgErrors.StreamingInvalidStream()
+			}
+			return streaming.UserNotificationStreamName(username), nil
+		default:
+			return "", pkgErrors.StreamingInvalidStream()
+		}
+	case streaming.DirectStream:
+		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
+			return "", pkgErrors.StreamingAuthenticationRequired()
+		}
+		if strings.TrimSpace(connection.Username) == "" {
+			return "", pkgErrors.StreamingFailedToSubscribe()
+		}
+
+		username := strings.TrimSpace(connection.Username)
+		switch len(parts) {
+		case 1:
+			return streaming.DirectStreamName(username), nil
+		case 2:
+			if parts[1] != username {
+				return "", pkgErrors.StreamingInvalidStream()
+			}
+			return streaming.DirectStreamName(username), nil
+		default:
+			return "", pkgErrors.StreamingInvalidStream()
+		}
+	case streaming.ListStreamPrefix:
+		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
+			return "", pkgErrors.StreamingAuthenticationRequired()
+		}
+		if strings.TrimSpace(connection.Username) == "" {
+			return "", pkgErrors.StreamingFailedToSubscribe()
+		}
+		if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+			return "", pkgErrors.StreamingInvalidStream()
+		}
+
+		listID := strings.TrimSpace(parts[1])
+		if err := authorizeListStreamSubscriptionFn(ctx, sh.storageFactory, listID, strings.TrimSpace(connection.Username)); err != nil {
+			if pkgErrors.HasCode(err, pkgErrors.CodeNotFound) || pkgErrors.HasCode(err, pkgErrors.CodeForbidden) {
+				return "", pkgErrors.StreamingInvalidStream()
+			}
+			sh.logger.Error("failed to authorize list stream subscription",
+				zap.String("connection_id", connection.ConnectionID),
+				zap.String("username", connection.Username),
+				zap.String("list_id", listID),
+				zap.Error(err))
+			return "", pkgErrors.StreamingFailedToSubscribe()
+		}
+
+		return streaming.ListStreamName(listID), nil
+	default:
+		return "", pkgErrors.StreamingInvalidStream()
+	}
 }
 
 func (sh *StreamingHandler) handlePing(connectionID string) error {

@@ -22,6 +22,8 @@ type upArgs struct {
 	App                    string
 	BaseDomain             string
 	AWSProfile             string
+	Stage                  string
+	ProvisioningInputPath  string
 	BootstrapWalletAddress string
 	WithStaging            bool
 	OutPath                string
@@ -74,12 +76,7 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, err
 	}
 
-	awsProfile := strings.TrimSpace(args.AWSProfile)
-	if awsProfile == "" {
-		return nil, errors.New("aws profile is required")
-	}
-
-	awsCfg, err := loadAWSConfigFromProfileFn(ctx, awsProfile)
+	awsCfg, awsProfile, err := loadAWSConfigForCLIFn(ctx, args.AWSProfile)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +91,10 @@ func prepareUpEnv(ctx context.Context, args upArgs) (*upEnv, error) {
 		return nil, err
 	}
 
-	stages := upStages(args.WithStaging)
+	stages, err := selectUpStages(args.WithStaging, args.Stage)
+	if err != nil {
+		return nil, err
+	}
 	newDB := bootstrapDBFactory(func() (theorydb.DB, error) {
 		db, dbErr := tabletheory.New(session.Config{
 			Region:              awsCfg.Region,
@@ -179,6 +179,27 @@ func upStages(withStaging bool) []naming.Stage {
 	return []naming.Stage{naming.StageDev, naming.StageLive}
 }
 
+func selectUpStages(withStaging bool, stage string) ([]naming.Stage, error) {
+	value := strings.TrimSpace(strings.ToLower(stage))
+	if value == "" {
+		return upStages(withStaging), nil
+	}
+	if withStaging {
+		return nil, errors.New("--stage cannot be combined with --with-staging")
+	}
+
+	switch value {
+	case string(naming.StageDev):
+		return []naming.Stage{naming.StageDev}, nil
+	case string(naming.StageStaging):
+		return []naming.Stage{naming.StageStaging}, nil
+	case string(naming.StageLive):
+		return []naming.Stage{naming.StageLive}, nil
+	default:
+		return nil, fmt.Errorf("invalid --stage %q (expected dev|staging|live)", stage)
+	}
+}
+
 func (e *upEnv) run(ctx context.Context) error {
 	if err := ensureToolsAvailableFn(); err != nil {
 		return err
@@ -191,7 +212,11 @@ func (e *upEnv) run(ctx context.Context) error {
 	}
 
 	fmt.Println("\nAWS environment:")
-	fmt.Println("  profile:", e.awsProfile)
+	profileLabel := e.awsProfile
+	if strings.TrimSpace(profileLabel) == "" {
+		profileLabel = "(ambient)"
+	}
+	fmt.Println("  profile:", profileLabel)
 	fmt.Println("  account:", e.accountID)
 	fmt.Println("  region:", e.awsCfg.Region)
 	fmt.Println("  hosted_zone:", e.hostedZone.Name, e.hostedZone.ID)
@@ -313,6 +338,11 @@ func (e *upEnv) printSummary(statePath string) {
 	fmt.Println("\nDeployment receipt:", statePath)
 	printStageURLs(e.stages, e.baseDomain)
 	fmt.Println("\nNext steps:")
+	if strings.TrimSpace(e.args.ProvisioningInputPath) != "" {
+		fmt.Println("  1) Seed the initial admin wallet with `lesser init-admin` using the provisioning input.")
+		fmt.Println("  2) Log in with the admin wallet and optionally enroll a passkey.")
+		return
+	}
 	if e.bootstrap.Mnemonic != "" {
 		fmt.Println("  1) Import the bootstrap mnemonic into a wallet (e.g. MetaMask).")
 	} else {
@@ -329,7 +359,9 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	var args upArgs
 	fs.StringVar(&args.App, "app", "", "app name slug (e.g. my-lesser)")
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
-	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
+	fs.StringVar(&args.AWSProfile, "aws-profile", os.Getenv("AWS_PROFILE"), "AWS profile name to use (sets AWS_PROFILE)")
+	fs.StringVar(&args.Stage, "stage", "", "deploy a single stage (dev|staging|live); default deploys dev+live")
+	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1)")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
@@ -339,8 +371,24 @@ func parseUpArgs(argv []string) (upArgs, error) {
 		return upArgs{}, err
 	}
 
-	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" || strings.TrimSpace(args.AWSProfile) == "" {
-		return upArgs{}, errors.New("required flags: --app, --base-domain, --aws-profile")
+	if strings.TrimSpace(args.ProvisioningInputPath) != "" {
+		in, err := readManagedProvisioningInput(args.ProvisioningInputPath)
+		if err != nil {
+			return upArgs{}, err
+		}
+		if strings.TrimSpace(args.App) == "" {
+			args.App = in.Slug
+		}
+		if strings.TrimSpace(args.Stage) == "" {
+			args.Stage = in.Stage
+		}
+		if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
+			args.BootstrapWalletAddress = in.AdminWalletAddress
+		}
+	}
+
+	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" {
+		return upArgs{}, errors.New("required flags: --base-domain and --app (or --provisioning-input)")
 	}
 	if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
 		args.BootstrapWalletAddress = strings.TrimSpace(os.Getenv("LESSER_BOOTSTRAP_WALLET_ADDRESS"))
@@ -351,6 +399,9 @@ func parseUpArgs(argv []string) (upArgs, error) {
 			return upArgs{}, err
 		}
 		args.BootstrapWalletAddress = normalized
+		if err := rejectReservedWallet(args.BootstrapWalletAddress, ""); err != nil {
+			return upArgs{}, err
+		}
 	}
 
 	return args, nil

@@ -111,29 +111,15 @@ func (h *Handler) HandleGetStatusFull(ctx *apptheory.Context) (*apptheory.Respon
 	viewerID := h.getOptionalAuthenticatedUser(ctx)
 
 	// Call Notes service to get the note
-	note, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
+	note, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerID,
+	})
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return common.RespondNotFound(ctx, "status not found")
-		}
-		if strings.Contains(err.Error(), "access denied") {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "access denied") {
 			return common.RespondNotFound(ctx, "status not found")
 		}
 		return common.RespondInternalServerError(ctx, "Internal server error")
-	}
-
-	// Check privacy permissions for the viewer using robust authorization
-	canView, err := h.checkStatusViewPermission(ctx.Context(), note, viewerID)
-	if err != nil {
-		h.logger.Error("failed to check status view permissions",
-			zap.String("status_id", statusID),
-			zap.String("viewer_id", viewerID),
-			zap.Error(err))
-		return common.RespondInternalServerError(ctx, "Internal server error")
-	}
-
-	if !canView {
-		return common.RespondNotFound(ctx, "status not found")
 	}
 
 	// Convert to Mastodon API format using converter
@@ -185,6 +171,7 @@ func (h *Handler) HandleDeleteStatusFull(ctx *apptheory.Context) (*apptheory.Res
 // Helper methods
 
 // checkStatusViewPermission implements comprehensive privacy checking for status visibility
+//nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storageModels.Status, viewerID string) (bool, error) {
 	// Import the visibility constants
 	const (
@@ -227,6 +214,7 @@ func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storage
 }
 
 // checkPrivateVisibility checks if viewer can see private (followers-only) posts
+//nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) checkPrivateVisibility(ctx context.Context, status *storageModels.Status, viewerID string) (bool, error) {
 	isFollowing, err := h.repos.Relationship().IsFollowing(ctx, viewerID, status.AuthorUsername)
 	if err != nil {
@@ -236,6 +224,7 @@ func (h *Handler) checkPrivateVisibility(ctx context.Context, status *storageMod
 }
 
 // checkDirectMessageVisibility checks if viewer can see direct messages
+//nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) checkDirectMessageVisibility(status *storageModels.Status, viewerID string) bool {
 	// Check if viewer is explicitly mentioned in the status
 	if h.isViewerMentioned(status.Mentions, viewerID) {
@@ -247,6 +236,7 @@ func (h *Handler) checkDirectMessageVisibility(status *storageModels.Status, vie
 }
 
 // isViewerMentioned checks if viewer is mentioned in the status
+//nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
 	for _, mention := range mentions {
 		if mention == viewerID {
@@ -257,6 +247,7 @@ func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
 }
 
 // isViewerInRecipientLists checks all recipient lists for viewer
+//nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) isViewerInRecipientLists(status *storageModels.Status, viewerID string) bool {
 	viewerActorID := "https://" + h.cfg.Domain + "/users/" + viewerID
 

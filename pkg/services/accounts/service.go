@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/activitypubutil"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -305,6 +306,10 @@ type RegisterAccountCommand struct {
 	Reason                   string `json:"reason"` // Registration reason (for approval)
 	InviteCode               string `json:"invite_code"`
 	DefaultPostingVisibility string `json:"default_posting_visibility"`
+
+	// RegistrationChallengeID is a registration-time proof reference (e.g. wallet challenge ID).
+	// It is stored temporarily in user metadata to allow completion of passwordless registration flows.
+	RegistrationChallengeID string `json:"registration_challenge_id,omitempty"`
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
@@ -820,12 +825,17 @@ func (s *Service) normalizeBaseURL(value string) string {
 }
 
 func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProfileCommand) error {
+	sanitizedBio := ""
+	if cmd.Bio != "" {
+		sanitizedBio = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Bio))
+	}
+
 	// Update User fields
 	if cmd.DisplayName != "" {
 		account.User.DisplayName = cmd.DisplayName
 	}
 	if cmd.Bio != "" {
-		account.User.Note = cmd.Bio
+		account.User.Note = sanitizedBio
 	}
 	if cmd.Avatar != "" {
 		account.User.Avatar = cmd.Avatar
@@ -840,9 +850,10 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 	if len(cmd.Fields) > 0 {
 		fields := make([]map[string]string, 0, len(cmd.Fields))
 		for _, field := range cmd.Fields {
+			sanitizedValue := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(field.Value))
 			fields = append(fields, map[string]string{
 				"name":  field.Name,
-				"value": field.Value,
+				"value": sanitizedValue,
 			})
 		}
 		account.User.Fields = fields
@@ -873,7 +884,7 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 	}
 
 	if cmd.Bio != "" {
-		account.Actor.Summary = cmd.Bio
+		account.Actor.Summary = sanitizedBio
 	}
 
 	// Update profile image URLs
@@ -908,10 +919,11 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 	if len(cmd.Fields) > 0 {
 		attachments := make([]activitypub.Attachment, len(cmd.Fields))
 		for i, field := range cmd.Fields {
+			sanitizedValue := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(field.Value))
 			attachments[i] = activitypub.Attachment{
 				Type:  "PropertyValue",
 				Name:  field.Name,
-				Value: field.Value,
+				Value: sanitizedValue,
 			}
 		}
 		account.Actor.Attachment = attachments
@@ -1815,6 +1827,13 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		Role:         "user",
 		Locale:       cmd.Locale,
 		CreatedAt:    time.Now(),
+	}
+
+	if strings.TrimSpace(cmd.RegistrationChallengeID) != "" {
+		if user.Metadata == nil {
+			user.Metadata = map[string]interface{}{}
+		}
+		user.Metadata["registration_challenge_id"] = strings.TrimSpace(cmd.RegistrationChallengeID)
 	}
 
 	// Hash password if provided

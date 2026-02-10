@@ -12,7 +12,7 @@ import (
 
 // AiAnalysisUpdates implements SubscriptionResolver
 func (r *subscriptionResolver) AiAnalysisUpdates(ctx context.Context, objectID *string) (<-chan *model.AIAnalysis, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (r *subscriptionResolver) AiAnalysisUpdates(ctx context.Context, objectID *
 
 // ThreatIntelligence implements SubscriptionResolver
 func (r *subscriptionResolver) ThreatIntelligence(ctx context.Context) (<-chan *model.ThreatAlert, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

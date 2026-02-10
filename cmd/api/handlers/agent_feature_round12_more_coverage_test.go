@@ -73,9 +73,9 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 				AgentVersion: "v1",
 				Metadata:     aliceMetadata,
 				AgentCapabilities: &agents.Capabilities{
-					CanPost:         true,
+					CanPost:           true,
 					RestrictedDomains: []string{"example.org"},
-					MaxPostsPerHour:  10,
+					MaxPostsPerHour:   10,
 				},
 			},
 		},
@@ -136,10 +136,10 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + ownerToken}
 
 		req := apimodels.UpdateAgentRequest{
-			DisplayName:  "Alice Agent",
-			Bio:          "updated bio",
-			AgentType:    "CUSTOM",
-			AgentVersion: "v2",
+			DisplayName:    "Alice Agent",
+			Bio:            "updated bio",
+			AgentType:      "CUSTOM",
+			AgentVersion:   "v2",
 			ExitQuarantine: true,
 			AgentCapabilities: &apimodels.AgentCapabilities{
 				CanPost:           true,
@@ -274,20 +274,20 @@ func TestAgentSelfSovereignRound12_ChallengeAuthAndRotateKey(t *testing.T) {
 		},
 		usersByUsername: map[string]storagemodels.User{
 			"agent": {
-				PK:           "USER#agent",
-				SK:           storagemodels.SKMetadata,
-				Username:     "agent",
-				Role:         "user",
-				Approved:     true,
-				Version:      1,
-				CreatedAt:    now.Add(-24 * time.Hour),
-				IsAgent:      true,
-				AgentType:    agentTypeCustom,
-				AgentVersion: "v1",
+				PK:             "USER#agent",
+				SK:             storagemodels.SKMetadata,
+				Username:       "agent",
+				Role:           "user",
+				Approved:       true,
+				Version:        1,
+				CreatedAt:      now.Add(-24 * time.Hour),
+				IsAgent:        true,
+				AgentType:      agentTypeCustom,
+				AgentVersion:   "v1",
 				AgentPublicKey: publicKey,
 				AgentKeyType:   "ed25519",
 				Metadata: map[string]any{
-					"agent_self_scopes": []any{"read", "write:statuses", "follow"},
+					"agent_self_scopes":    []any{"read", "write:statuses", "follow"},
 					"agent_self_sovereign": true,
 				},
 			},
@@ -323,9 +323,9 @@ func TestAgentSelfSovereignRound12_ChallengeAuthAndRotateKey(t *testing.T) {
 
 	t.Run("mints_auth_token", func(t *testing.T) {
 		req := apimodels.AgentSelfAuthTokenRequest{
-			Username:     "agent",
-			ChallengeID:  authChallengeID,
-			Signature:    authSignature,
+			Username:    "agent",
+			ChallengeID: authChallengeID,
+			Signature:   authSignature,
 		}
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/auth/token", nil, nil, req)
@@ -503,9 +503,9 @@ func TestAgentRemotePolicyRound12_HideDecisions(t *testing.T) {
 		},
 		remoteActorsByPK: map[string]storagemodels.RemoteActor{
 			"REMOTE_ACTOR#bob@remote.example": {
-				PK:       "REMOTE_ACTOR#bob@remote.example",
-				SK:       storagemodels.SKProfile,
-				CachedAt: now.Add(-10 * 24 * time.Hour),
+				PK:        "REMOTE_ACTOR#bob@remote.example",
+				SK:        storagemodels.SKProfile,
+				CachedAt:  now.Add(-10 * 24 * time.Hour),
 				UpdatedAt: now.Add(-10 * 24 * time.Hour),
 			},
 		},

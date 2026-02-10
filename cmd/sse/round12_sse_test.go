@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -246,12 +247,15 @@ func TestStreamSSE_RecordsLastEventID_Round12(t *testing.T) {
 func TestHandlers_Round12(t *testing.T) {
 	origLog := eventLog
 	origAuth := authService
+	origAuthorize := authorizeListStreamFn
 	t.Cleanup(func() {
 		eventLog = origLog
 		authService = origAuth
+		authorizeListStreamFn = origAuthorize
 	})
 
 	authService = &fakeValidator{claims: &auth.EnhancedClaims{Username: "alice"}}
+	authorizeListStreamFn = func(context.Context, string, string) error { return nil }
 	queries := make(chan struct{}, 16)
 	eventLog = &scriptedEventLog{
 		enabled: true,
@@ -383,6 +387,30 @@ func TestHandlers_Round12(t *testing.T) {
 			t.Fatalf("timeout waiting for event log query %d", i+1)
 		}
 	}
+}
+
+func TestHandleListStream_AuthorizationFailure_Round12(t *testing.T) {
+	origAuth := authService
+	origAuthorize := authorizeListStreamFn
+	t.Cleanup(func() {
+		authService = origAuth
+		authorizeListStreamFn = origAuthorize
+	})
+
+	authService = &fakeValidator{claims: &auth.EnhancedClaims{Username: "alice"}}
+	authorizeListStreamFn = func(context.Context, string, string) error { return apperrors.NotFound("list") }
+
+	resp, err := handleListStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/list",
+			Headers: map[string][]string{"authorization": {"Bearer token"}},
+			Query:   map[string][]string{"list": {"1"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusNotFound, resp.Status)
 }
 
 func TestHandlers_Unauthorized_Round12(t *testing.T) {

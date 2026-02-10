@@ -167,6 +167,7 @@ func (r *AccountRepository) DeleteAuthorizationCode(ctx context.Context, code st
 	err := r.db.WithContext(ctx).Model(&models.AuthorizationCode{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
+		IfExists().
 		Delete()
 
 	if err != nil {

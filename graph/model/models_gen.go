@@ -420,15 +420,15 @@ type AffectedRelationshipEdge struct {
 }
 
 type Agent struct {
-	ID            string             `json:"id"`
-	Username      string             `json:"username"`
-	DisplayName   string             `json:"displayName"`
-	Type          AgentType          `json:"type"`
-	Version       string             `json:"version"`
-	Capabilities  *AgentCapabilities `json:"capabilities"`
-	Owner         *activitypub.Actor `json:"owner,omitempty"`
-	CreatedAt     Time               `json:"createdAt"`
-	ActivityCount int                `json:"activityCount"`
+	ID            string                         `json:"id"`
+	Username      string                         `json:"username"`
+	DisplayName   string                         `json:"displayName"`
+	Type          AgentType                      `json:"type"`
+	Version       string                         `json:"version"`
+	Capabilities  *activitypub.AgentCapabilities `json:"capabilities"`
+	Owner         *activitypub.Actor             `json:"owner,omitempty"`
+	CreatedAt     Time                           `json:"createdAt"`
+	ActivityCount int                            `json:"activityCount"`
 }
 
 type AgentActivityEvent struct {
@@ -438,17 +438,6 @@ type AgentActivityEvent struct {
 	TargetID      *string `json:"targetId,omitempty"`
 	MetadataJSON  *string `json:"metadataJson,omitempty"`
 	Timestamp     Time    `json:"timestamp"`
-}
-
-type AgentCapabilities struct {
-	CanPost           bool     `json:"canPost"`
-	CanReply          bool     `json:"canReply"`
-	CanBoost          bool     `json:"canBoost"`
-	CanFollow         bool     `json:"canFollow"`
-	CanDm             bool     `json:"canDM"`
-	MaxPostsPerHour   int      `json:"maxPostsPerHour"`
-	RequiresApproval  bool     `json:"requiresApproval"`
-	RestrictedDomains []string `json:"restrictedDomains,omitempty"`
 }
 
 type AgentConnection struct {
@@ -1246,6 +1235,7 @@ type InstanceInfo struct {
 	DomainCount       int                `json:"domainCount"`
 	ContactAccount    *activitypub.Actor `json:"contactAccount,omitempty"`
 	Rules             []*InstanceRule    `json:"rules"`
+	Tips              *TipsConfig        `json:"tips"`
 }
 
 type InstanceMetadata struct {
@@ -1640,6 +1630,7 @@ type Object struct {
 	Boosted          bool                      `json:"boosted"`
 	RelationshipType ObjectRelationshipType    `json:"relationshipType"`
 	BoostedObject    *Object                   `json:"boostedObject,omitempty"`
+	ContentHash      string                    `json:"contentHash"`
 	EstimatedCost    int                       `json:"estimatedCost"`
 	ModerationScore  *float64                  `json:"moderationScore,omitempty"`
 	CommunityNotes   []*CommunityNote          `json:"communityNotes"`
@@ -2252,6 +2243,12 @@ type ThreatTrend struct {
 	Count     int                `json:"count"`
 	Change    float64            `json:"change"`
 	Instances []string           `json:"instances"`
+}
+
+type TipsConfig struct {
+	Enabled         bool    `json:"enabled"`
+	ChainID         *int    `json:"chainId,omitempty"`
+	ContractAddress *string `json:"contractAddress,omitempty"`
 }
 
 type TrainingResult struct {

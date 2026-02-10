@@ -83,8 +83,8 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 							ModifiedAt:     now,
 							Version:        1,
 							Note: &activitypub.Note{
-								BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/objects/s1"},
-								Content:    cmd.Content,
+								BaseObject:   activitypub.BaseObject{ID: cfg.BaseURL() + "/objects/s1"},
+								Content:      cmd.Content,
 								AttributedTo: cfg.BaseURL() + "/users/" + cmd.AuthorID,
 							},
 						},
@@ -97,9 +97,9 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		headers := map[string]string{"Authorization": "Bearer " + token}
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
-			Status:     "hello",
-			Visibility: "",
-			MediaIDs:   []string{"m1", "m2"},
+			Status:      "hello",
+			Visibility:  "",
+			MediaIDs:    []string{"m1", "m2"},
 			ScheduledAt: func() *string { s := time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339); return &s }(),
 		})
 		require.NoError(t, err)

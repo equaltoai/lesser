@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/services/moderationml"
+	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
@@ -116,7 +117,10 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 	}
 
 	// Validate object exists using notes service
-	object, err := r.Registry.Notes().GetNote(ctx, input.ObjectID)
+	object, err := r.Registry.Notes().GetNoteWithViewer(ctx, &servicenotes.GetNoteQuery{
+		StatusID: input.ObjectID,
+		ViewerID: username,
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, ErrObjectNotFound
@@ -142,14 +146,19 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 		NotHelpfulVotes:  0,
 	}
 
-	// Store the note using repository
-	err = r.Storage.CommunityNote().CreateCommunityNote(ctx, note)
+	// Store the note using Notes service (enforces write-time invariants).
+	created, err := r.Registry.Notes().CreateCommunityNote(ctx, &servicenotes.CreateCommunityNoteCommand{
+		Note: note,
+	})
 	if err != nil {
 		r.Logger.Error("Failed to create community note",
 			zap.String("objectID", input.ObjectID),
 			zap.String("authorID", username),
 			zap.Error(err))
 		return nil, errors.Join(errors.New("failed to create community note"), err)
+	}
+	if created != nil && created.Note != nil {
+		note = created.Note
 	}
 
 	// Get the author actor for response
@@ -418,7 +427,7 @@ func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*
 
 // DeleteModerationPattern implements MutationResolver
 func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id string) (bool, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -444,7 +453,7 @@ func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id strin
 
 // UpdateModerationPattern implements MutationResolver
 func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id string, input model.ModerationPatternInput) (*moderation.ModerationPattern, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +477,7 @@ func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id strin
 
 // CreateModerationPattern implements MutationResolver
 func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input model.ModerationPatternInput) (*moderation.ModerationPattern, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireModeratorOrAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

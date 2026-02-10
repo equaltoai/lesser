@@ -99,6 +99,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevUp := runUpFn
 	prevDown := runDownFn
 	prevClientDeploy := runClientDeployFn
+	prevInitAdmin := runInitAdminFn
 	prevBuild := runBuildFn
 	prevGenerate := runGenerateFn
 	prevVerify := runVerifyFn
@@ -122,6 +123,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 		runUpFn = prevUp
 		runDownFn = prevDown
 		runClientDeployFn = prevClientDeploy
+		runInitAdminFn = prevInitAdmin
 		runBuildFn = prevBuild
 		runGenerateFn = prevGenerate
 		runVerifyFn = prevVerify
@@ -157,6 +159,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runUpFn = stub("up")
 	runDownFn = stub("down")
 	runClientDeployFn = stub("client deploy")
+	runInitAdminFn = stub("init-admin")
 	runBuildFn = stub("build")
 	runGenerateFn = stub("generate")
 	runVerifyFn = stub("verify")
@@ -187,6 +190,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	require.Equal(t, []string{"--app", "x"}, calls["down"].argv)
 	require.Equal(t, 0, runCLI([]string{"lesser", "destroy", "--app", "x"}, &buf))
 	require.Equal(t, []string{"--app", "x"}, calls["down"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "init-admin", "--arg"}, &buf))
+	require.Equal(t, []string{"--arg"}, calls["init-admin"].argv)
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "client", helpFlagLong}, &buf))
 	require.Equal(t, 0, runCLI([]string{"lesser", "client", helpCommand}, &buf))

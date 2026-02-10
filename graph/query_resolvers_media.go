@@ -289,7 +289,11 @@ func (r *queryResolver) PopularStreams(ctx context.Context, first int, after *st
 }
 
 // SupportedBitrates returns supported bitrates for a media item
-func (r *queryResolver) SupportedBitrates(_ context.Context, mediaID string) ([]*model.Bitrate, error) {
+func (r *queryResolver) SupportedBitrates(ctx context.Context, mediaID string) ([]*model.Bitrate, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Import the streaming package's quality information
 	qualityLevels := []mediaStreaming.Quality{
 		mediaStreaming.Quality4K,

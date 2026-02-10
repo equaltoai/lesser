@@ -119,6 +119,7 @@ type NotesService interface {
 	GetLikeCount(ctx context.Context, statusID string) (int64, error)
 	GetLikers(ctx context.Context, query *notes.GetLikersQuery) (*notes.UsersResult, error)
 	GetNote(ctx context.Context, statusID string) (*storagemodels.Status, error)
+	GetNoteWithViewer(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error)
 	GetRebloggers(ctx context.Context, query *notes.GetRebloggersQuery) (*notes.UsersResult, error)
 	GetSearchSuggestions(ctx context.Context, query *notes.GetSearchSuggestionsQuery) (*notes.GetSearchSuggestionsResult, error)
 	GetUpdateHistory(ctx context.Context, query *notes.GetUpdateHistoryQuery) (*notes.GetUpdateHistoryResult, error)

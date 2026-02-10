@@ -17,4 +17,3 @@ func TestBootstrapRound14_TableNameAndDetermineWalletBranches(t *testing.T) {
 	require.Equal(t, defaultBootstrapDerivationPath, wallet.DerivationPath)
 	require.Equal(t, 1, wallet.ChainID)
 }
-

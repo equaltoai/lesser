@@ -13,6 +13,10 @@ type AccountRegistrationRequest struct {
 	Locale                   string `json:"locale,omitempty"`
 	Reason                   string `json:"reason,omitempty"` // For approval
 	DefaultPostingVisibility string `json:"default_posting_visibility,omitempty"`
+
+	// WalletChallengeID is required for passwordless wallet-based registration flows.
+	// The challenge must have been verified via POST /auth/wallet/verify before registration.
+	WalletChallengeID string `json:"wallet_challenge_id,omitempty"`
 }
 
 // AccountRegistrationResponse represents the response after successful registration

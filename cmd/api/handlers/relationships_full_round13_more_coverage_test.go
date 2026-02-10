@@ -131,4 +131,3 @@ func TestRelationshipsFullRound13_ServiceBackedHandlers(t *testing.T) {
 		requireStatus(t, http.StatusOK)(h.HandleGetRelationshipsFull(ctx))
 	})
 }
-

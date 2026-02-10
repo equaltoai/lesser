@@ -39,4 +39,3 @@ func TestSecurityCommands_Round14_ErrorBranches(t *testing.T) {
 	require.ErrorIs(t, runSecScan(nil), errSentinel)
 	require.ErrorIs(t, runVulnCheck(nil), errSentinel)
 }
-

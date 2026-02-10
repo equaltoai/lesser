@@ -250,7 +250,11 @@ func TestAccountsFull_Round12_ConvertStatusToMastodonAPI_HelperBranches(t *testi
 				}
 				return true, nil
 			},
-			GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+			GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+				statusID := ""
+				if query != nil {
+					statusID = query.StatusID
+				}
 				switch statusID {
 				case "mute-note-error", "pin-note-error", "reply-note-error":
 					return nil, stdErrors.New("err")
@@ -541,7 +545,7 @@ func TestAccountsFull_Round12_GetReplyToAccountID_EdgeCases(t *testing.T) {
 	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 	handler.registry = &RegistryStub{
 		NotesSvc: &NotesServiceStub{
-			GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+			GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
 				return nil, stdErrors.New("not found")
 			},
 		},
@@ -549,12 +553,12 @@ func TestAccountsFull_Round12_GetReplyToAccountID_EdgeCases(t *testing.T) {
 
 	t.Run("missing_in_reply_to", func(t *testing.T) {
 		status := &storagemodels.Status{}
-		require.Nil(t, handler.getReplyToAccountID(context.Background(), status))
+		require.Nil(t, handler.getReplyToAccountID(context.Background(), "", status))
 	})
 
 	t.Run("reply_lookup_error", func(t *testing.T) {
 		status := &storagemodels.Status{InReplyToID: "missing"}
-		require.Nil(t, handler.getReplyToAccountID(context.Background(), status))
+		require.Nil(t, handler.getReplyToAccountID(context.Background(), "alice", status))
 	})
 }
 

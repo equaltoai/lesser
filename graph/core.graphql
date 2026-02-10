@@ -86,6 +86,8 @@ type Actor {
   fields: [Field!]!
   
   # Lesser enhancements
+  tipAddress: String
+  tipChainId: Int
   trustScore: Float!
   reputation: Reputation
   vouches: [Vouch!]!
@@ -123,6 +125,7 @@ type Object {
   boostedObject: Object
 
   # Lesser enhancements
+  contentHash: String!
   estimatedCost: Int!
   moderationScore: Float
   communityNotes: [CommunityNote!]!
@@ -489,6 +492,12 @@ type InstanceRule {
   text: String!
 }
 
+type TipsConfig {
+  enabled: Boolean!
+  chainId: Int
+  contractAddress: String
+}
+
 type InstanceInfo {
   domain: String!
   title: String!
@@ -508,6 +517,7 @@ type InstanceInfo {
   domainCount: Int!
   contactAccount: Actor
   rules: [InstanceRule!]!
+  tips: TipsConfig!
 }
 
 type InstanceActivityEntry {

@@ -3,8 +3,8 @@ package handlers
 import (
 	"testing"
 
-	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestAppTheoryHelpersRound20_QueryValues(t *testing.T) {
@@ -45,4 +45,3 @@ func TestAppTheoryHelpersRound20_QueryValues(t *testing.T) {
 		require.Nil(t, queryValues(ctx, "tags"))
 	})
 }
-
