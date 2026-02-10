@@ -23,6 +23,18 @@ func TestDynamicAttrConverters_ToAttributeValueDynamic_MoreCoverage(t *testing.T
 		require.NoError(t, err)
 		_, ok = av.(*types.AttributeValueMemberNULL)
 		require.True(t, ok)
+
+		var m map[string]any
+		av, err = toAttributeValueDynamic(m)
+		require.NoError(t, err)
+		_, ok = av.(*types.AttributeValueMemberNULL)
+		require.True(t, ok)
+
+		var s []any
+		av, err = toAttributeValueDynamic(s)
+		require.NoError(t, err)
+		_, ok = av.(*types.AttributeValueMemberNULL)
+		require.True(t, ok)
 	})
 
 	t.Run("scalar_kinds", func(t *testing.T) {
@@ -68,6 +80,11 @@ func TestDynamicAttrConverters_ToAttributeValueDynamic_MoreCoverage(t *testing.T
 		require.NoError(t, err)
 		require.Equal(t, now.Format(time.RFC3339Nano), av.(*types.AttributeValueMemberS).Value)
 
+		av, err = toAttributeValueDynamic(time.Time{})
+		require.NoError(t, err)
+		_, ok := av.(*types.AttributeValueMemberNULL)
+		require.True(t, ok)
+
 		av, err = toAttributeValueDynamic(json.Number("123"))
 		require.NoError(t, err)
 		require.Equal(t, "123", av.(*types.AttributeValueMemberN).Value)
@@ -86,6 +103,12 @@ func TestDynamicAttrConverters_ToAttributeValueDynamic_MoreCoverage(t *testing.T
 		require.Contains(t, s, `"a"`)
 	})
 
+	t.Run("map_key_errors_are_wrapped", func(t *testing.T) {
+		_, err := toAttributeValueDynamic(map[string]any{"bad": math.NaN()})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "map key bad")
+	})
+
 	t.Run("lists_and_binary", func(t *testing.T) {
 		av, err := toAttributeValueDynamic([]int{1, 2})
 		require.NoError(t, err)
@@ -101,6 +124,12 @@ func TestDynamicAttrConverters_ToAttributeValueDynamic_MoreCoverage(t *testing.T
 		av, err = toAttributeValueDynamic([2]byte{0x4, 0x5})
 		require.NoError(t, err)
 		require.Equal(t, []byte{0x4, 0x5}, av.(*types.AttributeValueMemberB).Value)
+	})
+
+	t.Run("slice_index_errors_are_wrapped", func(t *testing.T) {
+		_, err := toAttributeValueDynamic([]any{math.NaN()})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "slice index 0")
 	})
 
 	t.Run("fallback_JSON_string_for_structs", func(t *testing.T) {
@@ -145,6 +174,7 @@ func TestDynamicAttrConverters_FromAttributeValueDynamic_MoreCoverage(t *testing
 
 	assert.Equal(t, int64(0), parseDynamoNumber(" "))
 	assert.Equal(t, json.Number("nope"), parseDynamoNumber("nope"))
+	assert.Equal(t, json.Number("1e999"), parseDynamoNumber("1e999"))
 }
 
 func TestDynamicAttrConverters_JSONStringFallbacks(t *testing.T) {
@@ -166,6 +196,22 @@ func TestDynamicAttrConverters_JSONStringFallbacks(t *testing.T) {
 		require.Equal(t, "a", out[0])
 		require.Equal(t, float64(2), out[1])
 		require.Equal(t, true, out[2])
+	})
+
+	t.Run("mapStringAnyConverter_FromAttributeValue_rejects_invalid_JSON_string", func(t *testing.T) {
+		conv := mapStringAnyConverter{}
+
+		var out map[string]any
+		err := conv.FromAttributeValue(&types.AttributeValueMemberS{Value: `{"k":`}, &out)
+		require.Error(t, err)
+	})
+
+	t.Run("sliceAnyConverter_FromAttributeValue_rejects_invalid_JSON_string", func(t *testing.T) {
+		conv := sliceAnyConverter{}
+
+		var out []any
+		err := conv.FromAttributeValue(&types.AttributeValueMemberS{Value: `{"k":`}, &out)
+		require.Error(t, err)
 	})
 }
 
@@ -205,6 +251,14 @@ func TestDynamicAttrConverters_NilInputsAndTypeErrors(t *testing.T) {
 
 		var outSlice []any
 		require.Error(t, (sliceAnyConverter{}).FromAttributeValue(&types.AttributeValueMemberBOOL{Value: true}, &outSlice))
+	})
+
+	t.Run("FromAttributeValue_target_type_mismatches_return_errors", func(t *testing.T) {
+		var outSlice []any
+		require.Error(t, (mapStringAnyConverter{}).FromAttributeValue(&types.AttributeValueMemberM{Value: map[string]types.AttributeValue{}}, &outSlice))
+
+		var outMap map[string]any
+		require.Error(t, (sliceAnyConverter{}).FromAttributeValue(&types.AttributeValueMemberL{Value: []types.AttributeValue{}}, &outMap))
 	})
 
 	t.Run("converter_errors_propagate_dynamic_errors", func(t *testing.T) {
