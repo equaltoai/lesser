@@ -141,3 +141,11 @@ models:
   UpdatePublicationInput:
     model:
       - github.com/equaltoai/lesser/graph/model.UpdatePublicationInput
+  Object:
+    fields:
+      viewerFavourited:
+        resolver: true
+      viewerBookmarked:
+        resolver: true
+      viewerPinned:
+        resolver: true

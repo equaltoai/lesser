@@ -233,6 +233,43 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 		return nil, err
 	}
 
+	// Ancestors are the chain of statuses this note replies to (root -> direct parent).
+	ancestors := make([]*model.Object, 0)
+	if status != nil && strings.TrimSpace(status.InReplyToID) != "" {
+		const maxAncestors = 50
+		visited := make(map[string]struct{}, maxAncestors+1)
+		if status.StatusID != "" {
+			visited[status.StatusID] = struct{}{}
+		}
+
+		current := status
+		ancestorStatuses := make([]*models.Status, 0, 4)
+		for strings.TrimSpace(current.InReplyToID) != "" && len(ancestorStatuses) < maxAncestors {
+			parentID := strings.TrimSpace(current.InReplyToID)
+			if parentID == "" {
+				break
+			}
+			if _, ok := visited[parentID]; ok {
+				break
+			}
+			visited[parentID] = struct{}{}
+
+			parent, parentErr := statusRepo.GetStatus(ctx, parentID)
+			if parentErr != nil || parent == nil || parent.Deleted {
+				break
+			}
+
+			ancestorStatuses = append(ancestorStatuses, parent)
+			current = parent
+		}
+
+		for i := len(ancestorStatuses) - 1; i >= 0; i-- {
+			if obj := r.convertStatusToObject(ctx, ancestorStatuses[i]); obj != nil {
+				ancestors = append(ancestors, obj)
+			}
+		}
+	}
+
 	engagement, err := r.calculateEngagementMetrics(ctx, storage, noteID)
 	if err != nil {
 		return nil, err
@@ -242,8 +279,20 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 	rootNote := r.createRootNoteObject(ctx, status, replies, engagement)
 	syncStatus := r.determineSyncStatus(replies)
 
+	descendants := make([]*model.Object, 0, len(replies))
+	for _, reply := range replies {
+		if reply == nil {
+			continue
+		}
+		if obj := r.convertStatusToObject(ctx, reply); obj != nil {
+			descendants = append(descendants, obj)
+		}
+	}
+
 	return &model.ThreadContext{
 		RootNote:         rootNote,
+		Ancestors:        ancestors,
+		Descendants:      descendants,
 		ReplyCount:       len(replies),
 		ParticipantCount: len(threadMetrics.participants),
 		LastActivity:     model.Time(threadMetrics.lastActivity),

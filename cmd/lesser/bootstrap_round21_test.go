@@ -36,4 +36,3 @@ func TestReadBootstrapKeyMaterial_ParseAndValidationErrors(t *testing.T) {
 		require.Contains(t, err.Error(), "missing address or mnemonic")
 	})
 }
-

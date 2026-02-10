@@ -171,6 +171,7 @@ func (h *Handler) HandleDeleteStatusFull(ctx *apptheory.Context) (*apptheory.Res
 // Helper methods
 
 // checkStatusViewPermission implements comprehensive privacy checking for status visibility
+//
 //nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storageModels.Status, viewerID string) (bool, error) {
 	// Import the visibility constants
@@ -214,6 +215,7 @@ func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storage
 }
 
 // checkPrivateVisibility checks if viewer can see private (followers-only) posts
+//
 //nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) checkPrivateVisibility(ctx context.Context, status *storageModels.Status, viewerID string) (bool, error) {
 	isFollowing, err := h.repos.Relationship().IsFollowing(ctx, viewerID, status.AuthorUsername)
@@ -224,6 +226,7 @@ func (h *Handler) checkPrivateVisibility(ctx context.Context, status *storageMod
 }
 
 // checkDirectMessageVisibility checks if viewer can see direct messages
+//
 //nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) checkDirectMessageVisibility(status *storageModels.Status, viewerID string) bool {
 	// Check if viewer is explicitly mentioned in the status
@@ -236,6 +239,7 @@ func (h *Handler) checkDirectMessageVisibility(status *storageModels.Status, vie
 }
 
 // isViewerMentioned checks if viewer is mentioned in the status
+//
 //nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
 	for _, mention := range mentions {
@@ -247,6 +251,7 @@ func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
 }
 
 // isViewerInRecipientLists checks all recipient lists for viewer
+//
 //nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) isViewerInRecipientLists(status *storageModels.Status, viewerID string) bool {
 	viewerActorID := "https://" + h.cfg.Domain + "/users/" + viewerID

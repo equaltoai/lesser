@@ -26,15 +26,23 @@ type Loaders struct {
 	ObjectLoader      *dataloader.Loader
 	TrustScoreLoader  *dataloader.Loader
 	QuoteTargetLoader *dataloader.Loader
+
+	// Viewer interaction loaders (GraphQL fields on Object).
+	ViewerFavouritedLoader *dataloader.Loader
+	ViewerBookmarkedLoader *dataloader.Loader
+	ViewerPinnedLoader     *dataloader.Loader
 }
 
 // NewLoaders creates new instances of all dataloaders
 func NewLoaders(repos core.RepositoryStorage, logger *zap.Logger) *Loaders {
 	return &Loaders{
-		ActorLoader:       newActorLoader(repos, logger),
-		ObjectLoader:      newObjectLoader(repos, logger),
-		TrustScoreLoader:  newTrustScoreLoader(repos, logger),
-		QuoteTargetLoader: newQuoteTargetLoader(repos, logger),
+		ActorLoader:            newActorLoader(repos, logger),
+		ObjectLoader:           newObjectLoader(repos, logger),
+		TrustScoreLoader:       newTrustScoreLoader(repos, logger),
+		QuoteTargetLoader:      newQuoteTargetLoader(repos, logger),
+		ViewerFavouritedLoader: newViewerFavouritedLoader(repos, logger),
+		ViewerBookmarkedLoader: newViewerBookmarkedLoader(repos, logger),
+		ViewerPinnedLoader:     newViewerPinnedLoader(repos, logger),
 	}
 }
 
@@ -126,6 +134,189 @@ func newTrustScoreLoader(repos core.RepositoryStorage, logger *zap.Logger) *data
 			}
 		}
 
+		return results
+	}
+
+	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+}
+
+func newViewerFavouritedLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	type parsedKey struct {
+		actorID  string
+		objectID string
+	}
+
+	logWarn := func(msg string, fields ...zap.Field) {
+		if logger != nil {
+			logger.Warn(msg, fields...)
+		}
+	}
+
+	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
+		results := make([]*dataloader.Result, len(keys))
+		parsed := make([]parsedKey, len(keys))
+
+		likeRepo := repos.Like()
+		if likeRepo == nil {
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		byActor := make(map[string][]string)
+		for i, key := range keys {
+			raw := key.String()
+			parts := strings.SplitN(raw, "\n", 2)
+			if len(parts) != 2 {
+				parsed[i] = parsedKey{}
+				results[i] = &dataloader.Result{Data: false}
+				continue
+			}
+			actorID := strings.TrimSpace(parts[0])
+			objectID := strings.TrimSpace(parts[1])
+			parsed[i] = parsedKey{actorID: actorID, objectID: objectID}
+			if actorID == "" || objectID == "" {
+				results[i] = &dataloader.Result{Data: false}
+				continue
+			}
+			byActor[actorID] = append(byActor[actorID], objectID)
+		}
+
+		likedByActor := make(map[string]map[string]bool, len(byActor))
+		for actorID, objectIDs := range byActor {
+			liked, err := likeRepo.CheckLikesForStatuses(ctx, actorID, objectIDs)
+			if err != nil {
+				logWarn("viewer favourited loader batch lookup failed",
+					zap.String("actor_id", actorID),
+					zap.Int("requested", len(objectIDs)),
+					zap.Error(err))
+				likedByActor[actorID] = map[string]bool{}
+				continue
+			}
+			likedByActor[actorID] = liked
+		}
+
+		for i := range results {
+			if results[i] != nil {
+				continue
+			}
+			p := parsed[i]
+			if p.actorID == "" || p.objectID == "" {
+				results[i] = &dataloader.Result{Data: false}
+				continue
+			}
+			liked := false
+			if m := likedByActor[p.actorID]; m != nil {
+				liked = m[p.objectID]
+			}
+			results[i] = &dataloader.Result{Data: liked}
+		}
+
+		return results
+	}
+
+	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+}
+
+func newViewerBookmarkedLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	logWarn := func(msg string, fields ...zap.Field) {
+		if logger != nil {
+			logger.Warn(msg, fields...)
+		}
+	}
+
+	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
+		results := make([]*dataloader.Result, len(keys))
+
+		viewerUsername := getUsernameFromContext(ctx)
+		if viewerUsername == "" {
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		bookmarkRepo := repos.Bookmark()
+		if bookmarkRepo == nil {
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		statusIDs := make([]string, 0, len(keys))
+		for _, key := range keys {
+			statusIDs = append(statusIDs, key.String())
+		}
+
+		bookmarked, err := bookmarkRepo.CheckBookmarksForStatuses(ctx, viewerUsername, statusIDs)
+		if err != nil {
+			logWarn("viewer bookmarked loader batch lookup failed",
+				zap.String("viewer", viewerUsername),
+				zap.Int("requested", len(statusIDs)),
+				zap.Error(err))
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		for i, key := range keys {
+			results[i] = &dataloader.Result{Data: bookmarked[key.String()]}
+		}
+		return results
+	}
+
+	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+}
+
+func newViewerPinnedLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	logWarn := func(msg string, fields ...zap.Field) {
+		if logger != nil {
+			logger.Warn(msg, fields...)
+		}
+	}
+
+	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
+		results := make([]*dataloader.Result, len(keys))
+
+		viewerUsername := getUsernameFromContext(ctx)
+		if viewerUsername == "" {
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		socialRepo := repos.Social()
+		if socialRepo == nil {
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		statusIDs := make([]string, 0, len(keys))
+		for _, key := range keys {
+			statusIDs = append(statusIDs, key.String())
+		}
+
+		pinned, err := socialRepo.CheckPinnedStatuses(ctx, viewerUsername, statusIDs)
+		if err != nil {
+			logWarn("viewer pinned loader batch lookup failed",
+				zap.String("viewer", viewerUsername),
+				zap.Int("requested", len(statusIDs)),
+				zap.Error(err))
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		for i, key := range keys {
+			results[i] = &dataloader.Result{Data: pinned[key.String()]}
+		}
 		return results
 	}
 
