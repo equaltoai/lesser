@@ -26,15 +26,23 @@ type Loaders struct {
 	ObjectLoader      *dataloader.Loader
 	TrustScoreLoader  *dataloader.Loader
 	QuoteTargetLoader *dataloader.Loader
+
+	// Viewer interaction loaders (GraphQL fields on Object).
+	ViewerFavouritedLoader *dataloader.Loader
+	ViewerBookmarkedLoader *dataloader.Loader
+	ViewerPinnedLoader     *dataloader.Loader
 }
 
 // NewLoaders creates new instances of all dataloaders
 func NewLoaders(repos core.RepositoryStorage, logger *zap.Logger) *Loaders {
 	return &Loaders{
-		ActorLoader:       newActorLoader(repos, logger),
-		ObjectLoader:      newObjectLoader(repos, logger),
-		TrustScoreLoader:  newTrustScoreLoader(repos, logger),
-		QuoteTargetLoader: newQuoteTargetLoader(repos, logger),
+		ActorLoader:            newActorLoader(repos, logger),
+		ObjectLoader:           newObjectLoader(repos, logger),
+		TrustScoreLoader:       newTrustScoreLoader(repos, logger),
+		QuoteTargetLoader:      newQuoteTargetLoader(repos, logger),
+		ViewerFavouritedLoader: newViewerFavouritedLoader(repos, logger),
+		ViewerBookmarkedLoader: newViewerBookmarkedLoader(repos, logger),
+		ViewerPinnedLoader:     newViewerPinnedLoader(repos, logger),
 	}
 }
 
@@ -130,6 +138,158 @@ func newTrustScoreLoader(repos core.RepositoryStorage, logger *zap.Logger) *data
 	}
 
 	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+}
+
+type viewerStatusFlagLookup func(ctx context.Context, viewerUsername string, statusIDs []string) (map[string]bool, error)
+
+func newViewerStatusFlagLoader(logger *zap.Logger, lookup viewerStatusFlagLookup, warnMsg string) *dataloader.Loader {
+	logWarn := func(msg string, fields ...zap.Field) {
+		if logger != nil {
+			logger.Warn(msg, fields...)
+		}
+	}
+
+	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
+		results := make([]*dataloader.Result, len(keys))
+
+		viewerUsername := getUsernameFromContext(ctx)
+		if viewerUsername == "" || lookup == nil {
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		statusIDs := make([]string, len(keys))
+		for i, key := range keys {
+			statusIDs[i] = key.String()
+		}
+
+		flags, err := lookup(ctx, viewerUsername, statusIDs)
+		if err != nil {
+			logWarn(warnMsg,
+				zap.String("viewer", viewerUsername),
+				zap.Int("requested", len(statusIDs)),
+				zap.Error(err))
+			for i := range results {
+				results[i] = &dataloader.Result{Data: false}
+			}
+			return results
+		}
+
+		for i, key := range keys {
+			results[i] = &dataloader.Result{Data: flags[key.String()]}
+		}
+		return results
+	}
+
+	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+}
+
+type viewerFavouritedLookup func(ctx context.Context, actorID string, objectIDs []string) (map[string]bool, error)
+
+type viewerFavouritedParsedKey struct {
+	actorID  string
+	objectID string
+}
+
+func parseViewerFavouritedKeys(keys dataloader.Keys) ([]viewerFavouritedParsedKey, map[string][]string) {
+	parsed := make([]viewerFavouritedParsedKey, len(keys))
+	byActor := make(map[string][]string)
+	for i, key := range keys {
+		parts := strings.SplitN(key.String(), "\n", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		actorID := strings.TrimSpace(parts[0])
+		objectID := strings.TrimSpace(parts[1])
+		parsed[i] = viewerFavouritedParsedKey{actorID: actorID, objectID: objectID}
+		if actorID == "" || objectID == "" {
+			continue
+		}
+		byActor[actorID] = append(byActor[actorID], objectID)
+	}
+
+	return parsed, byActor
+}
+
+func fetchViewerFavouritedByActor(ctx context.Context, byActor map[string][]string, lookup viewerFavouritedLookup, logger *zap.Logger) map[string]map[string]bool {
+	logWarn := func(msg string, fields ...zap.Field) {
+		if logger != nil {
+			logger.Warn(msg, fields...)
+		}
+	}
+
+	likedByActor := make(map[string]map[string]bool, len(byActor))
+	for actorID, objectIDs := range byActor {
+		liked, err := lookup(ctx, actorID, objectIDs)
+		if err != nil {
+			logWarn("viewer favourited loader batch lookup failed",
+				zap.String("actor_id", actorID),
+				zap.Int("requested", len(objectIDs)),
+				zap.Error(err))
+			likedByActor[actorID] = map[string]bool{}
+			continue
+		}
+		likedByActor[actorID] = liked
+	}
+
+	return likedByActor
+}
+
+func viewerFavouritedBatch(ctx context.Context, keys dataloader.Keys, lookup viewerFavouritedLookup, logger *zap.Logger) []*dataloader.Result {
+	results := make([]*dataloader.Result, len(keys))
+	if lookup == nil {
+		for i := range results {
+			results[i] = &dataloader.Result{Data: false}
+		}
+		return results
+	}
+
+	parsed, byActor := parseViewerFavouritedKeys(keys)
+	likedByActor := fetchViewerFavouritedByActor(ctx, byActor, lookup, logger)
+
+	for i, p := range parsed {
+		results[i] = &dataloader.Result{Data: likedByActor[p.actorID][p.objectID]}
+	}
+
+	return results
+}
+
+func newViewerFavouritedLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	var lookup viewerFavouritedLookup
+	if repos != nil {
+		if likeRepo := repos.Like(); likeRepo != nil {
+			lookup = likeRepo.CheckLikesForStatuses
+		}
+	}
+
+	batchFn := func(ctx context.Context, keys dataloader.Keys) []*dataloader.Result {
+		return viewerFavouritedBatch(ctx, keys, lookup, logger)
+	}
+
+	return dataloader.NewBatchedLoader(batchFn, dataloader.WithWait(2*time.Millisecond))
+}
+
+func newViewerBookmarkedLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	var lookup viewerStatusFlagLookup
+	if repos != nil {
+		if bookmarkRepo := repos.Bookmark(); bookmarkRepo != nil {
+			lookup = bookmarkRepo.CheckBookmarksForStatuses
+		}
+	}
+	return newViewerStatusFlagLoader(logger, lookup, "viewer bookmarked loader batch lookup failed")
+}
+
+func newViewerPinnedLoader(repos core.RepositoryStorage, logger *zap.Logger) *dataloader.Loader {
+	var lookup viewerStatusFlagLookup
+	if repos != nil {
+		if socialRepo := repos.Social(); socialRepo != nil {
+			lookup = socialRepo.CheckPinnedStatuses
+		}
+	}
+	return newViewerStatusFlagLoader(logger, lookup, "viewer pinned loader batch lookup failed")
 }
 
 // Quote target loader batches quote target lookups so timelines with many quotes avoid N+1 lookups.

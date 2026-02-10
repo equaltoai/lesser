@@ -1628,6 +1628,9 @@ type Object struct {
 	LikesCount       int                       `json:"likesCount"`
 	SharesCount      int                       `json:"sharesCount"`
 	Boosted          bool                      `json:"boosted"`
+	ViewerFavourited bool                      `json:"viewerFavourited"`
+	ViewerBookmarked bool                      `json:"viewerBookmarked"`
+	ViewerPinned     bool                      `json:"viewerPinned"`
 	RelationshipType ObjectRelationshipType    `json:"relationshipType"`
 	BoostedObject    *Object                   `json:"boostedObject,omitempty"`
 	ContentHash      string                    `json:"contentHash"`
@@ -2219,6 +2222,8 @@ type TextAnalysisCapabilities struct {
 
 type ThreadContext struct {
 	RootNote         *Object    `json:"rootNote"`
+	Ancestors        []*Object  `json:"ancestors"`
+	Descendants      []*Object  `json:"descendants"`
 	ReplyCount       int        `json:"replyCount"`
 	ParticipantCount int        `json:"participantCount"`
 	LastActivity     Time       `json:"lastActivity"`
