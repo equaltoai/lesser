@@ -71,6 +71,31 @@ func (r *queryResolver) Instance(ctx context.Context) (*model.InstanceInfo, erro
 		domainCount = 0
 	}
 
+	tipsConfig := func() *model.TipsConfig {
+		enabled := r.Config.TipEnabled
+		chainID := r.Config.TipChainID
+		contractAddress := strings.TrimSpace(r.Config.TipContractAddress)
+
+		if enabled && (chainID == 0 || contractAddress == "") {
+			enabled = false
+		}
+
+		var chainIDPtr *int
+		var contractPtr *string
+		if enabled {
+			cid := chainID
+			chainIDPtr = &cid
+			addr := contractAddress
+			contractPtr = &addr
+		}
+
+		return &model.TipsConfig{
+			Enabled:         enabled,
+			ChainID:         chainIDPtr,
+			ContractAddress: contractPtr,
+		}
+	}()
+
 	return &model.InstanceInfo{
 		Domain:            r.Config.Domain,
 		Title:             instanceConfig.Title,
@@ -90,6 +115,7 @@ func (r *queryResolver) Instance(ctx context.Context) (*model.InstanceInfo, erro
 		DomainCount:       int(domainCount),
 		ContactAccount:    contactAccount,
 		Rules:             ruleModels,
+		Tips:              tipsConfig,
 	}, nil
 }
 

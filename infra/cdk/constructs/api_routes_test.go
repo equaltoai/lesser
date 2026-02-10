@@ -142,6 +142,14 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 	if _, ok := gotRoutes["GET /activities/{id}"]; ok {
 		t.Fatalf("unexpected activity dereference route present")
 	}
+
+	apiFnName := naming.ResourceName("api", "development")
+	if got, ok := gotRoutes["GET /"]; !ok || got != apiFnName {
+		t.Fatalf("expected root GET route to integrate with %s (got %q)", apiFnName, got)
+	}
+	if got, ok := gotRoutes["HEAD /"]; !ok || got != apiFnName {
+		t.Fatalf("expected root HEAD route to integrate with %s (got %q)", apiFnName, got)
+	}
 }
 
 func expectedFederationHttpRoutes(t *testing.T, environment string) map[string]string {
@@ -276,11 +284,12 @@ func extractHttpRouteToFunctionName(t *testing.T, tpl map[string]any) map[string
 			continue
 		}
 
-		resourceLogicalID, ok := findFirstRefLogicalID(props["ResourceId"])
-		if !ok {
-			continue
+		fullPath := ""
+		if resourceLogicalID, ok := findFirstRefLogicalID(props["ResourceId"]); ok {
+			fullPath = buildPath(resourceLogicalID)
+		} else if restApiLogicalID != "" && isRestApiRootResourceRef(props["ResourceId"], restApiLogicalID) {
+			fullPath = "/"
 		}
-		fullPath := buildPath(resourceLogicalID)
 		if fullPath == "" {
 			continue
 		}

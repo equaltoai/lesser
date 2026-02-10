@@ -64,6 +64,12 @@ type Config struct {
 	AdminUsername        string // Admin username for privileged operations
 	SystemActorPublicKey string // System actor public key for recovery federation
 
+	// lesser.host trust services (optional; managed instances)
+	LesserHostURL             string // Base URL for lesser.host trust API
+	LesserHostInstanceKey     string // Instance key for machine-to-machine trust API calls (server-side only)
+	LesserHostInstanceKeyARN  string // ARN pointing to stored instance key (optional)
+	LesserHostAttestationsURL string // Optional override for public attestations/JWKS base URL
+
 	// Privacy Configuration
 	PrivacyMasterKey     string // Master key for privacy hashing (required for audit privacy)
 	EnablePrivacyHashing bool   // Enable privacy-preserving hashing in audit logs
@@ -234,6 +240,11 @@ type Config struct {
 	ApprovalRequired    bool     // Whether new registrations require approval
 	InvitesEnabled      bool     // Whether invites are enabled
 	FederationEnabled   bool     // Whether federation is enabled
+
+	// Tips (TipSplitter integration; non-secret public config)
+	TipEnabled         bool   // Whether on-chain tipping is enabled for this instance
+	TipChainID         int    // EVM chain ID (e.g. 8453)
+	TipContractAddress string // TipSplitter contract address
 }
 
 var config *Config
@@ -305,6 +316,13 @@ func loadConfig() *Config {
 		VAPIDSubject:         getEnvOrDefault("VAPID_SUBJECT", ""),
 		AdminUsername:        getEnvOrDefault("ADMIN_USERNAME", ""),
 		SystemActorPublicKey: getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
+		LesserHostURL:        strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "https://lesser.host")), "/"),
+		LesserHostInstanceKey: getOptionalSecretFromEnvOrARN(
+			"LESSER_HOST_INSTANCE_KEY",
+			"LESSER_HOST_INSTANCE_KEY_ARN",
+		),
+		LesserHostInstanceKeyARN:  strings.TrimSpace(getEnvOrDefault("LESSER_HOST_INSTANCE_KEY_ARN", "")),
+		LesserHostAttestationsURL: strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_ATTESTATIONS_URL", "")), "/"),
 
 		// Privacy configuration
 		PrivacyMasterKey:     getEnvOrDefault("PRIVACY_MASTER_KEY", ""),
@@ -468,6 +486,11 @@ func loadConfig() *Config {
 		InvitesEnabled:           getEnvAsBoolOrDefault("INVITES_ENABLED", false),
 		FederationEnabled:        getEnvAsBoolOrDefault("FEDERATION_ENABLED", true),
 		AllowPublicStatusHistory: getEnvAsBoolOrDefault("ALLOW_PUBLIC_STATUS_HISTORY", false),
+
+		// Tips (TipSplitter integration; public config)
+		TipEnabled:         getEnvAsBoolOrDefault("TIP_ENABLED", false),
+		TipChainID:         getEnvAsIntOrDefault("TIP_CHAIN_ID", 0),
+		TipContractAddress: strings.TrimSpace(getEnvOrDefault("TIP_CONTRACT_ADDRESS", "")),
 	}
 
 	return cfg
@@ -608,6 +631,27 @@ func fetchSecretValue(arn string) (string, error) {
 	}
 
 	return val, nil
+}
+
+func getOptionalSecretFromEnvOrARN(valueKey, arnKey string) string {
+	if v := strings.TrimSpace(os.Getenv(valueKey)); v != "" {
+		return v
+	}
+
+	arn := strings.TrimSpace(os.Getenv(arnKey))
+	if arn == "" {
+		return ""
+	}
+	if isRunningTests() {
+		// Avoid reaching out to AWS Secrets Manager during unit tests.
+		return ""
+	}
+
+	val, err := fetchSecretValue(arn)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to resolve %s from %s: %v", arnKey, arn, err))
+	}
+	return val
 }
 
 func getEnvAsIntOrDefault(key string, defaultValue int) int {

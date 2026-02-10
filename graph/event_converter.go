@@ -79,7 +79,8 @@ func (ec *EventConverter) ConvertToNotification(event *streaming.InternalEvent) 
 				return nil
 			}
 			return &model.Object{
-				ID: payload.StatusID,
+				ID:          payload.StatusID,
+				ContentHash: contentHashForObjectID(payload.StatusID),
 			}
 		}(),
 	}
@@ -183,10 +184,11 @@ func (ec *EventConverter) convertStatusToObject(event *streaming.InternalEvent) 
 
 	// Convert status to Object model
 	obj := &model.Object{
-		ID:        payload.StatusID,
-		Type:      model.ObjectTypeNote,
-		Content:   payload.Content,
-		CreatedAt: model.Time(payload.CreatedAt),
+		ID:          payload.StatusID,
+		Type:        model.ObjectTypeNote,
+		Content:     payload.Content,
+		CreatedAt:   model.Time(payload.CreatedAt),
+		ContentHash: contentHashForObjectID(payload.StatusID),
 		Actor: &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
 				ID:   payload.AuthorID,
@@ -198,7 +200,10 @@ func (ec *EventConverter) convertStatusToObject(event *streaming.InternalEvent) 
 
 	// Add reply context if present
 	if payload.InReplyToID != "" {
-		inReplyTo := &model.Object{ID: payload.InReplyToID}
+		inReplyTo := &model.Object{
+			ID:          payload.InReplyToID,
+			ContentHash: contentHashForObjectID(payload.InReplyToID),
+		}
 		obj.InReplyTo = inReplyTo
 	}
 
@@ -307,10 +312,11 @@ func (ec *EventConverter) convertStatusToHashtagActivity(event *streaming.Intern
 	return &model.HashtagActivityUpdate{
 		Hashtag: hashtag,
 		Post: &model.Object{
-			ID:        payload.StatusID,
-			Type:      model.ObjectTypeNote,
-			Content:   payload.Content,
-			CreatedAt: model.Time(payload.CreatedAt),
+			ID:          payload.StatusID,
+			Type:        model.ObjectTypeNote,
+			Content:     payload.Content,
+			CreatedAt:   model.Time(payload.CreatedAt),
+			ContentHash: contentHashForObjectID(payload.StatusID),
 			Actor: &activitypub.Actor{
 				BaseObject: activitypub.BaseObject{
 					ID:   payload.AuthorID,
@@ -353,10 +359,11 @@ func (ec *EventConverter) convertStatusToQuoteActivity(event *streaming.Internal
 	return &model.QuoteActivityUpdate{
 		Type: activityType,
 		Quote: &model.Object{
-			ID:        payload.StatusID,
-			Type:      model.ObjectTypeNote,
-			Content:   payload.Content,
-			CreatedAt: model.Time(payload.CreatedAt),
+			ID:          payload.StatusID,
+			Type:        model.ObjectTypeNote,
+			Content:     payload.Content,
+			CreatedAt:   model.Time(payload.CreatedAt),
+			ContentHash: contentHashForObjectID(payload.StatusID),
 			Actor: &activitypub.Actor{
 				BaseObject: activitypub.BaseObject{
 					ID:   payload.AuthorID,
@@ -756,11 +763,13 @@ func (ec *EventConverter) ConvertToConversation(event *streaming.InternalEvent) 
 
 	// For now, return a basic conversation
 	// This would be enhanced based on the actual event payload structure
+	lastStatusID := extractStringFromData(event.Data, "last_status_id")
 	return &model.Conversation{
 		ID:     extractStringFromData(event.Data, "conversation_id"),
 		Unread: extractBoolFromData(event.Data, "unread"),
 		LastStatus: &model.Object{
-			ID: extractStringFromData(event.Data, "last_status_id"),
+			ID:          lastStatusID,
+			ContentHash: contentHashForObjectID(lastStatusID),
 		},
 		Accounts:  []*activitypub.Actor{},
 		CreatedAt: model.Time(event.Timestamp),
