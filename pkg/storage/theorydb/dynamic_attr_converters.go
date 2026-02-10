@@ -139,22 +139,15 @@ func toAttributeValueDynamic(value any) (types.AttributeValue, error) {
 	}
 
 	rv := reflect.ValueOf(value)
-	switch rv.Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Interface:
-		if rv.IsNil() {
-			return &types.AttributeValueMemberNULL{Value: true}, nil
-		}
+	if isNilReflectValue(rv) {
+		return &types.AttributeValueMemberNULL{Value: true}, nil
+	}
+
+	if av, ok := value.(types.AttributeValue); ok {
+		return av, nil
 	}
 
 	switch v := value.(type) {
-	case types.AttributeValue:
-		return v, nil
-	case string:
-		return &types.AttributeValueMemberS{Value: v}, nil
-	case []byte:
-		return &types.AttributeValueMemberB{Value: v}, nil
-	case bool:
-		return &types.AttributeValueMemberBOOL{Value: v}, nil
 	case time.Time:
 		if v.IsZero() {
 			return &types.AttributeValueMemberNULL{Value: true}, nil
@@ -162,68 +155,18 @@ func toAttributeValueDynamic(value any) (types.AttributeValue, error) {
 		return &types.AttributeValueMemberS{Value: v.UTC().Format(time.RFC3339Nano)}, nil
 	case json.Number:
 		return &types.AttributeValueMemberN{Value: v.String()}, nil
-	case int:
-		return &types.AttributeValueMemberN{Value: strconv.FormatInt(int64(v), 10)}, nil
-	case int8:
-		return &types.AttributeValueMemberN{Value: strconv.FormatInt(int64(v), 10)}, nil
-	case int16:
-		return &types.AttributeValueMemberN{Value: strconv.FormatInt(int64(v), 10)}, nil
-	case int32:
-		return &types.AttributeValueMemberN{Value: strconv.FormatInt(int64(v), 10)}, nil
-	case int64:
-		return &types.AttributeValueMemberN{Value: strconv.FormatInt(v, 10)}, nil
-	case uint:
-		return &types.AttributeValueMemberN{Value: strconv.FormatUint(uint64(v), 10)}, nil
-	case uint8:
-		return &types.AttributeValueMemberN{Value: strconv.FormatUint(uint64(v), 10)}, nil
-	case uint16:
-		return &types.AttributeValueMemberN{Value: strconv.FormatUint(uint64(v), 10)}, nil
-	case uint32:
-		return &types.AttributeValueMemberN{Value: strconv.FormatUint(uint64(v), 10)}, nil
-	case uint64:
-		return &types.AttributeValueMemberN{Value: strconv.FormatUint(v, 10)}, nil
-	case float32:
-		f := float64(v)
-		if math.IsNaN(f) || math.IsInf(f, 0) {
-			return nil, fmt.Errorf("invalid float32: %v", v)
-		}
-		return &types.AttributeValueMemberN{Value: strconv.FormatFloat(f, 'f', -1, 32)}, nil
-	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return nil, fmt.Errorf("invalid float64: %v", v)
-		}
-		return &types.AttributeValueMemberN{Value: strconv.FormatFloat(v, 'f', -1, 64)}, nil
 	}
 
-	// Handle map types with string keys.
-	if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
-		out := make(map[string]types.AttributeValue, rv.Len())
-		for _, key := range rv.MapKeys() {
-			keyStr := key.String()
-			val := rv.MapIndex(key)
-			av, err := toAttributeValueDynamic(val.Interface())
-			if err != nil {
-				return nil, fmt.Errorf("map key %s: %w", keyStr, err)
-			}
-			out[keyStr] = av
-		}
-		return &types.AttributeValueMemberM{Value: out}, nil
+	if av, ok, err := toAttributeValueScalar(rv); ok {
+		return av, err
 	}
 
-	// Handle slices/arrays (non-[]byte).
-	if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
-		if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() == reflect.Uint8 {
-			return &types.AttributeValueMemberB{Value: rv.Bytes()}, nil
-		}
-		out := make([]types.AttributeValue, 0, rv.Len())
-		for i := 0; i < rv.Len(); i++ {
-			av, err := toAttributeValueDynamic(rv.Index(i).Interface())
-			if err != nil {
-				return nil, fmt.Errorf("slice index %d: %w", i, err)
-			}
-			out = append(out, av)
-		}
-		return &types.AttributeValueMemberL{Value: out}, nil
+	if av, ok, err := toAttributeValueStringKeyMap(rv); ok {
+		return av, err
+	}
+
+	if av, ok, err := toAttributeValueSliceOrArray(rv); ok {
+		return av, err
 	}
 
 	// Fall back to JSON string for unknown types.
@@ -232,6 +175,87 @@ func toAttributeValueDynamic(value any) (types.AttributeValue, error) {
 		return nil, fmt.Errorf("unsupported type %T", value)
 	}
 	return &types.AttributeValueMemberS{Value: string(blob)}, nil
+}
+
+func isNilReflectValue(rv reflect.Value) bool {
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Interface:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
+func toAttributeValueScalar(rv reflect.Value) (types.AttributeValue, bool, error) {
+	switch rv.Kind() {
+	case reflect.String:
+		return &types.AttributeValueMemberS{Value: rv.String()}, true, nil
+	case reflect.Bool:
+		return &types.AttributeValueMemberBOOL{Value: rv.Bool()}, true, nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return &types.AttributeValueMemberN{Value: strconv.FormatInt(rv.Int(), 10)}, true, nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return &types.AttributeValueMemberN{Value: strconv.FormatUint(rv.Uint(), 10)}, true, nil
+	case reflect.Float32, reflect.Float64:
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil, true, fmt.Errorf("invalid float: %v", f)
+		}
+		bitSize := 64
+		if rv.Kind() == reflect.Float32 {
+			bitSize = 32
+		}
+		return &types.AttributeValueMemberN{Value: strconv.FormatFloat(f, 'f', -1, bitSize)}, true, nil
+	default:
+		return nil, false, nil
+	}
+}
+
+func toAttributeValueStringKeyMap(rv reflect.Value) (types.AttributeValue, bool, error) {
+	if rv.Kind() != reflect.Map || rv.Type().Key().Kind() != reflect.String {
+		return nil, false, nil
+	}
+
+	out := make(map[string]types.AttributeValue, rv.Len())
+	for _, key := range rv.MapKeys() {
+		keyStr := key.String()
+		val := rv.MapIndex(key)
+		av, err := toAttributeValueDynamic(val.Interface())
+		if err != nil {
+			return nil, true, fmt.Errorf("map key %s: %w", keyStr, err)
+		}
+		out[keyStr] = av
+	}
+	return &types.AttributeValueMemberM{Value: out}, true, nil
+}
+
+func toAttributeValueSliceOrArray(rv reflect.Value) (types.AttributeValue, bool, error) {
+	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+		return nil, false, nil
+	}
+
+	// Treat any slice/array of bytes as a binary DynamoDB attribute.
+	if rv.Type().Elem().Kind() == reflect.Uint8 {
+		if rv.Kind() == reflect.Slice {
+			return &types.AttributeValueMemberB{Value: rv.Bytes()}, true, nil
+		}
+
+		out := make([]byte, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			out[i] = byte(rv.Index(i).Uint())
+		}
+		return &types.AttributeValueMemberB{Value: out}, true, nil
+	}
+
+	out := make([]types.AttributeValue, 0, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		av, err := toAttributeValueDynamic(rv.Index(i).Interface())
+		if err != nil {
+			return nil, true, fmt.Errorf("slice index %d: %w", i, err)
+		}
+		out = append(out, av)
+	}
+	return &types.AttributeValueMemberL{Value: out}, true, nil
 }
 
 func fromAttributeValueDynamic(av types.AttributeValue) (any, error) {

@@ -100,7 +100,7 @@ func TestRecordLatencyMetric(t *testing.T) {
 	cfg = &config.Config{Domain: "example.com"}
 	logger = zap.NewNop()
 
-	err := recordLatencyMetric(context.Background(), "api_endpoint", "GET /", 15*time.Millisecond, map[string]string{"endpoint": "/"})
+	err := recordLatencyMetricWithRepos(context.Background(), repos, "api_endpoint", "GET /", 15*time.Millisecond, map[string]string{"endpoint": "/"})
 	require.NoError(t, err)
 }
 

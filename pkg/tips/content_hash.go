@@ -1,3 +1,4 @@
+// Package tips provides helpers for Lesser's on-chain tipping integration.
 package tips
 
 import (
