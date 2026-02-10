@@ -80,6 +80,9 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/oauth/consent", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthConsentLift,
 		20, 5*time.Minute, logger))
+	app.Post("/oauth/device/code", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthDeviceCodeLift,
+		10, time.Minute, logger))
 	app.Post("/oauth/token", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthTokenLift,
 		10, time.Minute, logger))
@@ -87,6 +90,7 @@ func configureRoutes(app *apptheory.App) {
 	// OPTIONS handlers for OAuth endpoints (CORS preflight)
 	app.Handle("OPTIONS", "/oauth/authorize", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/consent", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/device/code", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/token", optionsHandler)
 
 	// NodeInfo endpoints with native Lift implementation
