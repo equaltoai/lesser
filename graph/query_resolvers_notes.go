@@ -233,42 +233,7 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 		return nil, err
 	}
 
-	// Ancestors are the chain of statuses this note replies to (root -> direct parent).
-	ancestors := make([]*model.Object, 0)
-	if status != nil && strings.TrimSpace(status.InReplyToID) != "" {
-		const maxAncestors = 50
-		visited := make(map[string]struct{}, maxAncestors+1)
-		if status.StatusID != "" {
-			visited[status.StatusID] = struct{}{}
-		}
-
-		current := status
-		ancestorStatuses := make([]*models.Status, 0, 4)
-		for strings.TrimSpace(current.InReplyToID) != "" && len(ancestorStatuses) < maxAncestors {
-			parentID := strings.TrimSpace(current.InReplyToID)
-			if parentID == "" {
-				break
-			}
-			if _, ok := visited[parentID]; ok {
-				break
-			}
-			visited[parentID] = struct{}{}
-
-			parent, parentErr := statusRepo.GetStatus(ctx, parentID)
-			if parentErr != nil || parent == nil || parent.Deleted {
-				break
-			}
-
-			ancestorStatuses = append(ancestorStatuses, parent)
-			current = parent
-		}
-
-		for i := len(ancestorStatuses) - 1; i >= 0; i-- {
-			if obj := r.convertStatusToObject(ctx, ancestorStatuses[i]); obj != nil {
-				ancestors = append(ancestors, obj)
-			}
-		}
-	}
+	ancestors := r.buildThreadAncestors(ctx, statusRepo, status)
 
 	engagement, err := r.calculateEngagementMetrics(ctx, storage, noteID)
 	if err != nil {
@@ -279,15 +244,7 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 	rootNote := r.createRootNoteObject(ctx, status, replies, engagement)
 	syncStatus := r.determineSyncStatus(replies)
 
-	descendants := make([]*model.Object, 0, len(replies))
-	for _, reply := range replies {
-		if reply == nil {
-			continue
-		}
-		if obj := r.convertStatusToObject(ctx, reply); obj != nil {
-			descendants = append(descendants, obj)
-		}
-	}
+	descendants := r.convertStatusesToObjects(ctx, replies)
 
 	return &model.ThreadContext{
 		RootNote:         rootNote,
@@ -299,4 +256,63 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 		MissingPosts:     threadMetrics.missingPosts,
 		SyncStatus:       syncStatus,
 	}, nil
+}
+
+func (r *queryResolver) buildThreadAncestors(ctx context.Context, statusRepo interfaces.StatusRepository, status *models.Status) []*model.Object {
+	ancestors := make([]*model.Object, 0)
+	if status == nil || statusRepo == nil {
+		return ancestors
+	}
+
+	if strings.TrimSpace(status.InReplyToID) == "" {
+		return ancestors
+	}
+
+	const maxAncestors = 50
+	visited := make(map[string]struct{}, maxAncestors+1)
+	if status.StatusID != "" {
+		visited[status.StatusID] = struct{}{}
+	}
+
+	current := status
+	ancestorStatuses := make([]*models.Status, 0, 4)
+	for len(ancestorStatuses) < maxAncestors {
+		parentID := strings.TrimSpace(current.InReplyToID)
+		if parentID == "" {
+			break
+		}
+		if _, ok := visited[parentID]; ok {
+			break
+		}
+		visited[parentID] = struct{}{}
+
+		parent, err := statusRepo.GetStatus(ctx, parentID)
+		if err != nil || parent == nil || parent.Deleted {
+			break
+		}
+
+		ancestorStatuses = append(ancestorStatuses, parent)
+		current = parent
+	}
+
+	for i := len(ancestorStatuses) - 1; i >= 0; i-- {
+		if obj := r.convertStatusToObject(ctx, ancestorStatuses[i]); obj != nil {
+			ancestors = append(ancestors, obj)
+		}
+	}
+
+	return ancestors
+}
+
+func (r *queryResolver) convertStatusesToObjects(ctx context.Context, statuses []*models.Status) []*model.Object {
+	objects := make([]*model.Object, 0, len(statuses))
+	for _, status := range statuses {
+		if status == nil {
+			continue
+		}
+		if obj := r.convertStatusToObject(ctx, status); obj != nil {
+			objects = append(objects, obj)
+		}
+	}
+	return objects
 }

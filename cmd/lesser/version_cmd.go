@@ -9,9 +9,12 @@ import (
 
 func printVersionTo(w io.Writer) {
 	buildInfo, ok := debug.ReadBuildInfo()
-	if !ok {
-		_, _ = fmt.Fprintln(w, "lesser (unknown)")
-		return
+	_, _ = io.WriteString(w, formatVersion(buildInfo, ok))
+}
+
+func formatVersion(buildInfo *debug.BuildInfo, ok bool) string {
+	if !ok || buildInfo == nil {
+		return "lesser (unknown)\n"
 	}
 
 	version := strings.TrimSpace(buildInfo.Main.Version)
@@ -19,29 +22,32 @@ func printVersionTo(w io.Writer) {
 		version = "(unknown)"
 	}
 
-	revision := ""
-	modified := ""
-	for _, setting := range buildInfo.Settings {
-		switch setting.Key {
-		case "vcs.revision":
-			revision = strings.TrimSpace(setting.Value)
-		case "vcs.modified":
-			modified = strings.TrimSpace(setting.Value)
-		}
-	}
-
+	revision, modified := vcsInfo(buildInfo.Settings)
 	if revision == "" {
-		_, _ = fmt.Fprintf(w, "lesser %s\n", version)
-		return
+		return fmt.Sprintf("lesser %s\n", version)
 	}
 
 	short := revision
 	if len(short) > 12 {
 		short = short[:12]
 	}
-	if modified == "true" {
-		_, _ = fmt.Fprintf(w, "lesser %s (%s, dirty)\n", version, short)
-		return
+
+	if modified {
+		return fmt.Sprintf("lesser %s (%s, dirty)\n", version, short)
 	}
-	_, _ = fmt.Fprintf(w, "lesser %s (%s)\n", version, short)
+	return fmt.Sprintf("lesser %s (%s)\n", version, short)
+}
+
+func vcsInfo(settings []debug.BuildSetting) (string, bool) {
+	revision := ""
+	modified := false
+	for _, setting := range settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = strings.TrimSpace(setting.Value)
+		case "vcs.modified":
+			modified = strings.TrimSpace(setting.Value) == "true"
+		}
+	}
+	return revision, modified
 }

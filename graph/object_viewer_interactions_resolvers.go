@@ -54,8 +54,26 @@ func (r *objectResolver) ViewerFavourited(ctx context.Context, obj *model.Object
 }
 
 func (r *objectResolver) ViewerBookmarked(ctx context.Context, obj *model.Object) (bool, error) {
+	var loader *dataloader.Loader
+	if loaders := GetLoaders(ctx); loaders != nil {
+		loader = loaders.ViewerBookmarkedLoader
+	}
+	return r.resolveViewerStatusFlag(ctx, obj, loader, "viewer bookmarked loader failed", r.viewerBookmarkedFallback, "failed to resolve viewer bookmarked state")
+}
+
+func (r *objectResolver) ViewerPinned(ctx context.Context, obj *model.Object) (bool, error) {
+	var loader *dataloader.Loader
+	if loaders := GetLoaders(ctx); loaders != nil {
+		loader = loaders.ViewerPinnedLoader
+	}
+	return r.resolveViewerStatusFlag(ctx, obj, loader, "viewer pinned loader failed", r.viewerPinnedFallback, "failed to resolve viewer pinned state")
+}
+
+type viewerStatusFlagFallback func(ctx context.Context, viewerUsername, statusID string) (bool, error)
+
+func (r *objectResolver) resolveViewerStatusFlag(ctx context.Context, obj *model.Object, loader *dataloader.Loader, loaderFailMsg string, fallback viewerStatusFlagFallback, warnMsg string) (bool, error) {
 	viewerUsername := getUsernameFromContext(ctx)
-	statusID := strings.TrimSpace("")
+	statusID := ""
 	if obj != nil {
 		statusID = strings.TrimSpace(obj.ID)
 	}
@@ -63,70 +81,55 @@ func (r *objectResolver) ViewerBookmarked(ctx context.Context, obj *model.Object
 		return false, nil
 	}
 
-	if loaders := GetLoaders(ctx); loaders != nil && loaders.ViewerBookmarkedLoader != nil {
-		thunk := loaders.ViewerBookmarkedLoader.Load(ctx, dataloader.StringKey(statusID))
+	if loader != nil {
+		thunk := loader.Load(ctx, dataloader.StringKey(statusID))
 		value, err := thunk()
 		if err == nil {
-			if bookmarked, ok := value.(bool); ok {
-				return bookmarked, nil
+			if flag, ok := value.(bool); ok {
+				return flag, nil
 			}
 		} else if r.Logger != nil {
-			r.Logger.Debug("viewer bookmarked loader failed", zap.Error(err))
+			r.Logger.Debug(loaderFailMsg, zap.Error(err))
 		}
 	}
 
+	if fallback == nil {
+		return false, nil
+	}
+
+	flag, err := fallback(ctx, viewerUsername, statusID)
+	if err != nil {
+		if r.Logger != nil {
+			r.Logger.Warn(warnMsg,
+				zap.String("viewer", viewerUsername),
+				zap.String("status_id", statusID),
+				zap.Error(err))
+		}
+		return false, nil
+	}
+
+	return flag, nil
+}
+
+func (r *objectResolver) viewerBookmarkedFallback(ctx context.Context, viewerUsername, statusID string) (bool, error) {
 	if r.Storage == nil || r.Storage.Bookmark() == nil {
 		return false, nil
 	}
 
 	bookmarked, err := r.Storage.Bookmark().CheckBookmarksForStatuses(ctx, viewerUsername, []string{statusID})
-	if err != nil && r.Logger != nil {
-		r.Logger.Warn("failed to resolve viewer bookmarked state",
-			zap.String("viewer", viewerUsername),
-			zap.String("status_id", statusID),
-			zap.Error(err))
-		return false, nil
+	if err != nil {
+		return false, err
 	}
 
 	return bookmarked[statusID], nil
 }
 
-func (r *objectResolver) ViewerPinned(ctx context.Context, obj *model.Object) (bool, error) {
-	viewerUsername := getUsernameFromContext(ctx)
-	statusID := strings.TrimSpace("")
-	if obj != nil {
-		statusID = strings.TrimSpace(obj.ID)
-	}
-	if viewerUsername == "" || statusID == "" {
-		return false, nil
-	}
-
-	if loaders := GetLoaders(ctx); loaders != nil && loaders.ViewerPinnedLoader != nil {
-		thunk := loaders.ViewerPinnedLoader.Load(ctx, dataloader.StringKey(statusID))
-		value, err := thunk()
-		if err == nil {
-			if pinned, ok := value.(bool); ok {
-				return pinned, nil
-			}
-		} else if r.Logger != nil {
-			r.Logger.Debug("viewer pinned loader failed", zap.Error(err))
-		}
-	}
-
+func (r *objectResolver) viewerPinnedFallback(ctx context.Context, viewerUsername, statusID string) (bool, error) {
 	if r.Storage == nil || r.Storage.Social() == nil {
 		return false, nil
 	}
 
-	pinned, err := r.Storage.Social().CheckPinnedStatuses(ctx, viewerUsername, []string{statusID})
-	if err != nil && r.Logger != nil {
-		r.Logger.Warn("failed to resolve viewer pinned state",
-			zap.String("viewer", viewerUsername),
-			zap.String("status_id", statusID),
-			zap.Error(err))
-		return false, nil
-	}
-
-	return pinned[statusID], nil
+	return r.Storage.Social().IsStatusPinned(ctx, viewerUsername, statusID)
 }
 
 func (r *objectResolver) viewerActorID(viewerUsername string) string {

@@ -23,6 +23,19 @@ func TestRunCLI_DispatchAndExitCodes(t *testing.T) {
 		require.Contains(t, buf.String(), "Usage:")
 	})
 
+	t.Run("version prints version and returns 0", func(t *testing.T) {
+		for _, arg := range []string{"version", "--version"} {
+			arg := arg
+			t.Run(arg, func(t *testing.T) {
+				var buf bytes.Buffer
+				code := runCLI([]string{"lesser", arg}, &buf)
+				require.Equal(t, 0, code)
+				require.Contains(t, buf.String(), "lesser")
+				require.NotContains(t, buf.String(), "Usage:")
+			})
+		}
+	})
+
 	t.Run("unknown command returns 2", func(t *testing.T) {
 		var buf bytes.Buffer
 		code := runCLI([]string{"lesser", "nope"}, &buf)
