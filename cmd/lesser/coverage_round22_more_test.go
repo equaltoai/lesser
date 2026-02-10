@@ -160,4 +160,3 @@ func TestRunDown_RegionFallbackAndMissingRegionError(t *testing.T) {
 		require.Contains(t, err.Error(), "receipt is missing AWS region")
 	})
 }
-

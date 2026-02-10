@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestOutboxQueryAndHeaderHelpers_Round16(t *testing.T) {

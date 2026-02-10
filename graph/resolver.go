@@ -88,6 +88,9 @@ func (r *Resolver) ModerationPattern() ModerationPatternResolver {
 // Mutation returns the MutationResolver implementation
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 
+// Object returns the ObjectResolver implementation
+func (r *Resolver) Object() ObjectResolver { return &objectResolver{r} }
+
 // Query returns the QueryResolver implementation
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 

@@ -37,10 +37,10 @@ var (
 )
 
 var (
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	lambdaStartFn            = lambda.Start
-	newHandlerFn             = NewHandler
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	lambdaStartFn              = lambda.Start
+	newHandlerFn               = NewHandler
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)
@@ -649,6 +649,7 @@ func (h *Handler) generateHTML(objectType, content, name, summary, attributedTo,
 
 // generateWarningHTML creates content warning HTML if needed.
 // Deprecated: prefer template-first rendering via objectHTMLTemplate.
+//
 //nolint:unused // Used by tests to validate legacy behavior during the template migration.
 func (h *Handler) generateWarningHTML(sensitive bool, summary string) string {
 	if sensitive && strings.TrimSpace(summary) != "" {
@@ -661,6 +662,7 @@ func (h *Handler) generateWarningHTML(sensitive bool, summary string) string {
 
 // generateUpdatedHTML creates updated date HTML if object was updated.
 // Deprecated: prefer template-first rendering via objectHTMLTemplate.
+//
 //nolint:unused // Used by tests to validate legacy behavior during the template migration.
 func (h *Handler) generateUpdatedHTML(updated time.Time) string {
 	if !updated.IsZero() {

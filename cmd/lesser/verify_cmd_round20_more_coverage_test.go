@@ -126,4 +126,3 @@ func TestRunVerifyCI_Round20_PropagatesInventoryFailure(t *testing.T) {
 
 	require.ErrorIs(t, runVerifyCI(nil), errSentinel)
 }
-

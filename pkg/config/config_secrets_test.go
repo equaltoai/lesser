@@ -33,4 +33,3 @@ func TestGetOptionalSecretFromEnvOrARN_ArnSkipsAwsInTests(t *testing.T) {
 
 	assert.Equal(t, "", getOptionalSecretFromEnvOrARN("UNIT_TEST_SECRET_VALUE", "UNIT_TEST_SECRET_ARN"))
 }
-

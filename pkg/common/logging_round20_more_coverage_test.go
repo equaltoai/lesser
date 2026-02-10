@@ -28,4 +28,3 @@ func TestLoggingHelpers_Round20_WithFieldsReturnsDerivedLogger(t *testing.T) {
 func TestLoggingHelpers_Round20_SyncDoesNotPanic(t *testing.T) {
 	require.NotPanics(t, func() { Sync() })
 }
-

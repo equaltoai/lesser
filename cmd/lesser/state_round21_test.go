@@ -35,4 +35,3 @@ func TestReadReceipt_ErrorPaths(t *testing.T) {
 		require.Contains(t, err.Error(), "missing required fields")
 	})
 }
-

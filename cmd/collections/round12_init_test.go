@@ -57,9 +57,9 @@ func TestInitializeCollections_ManualStorageInitialization_Round12(t *testing.T)
 
 	mustInitializeLambdaFn = func(common.LambdaConfig) *common.LambdaContext {
 		return &common.LambdaContext{
-			Config:  &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
-			Logger:  zap.NewNop(),
-			Repos:   nil,
+			Config:   &config.Config{Region: "us-east-1", DynamoTableName: "test-table"},
+			Logger:   zap.NewNop(),
+			Repos:    nil,
 			DynamoDB: nil,
 		}
 	}
@@ -91,4 +91,3 @@ func TestInitializeCollections_ManualStorageInitialization_Round12(t *testing.T)
 		t.Fatalf("expected repos to be set")
 	}
 }
-

@@ -181,6 +181,41 @@ func (r *LikeRepository) HasLiked(ctx context.Context, actor, object string) (bo
 	return like != nil, nil
 }
 
+// CheckLikesForStatuses returns a map of statusID -> liked for the provided IDs.
+func (r *LikeRepository) CheckLikesForStatuses(ctx context.Context, actorID string, statusIDs []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if actorID == "" || len(statusIDs) == 0 {
+		return result, nil
+	}
+
+	uniqueIDs := deduplicate(statusIDs)
+	keys := make([]struct{ PK, SK string }, 0, len(uniqueIDs))
+	sk := fmt.Sprintf("actor#%s", actorID)
+	for _, statusID := range uniqueIDs {
+		if statusID == "" {
+			continue
+		}
+		keys = append(keys, struct{ PK, SK string }{
+			PK: fmt.Sprintf("object#%s#likes", statusID),
+			SK: sk,
+		})
+	}
+
+	likes, err := r.BatchGet(ctx, keys)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "like", "batch like lookup")
+	}
+
+	for _, like := range likes {
+		if like == nil || like.Object == "" {
+			continue
+		}
+		result[like.Object] = true
+	}
+
+	return result, nil
+}
+
 // CascadeDeleteLikes deletes all likes for an object
 func (r *LikeRepository) CascadeDeleteLikes(ctx context.Context, objectID string) error {
 	// Query all likes for the object
