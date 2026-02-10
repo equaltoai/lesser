@@ -1,6 +1,10 @@
 package models
 
-import "github.com/equaltoai/lesser/pkg/config"
+import (
+	"os"
+
+	"github.com/equaltoai/lesser/pkg/config"
+)
 
 // Common SK (Sort Key) constants used across multiple models
 const (
@@ -88,9 +92,26 @@ const (
 
 // Table names
 var (
-	// MainTableName is the primary DynamoDB table name (resolved from environment)
-	MainTableName = config.GetMainTableName()
+	// MainTableName is the primary DynamoDB table name.
+	//
+	// Most production binaries resolve this from environment (DYNAMODB_TABLE / DYNAMO_TABLE_NAME / STAGE).
+	// Operator CLIs may override it explicitly (for example based on --stage) and should not require STAGE just
+	// to run help/version commands.
+	MainTableName = resolveMainTableName()
 )
+
+func resolveMainTableName() (tableName string) {
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		return config.GetMainTableName()
+	}
+
+	defer func() {
+		if recover() != nil {
+			tableName = ""
+		}
+	}()
+	return config.GetMainTableName()
+}
 
 // Cost tracking key patterns
 const (

@@ -34,10 +34,10 @@ var (
 )
 
 var (
-	mustInitializeLambdaFn   = common.MustInitializeLambda
-	initializeWithDefaultsFn = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
-	lambdaStartFn            = lambda.Start
-	newCollectionsHandlerFn  = NewCollectionsHandler
+	mustInitializeLambdaFn     = common.MustInitializeLambda
+	initializeWithDefaultsFn   = func(ctx *common.LambdaContext) error { return ctx.InitializeWithDefaults() }
+	lambdaStartFn              = lambda.Start
+	newCollectionsHandlerFn    = NewCollectionsHandler
 	newLambdaOptimizedClientFn = theorydb.NewLambdaOptimizedClient
 	newRepositoryFactoryFn     = func(db dynamormCore.DB, tableName string, logger *zap.Logger) (core.RepositoryStorage, error) {
 		return factory.NewRepositoryFactory(db, tableName, logger)

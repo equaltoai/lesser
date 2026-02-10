@@ -647,7 +647,7 @@ func TestLesserHostTrustProxyHelpersRound20(t *testing.T) {
 		resp := requireStatus(t, http.StatusServiceUnavailable)(h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 			method:  http.MethodGet,
 			baseURL: "",
-			path:   "/api/v1/previews",
+			path:    "/api/v1/previews",
 		}))
 		require.NotNil(t, resp)
 	})

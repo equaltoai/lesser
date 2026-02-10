@@ -1040,6 +1040,41 @@ func (r *SocialRepository) IsStatusPinned(ctx context.Context, username, statusI
 	return true, nil
 }
 
+// CheckPinnedStatuses returns a map of statusID -> pinned for the provided IDs.
+func (r *SocialRepository) CheckPinnedStatuses(ctx context.Context, username string, statusIDs []string) (map[string]bool, error) {
+	result := make(map[string]bool)
+	if username == "" || len(statusIDs) == 0 || r == nil || r.statusPinRepo == nil {
+		return result, nil
+	}
+
+	pk := fmt.Sprintf(storage.UserPinsKey, username)
+	uniqueIDs := deduplicate(statusIDs)
+	keys := make([]struct{ PK, SK string }, 0, len(uniqueIDs))
+	for _, statusID := range uniqueIDs {
+		if statusID == "" {
+			continue
+		}
+		keys = append(keys, struct{ PK, SK string }{
+			PK: pk,
+			SK: fmt.Sprintf(models.KeyPatternStatus, statusID),
+		})
+	}
+
+	pins, err := r.statusPinRepo.BatchGet(ctx, keys)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityStatusPin, "batch pin lookup")
+	}
+
+	for _, pin := range pins {
+		if pin == nil || pin.StatusID == "" {
+			continue
+		}
+		result[pin.StatusID] = true
+	}
+
+	return result, nil
+}
+
 // ReorderStatusPins reorders pinned statuses by re-creating them with new timestamps
 // Since the legacy system doesn't have a PinOrder field, we use creation timestamps for ordering
 func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username string, statusIDs []string) error {

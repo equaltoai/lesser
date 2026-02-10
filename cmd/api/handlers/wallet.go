@@ -128,6 +128,7 @@ func (h *Handler) HandleLoginWalletLift(ctx *apptheory.Context) (*apptheory.Resp
 }
 
 // HandleLinkWalletLift handles POST /auth/wallet/link
+//
 //nolint:gocognit,gocyclo // Wallet linking flow includes many security checks and early exits.
 func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Try to get authenticated user (for existing users)

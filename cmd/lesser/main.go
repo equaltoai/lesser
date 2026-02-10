@@ -43,6 +43,9 @@ func runCLI(args []string, stderr io.Writer) int {
 	}
 
 	switch args[1] {
+	case "version", "--version":
+		printVersionTo(stderr)
+		return 0
 	case "up":
 		return exitCodeFromErr(runUpFn(args[2:]), stderr)
 	case "down", "destroy":
@@ -119,6 +122,7 @@ func printUsage() {
 
 func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  lesser version | lesser --version")
 	_, _ = fmt.Fprintln(w, "  lesser up --app <slug> --base-domain <example.com> [--aws-profile <profile>] [--stage dev|staging|live] [--provisioning-input <path>] [--bootstrap-wallet-address <0x...>] [--with-staging] [--out <path>] [--rebuild-lambdas]")
 	_, _ = fmt.Fprintln(w, "  lesser init-admin --app <slug> --base-domain <example.com> [--aws-profile <profile>] --stage dev|staging|live [--provisioning-input <path>] --wallet-address <0x...> --signature <0x...> [--message <string> | --message-file <path>] [--username <username>] [--chain-id <n>]")
 	_, _ = fmt.Fprintln(w, "  lesser down --app <slug> --base-domain <example.com> --aws-profile <profile> [--state <path>] [--purge-artifacts]")

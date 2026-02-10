@@ -121,6 +121,9 @@ type Object {
   likesCount: Int!
   sharesCount: Int!
   boosted: Boolean!
+  viewerFavourited: Boolean!
+  viewerBookmarked: Boolean!
+  viewerPinned: Boolean!
   relationshipType: ObjectRelationshipType!
   boostedObject: Object
 
@@ -1810,6 +1813,8 @@ type AIDetectionCapabilities {
 # Thread Synchronization types
 type ThreadContext {
   rootNote: Object!
+  ancestors: [Object!]!
+  descendants: [Object!]!
   replyCount: Int!
   participantCount: Int!
   lastActivity: Time!
