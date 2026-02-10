@@ -24,6 +24,15 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondValidationError(ctx, err)
 	}
 
+	// This is a sensitive endpoint (returns source/inputs), so require authentication.
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondForbidden(ctx, err.Error())
+		}
+		return common.RespondUnauthorized(ctx)
+	}
+
 	// Normalize the status ID to a full URL if it's not already
 	objectID := statusID
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
@@ -35,11 +44,26 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *apptheory.Context) (*apptheory.
 	statusID = strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
 
 	// Get the note using Notes service
-	result, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
-	if err != nil {
+	result, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: claims.Username,
+	})
+	if err != nil || result == nil {
 		return common.RespondNotFound(ctx, "status not found")
 	}
+
+	authorUsername := strings.TrimSpace(result.AuthorUsername)
+	if authorUsername == "" {
+		authorUsername = transformations.ExtractUsernameFromActorID(result.AuthorID)
+	}
+	if authorUsername != claims.Username {
+		return common.RespondNotFound(ctx, "status not found")
+	}
+
 	object := result.Note
+	if object == nil {
+		return common.RespondNotFound(ctx, "status not found")
+	}
 
 	// Debug logging to see what type we're getting
 	h.logger.Info("GetStatusSource: object type info",
@@ -73,15 +97,35 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *apptheory.Context) (*apptheory
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Perform optional authentication
-	h.performOptionalHistoryAuth(ctx, statusID)
+	// Determine viewer context (used for both access control and shaping).
+	viewerUsername := ""
+	authHeader := h.extractHistoryAuthHeader(ctx)
+	if strings.TrimSpace(authHeader) != "" {
+		if token, err := auth.ExtractBearerToken(authHeader); err == nil && strings.TrimSpace(token) != "" {
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil && claims != nil {
+				viewerUsername = claims.Username
+			}
+		}
+	}
+
+	// If public history is not allowed, require authentication.
+	if !h.cfg.AllowPublicStatusHistory && strings.TrimSpace(viewerUsername) == "" {
+		return common.RespondUnauthorized(ctx, "authentication required")
+	}
+
+	// Enforce viewer privacy on the underlying status itself (public/unlisted for unauth).
+	status, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
+	if err != nil || status == nil {
+		return common.RespondNotFound(ctx, "status not found")
+	}
 
 	// Normalize and fetch the current object
 	objectID := h.normalizeStatusIDForHistory(statusID)
-	currentObject, err := h.fetchObjectForHistory(ctx, objectID)
-	if err != nil {
-		return common.RespondNotFound(ctx, "status not found")
-	}
+	currentObject := any(status.Note)
 
 	// Get the author actor
 	actor := h.getHistoryAuthorActor(ctx, currentObject)
@@ -105,6 +149,7 @@ func (h *Handler) extractStatusIDForHistory(ctx *apptheory.Context) (string, err
 }
 
 // performOptionalHistoryAuth performs authentication for history endpoints if required
+//nolint:unused // Retained for future history access policy toggles; current handler inlines optional auth.
 func (h *Handler) performOptionalHistoryAuth(ctx *apptheory.Context, _ string) {
 	// If public history is allowed, no auth is needed
 	if h.cfg.AllowPublicStatusHistory {
@@ -141,6 +186,7 @@ func (h *Handler) normalizeStatusIDForHistory(statusID string) string {
 }
 
 // fetchObjectForHistory fetches the current object
+//nolint:unused // Retained for future history refactors; current handler loads via Notes service directly.
 func (h *Handler) fetchObjectForHistory(ctx *apptheory.Context, objectID string) (any, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")

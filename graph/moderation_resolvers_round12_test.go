@@ -13,7 +13,8 @@ import (
 
 func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	resolver, storageRepo := newRound12GraphResolver(t)
-	ctx := round12AuthContext("alice")
+	userCtx := round12AuthContext("alice")
+	adminCtx := round12AuthContext("admin")
 
 	// Ensure a note exists so AddCommunityNote can validate it via notes service.
 	status := &storageModels.Status{
@@ -45,7 +46,7 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	qry := resolver.Query()
 
 	// Flag content (creates a flag + moderation event).
-	flagPayload, err := mut.FlagObject(ctx, model.FlagInput{
+	flagPayload, err := mut.FlagObject(userCtx, model.FlagInput{
 		ObjectID: "status-1",
 		Reason:   "spam",
 		Evidence: []string{"e1"},
@@ -83,7 +84,15 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 
 	// Create a pattern through the mutation resolver (stored in moderation repo).
 	active := true
-	pattern, err := mut.CreateModerationPattern(ctx, model.ModerationPatternInput{
+	_, err = mut.CreateModerationPattern(userCtx, model.ModerationPatternInput{
+		Pattern:  "spam",
+		Type:     model.PatternTypeKeyword,
+		Severity: model.ModerationSeverityHigh,
+		Active:   &active,
+	})
+	require.Error(t, err)
+
+	pattern, err := mut.CreateModerationPattern(adminCtx, model.ModerationPatternInput{
 		Pattern:  "spam",
 		Type:     model.PatternTypeKeyword,
 		Severity: model.ModerationSeverityHigh,
@@ -94,37 +103,37 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	require.NotEmpty(t, pattern.ID)
 
 	// Query: moderation queue should include the flagged events.
-	queue, err := qry.ModerationQueue(context.Background(), ptrIntValue(10), nil)
+	queue, err := qry.ModerationQueue(adminCtx, ptrIntValue(10), nil)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(queue), 1)
 
 	// Query: dashboard aggregates multiple helper methods.
-	dashboard, err := qry.ModerationDashboard(context.Background(), nil)
+	dashboard, err := qry.ModerationDashboard(adminCtx, nil)
 	require.NoError(t, err)
 	require.NotNil(t, dashboard)
 
 	// Query: effectiveness uses calculatePatternEffectiveness.
-	eff, err := qry.ModerationEffectiveness(context.Background(), pattern.ID, model.ModerationPeriodDaily)
+	eff, err := qry.ModerationEffectiveness(adminCtx, pattern.ID, model.ModerationPeriodDaily)
 	require.NoError(t, err)
 	require.NotNil(t, eff)
 
 	// Query: patterns list.
-	patterns, err := qry.ModerationPatterns(context.Background(), nil, nil, nil, nil)
+	patterns, err := qry.ModerationPatterns(adminCtx, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, patterns)
 
 	// Query: moderator stats.
-	stats, err := qry.ModeratorActivity(context.Background(), "mod1", model.TimePeriodDay)
+	stats, err := qry.ModeratorActivity(adminCtx, "mod1", model.TimePeriodDay)
 	require.NoError(t, err)
 	require.NotNil(t, stats)
 
 	// Query: pattern effectiveness uses recent events/accuracy heuristics.
-	pStats, err := qry.PatternEffectiveness(context.Background(), pattern.ID)
+	pStats, err := qry.PatternEffectiveness(adminCtx, pattern.ID)
 	require.NoError(t, err)
 	require.NotNil(t, pStats)
 
 	// Mutation: add community note.
-	notePayload, err := mut.AddCommunityNote(ctx, model.CommunityNoteInput{
+	notePayload, err := mut.AddCommunityNote(userCtx, model.CommunityNoteInput{
 		ObjectID: "status-1",
 		Content:  "fact check",
 	})
@@ -134,7 +143,7 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	require.NotNil(t, notePayload.Object)
 
 	// Mutation: voting paths (author cannot vote).
-	note, err := mut.VoteCommunityNote(ctx, "note-1", true)
+	note, err := mut.VoteCommunityNote(userCtx, "note-1", true)
 	require.NoError(t, err)
 	require.NotNil(t, note)
 
@@ -142,7 +151,14 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	require.Error(t, err)
 
 	// Mutation: update/delete pattern.
-	updated, err := mut.UpdateModerationPattern(ctx, pattern.ID, model.ModerationPatternInput{
+	_, err = mut.UpdateModerationPattern(userCtx, pattern.ID, model.ModerationPatternInput{
+		Pattern:  "spam2",
+		Type:     model.PatternTypePhrase,
+		Severity: model.ModerationSeverityMedium,
+	})
+	require.Error(t, err)
+
+	updated, err := mut.UpdateModerationPattern(adminCtx, pattern.ID, model.ModerationPatternInput{
 		Pattern:  "spam2",
 		Type:     model.PatternTypePhrase,
 		Severity: model.ModerationSeverityMedium,
@@ -150,12 +166,12 @@ func TestRound12ModerationResolvers_QueryAndMutation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
-	ok, err := mut.DeleteModerationPattern(ctx, pattern.ID)
+	ok, err := mut.DeleteModerationPattern(adminCtx, pattern.ID)
 	require.NoError(t, err)
 	require.True(t, ok)
 
 	// Mutation: ML training is permission-gated.
-	_, err = mut.TrainModerationModel(ctx, nil, nil)
+	_, err = mut.TrainModerationModel(userCtx, nil, nil)
 	require.Error(t, err)
 }
 
@@ -164,6 +180,6 @@ func TestRound12ModerationResolvers_DashboardStorageNil(t *testing.T) {
 	resolver.Storage = nil
 
 	q := &queryResolver{resolver}
-	_, err := q.ModerationDashboard(context.Background(), nil)
+	_, err := q.ModerationDashboard(round12AuthContext("admin"), nil)
 	require.Error(t, err)
 }

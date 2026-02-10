@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	htmlpkg "html"
 	"net/url"
@@ -9,6 +11,8 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	securityheaders "github.com/equaltoai/lesser/pkg/security/headers"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -296,19 +300,21 @@ func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Act
 func (h *Handler) generateOEmbedHTML(note *activitypub.Note, maxWidth int) string {
 	// Extract clean status ID from note ID
 	statusID := strings.TrimPrefix(note.ID, h.cfg.BaseURL()+"/objects/")
+	statusID = url.PathEscape(statusID)
 
 	// Build embed HTML
 	var htmlBuilder strings.Builder
 
 	// Iframe wrapper
-	htmlBuilder.WriteString(fmt.Sprintf(`<iframe src="%s/embed/%s" class="mastodon-embed" style="max-width: 100%%; border: 0" width="%d" allowfullscreen="allowfullscreen"></iframe>`,
-		h.cfg.BaseURL(),
-		statusID,
+	embedSrc := htmlpkg.EscapeString(fmt.Sprintf("%s/embed/%s", h.cfg.BaseURL(), statusID))
+	htmlBuilder.WriteString(fmt.Sprintf(`<iframe src="%s" class="mastodon-embed" style="max-width: 100%%; border: 0" width="%d" allowfullscreen="allowfullscreen"></iframe>`,
+		embedSrc,
 		maxWidth,
 	))
 
 	// Add script for dynamic resizing
-	htmlBuilder.WriteString(fmt.Sprintf(`<script src="%s/embed.js" async="async"></script>`, h.cfg.BaseURL()))
+	scriptSrc := htmlpkg.EscapeString(fmt.Sprintf("%s/embed.js", h.cfg.BaseURL()))
+	htmlBuilder.WriteString(fmt.Sprintf(`<script src="%s" async="async"></script>`, scriptSrc))
 
 	return htmlBuilder.String()
 }
@@ -390,14 +396,20 @@ func (h *Handler) HandleEmbedPageLift(ctx *apptheory.Context) (*apptheory.Respon
 	timestamp := h.formatEmbedTimestamp(note)
 
 	// Generate embed HTML
-	htmlContent := h.generateEmbedHTML(note, authorInfo, timestamp)
+	scriptNonce := newCSPNonce()
+	htmlContent := h.generateEmbedHTML(note, authorInfo, timestamp, scriptNonce)
 
 	// Set HTML content type and additional headers
 	resp = &apptheory.Response{
 		Status: 200,
 		Headers: map[string][]string{
-			"content-type":    {"text/html; charset=utf-8"},
-			"x-frame-options": {"ALLOWALL"},
+			"content-type":                 {"text/html; charset=utf-8"},
+			"content-security-policy":      {securityheaders.EmbedHTMLPageCSP(scriptNonce)},
+			"x-content-type-options":       {"nosniff"},
+			"x-frame-options":              {"ALLOWALL"},
+			"referrer-policy":              {"strict-origin-when-cross-origin"},
+			"cross-origin-resource-policy": {"cross-origin"},
+			"x-robots-tag":                 {"noindex, nofollow"},
 		},
 		Body: []byte(htmlContent),
 	}
@@ -520,8 +532,16 @@ func (h *Handler) formatEmbedTimestamp(note *activitypub.Note) string {
 	return "Unknown"
 }
 
+func newCSPNonce() string {
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return ""
+	}
+	return base64.RawStdEncoding.EncodeToString(nonceBytes)
+}
+
 // generateEmbedHTML generates the HTML for the embed page
-func (h *Handler) generateEmbedHTML(note *activitypub.Note, authorInfo embedAuthorInfo, timestamp string) string {
+func (h *Handler) generateEmbedHTML(note *activitypub.Note, authorInfo embedAuthorInfo, timestamp string, scriptNonce string) string {
 	var htmlBuilder strings.Builder
 
 	// Add HTML header and styles
@@ -531,7 +551,7 @@ func (h *Handler) generateEmbedHTML(note *activitypub.Note, authorInfo embedAuth
 	h.writeEmbedBodyContent(&htmlBuilder, note, authorInfo, timestamp)
 
 	// Add footer and scripts
-	h.writeEmbedHTMLFooter(&htmlBuilder)
+	h.writeEmbedHTMLFooter(&htmlBuilder, scriptNonce)
 
 	return htmlBuilder.String()
 }
@@ -612,25 +632,26 @@ func (h *Handler) writeEmbedHTMLHeader(builder *strings.Builder, authorName stri
 
 // writeEmbedBodyContent writes the main body content
 func (h *Handler) writeEmbedBodyContent(builder *strings.Builder, note *activitypub.Note, authorInfo embedAuthorInfo, timestamp string) {
+	authorUsername := strings.TrimSpace(authorInfo.username)
+	authorProfileURL := fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), url.PathEscape(authorUsername))
+
 	builder.WriteString(`
     <article class="status">
         <div class="author">
             <div class="avatar"></div>
             <div class="author-info">
                 <a href="`)
-	builder.WriteString(h.cfg.BaseURL())
-	builder.WriteString("/@")
-	builder.WriteString(authorInfo.username)
+	builder.WriteString(htmlpkg.EscapeString(authorProfileURL))
 	builder.WriteString(`" target="_blank" class="display-name">`)
 	builder.WriteString(htmlpkg.EscapeString(authorInfo.name))
 	builder.WriteString(`</a>
                 <div class="username">@`)
-	builder.WriteString(authorInfo.username)
+	builder.WriteString(htmlpkg.EscapeString(authorUsername))
 	builder.WriteString(`</div>
             </div>
         </div>
         <div class="content">`)
-	builder.WriteString(note.Content) // Already HTML
+	builder.WriteString(htmlsafe.SanitizeHTMLByContract(note.Content))
 	builder.WriteString(`</div>`)
 
 	// Add media attachments
@@ -640,9 +661,9 @@ func (h *Handler) writeEmbedBodyContent(builder *strings.Builder, note *activity
 	builder.WriteString(`
         <div>
             <a href="`)
-	builder.WriteString(note.ID)
+	builder.WriteString(htmlpkg.EscapeString(note.ID))
 	builder.WriteString(`" target="_blank" class="timestamp">`)
-	builder.WriteString(timestamp)
+	builder.WriteString(htmlpkg.EscapeString(timestamp))
 	builder.WriteString(`</a>
         </div>
     </article>`)
@@ -656,8 +677,13 @@ func (h *Handler) writeEmbedMediaAttachments(builder *strings.Builder, note *act
 
 	for _, attachment := range note.Attachment {
 		if h.isImageAttachment(attachment) {
+			safeURL, ok := safeHTTPURL(attachment.URL)
+			if !ok {
+				continue
+			}
+
 			builder.WriteString(`<img src="`)
-			builder.WriteString(attachment.URL)
+			builder.WriteString(htmlpkg.EscapeString(safeURL))
 			builder.WriteString(`" alt="`)
 			builder.WriteString(htmlpkg.EscapeString(attachment.Name))
 			builder.WriteString(`" class="media">`)
@@ -673,10 +699,41 @@ func (h *Handler) isImageAttachment(attachment activitypub.Attachment) bool {
 	return attachment.MediaType != "" && strings.HasPrefix(attachment.MediaType, "image/")
 }
 
+func safeHTTPURL(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", false
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return "", false
+	}
+
+	return parsed.String(), true
+}
+
 // writeEmbedHTMLFooter writes the HTML footer and scripts
-func (h *Handler) writeEmbedHTMLFooter(builder *strings.Builder) {
+func (h *Handler) writeEmbedHTMLFooter(builder *strings.Builder, scriptNonce string) {
+	if strings.TrimSpace(scriptNonce) == "" {
+		builder.WriteString(`
+</body>
+</html>`)
+		return
+	}
+
 	builder.WriteString(`
-    <script>
+    <script nonce="`)
+	builder.WriteString(htmlpkg.EscapeString(scriptNonce))
+	builder.WriteString(`">
         // Send height to parent
         function sendHeight() {
             const height = document.body.scrollHeight;

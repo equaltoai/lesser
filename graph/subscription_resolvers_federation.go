@@ -12,7 +12,7 @@ import (
 
 // FederationHealthUpdates implements SubscriptionResolver
 func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, domain *string) (<-chan *model.FederationHealthUpdate, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 
 // InfrastructureEvent implements SubscriptionResolver
 func (r *subscriptionResolver) InfrastructureEvent(ctx context.Context) (<-chan *model.InfrastructureEvent, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -158,6 +158,32 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 				"min_expiration":            300,
 				"max_expiration":            2629746,
 			},
+			"tips": func() map[string]any {
+				enabled := false
+				chainID := 0
+				contractAddress := ""
+				if h.cfg != nil {
+					enabled = h.cfg.TipEnabled
+					chainID = h.cfg.TipChainID
+					contractAddress = strings.TrimSpace(h.cfg.TipContractAddress)
+				}
+
+				if enabled && (chainID == 0 || contractAddress == "") {
+					h.logger.Warn("tips enabled but missing chain ID or contract address; disabling tips in instance config",
+						zap.Int("chain_id", chainID),
+						zap.String("contract_address", contractAddress))
+					enabled = false
+				}
+
+				out := map[string]any{
+					"enabled": enabled,
+				}
+				if enabled {
+					out["chain_id"] = chainID
+					out["contract_address"] = contractAddress
+				}
+				return out
+			}(),
 		},
 		ExtendedDescription: extendedDescription,
 		VAPIDKey:            vapidPublicKey,

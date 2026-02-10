@@ -11,6 +11,7 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -69,7 +70,7 @@ func TestUpdateStatusLift_Round12(t *testing.T) {
 		actor := makeActor("alice")
 		reg := makeRegistry(
 			&NotesServiceStub{
-				GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) { return status, nil },
+				GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) { return status, nil },
 			},
 			&AccountsServiceStub{
 				GetAccountFunc: func(_ context.Context, _ string) (*storage.Account, error) {
@@ -150,7 +151,9 @@ func TestUpdateStatusLift_Round12(t *testing.T) {
 	t.Run("status not found returns 404", func(t *testing.T) {
 		reg := makeRegistry(
 			&NotesServiceStub{
-				GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) { return nil, errors.New("not found") },
+				GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					return nil, errors.New("not found")
+				},
 			},
 			&AccountsServiceStub{
 				GetAccountFunc: func(_ context.Context, _ string) (*storage.Account, error) {
@@ -181,7 +184,9 @@ func TestUpdateStatusLift_Round12(t *testing.T) {
 
 		reg := makeRegistry(
 			&NotesServiceStub{
-				GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) { return nil, errors.New("gone") },
+				GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					return nil, errors.New("gone")
+				},
 			},
 			&AccountsServiceStub{
 				GetAccountFunc: func(_ context.Context, _ string) (*storage.Account, error) {
@@ -204,7 +209,7 @@ func TestUpdateStatusLift_Round12(t *testing.T) {
 		status := makeStatus("bob")
 		reg := makeRegistry(
 			&NotesServiceStub{
-				GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) { return status, nil },
+				GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) { return status, nil },
 			},
 			&AccountsServiceStub{
 				GetAccountFunc: func(_ context.Context, _ string) (*storage.Account, error) {
@@ -227,7 +232,7 @@ func TestUpdateStatusLift_Round12(t *testing.T) {
 		status := makeStatus("alice")
 		reg := makeRegistry(
 			&NotesServiceStub{
-				GetNoteFunc: func(_ context.Context, _ string) (*storagemodels.Status, error) { return status, nil },
+				GetNoteWithViewerFunc: func(_ context.Context, _ *notes.GetNoteQuery) (*storagemodels.Status, error) { return status, nil },
 			},
 			&AccountsServiceStub{
 				GetAccountFunc: func(_ context.Context, _ string) (*storage.Account, error) {

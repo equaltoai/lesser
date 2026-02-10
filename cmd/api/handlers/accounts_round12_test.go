@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
@@ -37,6 +39,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 
 	t.Run("service_errors_are_mapped", func(t *testing.T) {
 		cfg := round10TestConfig()
+		now := time.Now()
 
 		tests := []struct {
 			name       string
@@ -50,7 +53,23 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+				state := &round10QueryState{
+					walletChallengesByID: map[string]storagemodels.WalletChallenge{
+						"c1": {
+							ID:        "c1",
+							Username:  "alice",
+							Address:   "0xabc",
+							ChainID:   1,
+							Nonce:     "nonce",
+							Message:   "msg",
+							IssuedAt:  now.Add(-time.Minute),
+							ExpiresAt: now.Add(10 * time.Minute),
+							Used:      true,
+						},
+					},
+				}
+
+				h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
 					AccountsSvc: &AccountsServiceStub{
 						RegisterAccountFunc: func(context.Context, *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
 							return nil, tt.serviceErr
@@ -59,9 +78,10 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 				})
 
 				ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts", nil, nil, apimodels.AccountRegistrationRequest{
-					Username:  "alice",
-					Password:  "ignored",
-					Agreement: true,
+					Username:          "alice",
+					Password:          "ignored",
+					Agreement:         true,
+					WalletChallengeID: "c1",
 				})
 				require.NoError(t, err)
 
@@ -72,9 +92,25 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 
 	t.Run("success_ignores_password_and_email", func(t *testing.T) {
 		cfg := round10TestConfig()
+		now := time.Now()
 
 		var gotCmd *accounts.RegisterAccountCommand
-		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+		state := &round10QueryState{
+			walletChallengesByID: map[string]storagemodels.WalletChallenge{
+				"c1": {
+					ID:        "c1",
+					Username:  "alice",
+					Address:   "0xabc",
+					ChainID:   1,
+					Nonce:     "nonce",
+					Message:   "msg",
+					IssuedAt:  now.Add(-time.Minute),
+					ExpiresAt: now.Add(10 * time.Minute),
+					Used:      true,
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{
 			AccountsSvc: &AccountsServiceStub{
 				RegisterAccountFunc: func(_ context.Context, cmd *accounts.RegisterAccountCommand) (*accounts.RegisterAccountResult, error) {
 					gotCmd = cmd
@@ -96,6 +132,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 			Locale:                   "en",
 			Reason:                   "hello",
 			DefaultPostingVisibility: "public",
+			WalletChallengeID:        "c1",
 		})
 		require.NoError(t, err)
 
@@ -109,6 +146,7 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 		require.True(t, gotCmd.Agreement)
 		require.Equal(t, "hello", gotCmd.Reason)
 		require.Equal(t, "public", gotCmd.DefaultPostingVisibility)
+		require.Equal(t, "c1", gotCmd.RegistrationChallengeID)
 
 		var regResp apimodels.AccountRegistrationResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &regResp))
@@ -120,8 +158,9 @@ func TestAccountsRound12_HandleRegistrationLift(t *testing.T) {
 	t.Run("validateRegistrationRequestLift_allows_empty_visibility", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, round10TestConfig(), &round10QueryState{}, &RegistryStub{})
 		require.NoError(t, h.validateRegistrationRequestLift(apimodels.AccountRegistrationRequest{
-			Username:  "alice",
-			Agreement: true,
+			Username:          "alice",
+			Agreement:         true,
+			WalletChallengeID: "c1",
 		}))
 	})
 }

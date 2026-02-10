@@ -124,6 +124,11 @@ func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFun
 	sseFn := functions.Must("sse")
 	healthFn := apiFn
 
+	// Root redirect is implemented in the API Lambda (GET/HEAD "/" → 302 "/l/"), but API Gateway requires an
+	// explicit route for "/" (the proxy route does not match the empty path).
+	api.AddLambdaIntegration(jsii.String("/"), &[]*string{jsii.String("GET")}, apiFn, nil)
+	api.AddLambdaIntegration(jsii.String("/"), &[]*string{jsii.String("HEAD")}, apiFn, nil)
+
 	// Mastodon streaming (SSE) routes.
 	sseOptions := &apptheorycdk.AppTheoryRestApiRouterIntegrationOptions{
 		Streaming: jsii.Bool(true),

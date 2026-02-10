@@ -35,10 +35,20 @@ func TestStatusesRound13_AccountStatusesFilteringAndHelpers(t *testing.T) {
 
 	reg := &RegistryStub{
 		NotesSvc: &NotesServiceStub{
-			GetUserTimelineFunc: func(context.Context, string, interfaces.PaginationOptions) (*notes.GetUserTimelineResult, error) {
-				return &notes.GetUserTimelineResult{
-					Items:      []*storagemodels.Status{s1, s2},
-					NextCursor: "cursor",
+			ListNotesFunc: func(_ context.Context, query *notes.ListNotesQuery) (*notes.Result, error) {
+				if query != nil && query.OnlyMedia {
+					return &notes.Result{
+						Notes: []*storagemodels.Status{},
+						Pagination: &interfaces.PaginatedResult[*storagemodels.Status]{
+							NextCursor: "cursor",
+						},
+					}, nil
+				}
+				return &notes.Result{
+					Notes: []*storagemodels.Status{s1, s2},
+					Pagination: &interfaces.PaginatedResult[*storagemodels.Status]{
+						NextCursor: "cursor",
+					},
 				}, nil
 			},
 		},
@@ -111,8 +121,8 @@ func TestStatusesRound13_GetAccountStatuses_AccountIDURLBranch(t *testing.T) {
 	cfg := round10TestConfig()
 	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 		NotesSvc: &NotesServiceStub{
-			GetUserTimelineFunc: func(context.Context, string, interfaces.PaginationOptions) (*notes.GetUserTimelineResult, error) {
-				return &notes.GetUserTimelineResult{}, nil
+			ListNotesFunc: func(context.Context, *notes.ListNotesQuery) (*notes.Result, error) {
+				return &notes.Result{Notes: []*storagemodels.Status{}}, nil
 			},
 		},
 	})
@@ -126,4 +136,3 @@ func TestStatusesRound13_GetAccountStatuses_AccountIDURLBranch(t *testing.T) {
 
 	requireStatus(t, http.StatusOK)(h.HandleGetAccountStatusesLift(ctx))
 }
-

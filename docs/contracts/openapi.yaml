@@ -136,6 +136,8 @@ components:
                     type: string
                 username:
                     type: string
+                wallet_challenge_id:
+                    type: string
             required:
                 - agreement
                 - username
@@ -14317,6 +14319,8 @@ paths:
             operationId: get_api_v1_statuses_by_id_source
             tags:
                 - statuses
+            security:
+                - bearerAuth: []
             parameters:
                 - name: id
                   in: path
@@ -14332,6 +14336,10 @@ paths:
                                 $ref: '#/components/schemas/StatusSource'
                 "400":
                     $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
                 "404":
                     $ref: '#/components/responses/NotFound'
                 "500":
@@ -14340,6 +14348,8 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/statuses/{id}/translate:
         post:
             operationId: post_api_v1_statuses_by_id_translate
@@ -15314,6 +15324,414 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /api/v1/trust/ai/claims/verify:
+        post:
+            operationId: post_api_v1_trust_ai_claims_verify
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustAIClaimVerifyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+    /api/v1/trust/ai/jobs/{jobId}:
+        get:
+            operationId: get_api_v1_trust_ai_jobs_by_jobId
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: jobId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetAIJobLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/attestations:
+        get:
+            operationId: get_api_v1_trust_attestations
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustLookupAttestationLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/attestations/{id}:
+        get:
+            operationId: get_api_v1_trust_attestations_by_id
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetAttestationLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/jwks.json:
+        get:
+            operationId: get_api_v1_trust_jwks_json
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustJWKSJSONLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/previews:
+        post:
+            operationId: post_api_v1_trust_previews
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustCreateLinkPreviewLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+    /api/v1/trust/previews/{id}:
+        get:
+            operationId: get_api_v1_trust_previews_by_id
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetLinkPreviewLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/previews/images/{imageId}:
+        get:
+            operationId: get_api_v1_trust_previews_images_by_imageId
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: imageId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetLinkPreviewImageLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/publish/jobs:
+        post:
+            operationId: post_api_v1_trust_publish_jobs
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustCreatePublishJobLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+    /api/v1/trust/publish/jobs/{jobId}:
+        get:
+            operationId: get_api_v1_trust_publish_jobs_by_jobId
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: jobId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetPublishJobLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/renders:
+        post:
+            operationId: post_api_v1_trust_renders
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustCreateRenderLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+    /api/v1/trust/renders/{renderId}:
+        get:
+            operationId: get_api_v1_trust_renders_by_renderId
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: renderId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetRenderLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/renders/{renderId}/snapshot:
+        get:
+            operationId: get_api_v1_trust_renders_by_renderId_snapshot
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: renderId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetRenderSnapshotLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /api/v1/trust/renders/{renderId}/thumbnail:
+        get:
+            operationId: get_api_v1_trust_renders_by_renderId_thumbnail
+            tags:
+                - trust
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: renderId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleTrustGetRenderThumbnailLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
     /api/v1/vouches:
         post:
             operationId: post_api_v1_vouches

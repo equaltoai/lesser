@@ -37,6 +37,28 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 
+	// Require wallet verification as the registration proof (passwordless signup).
+	// The auth-ui flow calls POST /auth/wallet/verify first, which marks the challenge as used.
+	authService, authResp, err := h.requireAuthService(ctx)
+	if authResp != nil || err != nil {
+		return authResp, err
+	}
+
+	challengeID := strings.TrimSpace(req.WalletChallengeID)
+	challenge, err := authService.GetWalletChallenge(ctx.Context(), challengeID)
+	if err != nil || challenge == nil {
+		return common.RespondUnprocessableEntity(ctx, "wallet_challenge_id is invalid or expired")
+	}
+	if strings.TrimSpace(challenge.Username) != strings.TrimSpace(req.Username) {
+		return common.RespondUnprocessableEntity(ctx, "wallet challenge was created for a different username")
+	}
+	if !challenge.Used {
+		return common.RespondUnprocessableEntity(ctx, "wallet challenge has not been verified")
+	}
+	if challenge.Spent {
+		return common.RespondUnprocessableEntity(ctx, "wallet challenge was already spent")
+	}
+
 	// NOTE: Password-based authentication is disabled. This system uses WebAuthn/crypto wallet authentication only.
 	// If a password is provided in the request, it will be ignored to prevent password-based access.
 	if req.Password != "" {
@@ -55,6 +77,7 @@ func (h *Handler) HandleRegistrationLift(ctx *apptheory.Context) (*apptheory.Res
 		Agreement:                req.Agreement,
 		Reason:                   req.Reason,
 		DefaultPostingVisibility: req.DefaultPostingVisibility,
+		RegistrationChallengeID:  challengeID,
 	})
 	if err != nil {
 		if errors.Is(err, accounts.ErrUsernameAlreadyTaken) {
@@ -589,6 +612,10 @@ func (h *Handler) validateRegistrationRequestLift(req models.AccountRegistration
 		default:
 			return fmt.Errorf("default_posting_visibility must be one of public, unlisted, private, or direct")
 		}
+	}
+
+	if strings.TrimSpace(req.WalletChallengeID) == "" {
+		return errors.New("wallet_challenge_id is required")
 	}
 
 	return nil

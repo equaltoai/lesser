@@ -81,6 +81,8 @@ func TestRunGenerateOpenAPI_ErrorsWhenGoCacheCannotBeCreated(t *testing.T) {
 		findRepoRootFn = previousRepoRoot
 	})
 
+	t.Setenv("GOCACHE", "")
+
 	ensureToolAvailableFn = func(string) error { return nil }
 
 	repoRoot := t.TempDir()

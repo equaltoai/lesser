@@ -214,15 +214,15 @@ func TestTimeseriesProcessor_GroupingAndAggregation_Branches(t *testing.T) {
 		tp.extractTimestamp(mkRecord("ACTOR#1", "Person", "bad", "2024-01-01T00:01:00Z", "")),
 	)
 
-		records := []events.DynamoDBEventRecord{
-			mkRecord("OBJECT#1", "Note", "2024-01-01T00:01:00Z", "", ""), // non-federation
-			mkRecord("OTHER#2", "Follow", "", "", ""),                    // federation, but no timestamp
-			mkRecord("ACTIVITY#1", "Follow", "2024-01-01T00:01:00Z", "", ""),
-			mkRecord("ACTIVITY#2", "Announce", "2024-01-01T00:06:00Z", "", ""),
-		}
+	records := []events.DynamoDBEventRecord{
+		mkRecord("OBJECT#1", "Note", "2024-01-01T00:01:00Z", "", ""), // non-federation
+		mkRecord("OTHER#2", "Follow", "", "", ""),                    // federation, but no timestamp
+		mkRecord("ACTIVITY#1", "Follow", "2024-01-01T00:01:00Z", "", ""),
+		mkRecord("ACTIVITY#2", "Announce", "2024-01-01T00:06:00Z", "", ""),
+	}
 
-		metrics := tp.aggregateMetrics(records)
-		require.Equal(t, 2, metrics.FollowCount)
+	metrics := tp.aggregateMetrics(records)
+	require.Equal(t, 2, metrics.FollowCount)
 	require.Equal(t, 0, metrics.LikeCount)
 	require.Equal(t, 1, metrics.AnnounceCount)
 	require.Equal(t, 1, metrics.ActivityCount)

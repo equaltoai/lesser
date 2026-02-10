@@ -115,4 +115,3 @@ func TestGraphQLWithCostTracker_Round13(t *testing.T) {
 	requestCtx := graphqlWithCostTracker(context.Background(), ctx)
 	require.Equal(t, "x", requestCtx.Value(contextKeyCostTracker))
 }
-

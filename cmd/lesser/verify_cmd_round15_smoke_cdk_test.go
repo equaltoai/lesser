@@ -98,4 +98,3 @@ func TestRunCDKSynth_Round15_XDGCacheDirError(t *testing.T) {
 
 	require.Error(t, runCDKSynth("profile", "us-east-1"))
 }
-

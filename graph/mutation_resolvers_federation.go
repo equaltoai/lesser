@@ -13,7 +13,12 @@ import (
 // required imports after generating these files.
 
 // OptimizeFederationCosts implements MutationResolver.
-func (r *mutationResolver) OptimizeFederationCosts(_ context.Context, targetAmount float64) (*model.CostOptimizationResult, error) {
+func (r *mutationResolver) OptimizeFederationCosts(ctx context.Context, targetAmount float64) (*model.CostOptimizationResult, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Run optimization logic
 	// This would analyze current federation costs and find optimizations
 
@@ -39,7 +44,12 @@ func (r *mutationResolver) OptimizeFederationCosts(_ context.Context, targetAmou
 }
 
 // SetFederationLimit implements MutationResolver.
-func (r *mutationResolver) SetFederationLimit(_ context.Context, domain string, _ model.FederationLimitInput) (*model.FederationLimit, error) {
+func (r *mutationResolver) SetFederationLimit(ctx context.Context, domain string, _ model.FederationLimitInput) (*model.FederationLimit, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Set federation limits for a domain
 	// Create federation limit from input
 	now := model.Time(time.Now())
@@ -56,7 +66,12 @@ func (r *mutationResolver) SetFederationLimit(_ context.Context, domain string, 
 }
 
 // PauseFederation implements MutationResolver.
-func (r *mutationResolver) PauseFederation(_ context.Context, domain string, reason string, until *model.Time) (*model.FederationManagementStatus, error) {
+func (r *mutationResolver) PauseFederation(ctx context.Context, domain string, reason string, until *model.Time) (*model.FederationManagementStatus, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Pause federation with a domain
 	return &model.FederationManagementStatus{
 		Domain:      domain,
@@ -68,7 +83,12 @@ func (r *mutationResolver) PauseFederation(_ context.Context, domain string, rea
 }
 
 // ResumeFederation implements MutationResolver.
-func (r *mutationResolver) ResumeFederation(_ context.Context, domain string) (*model.FederationManagementStatus, error) {
+func (r *mutationResolver) ResumeFederation(ctx context.Context, domain string) (*model.FederationManagementStatus, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Resume federation with a domain
 	return &model.FederationManagementStatus{
 		Domain:      domain,
@@ -80,7 +100,12 @@ func (r *mutationResolver) ResumeFederation(_ context.Context, domain string) (*
 }
 
 // SetInstanceBudget implements MutationResolver.
-func (r *mutationResolver) SetInstanceBudget(_ context.Context, domain string, monthlyUSD float64, autoLimit *bool) (*model.InstanceBudget, error) {
+func (r *mutationResolver) SetInstanceBudget(ctx context.Context, domain string, monthlyUSD float64, autoLimit *bool) (*model.InstanceBudget, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Set budget limit for an instance
 	autoLimitEnabled := false
 	if autoLimit != nil {
@@ -100,7 +125,7 @@ func (r *mutationResolver) SetInstanceBudget(_ context.Context, domain string, m
 
 // AcknowledgeSeverance implements MutationResolver
 func (r *mutationResolver) AcknowledgeSeverance(ctx context.Context, id string) (*model.AcknowledgePayload, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +154,7 @@ func (r *mutationResolver) AcknowledgeSeverance(ctx context.Context, id string) 
 
 // AttemptReconnection implements MutationResolver
 func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (*model.ReconnectionPayload, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

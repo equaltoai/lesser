@@ -279,6 +279,62 @@ func TestActorHandler_Round12(t *testing.T) {
 		require.Contains(t, body, "<!DOCTYPE html>")
 		require.Contains(t, body, "@alice@example.com")
 	})
+
+	t.Run("html response renders inert for xss payloads", func(t *testing.T) {
+		actor := &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:      cfg.ActorURL("alice"),
+				Type:    activitypub.PersonType,
+				Summary: `<img src=x onerror=alert(1)>bio`,
+			},
+			PreferredUsername: "alice",
+			Name:              `Alice<script>alert(1)</script>`,
+			Icon:              &activitypub.Image{URL: "https://example.com/avatar.png"},
+		}
+		h := &Handler{
+			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
+			actorRepo:              &fakeActorRepo{actor: actor},
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: false},
+		}
+		resp, err := h.HandleActorProfile(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/users/alice",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"username": "alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+
+		body := string(resp.Body)
+		require.NotContains(t, body, "<script>")
+		require.NotContains(t, body, "onerror=")
+		require.Contains(t, body, "Alice")
+		require.Contains(t, body, "bio")
+	})
+
+	t.Run("security headers set csp for html", func(t *testing.T) {
+		mw := actorActivityPubSecurityHeaders()
+		wrapped := mw(func(_ *apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{
+				Status: 200,
+				Headers: map[string][]string{
+					"content-type": {"text/html; charset=utf-8"},
+				},
+				Body: []byte("<!DOCTYPE html><html></html>"),
+			}, nil
+		})
+
+		resp, err := wrapped(&apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/users/alice"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.NotEmpty(t, resp.Headers["content-security-policy"])
+		require.Contains(t, resp.Headers["content-security-policy"][0], "script-src 'none'")
+	})
 }
 
 func TestActorEntrypoint_Round12(t *testing.T) {

@@ -18,14 +18,14 @@ func TestStatusesContextAncestors_Round12(t *testing.T) {
 	cfg := round11TestConfig()
 
 	notesByID := map[string]*storagemodels.Status{
-		cfg.BaseURL() + "/objects/child": {
+		"child": {
 			StatusID:       "child",
 			AuthorUsername: "alice",
 			AuthorID:       cfg.ActorURL("alice"),
 			Content:        "child",
 			InReplyToID:    "parent",
 		},
-		cfg.BaseURL() + "/objects/parent": {
+		"parent": {
 			StatusID:       "parent",
 			AuthorUsername: "alice",
 			AuthorID:       cfg.ActorURL("alice"),
@@ -36,6 +36,15 @@ func TestStatusesContextAncestors_Round12(t *testing.T) {
 	notesSvc := &NotesServiceStub{
 		GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
 			if note, ok := notesByID[statusID]; ok {
+				return note, nil
+			}
+			return nil, errors.New("not found")
+		},
+		GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+			if query == nil {
+				return nil, errors.New("missing query")
+			}
+			if note, ok := notesByID[query.StatusID]; ok {
 				return note, nil
 			}
 			return nil, errors.New("not found")

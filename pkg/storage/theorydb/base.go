@@ -97,6 +97,10 @@ func NewLambdaOptimizedClient(_ context.Context, region string) (core.DB, error)
 		return nil, err
 	}
 
+	if err := registerDefaultTypeConverters(client); err != nil {
+		return nil, err
+	}
+
 	// Return the client as a core.DB interface
 	return client, nil
 }

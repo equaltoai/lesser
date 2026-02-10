@@ -383,6 +383,9 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	// This allows downstream middleware (rate limits, logging) to key by username for agents.
 	app.Use(createOptionalOAuthAuthMiddleware(cfg, repos, lambdaLogger))
 
+	// Enforce default-deny public surface policy.
+	app.Use(createPublicSurfaceMiddleware())
+
 	// Agent safety rails middleware (Phase 1).
 	app.Use(createAgentSafetyRailsMiddleware(cfg, repos, lambdaLogger))
 
@@ -483,15 +486,20 @@ func addLatencyContextValues(ctx *apptheory.Context, info requestInfo, startTime
 
 // recordDynamoDBLatencyMetric records latency metric to DynamoDB asynchronously
 func recordDynamoDBLatencyMetric(ctx context.Context, info requestInfo, statusCode int, totalLatency time.Duration) {
+	reposSnapshot := repos
+	loggerSnapshot := logger
+
 	go func() {
-		if err := recordLatencyMetric(ctx, "api_endpoint", info.endpoint, totalLatency, map[string]string{
+		if err := recordLatencyMetricWithRepos(ctx, reposSnapshot, "api_endpoint", info.endpoint, totalLatency, map[string]string{
 			"endpoint":    info.path,
 			"method":      info.method,
 			"status_code": fmt.Sprintf("%d", statusCode),
 			"user_agent":  info.userAgent,
 			"client_ip":   info.clientIP,
 		}); err != nil {
-			logger.Warn("failed to record latency metric", zap.Error(err))
+			if loggerSnapshot != nil {
+				loggerSnapshot.Warn("failed to record latency metric", zap.Error(err))
+			}
 		}
 	}()
 }
@@ -900,8 +908,8 @@ func createTracingMiddleware() apptheory.Middleware {
 }
 
 // recordLatencyMetric records latency metrics to DynamoDB using DynamORM
-func recordLatencyMetric(ctx context.Context, metricType, operation string, duration time.Duration, dimensions map[string]string) error {
-	if repos == nil {
+func recordLatencyMetricWithRepos(ctx context.Context, repo core.RepositoryStorage, metricType, operation string, duration time.Duration, dimensions map[string]string) error {
+	if repo == nil {
 		return errors.ServiceInitializationFailed("repositories", nil)
 	}
 
@@ -927,7 +935,7 @@ func recordLatencyMetric(ctx context.Context, metricType, operation string, dura
 	metric.AddDimension("operation", operation)
 
 	// Store to DynamoDB via metrics repository
-	return repos.MetricRecord().CreateMetricRecord(ctx, metric)
+	return repo.MetricRecord().CreateMetricRecord(ctx, metric)
 }
 
 // createCentralizedCostTrackingMiddleware creates centralized cost tracking middleware using the TrackingService

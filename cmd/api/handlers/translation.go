@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/translation"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -64,7 +65,7 @@ func (h *Handler) HandleTranslateStatusLift(ctx *apptheory.Context) (*apptheory.
 
 	// Get the status object
 	objectID := h.normalizeTranslationObjectID(statusID)
-	obj, resp, err := h.getStatusForTranslation(ctx, statusID, objectID)
+	obj, resp, err := h.getStatusForTranslation(ctx, statusID, objectID, username)
 	if resp != nil || err != nil {
 		return resp, err
 	}
@@ -145,9 +146,12 @@ func (h *Handler) normalizeTranslationObjectID(statusID string) string {
 }
 
 // getStatusForTranslation retrieves the status object
-func (h *Handler) getStatusForTranslation(ctx *apptheory.Context, statusID, objectID string) (any, *apptheory.Response, error) {
+func (h *Handler) getStatusForTranslation(ctx *apptheory.Context, statusID, objectID, viewerUsername string) (any, *apptheory.Response, error) {
 	// Use Notes service to get the status
-	note, err := h.registry.Notes().GetNote(ctx.Context(), statusID)
+	note, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil {
 		h.logger.Error("failed to get status for translation",
 			zap.String("status_id", statusID),

@@ -42,6 +42,11 @@ exemptions:
         prefixes:
             - /api/v1/admin/agents
             - /api/v1/agents
+    - id: lesser_host_trust
+      reason: Managed-instance lesser-host trust proxy endpoints are REST-only for now.
+      match:
+        prefixes:
+            - /api/v1/trust
 routes:
     - method: GET
       path: /
@@ -1224,6 +1229,62 @@ routes:
       graphql:
         - Query.trendingTags
     - method: POST
+      path: /api/v1/trust/ai/claims/verify
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/ai/jobs/{jobId}
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/attestations
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/attestations/{id}
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/jwks.json
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: POST
+      path: /api/v1/trust/previews
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/previews/images/{imageId}
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/previews/{id}
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: POST
+      path: /api/v1/trust/publish/jobs
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/publish/jobs/{jobId}
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: POST
+      path: /api/v1/trust/renders
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/renders/{renderId}
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/renders/{renderId}/snapshot
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: GET
+      path: /api/v1/trust/renders/{renderId}/thumbnail
+      policy: rest_only
+      exemptedBy: lesser_host_trust
+    - method: POST
       path: /api/v1/vouches
       policy: graphql_required
       status: covered
@@ -1451,4 +1512,3 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
-

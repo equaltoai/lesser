@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
@@ -62,8 +63,9 @@ var (
 	newStreamEventLogFn = func(db dynamormCore.DB, ttl time.Duration) streamEventLog {
 		return streaming.NewStreamEventLog(db, ttl)
 	}
-	lambdaStartFn = lambda.Start
-	timeAfterFn   = time.After
+	lambdaStartFn         = lambda.Start
+	timeAfterFn           = time.After
+	authorizeListStreamFn = authorizeListStream
 )
 
 func init() {
@@ -245,7 +247,17 @@ func handleListStream(ctx *apptheory.Context) (*apptheory.Response, error) {
 		return apptheory.MustJSON(http.StatusBadRequest, map[string]string{"error": "list is required"}), nil
 	}
 
-	_ = claims // placeholder for future list membership validation
+	if err := authorizeListStreamFn(ctx.Context(), listID, claims.Username); err != nil {
+		if apperrors.HasCode(err, apperrors.CodeNotFound) || apperrors.HasCode(err, apperrors.CodeForbidden) {
+			return apptheory.Text(http.StatusNotFound, "Not Found"), nil
+		}
+		logger.Warn("failed to authorize list stream",
+			zap.String("list_id", listID),
+			zap.String("username", claims.Username),
+			zap.Error(err),
+		)
+		return apptheory.Text(http.StatusInternalServerError, "Internal Server Error"), nil
+	}
 	return streamSSE(ctx, streaming.ListStreamName(listID), false)
 }
 
@@ -255,6 +267,28 @@ func handleDirectStream(ctx *apptheory.Context) (*apptheory.Response, error) {
 		return resp, nil
 	}
 	return streamSSE(ctx, streaming.DirectStreamName(claims.Username), false)
+}
+
+func authorizeListStream(ctx context.Context, listID, username string) error {
+	if repos == nil {
+		return apperrors.Internal("repositories not initialized")
+	}
+
+	listRepo := repos.List()
+	if listRepo == nil {
+		return apperrors.Internal("list repository not initialized")
+	}
+
+	list, err := listRepo.GetList(ctx, listID)
+	if err != nil {
+		return err
+	}
+
+	if list == nil || list.Username != username {
+		return apperrors.NotFound("list")
+	}
+
+	return nil
 }
 
 func streamSSE(ctx *apptheory.Context, streamName string, onlyMedia bool) (*apptheory.Response, error) {

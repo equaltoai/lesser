@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/translation"
@@ -19,9 +20,9 @@ import (
 )
 
 type translationServiceStub struct {
-	TranslateHTMLFunc          func(ctx context.Context, content, sourceLang, targetLang string) (string, string, error)
-	TranslateTextFunc          func(ctx context.Context, content, sourceLang, targetLang string) (string, string, error)
-	GetSupportedLanguagesFunc  func(ctx context.Context) ([]translation.LanguageInfo, error)
+	TranslateHTMLFunc         func(ctx context.Context, content, sourceLang, targetLang string) (string, string, error)
+	TranslateTextFunc         func(ctx context.Context, content, sourceLang, targetLang string) (string, string, error)
+	GetSupportedLanguagesFunc func(ctx context.Context) ([]translation.LanguageInfo, error)
 }
 
 func (s *translationServiceStub) TranslateHTML(ctx context.Context, content, sourceLang, targetLang string) (string, string, error) {
@@ -92,7 +93,7 @@ func TestTranslationRound13_HandleTranslateStatus_AndLanguages(t *testing.T) {
 	t.Run("status not found returns 404", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
 					return nil, errors.New("not found")
 				},
 			},
@@ -114,7 +115,11 @@ func TestTranslationRound13_HandleTranslateStatus_AndLanguages(t *testing.T) {
 	t.Run("status with empty content returns 422", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					statusID := ""
+					if query != nil {
+						statusID = query.StatusID
+					}
 					return &storagemodels.Status{StatusID: statusID, Content: "", Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Summary: "spoiler"}}}, nil
 				},
 			},
@@ -136,7 +141,11 @@ func TestTranslationRound13_HandleTranslateStatus_AndLanguages(t *testing.T) {
 	t.Run("invalid source language rejected", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					statusID := ""
+					if query != nil {
+						statusID = query.StatusID
+					}
 					return &storagemodels.Status{StatusID: statusID, Content: "<p>hello</p>", Language: "english"}, nil
 				},
 			},
@@ -173,7 +182,11 @@ func TestTranslationRound13_HandleTranslateStatus_AndLanguages(t *testing.T) {
 	t.Run("translation service initialization failure returns 500", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					statusID := ""
+					if query != nil {
+						statusID = query.StatusID
+					}
 					return &storagemodels.Status{StatusID: statusID, Content: "<p>hello</p>"}, nil
 				},
 			},
@@ -201,7 +214,11 @@ func TestTranslationRound13_HandleTranslateStatus_AndLanguages(t *testing.T) {
 	t.Run("translation failure returns 500", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					statusID := ""
+					if query != nil {
+						statusID = query.StatusID
+					}
 					return &storagemodels.Status{StatusID: statusID, Content: "<p>hello</p>", Note: &activitypub.Note{BaseObject: activitypub.BaseObject{Summary: "spoiler"}}}, nil
 				},
 			},
@@ -238,12 +255,16 @@ func TestTranslationRound13_HandleTranslateStatus_AndLanguages(t *testing.T) {
 	t.Run("success returns translated content and supports spoiler fallback", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					statusID := ""
+					if query != nil {
+						statusID = query.StatusID
+					}
 					return &storagemodels.Status{
-						StatusID:  statusID,
-						Content:   "<p>Hello</p>",
-						Language:  "en",
-						Note:      &activitypub.Note{BaseObject: activitypub.BaseObject{Summary: "Spoiler"}},
+						StatusID: statusID,
+						Content:  "<p>Hello</p>",
+						Language: "en",
+						Note:     &activitypub.Note{BaseObject: activitypub.BaseObject{Summary: "Spoiler"}},
 					}, nil
 				},
 			},
@@ -286,7 +307,11 @@ func TestTranslationRound13_HandleTranslateStatus_AndLanguages(t *testing.T) {
 	t.Run("target language validation errors", func(t *testing.T) {
 		reg := &RegistryStub{
 			NotesSvc: &NotesServiceStub{
-				GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
+				GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+					statusID := ""
+					if query != nil {
+						statusID = query.StatusID
+					}
 					return &storagemodels.Status{StatusID: statusID, Content: "<p>Hello</p>", Language: "en"}, nil
 				},
 			},

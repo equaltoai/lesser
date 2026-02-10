@@ -99,4 +99,3 @@ func TestHandleDefaultAndDisconnect_NilContexts_Round14(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, resp)
 }
-

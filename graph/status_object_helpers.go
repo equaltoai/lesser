@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
@@ -171,8 +172,12 @@ func (r *Resolver) resolveInReplyToObject(ctx context.Context, status *models.St
 	}
 
 	newCtx := r.setConversionDepth(ctx, depth+1)
+	viewerUsername := r.optionalAuth(newCtx)
 	parentLookupStart := time.Now()
-	parentStatus, err := r.Registry.Notes().GetNote(newCtx, status.InReplyToID)
+	parentStatus, err := r.Registry.Notes().GetNoteWithViewer(newCtx, &notes.GetNoteQuery{
+		StatusID: status.InReplyToID,
+		ViewerID: viewerUsername,
+	})
 	if convertLogger != nil {
 		convertLogger.Info("convertStatusToObject parent lookup",
 			zap.String("status_id", status.StatusID),
@@ -209,6 +214,7 @@ func (r *Resolver) resolveBoostedObject(ctx context.Context, status *models.Stat
 	}
 
 	newCtx := r.setConversionDepth(ctx, depth+1)
+	viewerUsername := r.optionalAuth(newCtx)
 	notesSvc := r.notesService()
 	if notesSvc == nil {
 		if convertLogger != nil {
@@ -219,7 +225,10 @@ func (r *Resolver) resolveBoostedObject(ctx context.Context, status *models.Stat
 		return nil
 	}
 
-	originalStatus, err := notesSvc.GetNote(newCtx, targetStatusID)
+	originalStatus, err := notesSvc.GetNoteWithViewer(newCtx, &notes.GetNoteQuery{
+		StatusID: targetStatusID,
+		ViewerID: viewerUsername,
+	})
 	if err != nil {
 		if convertLogger != nil {
 			convertLogger.Warn("failed to resolve boost target",

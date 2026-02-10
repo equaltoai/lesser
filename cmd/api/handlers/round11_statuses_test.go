@@ -87,6 +87,12 @@ func TestStatusHandlersLift(t *testing.T) {
 			}
 			return status, nil
 		},
+		GetNoteWithViewerFunc: func(_ context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+			if query.StatusID == "missing" {
+				return nil, errors.New("not found")
+			}
+			return status, nil
+		},
 		DeleteNoteFunc: func(_ context.Context, cmd *notes.DeleteNoteCommand) error {
 			require.Equal(t, "s1", cmd.StatusID)
 			return nil
@@ -184,10 +190,17 @@ func TestStatusHelpers(t *testing.T) {
 	require.Equal(t, "warn", note.Summary)
 	require.True(t, note.Sensitive)
 
+	// Stored HTML-by-contract fields must be sanitized at write time.
+	xssReq := &apimodels.UpdateStatusRequest{Status: `<img src=x onerror=alert(1)>ok`, SpoilerText: `<script>alert(1)</script>warn`, Sensitive: false}
+	handler.applyStatusUpdates(note, xssReq)
+	require.NotContains(t, note.Content, "<img")
+	require.NotContains(t, note.Content, "onerror=")
+	require.NotContains(t, note.Summary, "<script")
+
 	owned, resp, err := handler.convertObjectToNoteWithOwnershipCheck(ctx, note, "https://example.com/users/alice")
 	require.NoError(t, err)
 	require.Nil(t, resp)
-	require.Equal(t, "updated", owned.Content)
+	require.Equal(t, "ok", owned.Content)
 
 	ctxForbidden, err := round10NewLiftContext(http.MethodGet, "/status", nil, nil, nil)
 	require.NoError(t, err)

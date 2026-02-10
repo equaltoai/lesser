@@ -12,7 +12,12 @@ import (
 // required imports after generating these files.
 
 // CostBreakdown is the resolver for the costBreakdown field.
-func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (*model.CostBreakdown, error) {
+func (r *queryResolver) CostBreakdown(ctx context.Context, period *model.Period) (*model.CostBreakdown, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	p := model.PeriodDay
 	if period != nil {
 		p = *period
@@ -101,6 +106,11 @@ func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (
 
 // InfrastructureHealth implements QueryResolver.
 func (r *queryResolver) InfrastructureHealth(ctx context.Context) (*model.InfrastructureStatus, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Use analytics service to get real infrastructure metrics
 	analytics := r.Registry.Analytics()
 	if analytics == nil {
@@ -119,6 +129,11 @@ func (r *queryResolver) InfrastructureHealth(ctx context.Context) (*model.Infras
 
 // SlowQueries implements QueryResolver.
 func (r *queryResolver) SlowQueries(ctx context.Context, threshold model.Duration) ([]*model.QueryPerformance, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get query tracker from registry
 	queryTracker := r.Registry.QueryTracker()
 	if queryTracker == nil {
@@ -138,6 +153,11 @@ func (r *queryResolver) SlowQueries(ctx context.Context, threshold model.Duratio
 
 // PerformanceMetrics returns performance metrics for a service
 func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.ServiceCategory) (*model.PerformanceReport, error) {
+	_, err := r.requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get performance service from registry
 	perfService := r.Registry.Performance()
 	if perfService == nil {
@@ -162,7 +182,7 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 
 // BandwidthUsage implements QueryResolver
 func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePeriod) (*model.BandwidthReport, error) {
-	_, err := r.requireAuth(ctx)
+	_, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +217,7 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 
 // CostProjections implements QueryResolver
 func (r *queryResolver) CostProjections(ctx context.Context, period model.Period) (*model.CostProjection, error) {
-	username, err := r.requireAuth(ctx)
+	username, err := r.requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}

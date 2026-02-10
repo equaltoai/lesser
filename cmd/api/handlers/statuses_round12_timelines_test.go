@@ -46,18 +46,26 @@ func TestStatusesGetAndTimelines_Round12(t *testing.T) {
 		},
 	}
 
+	getNoteByID := func(_ context.Context, statusID string) (*storagemodels.Status, error) {
+		if statusID == "gone" {
+			return nil, errors.New("not found")
+		}
+		if statusID == "err" {
+			return nil, errors.New("boom")
+		}
+		if note, ok := notesByID[statusID]; ok {
+			return note, nil
+		}
+		return nil, errors.New("not found")
+	}
+
 	notesSvc := &NotesServiceStub{
-		GetNoteFunc: func(ctx context.Context, statusID string) (*storagemodels.Status, error) {
-			if statusID == cfg.BaseURL()+"/objects/gone" {
+		GetNoteFunc: getNoteByID,
+		GetNoteWithViewerFunc: func(ctx context.Context, query *notes.GetNoteQuery) (*storagemodels.Status, error) {
+			if query == nil {
 				return nil, errors.New("not found")
 			}
-			if statusID == "err" {
-				return nil, errors.New("boom")
-			}
-			if note, ok := notesByID[statusID]; ok {
-				return note, nil
-			}
-			return nil, errors.New("not found")
+			return getNoteByID(ctx, query.StatusID)
 		},
 		ListNotesFunc: func(ctx context.Context, query *notes.ListNotesQuery) (*notes.Result, error) {
 			if query != nil && query.TimelineType == "error" {

@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	svcErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -311,10 +312,17 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		zap.String("visibility", cmd.Visibility),
 		zap.Int("content_length", len(cmd.Content)))
 
+	rawContent := cmd.Content
+
 	// Validate the command
 	if err := s.validateCreateCommand(ctx, cmd); err != nil {
 		return nil, err
 	}
+
+	// Enforce "HTML-by-contract" invariants at write time. (Mastodon-compatible clients render `content` as HTML.)
+	sanitizedCmd := *cmd
+	sanitizedCmd.Content = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Content))
+	sanitizedCmd.SpoilerText = strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.SpoilerText))
 
 	// Get author account
 	author, err := s.accountRepo.GetAccount(ctx, cmd.AuthorID)
@@ -326,19 +334,19 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	statusID := uuid.New().String()
 
 	// Create ActivityPub Note
-	note := s.buildActivityPubNote(cmd, statusID, author)
+	note := s.buildActivityPubNote(&sanitizedCmd, statusID, author)
 
 	publishedAt := time.Now()
 	note.Published = &publishedAt
 
 	// Enrich note with hashtags
-	hashtagTags, normalizedHashtags := s.buildHashtagTags(cmd.Content)
+	hashtagTags, normalizedHashtags := s.buildHashtagTags(rawContent)
 	if len(hashtagTags) > 0 {
 		note.Tag = append(note.Tag, hashtagTags...)
 	}
 
 	// Attach media if provided
-	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, cmd.MediaIDs)
+	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, sanitizedCmd.MediaIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +354,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		note.Attachment = attachments
 	}
 
-	status := s.composeStatus(cmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
+	status := s.composeStatus(&sanitizedCmd, author, statusID, note, normalizedHashtags, attachments, publishedAt)
 	status.ConversationID = resolveConversationID(ctx, status, s.lookupParentStatus)
 
 	// Store the status
@@ -525,17 +533,21 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 		return nil, err
 	}
 
+	// Enforce "HTML-by-contract" invariants at write time.
+	sanitizedContent := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.Content))
+	sanitizedSpoiler := strings.TrimSpace(htmlsafe.SanitizeHTMLByContract(cmd.SpoilerText))
+
 	// Update status fields
-	status.Content = cmd.Content
+	status.Content = sanitizedContent
 	status.Sensitive = cmd.Sensitive
 	status.Language = cmd.Language
 	status.UpdatedAt = time.Now()
 
 	// Update the ActivityPub Note if present
 	if status.Note != nil {
-		status.Note.Content = cmd.Content
+		status.Note.Content = sanitizedContent
 		status.Note.Sensitive = cmd.Sensitive
-		status.Note.Summary = cmd.SpoilerText
+		status.Note.Summary = sanitizedSpoiler
 		now := time.Now()
 		status.Note.Updated = &now
 	}
@@ -620,7 +632,10 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 	return nil
 }
 
-// GetNote retrieves a single note with privacy checks
+// GetNote retrieves a single note for public contexts.
+//
+// It enforces visibility as if the viewer is unauthenticated (public/unlisted only).
+// Use GetNoteWithViewer for viewer-aware access to private/direct content.
 func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status, error) {
 	s.logger.Debug("getting note",
 		zap.String("status_id", statusID))
@@ -636,7 +651,14 @@ func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status,
 		return nil, ErrStatusNotFound // Don't reveal it was deleted
 	}
 
-	// Return the status directly since we simplified the method
+	canView, err := s.checkViewPermissions(ctx, status, "")
+	if err != nil {
+		return nil, ErrCheckViewPermissions
+	}
+	if !canView {
+		return nil, ErrStatusNotFound
+	}
+
 	return status, nil
 }
 
@@ -761,7 +783,7 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		zap.Int("items_count", len(result.Items)))
 
 	hydratedItems := s.hydrateTimelineStatuses(ctx, result.Items)
-	filteredNotes := s.filterNotesForViewer(hydratedItems, query)
+	filteredNotes := s.filterNotesForViewer(ctx, hydratedItems, query)
 
 	return s.buildNotesResult(filteredNotes, result), nil
 }
@@ -827,12 +849,12 @@ func (s *Service) routeTimelineQuery(ctx context.Context, query *ListNotesQuery)
 }
 
 // filterNotesForViewer filters notes based on privacy, visibility, and query filters
-func (s *Service) filterNotesForViewer(notes []*models.Status, query *ListNotesQuery) []*models.Status {
+func (s *Service) filterNotesForViewer(ctx context.Context, notes []*models.Status, query *ListNotesQuery) []*models.Status {
 	filteredNotes := make([]*models.Status, 0, len(notes))
 	isPublicTimeline := query.TimelineType == VisibilityPublic || query.TimelineType == "local"
 
 	for _, status := range notes {
-		if !s.shouldIncludeStatus(status, query, isPublicTimeline) {
+		if !s.shouldIncludeStatus(ctx, status, query, isPublicTimeline) {
 			continue
 		}
 
@@ -943,7 +965,7 @@ func safeKey(status *models.Status, isPK bool) string {
 }
 
 // shouldIncludeStatus determines if a status should be included based on filters
-func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQuery, isPublicTimeline bool) bool {
+func (s *Service) shouldIncludeStatus(ctx context.Context, status *models.Status, query *ListNotesQuery, isPublicTimeline bool) bool {
 	// Skip deleted posts
 	if status.Deleted {
 		s.logger.Debug("skipping deleted status",
@@ -954,7 +976,16 @@ func (s *Service) shouldIncludeStatus(status *models.Status, query *ListNotesQue
 	// For public/local timelines, skip visibility check since repository already filtered
 	// For other timelines (home, user, etc.), check visibility
 	if !isPublicTimeline {
-		if !status.IsVisibleTo(query.ViewerID) {
+		canView, err := s.checkViewPermissions(ctx, status, query.ViewerID)
+		if err != nil {
+			s.logger.Error("failed to check view permissions for timeline status",
+				zap.String("status_id", status.StatusID),
+				zap.String("visibility", status.Visibility),
+				zap.String("viewer_id", query.ViewerID),
+				zap.Error(err))
+			return false
+		}
+		if !canView {
 			s.logger.Debug("skipping status not visible to viewer",
 				zap.String("status_id", status.StatusID),
 				zap.String("visibility", status.Visibility),
@@ -1089,9 +1120,9 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 			Sensitive: cmd.Sensitive,
 			Summary:   cmd.SpoilerText,
 		},
-		Content:      cmd.Content,
-		AttributedTo: fmt.Sprintf("https://%s/users/%s", s.domainName, author.User.Username),
-		Visibility:   cmd.Visibility,
+		Content:          cmd.Content,
+		AttributedTo:     fmt.Sprintf("https://%s/users/%s", s.domainName, author.User.Username),
+		Visibility:       cmd.Visibility,
 		AgentAttribution: cmd.AgentAttribution,
 	}
 
@@ -3389,6 +3420,12 @@ type CreateCommunityNoteResult struct {
 
 // CreateCommunityNote creates a new community note
 func (s *Service) CreateCommunityNote(ctx context.Context, cmd *CreateCommunityNoteCommand) (*CreateCommunityNoteResult, error) {
+	if cmd != nil && cmd.Note != nil {
+		// Community notes are surfaced via an HTML-by-contract field in Mastodon-compatible responses.
+		// Treat stored note content as plain text and escape so it is always safe to embed.
+		cmd.Note.Content = htmlsafe.Escape(strings.TrimSpace(cmd.Note.Content))
+	}
+
 	// Create community note through repository
 	if err := s.communityNoteRepo.CreateCommunityNote(ctx, cmd.Note); err != nil {
 		return nil, ErrCreateCommunityNote

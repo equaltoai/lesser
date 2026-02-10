@@ -592,16 +592,17 @@ func (r *Resolver) buildMinimalThreadNote(note *activitypub.Note) *model.Object 
 	}
 
 	return &model.Object{
-		ID:         note.ID,
-		Type:       model.ObjectTypeNote,
-		Actor:      actor,
-		Content:    note.Content,
-		ContentMap: r.extractContentMaps(note.Content),
-		Mentions:   r.extractMentionsFromNote(note),
-		CreatedAt:  model.Time(*createdAt),
-		UpdatedAt:  model.Time(*updatedAt),
-		Visibility: model.VisibilityPublic,
-		Sensitive:  note.Sensitive,
+		ID:          note.ID,
+		Type:        model.ObjectTypeNote,
+		Actor:       actor,
+		Content:     note.Content,
+		ContentMap:  r.extractContentMaps(note.Content),
+		Mentions:    r.extractMentionsFromNote(note),
+		CreatedAt:   model.Time(*createdAt),
+		UpdatedAt:   model.Time(*updatedAt),
+		Visibility:  model.VisibilityPublic,
+		Sensitive:   note.Sensitive,
+		ContentHash: contentHashForObjectID(note.ID),
 	}
 }
 

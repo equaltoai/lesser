@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -127,10 +128,12 @@ func (h *Handler) HandleLoginWalletLift(ctx *apptheory.Context) (*apptheory.Resp
 }
 
 // HandleLinkWalletLift handles POST /auth/wallet/link
+//nolint:gocognit,gocyclo // Wallet linking flow includes many security checks and early exits.
 func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Try to get authenticated user (for existing users)
 	// But allow linking during registration if signature is valid
 	username := h.getAuthenticatedUserLift(ctx)
+	isAuthenticated := strings.TrimSpace(username) != ""
 
 	var req apimodels.WalletLinkRequest
 
@@ -151,7 +154,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	// Determine username
-	if username == "" {
+	if !isAuthenticated {
 		// No auth token - this is registration flow
 		// Use username from request if provided
 		if req.Username != "" {
@@ -161,55 +164,90 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		}
 	}
 
+	// Require signature-based proof for linking (wallet ownership).
+	if err := common.ValidateRequiredParam("challengeId", req.ChallengeID); err != nil {
+		return h.respondBadRequest(ctx, "challengeId is required")
+	}
+	if err := common.ValidateRequiredParam("signature", req.Signature); err != nil {
+		return h.respondBadRequest(ctx, "signature is required")
+	}
+	if err := common.ValidateRequiredParam("message", req.Message); err != nil {
+		return h.respondBadRequest(ctx, "message is required")
+	}
+
 	// Get auth service
 	authService, resp, err := h.requireAuthService(ctx)
 	if resp != nil || err != nil {
 		return resp, err
 	}
 
-	// If signature provided, verify it (for registration flow or manual verification)
-	if req.ChallengeID != "" && req.Signature != "" && req.Message != "" {
-		// Get the challenge to verify username binding
-		challenge, err := authService.GetWalletChallenge(ctx.Context(), req.ChallengeID)
-		if err != nil {
-			h.logger.Error("failed to get challenge for verification",
-				zap.String("challengeId", req.ChallengeID),
-				zap.Error(err))
-			return h.respondWithError(ctx, http.StatusUnauthorized, "invalid or expired challenge")
-		}
+	// Get the challenge to verify username binding
+	challenge, err := authService.GetWalletChallenge(ctx.Context(), req.ChallengeID)
+	if err != nil {
+		h.logger.Error("failed to get challenge for verification",
+			zap.String("challengeId", req.ChallengeID),
+			zap.Error(err))
+		return h.respondWithError(ctx, http.StatusUnauthorized, "invalid or expired challenge")
+	}
 
-		// CRITICAL: Verify the challenge username matches the requested username
-		// This prevents replay attacks where someone uses your signature for a different username
-		if challenge.Username != username {
-			h.logger.Error("username mismatch - signature was bound to different username",
-				zap.String("challenge_username", challenge.Username),
-				zap.String("requested_username", username),
-				zap.String("address", req.Address))
-			return h.respondWithError(ctx, http.StatusUnauthorized, "signature was created for a different username - replay attack prevented")
-		}
+	// CRITICAL: Verify the challenge username matches the requested username
+	// This prevents replay attacks where someone uses your signature for a different username.
+	if challenge.Username != username {
+		h.logger.Error("username mismatch - signature was bound to different username",
+			zap.String("challenge_username", challenge.Username),
+			zap.String("requested_username", username),
+			zap.String("address", req.Address))
+		return h.respondWithError(ctx, http.StatusUnauthorized, "signature was created for a different username - replay attack prevented")
+	}
 
-		// Check if challenge is already spent
-		if challenge.Spent {
-			h.logger.Error("challenge already spent",
-				zap.String("challengeId", req.ChallengeID))
-			return h.respondWithError(ctx, http.StatusUnauthorized, "challenge already used")
-		}
+	// Check if challenge is already spent.
+	if challenge.Spent {
+		h.logger.Error("challenge already spent",
+			zap.String("challengeId", req.ChallengeID))
+		return h.respondWithError(ctx, http.StatusUnauthorized, "challenge already used")
+	}
 
-		// Verify the signature directly (single verification)
-		// The challenge was already verified once in /auth/wallet/verify
-		// We just need to verify the signature matches
-		if err := authService.VerifySignatureOnly(ctx.Context(), challenge, req.Signature); err != nil {
-			h.logger.Error("signature verification failed for wallet link",
-				zap.String("address", req.Address),
-				zap.Error(err))
-			return h.respondWithError(ctx, http.StatusUnauthorized, "signature verification failed")
-		}
+	// Check that the message matches the challenge (defense-in-depth).
+	if strings.TrimSpace(req.Message) != strings.TrimSpace(challenge.Message) {
+		return h.respondWithError(ctx, http.StatusUnauthorized, "message mismatch")
+	}
 
-		// Mark challenge as spent (second and final use)
-		if err := authService.MarkWalletChallengeSpent(ctx.Context(), req.ChallengeID); err != nil {
-			h.logger.Warn("failed to mark challenge as spent", zap.Error(err))
-			// Non-fatal - continue
+	// Enforce that unauthenticated wallet linking is only allowed immediately after registration.
+	// The registration handler stores the verified challenge ID in user metadata; unauth flows must match it.
+	accountRepo := h.repos.Account()
+	if accountRepo == nil {
+		return h.respondWithError(ctx, http.StatusInternalServerError, "internal server error")
+	}
+	user, err := accountRepo.GetUser(ctx.Context(), username)
+	if err != nil || user == nil {
+		return h.respondBadRequest(ctx, "user not found")
+	}
+
+	if !isAuthenticated {
+		expectedChallengeID := ""
+		if user.Metadata != nil {
+			if v, ok := user.Metadata["registration_challenge_id"].(string); ok {
+				expectedChallengeID = strings.TrimSpace(v)
+			}
 		}
+		if expectedChallengeID == "" || expectedChallengeID != strings.TrimSpace(req.ChallengeID) {
+			return h.respondWithError(ctx, http.StatusUnauthorized, "registration challenge mismatch")
+		}
+	}
+
+	// Verify the signature directly (single verification).
+	// The challenge was already verified once in /auth/wallet/verify; we verify again as defense-in-depth.
+	if err := authService.VerifySignatureOnly(ctx.Context(), challenge, req.Signature); err != nil {
+		h.logger.Error("signature verification failed for wallet link",
+			zap.String("address", req.Address),
+			zap.Error(err))
+		return h.respondWithError(ctx, http.StatusUnauthorized, "signature verification failed")
+	}
+
+	// Mark challenge as spent (second and final use).
+	if err := authService.MarkWalletChallengeSpent(ctx.Context(), req.ChallengeID); err != nil {
+		h.logger.Warn("failed to mark challenge as spent", zap.Error(err))
+		// Non-fatal - continue
 	}
 
 	// Link the wallet
@@ -224,7 +262,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 	// If this is a registration flow (signature provided but no auth token), create session
 	// This creates a server-side session so /oauth/authorize can authenticate the user
 	// Signature was already verified in /auth/wallet/verify, so we can create session directly
-	if req.ChallengeID != "" && req.Signature != "" && req.Message != "" {
+	if !isAuthenticated {
 		// Get device info for session creation
 		userAgent, ipAddress := h.getDeviceInfo(ctx)
 		deviceName := userAgent
@@ -245,6 +283,20 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 
 		// Return success with JWT for stateless OAuth flow
 		// Client will use this JWT to authenticate with /oauth/authorize
+		// Clear registration-only metadata so unauth linking can't be reused.
+		if user != nil && user.Metadata != nil {
+			updatedMetadata := map[string]interface{}{}
+			for k, v := range user.Metadata {
+				if k == "registration_challenge_id" {
+					continue
+				}
+				updatedMetadata[k] = v
+			}
+			if err := accountRepo.UpdateUser(ctx.Context(), username, map[string]interface{}{"metadata": updatedMetadata}); err != nil {
+				h.logger.Warn("failed to clear registration challenge metadata", zap.Error(err))
+			}
+		}
+
 		return okJSON(apimodels.WalletLinkResponse{
 			Success:     true,
 			Message:     "wallet linked successfully",

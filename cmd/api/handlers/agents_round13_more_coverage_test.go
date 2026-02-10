@@ -160,15 +160,15 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(h.HandleDelegateAgentLift(ctx))
 	})
 
-		t.Run("scopes cannot exceed owner scopes", func(t *testing.T) {
-			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", readHeaders, nil, apimodels.AgentDelegationRequest{
-				AgentUsername: "agent1",
-				DisplayName:   "Agent",
-				Scopes:        []string{auth.ScopeWrite},
-			})
-			require.NoError(t, err)
-			requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(ctx))
+	t.Run("scopes cannot exceed owner scopes", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", readHeaders, nil, apimodels.AgentDelegationRequest{
+			AgentUsername: "agent1",
+			DisplayName:   "Agent",
+			Scopes:        []string{auth.ScopeWrite},
 		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(ctx))
+	})
 
 	t.Run("delegation scope validation rejects forbidden base scopes", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", writeHeaders, nil, apimodels.AgentDelegationRequest{
@@ -193,14 +193,14 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(h.HandleDelegateAgentLift(ctx))
 	})
 
-		t.Run("conflict on create returns 409", func(t *testing.T) {
-			stateConflict := &round10QueryState{
-				agentInstanceConfig: policy,
-				usersByUsername: map[string]storagemodels.User{
-					"owner": state.usersByUsername["owner"],
-				},
-				createErrorOnce: dynamormerrors.ErrConditionFailed,
-			}
+	t.Run("conflict on create returns 409", func(t *testing.T) {
+		stateConflict := &round10QueryState{
+			agentInstanceConfig: policy,
+			usersByUsername: map[string]storagemodels.User{
+				"owner": state.usersByUsername["owner"],
+			},
+			createErrorOnce: dynamormerrors.ErrConditionFailed,
+		}
 
 		hConflict, _, _ := round11NewHandler(t, cfg, stateConflict)
 		hConflict.repos.Account().SetEncryptor(noopEncryptor{})
@@ -211,9 +211,9 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 			Scopes:        []string{"read"},
 		})
 		require.NoError(t, err)
-			resp := requireStatus(t, http.StatusConflict)(hConflict.HandleDelegateAgentLift(ctx))
-			require.NotEmpty(t, resp.Body)
-		})
+		resp := requireStatus(t, http.StatusConflict)(hConflict.HandleDelegateAgentLift(ctx))
+		require.NotEmpty(t, resp.Body)
+	})
 
 	t.Run("validateAgentAccessTokenTTL boundaries", func(t *testing.T) {
 		ctx := &apptheory.Context{}
@@ -242,11 +242,11 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 		require.NotNil(t, resp)
 	})
 
-		t.Run("authenticateAgentOwner rejects missing token", func(t *testing.T) {
-			ctx := &apptheory.Context{}
-			claims, resp, authErr := h.authenticateAgentOwner(ctx)
-			require.Nil(t, claims)
-			require.NoError(t, authErr)
-			require.NotNil(t, resp)
-		})
-	}
+	t.Run("authenticateAgentOwner rejects missing token", func(t *testing.T) {
+		ctx := &apptheory.Context{}
+		claims, resp, authErr := h.authenticateAgentOwner(ctx)
+		require.Nil(t, claims)
+		require.NoError(t, authErr)
+		require.NotNil(t, resp)
+	})
+}

@@ -121,9 +121,9 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 	t.Run("agent falls back to stored delegation and constraints", func(t *testing.T) {
 		account := &storage.Account{
 			User: &storage.User{
-				Username:    "bot",
-				IsAgent:     true,
-				AgentOwner:  "",
+				Username:     "bot",
+				IsAgent:      true,
+				AgentOwner:   "",
 				AgentVersion: "",
 				Metadata: map[string]any{
 					"agent_delegated_scopes": []any{"read", "write:statuses"},

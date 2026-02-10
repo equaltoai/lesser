@@ -284,7 +284,17 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 		}, "featured", target))
 
 		require.NoError(t, env.handler.verifyCollectionAuthorization(context.Background(), &activitypub.Activity{
+			Actor:  target.ID + "/",
+			Target: target.ID + "/likes",
+		}, "likes", target))
+
+		require.Error(t, env.handler.verifyCollectionAuthorization(context.Background(), &activitypub.Activity{
 			Actor:  "https://example.com/users/alice",
+			Target: target.ID + "/likes",
+		}, "likes", target))
+
+		require.Error(t, env.handler.verifyCollectionAuthorization(context.Background(), &activitypub.Activity{
+			Actor:  env.remoteActorID,
 			Target: target.ID + "/likes",
 		}, "likes", target))
 
@@ -292,11 +302,6 @@ func TestInboxHandler_Round10_HelperCoverageExpansion(t *testing.T) {
 			Actor:  env.remoteActorID,
 			Target: target.ID + "/featured",
 		}, "featured", target))
-
-		require.Error(t, env.handler.verifyCollectionAuthorization(context.Background(), &activitypub.Activity{
-			Actor:  env.remoteActorID,
-			Target: target.ID + "/likes",
-		}, "likes", target))
 	})
 
 	t.Run("enrichActivitiesWithObjects branches", func(t *testing.T) {

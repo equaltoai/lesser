@@ -179,8 +179,9 @@ func (r *queryResolver) MultiHashtagTimeline(ctx context.Context, hashtags []str
 
 			if _, exists := allPosts[post.StatusID]; !exists {
 				allPosts[post.StatusID] = &model.Object{
-					ID:      post.StatusID,
-					Content: post.Content,
+					ID:          post.StatusID,
+					Content:     post.Content,
+					ContentHash: contentHashForObjectID(post.StatusID),
 				}
 			}
 			postMap[post.StatusID] = append(postMap[post.StatusID], tag)
@@ -345,8 +346,9 @@ func (r *queryResolver) buildTimelineObject(ctx context.Context, status *models.
 	}
 
 	return &model.Object{
-		ID:      statusID,
-		Content: content,
+		ID:          statusID,
+		Content:     content,
+		ContentHash: contentHashForObjectID(statusID),
 	}
 }
 

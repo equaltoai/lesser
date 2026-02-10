@@ -27,10 +27,8 @@ export { default as CodeBlock } from './components/CodeBlock.svelte';
  */
 export { default as MarkdownRenderer } from './components/MarkdownRenderer.svelte';
 
-// Import component types for prop inference
-import type CodeBlockComponent from './components/CodeBlock.svelte';
-import type MarkdownRendererComponent from './components/MarkdownRenderer.svelte';
-
 // Component prop types
-export type CodeBlockProps = ComponentProps<CodeBlockComponent>;
-export type MarkdownRendererProps = ComponentProps<MarkdownRendererComponent>;
+export type CodeBlockProps = ComponentProps<typeof import('./components/CodeBlock.svelte').default>;
+export type MarkdownRendererProps = ComponentProps<
+	typeof import('./components/MarkdownRenderer.svelte').default
+>;

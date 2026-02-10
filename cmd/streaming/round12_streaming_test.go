@@ -14,6 +14,7 @@ import (
 	awsinit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services"
 	storagecore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -350,6 +351,109 @@ func TestHandleSubscribe_AndUnsubscribe_ErrorBranches(t *testing.T) {
 
 	ws.postErr = errors.New("send failed")
 	require.ErrorIs(t, sh.handleUnsubscribe(context.Background(), connection, StreamMessage{Type: "unsubscribe", Stream: "public"}), streaming.ErrConfirmationSendFailed)
+}
+
+func TestHandleSubscribe_CanonicalizesAndRestrictsUserStreams_Round12(t *testing.T) {
+	connRepo := &fakeConnectionRepo{}
+	ws := &fakeWSClient{}
+	sh := &StreamingHandler{
+		connectionRepo: connRepo,
+		wsClient:       ws,
+		logger:         zap.NewNop(),
+	}
+
+	connection := &models.WebSocketConnection{ConnectionID: "c1", UserID: "u1", Username: "alice"}
+	ws.posts = nil
+
+	require.NoError(t, sh.handleSubscribe(context.Background(), connection, StreamMessage{Type: "subscribe", Stream: "user"}))
+	require.Len(t, connRepo.wroteSubscriptions, 1)
+	require.Equal(t, "user:alice", connRepo.wroteSubscriptions[0].stream)
+	require.Contains(t, connection.Streams, "user:alice")
+	require.Len(t, ws.posts, 1)
+
+	var confirm StreamMessage
+	require.NoError(t, json.Unmarshal(ws.posts[0].data, &confirm))
+	require.Equal(t, "subscribed", confirm.Type)
+	require.Equal(t, "user", confirm.Stream)
+	require.Equal(t, "user:alice", confirm.Payload["canonical_stream"])
+
+	// Cannot subscribe to another user's stream.
+	ws.posts = nil
+	connRepo.wroteSubscriptions = nil
+	require.NoError(t, sh.handleSubscribe(context.Background(), connection, StreamMessage{Type: "subscribe", Stream: "user:bob"}))
+	require.Len(t, connRepo.wroteSubscriptions, 0)
+	require.Len(t, ws.posts, 1)
+	require.NoError(t, json.Unmarshal(ws.posts[0].data, &confirm))
+	require.Equal(t, "error", confirm.Type)
+}
+
+func TestHandleSubscribe_DirectStreamsRequireAuth_Round12(t *testing.T) {
+	connRepo := &fakeConnectionRepo{}
+	ws := &fakeWSClient{}
+	sh := &StreamingHandler{
+		connectionRepo: connRepo,
+		wsClient:       ws,
+		logger:         zap.NewNop(),
+	}
+
+	// Anonymous connections cannot subscribe to direct streams (including direct:<user>).
+	anon := &models.WebSocketConnection{ConnectionID: "c1"}
+	ws.posts = nil
+	require.NoError(t, sh.handleSubscribe(context.Background(), anon, StreamMessage{Type: "subscribe", Stream: "direct:alice"}))
+	require.Len(t, connRepo.wroteSubscriptions, 0)
+	require.Len(t, ws.posts, 1)
+}
+
+func TestHandleSubscribe_ListStreamsRequireOwnership_Round12(t *testing.T) {
+	origAuthorize := authorizeListStreamSubscriptionFn
+	t.Cleanup(func() { authorizeListStreamSubscriptionFn = origAuthorize })
+
+	connRepo := &fakeConnectionRepo{}
+	ws := &fakeWSClient{}
+	sh := &StreamingHandler{
+		connectionRepo: connRepo,
+		wsClient:       ws,
+		logger:         zap.NewNop(),
+		storageFactory: nil,
+	}
+
+	connection := &models.WebSocketConnection{ConnectionID: "c1", UserID: "u1", Username: "alice"}
+
+	authorizeListStreamSubscriptionFn = func(context.Context, storagecore.RepositoryStorage, string, string) error {
+		return apperrors.NotFound("list")
+	}
+	ws.posts = nil
+	require.NoError(t, sh.handleSubscribe(context.Background(), connection, StreamMessage{Type: "subscribe", Stream: "list:1"}))
+	require.Len(t, connRepo.wroteSubscriptions, 0)
+	require.Len(t, ws.posts, 1)
+
+	authorizeListStreamSubscriptionFn = func(context.Context, storagecore.RepositoryStorage, string, string) error {
+		return nil
+	}
+	ws.posts = nil
+	require.NoError(t, sh.handleSubscribe(context.Background(), connection, StreamMessage{Type: "subscribe", Stream: "list:1"}))
+	require.Len(t, connRepo.wroteSubscriptions, 1)
+	require.Equal(t, "list:1", connRepo.wroteSubscriptions[0].stream)
+	require.Contains(t, connection.Streams, "list:1")
+	require.Len(t, ws.posts, 1)
+}
+
+func TestHandleUnsubscribe_UsesCanonicalStreamAliases_Round12(t *testing.T) {
+	connRepo := &fakeConnectionRepo{}
+	ws := &fakeWSClient{}
+	sh := &StreamingHandler{
+		connectionRepo: connRepo,
+		wsClient:       ws,
+		logger:         zap.NewNop(),
+	}
+
+	connection := &models.WebSocketConnection{ConnectionID: "c1", UserID: "u1", Username: "alice", Streams: []string{"user:alice"}}
+	ws.posts = nil
+	require.NoError(t, sh.handleUnsubscribe(context.Background(), connection, StreamMessage{Type: "unsubscribe", Stream: "user"}))
+	require.Empty(t, connection.Streams)
+
+	// We should attempt to delete both the alias and canonical name, for backward-compatibility.
+	require.Len(t, connRepo.deletedSubscriptions, 2)
 }
 
 func TestHandlePing(t *testing.T) {

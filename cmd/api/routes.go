@@ -366,6 +366,42 @@ func configureRoutes(app *apptheory.App) {
 	app.Get("/api/v1/vouches/{actor_id}", apiHandler.HandleGetVouchesLift)
 	app.Delete("/api/v1/vouches/{vouch_id}", apiHandler.HandleRevokeVouchLift)
 
+	// lesser-host trust proxy (managed instances)
+	// Requires user auth for all JSON endpoints; public media endpoints do not require auth.
+	app.Post("/api/v1/trust/previews", apiHandler.HandleTrustCreateLinkPreviewLift)
+	app.Get("/api/v1/trust/previews/{id}", apiHandler.HandleTrustGetLinkPreviewLift)
+	app.Get("/api/v1/trust/previews/images/{imageId}", apiHandler.HandleTrustGetLinkPreviewImageLift)
+
+	app.Post("/api/v1/trust/publish/jobs", apiHandler.HandleTrustCreatePublishJobLift)
+	app.Get("/api/v1/trust/publish/jobs/{jobId}", apiHandler.HandleTrustGetPublishJobLift)
+
+	app.Post("/api/v1/trust/renders", apiHandler.HandleTrustCreateRenderLift)
+	app.Get("/api/v1/trust/renders/{renderId}", apiHandler.HandleTrustGetRenderLift)
+	app.Get("/api/v1/trust/renders/{renderId}/thumbnail", apiHandler.HandleTrustGetRenderThumbnailLift)
+	app.Get("/api/v1/trust/renders/{renderId}/snapshot", apiHandler.HandleTrustGetRenderSnapshotLift)
+
+	app.Post("/api/v1/trust/ai/claims/verify", apiHandler.HandleTrustAIClaimVerifyLift)
+	app.Get("/api/v1/trust/ai/jobs/{jobId}", apiHandler.HandleTrustGetAIJobLift)
+
+	app.Get("/api/v1/trust/jwks.json", apiHandler.HandleTrustJWKSJSONLift)
+	app.Get("/api/v1/trust/attestations", apiHandler.HandleTrustLookupAttestationLift)
+	app.Get("/api/v1/trust/attestations/{id}", apiHandler.HandleTrustGetAttestationLift)
+
+	app.Handle("OPTIONS", "/api/v1/trust/previews", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/previews/{id}", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/previews/images/{imageId}", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/publish/jobs", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/publish/jobs/{jobId}", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/renders", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/renders/{renderId}", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/renders/{renderId}/thumbnail", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/renders/{renderId}/snapshot", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/ai/claims/verify", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/ai/jobs/{jobId}", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/jwks.json", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/attestations", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/trust/attestations/{id}", optionsHandler)
+
 	// Admin endpoints (always enabled for administration)
 	// Note: RBAC is handled within each handler's requireAdminLift() method
 	// Account management (Admin only)

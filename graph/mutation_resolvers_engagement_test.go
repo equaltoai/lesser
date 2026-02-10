@@ -51,6 +51,13 @@ func (f *fakeNotesService) GetNote(_ context.Context, id string) (*models.Status
 	return f.noteByID[id], f.getNoteErr
 }
 
+func (f *fakeNotesService) GetNoteWithViewer(ctx context.Context, query *notes.GetNoteQuery) (*models.Status, error) {
+	if query == nil {
+		return nil, f.getNoteErr
+	}
+	return f.GetNote(ctx, query.StatusID)
+}
+
 func (f *fakeNotesService) HasReblogged(_ context.Context, _, statusID string) (bool, error) {
 	if f.hasRebloggedErr != nil {
 		return false, f.hasRebloggedErr

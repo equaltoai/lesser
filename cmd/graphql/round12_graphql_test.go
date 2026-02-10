@@ -388,6 +388,8 @@ func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
 				Body:   []byte(`{}`),
 			},
 		}
+		ctx.Set("is_authenticated", true)
+		ctx.Set("username", "alice")
 		ctx.Set("claims", "not-claims")
 		ctx.Set("loaders", "bad-loaders")
 		resp, err := handleGraphQL(ctx)
@@ -410,6 +412,7 @@ func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
 		ctx := &apptheory.Context{
 			Request: apptheory.Request{Method: http.MethodGet, Path: "/graphql", Body: []byte(`{}`)},
 		}
+		ctx.Set("is_authenticated", true)
 		ctx.Set("claims", &auth.Claims{})
 		_, err := handleGraphQL(ctx)
 		require.NoError(t, err)
@@ -424,8 +427,24 @@ func TestHandleGraphQL_AdditionalBranches_Round12(t *testing.T) {
 		ctx := &apptheory.Context{
 			Request: apptheory.Request{Method: http.MethodGet, Path: "/graphql", Body: []byte(`{}`)},
 		}
+		ctx.Set("is_authenticated", true)
+		ctx.Set("username", "alice")
 		_, err := handleGraphQL(ctx)
 		require.NoError(t, err)
+	})
+
+	t.Run("unauthenticated_rejected", func(t *testing.T) {
+		graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			require.Fail(t, "graphql handler should not be invoked for unauthenticated requests")
+		})
+
+		ctx := &apptheory.Context{
+			Request: apptheory.Request{Method: http.MethodGet, Path: "/graphql", Body: []byte(`{}`)},
+		}
+		resp, err := handleGraphQL(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.Status)
 	})
 }
 
@@ -814,11 +833,23 @@ func TestMain_RegistersAndStartsLambda_Round12(t *testing.T) {
 	require.Equal(t, 204, resp.StatusCode)
 
 	graphQLHandler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") })
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &auth.Claims{
+		Username: "alice",
+		Scopes:   []string{"read"},
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}).SignedString([]byte(cfg.JWTSecret))
+	require.NoError(t, err)
 	raw, err = json.Marshal(events.APIGatewayV2HTTPRequest{
 		Version:  "2.0",
 		RouteKey: "GET /graphql",
 		RawPath:  "/graphql",
-		Headers:  map[string]string{"accept": "application/json"},
+		Headers: map[string]string{
+			"accept":        "application/json",
+			"authorization": "Bearer " + token,
+		},
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
 			RequestID: "test-request-id",
 			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{

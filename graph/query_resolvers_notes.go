@@ -21,7 +21,11 @@ import (
 // Object is the resolver for the object field.
 func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, error) {
 	// Get object using notes service
-	note, err := r.Registry.Notes().GetNote(ctx, id)
+	viewerUsername := r.optionalAuth(ctx)
+	note, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: id,
+		ViewerID: viewerUsername,
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, nil

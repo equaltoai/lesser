@@ -72,4 +72,3 @@ func TestDLQHTTPHandlers_Round14_TrendsAndErrorBranches(t *testing.T) {
 		require.Equal(t, 500, resp.Status)
 	})
 }
-

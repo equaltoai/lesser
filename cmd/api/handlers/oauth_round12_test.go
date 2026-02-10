@@ -403,10 +403,9 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Contains(t, body["error_description"], "PKCE")
 	})
 
-	t.Run("authorization_code success even when refresh token storage and code cleanup fail", func(t *testing.T) {
+	t.Run("authorization_code success even when refresh token storage fails", func(t *testing.T) {
 		state := &round10QueryState{
 			createErrorOnce: errors.New("create failed"),
-			deleteErrorOnce: errors.New("delete failed"),
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 
@@ -416,6 +415,19 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
+	})
+
+	t.Run("authorization_code invalid_grant when code consumption fails", func(t *testing.T) {
+		state := &round10QueryState{
+			deleteErrorOnce: errors.New("delete failed"),
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_grant", body["error"])
 	})
 
 	t.Run("refresh_token missing params", func(t *testing.T) {

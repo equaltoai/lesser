@@ -112,6 +112,29 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"KMS_KEY_ID":         jsii.String(fmt.Sprintf("alias/%s", naming.SharedResourceName(appName, "encryption"))), // KMS key for encrypting actor private keys
 	}
 
+	// Tips (TipSplitter integration). These are public, non-secret values and are only set when configured.
+	if v := getConfigString("tipEnabled"); v != "" {
+		commonEnv["TIP_ENABLED"] = jsii.String(v)
+	}
+	if v := getConfigString("tipChainId"); v != "" {
+		commonEnv["TIP_CHAIN_ID"] = jsii.String(v)
+	}
+	if v := getConfigString("tipContractAddress"); v != "" {
+		commonEnv["TIP_CONTRACT_ADDRESS"] = jsii.String(v)
+	}
+
+	// lesser.host trust services (optional; managed instances). Values are non-secret unless explicitly noted.
+	if v := getConfigString("lesserHostUrl"); v != "" {
+		commonEnv["LESSER_HOST_URL"] = jsii.String(v)
+	}
+	// NOTE: The ARN itself is not secret, but it points at the stored instance key.
+	if v := getConfigString("lesserHostInstanceKeyArn"); v != "" {
+		commonEnv["LESSER_HOST_INSTANCE_KEY_ARN"] = jsii.String(v)
+	}
+	if v := getConfigString("lesserHostAttestationsUrl"); v != "" {
+		commonEnv["LESSER_HOST_ATTESTATIONS_URL"] = jsii.String(v)
+	}
+
 	// Optional tables
 	if props.StreamEventsTable != nil {
 		commonEnv["STREAM_EVENTS_TABLE_NAME"] = props.StreamEventsTable.TableName()

@@ -53,13 +53,16 @@ func cdkBootstrap(ctx context.Context, repoRoot string, awsProfile string, accou
 	}
 
 	fmt.Println("\nEnsuring CDK bootstrap:", args[len(args)-1])
+	env := map[string]string{
+		"AWS_REGION":         region,
+		"AWS_DEFAULT_REGION": region,
+	}
+	if strings.TrimSpace(awsProfile) != "" {
+		env["AWS_PROFILE"] = awsProfile
+	}
 	if err := runCommandFn(ctx, "cdk", args, execOptions{
 		Dir: cdkDir,
-		Env: map[string]string{
-			"AWS_PROFILE":        awsProfile,
-			"AWS_REGION":         region,
-			"AWS_DEFAULT_REGION": region,
-		},
+		Env: env,
 	}); err != nil {
 		return fmt.Errorf("cdk bootstrap: %w", err)
 	}
@@ -96,13 +99,16 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 	if req.WithStaging {
 		args = append(args, "--context", "withStaging=true")
 	}
+	env := map[string]string{
+		"AWS_REGION":         req.Region,
+		"AWS_DEFAULT_REGION": req.Region,
+	}
+	if strings.TrimSpace(awsProfile) != "" {
+		env["AWS_PROFILE"] = awsProfile
+	}
 	if err := runCommandFn(ctx, "cdk", args, execOptions{
 		Dir: cdkDir,
-		Env: map[string]string{
-			"AWS_PROFILE":        awsProfile,
-			"AWS_REGION":         req.Region,
-			"AWS_DEFAULT_REGION": req.Region,
-		},
+		Env: env,
 	}); err != nil {
 		return cdkDeployResult{}, fmt.Errorf("cdk deploy %s: %w", req.StackName, err)
 	}
@@ -142,13 +148,16 @@ func cdkDestroyStack(ctx context.Context, repoRoot string, awsProfile string, re
 		args = append(args, "--context", "withStaging=true")
 	}
 
+	env := map[string]string{
+		"AWS_REGION":         req.Region,
+		"AWS_DEFAULT_REGION": req.Region,
+	}
+	if strings.TrimSpace(awsProfile) != "" {
+		env["AWS_PROFILE"] = awsProfile
+	}
 	if err := runCommandFn(ctx, "cdk", args, execOptions{
 		Dir: cdkDir,
-		Env: map[string]string{
-			"AWS_PROFILE":        awsProfile,
-			"AWS_REGION":         req.Region,
-			"AWS_DEFAULT_REGION": req.Region,
-		},
+		Env: env,
 	}); err != nil {
 		return fmt.Errorf("cdk destroy %s: %w", req.StackName, err)
 	}

@@ -503,6 +503,7 @@ func (h *OAuthHelper) DeleteAuthorizationCodeGeneric(ctx context.Context, code s
 	err := h.db.WithContext(ctx).Model(&models.AuthorizationCode{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
+		IfExists().
 		Delete()
 
 	if err != nil {
