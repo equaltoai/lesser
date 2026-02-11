@@ -16,6 +16,7 @@ import (
 
 const (
 	defaultAuthClientName    = "lesser cli"
+	defaultAuthClientClass   = "cli"
 	defaultAuthRedirectURIs  = "urn:ietf:wg:oauth:2.0:oob"
 	defaultHTTPTimeout       = 15 * time.Second
 	defaultDevicePollBackoff = 5 * time.Second
@@ -35,18 +36,24 @@ func getOrCreateOAuthClientID(ctx context.Context, baseURL, scopes string, key [
 	}
 
 	flags.debugf("registering oauth app via /api/v1/apps")
-	clientID, err := registerOAuthApp(ctx, baseURL, scopes)
+	clientID, err := registerOAuthApp(ctx, baseURL, scopes, defaultAuthRedirectURIs, defaultAuthClientClass)
 	if err != nil {
 		return "", err
 	}
 	return clientID, nil
 }
 
-func registerOAuthApp(ctx context.Context, baseURL, scopes string) (string, error) {
+func registerOAuthApp(ctx context.Context, baseURL, scopes, redirectURIs, clientClass string) (string, error) {
 	form := url.Values{}
 	form.Set("client_name", defaultAuthClientName)
-	form.Set("redirect_uris", defaultAuthRedirectURIs)
+	if strings.TrimSpace(redirectURIs) == "" {
+		redirectURIs = defaultAuthRedirectURIs
+	}
+	form.Set("redirect_uris", redirectURIs)
 	form.Set("scopes", strings.TrimSpace(scopes))
+	if strings.TrimSpace(clientClass) != "" {
+		form.Set("client_class", strings.TrimSpace(clientClass))
+	}
 
 	var resp apimodels.AppRegistrationResponse
 	if err := doFormPOST(ctx, baseURL, "/api/v1/apps", form, &resp); err != nil {

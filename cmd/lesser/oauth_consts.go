@@ -8,4 +8,7 @@ const (
 	oauthErrorDeviceAuthDenied       = "device authorization denied"
 	oauthErrorDeviceCodeExpired      = "device code expired"
 	oauthErrorDeviceAuthorizationTTL = "device authorization timed out"
+
+	oauthFlowDevice   = "device"
+	oauthFlowLoopback = "loopback"
 )

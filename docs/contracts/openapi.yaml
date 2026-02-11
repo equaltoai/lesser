@@ -1312,6 +1312,8 @@ components:
         AppRegistrationRequest:
             additionalProperties: false
             properties:
+                client_class:
+                    type: string
                 client_name:
                     type: string
                 redirect_uris:

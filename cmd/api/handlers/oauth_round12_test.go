@@ -432,6 +432,34 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotEmpty(t, body.RefreshToken)
 	})
 
+	t.Run("authorization_code cli client issues cli tokens", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "lesser cli",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:  auth.ClientClassCLI,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, auth.ClientClassCLI, claims.ClientClass)
+		require.NotEmpty(t, claims.SessionID)
+	})
+
 	t.Run("authorization_code invalid_grant when code consumption fails", func(t *testing.T) {
 		state := &round10QueryState{
 			deleteErrorOnce: errors.New("delete failed"),

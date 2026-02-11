@@ -812,20 +812,33 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", auth.ErrInvalidGrant
 	}
 
+	clientClass := ""
+	sessionID := ""
+	if client, err := h.repos.Account().GetOAuthClient(ctx, clientID); err == nil && client != nil {
+		clientClass = strings.ToLower(strings.TrimSpace(client.ClientClass))
+	}
+	if clientClass == auth.ClientClassCLI {
+		sessionID = common.GenerateSessionIDULID()
+	}
+
 	// Generate tokens
-	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx, authCode.Username, clientID, "", authCode.Scopes)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, auth.AccessTokenDuration, clientClass, sessionID)
 	if err != nil {
 		return "", "", errors.Join(failedToGenerateTokens(), err)
 	}
 
+	now := time.Now().UTC()
+
 	// Store refresh token in storage for later validation
 	oauthRefreshToken := &storage.RefreshToken{
-		Token:     refreshToken,
-		Username:  authCode.Username,
-		ClientID:  clientID,
-		Scopes:    authCode.Scopes,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(auth.RefreshTokenDuration),
+		Token:       refreshToken,
+		Username:    authCode.Username,
+		ClientID:    clientID,
+		Scopes:      authCode.Scopes,
+		CreatedAt:   now,
+		ExpiresAt:   now.Add(auth.RefreshTokenDuration),
+		ClientClass: clientClass,
+		SessionID:   sessionID,
 	}
 
 	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {

@@ -349,6 +349,7 @@ type OAuthClient struct {
 	RedirectURIs     []string  `json:"redirect_uris"`
 	GrantTypes       []string  `json:"grant_types,omitempty"`
 	Scopes           []string  `json:"scopes"`
+	ClientClass      string    `json:"client_class,omitempty"`
 	OwnerID          string    `json:"owner_id,omitempty"`
 	Confidential     bool      `json:"confidential"`
 	CreatedAt        time.Time `json:"created_at"`

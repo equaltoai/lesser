@@ -21,6 +21,16 @@ Authenticate:
 The CLI prints a verification URL and (if needed) a short `user_code`. Complete the wallet login in the browser,
 choose the username to authorize (required for wallets with multiple actors), then approve the consent prompt.
 
+### Optional: loopback callback flow (laptop-friendly)
+
+For a smoother laptop UX, you can use an OAuth authorization-code flow with a localhost callback:
+
+```bash
+./lesser auth login --base-url https://dev.example.com --flow loopback
+```
+
+This still mints `client_class=cli` tokens server-side (same safety rails), but requires a browser on the CLI machine.
+
 Verify your session:
 
 ```bash
@@ -74,4 +84,3 @@ Tokens minted via the device flow are classified as `client_class=cli` server-si
 automation limits (concurrency caps, throttles, and lockouts), regardless of username.
 
 See `docs/configuration.md` for `ALLOW_DEVICE_FLOW` and `CLI_AUTOMATION_*` tuning knobs.
-
