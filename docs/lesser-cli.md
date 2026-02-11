@@ -22,6 +22,21 @@ Run it from the repo root:
 ./lesser
 ```
 
+## CLI client auth (device flow)
+
+See `docs/cli/auth.md` for the headless OAuth device flow used by the CLI (wallet login + consent via the web UI).
+
+Common commands:
+
+```bash
+./lesser auth login --base-url https://dev.example.com
+./lesser auth status --base-url https://dev.example.com
+./lesser auth whoami --base-url https://dev.example.com
+./lesser auth logout --base-url https://dev.example.com
+
+./lesser api request --base-url https://dev.example.com --method GET --path /api/v1/accounts/verify_credentials
+```
+
 ## Deploy workflows
 
 ### Deploy dev + live (and optional staging)

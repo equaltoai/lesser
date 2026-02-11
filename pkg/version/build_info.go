@@ -1,5 +1,5 @@
 // Package version provides build information and version details for Lesser.
-package version
+package version //nolint:revive // package name is stable despite stdlib collision warning
 
 import (
 	"runtime/debug"

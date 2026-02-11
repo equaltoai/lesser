@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -491,6 +492,186 @@ func TestHandleHashtagStream_LocalOnly_Round12(t *testing.T) {
 		t.Fatal("timeout waiting for local hashtag query")
 	}
 	require.Equal(t, "hashtag:local:cats", gotStreamName)
+}
+
+func TestHandleOAuthDeviceStream_Round23(t *testing.T) {
+	origCfg := cfg
+	origGet := getOAuthDeviceSessionFn
+	origAfter := timeAfterFn
+	t.Cleanup(func() {
+		cfg = origCfg
+		getOAuthDeviceSessionFn = origGet
+		timeAfterFn = origAfter
+	})
+
+	cfg = &config.Config{AllowDeviceFlow: false}
+	resp, err := handleOAuthDeviceStream(&apptheory.Context{
+		Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/streaming/oauth/device"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusForbidden, resp.Status)
+
+	cfg.AllowDeviceFlow = true
+	resp, err = handleOAuthDeviceStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/oauth/device",
+			Headers: map[string][]string{},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.Status)
+
+	timeAfterFn = func(time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}
+
+	calls := 0
+	getOAuthDeviceSessionFn = func(context.Context, string) (*storage.OAuthDeviceSession, error) {
+		calls++
+		if calls == 1 {
+			return &storage.OAuthDeviceSession{
+				Status:    "pending",
+				ExpiresAt: time.Now().Add(1 * time.Minute),
+			}, nil
+		}
+		return &storage.OAuthDeviceSession{
+			Status:           "approved",
+			ApprovedUsername: "alice",
+			ExpiresAt:        time.Now().Add(1 * time.Minute),
+		}, nil
+	}
+
+	resp, err = handleOAuthDeviceStream(&apptheory.Context{
+		Request: apptheory.Request{
+			Method:  http.MethodGet,
+			Path:    "/api/v1/streaming/oauth/device",
+			Headers: map[string][]string{"x-lesser-device-code": {"dev-1"}},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusOK, resp.Status)
+	require.Equal(t, []string{"text/event-stream"}, resp.Headers["content-type"])
+
+	body, readErr := io.ReadAll(resp.BodyReader)
+	require.NoError(t, readErr)
+	require.Contains(t, string(body), `"status":"pending"`)
+	require.Contains(t, string(body), `"status":"approved"`)
+	require.Contains(t, string(body), `"username":"alice"`)
+}
+
+func TestProduceOAuthDeviceStreamEvents_Round23(t *testing.T) {
+	origGet := getOAuthDeviceSessionFn
+	t.Cleanup(func() { getOAuthDeviceSessionFn = origGet })
+
+	t.Run("empty device code hash emits invalid", func(t *testing.T) {
+		ch := make(chan apptheory.SSEEvent, 2)
+		produceOAuthDeviceStreamEvents(context.Background(), ch, "")
+
+		var got []apptheory.SSEEvent
+		for ev := range ch {
+			got = append(got, ev)
+		}
+		require.Len(t, got, 1)
+		require.Contains(t, got[0].Data.(string), `"status":"invalid"`)
+	})
+
+	t.Run("denied emits denied", func(t *testing.T) {
+		getOAuthDeviceSessionFn = func(context.Context, string) (*storage.OAuthDeviceSession, error) {
+			return &storage.OAuthDeviceSession{
+				Status:    "denied",
+				ExpiresAt: time.Now().Add(1 * time.Minute),
+			}, nil
+		}
+
+		ch := make(chan apptheory.SSEEvent, 2)
+		produceOAuthDeviceStreamEvents(context.Background(), ch, "hash")
+
+		var got []apptheory.SSEEvent
+		for ev := range ch {
+			got = append(got, ev)
+		}
+		require.Len(t, got, 1)
+		require.Contains(t, got[0].Data.(string), `"status":"denied"`)
+	})
+
+	t.Run("session lookup error emits invalid", func(t *testing.T) {
+		getOAuthDeviceSessionFn = func(context.Context, string) (*storage.OAuthDeviceSession, error) {
+			return nil, errors.New("boom")
+		}
+
+		ch := make(chan apptheory.SSEEvent, 2)
+		produceOAuthDeviceStreamEvents(context.Background(), ch, "hash")
+
+		var got []apptheory.SSEEvent
+		for ev := range ch {
+			got = append(got, ev)
+		}
+		require.Len(t, got, 1)
+		require.Contains(t, got[0].Data.(string), `"status":"invalid"`)
+	})
+
+	t.Run("expired emits expired", func(t *testing.T) {
+		getOAuthDeviceSessionFn = func(context.Context, string) (*storage.OAuthDeviceSession, error) {
+			return &storage.OAuthDeviceSession{
+				Status:    "pending",
+				ExpiresAt: time.Now().Add(-1 * time.Minute),
+			}, nil
+		}
+
+		ch := make(chan apptheory.SSEEvent, 2)
+		produceOAuthDeviceStreamEvents(context.Background(), ch, "hash")
+
+		var got []apptheory.SSEEvent
+		for ev := range ch {
+			got = append(got, ev)
+		}
+		require.Len(t, got, 1)
+		require.Contains(t, got[0].Data.(string), `"status":"expired"`)
+	})
+
+	t.Run("consumed emits consumed", func(t *testing.T) {
+		getOAuthDeviceSessionFn = func(context.Context, string) (*storage.OAuthDeviceSession, error) {
+			return &storage.OAuthDeviceSession{
+				Status:    "consumed",
+				ExpiresAt: time.Now().Add(1 * time.Minute),
+			}, nil
+		}
+
+		ch := make(chan apptheory.SSEEvent, 2)
+		produceOAuthDeviceStreamEvents(context.Background(), ch, "hash")
+
+		var got []apptheory.SSEEvent
+		for ev := range ch {
+			got = append(got, ev)
+		}
+		require.Len(t, got, 1)
+		require.Contains(t, got[0].Data.(string), `"status":"consumed"`)
+	})
+
+	t.Run("unknown status emits invalid", func(t *testing.T) {
+		getOAuthDeviceSessionFn = func(context.Context, string) (*storage.OAuthDeviceSession, error) {
+			return &storage.OAuthDeviceSession{
+				Status:    "wat",
+				ExpiresAt: time.Now().Add(1 * time.Minute),
+			}, nil
+		}
+
+		ch := make(chan apptheory.SSEEvent, 2)
+		produceOAuthDeviceStreamEvents(context.Background(), ch, "hash")
+
+		var got []apptheory.SSEEvent
+		for ev := range ch {
+			got = append(got, ev)
+		}
+		require.Len(t, got, 1)
+		require.Contains(t, got[0].Data.(string), `"status":"invalid"`)
+	})
 }
 
 func TestProduceSSEEvents_Round12(t *testing.T) {

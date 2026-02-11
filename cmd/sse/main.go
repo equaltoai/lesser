@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb"
@@ -32,6 +35,10 @@ const (
 	streamEventTypeUpdate       = "update"
 	streamEventTypeStatusUpdate = "status.update"
 	streamEventTypeDelete       = "delete"
+
+	oauthDeviceStreamEventType = "oauth.device"
+	oauthDeviceStreamPollDelay = 1 * time.Second
+	oauthDeviceCodeHeaderKey   = "x-lesser-device-code"
 )
 
 var (
@@ -63,9 +70,15 @@ var (
 	newStreamEventLogFn = func(db dynamormCore.DB, ttl time.Duration) streamEventLog {
 		return streaming.NewStreamEventLog(db, ttl)
 	}
-	lambdaStartFn         = lambda.Start
-	timeAfterFn           = time.After
-	authorizeListStreamFn = authorizeListStream
+	lambdaStartFn           = lambda.Start
+	timeAfterFn             = time.After
+	authorizeListStreamFn   = authorizeListStream
+	getOAuthDeviceSessionFn = func(ctx context.Context, deviceCodeHash string) (*storage.OAuthDeviceSession, error) {
+		if repos == nil || repos.Account() == nil {
+			return nil, apperrors.Internal("repositories not initialized")
+		}
+		return repos.Account().GetOAuthDeviceSession(ctx, deviceCodeHash)
+	}
 )
 
 func init() {
@@ -144,6 +157,7 @@ func runSSE() {
 				"Content-Type",
 				"Last-Event-ID",
 				"User-Agent",
+				"X-Lesser-Device-Code",
 				"X-Forwarded-For",
 				"X-Forwarded-Proto",
 			},
@@ -169,6 +183,7 @@ func runSSE() {
 	app.Get("/api/v1/streaming/hashtag/local", handleHashtagStream(true))
 	app.Get("/api/v1/streaming/list", handleListStream)
 	app.Get("/api/v1/streaming/direct", handleDirectStream)
+	app.Get("/api/v1/streaming/oauth/device", handleOAuthDeviceStream)
 
 	lambdaStartFn(func(ctx context.Context, event json.RawMessage) (any, error) {
 		return app.HandleLambda(ctx, event)
@@ -181,6 +196,32 @@ func handleStreamingRoot(*apptheory.Context) (*apptheory.Response, error) {
 
 func handleHealth(*apptheory.Context) (*apptheory.Response, error) {
 	return apptheory.Text(http.StatusOK, "OK"), nil
+}
+
+func handleOAuthDeviceStream(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if cfg == nil || !cfg.AllowDeviceFlow {
+		return apptheory.MustJSON(http.StatusForbidden, map[string]string{
+			"error":             "access_denied",
+			"error_description": "device authorization is disabled",
+		}), nil
+	}
+
+	deviceCode := strings.TrimSpace(sseHeaderValue(ctx, oauthDeviceCodeHeaderKey))
+	if deviceCode == "" {
+		return apptheory.MustJSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "x-lesser-device-code header is required",
+		}), nil
+	}
+
+	eventCh := make(chan apptheory.SSEEvent, 8)
+	streamCtx := context.Background()
+	if ctx != nil {
+		streamCtx = ctx.Context()
+	}
+
+	go produceOAuthDeviceStreamEvents(streamCtx, eventCh, oauthDeviceCodeHash(deviceCode))
+	return apptheory.SSEStreamResponse(streamCtx, http.StatusOK, eventCh)
 }
 
 func handleUserStream(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -343,6 +384,76 @@ func produceSSEEvents(ctx context.Context, eventCh chan<- apptheory.SSEEvent, st
 	}
 }
 
+func produceOAuthDeviceStreamEvents(ctx context.Context, eventCh chan<- apptheory.SSEEvent, deviceCodeHash string) {
+	defer close(eventCh)
+
+	if strings.TrimSpace(deviceCodeHash) == "" {
+		eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: `{"status":"invalid"}`}
+		return
+	}
+
+	heartbeat := time.NewTicker(streamHeartbeatEvery)
+	defer heartbeat.Stop()
+
+	start := time.Now()
+	sentPending := false
+
+	for time.Since(start) <= streamMaxDuration {
+		session, err := getOAuthDeviceSessionFn(ctx, deviceCodeHash)
+		if err != nil || session == nil {
+			eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: `{"status":"invalid"}`}
+			return
+		}
+
+		now := time.Now().UTC()
+		if !session.ExpiresAt.IsZero() && now.After(session.ExpiresAt) {
+			eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: `{"status":"expired"}`}
+			return
+		}
+
+		status := strings.ToLower(strings.TrimSpace(session.Status))
+		switch status {
+		case "approved":
+			payload := map[string]any{"status": "approved"}
+			if username := strings.TrimSpace(session.ApprovedUsername); username != "" {
+				payload["username"] = username
+			}
+			data, _ := json.Marshal(payload)
+			eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: string(data)}
+			return
+		case "denied":
+			eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: `{"status":"denied"}`}
+			return
+		case "consumed":
+			eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: `{"status":"consumed"}`}
+			return
+		case "", "pending":
+			if !sentPending {
+				payload := map[string]any{"status": "pending"}
+				if !session.ExpiresAt.IsZero() {
+					payload["expires_at"] = session.ExpiresAt.UTC().Format(time.RFC3339)
+				}
+				data, _ := json.Marshal(payload)
+				eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: string(data)}
+				sentPending = true
+			}
+		default:
+			eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: `{"status":"invalid"}`}
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-heartbeat.C:
+			eventCh <- apptheory.SSEEvent{Event: "keepalive", Data: "thump"}
+		case <-timeAfterFn(oauthDeviceStreamPollDelay):
+		}
+	}
+
+	eventCh <- apptheory.SSEEvent{Event: oauthDeviceStreamEventType, Data: `{"status":"expired"}`}
+}
+
 func emitSSEItems(eventCh chan<- apptheory.SSEEvent, items []streaming.StreamEventLogItem, onlyMedia bool, afterID string) string {
 	for _, item := range items {
 		afterID = item.ID
@@ -429,6 +540,11 @@ func normalizeDeletePayload(eventType, data string) string {
 	}
 
 	return data
+}
+
+func oauthDeviceCodeHash(deviceCode string) string {
+	sum := sha256.Sum256([]byte(deviceCode))
+	return hex.EncodeToString(sum[:])
 }
 
 func ssePanicRecovery(logger *zap.Logger) apptheory.Middleware {

@@ -145,6 +145,7 @@ func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFun
 	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/hashtag/local"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
 	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/list"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
 	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/direct"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
+	api.AddLambdaIntegration(jsii.String("/api/v1/streaming/oauth/device"), &[]*string{jsii.String("GET")}, sseFn, sseOptions)
 
 	// Mastodon API routes (Lift handles internal routing).
 	api.AddLambdaIntegration(jsii.String("/api/v1/{proxy+}"), &[]*string{jsii.String("ANY")}, apiFn, nil)

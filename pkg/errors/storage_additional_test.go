@@ -20,6 +20,12 @@ func TestStorageConstructors_AdditionalCoverage(t *testing.T) {
 		expectUnwrapIs bool
 	}{
 		{
+			name:         "ItemAlreadyExistsWithID",
+			create:       func() *AppError { return ItemAlreadyExistsWithID("user", "alice") },
+			wantCode:     CodeAlreadyExists,
+			wantMetaKeys: []string{"item_type", "id"},
+		},
+		{
 			name:           "DatabaseConnectionFailed",
 			create:         func() *AppError { return DatabaseConnectionFailed(underlying) },
 			wantCode:       CodeDatabaseConnection,
@@ -197,6 +203,130 @@ func TestStorageConstructors_AdditionalCoverage(t *testing.T) {
 				"item_type",
 				"id",
 			},
+		},
+		{
+			name:         "UserAlreadyExists",
+			create:       func() *AppError { return UserAlreadyExists("alice") },
+			wantCode:     CodeAlreadyExists,
+			wantMetaKeys: []string{"item_type", "id"},
+		},
+		{
+			name:     "StorageActorNotFound",
+			create:   func() *AppError { return StorageActorNotFound("bob") },
+			wantCode: CodeNotFound,
+			wantMetaKeys: []string{
+				"item_type",
+				"id",
+			},
+		},
+		{
+			name:         "ActorAlreadyExists",
+			create:       func() *AppError { return ActorAlreadyExists("bob") },
+			wantCode:     CodeAlreadyExists,
+			wantMetaKeys: []string{"item_type", "id"},
+		},
+		{
+			name:     "ObjectNotFound",
+			create:   func() *AppError { return ObjectNotFound("obj-1") },
+			wantCode: CodeNotFound,
+			wantMetaKeys: []string{
+				"item_type",
+				"id",
+			},
+		},
+		{
+			name:     "ActivityNotFound",
+			create:   func() *AppError { return ActivityNotFound("act-1") },
+			wantCode: CodeNotFound,
+			wantMetaKeys: []string{
+				"item_type",
+				"id",
+			},
+		},
+		{
+			name:         "RelationshipNotFound",
+			create:       func() *AppError { return RelationshipNotFound() },
+			wantCode:     CodeNotFound,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:         "RelationshipAlreadyExists",
+			create:       func() *AppError { return RelationshipAlreadyExists() },
+			wantCode:     CodeAlreadyExists,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:     "ListNotFound",
+			create:   func() *AppError { return ListNotFound("list-1") },
+			wantCode: CodeNotFound,
+			wantMetaKeys: []string{
+				"item_type",
+				"id",
+			},
+		},
+		{
+			name:         "ListMemberNotFound",
+			create:       func() *AppError { return ListMemberNotFound() },
+			wantCode:     CodeNotFound,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:         "ListMemberAlreadyExists",
+			create:       func() *AppError { return ListMemberAlreadyExists() },
+			wantCode:     CodeAlreadyExists,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:     "StorageSessionNotFound",
+			create:   func() *AppError { return StorageSessionNotFound("sess-1") },
+			wantCode: CodeNotFound,
+			wantMetaKeys: []string{
+				"item_type",
+				"id",
+			},
+		},
+		{
+			name:         "TokenNotFound",
+			create:       func() *AppError { return TokenNotFound() },
+			wantCode:     CodeNotFound,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:         "RefreshTokenNotFound",
+			create:       func() *AppError { return RefreshTokenNotFound() },
+			wantCode:     CodeNotFound,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:         "PatternNotFound",
+			create:       func() *AppError { return PatternNotFound() },
+			wantCode:     CodeNotFound,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:         "PatternCacheNotFound",
+			create:       func() *AppError { return PatternCacheNotFound() },
+			wantCode:     CodeNotFound,
+			wantMetaKeys: []string{"item_type"},
+		},
+		{
+			name:           "BackupFailed",
+			create:         func() *AppError { return BackupFailed(underlying) },
+			wantCode:       CodeInternal,
+			expectUnwrapIs: true,
+		},
+		{
+			name:           "CostTrackingFailed",
+			create:         func() *AppError { return CostTrackingFailed("op", underlying) },
+			wantCode:       CodeInternal,
+			wantMetaKeys:   []string{"operation"},
+			expectUnwrapIs: true,
+		},
+		{
+			name:         "CostLimitExceeded",
+			create:       func() *AppError { return CostLimitExceeded("op", 1.23) },
+			wantCode:     CodeQuotaExceeded,
+			wantMetaKeys: []string{"operation", "cost"},
 		},
 	}
 

@@ -258,12 +258,14 @@ type AuthorizationCode struct {
 
 // RefreshToken represents an OAuth refresh token
 type RefreshToken struct {
-	Token     string    `json:"token"`
-	Username  string    `json:"username"`
-	ClientID  string    `json:"client_id"`
-	Scopes    []string  `json:"scopes"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Token       string    `json:"token"`
+	Username    string    `json:"username"`
+	ClientID    string    `json:"client_id"`
+	Scopes      []string  `json:"scopes"`
+	CreatedAt   time.Time `json:"created_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	ClientClass string    `json:"client_class,omitempty"`
+	SessionID   string    `json:"session_id,omitempty"`
 }
 
 // WebAuthnChallenge represents a WebAuthn challenge
@@ -312,6 +314,27 @@ type OAuthState struct {
 	ExpiresAt           time.Time `json:"expires_at"`
 }
 
+// OAuthDeviceSession represents an OAuth device authorization session (RFC 8628-style).
+//
+// The device_code is treated as a secret and is never stored directly; callers should store only a hash.
+type OAuthDeviceSession struct {
+	DeviceCodeHash   string    `json:"device_code_hash"`
+	UserCode         string    `json:"user_code"`
+	ClientID         string    `json:"client_id"`
+	Scopes           []string  `json:"scopes,omitempty"`
+	Status           string    `json:"status"`
+	IntervalSeconds  int       `json:"interval_seconds"`
+	PollCount        int       `json:"poll_count,omitempty"`
+	LastPolledAt     time.Time `json:"last_polled_at,omitempty"`
+	ApprovedUsername string    `json:"approved_username,omitempty"`
+	ApprovedAt       time.Time `json:"approved_at,omitempty"`
+	DeniedAt         time.Time `json:"denied_at,omitempty"`
+	ConsumedAt       time.Time `json:"consumed_at,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
 // OAuthClient represents an OAuth client application
 type OAuthClient struct {
 	ID           string `json:"id"`
@@ -326,6 +349,7 @@ type OAuthClient struct {
 	RedirectURIs     []string  `json:"redirect_uris"`
 	GrantTypes       []string  `json:"grant_types,omitempty"`
 	Scopes           []string  `json:"scopes"`
+	ClientClass      string    `json:"client_class,omitempty"`
 	OwnerID          string    `json:"owner_id,omitempty"`
 	Confidential     bool      `json:"confidential"`
 	CreatedAt        time.Time `json:"created_at"`

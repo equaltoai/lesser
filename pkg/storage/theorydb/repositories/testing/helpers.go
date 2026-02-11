@@ -1,5 +1,5 @@
 // Package testing provides test utilities and helpers for DynamORM repository testing with mock support.
-package testing
+package testing //nolint:revive // package name is stable despite stdlib collision warning
 
 import (
 	"context"

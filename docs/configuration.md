@@ -122,6 +122,40 @@ GRAPHQL_PARSER_TOKEN_LIMIT=15000
 GRAPHQL_REQUEST_TIMEOUT=25s
 ```
 
+### CLI auth (device flow) + automation safety rails
+
+Device authorization is feature-gated and disabled by default:
+
+```bash
+ALLOW_DEVICE_FLOW=false
+```
+
+When device flow is enabled, access tokens minted via the device grant are classified as `client_class=cli` and are
+governed server-side by stricter automation limits (regardless of username):
+
+```bash
+# Max concurrent in-flight requests per CLI session (JWT `sid`)
+CLI_AUTOMATION_CONCURRENCY_LIMIT=2
+
+# Per-session throttles (token-bucket style)
+CLI_AUTOMATION_BURST_LIMIT=20
+CLI_AUTOMATION_BURST_WINDOW=10s
+CLI_AUTOMATION_SUSTAINED_LIMIT=60
+CLI_AUTOMATION_SUSTAINED_WINDOW=1m
+
+# Error-rate circuit breaker → lockout
+CLI_AUTOMATION_ERROR_RATE_THRESHOLD=0.10
+CLI_AUTOMATION_ERROR_RATE_MIN_REQUESTS=10
+CLI_AUTOMATION_ERROR_RATE_WINDOW=1m
+CLI_AUTOMATION_LOCKOUT_DURATION=1h
+```
+
+Notes:
+
+- These rails apply based on the token’s classification (`client_class=cli`), not on account type.
+- GraphQL depth is capped for `client_class=cli` tokens even if `GRAPHQL_MAX_DEPTH` is higher.
+- Recommended rollout: enable in `dev`, validate behavior, then `staging`, then `live`.
+
 ### Crawler protection
 
 ```bash

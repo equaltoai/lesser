@@ -13,11 +13,13 @@ type RefreshToken struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // TOKEN
 
 	// Core fields from legacy storage.RefreshToken
-	Token     string    `theorydb:"attr:token" json:"Token"`
-	ClientID  string    `theorydb:"attr:clientID" json:"ClientID"`
-	Username  string    `theorydb:"attr:username" json:"Username"`
-	ExpiresAt time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
-	Scopes    []string  `theorydb:"attr:scopes" json:"Scopes"`
+	Token       string    `theorydb:"attr:token" json:"Token"`
+	ClientID    string    `theorydb:"attr:clientID" json:"ClientID"`
+	Username    string    `theorydb:"attr:username" json:"Username"`
+	ExpiresAt   time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
+	Scopes      []string  `theorydb:"attr:scopes" json:"Scopes"`
+	ClientClass string    `theorydb:"attr:clientClass" json:"ClientClass,omitempty"`
+	SessionID   string    `theorydb:"attr:sessionID" json:"SessionID,omitempty"`
 
 	// Tracking fields
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`

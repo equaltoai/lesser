@@ -101,6 +101,18 @@ type Config struct {
 	AllowRegistration      bool  // Whether new users can register
 	AllowAgents            bool  // Whether agent accounts are enabled
 	AllowAgentRegistration bool  // Whether new agent accounts can be registered/delegated
+	AllowDeviceFlow        bool  // Whether OAuth device authorization is enabled
+
+	// CLI automation safety rails (device-flow tokens classified as client_class=cli)
+	CLIAutomationConcurrencyLimit   int           // Max concurrent in-flight requests per CLI session (sid)
+	CLIAutomationBurstLimit         int           // Burst requests allowed per window
+	CLIAutomationBurstWindow        time.Duration // Burst window duration
+	CLIAutomationSustainedLimit     int           // Sustained requests allowed per window
+	CLIAutomationSustainedWindow    time.Duration // Sustained window duration
+	CLIAutomationErrorRateThreshold float64       // Fraction of requests in window that may be errors before lockout
+	CLIAutomationErrorRateMin       int           // Minimum requests in window before error-rate lockout can trigger
+	CLIAutomationErrorRateWindow    time.Duration // Error-rate evaluation window
+	CLIAutomationLockoutDuration    time.Duration // Lockout duration when error-rate threshold exceeded
 
 	// CMS Configuration
 	CMSLongFormPublishingEnabled  bool // Enable Article creation and CMS reads
@@ -343,11 +355,21 @@ func loadConfig() *Config {
 		Argon2Threads: getEnvAsUint8OrDefault("ARGON2_THREADS", 4),
 		Argon2KeyLen:  getEnvAsUint32OrDefault("ARGON2_KEY_LENGTH", 32),
 
-		MaxUploadSize:          getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
-		PageSize:               getEnvAsIntOrDefault("PAGE_SIZE", 20),
-		AllowRegistration:      getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
-		AllowAgents:            getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
-		AllowAgentRegistration: getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
+		MaxUploadSize:                   getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
+		PageSize:                        getEnvAsIntOrDefault("PAGE_SIZE", 20),
+		AllowRegistration:               getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
+		AllowAgents:                     getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
+		AllowAgentRegistration:          getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
+		AllowDeviceFlow:                 getEnvAsBoolOrDefault("ALLOW_DEVICE_FLOW", false),
+		CLIAutomationConcurrencyLimit:   getEnvAsIntOrDefault("CLI_AUTOMATION_CONCURRENCY_LIMIT", 2),
+		CLIAutomationBurstLimit:         getEnvAsIntOrDefault("CLI_AUTOMATION_BURST_LIMIT", 20),
+		CLIAutomationBurstWindow:        getEnvAsDurationOrDefault("CLI_AUTOMATION_BURST_WINDOW", 10*time.Second),
+		CLIAutomationSustainedLimit:     getEnvAsIntOrDefault("CLI_AUTOMATION_SUSTAINED_LIMIT", 60),
+		CLIAutomationSustainedWindow:    getEnvAsDurationOrDefault("CLI_AUTOMATION_SUSTAINED_WINDOW", time.Minute),
+		CLIAutomationErrorRateThreshold: getEnvAsFloat64OrDefault("CLI_AUTOMATION_ERROR_RATE_THRESHOLD", 0.10),
+		CLIAutomationErrorRateMin:       getEnvAsIntOrDefault("CLI_AUTOMATION_ERROR_RATE_MIN_REQUESTS", 10),
+		CLIAutomationErrorRateWindow:    getEnvAsDurationOrDefault("CLI_AUTOMATION_ERROR_RATE_WINDOW", time.Minute),
+		CLIAutomationLockoutDuration:    getEnvAsDurationOrDefault("CLI_AUTOMATION_LOCKOUT_DURATION", time.Hour),
 
 		// CMS Configuration
 		CMSLongFormPublishingEnabled:  getEnvAsBoolOrDefault("CMS_LONG_FORM_PUBLISHING_ENABLED", cmsEnabledByMode),
@@ -737,6 +759,18 @@ func getEnvAsUint8OrDefault(key string, defaultValue uint8) uint8 {
 	}
 	var result uint8
 	if _, err := fmt.Sscanf(value, "%d", &result); err != nil {
+		return defaultValue
+	}
+	return result
+}
+
+func getEnvAsFloat64OrDefault(key string, defaultValue float64) float64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	var result float64
+	if _, err := fmt.Sscanf(value, "%f", &result); err != nil {
 		return defaultValue
 	}
 	return result
