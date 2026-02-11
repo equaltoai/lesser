@@ -28,6 +28,7 @@ type OAuthClient struct {
 	RedirectURIs []string  `theorydb:"attr:redirectURIs" json:"redirect_uris"`
 	GrantTypes   []string  `theorydb:"attr:grantTypes" json:"grant_types,omitempty"`
 	Scopes       []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
+	ClientClass  string    `theorydb:"attr:clientClass,omitempty" json:"client_class,omitempty"`
 	OwnerID      string    `theorydb:"attr:ownerID,omitempty" json:"owner_id,omitempty"`
 	Confidential bool      `theorydb:"attr:confidential" json:"confidential"`
 	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"created_at"`

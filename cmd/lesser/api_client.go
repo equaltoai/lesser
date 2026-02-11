@@ -198,12 +198,12 @@ func (c *cliAPIClient) refreshTokens(ctx context.Context, clientID, refreshToken
 		var oauthErr apimodels.OAuthErrorResponse
 		if jsonErr := json.Unmarshal(body, &oauthErr); jsonErr == nil && strings.TrimSpace(oauthErr.Error) != "" {
 			code := strings.ToLower(strings.TrimSpace(oauthErr.Error))
-			if code == "invalid_grant" {
-				return nil, fmt.Errorf("refresh token invalid; re-auth required")
+			if code == oauthErrorInvalidGrant {
+				return nil, errors.New(oauthErrorRefreshReauthRequired)
 			}
 			desc := strings.TrimSpace(oauthErr.ErrorDescription)
 			if desc == "" {
-				desc = "oauth error"
+				desc = oauthErrorDescriptionDefault
 			}
 			return nil, fmt.Errorf("%s (%s)", desc, code)
 		}
@@ -314,7 +314,7 @@ func (c *cliAPIClient) doSingleRequest(ctx context.Context, method, path string,
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {

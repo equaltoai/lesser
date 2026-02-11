@@ -14,7 +14,7 @@ Core decisions locked for this roadmap:
 Non-goals (for this roadmap):
 - Build a full interactive TUI.
 - Replace existing web client auth.
-- Make local credential encryption resilient to full local compromise (goal is “headless-safe + reduces accidents”).
+- Target only “headless-safe + reduces accidents” local encryption (do not attempt full local-compromise resilience).
 
 ---
 

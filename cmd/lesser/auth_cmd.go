@@ -45,6 +45,8 @@ type authFlags struct {
 	SecretFile  string
 	Debug       bool
 	JSON        bool
+	Flow        string
+	NoBrowser   bool
 	ClientID    string
 	DeviceCode  string
 	ExpiresIn   int
@@ -68,6 +70,8 @@ func runAuthLogin(argv []string) error {
 	fs.StringVar(&args.SecretFile, "secret-file", os.Getenv("LESSER_AUTH_SECRET_FILE"), "path to auth secret file (env: LESSER_AUTH_SECRET_FILE)")
 	fs.BoolVar(&args.Debug, "debug", false, "enable debug logging (never prints tokens)")
 	fs.BoolVar(&args.JSON, "json", false, "print device login instructions as json (never prints tokens)")
+	fs.StringVar(&args.Flow, "flow", envOrDefault("LESSER_OAUTH_FLOW", oauthFlowDevice), "oauth flow: device|loopback (env: LESSER_OAUTH_FLOW)")
+	fs.BoolVar(&args.NoBrowser, "no-browser", false, "do not try to open a browser for loopback flow")
 
 	if err := fs.Parse(argv); err != nil {
 		return err
@@ -83,6 +87,20 @@ func runAuthLogin(argv []string) error {
 		return err
 	}
 	key := deriveAuthKey(baseURL, secret)
+
+	flow := strings.ToLower(strings.TrimSpace(args.Flow))
+	if flow == "" {
+		flow = oauthFlowDevice
+	}
+	if flow == oauthFlowLoopback {
+		if args.JSON {
+			return fmt.Errorf("--json is only supported for device flow")
+		}
+		return runAuthLoopbackLogin(baseURL, key, &args)
+	}
+	if flow != oauthFlowDevice {
+		return fmt.Errorf("unsupported oauth flow %q (expected device or loopback)", flow)
+	}
 
 	clientID, err := getOrCreateOAuthClientID(context.Background(), baseURL, args.Scopes, key, &args)
 	if err != nil {
@@ -150,15 +168,31 @@ func runAuthLogout(argv []string) error {
 	fs := flag.NewFlagSet("lesser auth logout", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	var baseURL string
-	fs.StringVar(&baseURL, "base-url", os.Getenv("LESSER_BASE_URL"), "instance base url (env: LESSER_BASE_URL)")
+	var args authFlags
+	fs.StringVar(&args.BaseURL, "base-url", os.Getenv("LESSER_BASE_URL"), "instance base url (env: LESSER_BASE_URL)")
+	fs.StringVar(&args.SecretFile, "secret-file", os.Getenv("LESSER_AUTH_SECRET_FILE"), "path to auth secret file (env: LESSER_AUTH_SECRET_FILE)")
+	fs.BoolVar(&args.Debug, "debug", false, "enable debug logging")
 	if err := fs.Parse(argv); err != nil {
 		return err
 	}
 
-	baseURL, err := normalizeBaseURL(baseURL)
+	baseURL, err := normalizeBaseURL(args.BaseURL)
 	if err != nil {
 		return err
+	}
+
+	// Best-effort token revocation (server-side logout). Failures do not block local logout.
+	if secret, err := readAuthSecret(args.SecretFile); err != nil {
+		args.debugf("unable to read auth secret: %v", err)
+	} else {
+		key := deriveAuthKey(baseURL, secret)
+		if session, err := readAuthSession(baseURL, key); err != nil {
+			args.debugf("unable to read auth session for revocation: %v", err)
+		} else if session != nil && strings.TrimSpace(session.RefreshToken) != "" {
+			if err := revokeRefreshToken(context.Background(), baseURL, session.ClientID, session.RefreshToken); err != nil {
+				args.debugf("unable to revoke refresh token: %v", err)
+			}
+		}
 	}
 
 	removed, err := deleteAuthSession(baseURL)

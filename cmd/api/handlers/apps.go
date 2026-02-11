@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -238,6 +239,7 @@ func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRe
 		RedirectURIs: params["redirect_uris"],
 		Scopes:       params["scopes"],
 		Website:      params["website"],
+		ClientClass:  params["client_class"],
 	}
 
 	return req, nil
@@ -251,6 +253,10 @@ func (h *Handler) validateAppRegistrationParams(ctx *apptheory.Context, req *mod
 		zap.String("redirect_uris", req.RedirectURIs),
 		zap.String("scopes", req.Scopes),
 		zap.String("website", req.Website))
+	if strings.TrimSpace(req.ClientClass) != "" {
+		h.logger.Info("app registration request includes client_class",
+			zap.String("client_class", req.ClientClass))
+	}
 
 	// Validate application registration parameters
 	params := map[string]interface{}{
@@ -336,6 +342,16 @@ func (h *Handler) validateSingleRedirectURI(_ *apptheory.Context, uri string) er
 func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *models.AppRegistrationRequest, redirectURIs []string) (*apptheory.Response, error) {
 	// Parse scopes
 	scopes := h.parseScopes(req.Scopes)
+	clientClass, err := normalizeOAuthClientClass(req.ClientClass)
+	if err != nil {
+		return h.respondUnprocessableEntity(ctx, err.Error())
+	}
+	if clientClass == auth.ClientClassCLI && (h.cfg == nil || !h.cfg.AllowDeviceFlow) {
+		return apptheory.JSON(http.StatusForbidden, map[string]string{
+			"error":             "access_denied",
+			"error_description": "cli automation is disabled",
+		})
+	}
 
 	// Try to extract authenticated user (optional - public registration allowed for initial OAuth flow)
 	// But if authenticated, set OwnerID for security and proper ownership
@@ -347,6 +363,7 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 		Website:      req.Website,
 		RedirectURIs: redirectURIs,
 		Scopes:       scopes,
+		ClientClass:  clientClass,
 		OwnerID:      ownerID, // Set owner if authenticated
 	}
 
@@ -388,6 +405,20 @@ func (h *Handler) parseScopes(scopesString string) []string {
 	}
 	// Default scopes
 	return []string{"read", "write"}
+}
+
+func normalizeOAuthClientClass(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "", nil
+	}
+
+	switch value {
+	case auth.ClientClassCLI, auth.ClientClassWeb, auth.ClientClassAgent:
+		return value, nil
+	default:
+		return "", errors.New("invalid client_class")
+	}
 }
 
 // getVAPIDKey retrieves the VAPID public key

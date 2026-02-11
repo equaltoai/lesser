@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,9 +17,12 @@ import (
 
 const (
 	defaultAuthClientName    = "lesser cli"
+	defaultAuthClientClass   = "cli"
 	defaultAuthRedirectURIs  = "urn:ietf:wg:oauth:2.0:oob"
 	defaultHTTPTimeout       = 15 * time.Second
 	defaultDevicePollBackoff = 5 * time.Second
+	defaultDeviceStreamPath  = "/api/v1/streaming/oauth/device"
+	defaultDeviceStreamHdr   = "X-Lesser-Device-Code"
 )
 
 func getOrCreateOAuthClientID(ctx context.Context, baseURL, scopes string, key []byte, flags *authFlags) (string, error) {
@@ -35,18 +39,24 @@ func getOrCreateOAuthClientID(ctx context.Context, baseURL, scopes string, key [
 	}
 
 	flags.debugf("registering oauth app via /api/v1/apps")
-	clientID, err := registerOAuthApp(ctx, baseURL, scopes)
+	clientID, err := registerOAuthApp(ctx, baseURL, scopes, defaultAuthRedirectURIs, defaultAuthClientClass)
 	if err != nil {
 		return "", err
 	}
 	return clientID, nil
 }
 
-func registerOAuthApp(ctx context.Context, baseURL, scopes string) (string, error) {
+func registerOAuthApp(ctx context.Context, baseURL, scopes, redirectURIs, clientClass string) (string, error) {
 	form := url.Values{}
 	form.Set("client_name", defaultAuthClientName)
-	form.Set("redirect_uris", defaultAuthRedirectURIs)
+	if strings.TrimSpace(redirectURIs) == "" {
+		redirectURIs = defaultAuthRedirectURIs
+	}
+	form.Set("redirect_uris", redirectURIs)
 	form.Set("scopes", strings.TrimSpace(scopes))
+	if strings.TrimSpace(clientClass) != "" {
+		form.Set("client_class", strings.TrimSpace(clientClass))
+	}
 
 	var resp apimodels.AppRegistrationResponse
 	if err := doFormPOST(ctx, baseURL, "/api/v1/apps", form, &resp); err != nil {
@@ -77,27 +87,85 @@ func startDeviceAuthorization(ctx context.Context, baseURL, clientID, scopes str
 }
 
 func pollDeviceToken(ctx context.Context, baseURL, clientID, deviceCode string, interval time.Duration, ttl time.Duration, flags *authFlags) (*apimodels.OAuthTokenResponse, error) {
+	if status, ok, err := waitForDeviceAuthorizationStream(ctx, baseURL, deviceCode, ttl, flags); ok {
+		if err == nil {
+			switch strings.ToLower(strings.TrimSpace(status)) {
+			case "approved":
+				return exchangeDeviceCodeWithRetries(ctx, baseURL, clientID, deviceCode)
+			case "denied":
+				return nil, errors.New(oauthErrorDeviceAuthDenied)
+			case "expired":
+				return nil, errors.New(oauthErrorDeviceCodeExpired)
+			case "consumed", "invalid":
+				return nil, errors.New(oauthErrorDeviceAuthInvalid)
+			}
+		} else if flags != nil {
+			flags.debugf("device stream wait failed: %v", err)
+		}
+	}
+
+	return pollDeviceTokenInternal(ctx, baseURL, clientID, deviceCode, interval, ttl, flags, time.Now, sleepWithContext, exchangeDeviceCodeForToken)
+}
+
+type deviceCodeTokenExchanger func(ctx context.Context, baseURL, clientID, deviceCode string) (*apimodels.OAuthTokenResponse, *apimodels.OAuthErrorResponse, error)
+
+type sleepFunc func(ctx context.Context, d time.Duration) error
+
+type nowFunc func() time.Time
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+func pollDeviceTokenInternal(
+	ctx context.Context,
+	baseURL, clientID, deviceCode string,
+	interval time.Duration,
+	ttl time.Duration,
+	flags *authFlags,
+	now nowFunc,
+	sleep sleepFunc,
+	exchange deviceCodeTokenExchanger,
+) (*apimodels.OAuthTokenResponse, error) {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
 
-	deadline := time.Now().Add(ttl)
+	if now == nil {
+		now = time.Now
+	}
+	if sleep == nil {
+		sleep = sleepWithContext
+	}
+	if exchange == nil {
+		exchange = exchangeDeviceCodeForToken
+	}
+
+	deadline := now().Add(ttl)
 	nextInterval := interval
 	if nextInterval <= 0 {
 		nextInterval = 10 * time.Second
 	}
 
 	for {
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("device authorization timed out")
+		if now().After(deadline) {
+			return nil, errors.New(oauthErrorDeviceAuthorizationTTL)
 		}
 
-		tokenResp, oauthErr, err := exchangeDeviceCodeForToken(ctx, baseURL, clientID, deviceCode)
+		tokenResp, oauthErr, err := exchange(ctx, baseURL, clientID, deviceCode)
 		if err != nil {
 			return nil, err
 		}
 		if tokenResp != nil {
 			return tokenResp, nil
+		}
+		if oauthErr == nil {
+			return nil, errors.New("device token polling returned no oauth error")
 		}
 
 		code := strings.ToLower(strings.TrimSpace(oauthErr.Error))
@@ -111,23 +179,21 @@ func pollDeviceToken(ctx context.Context, baseURL, clientID, deviceCode string, 
 		case "slow_down":
 			nextInterval += defaultDevicePollBackoff
 		case "access_denied":
-			return nil, fmt.Errorf("device authorization denied")
+			return nil, errors.New(oauthErrorDeviceAuthDenied)
 		case "expired_token":
-			return nil, fmt.Errorf("device code expired")
-		case "invalid_grant":
-			return nil, fmt.Errorf("device authorization invalid")
+			return nil, errors.New(oauthErrorDeviceCodeExpired)
+		case oauthErrorInvalidGrant:
+			return nil, errors.New(oauthErrorDeviceAuthInvalid)
 		default:
 			msg := strings.TrimSpace(oauthErr.ErrorDescription)
 			if msg == "" {
-				msg = "oauth error"
+				msg = oauthErrorDescriptionDefault
 			}
 			return nil, fmt.Errorf("%s (%s)", msg, code)
 		}
 
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(nextInterval):
+		if err := sleep(ctx, nextInterval); err != nil {
+			return nil, err
 		}
 	}
 }
@@ -152,6 +218,163 @@ func exchangeDeviceCodeForToken(ctx context.Context, baseURL, clientID, deviceCo
 	return nil, nil, err
 }
 
+type deviceAuthorizationStreamPayload struct {
+	Status string `json:"status"`
+}
+
+func waitForDeviceAuthorizationStream(ctx context.Context, baseURL, deviceCode string, ttl time.Duration, flags *authFlags) (status string, supported bool, err error) {
+	if strings.TrimSpace(baseURL) == "" || strings.TrimSpace(deviceCode) == "" {
+		return "", false, nil
+	}
+
+	streamCtx, cancel := contextWithTimeout(ctx, ttl)
+	defer cancel()
+
+	body, supported, err := openDeviceAuthorizationStream(streamCtx, baseURL, deviceCode, flags)
+	if err != nil || !supported {
+		return "", supported, err
+	}
+	defer func() { _ = body.Close() }()
+
+	status, err = readDeviceAuthorizationStreamFinalStatus(body)
+	if err != nil {
+		return "", true, err
+	}
+	return status, true, nil
+}
+
+func contextWithTimeout(parent context.Context, ttl time.Duration) (context.Context, context.CancelFunc) {
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	return context.WithTimeout(parent, ttl)
+}
+
+func openDeviceAuthorizationStream(ctx context.Context, baseURL, deviceCode string, flags *authFlags) (io.ReadCloser, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+defaultDeviceStreamPath, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set(defaultDeviceStreamHdr, strings.TrimSpace(deviceCode))
+
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		if flags != nil {
+			flags.debugf("device stream request failed: %v", err)
+		}
+		return nil, false, err
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		return resp.Body, true, nil
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	_ = resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		if flags != nil {
+			flags.debugf("device stream not supported (status=%d)", resp.StatusCode)
+		}
+		return nil, false, nil
+	default:
+		if flags != nil {
+			flags.debugf("device stream returned status=%d body=%q", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		return nil, true, fmt.Errorf("device stream returned %d", resp.StatusCode)
+	}
+}
+
+func readDeviceAuthorizationStreamFinalStatus(r io.Reader) (string, error) {
+	scanner := bufio.NewScanner(r)
+	var data strings.Builder
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if status, ok := deviceAuthorizationStreamStatusFromData(strings.TrimSpace(data.String())); ok {
+				return status, nil
+			}
+			data.Reset()
+			continue
+		}
+
+		if strings.HasPrefix(line, "data:") {
+			chunk := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if chunk == "" {
+				continue
+			}
+			if data.Len() > 0 {
+				data.WriteByte('\n')
+			}
+			data.WriteString(chunk)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", io.EOF
+}
+
+func deviceAuthorizationStreamStatusFromData(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+
+	var payload deviceAuthorizationStreamPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return "", false
+	}
+
+	status := strings.ToLower(strings.TrimSpace(payload.Status))
+	if status == "" || status == "pending" {
+		return "", false
+	}
+	return status, true
+}
+
+func exchangeDeviceCodeWithRetries(ctx context.Context, baseURL, clientID, deviceCode string) (*apimodels.OAuthTokenResponse, error) {
+	for attempts := 0; attempts < 5; attempts++ {
+		tokenResp, oauthErr, err := exchangeDeviceCodeForToken(ctx, baseURL, clientID, deviceCode)
+		if err != nil {
+			return nil, err
+		}
+		if tokenResp != nil {
+			return tokenResp, nil
+		}
+		if oauthErr == nil {
+			return nil, errors.New("device token exchange returned no oauth error")
+		}
+
+		code := strings.ToLower(strings.TrimSpace(oauthErr.Error))
+		switch code {
+		case "authorization_pending", "slow_down":
+			if err := sleepWithContext(ctx, 200*time.Millisecond); err != nil {
+				return nil, err
+			}
+			continue
+		case "access_denied":
+			return nil, errors.New(oauthErrorDeviceAuthDenied)
+		case "expired_token":
+			return nil, errors.New(oauthErrorDeviceCodeExpired)
+		case oauthErrorInvalidGrant:
+			return nil, errors.New(oauthErrorDeviceAuthInvalid)
+		default:
+			msg := strings.TrimSpace(oauthErr.ErrorDescription)
+			if msg == "" {
+				msg = oauthErrorDescriptionDefault
+			}
+			return nil, fmt.Errorf("%s (%s)", msg, code)
+		}
+	}
+
+	return nil, errors.New("device token exchange did not complete")
+}
+
 func refreshAccessToken(ctx context.Context, baseURL, clientID, refreshToken string) (*apimodels.OAuthTokenResponse, error) {
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
@@ -163,13 +386,25 @@ func refreshAccessToken(ctx context.Context, baseURL, clientID, refreshToken str
 		var oauthErr *oauthHTTPError
 		if errors.As(err, &oauthErr) {
 			code := strings.ToLower(strings.TrimSpace(oauthErr.OAuth.Error))
-			if code == "invalid_grant" {
-				return nil, fmt.Errorf("refresh token invalid; re-auth required")
+			if code == oauthErrorInvalidGrant {
+				return nil, errors.New(oauthErrorRefreshReauthRequired)
 			}
 		}
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func revokeRefreshToken(ctx context.Context, baseURL, clientID, refreshToken string) error {
+	form := url.Values{}
+	form.Set("token", strings.TrimSpace(refreshToken))
+	form.Set("token_type_hint", "refresh_token")
+	if id := strings.TrimSpace(clientID); id != "" {
+		form.Set("client_id", id)
+	}
+
+	var resp map[string]any
+	return doFormPOST(ctx, baseURL, "/oauth/revoke", form, &resp)
 }
 
 type verifyCredentialsResponse struct {
@@ -203,7 +438,7 @@ func (e *oauthHTTPError) Error() string {
 	code := strings.TrimSpace(e.OAuth.Error)
 	desc := strings.TrimSpace(e.OAuth.ErrorDescription)
 	if desc == "" {
-		desc = "oauth error"
+		desc = oauthErrorDescriptionDefault
 	}
 	if code == "" {
 		return desc
@@ -226,7 +461,7 @@ func doFormPOST(ctx context.Context, baseURL, path string, form url.Values, out 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if err != nil {
@@ -272,7 +507,7 @@ func doGETJSON(ctx context.Context, baseURL, path, accessToken string, out any) 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if err != nil {

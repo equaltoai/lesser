@@ -242,6 +242,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 		Website:      client.Website,
 		RedirectURIs: client.RedirectURIs,
 		Scopes:       client.Scopes,
+		ClientClass:  client.ClientClass,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
@@ -303,6 +304,7 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 		Website:          model.Website,
 		RedirectURIs:     model.RedirectURIs,
 		Scopes:           model.Scopes,
+		ClientClass:      model.ClientClass,
 		CreatedAt:        model.CreatedAt,
 		UpdatedAt:        model.UpdatedAt,
 	}

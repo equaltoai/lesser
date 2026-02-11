@@ -383,61 +383,23 @@ func handleCLIAutomationSafetyRails(ctx *apptheory.Context, cfg *config.Config, 
 		return resp, err
 	}
 
-	sustainedLimit := cliAutomationDefaultSustainedLimit
-	sustainedWindow := cliAutomationDefaultSustainedWindow
-	burstLimit := cliAutomationDefaultBurstLimit
-	burstWindow := cliAutomationDefaultBurstWindow
-	concurrencyLimit := cliAutomationDefaultConcurrencyLimit
-	errorRateThreshold := cliAutomationDefaultErrorRateThresh
-	errorRateMinRequests := cliAutomationDefaultErrorRateMin
-	errorRateWindow := cliAutomationDefaultErrorRateWindow
-	lockoutDuration := cliAutomationDefaultLockoutDuration
-
-	if cfg != nil {
-		if cfg.CLIAutomationSustainedLimit > 0 {
-			sustainedLimit = cfg.CLIAutomationSustainedLimit
-		}
-		if cfg.CLIAutomationSustainedWindow > 0 {
-			sustainedWindow = cfg.CLIAutomationSustainedWindow
-		}
-		if cfg.CLIAutomationBurstLimit > 0 {
-			burstLimit = cfg.CLIAutomationBurstLimit
-		}
-		if cfg.CLIAutomationBurstWindow > 0 {
-			burstWindow = cfg.CLIAutomationBurstWindow
-		}
-		if cfg.CLIAutomationConcurrencyLimit > 0 {
-			concurrencyLimit = cfg.CLIAutomationConcurrencyLimit
-		}
-		if cfg.CLIAutomationErrorRateThreshold > 0 {
-			errorRateThreshold = cfg.CLIAutomationErrorRateThreshold
-		}
-		if cfg.CLIAutomationErrorRateMin > 0 {
-			errorRateMinRequests = cfg.CLIAutomationErrorRateMin
-		}
-		if cfg.CLIAutomationErrorRateWindow > 0 {
-			errorRateWindow = cfg.CLIAutomationErrorRateWindow
-		}
-		if cfg.CLIAutomationLockoutDuration > 0 {
-			lockoutDuration = cfg.CLIAutomationLockoutDuration
-		}
-	}
+	limits := resolveCLIAutomationLimits(cfg)
 
 	// Throttles (per session ID; stable cardinality).
 	identifier := "cli:" + strings.ToLower(sessionID)
-	if ok, remaining, resetAt, err := rateRepo.CheckFixedWindowRateLimit(ctx.Context(), identifier, "api_all_sustained", sustainedLimit, sustainedWindow); err != nil {
+	if ok, remaining, resetAt, err := rateRepo.CheckFixedWindowRateLimit(ctx.Context(), identifier, "api_all_sustained", limits.sustainedLimit, limits.sustainedWindow); err != nil {
 		logger.Debug("cli sustained throttle check failed - allowing request", zap.Error(err))
 	} else if !ok {
-		return cliRateLimitedResponse("cli sustained rate limit exceeded", sustainedLimit, remaining, resetAt)
+		return cliRateLimitedResponse("cli sustained rate limit exceeded", limits.sustainedLimit, remaining, resetAt)
 	}
 
-	if ok, remaining, resetAt, err := rateRepo.CheckFixedWindowRateLimit(ctx.Context(), identifier, "api_all_burst", burstLimit, burstWindow); err != nil {
+	if ok, remaining, resetAt, err := rateRepo.CheckFixedWindowRateLimit(ctx.Context(), identifier, "api_all_burst", limits.burstLimit, limits.burstWindow); err != nil {
 		logger.Debug("cli burst throttle check failed - allowing request", zap.Error(err))
 	} else if !ok {
-		return cliRateLimitedResponse("cli burst rate limit exceeded", burstLimit, remaining, resetAt)
+		return cliRateLimitedResponse("cli burst rate limit exceeded", limits.burstLimit, remaining, resetAt)
 	}
 
-	if lease, err := acquireCLIAutomationConcurrencyLease(ctx.Context(), repos.GetDB(), sessionID, concurrencyLimit, agentConcurrencyLeaseDuration); err != nil {
+	if lease, err := acquireCLIAutomationConcurrencyLease(ctx.Context(), repos.GetDB(), sessionID, limits.concurrencyLimit, agentConcurrencyLeaseDuration); err != nil {
 		if errors.Is(err, errAgentConcurrencyExceeded) {
 			return cliTooManyRequestsResponse("cli concurrency limit exceeded", 1)
 		}
@@ -448,9 +410,69 @@ func handleCLIAutomationSafetyRails(ctx *apptheory.Context, cfg *config.Config, 
 
 	resp, handlerErr := next(ctx)
 
-	maybeApplyCLIAutomationErrorRateLockout(ctx, rateRepo, sessionID, resp, handlerErr, errorRateThreshold, errorRateMinRequests, errorRateWindow, lockoutDuration)
+	maybeApplyCLIAutomationErrorRateLockout(ctx, rateRepo, sessionID, resp, handlerErr, limits.errorRateThreshold, limits.errorRateMin, limits.errorRateWindow, limits.lockoutDuration)
 
 	return resp, handlerErr
+}
+
+type cliAutomationLimits struct {
+	sustainedLimit     int
+	sustainedWindow    time.Duration
+	burstLimit         int
+	burstWindow        time.Duration
+	concurrencyLimit   int
+	errorRateThreshold float64
+	errorRateMin       int
+	errorRateWindow    time.Duration
+	lockoutDuration    time.Duration
+}
+
+func resolveCLIAutomationLimits(cfg *config.Config) cliAutomationLimits {
+	limits := cliAutomationLimits{
+		sustainedLimit:     cliAutomationDefaultSustainedLimit,
+		sustainedWindow:    cliAutomationDefaultSustainedWindow,
+		burstLimit:         cliAutomationDefaultBurstLimit,
+		burstWindow:        cliAutomationDefaultBurstWindow,
+		concurrencyLimit:   cliAutomationDefaultConcurrencyLimit,
+		errorRateThreshold: cliAutomationDefaultErrorRateThresh,
+		errorRateMin:       cliAutomationDefaultErrorRateMin,
+		errorRateWindow:    cliAutomationDefaultErrorRateWindow,
+		lockoutDuration:    cliAutomationDefaultLockoutDuration,
+	}
+
+	if cfg == nil {
+		return limits
+	}
+
+	if cfg.CLIAutomationSustainedLimit > 0 {
+		limits.sustainedLimit = cfg.CLIAutomationSustainedLimit
+	}
+	if cfg.CLIAutomationSustainedWindow > 0 {
+		limits.sustainedWindow = cfg.CLIAutomationSustainedWindow
+	}
+	if cfg.CLIAutomationBurstLimit > 0 {
+		limits.burstLimit = cfg.CLIAutomationBurstLimit
+	}
+	if cfg.CLIAutomationBurstWindow > 0 {
+		limits.burstWindow = cfg.CLIAutomationBurstWindow
+	}
+	if cfg.CLIAutomationConcurrencyLimit > 0 {
+		limits.concurrencyLimit = cfg.CLIAutomationConcurrencyLimit
+	}
+	if cfg.CLIAutomationErrorRateThreshold > 0 {
+		limits.errorRateThreshold = cfg.CLIAutomationErrorRateThreshold
+	}
+	if cfg.CLIAutomationErrorRateMin > 0 {
+		limits.errorRateMin = cfg.CLIAutomationErrorRateMin
+	}
+	if cfg.CLIAutomationErrorRateWindow > 0 {
+		limits.errorRateWindow = cfg.CLIAutomationErrorRateWindow
+	}
+	if cfg.CLIAutomationLockoutDuration > 0 {
+		limits.lockoutDuration = cfg.CLIAutomationLockoutDuration
+	}
+
+	return limits
 }
 
 func rejectLockedCLIAutomation(ctx *apptheory.Context, rateRepo *storageRepos.RateLimitRepository, sessionID string) (*apptheory.Response, error) {

@@ -117,6 +117,7 @@ func apiRequestIsPublic(method, path string) bool {
 		case "/api/v1/apps",
 			"/api/v1/accounts",
 			"/oauth/token",
+			"/oauth/revoke",
 			"/oauth/consent",
 			"/setup/bootstrap/challenge",
 			"/setup/bootstrap/verify",

@@ -89,6 +89,8 @@ type Actor {
   fields: [Field!]!
   
   # Lesser enhancements
+  isAgent: Boolean!
+  agentInfo: Agent
   tipAddress: String
   tipChainId: Int
   trustScore: Float!
@@ -135,6 +137,7 @@ type Object {
   estimatedCost: Int!
   moderationScore: Float
   communityNotes: [CommunityNote!]!
+  agentAttribution: AgentPostAttribution
   
   # Quote Posts extensions
   quoteUrl: String
@@ -143,6 +146,26 @@ type Object {
   quoteContext: QuoteContext
   quoteCount: Int!
   quotes(first: Int, after: String): QuoteConnection!
+}
+
+type AgentPostAttribution {
+  triggerType: String
+  triggerDetails: String
+  memoryCitations: [String!]
+  delegatedBy: String
+  scopes: [String!]
+  constraints: [String!]
+  modelVersion: String
+}
+
+input AgentPostAttributionInput {
+  triggerType: String
+  triggerDetails: String
+  memoryCitations: [String!]
+  delegatedBy: String
+  scopes: [String!]
+  constraints: [String!]
+  modelVersion: String
 }
 
 type ContentMap {
@@ -851,6 +874,7 @@ input CreateNoteInput {
   mentions: [String!]
   tags: [String!]
   poll: PollParamsInput
+  agentAttribution: AgentPostAttributionInput
 }
 
 input UpdateStatusInput {
@@ -1072,6 +1096,7 @@ type Query {
     first: Int = 20
     after: Cursor
     mediaOnly: Boolean = false
+    excludeAgents: Boolean = false
   ): ObjectConnection!
   search(query: String!, type: String, first: Int = 20, after: Cursor): SearchResult!
   notifications(types: [String!], excludeTypes: [String!], first: Int = 20, after: Cursor): NotificationConnection!

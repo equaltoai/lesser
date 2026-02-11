@@ -1007,46 +1007,45 @@ func initializeResolver() (*graph.Resolver, *executor.Executor) {
 
 	schema := graph.NewExecutableSchema(graph.Config{Resolvers: resolver})
 	exec := executor.New(schema)
-	if cfg != nil {
-		if cfg.GraphQLParserTokenLimit > 0 {
-			exec.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
-		}
-		// Depth enforcement: agents and CLI automation tokens are restricted to shallow queries (max depth 3),
-		// humans use configured depth.
-		if cfg.GraphQLMaxDepth > 0 {
-			exec.Use(&gqllimits.DepthLimit{
-				Func: func(ctx context.Context, _ *graphql.OperationContext) int {
-					if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
-						if claims, ok := claimsVal.(*auth.Claims); ok && (claims.IsAgent || strings.EqualFold(claims.ClientClass, auth.ClientClassCLI)) {
-							return 3
-						}
-					}
-					return cfg.GraphQLMaxDepth
-				},
-			})
-		} else {
-			exec.Use(&gqllimits.DepthLimit{
-				Func: func(ctx context.Context, _ *graphql.OperationContext) int {
-					if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
-						if claims, ok := claimsVal.(*auth.Claims); ok && (claims.IsAgent || strings.EqualFold(claims.ClientClass, auth.ClientClassCLI)) {
-							return 3
-						}
-					}
-					return 0
-				},
-			})
-		}
-		if cfg.GraphQLMaxComplexity > 0 {
-			exec.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))
-		}
-
-		// Introspection is disabled by default; enable it explicitly for debug/playground workflows.
-		if cfg.DebugMode || cfg.EnablePlayground || cfg.GraphQLAllowIntrospection {
-			exec.Use(extension.Introspection{})
-		}
-	}
+	configureGraphQLExecutor(exec, cfg)
 
 	return resolver, exec
+}
+
+func configureGraphQLExecutor(exec *executor.Executor, cfg *appconfig.Config) {
+	if exec == nil || cfg == nil {
+		return
+	}
+
+	if cfg.GraphQLParserTokenLimit > 0 {
+		exec.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
+	}
+
+	// Depth enforcement: agents and CLI automation tokens are restricted to shallow queries (max depth 3),
+	// humans use configured depth.
+	defaultDepth := 0
+	if cfg.GraphQLMaxDepth > 0 {
+		defaultDepth = cfg.GraphQLMaxDepth
+	}
+	exec.Use(&gqllimits.DepthLimit{
+		Func: func(ctx context.Context, _ *graphql.OperationContext) int {
+			if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
+				if claims, ok := claimsVal.(*auth.Claims); ok && (claims.IsAgent || strings.EqualFold(claims.ClientClass, auth.ClientClassCLI)) {
+					return 3
+				}
+			}
+			return defaultDepth
+		},
+	})
+
+	if cfg.GraphQLMaxComplexity > 0 {
+		exec.Use(extension.FixedComplexityLimit(cfg.GraphQLMaxComplexity))
+	}
+
+	// Introspection is disabled by default; enable it explicitly for debug/playground workflows.
+	if cfg.DebugMode || cfg.EnablePlayground || cfg.GraphQLAllowIntrospection {
+		exec.Use(extension.Introspection{})
+	}
 }
 
 func initializeConnectionRepository() {

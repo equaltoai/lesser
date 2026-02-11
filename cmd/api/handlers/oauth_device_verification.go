@@ -99,9 +99,9 @@ func (h *Handler) HandleOAuthDeviceVerifyLift(ctx *apptheory.Context) (*apptheor
 
 	status := strings.ToLower(strings.TrimSpace(session.Status))
 	switch status {
-	case "pending", "approved", "denied":
+	case oauthDeviceSessionStatusPending, oauthDeviceSessionStatusApproved, oauthDeviceSessionStatusDenied:
 		// allowed
-	case "consumed":
+	case oauthDeviceSessionStatusConsumed:
 		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
 			Error:            "invalid_request",
 			ErrorDescription: "the user_code has already been used",
@@ -205,7 +205,7 @@ func (h *Handler) HandleOAuthDeviceConsentLift(ctx *apptheory.Context) (*apptheo
 	}
 
 	action := strings.ToLower(strings.TrimSpace(params["action"]))
-	if action != "approve" && action != "deny" {
+	if action != actionApprove && action != oauthConsentActionDeny {
 		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
 			Error:            "invalid_request",
 			ErrorDescription: "invalid action",
@@ -229,7 +229,7 @@ func (h *Handler) HandleOAuthDeviceConsentLift(ctx *apptheory.Context) (*apptheo
 	}
 
 	status := strings.ToLower(strings.TrimSpace(session.Status))
-	if status == "consumed" {
+	if status == oauthDeviceSessionStatusConsumed {
 		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
 			Error:            "invalid_request",
 			ErrorDescription: "the user_code has already been used",
@@ -237,12 +237,12 @@ func (h *Handler) HandleOAuthDeviceConsentLift(ctx *apptheory.Context) (*apptheo
 	}
 
 	switch action {
-	case "approve":
-		session.Status = "approved"
+	case actionApprove:
+		session.Status = oauthDeviceSessionStatusApproved
 		session.ApprovedUsername = strings.TrimSpace(claims.Username)
 		session.ApprovedAt = now
-	case "deny":
-		session.Status = "denied"
+	case oauthConsentActionDeny:
+		session.Status = oauthDeviceSessionStatusDenied
 		session.DeniedAt = now
 	}
 
