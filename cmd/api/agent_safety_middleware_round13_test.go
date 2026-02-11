@@ -10,6 +10,7 @@ import (
 	apiHandlers "github.com/equaltoai/lesser/cmd/api/handlers"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
@@ -68,6 +69,37 @@ func newConcurrencyDB(t *testing.T) (*tablemocks.MockDB, *tablemocks.MockQuery, 
 	q.On("Delete").Return(nil).Maybe()
 
 	return db, q, update
+}
+
+func newRateLimitRepoForCLISafety(t *testing.T) (*storageRepos.RateLimitRepository, *tablemocks.MockUpdateBuilder) {
+	t.Helper()
+
+	db := new(tablemocks.MockDB)
+	q := new(tablemocks.MockQuery)
+	update := new(tablemocks.MockUpdateBuilder)
+
+	db.On("WithContext", mock.Anything).Return(db).Maybe()
+	db.On("Model", mock.Anything).Return(q).Maybe()
+	q.On("WithContext", mock.Anything).Return(q).Maybe()
+	q.On("Index", mock.Anything).Return(q).Maybe()
+	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
+	q.On("OrderBy", mock.Anything, mock.Anything).Return(q).Maybe()
+	q.On("Limit", mock.Anything).Return(q).Maybe()
+	q.On("Cursor", mock.Anything).Return(q).Maybe()
+	q.On("ConsistentRead").Return(q).Maybe()
+	q.On("UpdateBuilder").Return(update).Maybe()
+
+	update.On("Set", mock.Anything, mock.Anything).Return(update).Maybe()
+	update.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(update).Maybe()
+	update.On("Increment", mock.Anything).Return(update).Maybe()
+	update.On("ReturnValues", mock.Anything).Return(update).Maybe()
+
+	// Default: treat reads as not found and allow writes.
+	q.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Maybe()
+	q.On("Create").Return(nil).Maybe()
+	q.On("Delete").Return(nil).Maybe()
+
+	return storageRepos.NewRateLimitRepository(db, "test-table", zap.NewNop(), nil), update
 }
 
 func TestCreateOptionalOAuthAuthMiddleware_Round13(t *testing.T) {
@@ -242,6 +274,102 @@ func TestCreateAgentSafetyRailsMiddleware_Round13(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, called)
 		require.Equal(t, http.StatusOK, resp.Status)
+	})
+
+	t.Run("cli tokens are throttled with retry-after + x-ratelimit headers", func(t *testing.T) {
+		rateRepo, update := newRateLimitRepoForCLISafety(t)
+		update.On("ExecuteWithResult", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			limit := args.Get(0).(*storageModels.APIRateLimit)
+			limit.Count = 61 // sustained default (60) exceeded
+		}).Once()
+
+		repos := &apiHandlers.MockRepositoryStorage{}
+		repos.On("RateLimit").Return(rateRepo).Maybe()
+		repos.On("GetDB").Return((*tablemocks.MockDB)(nil)).Maybe()
+
+		mw := createAgentSafetyRailsMiddleware(cfg, repos, zap.NewNop())
+
+		ctx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/timelines/home"}}
+		ctx.Set("claims", &auth.Claims{ClientClass: auth.ClientClassCLI, SessionID: "sid-1"})
+
+		called := false
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			called = true
+			return apptheory.Text(http.StatusOK, "ok"), nil
+		})(ctx)
+		require.NoError(t, err)
+		require.False(t, called)
+		require.Equal(t, http.StatusTooManyRequests, resp.Status)
+		require.Equal(t, "60", resp.Headers["x-ratelimit-limit"][0])
+		require.NotEmpty(t, resp.Headers["x-ratelimit-reset"][0])
+		require.NotEmpty(t, resp.Headers["retry-after"][0])
+	})
+
+	t.Run("cli tokens enforce burst throttle after sustained passes", func(t *testing.T) {
+		rateRepo, update := newRateLimitRepoForCLISafety(t)
+
+		callCount := 0
+		update.On("ExecuteWithResult", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			callCount++
+			limit := args.Get(0).(*storageModels.APIRateLimit)
+			switch callCount {
+			case 1:
+				limit.Count = 1 // sustained ok
+			default:
+				limit.Count = 21 // burst default (20) exceeded
+			}
+		}).Twice()
+
+		repos := &apiHandlers.MockRepositoryStorage{}
+		repos.On("RateLimit").Return(rateRepo).Maybe()
+		repos.On("GetDB").Return((*tablemocks.MockDB)(nil)).Maybe()
+
+		mw := createAgentSafetyRailsMiddleware(cfg, repos, zap.NewNop())
+
+		ctx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/timelines/home"}}
+		ctx.Set("claims", &auth.Claims{ClientClass: auth.ClientClassCLI, SessionID: "sid-2"})
+
+		called := false
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			called = true
+			return apptheory.Text(http.StatusOK, "ok"), nil
+		})(ctx)
+		require.NoError(t, err)
+		require.False(t, called)
+		require.Equal(t, http.StatusTooManyRequests, resp.Status)
+		require.Equal(t, "20", resp.Headers["x-ratelimit-limit"][0])
+		require.NotEmpty(t, resp.Headers["retry-after"][0])
+	})
+
+	t.Run("cli tokens return 429 when concurrency exceeded", func(t *testing.T) {
+		rateRepo, update := newRateLimitRepoForCLISafety(t)
+		update.On("ExecuteWithResult", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			limit := args.Get(0).(*storageModels.APIRateLimit)
+			limit.Count = 1
+		}).Twice()
+
+		concurrencyDB, q, updateConcurrency := newConcurrencyDB(t)
+		q.On("Create").Return(dynamormErrors.ErrConditionFailed).Twice()
+		updateConcurrency.On("Execute").Return(dynamormErrors.ErrConditionFailed).Twice()
+
+		repos := &apiHandlers.MockRepositoryStorage{}
+		repos.On("RateLimit").Return(rateRepo).Maybe()
+		repos.On("GetDB").Return(concurrencyDB).Maybe()
+
+		mw := createAgentSafetyRailsMiddleware(cfg, repos, zap.NewNop())
+
+		ctx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodPost, Path: "/api/v1/statuses"}}
+		ctx.Set("claims", &auth.Claims{ClientClass: auth.ClientClassCLI, SessionID: "sid-3"})
+
+		called := false
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			called = true
+			return apptheory.Text(http.StatusOK, "ok"), nil
+		})(ctx)
+		require.NoError(t, err)
+		require.False(t, called)
+		require.Equal(t, http.StatusTooManyRequests, resp.Status)
+		require.Equal(t, "1", resp.Headers["retry-after"][0])
 	})
 
 	t.Run("returns 429 when concurrency exceeded", func(t *testing.T) {

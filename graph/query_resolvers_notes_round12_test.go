@@ -35,18 +35,18 @@ func TestRound12QueryResolvers_Notes_ObjectTimelineSearch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, obj)
 
-	_, err = q.Timeline(context.Background(), model.TimelineTypeHome, nil, nil, nil, nil, nil, nil)
+	_, err = q.Timeline(context.Background(), model.TimelineTypeHome, nil, nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 
 	first := 5
-	conn, err := q.Timeline(context.Background(), model.TimelineTypePublic, nil, nil, nil, &first, nil, nil)
+	conn, err := q.Timeline(context.Background(), model.TimelineTypePublic, nil, nil, nil, &first, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
-	_, err = q.Timeline(context.Background(), model.TimelineTypeHashtag, nil, nil, nil, nil, nil, nil)
+	_, err = q.Timeline(context.Background(), model.TimelineTypeHashtag, nil, nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 
-	_, err = q.Timeline(context.Background(), model.TimelineType("NOPE"), nil, nil, nil, nil, nil, nil)
+	_, err = q.Timeline(context.Background(), model.TimelineType("NOPE"), nil, nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 
 	result, err := q.Search(context.Background(), "alice", nil, nil, nil)

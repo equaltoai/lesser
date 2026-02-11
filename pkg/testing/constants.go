@@ -1,5 +1,5 @@
 // Package testing provides common test utilities and constants for the Lesser test suite.
-package testing
+package testing //nolint:revive // package name is stable despite stdlib collision warning
 
 // Test environment constants
 const (

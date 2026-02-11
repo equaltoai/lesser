@@ -63,6 +63,12 @@ func applyOAuthOverrides(op *operation, route routeDef) {
 	switch {
 	case route.Method == methodPOST && route.Path == "/oauth/token":
 		applyOAuthTokenOverrides(op)
+	case route.Method == methodPOST && route.Path == "/oauth/device/code":
+		applyOAuthDeviceCodeOverrides(op)
+	case route.Method == methodPOST && route.Path == "/oauth/device/verify":
+		applyOAuthDeviceVerifyOverrides(op)
+	case route.Method == methodPOST && route.Path == "/oauth/device/consent":
+		applyOAuthDeviceConsentOverrides(op)
 	case route.Method == methodPOST && route.Path == "/oauth/consent":
 		applyOAuthConsentOverrides(op)
 	case route.Method == methodGET && route.Path == "/oauth/authorize":
@@ -87,6 +93,57 @@ func applyOAuthTokenOverrides(op *operation) {
 	}
 
 	ensureJSONResponseSchema(op, "200", "OAuthTokenResponse")
+}
+
+func applyOAuthDeviceCodeOverrides(op *operation) {
+	if op == nil {
+		return
+	}
+
+	op.RequestBody = &requestBody{
+		Required: true,
+		Content: map[string]mediaType{
+			"application/x-www-form-urlencoded": {
+				Schema: schemaRef{Ref: "#/components/schemas/OAuthDeviceCodeRequest"},
+			},
+		},
+	}
+
+	ensureJSONResponseSchema(op, "200", "OAuthDeviceCodeResponse")
+}
+
+func applyOAuthDeviceVerifyOverrides(op *operation) {
+	if op == nil {
+		return
+	}
+
+	op.RequestBody = &requestBody{
+		Required: true,
+		Content: map[string]mediaType{
+			"application/x-www-form-urlencoded": {
+				Schema: schemaRef{Ref: "#/components/schemas/OAuthDeviceVerifyRequest"},
+			},
+		},
+	}
+
+	ensureJSONResponseSchema(op, "200", "OAuthDeviceVerifyResponse")
+}
+
+func applyOAuthDeviceConsentOverrides(op *operation) {
+	if op == nil {
+		return
+	}
+
+	op.RequestBody = &requestBody{
+		Required: true,
+		Content: map[string]mediaType{
+			"application/x-www-form-urlencoded": {
+				Schema: schemaRef{Ref: "#/components/schemas/OAuthDeviceConsentRequest"},
+			},
+		},
+	}
+
+	ensureJSONResponseSchema(op, "200", "OAuthDeviceConsentResponse")
 }
 
 func applyOAuthConsentOverrides(op *operation) {

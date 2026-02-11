@@ -164,6 +164,7 @@ type ComplexityRoot struct {
 	}
 
 	Actor struct {
+		AgentInfo     func(childComplexity int) int
 		Avatar        func(childComplexity int) int
 		Bot           func(childComplexity int) int
 		CreatedAt     func(childComplexity int) int
@@ -174,6 +175,7 @@ type ComplexityRoot struct {
 		Following     func(childComplexity int) int
 		Header        func(childComplexity int) int
 		ID            func(childComplexity int) int
+		IsAgent       func(childComplexity int) int
 		Locked        func(childComplexity int) int
 		Reputation    func(childComplexity int) int
 		StatusesCount func(childComplexity int) int
@@ -213,6 +215,24 @@ type ComplexityRoot struct {
 	AdminAccountConnection struct {
 		Accounts   func(childComplexity int) int
 		NextCursor func(childComplexity int) int
+	}
+
+	AdminAgentPolicy struct {
+		AgentMaxFollowsPerHour         func(childComplexity int) int
+		AgentMaxPostsPerHour           func(childComplexity int) int
+		AllowAgentRegistration         func(childComplexity int) int
+		AllowAgents                    func(childComplexity int) int
+		AllowRemoteAgents              func(childComplexity int) int
+		BlockedAgentDomains            func(childComplexity int) int
+		DefaultQuarantineDays          func(childComplexity int) int
+		HybridRetrievalEnabled         func(childComplexity int) int
+		HybridRetrievalMaxCandidates   func(childComplexity int) int
+		MaxAgentsPerOwner              func(childComplexity int) int
+		RemoteQuarantineDays           func(childComplexity int) int
+		TrustedAgentDomains            func(childComplexity int) int
+		UpdatedAt                      func(childComplexity int) int
+		VerifiedAgentMaxFollowsPerHour func(childComplexity int) int
+		VerifiedAgentMaxPostsPerHour   func(childComplexity int) int
 	}
 
 	AdminDomainAllow struct {
@@ -425,15 +445,35 @@ type ComplexityRoot struct {
 	}
 
 	Agent struct {
-		ActivityCount func(childComplexity int) int
-		Capabilities  func(childComplexity int) int
-		CreatedAt     func(childComplexity int) int
-		DisplayName   func(childComplexity int) int
-		ID            func(childComplexity int) int
-		Owner         func(childComplexity int) int
-		Type          func(childComplexity int) int
-		Username      func(childComplexity int) int
-		Version       func(childComplexity int) int
+		ActivityCount     func(childComplexity int) int
+		AgentCapabilities func(childComplexity int) int
+		AgentOwner        func(childComplexity int) int
+		AgentType         func(childComplexity int) int
+		AgentVersion      func(childComplexity int) int
+		Bio               func(childComplexity int) int
+		Capabilities      func(childComplexity int) int
+		CreatedAt         func(childComplexity int) int
+		DelegatedScopes   func(childComplexity int) int
+		DisplayName       func(childComplexity int) int
+		ID                func(childComplexity int) int
+		Owner             func(childComplexity int) int
+		OwnerActor        func(childComplexity int) int
+		Type              func(childComplexity int) int
+		Username          func(childComplexity int) int
+		Verified          func(childComplexity int) int
+		VerifiedAt        func(childComplexity int) int
+		Version           func(childComplexity int) int
+	}
+
+	AgentActivityConnection struct {
+		Edges      func(childComplexity int) int
+		PageInfo   func(childComplexity int) int
+		TotalCount func(childComplexity int) int
+	}
+
+	AgentActivityEdge struct {
+		Cursor func(childComplexity int) int
+		Node   func(childComplexity int) int
 	}
 
 	AgentActivityEvent struct {
@@ -465,6 +505,16 @@ type ComplexityRoot struct {
 	AgentEdge struct {
 		Cursor func(childComplexity int) int
 		Node   func(childComplexity int) int
+	}
+
+	AgentPostAttribution struct {
+		Constraints     func(childComplexity int) int
+		DelegatedBy     func(childComplexity int) int
+		MemoryCitations func(childComplexity int) int
+		ModelVersion    func(childComplexity int) int
+		Scopes          func(childComplexity int) int
+		TriggerDetails  func(childComplexity int) int
+		TriggerType     func(childComplexity int) int
 	}
 
 	Announcement struct {
@@ -712,11 +762,13 @@ type ComplexityRoot struct {
 	}
 
 	DelegationPayload struct {
-		AccessToken func(childComplexity int) int
-		Agent       func(childComplexity int) int
-		CreatedAt   func(childComplexity int) int
-		Scope       func(childComplexity int) int
-		TokenType   func(childComplexity int) int
+		AccessToken  func(childComplexity int) int
+		Agent        func(childComplexity int) int
+		CreatedAt    func(childComplexity int) int
+		ExpiresIn    func(childComplexity int) int
+		RefreshToken func(childComplexity int) int
+		Scope        func(childComplexity int) int
+		TokenType    func(childComplexity int) int
 	}
 
 	DiscoveryPreferences struct {
@@ -1567,8 +1619,11 @@ type ComplexityRoot struct {
 		AdminPromoteReviewer          func(childComplexity int, id string) int
 		AdminReportAction             func(childComplexity int, id string, action model.AdminReportAction) int
 		AdminSetStatusSensitive       func(childComplexity int, id string, sensitive bool) int
+		AdminSuspendAgent             func(childComplexity int, username string) int
+		AdminUnverifyAgent            func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
 		AdminUpdateDomainBlock        func(childComplexity int, id string, input model.AdminDomainBlockUpdateInput) int
 		AdminUpdateTrust              func(childComplexity int, input model.AdminUpdateTrustInput) int
+		AdminVerifyAgent              func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
 		AttemptReconnection           func(childComplexity int, id string) int
 		AutosaveDraft                 func(childComplexity int, id string, content string) int
 		BlockActor                    func(childComplexity int, id string) int
@@ -1593,6 +1648,7 @@ type ComplexityRoot struct {
 		CreateSeries                  func(childComplexity int, input model.CreateSeriesInput) int
 		CreateVouch                   func(childComplexity int, input model.CreateVouchInput) int
 		DelegateToAgent               func(childComplexity int, input model.DelegateToAgentInput) int
+		DeleteAgent                   func(childComplexity int, username string) int
 		DeleteArticle                 func(childComplexity int, id string) int
 		DeleteCategory                func(childComplexity int, id string) int
 		DeleteConversation            func(childComplexity int, id string) int
@@ -1664,6 +1720,7 @@ type ComplexityRoot struct {
 		UnpinObject                   func(childComplexity int, id string) int
 		UnshareObject                 func(childComplexity int, id string) int
 		UpdateAccountQuotePermissions func(childComplexity int, input model.UpdateAccountQuotePermissionsInput) int
+		UpdateAdminAgentPolicy        func(childComplexity int, input model.UpdateAdminAgentPolicyInput) int
 		UpdateAgent                   func(childComplexity int, username string, input model.UpdateAgentInput) int
 		UpdateArticle                 func(childComplexity int, id string, input model.UpdateArticleInput) int
 		UpdateCategory                func(childComplexity int, id string, input model.UpdateCategoryInput) int
@@ -1732,6 +1789,7 @@ type ComplexityRoot struct {
 
 	Object struct {
 		Actor            func(childComplexity int) int
+		AgentAttribution func(childComplexity int) int
 		Attachments      func(childComplexity int) int
 		Boosted          func(childComplexity int) int
 		BoostedObject    func(childComplexity int) int
@@ -1964,6 +2022,7 @@ type ComplexityRoot struct {
 		Actor                     func(childComplexity int, id *string, username *string) int
 		AdminAccount              func(childComplexity int, id string) int
 		AdminAccounts             func(childComplexity int, first *int, after *model.Cursor) int
+		AdminAgentPolicy          func(childComplexity int) int
 		AdminDomainAllows         func(childComplexity int, first *int, after *model.Cursor) int
 		AdminDomainBlock          func(childComplexity int, id string) int
 		AdminDomainBlocks         func(childComplexity int, first *int, after *model.Cursor) int
@@ -1980,8 +2039,9 @@ type ComplexityRoot struct {
 		AdminTrustGraph           func(childComplexity int, limit *int) int
 		AffectedRelationships     func(childComplexity int, severedRelationshipID string) int
 		Agent                     func(childComplexity int, username string) int
+		AgentActivity             func(childComplexity int, username string, first *int, after *model.Cursor) int
 		AgentMemorySearch         func(childComplexity int, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) int
-		Agents                    func(childComplexity int, first *int, after *model.Cursor, typeArg *model.AgentType) int
+		Agents                    func(childComplexity int, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) int
 		AiAnalysis                func(childComplexity int, objectID string) int
 		AiCapabilities            func(childComplexity int) int
 		AiStats                   func(childComplexity int, period model.Period) int
@@ -2088,7 +2148,7 @@ type ComplexityRoot struct {
 		Suggestions               func(childComplexity int, limit *int) int
 		SupportedBitrates         func(childComplexity int, mediaID string) int
 		ThreadContext             func(childComplexity int, noteID string) int
-		Timeline                  func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool) int
+		Timeline                  func(childComplexity int, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool, excludeAgents *bool) int
 		TranslateStatus           func(childComplexity int, id string, targetLanguage *string) int
 		TranslationLanguages      func(childComplexity int) int
 		TrendingLinks             func(childComplexity int, limit *int) int
@@ -2700,6 +2760,8 @@ type ActorResolver interface {
 	CreatedAt(ctx context.Context, obj *activitypub.Actor) (*model.Time, error)
 	UpdatedAt(ctx context.Context, obj *activitypub.Actor) (*model.Time, error)
 	Fields(ctx context.Context, obj *activitypub.Actor) ([]*model.Field, error)
+	IsAgent(ctx context.Context, obj *activitypub.Actor) (bool, error)
+	AgentInfo(ctx context.Context, obj *activitypub.Actor) (*model.Agent, error)
 	TipAddress(ctx context.Context, obj *activitypub.Actor) (*string, error)
 	TipChainID(ctx context.Context, obj *activitypub.Actor) (*int, error)
 	TrustScore(ctx context.Context, obj *activitypub.Actor) (float64, error)
@@ -2900,8 +2962,13 @@ type MutationResolver interface {
 	AdminSetStatusSensitive(ctx context.Context, id string, sensitive bool) (*model.Object, error)
 	RegisterAgent(ctx context.Context, input model.RegisterAgentInput) (*model.RegisterAgentPayload, error)
 	UpdateAgent(ctx context.Context, username string, input model.UpdateAgentInput) (*model.Agent, error)
+	DeleteAgent(ctx context.Context, username string) (*model.Agent, error)
 	DelegateToAgent(ctx context.Context, input model.DelegateToAgentInput) (*model.DelegationPayload, error)
 	RevokeAgentToken(ctx context.Context, username string) (bool, error)
+	UpdateAdminAgentPolicy(ctx context.Context, input model.UpdateAdminAgentPolicyInput) (*model.AdminAgentPolicy, error)
+	AdminVerifyAgent(ctx context.Context, username string, input *model.AdminVerifyAgentInput) (*model.Agent, error)
+	AdminUnverifyAgent(ctx context.Context, username string, input *model.AdminVerifyAgentInput) (*model.Agent, error)
+	AdminSuspendAgent(ctx context.Context, username string) (*model.Agent, error)
 }
 type ObjectResolver interface {
 	ViewerFavourited(ctx context.Context, obj *model.Object) (bool, error)
@@ -2912,7 +2979,7 @@ type QueryResolver interface {
 	Viewer(ctx context.Context) (*activitypub.Actor, error)
 	Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error)
 	Object(ctx context.Context, id string) (*model.Object, error)
-	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error)
+	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool, excludeAgents *bool) (*model.ObjectConnection, error)
 	Search(ctx context.Context, query string, typeArg *string, first *int, after *model.Cursor) (*model.SearchResult, error)
 	Notifications(ctx context.Context, types []string, excludeTypes []string, first *int, after *model.Cursor) (*model.NotificationConnection, error)
 	Notification(ctx context.Context, id string) (*model.Notification, error)
@@ -3045,8 +3112,10 @@ type QueryResolver interface {
 	AdminStatuses(ctx context.Context, filter *model.AdminStatusFilter, first *int, after *model.Cursor) (*model.AdminStatusConnection, error)
 	AdminStatus(ctx context.Context, id string) (*model.Object, error)
 	Agent(ctx context.Context, username string) (*model.Agent, error)
-	Agents(ctx context.Context, first *int, after *model.Cursor, typeArg *model.AgentType) (*model.AgentConnection, error)
+	Agents(ctx context.Context, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) (*model.AgentConnection, error)
 	MyAgents(ctx context.Context) ([]*model.Agent, error)
+	AgentActivity(ctx context.Context, username string, first *int, after *model.Cursor) (*model.AgentActivityConnection, error)
+	AdminAgentPolicy(ctx context.Context) (*model.AdminAgentPolicy, error)
 	AgentMemorySearch(ctx context.Context, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 }
 type QuoteContextResolver interface {
@@ -3552,6 +3621,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Activity.Type(childComplexity), true
 
+	case "Actor.agentInfo":
+		if e.complexity.Actor.AgentInfo == nil {
+			break
+		}
+
+		return e.complexity.Actor.AgentInfo(childComplexity), true
+
 	case "Actor.avatar":
 		if e.complexity.Actor.Avatar == nil {
 			break
@@ -3621,6 +3697,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Actor.ID(childComplexity), true
+
+	case "Actor.isAgent":
+		if e.complexity.Actor.IsAgent == nil {
+			break
+		}
+
+		return e.complexity.Actor.IsAgent(childComplexity), true
 
 	case "Actor.locked":
 		if e.complexity.Actor.Locked == nil {
@@ -3831,6 +3914,111 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AdminAccountConnection.NextCursor(childComplexity), true
+
+	case "AdminAgentPolicy.agentMaxFollowsPerHour":
+		if e.complexity.AdminAgentPolicy.AgentMaxFollowsPerHour == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.AgentMaxFollowsPerHour(childComplexity), true
+
+	case "AdminAgentPolicy.agentMaxPostsPerHour":
+		if e.complexity.AdminAgentPolicy.AgentMaxPostsPerHour == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.AgentMaxPostsPerHour(childComplexity), true
+
+	case "AdminAgentPolicy.allowAgentRegistration":
+		if e.complexity.AdminAgentPolicy.AllowAgentRegistration == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.AllowAgentRegistration(childComplexity), true
+
+	case "AdminAgentPolicy.allowAgents":
+		if e.complexity.AdminAgentPolicy.AllowAgents == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.AllowAgents(childComplexity), true
+
+	case "AdminAgentPolicy.allowRemoteAgents":
+		if e.complexity.AdminAgentPolicy.AllowRemoteAgents == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.AllowRemoteAgents(childComplexity), true
+
+	case "AdminAgentPolicy.blockedAgentDomains":
+		if e.complexity.AdminAgentPolicy.BlockedAgentDomains == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.BlockedAgentDomains(childComplexity), true
+
+	case "AdminAgentPolicy.defaultQuarantineDays":
+		if e.complexity.AdminAgentPolicy.DefaultQuarantineDays == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.DefaultQuarantineDays(childComplexity), true
+
+	case "AdminAgentPolicy.hybridRetrievalEnabled":
+		if e.complexity.AdminAgentPolicy.HybridRetrievalEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.HybridRetrievalEnabled(childComplexity), true
+
+	case "AdminAgentPolicy.hybridRetrievalMaxCandidates":
+		if e.complexity.AdminAgentPolicy.HybridRetrievalMaxCandidates == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.HybridRetrievalMaxCandidates(childComplexity), true
+
+	case "AdminAgentPolicy.maxAgentsPerOwner":
+		if e.complexity.AdminAgentPolicy.MaxAgentsPerOwner == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.MaxAgentsPerOwner(childComplexity), true
+
+	case "AdminAgentPolicy.remoteQuarantineDays":
+		if e.complexity.AdminAgentPolicy.RemoteQuarantineDays == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.RemoteQuarantineDays(childComplexity), true
+
+	case "AdminAgentPolicy.trustedAgentDomains":
+		if e.complexity.AdminAgentPolicy.TrustedAgentDomains == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.TrustedAgentDomains(childComplexity), true
+
+	case "AdminAgentPolicy.updatedAt":
+		if e.complexity.AdminAgentPolicy.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.UpdatedAt(childComplexity), true
+
+	case "AdminAgentPolicy.verifiedAgentMaxFollowsPerHour":
+		if e.complexity.AdminAgentPolicy.VerifiedAgentMaxFollowsPerHour == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.VerifiedAgentMaxFollowsPerHour(childComplexity), true
+
+	case "AdminAgentPolicy.verifiedAgentMaxPostsPerHour":
+		if e.complexity.AdminAgentPolicy.VerifiedAgentMaxPostsPerHour == nil {
+			break
+		}
+
+		return e.complexity.AdminAgentPolicy.VerifiedAgentMaxPostsPerHour(childComplexity), true
 
 	case "AdminDomainAllow.createdAt":
 		if e.complexity.AdminDomainAllow.CreatedAt == nil {
@@ -4693,6 +4881,41 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Agent.ActivityCount(childComplexity), true
 
+	case "Agent.agentCapabilities":
+		if e.complexity.Agent.AgentCapabilities == nil {
+			break
+		}
+
+		return e.complexity.Agent.AgentCapabilities(childComplexity), true
+
+	case "Agent.agentOwner":
+		if e.complexity.Agent.AgentOwner == nil {
+			break
+		}
+
+		return e.complexity.Agent.AgentOwner(childComplexity), true
+
+	case "Agent.agentType":
+		if e.complexity.Agent.AgentType == nil {
+			break
+		}
+
+		return e.complexity.Agent.AgentType(childComplexity), true
+
+	case "Agent.agentVersion":
+		if e.complexity.Agent.AgentVersion == nil {
+			break
+		}
+
+		return e.complexity.Agent.AgentVersion(childComplexity), true
+
+	case "Agent.bio":
+		if e.complexity.Agent.Bio == nil {
+			break
+		}
+
+		return e.complexity.Agent.Bio(childComplexity), true
+
 	case "Agent.capabilities":
 		if e.complexity.Agent.Capabilities == nil {
 			break
@@ -4706,6 +4929,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Agent.CreatedAt(childComplexity), true
+
+	case "Agent.delegatedScopes":
+		if e.complexity.Agent.DelegatedScopes == nil {
+			break
+		}
+
+		return e.complexity.Agent.DelegatedScopes(childComplexity), true
 
 	case "Agent.displayName":
 		if e.complexity.Agent.DisplayName == nil {
@@ -4728,6 +4958,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Agent.Owner(childComplexity), true
 
+	case "Agent.ownerActor":
+		if e.complexity.Agent.OwnerActor == nil {
+			break
+		}
+
+		return e.complexity.Agent.OwnerActor(childComplexity), true
+
 	case "Agent.type":
 		if e.complexity.Agent.Type == nil {
 			break
@@ -4742,12 +4979,61 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Agent.Username(childComplexity), true
 
+	case "Agent.verified":
+		if e.complexity.Agent.Verified == nil {
+			break
+		}
+
+		return e.complexity.Agent.Verified(childComplexity), true
+
+	case "Agent.verifiedAt":
+		if e.complexity.Agent.VerifiedAt == nil {
+			break
+		}
+
+		return e.complexity.Agent.VerifiedAt(childComplexity), true
+
 	case "Agent.version":
 		if e.complexity.Agent.Version == nil {
 			break
 		}
 
 		return e.complexity.Agent.Version(childComplexity), true
+
+	case "AgentActivityConnection.edges":
+		if e.complexity.AgentActivityConnection.Edges == nil {
+			break
+		}
+
+		return e.complexity.AgentActivityConnection.Edges(childComplexity), true
+
+	case "AgentActivityConnection.pageInfo":
+		if e.complexity.AgentActivityConnection.PageInfo == nil {
+			break
+		}
+
+		return e.complexity.AgentActivityConnection.PageInfo(childComplexity), true
+
+	case "AgentActivityConnection.totalCount":
+		if e.complexity.AgentActivityConnection.TotalCount == nil {
+			break
+		}
+
+		return e.complexity.AgentActivityConnection.TotalCount(childComplexity), true
+
+	case "AgentActivityEdge.cursor":
+		if e.complexity.AgentActivityEdge.Cursor == nil {
+			break
+		}
+
+		return e.complexity.AgentActivityEdge.Cursor(childComplexity), true
+
+	case "AgentActivityEdge.node":
+		if e.complexity.AgentActivityEdge.Node == nil {
+			break
+		}
+
+		return e.complexity.AgentActivityEdge.Node(childComplexity), true
 
 	case "AgentActivityEvent.action":
 		if e.complexity.AgentActivityEvent.Action == nil {
@@ -4881,6 +5167,55 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AgentEdge.Node(childComplexity), true
+
+	case "AgentPostAttribution.constraints":
+		if e.complexity.AgentPostAttribution.Constraints == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.Constraints(childComplexity), true
+
+	case "AgentPostAttribution.delegatedBy":
+		if e.complexity.AgentPostAttribution.DelegatedBy == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.DelegatedBy(childComplexity), true
+
+	case "AgentPostAttribution.memoryCitations":
+		if e.complexity.AgentPostAttribution.MemoryCitations == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.MemoryCitations(childComplexity), true
+
+	case "AgentPostAttribution.modelVersion":
+		if e.complexity.AgentPostAttribution.ModelVersion == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.ModelVersion(childComplexity), true
+
+	case "AgentPostAttribution.scopes":
+		if e.complexity.AgentPostAttribution.Scopes == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.Scopes(childComplexity), true
+
+	case "AgentPostAttribution.triggerDetails":
+		if e.complexity.AgentPostAttribution.TriggerDetails == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.TriggerDetails(childComplexity), true
+
+	case "AgentPostAttribution.triggerType":
+		if e.complexity.AgentPostAttribution.TriggerType == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.TriggerType(childComplexity), true
 
 	case "Announcement.allDay":
 		if e.complexity.Announcement.AllDay == nil {
@@ -6022,6 +6357,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.DelegationPayload.CreatedAt(childComplexity), true
+
+	case "DelegationPayload.expiresIn":
+		if e.complexity.DelegationPayload.ExpiresIn == nil {
+			break
+		}
+
+		return e.complexity.DelegationPayload.ExpiresIn(childComplexity), true
+
+	case "DelegationPayload.refreshToken":
+		if e.complexity.DelegationPayload.RefreshToken == nil {
+			break
+		}
+
+		return e.complexity.DelegationPayload.RefreshToken(childComplexity), true
 
 	case "DelegationPayload.scope":
 		if e.complexity.DelegationPayload.Scope == nil {
@@ -10143,6 +10492,30 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.AdminSetStatusSensitive(childComplexity, args["id"].(string), args["sensitive"].(bool)), true
 
+	case "Mutation.adminSuspendAgent":
+		if e.complexity.Mutation.AdminSuspendAgent == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_adminSuspendAgent_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AdminSuspendAgent(childComplexity, args["username"].(string)), true
+
+	case "Mutation.adminUnverifyAgent":
+		if e.complexity.Mutation.AdminUnverifyAgent == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_adminUnverifyAgent_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AdminUnverifyAgent(childComplexity, args["username"].(string), args["input"].(*model.AdminVerifyAgentInput)), true
+
 	case "Mutation.adminUpdateDomainBlock":
 		if e.complexity.Mutation.AdminUpdateDomainBlock == nil {
 			break
@@ -10166,6 +10539,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.AdminUpdateTrust(childComplexity, args["input"].(model.AdminUpdateTrustInput)), true
+
+	case "Mutation.adminVerifyAgent":
+		if e.complexity.Mutation.AdminVerifyAgent == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_adminVerifyAgent_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AdminVerifyAgent(childComplexity, args["username"].(string), args["input"].(*model.AdminVerifyAgentInput)), true
 
 	case "Mutation.attemptReconnection":
 		if e.complexity.Mutation.AttemptReconnection == nil {
@@ -10449,6 +10834,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.DelegateToAgent(childComplexity, args["input"].(model.DelegateToAgentInput)), true
+
+	case "Mutation.deleteAgent":
+		if e.complexity.Mutation.DeleteAgent == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_deleteAgent_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.DeleteAgent(childComplexity, args["username"].(string)), true
 
 	case "Mutation.deleteArticle":
 		if e.complexity.Mutation.DeleteArticle == nil {
@@ -11292,6 +11689,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.UpdateAccountQuotePermissions(childComplexity, args["input"].(model.UpdateAccountQuotePermissionsInput)), true
 
+	case "Mutation.updateAdminAgentPolicy":
+		if e.complexity.Mutation.UpdateAdminAgentPolicy == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateAdminAgentPolicy_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateAdminAgentPolicy(childComplexity, args["input"].(model.UpdateAdminAgentPolicyInput)), true
+
 	case "Mutation.updateAgent":
 		if e.complexity.Mutation.UpdateAgent == nil {
 			break
@@ -11750,6 +12159,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Object.Actor(childComplexity), true
+
+	case "Object.agentAttribution":
+		if e.complexity.Object.AgentAttribution == nil {
+			break
+		}
+
+		return e.complexity.Object.AgentAttribution(childComplexity), true
 
 	case "Object.attachments":
 		if e.complexity.Object.Attachments == nil {
@@ -12875,6 +13291,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.AdminAccounts(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
 
+	case "Query.adminAgentPolicy":
+		if e.complexity.Query.AdminAgentPolicy == nil {
+			break
+		}
+
+		return e.complexity.Query.AdminAgentPolicy(childComplexity), true
+
 	case "Query.adminDomainAllows":
 		if e.complexity.Query.AdminDomainAllows == nil {
 			break
@@ -13062,6 +13485,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.Agent(childComplexity, args["username"].(string)), true
 
+	case "Query.agentActivity":
+		if e.complexity.Query.AgentActivity == nil {
+			break
+		}
+
+		args, err := ec.field_Query_agentActivity_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.AgentActivity(childComplexity, args["username"].(string), args["first"].(*int), args["after"].(*model.Cursor)), true
+
 	case "Query.agentMemorySearch":
 		if e.complexity.Query.AgentMemorySearch == nil {
 			break
@@ -13084,7 +13519,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Agents(childComplexity, args["first"].(*int), args["after"].(*model.Cursor), args["type"].(*model.AgentType)), true
+		return e.complexity.Query.Agents(childComplexity, args["first"].(*int), args["after"].(*model.Cursor), args["type"].(*model.AgentType), args["query"].(*string), args["verified"].(*bool), args["ownerUsername"].(*string)), true
 
 	case "Query.aiAnalysis":
 		if e.complexity.Query.AiAnalysis == nil {
@@ -14303,7 +14738,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Timeline(childComplexity, args["type"].(model.TimelineType), args["hashtag"].(*string), args["listId"].(*string), args["actorId"].(*string), args["first"].(*int), args["after"].(*model.Cursor), args["mediaOnly"].(*bool)), true
+		return e.complexity.Query.Timeline(childComplexity, args["type"].(model.TimelineType), args["hashtag"].(*string), args["listId"].(*string), args["actorId"].(*string), args["first"].(*int), args["after"].(*model.Cursor), args["mediaOnly"].(*bool), args["excludeAgents"].(*bool)), true
 
 	case "Query.translateStatus":
 		if e.complexity.Query.TranslateStatus == nil {
@@ -17099,6 +17534,9 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputAdminModerationEventOverrideInput,
 		ec.unmarshalInputAdminStatusFilter,
 		ec.unmarshalInputAdminUpdateTrustInput,
+		ec.unmarshalInputAdminVerifyAgentInput,
+		ec.unmarshalInputAgentCapabilitiesInput,
+		ec.unmarshalInputAgentPostAttributionInput,
 		ec.unmarshalInputBedrockTrainingOptions,
 		ec.unmarshalInputCommunityNoteInput,
 		ec.unmarshalInputContentMapInput,
@@ -17147,6 +17585,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputStreamingQualityInput,
 		ec.unmarshalInputTrustInput,
 		ec.unmarshalInputUpdateAccountQuotePermissionsInput,
+		ec.unmarshalInputUpdateAdminAgentPolicyInput,
 		ec.unmarshalInputUpdateAgentInput,
 		ec.unmarshalInputUpdateArticleInput,
 		ec.unmarshalInputUpdateCategoryInput,
@@ -17637,6 +18076,33 @@ func (ec *executionContext) field_Mutation_adminSetStatusSensitive_args(ctx cont
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_adminSuspendAgent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_adminUnverifyAgent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalOAdminVerifyAgentInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminVerifyAgentInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_adminUpdateDomainBlock_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -17661,6 +18127,22 @@ func (ec *executionContext) field_Mutation_adminUpdateTrust_args(ctx context.Con
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_adminVerifyAgent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalOAdminVerifyAgentInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminVerifyAgentInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg1
 	return args, nil
 }
 
@@ -17919,6 +18401,17 @@ func (ec *executionContext) field_Mutation_delegateToAgent_args(ctx context.Cont
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_deleteAgent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
 	return args, nil
 }
 
@@ -18811,6 +19304,17 @@ func (ec *executionContext) field_Mutation_updateAccountQuotePermissions_args(ct
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_updateAdminAgentPolicy_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNUpdateAdminAgentPolicyInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAdminAgentPolicyInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_updateAgent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -19487,6 +19991,27 @@ func (ec *executionContext) field_Query_affectedRelationships_args(ctx context.C
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_agentActivity_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_agentMemorySearch_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -19547,6 +20072,21 @@ func (ec *executionContext) field_Query_agents_args(ctx context.Context, rawArgs
 		return nil, err
 	}
 	args["type"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "query", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["query"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "verified", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["verified"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "ownerUsername", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["ownerUsername"] = arg5
 	return args, nil
 }
 
@@ -20936,6 +21476,11 @@ func (ec *executionContext) field_Query_timeline_args(ctx context.Context, rawAr
 		return nil, err
 	}
 	args["mediaOnly"] = arg6
+	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "excludeAgents", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["excludeAgents"] = arg7
 	return args, nil
 }
 
@@ -23602,6 +24147,10 @@ func (ec *executionContext) fieldContext_AccountSuggestion_account(_ context.Con
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -24013,6 +24562,10 @@ func (ec *executionContext) fieldContext_Activity_actor(_ context.Context, field
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -24122,6 +24675,8 @@ func (ec *executionContext) fieldContext_Activity_object(_ context.Context, fiel
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -24233,6 +24788,8 @@ func (ec *executionContext) fieldContext_Activity_target(_ context.Context, fiel
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -24993,6 +25550,129 @@ func (ec *executionContext) fieldContext_Actor_fields(_ context.Context, field g
 	return fc, nil
 }
 
+func (ec *executionContext) _Actor_isAgent(ctx context.Context, field graphql.CollectedField, obj *activitypub.Actor) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Actor_isAgent(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Actor().IsAgent(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Actor_isAgent(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Actor",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Actor_agentInfo(ctx context.Context, field graphql.CollectedField, obj *activitypub.Actor) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Actor_agentInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Actor().AgentInfo(rctx, obj)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Agent)
+	fc.Result = res
+	return ec.marshalOAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgent(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Actor_agentInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Actor",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Agent_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Agent_username(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
+			case "type":
+				return ec.fieldContext_Agent_type(ctx, field)
+			case "version":
+				return ec.fieldContext_Agent_version(ctx, field)
+			case "capabilities":
+				return ec.fieldContext_Agent_capabilities(ctx, field)
+			case "owner":
+				return ec.fieldContext_Agent_owner(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Agent_createdAt(ctx, field)
+			case "activityCount":
+				return ec.fieldContext_Agent_activityCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Agent", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Actor_tipAddress(ctx context.Context, field graphql.CollectedField, obj *activitypub.Actor) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Actor_tipAddress(ctx, field)
 	if err != nil {
@@ -25321,6 +26001,10 @@ func (ec *executionContext) fieldContext_ActorListPage_actors(_ context.Context,
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -26028,6 +26712,10 @@ func (ec *executionContext) fieldContext_AdminAccount_actor(_ context.Context, f
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -26245,6 +26933,666 @@ func (ec *executionContext) fieldContext_AdminAccountConnection_nextCursor(_ con
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_allowAgents(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_allowAgents(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AllowAgents, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_allowAgents(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_allowAgentRegistration(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_allowAgentRegistration(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AllowAgentRegistration, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_allowAgentRegistration(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_defaultQuarantineDays(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_defaultQuarantineDays(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DefaultQuarantineDays, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_defaultQuarantineDays(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_maxAgentsPerOwner(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_maxAgentsPerOwner(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MaxAgentsPerOwner, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_maxAgentsPerOwner(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_allowRemoteAgents(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_allowRemoteAgents(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AllowRemoteAgents, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_allowRemoteAgents(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_remoteQuarantineDays(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_remoteQuarantineDays(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RemoteQuarantineDays, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_remoteQuarantineDays(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_blockedAgentDomains(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_blockedAgentDomains(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BlockedAgentDomains, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_blockedAgentDomains(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_trustedAgentDomains(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_trustedAgentDomains(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TrustedAgentDomains, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_trustedAgentDomains(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_agentMaxPostsPerHour(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_agentMaxPostsPerHour(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentMaxPostsPerHour, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_agentMaxPostsPerHour(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_verifiedAgentMaxPostsPerHour(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_verifiedAgentMaxPostsPerHour(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.VerifiedAgentMaxPostsPerHour, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_verifiedAgentMaxPostsPerHour(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_agentMaxFollowsPerHour(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_agentMaxFollowsPerHour(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentMaxFollowsPerHour, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_agentMaxFollowsPerHour(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_verifiedAgentMaxFollowsPerHour(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_verifiedAgentMaxFollowsPerHour(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.VerifiedAgentMaxFollowsPerHour, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_verifiedAgentMaxFollowsPerHour(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_hybridRetrievalEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_hybridRetrievalEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.HybridRetrievalEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_hybridRetrievalEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_hybridRetrievalMaxCandidates(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_hybridRetrievalMaxCandidates(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.HybridRetrievalMaxCandidates, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_hybridRetrievalMaxCandidates(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAgentPolicy_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.AdminAgentPolicy) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAgentPolicy_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAgentPolicy_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAgentPolicy",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
 		},
 	}
 	return fc, nil
@@ -29510,6 +30858,10 @@ func (ec *executionContext) fieldContext_AdminReport_reporter(_ context.Context,
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -29596,6 +30948,10 @@ func (ec *executionContext) fieldContext_AdminReport_target(_ context.Context, f
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -29679,6 +31035,10 @@ func (ec *executionContext) fieldContext_AdminReport_assignedAccount(_ context.C
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -29762,6 +31122,10 @@ func (ec *executionContext) fieldContext_AdminReport_actionTakenBy(_ context.Con
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -29874,6 +31238,8 @@ func (ec *executionContext) fieldContext_AdminReport_statuses(_ context.Context,
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -30714,6 +32080,8 @@ func (ec *executionContext) fieldContext_AdminStatusConnection_statuses(_ contex
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -31700,6 +33068,10 @@ func (ec *executionContext) fieldContext_AffectedRelationship_actor(_ context.Co
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -32224,6 +33596,454 @@ func (ec *executionContext) fieldContext_Agent_displayName(_ context.Context, fi
 	return fc, nil
 }
 
+func (ec *executionContext) _Agent_bio(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_bio(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Bio, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_bio(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_agentType(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_agentType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.AgentType)
+	fc.Result = res
+	return ec.marshalNAgentType2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentType(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_agentType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type AgentType does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_agentVersion(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_agentVersion(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentVersion, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_agentVersion(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_agentCapabilities(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_agentCapabilities(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentCapabilities, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.AgentCapabilities)
+	fc.Result = res
+	return ec.marshalNAgentCapabilities2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐAgentCapabilities(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_agentCapabilities(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "canPost":
+				return ec.fieldContext_AgentCapabilities_canPost(ctx, field)
+			case "canReply":
+				return ec.fieldContext_AgentCapabilities_canReply(ctx, field)
+			case "canBoost":
+				return ec.fieldContext_AgentCapabilities_canBoost(ctx, field)
+			case "canFollow":
+				return ec.fieldContext_AgentCapabilities_canFollow(ctx, field)
+			case "canDM":
+				return ec.fieldContext_AgentCapabilities_canDM(ctx, field)
+			case "maxPostsPerHour":
+				return ec.fieldContext_AgentCapabilities_maxPostsPerHour(ctx, field)
+			case "requiresApproval":
+				return ec.fieldContext_AgentCapabilities_requiresApproval(ctx, field)
+			case "restrictedDomains":
+				return ec.fieldContext_AgentCapabilities_restrictedDomains(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentCapabilities", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_agentOwner(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_agentOwner(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentOwner, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_agentOwner(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_delegatedScopes(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_delegatedScopes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DelegatedScopes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_delegatedScopes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_verified(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_verified(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Verified, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_verified(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_verifiedAt(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_verifiedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.VerifiedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_verifiedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Agent_ownerActor(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Agent_ownerActor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OwnerActor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.Actor)
+	fc.Result = res
+	return ec.marshalOActor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐActor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Agent_ownerActor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Actor_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Actor_username(ctx, field)
+			case "domain":
+				return ec.fieldContext_Actor_domain(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Actor_displayName(ctx, field)
+			case "summary":
+				return ec.fieldContext_Actor_summary(ctx, field)
+			case "avatar":
+				return ec.fieldContext_Actor_avatar(ctx, field)
+			case "header":
+				return ec.fieldContext_Actor_header(ctx, field)
+			case "followers":
+				return ec.fieldContext_Actor_followers(ctx, field)
+			case "following":
+				return ec.fieldContext_Actor_following(ctx, field)
+			case "statusesCount":
+				return ec.fieldContext_Actor_statusesCount(ctx, field)
+			case "bot":
+				return ec.fieldContext_Actor_bot(ctx, field)
+			case "locked":
+				return ec.fieldContext_Actor_locked(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Actor_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Actor_updatedAt(ctx, field)
+			case "fields":
+				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
+			case "tipAddress":
+				return ec.fieldContext_Actor_tipAddress(ctx, field)
+			case "tipChainId":
+				return ec.fieldContext_Actor_tipChainId(ctx, field)
+			case "trustScore":
+				return ec.fieldContext_Actor_trustScore(ctx, field)
+			case "reputation":
+				return ec.fieldContext_Actor_reputation(ctx, field)
+			case "vouches":
+				return ec.fieldContext_Actor_vouches(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Agent_type(ctx context.Context, field graphql.CollectedField, obj *model.Agent) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Agent_type(ctx, field)
 	if err != nil {
@@ -32440,6 +34260,10 @@ func (ec *executionContext) fieldContext_Agent_owner(_ context.Context, field gr
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -32540,6 +34364,256 @@ func (ec *executionContext) fieldContext_Agent_activityCount(_ context.Context, 
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentActivityConnection_edges(ctx context.Context, field graphql.CollectedField, obj *model.AgentActivityConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentActivityConnection_edges(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Edges, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.AgentActivityEdge)
+	fc.Result = res
+	return ec.marshalNAgentActivityEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityEdgeᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentActivityConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentActivityConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "node":
+				return ec.fieldContext_AgentActivityEdge_node(ctx, field)
+			case "cursor":
+				return ec.fieldContext_AgentActivityEdge_cursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentActivityEdge", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentActivityConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *model.AgentActivityConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentActivityConnection_pageInfo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PageInfo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.PageInfo)
+	fc.Result = res
+	return ec.marshalNPageInfo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐPageInfo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentActivityConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentActivityConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentActivityConnection_totalCount(ctx context.Context, field graphql.CollectedField, obj *model.AgentActivityConnection) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentActivityConnection_totalCount(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TotalCount, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentActivityConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentActivityConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentActivityEdge_node(ctx context.Context, field graphql.CollectedField, obj *model.AgentActivityEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentActivityEdge_node(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Node, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentActivityEvent)
+	fc.Result = res
+	return ec.marshalNAgentActivityEvent2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityEvent(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentActivityEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentActivityEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "eventId":
+				return ec.fieldContext_AgentActivityEvent_eventId(ctx, field)
+			case "agentUsername":
+				return ec.fieldContext_AgentActivityEvent_agentUsername(ctx, field)
+			case "action":
+				return ec.fieldContext_AgentActivityEvent_action(ctx, field)
+			case "targetId":
+				return ec.fieldContext_AgentActivityEvent_targetId(ctx, field)
+			case "metadataJson":
+				return ec.fieldContext_AgentActivityEvent_metadataJson(ctx, field)
+			case "timestamp":
+				return ec.fieldContext_AgentActivityEvent_timestamp(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentActivityEvent", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentActivityEdge_cursor(ctx context.Context, field graphql.CollectedField, obj *model.AgentActivityEdge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentActivityEdge_cursor(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Cursor, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Cursor)
+	fc.Result = res
+	return ec.marshalNCursor2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentActivityEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentActivityEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Cursor does not have child fields")
 		},
 	}
 	return fc, nil
@@ -33345,6 +35419,24 @@ func (ec *executionContext) fieldContext_AgentEdge_node(_ context.Context, field
 				return ec.fieldContext_Agent_username(ctx, field)
 			case "displayName":
 				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
 				return ec.fieldContext_Agent_type(ctx, field)
 			case "version":
@@ -33403,6 +35495,293 @@ func (ec *executionContext) fieldContext_AgentEdge_cursor(_ context.Context, fie
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_triggerType(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_triggerType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TriggerType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_triggerType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_triggerDetails(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_triggerDetails(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TriggerDetails, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_triggerDetails(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_memoryCitations(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_memoryCitations(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MemoryCitations, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalOString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_memoryCitations(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_delegatedBy(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_delegatedBy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DelegatedBy, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_delegatedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_scopes(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_scopes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Scopes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalOString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_scopes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_constraints(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_constraints(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Constraints, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalOString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_constraints(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_modelVersion(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_modelVersion(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ModelVersion, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_modelVersion(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -34225,6 +36604,10 @@ func (ec *executionContext) fieldContext_Article_author(_ context.Context, field
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -37678,6 +40061,10 @@ func (ec *executionContext) fieldContext_CommunityNote_author(_ context.Context,
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -38274,6 +40661,8 @@ func (ec *executionContext) fieldContext_CommunityNotePayload_object(_ context.C
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -38517,6 +40906,8 @@ func (ec *executionContext) fieldContext_Conversation_lastStatus(_ context.Conte
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -38649,6 +41040,10 @@ func (ec *executionContext) fieldContext_Conversation_accounts(_ context.Context
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -40240,6 +42635,8 @@ func (ec *executionContext) fieldContext_CreateNotePayload_object(_ context.Cont
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -41070,6 +43467,24 @@ func (ec *executionContext) fieldContext_DelegationPayload_agent(_ context.Conte
 				return ec.fieldContext_Agent_username(ctx, field)
 			case "displayName":
 				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
 				return ec.fieldContext_Agent_type(ctx, field)
 			case "version":
@@ -41121,6 +43536,50 @@ func (ec *executionContext) _DelegationPayload_accessToken(ctx context.Context, 
 }
 
 func (ec *executionContext) fieldContext_DelegationPayload_accessToken(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DelegationPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DelegationPayload_refreshToken(ctx context.Context, field graphql.CollectedField, obj *model.DelegationPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DelegationPayload_refreshToken(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RefreshToken, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DelegationPayload_refreshToken(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "DelegationPayload",
 		Field:      field,
@@ -41260,6 +43719,50 @@ func (ec *executionContext) fieldContext_DelegationPayload_createdAt(_ context.C
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DelegationPayload_expiresIn(ctx context.Context, field graphql.CollectedField, obj *model.DelegationPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_DelegationPayload_expiresIn(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresIn, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_DelegationPayload_expiresIn(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DelegationPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
 		},
 	}
 	return fc, nil
@@ -41639,6 +44142,10 @@ func (ec *executionContext) fieldContext_Draft_author(_ context.Context, field g
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -48472,6 +50979,10 @@ func (ec *executionContext) fieldContext_GroupedNotificationGroup_sampleActors(_
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -49387,6 +51898,8 @@ func (ec *executionContext) fieldContext_HashtagActivityUpdate_post(_ context.Co
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -49475,6 +51988,10 @@ func (ec *executionContext) fieldContext_HashtagActivityUpdate_author(_ context.
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -49693,6 +52210,10 @@ func (ec *executionContext) fieldContext_HashtagAnalytics_topPosters(_ context.C
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -56029,6 +58550,10 @@ func (ec *executionContext) fieldContext_InstanceInfo_contactAccount(_ context.C
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -57910,6 +60435,10 @@ func (ec *executionContext) fieldContext_List_accounts(_ context.Context, field 
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -58187,6 +60716,10 @@ func (ec *executionContext) fieldContext_ListUpdate_account(_ context.Context, f
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -59142,6 +61675,10 @@ func (ec *executionContext) fieldContext_Media_uploadedBy(_ context.Context, fie
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -61505,6 +64042,8 @@ func (ec *executionContext) fieldContext_ModerationAlert_content(_ context.Conte
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -62893,6 +65432,8 @@ func (ec *executionContext) fieldContext_ModerationDecision_object(_ context.Con
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -63113,6 +65654,10 @@ func (ec *executionContext) fieldContext_ModerationDecision_reviewers(_ context.
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -65026,6 +67571,8 @@ func (ec *executionContext) fieldContext_ModerationItem_content(_ context.Contex
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -65243,6 +67790,10 @@ func (ec *executionContext) fieldContext_ModerationItem_assignedTo(_ context.Con
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -65854,6 +68405,10 @@ func (ec *executionContext) fieldContext_ModerationPattern_createdBy(_ context.C
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -67297,6 +69852,8 @@ func (ec *executionContext) fieldContext_Mutation_updateStatus(ctx context.Conte
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -67603,6 +70160,8 @@ func (ec *executionContext) fieldContext_Mutation_shareObject(ctx context.Contex
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -67728,6 +70287,8 @@ func (ec *executionContext) fieldContext_Mutation_unshareObject(ctx context.Cont
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -67853,6 +70414,8 @@ func (ec *executionContext) fieldContext_Mutation_bookmarkObject(ctx context.Con
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -68033,6 +70596,8 @@ func (ec *executionContext) fieldContext_Mutation_pinObject(ctx context.Context,
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -68947,6 +71512,10 @@ func (ec *executionContext) fieldContext_Mutation_updateProfile(ctx context.Cont
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -76889,6 +79458,8 @@ func (ec *executionContext) fieldContext_Mutation_adminSetStatusSensitive(ctx co
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -77023,6 +79594,24 @@ func (ec *executionContext) fieldContext_Mutation_updateAgent(ctx context.Contex
 				return ec.fieldContext_Agent_username(ctx, field)
 			case "displayName":
 				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
 				return ec.fieldContext_Agent_type(ctx, field)
 			case "version":
@@ -77047,6 +79636,99 @@ func (ec *executionContext) fieldContext_Mutation_updateAgent(ctx context.Contex
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updateAgent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_deleteAgent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_deleteAgent(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().DeleteAgent(rctx, fc.Args["username"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Agent)
+	fc.Result = res
+	return ec.marshalNAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgent(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_deleteAgent(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Agent_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Agent_username(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
+			case "type":
+				return ec.fieldContext_Agent_type(ctx, field)
+			case "version":
+				return ec.fieldContext_Agent_version(ctx, field)
+			case "capabilities":
+				return ec.fieldContext_Agent_capabilities(ctx, field)
+			case "owner":
+				return ec.fieldContext_Agent_owner(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Agent_createdAt(ctx, field)
+			case "activityCount":
+				return ec.fieldContext_Agent_activityCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Agent", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_deleteAgent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -77096,12 +79778,16 @@ func (ec *executionContext) fieldContext_Mutation_delegateToAgent(ctx context.Co
 				return ec.fieldContext_DelegationPayload_agent(ctx, field)
 			case "accessToken":
 				return ec.fieldContext_DelegationPayload_accessToken(ctx, field)
+			case "refreshToken":
+				return ec.fieldContext_DelegationPayload_refreshToken(ctx, field)
 			case "tokenType":
 				return ec.fieldContext_DelegationPayload_tokenType(ctx, field)
 			case "scope":
 				return ec.fieldContext_DelegationPayload_scope(ctx, field)
 			case "createdAt":
 				return ec.fieldContext_DelegationPayload_createdAt(ctx, field)
+			case "expiresIn":
+				return ec.fieldContext_DelegationPayload_expiresIn(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type DelegationPayload", field.Name)
 		},
@@ -77169,6 +79855,372 @@ func (ec *executionContext) fieldContext_Mutation_revokeAgentToken(ctx context.C
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_revokeAgentToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateAdminAgentPolicy(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateAdminAgentPolicy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateAdminAgentPolicy(rctx, fc.Args["input"].(model.UpdateAdminAgentPolicyInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminAgentPolicy)
+	fc.Result = res
+	return ec.marshalNAdminAgentPolicy2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAgentPolicy(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateAdminAgentPolicy(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "allowAgents":
+				return ec.fieldContext_AdminAgentPolicy_allowAgents(ctx, field)
+			case "allowAgentRegistration":
+				return ec.fieldContext_AdminAgentPolicy_allowAgentRegistration(ctx, field)
+			case "defaultQuarantineDays":
+				return ec.fieldContext_AdminAgentPolicy_defaultQuarantineDays(ctx, field)
+			case "maxAgentsPerOwner":
+				return ec.fieldContext_AdminAgentPolicy_maxAgentsPerOwner(ctx, field)
+			case "allowRemoteAgents":
+				return ec.fieldContext_AdminAgentPolicy_allowRemoteAgents(ctx, field)
+			case "remoteQuarantineDays":
+				return ec.fieldContext_AdminAgentPolicy_remoteQuarantineDays(ctx, field)
+			case "blockedAgentDomains":
+				return ec.fieldContext_AdminAgentPolicy_blockedAgentDomains(ctx, field)
+			case "trustedAgentDomains":
+				return ec.fieldContext_AdminAgentPolicy_trustedAgentDomains(ctx, field)
+			case "agentMaxPostsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_agentMaxPostsPerHour(ctx, field)
+			case "verifiedAgentMaxPostsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_verifiedAgentMaxPostsPerHour(ctx, field)
+			case "agentMaxFollowsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_agentMaxFollowsPerHour(ctx, field)
+			case "verifiedAgentMaxFollowsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_verifiedAgentMaxFollowsPerHour(ctx, field)
+			case "hybridRetrievalEnabled":
+				return ec.fieldContext_AdminAgentPolicy_hybridRetrievalEnabled(ctx, field)
+			case "hybridRetrievalMaxCandidates":
+				return ec.fieldContext_AdminAgentPolicy_hybridRetrievalMaxCandidates(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AdminAgentPolicy_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminAgentPolicy", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateAdminAgentPolicy_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_adminVerifyAgent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_adminVerifyAgent(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AdminVerifyAgent(rctx, fc.Args["username"].(string), fc.Args["input"].(*model.AdminVerifyAgentInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Agent)
+	fc.Result = res
+	return ec.marshalNAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgent(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_adminVerifyAgent(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Agent_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Agent_username(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
+			case "type":
+				return ec.fieldContext_Agent_type(ctx, field)
+			case "version":
+				return ec.fieldContext_Agent_version(ctx, field)
+			case "capabilities":
+				return ec.fieldContext_Agent_capabilities(ctx, field)
+			case "owner":
+				return ec.fieldContext_Agent_owner(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Agent_createdAt(ctx, field)
+			case "activityCount":
+				return ec.fieldContext_Agent_activityCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Agent", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_adminVerifyAgent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_adminUnverifyAgent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_adminUnverifyAgent(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AdminUnverifyAgent(rctx, fc.Args["username"].(string), fc.Args["input"].(*model.AdminVerifyAgentInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Agent)
+	fc.Result = res
+	return ec.marshalNAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgent(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_adminUnverifyAgent(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Agent_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Agent_username(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
+			case "type":
+				return ec.fieldContext_Agent_type(ctx, field)
+			case "version":
+				return ec.fieldContext_Agent_version(ctx, field)
+			case "capabilities":
+				return ec.fieldContext_Agent_capabilities(ctx, field)
+			case "owner":
+				return ec.fieldContext_Agent_owner(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Agent_createdAt(ctx, field)
+			case "activityCount":
+				return ec.fieldContext_Agent_activityCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Agent", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_adminUnverifyAgent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_adminSuspendAgent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_adminSuspendAgent(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AdminSuspendAgent(rctx, fc.Args["username"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Agent)
+	fc.Result = res
+	return ec.marshalNAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgent(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_adminSuspendAgent(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Agent_id(ctx, field)
+			case "username":
+				return ec.fieldContext_Agent_username(ctx, field)
+			case "displayName":
+				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
+			case "type":
+				return ec.fieldContext_Agent_type(ctx, field)
+			case "version":
+				return ec.fieldContext_Agent_version(ctx, field)
+			case "capabilities":
+				return ec.fieldContext_Agent_capabilities(ctx, field)
+			case "owner":
+				return ec.fieldContext_Agent_owner(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Agent_createdAt(ctx, field)
+			case "activityCount":
+				return ec.fieldContext_Agent_activityCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Agent", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_adminSuspendAgent_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -77487,6 +80539,10 @@ func (ec *executionContext) fieldContext_Notification_account(_ context.Context,
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -77596,6 +80652,8 @@ func (ec *executionContext) fieldContext_Notification_status(_ context.Context, 
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -78374,6 +81432,10 @@ func (ec *executionContext) fieldContext_Object_actor(_ context.Context, field g
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -78577,6 +81639,8 @@ func (ec *executionContext) fieldContext_Object_inReplyTo(_ context.Context, fie
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -79488,6 +82552,8 @@ func (ec *executionContext) fieldContext_Object_boostedObject(_ context.Context,
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -79689,6 +82755,63 @@ func (ec *executionContext) fieldContext_Object_communityNotes(_ context.Context
 				return ec.fieldContext_CommunityNote_createdAt(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type CommunityNote", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Object_agentAttribution(ctx context.Context, field graphql.CollectedField, obj *model.Object) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Object_agentAttribution(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentAttribution, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*activitypub.AgentPostAttribution)
+	fc.Result = res
+	return ec.marshalOAgentPostAttribution2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐAgentPostAttribution(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Object_agentAttribution(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Object",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "triggerType":
+				return ec.fieldContext_AgentPostAttribution_triggerType(ctx, field)
+			case "triggerDetails":
+				return ec.fieldContext_AgentPostAttribution_triggerDetails(ctx, field)
+			case "memoryCitations":
+				return ec.fieldContext_AgentPostAttribution_memoryCitations(ctx, field)
+			case "delegatedBy":
+				return ec.fieldContext_AgentPostAttribution_delegatedBy(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentPostAttribution_scopes(ctx, field)
+			case "constraints":
+				return ec.fieldContext_AgentPostAttribution_constraints(ctx, field)
+			case "modelVersion":
+				return ec.fieldContext_AgentPostAttribution_modelVersion(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentPostAttribution", field.Name)
 		},
 	}
 	return fc, nil
@@ -80226,6 +83349,8 @@ func (ec *executionContext) fieldContext_ObjectEdge_node(_ context.Context, fiel
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -80384,6 +83509,8 @@ func (ec *executionContext) fieldContext_ObjectExplanation_object(_ context.Cont
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -83220,6 +86347,8 @@ func (ec *executionContext) fieldContext_PostEdge_node(_ context.Context, field 
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -83616,6 +86745,10 @@ func (ec *executionContext) fieldContext_ProfileDirectory_accounts(_ context.Con
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -84083,6 +87216,10 @@ func (ec *executionContext) fieldContext_Publication_actor(_ context.Context, fi
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -84313,6 +87450,10 @@ func (ec *executionContext) fieldContext_PublicationMember_user(_ context.Contex
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -85776,6 +88917,10 @@ func (ec *executionContext) fieldContext_Query_viewer(_ context.Context, field g
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -85859,6 +89004,10 @@ func (ec *executionContext) fieldContext_Query_actor(ctx context.Context, field 
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -85979,6 +89128,8 @@ func (ec *executionContext) fieldContext_Query_object(ctx context.Context, field
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -86023,7 +89174,7 @@ func (ec *executionContext) _Query_timeline(ctx context.Context, field graphql.C
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Timeline(rctx, fc.Args["type"].(model.TimelineType), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string), fc.Args["actorId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor), fc.Args["mediaOnly"].(*bool))
+		return ec.resolvers.Query().Timeline(rctx, fc.Args["type"].(model.TimelineType), fc.Args["hashtag"].(*string), fc.Args["listId"].(*string), fc.Args["actorId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor), fc.Args["mediaOnly"].(*bool), fc.Args["excludeAgents"].(*bool))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -87232,6 +90383,10 @@ func (ec *executionContext) fieldContext_Query_endorsements(_ context.Context, f
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -87961,6 +91116,10 @@ func (ec *executionContext) fieldContext_Query_listAccounts(ctx context.Context,
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -95057,6 +98216,8 @@ func (ec *executionContext) fieldContext_Query_adminStatus(ctx context.Context, 
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -95129,6 +98290,24 @@ func (ec *executionContext) fieldContext_Query_agent(ctx context.Context, field 
 				return ec.fieldContext_Agent_username(ctx, field)
 			case "displayName":
 				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
 				return ec.fieldContext_Agent_type(ctx, field)
 			case "version":
@@ -95173,7 +98352,7 @@ func (ec *executionContext) _Query_agents(ctx context.Context, field graphql.Col
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Agents(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor), fc.Args["type"].(*model.AgentType))
+		return ec.resolvers.Query().Agents(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor), fc.Args["type"].(*model.AgentType), fc.Args["query"].(*string), fc.Args["verified"].(*bool), fc.Args["ownerUsername"].(*string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -95267,6 +98446,24 @@ func (ec *executionContext) fieldContext_Query_myAgents(_ context.Context, field
 				return ec.fieldContext_Agent_username(ctx, field)
 			case "displayName":
 				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
 				return ec.fieldContext_Agent_type(ctx, field)
 			case "version":
@@ -95281,6 +98478,145 @@ func (ec *executionContext) fieldContext_Query_myAgents(_ context.Context, field
 				return ec.fieldContext_Agent_activityCount(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Agent", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_agentActivity(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_agentActivity(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().AgentActivity(rctx, fc.Args["username"].(string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentActivityConnection)
+	fc.Result = res
+	return ec.marshalNAgentActivityConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_agentActivity(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_AgentActivityConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_AgentActivityConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_AgentActivityConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentActivityConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_agentActivity_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_adminAgentPolicy(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_adminAgentPolicy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().AdminAgentPolicy(rctx)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminAgentPolicy)
+	fc.Result = res
+	return ec.marshalNAdminAgentPolicy2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAgentPolicy(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_adminAgentPolicy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "allowAgents":
+				return ec.fieldContext_AdminAgentPolicy_allowAgents(ctx, field)
+			case "allowAgentRegistration":
+				return ec.fieldContext_AdminAgentPolicy_allowAgentRegistration(ctx, field)
+			case "defaultQuarantineDays":
+				return ec.fieldContext_AdminAgentPolicy_defaultQuarantineDays(ctx, field)
+			case "maxAgentsPerOwner":
+				return ec.fieldContext_AdminAgentPolicy_maxAgentsPerOwner(ctx, field)
+			case "allowRemoteAgents":
+				return ec.fieldContext_AdminAgentPolicy_allowRemoteAgents(ctx, field)
+			case "remoteQuarantineDays":
+				return ec.fieldContext_AdminAgentPolicy_remoteQuarantineDays(ctx, field)
+			case "blockedAgentDomains":
+				return ec.fieldContext_AdminAgentPolicy_blockedAgentDomains(ctx, field)
+			case "trustedAgentDomains":
+				return ec.fieldContext_AdminAgentPolicy_trustedAgentDomains(ctx, field)
+			case "agentMaxPostsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_agentMaxPostsPerHour(ctx, field)
+			case "verifiedAgentMaxPostsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_verifiedAgentMaxPostsPerHour(ctx, field)
+			case "agentMaxFollowsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_agentMaxFollowsPerHour(ctx, field)
+			case "verifiedAgentMaxFollowsPerHour":
+				return ec.fieldContext_AdminAgentPolicy_verifiedAgentMaxFollowsPerHour(ctx, field)
+			case "hybridRetrievalEnabled":
+				return ec.fieldContext_AdminAgentPolicy_hybridRetrievalEnabled(ctx, field)
+			case "hybridRetrievalMaxCandidates":
+				return ec.fieldContext_AdminAgentPolicy_hybridRetrievalMaxCandidates(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AdminAgentPolicy_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminAgentPolicy", field.Name)
 		},
 	}
 	return fc, nil
@@ -96097,6 +99433,8 @@ func (ec *executionContext) fieldContext_QuoteActivityUpdate_quote(_ context.Con
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -96182,6 +99520,10 @@ func (ec *executionContext) fieldContext_QuoteActivityUpdate_quoter(_ context.Co
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -96460,6 +99802,10 @@ func (ec *executionContext) fieldContext_QuoteContext_originalAuthor(_ context.C
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -96569,6 +99915,8 @@ func (ec *executionContext) fieldContext_QuoteContext_originalNote(_ context.Con
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -96815,6 +100163,8 @@ func (ec *executionContext) fieldContext_QuoteEdge_node(_ context.Context, field
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -97448,6 +100798,10 @@ func (ec *executionContext) fieldContext_RegisterAccountPayload_actor(_ context.
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -97554,6 +100908,24 @@ func (ec *executionContext) fieldContext_RegisterAgentPayload_agent(_ context.Co
 				return ec.fieldContext_Agent_username(ctx, field)
 			case "displayName":
 				return ec.fieldContext_Agent_displayName(ctx, field)
+			case "bio":
+				return ec.fieldContext_Agent_bio(ctx, field)
+			case "agentType":
+				return ec.fieldContext_Agent_agentType(ctx, field)
+			case "agentVersion":
+				return ec.fieldContext_Agent_agentVersion(ctx, field)
+			case "agentCapabilities":
+				return ec.fieldContext_Agent_agentCapabilities(ctx, field)
+			case "agentOwner":
+				return ec.fieldContext_Agent_agentOwner(ctx, field)
+			case "delegatedScopes":
+				return ec.fieldContext_Agent_delegatedScopes(ctx, field)
+			case "verified":
+				return ec.fieldContext_Agent_verified(ctx, field)
+			case "verifiedAt":
+				return ec.fieldContext_Agent_verifiedAt(ctx, field)
+			case "ownerActor":
+				return ec.fieldContext_Agent_ownerActor(ctx, field)
 			case "type":
 				return ec.fieldContext_Agent_type(ctx, field)
 			case "version":
@@ -98324,6 +101696,10 @@ func (ec *executionContext) fieldContext_RelationshipUpdate_actor(_ context.Cont
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -98841,6 +102217,10 @@ func (ec *executionContext) fieldContext_Report_targetAccount(_ context.Context,
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -100598,6 +103978,10 @@ func (ec *executionContext) fieldContext_Revision_changedBy(_ context.Context, f
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -101339,6 +104723,10 @@ func (ec *executionContext) fieldContext_SearchResult_accounts(_ context.Context
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -101451,6 +104839,8 @@ func (ec *executionContext) fieldContext_SearchResult_statuses(_ context.Context
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -101809,6 +105199,10 @@ func (ec *executionContext) fieldContext_Series_author(_ context.Context, field 
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -104257,6 +107651,10 @@ func (ec *executionContext) fieldContext_StatusEdit_account(_ context.Context, f
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -106052,6 +109450,8 @@ func (ec *executionContext) fieldContext_Subscription_timelineUpdates(ctx contex
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -109035,6 +112435,8 @@ func (ec *executionContext) fieldContext_ThreadContext_rootNote(_ context.Contex
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -109149,6 +112551,8 @@ func (ec *executionContext) fieldContext_ThreadContext_ancestors(_ context.Conte
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -109263,6 +112667,8 @@ func (ec *executionContext) fieldContext_ThreadContext_descendants(_ context.Con
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -112191,6 +115597,10 @@ func (ec *executionContext) fieldContext_TrustEdge_from(_ context.Context, field
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -112277,6 +115687,10 @@ func (ec *executionContext) fieldContext_TrustEdge_to(_ context.Context, field g
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -112847,6 +116261,8 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_note(_ co
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -113598,6 +117014,10 @@ func (ec *executionContext) fieldContext_Vouch_from(_ context.Context, field gra
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -113684,6 +117104,10 @@ func (ec *executionContext) fieldContext_Vouch_to(_ context.Context, field graph
 				return ec.fieldContext_Actor_updatedAt(ctx, field)
 			case "fields":
 				return ec.fieldContext_Actor_fields(ctx, field)
+			case "isAgent":
+				return ec.fieldContext_Actor_isAgent(ctx, field)
+			case "agentInfo":
+				return ec.fieldContext_Actor_agentInfo(ctx, field)
 			case "tipAddress":
 				return ec.fieldContext_Actor_tipAddress(ctx, field)
 			case "tipChainId":
@@ -114189,6 +117613,8 @@ func (ec *executionContext) fieldContext_WithdrawQuotePayload_note(_ context.Con
 				return ec.fieldContext_Object_moderationScore(ctx, field)
 			case "communityNotes":
 				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
 			case "quoteUrl":
 				return ec.fieldContext_Object_quoteUrl(ctx, field)
 			case "quoteable":
@@ -116757,6 +120183,185 @@ func (ec *executionContext) unmarshalInputAdminUpdateTrustInput(ctx context.Cont
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputAdminVerifyAgentInput(ctx context.Context, obj any) (model.AdminVerifyAgentInput, error) {
+	var it model.AdminVerifyAgentInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"reason", "exitQuarantine"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "reason":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("reason"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Reason = data
+		case "exitQuarantine":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("exitQuarantine"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExitQuarantine = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputAgentCapabilitiesInput(ctx context.Context, obj any) (model.AgentCapabilitiesInput, error) {
+	var it model.AgentCapabilitiesInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"canPost", "canReply", "canBoost", "canFollow", "canDM", "maxPostsPerHour", "requiresApproval", "restrictedDomains"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "canPost":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("canPost"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CanPost = data
+		case "canReply":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("canReply"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CanReply = data
+		case "canBoost":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("canBoost"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CanBoost = data
+		case "canFollow":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("canFollow"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CanFollow = data
+		case "canDM":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("canDM"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CanDm = data
+		case "maxPostsPerHour":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxPostsPerHour"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxPostsPerHour = data
+		case "requiresApproval":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("requiresApproval"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RequiresApproval = data
+		case "restrictedDomains":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("restrictedDomains"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RestrictedDomains = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.Context, obj any) (model.AgentPostAttributionInput, error) {
+	var it model.AgentPostAttributionInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"triggerType", "triggerDetails", "memoryCitations", "delegatedBy", "scopes", "constraints", "modelVersion"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "triggerType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("triggerType"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.TriggerType = data
+		case "triggerDetails":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("triggerDetails"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.TriggerDetails = data
+		case "memoryCitations":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("memoryCitations"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MemoryCitations = data
+		case "delegatedBy":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("delegatedBy"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DelegatedBy = data
+		case "scopes":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("scopes"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Scopes = data
+		case "constraints":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("constraints"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Constraints = data
+		case "modelVersion":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("modelVersion"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ModelVersion = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputBedrockTrainingOptions(ctx context.Context, obj any) (model.BedrockTrainingOptions, error) {
 	var it model.BedrockTrainingOptions
 	asMap := map[string]any{}
@@ -117444,7 +121049,7 @@ func (ec *executionContext) unmarshalInputCreateNoteInput(ctx context.Context, o
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"content", "contentMap", "inReplyToId", "quoteId", "visibility", "sensitive", "spoilerText", "attachmentIds", "mentions", "tags", "poll"}
+	fieldsInOrder := [...]string{"content", "contentMap", "inReplyToId", "quoteId", "visibility", "sensitive", "spoilerText", "attachmentIds", "mentions", "tags", "poll", "agentAttribution"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -117528,6 +121133,13 @@ func (ec *executionContext) unmarshalInputCreateNoteInput(ctx context.Context, o
 				return it, err
 			}
 			it.Poll = data
+		case "agentAttribution":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentAttribution"))
+			data, err := ec.unmarshalOAgentPostAttributionInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentPostAttributionInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentAttribution = data
 		}
 	}
 
@@ -117878,7 +121490,7 @@ func (ec *executionContext) unmarshalInputDelegateToAgentInput(ctx context.Conte
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"agentUsername", "displayName", "bio", "scopes", "expiresIn", "agentType", "version"}
+	fieldsInOrder := [...]string{"agentUsername", "displayName", "bio", "scopes", "expiresIn", "agentType", "agentVersion", "version"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -117927,6 +121539,13 @@ func (ec *executionContext) unmarshalInputDelegateToAgentInput(ctx context.Conte
 				return it, err
 			}
 			it.AgentType = data
+		case "agentVersion":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentVersion"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentVersion = data
 		case "version":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("version"))
 			data, err := ec.unmarshalNString2string(ctx, v)
@@ -119348,6 +122967,124 @@ func (ec *executionContext) unmarshalInputUpdateAccountQuotePermissionsInput(ctx
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputUpdateAdminAgentPolicyInput(ctx context.Context, obj any) (model.UpdateAdminAgentPolicyInput, error) {
+	var it model.UpdateAdminAgentPolicyInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"allowAgents", "allowAgentRegistration", "defaultQuarantineDays", "maxAgentsPerOwner", "allowRemoteAgents", "remoteQuarantineDays", "blockedAgentDomains", "trustedAgentDomains", "agentMaxPostsPerHour", "verifiedAgentMaxPostsPerHour", "agentMaxFollowsPerHour", "verifiedAgentMaxFollowsPerHour", "hybridRetrievalEnabled", "hybridRetrievalMaxCandidates"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "allowAgents":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("allowAgents"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AllowAgents = data
+		case "allowAgentRegistration":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("allowAgentRegistration"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AllowAgentRegistration = data
+		case "defaultQuarantineDays":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("defaultQuarantineDays"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DefaultQuarantineDays = data
+		case "maxAgentsPerOwner":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxAgentsPerOwner"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxAgentsPerOwner = data
+		case "allowRemoteAgents":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("allowRemoteAgents"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AllowRemoteAgents = data
+		case "remoteQuarantineDays":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("remoteQuarantineDays"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RemoteQuarantineDays = data
+		case "blockedAgentDomains":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("blockedAgentDomains"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.BlockedAgentDomains = data
+		case "trustedAgentDomains":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("trustedAgentDomains"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.TrustedAgentDomains = data
+		case "agentMaxPostsPerHour":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentMaxPostsPerHour"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentMaxPostsPerHour = data
+		case "verifiedAgentMaxPostsPerHour":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("verifiedAgentMaxPostsPerHour"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.VerifiedAgentMaxPostsPerHour = data
+		case "agentMaxFollowsPerHour":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentMaxFollowsPerHour"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentMaxFollowsPerHour = data
+		case "verifiedAgentMaxFollowsPerHour":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("verifiedAgentMaxFollowsPerHour"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.VerifiedAgentMaxFollowsPerHour = data
+		case "hybridRetrievalEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("hybridRetrievalEnabled"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.HybridRetrievalEnabled = data
+		case "hybridRetrievalMaxCandidates":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("hybridRetrievalMaxCandidates"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.HybridRetrievalMaxCandidates = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputUpdateAgentInput(ctx context.Context, obj any) (model.UpdateAgentInput, error) {
 	var it model.UpdateAgentInput
 	asMap := map[string]any{}
@@ -119355,7 +123092,7 @@ func (ec *executionContext) unmarshalInputUpdateAgentInput(ctx context.Context, 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"displayName", "bio", "agentType", "version", "purpose"}
+	fieldsInOrder := [...]string{"displayName", "bio", "agentType", "agentVersion", "version", "agentCapabilities", "exitQuarantine", "purpose"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -119383,6 +123120,13 @@ func (ec *executionContext) unmarshalInputUpdateAgentInput(ctx context.Context, 
 				return it, err
 			}
 			it.AgentType = data
+		case "agentVersion":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentVersion"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentVersion = data
 		case "version":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("version"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
@@ -119390,6 +123134,20 @@ func (ec *executionContext) unmarshalInputUpdateAgentInput(ctx context.Context, 
 				return it, err
 			}
 			it.Version = data
+		case "agentCapabilities":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentCapabilities"))
+			data, err := ec.unmarshalOAgentCapabilitiesInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentCapabilitiesInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentCapabilities = data
+		case "exitQuarantine":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("exitQuarantine"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExitQuarantine = data
 		case "purpose":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("purpose"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
@@ -121669,6 +125427,75 @@ func (ec *executionContext) _Actor(ctx context.Context, sel ast.SelectionSet, ob
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "isAgent":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Actor_isAgent(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "agentInfo":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Actor_agentInfo(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "tipAddress":
 			field := field
 
@@ -122030,6 +125857,115 @@ func (ec *executionContext) _AdminAccountConnection(ctx context.Context, sel ast
 			}
 		case "nextCursor":
 			out.Values[i] = ec._AdminAccountConnection_nextCursor(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminAgentPolicyImplementors = []string{"AdminAgentPolicy"}
+
+func (ec *executionContext) _AdminAgentPolicy(ctx context.Context, sel ast.SelectionSet, obj *model.AdminAgentPolicy) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminAgentPolicyImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminAgentPolicy")
+		case "allowAgents":
+			out.Values[i] = ec._AdminAgentPolicy_allowAgents(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowAgentRegistration":
+			out.Values[i] = ec._AdminAgentPolicy_allowAgentRegistration(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "defaultQuarantineDays":
+			out.Values[i] = ec._AdminAgentPolicy_defaultQuarantineDays(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxAgentsPerOwner":
+			out.Values[i] = ec._AdminAgentPolicy_maxAgentsPerOwner(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowRemoteAgents":
+			out.Values[i] = ec._AdminAgentPolicy_allowRemoteAgents(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "remoteQuarantineDays":
+			out.Values[i] = ec._AdminAgentPolicy_remoteQuarantineDays(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "blockedAgentDomains":
+			out.Values[i] = ec._AdminAgentPolicy_blockedAgentDomains(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "trustedAgentDomains":
+			out.Values[i] = ec._AdminAgentPolicy_trustedAgentDomains(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "agentMaxPostsPerHour":
+			out.Values[i] = ec._AdminAgentPolicy_agentMaxPostsPerHour(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "verifiedAgentMaxPostsPerHour":
+			out.Values[i] = ec._AdminAgentPolicy_verifiedAgentMaxPostsPerHour(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "agentMaxFollowsPerHour":
+			out.Values[i] = ec._AdminAgentPolicy_agentMaxFollowsPerHour(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "verifiedAgentMaxFollowsPerHour":
+			out.Values[i] = ec._AdminAgentPolicy_verifiedAgentMaxFollowsPerHour(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hybridRetrievalEnabled":
+			out.Values[i] = ec._AdminAgentPolicy_hybridRetrievalEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hybridRetrievalMaxCandidates":
+			out.Values[i] = ec._AdminAgentPolicy_hybridRetrievalMaxCandidates(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._AdminAgentPolicy_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -123609,6 +127545,39 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "bio":
+			out.Values[i] = ec._Agent_bio(ctx, field, obj)
+		case "agentType":
+			out.Values[i] = ec._Agent_agentType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "agentVersion":
+			out.Values[i] = ec._Agent_agentVersion(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "agentCapabilities":
+			out.Values[i] = ec._Agent_agentCapabilities(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "agentOwner":
+			out.Values[i] = ec._Agent_agentOwner(ctx, field, obj)
+		case "delegatedScopes":
+			out.Values[i] = ec._Agent_delegatedScopes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "verified":
+			out.Values[i] = ec._Agent_verified(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "verifiedAt":
+			out.Values[i] = ec._Agent_verifiedAt(ctx, field, obj)
+		case "ownerActor":
+			out.Values[i] = ec._Agent_ownerActor(ctx, field, obj)
 		case "type":
 			out.Values[i] = ec._Agent_type(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -123633,6 +127602,99 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "activityCount":
 			out.Values[i] = ec._Agent_activityCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var agentActivityConnectionImplementors = []string{"AgentActivityConnection"}
+
+func (ec *executionContext) _AgentActivityConnection(ctx context.Context, sel ast.SelectionSet, obj *model.AgentActivityConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentActivityConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentActivityConnection")
+		case "edges":
+			out.Values[i] = ec._AgentActivityConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._AgentActivityConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCount":
+			out.Values[i] = ec._AgentActivityConnection_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var agentActivityEdgeImplementors = []string{"AgentActivityEdge"}
+
+func (ec *executionContext) _AgentActivityEdge(ctx context.Context, sel ast.SelectionSet, obj *model.AgentActivityEdge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentActivityEdgeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentActivityEdge")
+		case "node":
+			out.Values[i] = ec._AgentActivityEdge_node(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._AgentActivityEdge_cursor(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -123858,6 +127920,54 @@ func (ec *executionContext) _AgentEdge(ctx context.Context, sel ast.SelectionSet
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var agentPostAttributionImplementors = []string{"AgentPostAttribution"}
+
+func (ec *executionContext) _AgentPostAttribution(ctx context.Context, sel ast.SelectionSet, obj *activitypub.AgentPostAttribution) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentPostAttributionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentPostAttribution")
+		case "triggerType":
+			out.Values[i] = ec._AgentPostAttribution_triggerType(ctx, field, obj)
+		case "triggerDetails":
+			out.Values[i] = ec._AgentPostAttribution_triggerDetails(ctx, field, obj)
+		case "memoryCitations":
+			out.Values[i] = ec._AgentPostAttribution_memoryCitations(ctx, field, obj)
+		case "delegatedBy":
+			out.Values[i] = ec._AgentPostAttribution_delegatedBy(ctx, field, obj)
+		case "scopes":
+			out.Values[i] = ec._AgentPostAttribution_scopes(ctx, field, obj)
+		case "constraints":
+			out.Values[i] = ec._AgentPostAttribution_constraints(ctx, field, obj)
+		case "modelVersion":
+			out.Values[i] = ec._AgentPostAttribution_modelVersion(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -125722,6 +129832,11 @@ func (ec *executionContext) _DelegationPayload(ctx context.Context, sel ast.Sele
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "refreshToken":
+			out.Values[i] = ec._DelegationPayload_refreshToken(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "tokenType":
 			out.Values[i] = ec._DelegationPayload_tokenType(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -125734,6 +129849,11 @@ func (ec *executionContext) _DelegationPayload(ctx context.Context, sel ast.Sele
 			}
 		case "createdAt":
 			out.Values[i] = ec._DelegationPayload_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresIn":
+			out.Values[i] = ec._DelegationPayload_expiresIn(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -133262,6 +137382,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "deleteAgent":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_deleteAgent(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "delegateToAgent":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_delegateToAgent(ctx, field)
@@ -133272,6 +137399,34 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "revokeAgentToken":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_revokeAgentToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateAdminAgentPolicy":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateAdminAgentPolicy(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "adminVerifyAgent":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_adminVerifyAgent(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "adminUnverifyAgent":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_adminUnverifyAgent(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "adminSuspendAgent":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_adminSuspendAgent(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -133826,6 +137981,8 @@ func (ec *executionContext) _Object(ctx context.Context, sel ast.SelectionSet, o
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "agentAttribution":
+			out.Values[i] = ec._Object_agentAttribution(ctx, field, obj)
 		case "quoteUrl":
 			out.Values[i] = ec._Object_quoteUrl(ctx, field, obj)
 		case "quoteable":
@@ -138194,6 +142351,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_myAgents(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "agentActivity":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_agentActivity(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "adminAgentPolicy":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_adminAgentPolicy(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -143438,6 +147639,20 @@ func (ec *executionContext) marshalNAdminAccountConnection2ᚖgithubᚗcomᚋequ
 	return ec._AdminAccountConnection(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNAdminAgentPolicy2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAgentPolicy(ctx context.Context, sel ast.SelectionSet, v model.AdminAgentPolicy) graphql.Marshaler {
+	return ec._AdminAgentPolicy(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAdminAgentPolicy2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAgentPolicy(ctx context.Context, sel ast.SelectionSet, v *model.AdminAgentPolicy) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminAgentPolicy(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNAdminCreateAnnouncementInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminCreateAnnouncementInput(ctx context.Context, v any) (model.AdminCreateAnnouncementInput, error) {
 	res, err := ec.unmarshalInputAdminCreateAnnouncementInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -144380,6 +148595,74 @@ func (ec *executionContext) marshalNAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 		return graphql.Null
 	}
 	return ec._Agent(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAgentActivityConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityConnection(ctx context.Context, sel ast.SelectionSet, v model.AgentActivityConnection) graphql.Marshaler {
+	return ec._AgentActivityConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAgentActivityConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityConnection(ctx context.Context, sel ast.SelectionSet, v *model.AgentActivityConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AgentActivityConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAgentActivityEdge2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.AgentActivityEdge) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNAgentActivityEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityEdge(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNAgentActivityEdge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityEdge(ctx context.Context, sel ast.SelectionSet, v *model.AgentActivityEdge) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AgentActivityEdge(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNAgentActivityEvent2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityEvent(ctx context.Context, sel ast.SelectionSet, v model.AgentActivityEvent) graphql.Marshaler {
@@ -152016,6 +156299,11 @@ func (ec *executionContext) unmarshalNUpdateAccountQuotePermissionsInput2github�
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNUpdateAdminAgentPolicyInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAdminAgentPolicyInput(ctx context.Context, v any) (model.UpdateAdminAgentPolicyInput, error) {
+	res, err := ec.unmarshalInputUpdateAdminAgentPolicyInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNUpdateAgentInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAgentInput(ctx context.Context, v any) (model.UpdateAgentInput, error) {
 	res, err := ec.unmarshalInputUpdateAgentInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -152647,11 +156935,42 @@ func (ec *executionContext) unmarshalOAdminStatusFilter2ᚖgithubᚗcomᚋequalt
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalOAdminVerifyAgentInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminVerifyAgentInput(ctx context.Context, v any) (*model.AdminVerifyAgentInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAdminVerifyAgentInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalOAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgent(ctx context.Context, sel ast.SelectionSet, v *model.Agent) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._Agent(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOAgentCapabilitiesInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentCapabilitiesInput(ctx context.Context, v any) (*model.AgentCapabilitiesInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAgentCapabilitiesInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOAgentPostAttribution2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋpkgᚋactivitypubᚐAgentPostAttribution(ctx context.Context, sel ast.SelectionSet, v *activitypub.AgentPostAttribution) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._AgentPostAttribution(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOAgentPostAttributionInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentPostAttributionInput(ctx context.Context, v any) (*model.AgentPostAttributionInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAgentPostAttributionInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOAgentType2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentType(ctx context.Context, v any) (*model.AgentType, error) {

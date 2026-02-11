@@ -80,14 +80,30 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/oauth/consent", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthConsentLift,
 		20, 5*time.Minute, logger))
+	app.Post("/oauth/device/code", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthDeviceCodeLift,
+		10, time.Minute, logger))
+	app.Post("/oauth/device/verify", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthDeviceVerifyLift,
+		20, 5*time.Minute, logger))
+	app.Post("/oauth/device/consent", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthDeviceConsentLift,
+		20, 5*time.Minute, logger))
 	app.Post("/oauth/token", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthTokenLift,
+		10, time.Minute, logger))
+	app.Post("/oauth/revoke", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthRevokeLift,
 		10, time.Minute, logger))
 
 	// OPTIONS handlers for OAuth endpoints (CORS preflight)
 	app.Handle("OPTIONS", "/oauth/authorize", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/consent", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/device/code", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/device/verify", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/device/consent", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/token", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/revoke", optionsHandler)
 
 	// NodeInfo endpoints with native Lift implementation
 	app.Get("/.well-known/nodeinfo", apiHandler.HandleNodeInfoWellKnownLift)
