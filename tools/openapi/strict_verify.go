@@ -276,7 +276,11 @@ func validateStrictOperationContentTypes(op *operation, route routeDef) error {
 		if !operationHasRequestContentType(op, "multipart/form-data") {
 			return errors.New("missing multipart/form-data request body")
 		}
-	case routeKey(methodPOST, "/oauth/token"), routeKey(methodPOST, "/oauth/consent"), routeKey(methodPOST, "/oauth/device/code"):
+	case routeKey(methodPOST, "/oauth/token"),
+		routeKey(methodPOST, "/oauth/consent"),
+		routeKey(methodPOST, "/oauth/device/code"),
+		routeKey(methodPOST, "/oauth/device/verify"),
+		routeKey(methodPOST, "/oauth/device/consent"):
 		if !operationHasRequestContentType(op, "application/x-www-form-urlencoded") {
 			return errors.New("missing application/x-www-form-urlencoded request body")
 		}

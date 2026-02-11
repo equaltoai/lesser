@@ -53,6 +53,10 @@
     hideRegisterLink?: boolean;
     /** Whether this is a registration flow (allows unlinked wallets) */
     isRegistration?: boolean;
+    /** How to proceed after successful authentication */
+    authFlow?: 'oauth' | 'redirect';
+    /** Redirect destination when authFlow=redirect */
+    postAuthRedirectTo?: string;
   }
   
   let { 
@@ -67,7 +71,9 @@
     codeChallenge,
     codeChallengeMethod,
     hideRegisterLink = false, 
-    isRegistration = false 
+    isRegistration = false,
+    authFlow = 'oauth',
+    postAuthRedirectTo = ''
   }: Props = $props();
   
   // API base URL - single-domain CloudFront routes API + UI by path.
@@ -87,6 +93,21 @@
   let walletConnected = $state(false);
   let connectedAddress = $state('');
   let walletChallengeId = $state('');
+
+  function handleAuthSuccess() {
+    if (authFlow === 'redirect') {
+      const target = postAuthRedirectTo || window.location.href;
+      try {
+        window.location.href = new URL(target, window.location.origin).toString();
+      } catch (e) {
+        console.error('Invalid postAuthRedirectTo:', target, e);
+        window.location.href = window.location.href;
+      }
+      return;
+    }
+
+    continueOAuthFlow();
+  }
   
   // Build authRequest query string from OAuth params
   // Read directly from URL since this is client-side only
@@ -282,7 +303,7 @@
       // Step 6: Store JWT temporarily in sessionStorage ONLY for the redirect
       if (finishData.access_token) {
         sessionStorage.setItem('lesser_auth_jwt', finishData.access_token);
-        continueOAuthFlow();
+        handleAuthSuccess();
       }
     } catch (err) {
       error = err instanceof Error ? err.message : 'WebAuthn login failed';
@@ -373,7 +394,7 @@
       if (verifyData.access_token) {
         // Login successful - store JWT temporarily for OAuth flow
         sessionStorage.setItem('lesser_auth_jwt', verifyData.access_token);
-        continueOAuthFlow();
+        handleAuthSuccess();
       } else if (isRegistration && verifyData.verified) {
         // Wallet verified for registration - proceed with account creation
         // Username was already collected and bound to signature - proceed directly
@@ -457,7 +478,7 @@
       if (jwt) {
         // Store JWT and continue OAuth flow
         sessionStorage.setItem('lesser_auth_jwt', jwt);
-        continueOAuthFlow();
+        handleAuthSuccess();
       } else {
         // Fallback: if backend doesn't return JWT (shouldn't happen, but handle gracefully)
         error = 'Registration successful, but authentication token missing. Please log in.';
