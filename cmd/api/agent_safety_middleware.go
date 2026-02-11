@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ import (
 )
 
 const (
+	agentConcurrencyPKPrefix       = "AGENT_CONCURRENCY"
+	cliAutomationConcurrencyPrefix = "CLI_CONCURRENCY"
+
 	agentConcurrencyLimit         = 2
 	agentConcurrencyLeaseDuration = 30 * time.Second
 
@@ -31,6 +35,16 @@ const (
 	agentErrorRateCounterCap  = 100000
 
 	agentErrorRateLockoutDuration = time.Hour
+
+	cliAutomationDefaultConcurrencyLimit = 2
+	cliAutomationDefaultBurstLimit       = 20
+	cliAutomationDefaultBurstWindow      = 10 * time.Second
+	cliAutomationDefaultSustainedLimit   = 60
+	cliAutomationDefaultSustainedWindow  = time.Minute
+	cliAutomationDefaultErrorRateWindow  = time.Minute
+	cliAutomationDefaultErrorRateMin     = 10
+	cliAutomationDefaultErrorRateThresh  = 0.10
+	cliAutomationDefaultLockoutDuration  = time.Hour
 )
 
 var errAgentConcurrencyExceeded = errors.New("agent concurrency exceeded")
@@ -89,31 +103,40 @@ func createAgentSafetyRailsMiddleware(cfg *config.Config, repos core.RepositoryS
 	return func(next apptheory.Handler) apptheory.Handler {
 		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
 			claims := agentClaimsFromContext(ctx)
-			if claims == nil || !claims.IsAgent {
+			if claims == nil {
 				return next(ctx)
 			}
 
-			if resp, err := rejectLockedAgent(ctx, rateRepo, claims); resp != nil || err != nil {
-				return resp, err
-			}
-
-			if lease, err := enforceAgentConcurrency(ctx, repos, claims); err != nil {
-				if errors.Is(err, errAgentConcurrencyExceeded) {
-					return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
-						"error":             "too_many_requests",
-						"error_description": "agent concurrency limit exceeded",
-					})
+			if claims.IsAgent {
+				if resp, err := rejectLockedAgent(ctx, rateRepo, claims); resp != nil || err != nil {
+					return resp, err
 				}
-				logger.Debug("agent concurrency check failed - allowing request", zap.Error(err))
-			} else if lease != nil {
-				defer lease.release(ctx.Context(), repos.GetDB())
+
+				if lease, err := enforceAgentConcurrency(ctx, repos, claims); err != nil {
+					if errors.Is(err, errAgentConcurrencyExceeded) {
+						return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
+							"error":             "too_many_requests",
+							"error_description": "agent concurrency limit exceeded",
+						})
+					}
+					logger.Debug("agent concurrency check failed - allowing request", zap.Error(err))
+				} else if lease != nil {
+					defer lease.release(ctx.Context(), repos.GetDB())
+				}
+
+				resp, handlerErr := next(ctx)
+
+				maybeApplyAgentErrorRateLockout(ctx, rateRepo, claims, resp, handlerErr)
+
+				return resp, handlerErr
 			}
 
-			resp, handlerErr := next(ctx)
+			if isCLIAutomationClaims(claims) {
+				resp, handlerErr := handleCLIAutomationSafetyRails(ctx, cfg, repos, rateRepo, logger, next, claims)
+				return resp, handlerErr
+			}
 
-			maybeApplyAgentErrorRateLockout(ctx, rateRepo, claims, resp, handlerErr)
-
-			return resp, handlerErr
+			return next(ctx)
 		}
 	}
 }
@@ -181,12 +204,21 @@ func maybeApplyAgentErrorRateLockout(ctx *apptheory.Context, rateRepo *storageRe
 }
 
 type agentConcurrencyLease struct {
+	pkPrefix  string
 	sessionID string
 	slot      int
 	leaseID   string
 }
 
 func acquireAgentConcurrencyLease(ctx context.Context, db dynamormCore.DB, sessionID string, limit int, leaseDuration time.Duration) (*agentConcurrencyLease, error) {
+	return acquireConcurrencyLease(ctx, db, agentConcurrencyPKPrefix, sessionID, limit, leaseDuration)
+}
+
+func acquireCLIAutomationConcurrencyLease(ctx context.Context, db dynamormCore.DB, sessionID string, limit int, leaseDuration time.Duration) (*agentConcurrencyLease, error) {
+	return acquireConcurrencyLease(ctx, db, cliAutomationConcurrencyPrefix, sessionID, limit, leaseDuration)
+}
+
+func acquireConcurrencyLease(ctx context.Context, db dynamormCore.DB, pkPrefix string, sessionID string, limit int, leaseDuration time.Duration) (*agentConcurrencyLease, error) {
 	if db == nil {
 		return nil, nil
 	}
@@ -195,13 +227,17 @@ func acquireAgentConcurrencyLease(ctx context.Context, db dynamormCore.DB, sessi
 	if sessionID == "" || limit <= 0 {
 		return nil, nil
 	}
+	pkPrefix = strings.TrimSpace(pkPrefix)
+	if pkPrefix == "" {
+		pkPrefix = agentConcurrencyPKPrefix
+	}
 	if leaseDuration <= 0 {
 		leaseDuration = agentConcurrencyLeaseDuration
 	}
 
 	now := time.Now().UTC()
 	leaseID := common.GenerateOperationIDULID()
-	pk := fmt.Sprintf("AGENT_CONCURRENCY#%s", sessionID)
+	pk := fmt.Sprintf("%s#%s", pkPrefix, sessionID)
 
 	for slot := 0; slot < limit; slot++ {
 		sk := fmt.Sprintf("SLOT#%d", slot)
@@ -216,7 +252,7 @@ func acquireAgentConcurrencyLease(ctx context.Context, db dynamormCore.DB, sessi
 
 		err := db.Model(slotModel).WithContext(ctx).IfNotExists().Create()
 		if err == nil {
-			return &agentConcurrencyLease{sessionID: sessionID, slot: slot, leaseID: leaseID}, nil
+			return &agentConcurrencyLease{pkPrefix: pkPrefix, sessionID: sessionID, slot: slot, leaseID: leaseID}, nil
 		}
 
 		if !dynamormErrors.IsConditionFailed(err) {
@@ -237,7 +273,7 @@ func acquireAgentConcurrencyLease(ctx context.Context, db dynamormCore.DB, sessi
 			Execute()
 
 		if claimErr == nil {
-			return &agentConcurrencyLease{sessionID: sessionID, slot: slot, leaseID: leaseID}, nil
+			return &agentConcurrencyLease{pkPrefix: pkPrefix, sessionID: sessionID, slot: slot, leaseID: leaseID}, nil
 		}
 		if dynamormErrors.IsConditionFailed(claimErr) {
 			continue
@@ -245,7 +281,7 @@ func acquireAgentConcurrencyLease(ctx context.Context, db dynamormCore.DB, sessi
 		if dynamormErrors.IsNotFound(claimErr) {
 			// Lease disappeared between create + takeover attempt; retry create once.
 			if retryErr := db.Model(slotModel).WithContext(ctx).IfNotExists().Create(); retryErr == nil {
-				return &agentConcurrencyLease{sessionID: sessionID, slot: slot, leaseID: leaseID}, nil
+				return &agentConcurrencyLease{pkPrefix: pkPrefix, sessionID: sessionID, slot: slot, leaseID: leaseID}, nil
 			}
 		} else {
 			return nil, claimErr
@@ -260,7 +296,12 @@ func (l *agentConcurrencyLease) release(ctx context.Context, db dynamormCore.DB)
 		return
 	}
 
-	pk := fmt.Sprintf("AGENT_CONCURRENCY#%s", l.sessionID)
+	prefix := strings.TrimSpace(l.pkPrefix)
+	if prefix == "" {
+		prefix = agentConcurrencyPKPrefix
+	}
+
+	pk := fmt.Sprintf("%s#%s", prefix, l.sessionID)
 	sk := fmt.Sprintf("SLOT#%d", l.slot)
 
 	model := &storageModels.AgentConcurrencySlot{
@@ -290,6 +331,278 @@ func agentLockoutIdentifier(username string) string {
 		return "agent:unknown"
 	}
 	return "agent:" + strings.ToLower(username)
+}
+
+func isCLIAutomationClaims(claims *auth.Claims) bool {
+	if claims == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(claims.ClientClass), auth.ClientClassCLI)
+}
+
+func cliAutomationSessionID(claims *auth.Claims) string {
+	if claims == nil {
+		return ""
+	}
+
+	if sessionID := strings.TrimSpace(claims.SessionID); sessionID != "" {
+		return sessionID
+	}
+	if clientID := strings.TrimSpace(claims.ClientID); clientID != "" {
+		return clientID
+	}
+	if subject := strings.TrimSpace(claims.Subject); subject != "" {
+		return subject
+	}
+	if username := strings.TrimSpace(claims.Username); username != "" {
+		return username
+	}
+
+	return ""
+}
+
+func cliAutomationLockoutIdentifier(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return "cli:unknown"
+	}
+	return "cli:" + strings.ToLower(sessionID)
+}
+
+func handleCLIAutomationSafetyRails(ctx *apptheory.Context, cfg *config.Config, repos core.RepositoryStorage, rateRepo *storageRepos.RateLimitRepository, logger *zap.Logger, next apptheory.Handler, claims *auth.Claims) (*apptheory.Response, error) {
+	if ctx == nil || repos == nil || rateRepo == nil || next == nil || claims == nil {
+		return next(ctx)
+	}
+
+	sessionID := cliAutomationSessionID(claims)
+	if sessionID == "" {
+		sessionID = "unknown"
+	}
+
+	if resp, err := rejectLockedCLIAutomation(ctx, rateRepo, sessionID); resp != nil || err != nil {
+		return resp, err
+	}
+
+	sustainedLimit := cliAutomationDefaultSustainedLimit
+	sustainedWindow := cliAutomationDefaultSustainedWindow
+	burstLimit := cliAutomationDefaultBurstLimit
+	burstWindow := cliAutomationDefaultBurstWindow
+	concurrencyLimit := cliAutomationDefaultConcurrencyLimit
+	errorRateThreshold := cliAutomationDefaultErrorRateThresh
+	errorRateMinRequests := cliAutomationDefaultErrorRateMin
+	errorRateWindow := cliAutomationDefaultErrorRateWindow
+	lockoutDuration := cliAutomationDefaultLockoutDuration
+
+	if cfg != nil {
+		if cfg.CLIAutomationSustainedLimit > 0 {
+			sustainedLimit = cfg.CLIAutomationSustainedLimit
+		}
+		if cfg.CLIAutomationSustainedWindow > 0 {
+			sustainedWindow = cfg.CLIAutomationSustainedWindow
+		}
+		if cfg.CLIAutomationBurstLimit > 0 {
+			burstLimit = cfg.CLIAutomationBurstLimit
+		}
+		if cfg.CLIAutomationBurstWindow > 0 {
+			burstWindow = cfg.CLIAutomationBurstWindow
+		}
+		if cfg.CLIAutomationConcurrencyLimit > 0 {
+			concurrencyLimit = cfg.CLIAutomationConcurrencyLimit
+		}
+		if cfg.CLIAutomationErrorRateThreshold > 0 {
+			errorRateThreshold = cfg.CLIAutomationErrorRateThreshold
+		}
+		if cfg.CLIAutomationErrorRateMin > 0 {
+			errorRateMinRequests = cfg.CLIAutomationErrorRateMin
+		}
+		if cfg.CLIAutomationErrorRateWindow > 0 {
+			errorRateWindow = cfg.CLIAutomationErrorRateWindow
+		}
+		if cfg.CLIAutomationLockoutDuration > 0 {
+			lockoutDuration = cfg.CLIAutomationLockoutDuration
+		}
+	}
+
+	// Throttles (per session ID; stable cardinality).
+	identifier := "cli:" + strings.ToLower(sessionID)
+	if ok, remaining, resetAt, err := rateRepo.CheckFixedWindowRateLimit(ctx.Context(), identifier, "api_all_sustained", sustainedLimit, sustainedWindow); err != nil {
+		logger.Debug("cli sustained throttle check failed - allowing request", zap.Error(err))
+	} else if !ok {
+		return cliRateLimitedResponse("cli sustained rate limit exceeded", sustainedLimit, remaining, resetAt)
+	}
+
+	if ok, remaining, resetAt, err := rateRepo.CheckFixedWindowRateLimit(ctx.Context(), identifier, "api_all_burst", burstLimit, burstWindow); err != nil {
+		logger.Debug("cli burst throttle check failed - allowing request", zap.Error(err))
+	} else if !ok {
+		return cliRateLimitedResponse("cli burst rate limit exceeded", burstLimit, remaining, resetAt)
+	}
+
+	if lease, err := acquireCLIAutomationConcurrencyLease(ctx.Context(), repos.GetDB(), sessionID, concurrencyLimit, agentConcurrencyLeaseDuration); err != nil {
+		if errors.Is(err, errAgentConcurrencyExceeded) {
+			return cliTooManyRequestsResponse("cli concurrency limit exceeded", 1)
+		}
+		logger.Debug("cli concurrency check failed - allowing request", zap.Error(err))
+	} else if lease != nil {
+		defer lease.release(ctx.Context(), repos.GetDB())
+	}
+
+	resp, handlerErr := next(ctx)
+
+	maybeApplyCLIAutomationErrorRateLockout(ctx, rateRepo, sessionID, resp, handlerErr, errorRateThreshold, errorRateMinRequests, errorRateWindow, lockoutDuration)
+
+	return resp, handlerErr
+}
+
+func rejectLockedCLIAutomation(ctx *apptheory.Context, rateRepo *storageRepos.RateLimitRepository, sessionID string) (*apptheory.Response, error) {
+	if ctx == nil || rateRepo == nil {
+		return nil, nil
+	}
+
+	locked, unlockAt, err := rateRepo.IsRateLimited(ctx.Context(), cliAutomationLockoutIdentifier(sessionID))
+	if err != nil || !locked {
+		return nil, nil
+	}
+
+	retryAfter := ceilSeconds(time.Until(unlockAt))
+	resp, respErr := apptheory.JSON(http.StatusTooManyRequests, map[string]any{
+		"error":             "cli_locked",
+		"error_description": "cli session is temporarily locked",
+		"unlock_time":       unlockAt.Format(time.RFC3339),
+	})
+	if resp != nil {
+		attachRateLimitHeaders(resp, rateLimitHeaders{
+			retryAfterSeconds: retryAfter,
+		})
+	}
+	return resp, respErr
+}
+
+func maybeApplyCLIAutomationErrorRateLockout(ctx *apptheory.Context, rateRepo *storageRepos.RateLimitRepository, sessionID string, resp *apptheory.Response, handlerErr error, threshold float64, minRequests int, window time.Duration, lockoutDuration time.Duration) {
+	if ctx == nil || rateRepo == nil || strings.TrimSpace(sessionID) == "" {
+		return
+	}
+
+	if threshold <= 0 {
+		threshold = cliAutomationDefaultErrorRateThresh
+	}
+	if minRequests <= 0 {
+		minRequests = cliAutomationDefaultErrorRateMin
+	}
+	if window <= 0 {
+		window = cliAutomationDefaultErrorRateWindow
+	}
+	if lockoutDuration <= 0 {
+		lockoutDuration = cliAutomationDefaultLockoutDuration
+	}
+
+	isError := handlerErr != nil || (resp != nil && resp.Status >= 400)
+	_ = rateRepo.CheckAPIRateLimit(ctx.Context(), "cli:"+sessionID, "cli_request_total", agentErrorRateCounterCap, window)
+	if !isError {
+		return
+	}
+
+	_ = rateRepo.CheckAPIRateLimit(ctx.Context(), "cli:"+sessionID, "cli_request_error", agentErrorRateCounterCap, window)
+
+	totalRemaining, _, _ := rateRepo.GetAPIRateLimitInfo(ctx.Context(), "cli:"+sessionID, "cli_request_total", agentErrorRateCounterCap, window)
+	errorRemaining, _, _ := rateRepo.GetAPIRateLimitInfo(ctx.Context(), "cli:"+sessionID, "cli_request_error", agentErrorRateCounterCap, window)
+
+	totalCount := agentErrorRateCounterCap - totalRemaining
+	errorCount := agentErrorRateCounterCap - errorRemaining
+
+	if totalCount < minRequests || totalCount <= 0 {
+		return
+	}
+
+	errorRate := float64(errorCount) / float64(totalCount)
+	if errorRate > threshold {
+		_ = rateRepo.ImposeLockout(ctx.Context(), cliAutomationLockoutIdentifier(sessionID), lockoutDuration)
+	}
+}
+
+type rateLimitHeaders struct {
+	limit             int
+	remaining         int
+	resetTimeUnix     int64
+	retryAfterSeconds int
+}
+
+func attachRateLimitHeaders(resp *apptheory.Response, hdr rateLimitHeaders) {
+	if resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+
+	if hdr.limit > 0 {
+		resp.Headers["x-ratelimit-limit"] = []string{strconv.Itoa(hdr.limit)}
+	}
+	resp.Headers["x-ratelimit-remaining"] = []string{strconv.Itoa(maxInt(0, hdr.remaining))}
+	if hdr.resetTimeUnix > 0 {
+		resp.Headers["x-ratelimit-reset"] = []string{strconv.FormatInt(hdr.resetTimeUnix, 10)}
+	}
+	if hdr.retryAfterSeconds > 0 {
+		resp.Headers["retry-after"] = []string{strconv.Itoa(hdr.retryAfterSeconds)}
+	}
+}
+
+func cliRateLimitedResponse(description string, limit int, remaining int, resetAt time.Time) (*apptheory.Response, error) {
+	retryAfter := ceilSeconds(time.Until(resetAt))
+	resp, err := apptheory.JSON(http.StatusTooManyRequests, map[string]any{
+		"error":             "too_many_requests",
+		"error_description": description,
+		"limit":             limit,
+		"remaining":         maxInt(0, remaining),
+		"reset_at":          resetAt.Unix(),
+		"retry_after":       retryAfter,
+	})
+	if resp != nil {
+		attachRateLimitHeaders(resp, rateLimitHeaders{
+			limit:             limit,
+			remaining:         remaining,
+			resetTimeUnix:     resetAt.Unix(),
+			retryAfterSeconds: retryAfter,
+		})
+	}
+	return resp, err
+}
+
+func cliTooManyRequestsResponse(description string, retryAfterSeconds int) (*apptheory.Response, error) {
+	if retryAfterSeconds <= 0 {
+		retryAfterSeconds = 1
+	}
+	resp, err := apptheory.JSON(http.StatusTooManyRequests, map[string]any{
+		"error":             "too_many_requests",
+		"error_description": description,
+		"retry_after":       retryAfterSeconds,
+	})
+	if resp != nil {
+		attachRateLimitHeaders(resp, rateLimitHeaders{
+			retryAfterSeconds: retryAfterSeconds,
+		})
+	}
+	return resp, err
+}
+
+func ceilSeconds(d time.Duration) int {
+	if d <= 0 {
+		return 1
+	}
+	seconds := int(d / time.Second)
+	if d%time.Second != 0 {
+		seconds++
+	}
+	if seconds < 1 {
+		return 1
+	}
+	return seconds
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func safeRateLimitRepo(repos core.RepositoryStorage) (repo *storageRepos.RateLimitRepository) {
