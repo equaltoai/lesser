@@ -66,7 +66,13 @@ func InitializeCostStorage(cfg *appConfig.Config) {
 }
 
 func init() {
-	// Use configuration-based initialization if available
+	// Avoid loading full app configuration (and AWS Secrets Manager) in non-Lambda contexts.
+	// The CLI and other local tooling should not require AWS credentials just because they
+	// import cost helpers.
+	if !tabletheory.IsLambdaEnvironment() {
+		return
+	}
+
 	cfg := appConfig.Get()
 	InitializeCostStorage(cfg)
 }

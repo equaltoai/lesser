@@ -1312,6 +1312,8 @@ components:
         AppRegistrationRequest:
             additionalProperties: false
             properties:
+                client_class:
+                    type: string
                 client_name:
                     type: string
                 redirect_uris:
@@ -3267,6 +3269,97 @@ components:
             required:
                 - redirect_uri
             type: object
+        OAuthDeviceCodeRequest:
+            additionalProperties: false
+            properties:
+                client_id:
+                    type: string
+                client_secret:
+                    type: string
+                scope:
+                    type: string
+            required:
+                - client_id
+            type: object
+        OAuthDeviceCodeResponse:
+            additionalProperties: false
+            properties:
+                device_code:
+                    type: string
+                expires_in:
+                    type: integer
+                interval:
+                    type: integer
+                user_code:
+                    type: string
+                verification_uri:
+                    type: string
+                verification_uri_complete:
+                    type: string
+            required:
+                - device_code
+                - expires_in
+                - interval
+                - user_code
+                - verification_uri
+            type: object
+        OAuthDeviceConsentRequest:
+            additionalProperties: false
+            properties:
+                action:
+                    type: string
+                user_code:
+                    type: string
+            required:
+                - action
+                - user_code
+            type: object
+        OAuthDeviceConsentResponse:
+            additionalProperties: false
+            properties:
+                message:
+                    type: string
+                status:
+                    type: string
+            required:
+                - status
+            type: object
+        OAuthDeviceVerifyRequest:
+            additionalProperties: false
+            properties:
+                user_code:
+                    type: string
+            required:
+                - user_code
+            type: object
+        OAuthDeviceVerifyResponse:
+            additionalProperties: false
+            properties:
+                client_id:
+                    type: string
+                client_name:
+                    type: string
+                client_url:
+                    type: string
+                expires_in:
+                    type: integer
+                interval:
+                    type: integer
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                status:
+                    type: string
+                user_code:
+                    type: string
+            required:
+                - client_id
+                - expires_in
+                - interval
+                - status
+                - user_code
+            type: object
         OAuthErrorResponse:
             additionalProperties: false
             properties:
@@ -3305,6 +3398,8 @@ components:
                 code:
                     type: string
                 code_verifier:
+                    type: string
+                device_code:
                     type: string
                 grant_type:
                     type: string
@@ -14840,6 +14935,35 @@ paths:
                 - cmd/sse/main.go
             x-oauth-scopes:
                 - read
+    /api/v1/streaming/oauth/device:
+        get:
+            operationId: get_api_v1_streaming_oauth_device
+            tags:
+                - streaming
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: SSE stream
+                    content:
+                        text/event-stream:
+                            schema:
+                                type: string
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/public:
         get:
             operationId: get_api_v1_streaming_public
@@ -17061,6 +17185,192 @@ paths:
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleOAuthConsentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /oauth/device/code:
+        post:
+            operationId: post_oauth_device_code
+            tags:
+                - oauth
+            requestBody:
+                required: true
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/OAuthDeviceCodeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OAuthDeviceCodeResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthDeviceCodeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /oauth/device/consent:
+        post:
+            operationId: post_oauth_device_consent
+            tags:
+                - oauth
+            security:
+                - bearerAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/OAuthDeviceConsentRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OAuthDeviceConsentResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthDeviceConsentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - read
+    /oauth/device/verify:
+        post:
+            operationId: post_oauth_device_verify
+            tags:
+                - oauth
+            requestBody:
+                required: true
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/OAuthDeviceVerifyRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OAuthDeviceVerifyResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthDeviceVerifyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /oauth/revoke:
+        post:
+            operationId: post_oauth_revoke
+            tags:
+                - oauth
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Map7d31df2b'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthRevokeLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go

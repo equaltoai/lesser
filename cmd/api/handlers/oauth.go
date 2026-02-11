@@ -36,6 +36,17 @@ type authorizeFlow struct {
 	scopes   []string
 }
 
+const oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
+const (
+	oauthGrantTypeAuthorizationCode = "authorization_code"
+	oauthGrantTypeRefreshToken      = "refresh_token"
+
+	oauthTokenTypeBearer       = "Bearer"
+	oauthTokenDefaultScope     = "read write follow push" // #nosec G101 -- OAuth scope string, not a credential
+	oauthTokenExpiresInSeconds = 3600
+)
+
 func (h *Handler) isOAuthAuthorizeUIMode(ctx *apptheory.Context) bool {
 	if strings.EqualFold(queryValue(ctx, "mode"), "ui") {
 		return true
@@ -400,143 +411,366 @@ func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID 
 	return true
 }
 
-// HandleOAuthTokenLift handles the OAuth token endpoint using native Lift patterns
-// POST /oauth/token
-func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	// Parse form data from request body
+type oauthTokenRequest struct {
+	grantType    string
+	code         string
+	redirectURI  string
+	clientID     string
+	clientSecret string
+	codeVerifier string
+	refreshToken string
+	deviceCode   string
+}
+
+func parseOAuthTokenRequest(ctx *apptheory.Context) (*oauthTokenRequest, *apptheory.Response, error) {
 	if err := common.ValidateSliceNotEmpty("request_body", ctx.Request.Body); err != nil {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": "Empty request body",
 		})
+		return nil, resp, respErr
 	}
 
 	params, err := common.ParseFormURLEncoded(string(ctx.Request.Body))
 	if err != nil {
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "invalid_request",
 			"error_description": "Unable to parse form data",
 		})
+		return nil, resp, respErr
 	}
 
-	// Extract form parameters
-	grantType := params["grant_type"]
-	code := params["code"]
-	redirectURI := params["redirect_uri"]
-	clientID := params["client_id"]
-	clientSecret := params["client_secret"]
-	codeVerifier := params["code_verifier"]
-	refreshToken := params["refresh_token"]
+	return &oauthTokenRequest{
+		grantType:    params["grant_type"],
+		code:         params["code"],
+		redirectURI:  params["redirect_uri"],
+		clientID:     params["client_id"],
+		clientSecret: params["client_secret"],
+		codeVerifier: params["code_verifier"],
+		refreshToken: params["refresh_token"],
+		deviceCode:   params["device_code"],
+	}, nil, nil
+}
+
+// HandleOAuthTokenLift handles the OAuth token endpoint using native Lift patterns
+// POST /oauth/token
+func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	req, resp, err := parseOAuthTokenRequest(ctx)
+	if resp != nil || err != nil {
+		return resp, err
+	}
 
 	// Initialize OAuth service
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 
-	switch grantType {
-	case "authorization_code":
-		// Validate required parameters using centralized validation
-		if err := common.ValidateMultipleRequiredParams(map[string]string{
-			"code":         code,
-			"client_id":    clientID,
-			"redirect_uri": redirectURI,
-		}); err != nil {
+	switch req.grantType {
+	case oauthGrantTypeAuthorizationCode:
+		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req)
+	case oauthGrantTypeRefreshToken:
+		return h.handleOAuthRefreshTokenGrant(ctx.Context(), oauthSvc, req)
+	case oauthDeviceCodeGrantType:
+		return h.handleOAuthDeviceCodeGrant(ctx.Context(), oauthSvc, req)
+	default:
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "unsupported_grant_type",
+			"error_description": "Only authorization_code, refresh_token, and device_code grant types are supported",
+		})
+	}
+}
+
+func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"code":         req.code,
+		"client_id":    req.clientID,
+		"redirect_uri": req.redirectURI,
+	}); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
+		})
+	}
+
+	accessToken, refreshTokenOut, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret)
+	if err != nil {
+		h.logger.Error("failed to exchange authorization code", zap.Error(err))
+		switch err {
+		case auth.ErrInvalidGrant:
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_request",
-				"error_description": err.Error(),
+				"error":             "invalid_grant",
+				"error_description": "Invalid authorization code or expired",
 			})
-		}
-
-		// Exchange authorization code for tokens
-		accessToken, refreshTokenOut, err := h.exchangeAuthorizationCode(ctx.Context(), oauthSvc, code, clientID, redirectURI, codeVerifier, clientSecret)
-		if err != nil {
-			h.logger.Error("failed to exchange authorization code", zap.Error(err))
-
-			// Return appropriate OAuth error based on the error type
-			if err == auth.ErrInvalidGrant {
-				return apptheory.JSON(http.StatusBadRequest, map[string]string{
-					"error":             "invalid_grant",
-					"error_description": "Invalid authorization code or expired",
-				})
-			}
-			if err == auth.ErrInvalidClient {
-				return apptheory.JSON(http.StatusBadRequest, map[string]string{
-					"error":             "invalid_client",
-					"error_description": "Invalid client credentials",
-				})
-			}
-			if err == auth.ErrInvalidCodeChallenge {
-				return apptheory.JSON(http.StatusBadRequest, map[string]string{
-					"error":             "invalid_grant",
-					"error_description": "PKCE verification failed",
-				})
-			}
-
+		case auth.ErrInvalidClient:
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_client",
+				"error_description": "Invalid client credentials",
+			})
+		case auth.ErrInvalidCodeChallenge:
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_grant",
+				"error_description": "PKCE verification failed",
+			})
+		default:
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
 				"error_description": "Authorization code exchange failed",
 			})
 		}
+	}
 
-		return okJSON(apimodels.OAuthTokenResponse{
-			AccessToken:  accessToken,
-			TokenType:    "Bearer",
-			Scope:        "read write follow push",
-			CreatedAt:    time.Now().Unix(),
-			ExpiresIn:    3600,
-			RefreshToken: refreshTokenOut,
+	return okJSON(apimodels.OAuthTokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    oauthTokenTypeBearer,
+		Scope:        oauthTokenDefaultScope,
+		CreatedAt:    time.Now().Unix(),
+		ExpiresIn:    oauthTokenExpiresInSeconds,
+		RefreshToken: refreshTokenOut,
+	})
+}
+
+func (h *Handler) handleOAuthRefreshTokenGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"refresh_token": req.refreshToken,
+		"client_id":     req.clientID,
+	}); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
 		})
+	}
 
-	case "refresh_token":
-		// Validate required parameters using centralized validation
-		if err := common.ValidateMultipleRequiredParams(map[string]string{
-			"refresh_token": refreshToken,
-			"client_id":     clientID,
-		}); err != nil {
+	accessToken, newRefreshToken, err := h.exchangeRefreshToken(ctx, oauthSvc, req.refreshToken, req.clientID, req.clientSecret)
+	if err != nil {
+		h.logger.Error("failed to refresh tokens", zap.Error(err))
+		switch err {
+		case auth.ErrInvalidToken:
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
-				"error":             "invalid_request",
-				"error_description": err.Error(),
+				"error":             "invalid_grant",
+				"error_description": "Invalid or expired refresh token",
 			})
-		}
-
-		// Exchange refresh token for new tokens
-		accessToken, newRefreshToken, err := h.exchangeRefreshToken(ctx.Context(), oauthSvc, refreshToken, clientID, clientSecret)
-		if err != nil {
-			h.logger.Error("failed to refresh tokens", zap.Error(err))
-
-			// Return appropriate OAuth error based on the error type
-			if err == auth.ErrInvalidToken {
-				return apptheory.JSON(http.StatusBadRequest, map[string]string{
-					"error":             "invalid_grant",
-					"error_description": "Invalid or expired refresh token",
-				})
-			}
-			if err == auth.ErrInvalidClient {
-				return apptheory.JSON(http.StatusBadRequest, map[string]string{
-					"error":             "invalid_client",
-					"error_description": "Invalid client credentials",
-				})
-			}
-
+		case auth.ErrInvalidClient:
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_client",
+				"error_description": "Invalid client credentials",
+			})
+		default:
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
 				"error_description": "Refresh token exchange failed",
 			})
 		}
+	}
 
-		return okJSON(apimodels.OAuthTokenResponse{
-			AccessToken:  accessToken,
-			TokenType:    "Bearer",
-			Scope:        "read write follow push",
-			CreatedAt:    time.Now().Unix(),
-			ExpiresIn:    3600,
-			RefreshToken: newRefreshToken,
-		})
+	return okJSON(apimodels.OAuthTokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    oauthTokenTypeBearer,
+		Scope:        oauthTokenDefaultScope,
+		CreatedAt:    time.Now().Unix(),
+		ExpiresIn:    oauthTokenExpiresInSeconds,
+		RefreshToken: newRefreshToken,
+	})
+}
 
-	default:
-		return apptheory.JSON(http.StatusBadRequest, map[string]string{
-			"error":             "unsupported_grant_type",
-			"error_description": "Only authorization_code and refresh_token grant types are supported",
+func (h *Handler) handleOAuthDeviceCodeGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+	if h.cfg == nil || !h.cfg.AllowDeviceFlow {
+		return apptheory.JSON(http.StatusForbidden, map[string]string{
+			"error":             "access_denied",
+			"error_description": "device authorization is disabled",
 		})
 	}
+
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"device_code": req.deviceCode,
+		"client_id":   req.clientID,
+	}); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
+		})
+	}
+
+	resp, err := h.validateOAuthClientSecretIfProvided(ctx, oauthSvc, req.clientID, req.clientSecret)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	session, resp, err := h.loadOAuthDeviceSessionForTokenGrant(ctx, req.deviceCode, req.clientID)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	now := time.Now().UTC()
+	resp, err = h.enforceOAuthDeviceSessionPolling(ctx, session, now)
+	if resp != nil || err != nil {
+		return resp, err
+	}
+
+	return h.oauthDeviceSessionTokenResponse(ctx, oauthSvc, session, req.clientID, now)
+}
+
+func (h *Handler) validateOAuthClientSecretIfProvided(ctx context.Context, oauthSvc *auth.OAuthService, clientID, clientSecret string) (*apptheory.Response, error) {
+	if clientSecret == "" {
+		return nil, nil
+	}
+
+	if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	}
+
+	return nil, nil
+}
+
+func (h *Handler) loadOAuthDeviceSessionForTokenGrant(ctx context.Context, deviceCode, clientID string) (*storage.OAuthDeviceSession, *apptheory.Response, error) {
+	session, err := h.repos.Account().GetOAuthDeviceSession(ctx, oauthDeviceCodeHash(deviceCode))
+	if err != nil || session == nil {
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Invalid device_code",
+		})
+		return nil, resp, respErr
+	}
+
+	if session.ClientID != clientID {
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Invalid device_code",
+		})
+		return nil, resp, respErr
+	}
+
+	return session, nil, nil
+}
+
+func (h *Handler) enforceOAuthDeviceSessionPolling(ctx context.Context, session *storage.OAuthDeviceSession, now time.Time) (*apptheory.Response, error) {
+	if session == nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Invalid device_code",
+		})
+	}
+
+	if !session.ExpiresAt.IsZero() && now.After(session.ExpiresAt) {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "expired_token",
+			"error_description": "The device_code has expired",
+		})
+	}
+
+	intervalSeconds := session.IntervalSeconds
+	if intervalSeconds <= 0 {
+		intervalSeconds = oauthDevicePollIntervalSeconds
+	}
+
+	if !session.LastPolledAt.IsZero() {
+		nextAllowed := session.LastPolledAt.Add(time.Duration(intervalSeconds) * time.Second)
+		if now.Before(nextAllowed) {
+			session.PollCount++
+			if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx, session); updateErr != nil {
+				h.logger.Warn("failed to update oauth device session poll metadata", zap.Error(updateErr))
+			}
+
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "slow_down",
+				"error_description": "Polling too frequently",
+			})
+		}
+	}
+
+	session.PollCount++
+	session.LastPolledAt = now
+	if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx, session); updateErr != nil {
+		h.logger.Warn("failed to update oauth device session poll metadata", zap.Error(updateErr))
+	}
+
+	return nil, nil
+}
+
+func (h *Handler) oauthDeviceSessionTokenResponse(ctx context.Context, oauthSvc *auth.OAuthService, session *storage.OAuthDeviceSession, clientID string, now time.Time) (*apptheory.Response, error) {
+	status := strings.ToLower(strings.TrimSpace(session.Status))
+	switch status {
+	case oauthDeviceSessionStatusPending:
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "authorization_pending",
+			"error_description": "Authorization is pending",
+		})
+	case oauthDeviceSessionStatusDenied:
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "access_denied",
+			"error_description": "Access denied",
+		})
+	case oauthDeviceSessionStatusConsumed:
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Invalid device_code",
+		})
+	case oauthDeviceSessionStatusApproved:
+		return h.oauthDeviceSessionApprovedTokenResponse(ctx, oauthSvc, session, clientID, now)
+	default:
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Device authorization is in an invalid state",
+		})
+	}
+}
+
+func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, oauthSvc *auth.OAuthService, session *storage.OAuthDeviceSession, clientID string, now time.Time) (*apptheory.Response, error) {
+	username := strings.TrimSpace(session.ApprovedUsername)
+	if username == "" {
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Device authorization is in an invalid state",
+		})
+	}
+
+	cliSessionID := common.GenerateSessionIDULID()
+	accessToken, refreshTokenOut, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
+		ctx,
+		username,
+		clientID,
+		"",
+		session.Scopes,
+		auth.AccessTokenDuration,
+		auth.ClientClassCLI,
+		cliSessionID,
+	)
+	if err != nil {
+		h.logger.Error("failed to generate tokens for device flow", zap.Error(err))
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Failed to generate tokens",
+		})
+	}
+
+	oauthRefreshToken := &storage.RefreshToken{
+		Token:       refreshTokenOut,
+		Username:    username,
+		ClientID:    clientID,
+		Scopes:      session.Scopes,
+		CreatedAt:   now,
+		ExpiresAt:   now.Add(auth.RefreshTokenDuration),
+		ClientClass: auth.ClientClassCLI,
+		SessionID:   cliSessionID,
+	}
+	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
+		h.logger.Error("failed to store refresh token for device flow", zap.Error(err))
+	}
+
+	session.Status = oauthDeviceSessionStatusConsumed
+	session.ConsumedAt = now
+	if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx, session); updateErr != nil {
+		h.logger.Warn("failed to mark oauth device session consumed", zap.Error(updateErr))
+	}
+
+	return okJSON(apimodels.OAuthTokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    oauthTokenTypeBearer,
+		Scope:        oauthTokenDefaultScope,
+		CreatedAt:    now.Unix(),
+		ExpiresIn:    oauthTokenExpiresInSeconds,
+		RefreshToken: refreshTokenOut,
+	})
 }
 
 // exchangeAuthorizationCode exchanges an authorization code for access and refresh tokens
@@ -578,20 +812,33 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", auth.ErrInvalidGrant
 	}
 
+	clientClass := ""
+	sessionID := ""
+	if client, err := h.repos.Account().GetOAuthClient(ctx, clientID); err == nil && client != nil {
+		clientClass = strings.ToLower(strings.TrimSpace(client.ClientClass))
+	}
+	if clientClass == auth.ClientClassCLI {
+		sessionID = common.GenerateSessionIDULID()
+	}
+
 	// Generate tokens
-	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx, authCode.Username, clientID, "", authCode.Scopes)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, auth.AccessTokenDuration, clientClass, sessionID)
 	if err != nil {
 		return "", "", errors.Join(failedToGenerateTokens(), err)
 	}
 
+	now := time.Now().UTC()
+
 	// Store refresh token in storage for later validation
 	oauthRefreshToken := &storage.RefreshToken{
-		Token:     refreshToken,
-		Username:  authCode.Username,
-		ClientID:  clientID,
-		Scopes:    authCode.Scopes,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(auth.RefreshTokenDuration),
+		Token:       refreshToken,
+		Username:    authCode.Username,
+		ClientID:    clientID,
+		Scopes:      authCode.Scopes,
+		CreatedAt:   now,
+		ExpiresAt:   now.Add(auth.RefreshTokenDuration),
+		ClientClass: clientClass,
+		SessionID:   sessionID,
 	}
 
 	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
@@ -651,19 +898,21 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		refreshExpiry = storedToken.ExpiresAt
 	}
 
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL)
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, storedToken.ClientClass, storedToken.SessionID)
 	if err != nil {
 		return "", "", errors.Join(failedToGenerateNewTokens(), err)
 	}
 
 	// Create new refresh token record
 	newOAuthRefreshToken := &storage.RefreshToken{
-		Token:     newRefreshToken,
-		Username:  storedToken.Username,
-		ClientID:  clientID,
-		Scopes:    storedToken.Scopes,
-		CreatedAt: time.Now(),
-		ExpiresAt: refreshExpiry,
+		Token:       newRefreshToken,
+		Username:    storedToken.Username,
+		ClientID:    clientID,
+		Scopes:      storedToken.Scopes,
+		CreatedAt:   time.Now(),
+		ExpiresAt:   refreshExpiry,
+		ClientClass: storedToken.ClientClass,
+		SessionID:   storedToken.SessionID,
 	}
 
 	// Store new refresh token

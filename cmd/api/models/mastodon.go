@@ -59,6 +59,7 @@ type AppRegistrationRequest struct {
 	RedirectURIs string `json:"redirect_uris"`
 	Scopes       string `json:"scopes"`
 	Website      string `json:"website,omitempty"`
+	ClientClass  string `json:"client_class,omitempty"`
 }
 
 // AppRegistrationResponse represents the response after successful app registration

@@ -140,6 +140,24 @@ type AdminAccountConnection struct {
 	NextCursor *Cursor         `json:"nextCursor,omitempty"`
 }
 
+type AdminAgentPolicy struct {
+	AllowAgents                    bool     `json:"allowAgents"`
+	AllowAgentRegistration         bool     `json:"allowAgentRegistration"`
+	DefaultQuarantineDays          int      `json:"defaultQuarantineDays"`
+	MaxAgentsPerOwner              int      `json:"maxAgentsPerOwner"`
+	AllowRemoteAgents              bool     `json:"allowRemoteAgents"`
+	RemoteQuarantineDays           int      `json:"remoteQuarantineDays"`
+	BlockedAgentDomains            []string `json:"blockedAgentDomains"`
+	TrustedAgentDomains            []string `json:"trustedAgentDomains"`
+	AgentMaxPostsPerHour           int      `json:"agentMaxPostsPerHour"`
+	VerifiedAgentMaxPostsPerHour   int      `json:"verifiedAgentMaxPostsPerHour"`
+	AgentMaxFollowsPerHour         int      `json:"agentMaxFollowsPerHour"`
+	VerifiedAgentMaxFollowsPerHour int      `json:"verifiedAgentMaxFollowsPerHour"`
+	HybridRetrievalEnabled         bool     `json:"hybridRetrievalEnabled"`
+	HybridRetrievalMaxCandidates   int      `json:"hybridRetrievalMaxCandidates"`
+	UpdatedAt                      Time     `json:"updatedAt"`
+}
+
 type AdminCreateAnnouncementInput struct {
 	Text     string `json:"text"`
 	AllDay   *bool  `json:"allDay,omitempty"`
@@ -401,6 +419,11 @@ type AdminUpdateTrustResult struct {
 	UpdatedAt   Time    `json:"updatedAt"`
 }
 
+type AdminVerifyAgentInput struct {
+	Reason         *string `json:"reason,omitempty"`
+	ExitQuarantine *bool   `json:"exitQuarantine,omitempty"`
+}
+
 type AffectedRelationship struct {
 	Actor            *activitypub.Actor `json:"actor"`
 	RelationshipType string             `json:"relationshipType"`
@@ -420,15 +443,35 @@ type AffectedRelationshipEdge struct {
 }
 
 type Agent struct {
-	ID            string                         `json:"id"`
-	Username      string                         `json:"username"`
-	DisplayName   string                         `json:"displayName"`
-	Type          AgentType                      `json:"type"`
-	Version       string                         `json:"version"`
-	Capabilities  *activitypub.AgentCapabilities `json:"capabilities"`
-	Owner         *activitypub.Actor             `json:"owner,omitempty"`
-	CreatedAt     Time                           `json:"createdAt"`
-	ActivityCount int                            `json:"activityCount"`
+	ID                string                         `json:"id"`
+	Username          string                         `json:"username"`
+	DisplayName       string                         `json:"displayName"`
+	Bio               *string                        `json:"bio,omitempty"`
+	AgentType         AgentType                      `json:"agentType"`
+	AgentVersion      string                         `json:"agentVersion"`
+	AgentCapabilities *activitypub.AgentCapabilities `json:"agentCapabilities"`
+	AgentOwner        *string                        `json:"agentOwner,omitempty"`
+	DelegatedScopes   []string                       `json:"delegatedScopes"`
+	Verified          bool                           `json:"verified"`
+	VerifiedAt        *Time                          `json:"verifiedAt,omitempty"`
+	OwnerActor        *activitypub.Actor             `json:"ownerActor,omitempty"`
+	Type              AgentType                      `json:"type"`
+	Version           string                         `json:"version"`
+	Capabilities      *activitypub.AgentCapabilities `json:"capabilities"`
+	Owner             *activitypub.Actor             `json:"owner,omitempty"`
+	CreatedAt         Time                           `json:"createdAt"`
+	ActivityCount     int                            `json:"activityCount"`
+}
+
+type AgentActivityConnection struct {
+	Edges      []*AgentActivityEdge `json:"edges"`
+	PageInfo   *PageInfo            `json:"pageInfo"`
+	TotalCount int                  `json:"totalCount"`
+}
+
+type AgentActivityEdge struct {
+	Node   *AgentActivityEvent `json:"node"`
+	Cursor Cursor              `json:"cursor"`
 }
 
 type AgentActivityEvent struct {
@@ -440,6 +483,17 @@ type AgentActivityEvent struct {
 	Timestamp     Time    `json:"timestamp"`
 }
 
+type AgentCapabilitiesInput struct {
+	CanPost           *bool    `json:"canPost,omitempty"`
+	CanReply          *bool    `json:"canReply,omitempty"`
+	CanBoost          *bool    `json:"canBoost,omitempty"`
+	CanFollow         *bool    `json:"canFollow,omitempty"`
+	CanDm             *bool    `json:"canDM,omitempty"`
+	MaxPostsPerHour   *int     `json:"maxPostsPerHour,omitempty"`
+	RequiresApproval  *bool    `json:"requiresApproval,omitempty"`
+	RestrictedDomains []string `json:"restrictedDomains,omitempty"`
+}
+
 type AgentConnection struct {
 	Edges      []*AgentEdge `json:"edges"`
 	PageInfo   *PageInfo    `json:"pageInfo"`
@@ -449,6 +503,16 @@ type AgentConnection struct {
 type AgentEdge struct {
 	Node   *Agent `json:"node"`
 	Cursor Cursor `json:"cursor"`
+}
+
+type AgentPostAttributionInput struct {
+	TriggerType     *string  `json:"triggerType,omitempty"`
+	TriggerDetails  *string  `json:"triggerDetails,omitempty"`
+	MemoryCitations []string `json:"memoryCitations,omitempty"`
+	DelegatedBy     *string  `json:"delegatedBy,omitempty"`
+	Scopes          []string `json:"scopes,omitempty"`
+	Constraints     []string `json:"constraints,omitempty"`
+	ModelVersion    *string  `json:"modelVersion,omitempty"`
 }
 
 type Announcement struct {
@@ -663,17 +727,18 @@ type CreateListInput struct {
 }
 
 type CreateNoteInput struct {
-	Content       string             `json:"content"`
-	ContentMap    []*ContentMapInput `json:"contentMap,omitempty"`
-	InReplyToID   *string            `json:"inReplyToId,omitempty"`
-	QuoteID       *string            `json:"quoteId,omitempty"`
-	Visibility    Visibility         `json:"visibility"`
-	Sensitive     *bool              `json:"sensitive,omitempty"`
-	SpoilerText   *string            `json:"spoilerText,omitempty"`
-	AttachmentIds []string           `json:"attachmentIds,omitempty"`
-	Mentions      []string           `json:"mentions,omitempty"`
-	Tags          []string           `json:"tags,omitempty"`
-	Poll          *PollParamsInput   `json:"poll,omitempty"`
+	Content          string                     `json:"content"`
+	ContentMap       []*ContentMapInput         `json:"contentMap,omitempty"`
+	InReplyToID      *string                    `json:"inReplyToId,omitempty"`
+	QuoteID          *string                    `json:"quoteId,omitempty"`
+	Visibility       Visibility                 `json:"visibility"`
+	Sensitive        *bool                      `json:"sensitive,omitempty"`
+	SpoilerText      *string                    `json:"spoilerText,omitempty"`
+	AttachmentIds    []string                   `json:"attachmentIds,omitempty"`
+	Mentions         []string                   `json:"mentions,omitempty"`
+	Tags             []string                   `json:"tags,omitempty"`
+	Poll             *PollParamsInput           `json:"poll,omitempty"`
+	AgentAttribution *AgentPostAttributionInput `json:"agentAttribution,omitempty"`
 }
 
 type CreateNotePayload struct {
@@ -741,15 +806,18 @@ type DelegateToAgentInput struct {
 	Scopes        []string  `json:"scopes"`
 	ExpiresIn     *int      `json:"expiresIn,omitempty"`
 	AgentType     AgentType `json:"agentType"`
+	AgentVersion  *string   `json:"agentVersion,omitempty"`
 	Version       string    `json:"version"`
 }
 
 type DelegationPayload struct {
-	Agent       *Agent `json:"agent"`
-	AccessToken string `json:"accessToken"`
-	TokenType   string `json:"tokenType"`
-	Scope       string `json:"scope"`
-	CreatedAt   Time   `json:"createdAt"`
+	Agent        *Agent `json:"agent"`
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
+	TokenType    string `json:"tokenType"`
+	Scope        string `json:"scope"`
+	CreatedAt    Time   `json:"createdAt"`
+	ExpiresIn    int    `json:"expiresIn"`
 }
 
 type DirectoryFiltersInput struct {
@@ -1609,40 +1677,41 @@ type NotificationPreferences struct {
 }
 
 type Object struct {
-	ID               string                    `json:"id"`
-	Type             ObjectType                `json:"type"`
-	Actor            *activitypub.Actor        `json:"actor"`
-	Content          string                    `json:"content"`
-	ContentMap       []*ContentMap             `json:"contentMap"`
-	InReplyTo        *Object                   `json:"inReplyTo,omitempty"`
-	Visibility       Visibility                `json:"visibility"`
-	Sensitive        bool                      `json:"sensitive"`
-	SpoilerText      *string                   `json:"spoilerText,omitempty"`
-	Attachments      []*activitypub.Attachment `json:"attachments"`
-	Tags             []*activitypub.Tag        `json:"tags"`
-	Mentions         []*Mention                `json:"mentions"`
-	CreatedAt        Time                      `json:"createdAt"`
-	UpdatedAt        Time                      `json:"updatedAt"`
-	Poll             *Poll                     `json:"poll,omitempty"`
-	RepliesCount     int                       `json:"repliesCount"`
-	LikesCount       int                       `json:"likesCount"`
-	SharesCount      int                       `json:"sharesCount"`
-	Boosted          bool                      `json:"boosted"`
-	ViewerFavourited bool                      `json:"viewerFavourited"`
-	ViewerBookmarked bool                      `json:"viewerBookmarked"`
-	ViewerPinned     bool                      `json:"viewerPinned"`
-	RelationshipType ObjectRelationshipType    `json:"relationshipType"`
-	BoostedObject    *Object                   `json:"boostedObject,omitempty"`
-	ContentHash      string                    `json:"contentHash"`
-	EstimatedCost    int                       `json:"estimatedCost"`
-	ModerationScore  *float64                  `json:"moderationScore,omitempty"`
-	CommunityNotes   []*CommunityNote          `json:"communityNotes"`
-	QuoteURL         *string                   `json:"quoteUrl,omitempty"`
-	Quoteable        bool                      `json:"quoteable"`
-	QuotePermissions QuotePermission           `json:"quotePermissions"`
-	QuoteContext     *activitypub.QuoteContext `json:"quoteContext,omitempty"`
-	QuoteCount       int                       `json:"quoteCount"`
-	Quotes           *QuoteConnection          `json:"quotes"`
+	ID               string                            `json:"id"`
+	Type             ObjectType                        `json:"type"`
+	Actor            *activitypub.Actor                `json:"actor"`
+	Content          string                            `json:"content"`
+	ContentMap       []*ContentMap                     `json:"contentMap"`
+	InReplyTo        *Object                           `json:"inReplyTo,omitempty"`
+	Visibility       Visibility                        `json:"visibility"`
+	Sensitive        bool                              `json:"sensitive"`
+	SpoilerText      *string                           `json:"spoilerText,omitempty"`
+	Attachments      []*activitypub.Attachment         `json:"attachments"`
+	Tags             []*activitypub.Tag                `json:"tags"`
+	Mentions         []*Mention                        `json:"mentions"`
+	CreatedAt        Time                              `json:"createdAt"`
+	UpdatedAt        Time                              `json:"updatedAt"`
+	Poll             *Poll                             `json:"poll,omitempty"`
+	RepliesCount     int                               `json:"repliesCount"`
+	LikesCount       int                               `json:"likesCount"`
+	SharesCount      int                               `json:"sharesCount"`
+	Boosted          bool                              `json:"boosted"`
+	ViewerFavourited bool                              `json:"viewerFavourited"`
+	ViewerBookmarked bool                              `json:"viewerBookmarked"`
+	ViewerPinned     bool                              `json:"viewerPinned"`
+	RelationshipType ObjectRelationshipType            `json:"relationshipType"`
+	BoostedObject    *Object                           `json:"boostedObject,omitempty"`
+	ContentHash      string                            `json:"contentHash"`
+	EstimatedCost    int                               `json:"estimatedCost"`
+	ModerationScore  *float64                          `json:"moderationScore,omitempty"`
+	CommunityNotes   []*CommunityNote                  `json:"communityNotes"`
+	AgentAttribution *activitypub.AgentPostAttribution `json:"agentAttribution,omitempty"`
+	QuoteURL         *string                           `json:"quoteUrl,omitempty"`
+	Quoteable        bool                              `json:"quoteable"`
+	QuotePermissions QuotePermission                   `json:"quotePermissions"`
+	QuoteContext     *activitypub.QuoteContext         `json:"quoteContext,omitempty"`
+	QuoteCount       int                               `json:"quoteCount"`
+	Quotes           *QuoteConnection                  `json:"quotes"`
 }
 
 type ObjectConnection struct {
@@ -2341,12 +2410,32 @@ type UpdateAccountQuotePermissionsInput struct {
 	BlockList      []string `json:"blockList,omitempty"`
 }
 
+type UpdateAdminAgentPolicyInput struct {
+	AllowAgents                    bool     `json:"allowAgents"`
+	AllowAgentRegistration         bool     `json:"allowAgentRegistration"`
+	DefaultQuarantineDays          int      `json:"defaultQuarantineDays"`
+	MaxAgentsPerOwner              int      `json:"maxAgentsPerOwner"`
+	AllowRemoteAgents              bool     `json:"allowRemoteAgents"`
+	RemoteQuarantineDays           int      `json:"remoteQuarantineDays"`
+	BlockedAgentDomains            []string `json:"blockedAgentDomains,omitempty"`
+	TrustedAgentDomains            []string `json:"trustedAgentDomains,omitempty"`
+	AgentMaxPostsPerHour           int      `json:"agentMaxPostsPerHour"`
+	VerifiedAgentMaxPostsPerHour   int      `json:"verifiedAgentMaxPostsPerHour"`
+	AgentMaxFollowsPerHour         int      `json:"agentMaxFollowsPerHour"`
+	VerifiedAgentMaxFollowsPerHour int      `json:"verifiedAgentMaxFollowsPerHour"`
+	HybridRetrievalEnabled         bool     `json:"hybridRetrievalEnabled"`
+	HybridRetrievalMaxCandidates   int      `json:"hybridRetrievalMaxCandidates"`
+}
+
 type UpdateAgentInput struct {
-	DisplayName *string    `json:"displayName,omitempty"`
-	Bio         *string    `json:"bio,omitempty"`
-	AgentType   *AgentType `json:"agentType,omitempty"`
-	Version     *string    `json:"version,omitempty"`
-	Purpose     *string    `json:"purpose,omitempty"`
+	DisplayName       *string                 `json:"displayName,omitempty"`
+	Bio               *string                 `json:"bio,omitempty"`
+	AgentType         *AgentType              `json:"agentType,omitempty"`
+	AgentVersion      *string                 `json:"agentVersion,omitempty"`
+	Version           *string                 `json:"version,omitempty"`
+	AgentCapabilities *AgentCapabilitiesInput `json:"agentCapabilities,omitempty"`
+	ExitQuarantine    *bool                   `json:"exitQuarantine,omitempty"`
+	Purpose           *string                 `json:"purpose,omitempty"`
 }
 
 type UpdateEmojiInput struct {
