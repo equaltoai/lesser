@@ -423,6 +423,72 @@ func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, e
 	return r.getRateLimitInfo(ctx, key, limit, window, logContext)
 }
 
+// CheckFixedWindowRateLimit atomically increments a counter for a fixed time window and returns the rate limit state.
+//
+// Unlike CheckAPIRateLimit, this helper does not apply escalating penalties or record violations. It is intended
+// for strict, predictable throttles (e.g., automation safety rails).
+//
+// Fail-open: storage errors are returned to the caller to decide policy; callers should generally allow the request
+// rather than failing user traffic due to rate limit storage outages.
+func (r *RateLimitRepository) CheckFixedWindowRateLimit(ctx context.Context, identifier, bucket string, limit int, window time.Duration) (allowed bool, remaining int, resetTime time.Time, err error) {
+	if r == nil || r.db == nil {
+		return true, limit, time.Time{}, nil
+	}
+
+	identifier = strings.TrimSpace(identifier)
+	bucket = strings.TrimSpace(bucket)
+	if identifier == "" || bucket == "" || limit <= 0 {
+		return true, limit, time.Time{}, nil
+	}
+	if window <= 0 {
+		window = time.Minute
+	}
+
+	now := time.Now().UTC()
+	windowStart := now.Truncate(window)
+	resetTime = windowStart.Add(window)
+
+	key := fmt.Sprintf("%s:%s", identifier, bucket)
+	pk := fmt.Sprintf("RATELIMIT#%s", key)
+	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
+
+	ttl := resetTime.Add(24 * time.Hour).Unix()
+
+	current := &models.APIRateLimit{PK: pk, SK: sk}
+	update := r.db.Model(current).WithContext(ctx).UpdateBuilder().
+		SetIfNotExists("Type", nil, "APIRateLimit").
+		SetIfNotExists("UserID", nil, identifier).
+		SetIfNotExists("Endpoint", nil, bucket).
+		SetIfNotExists("Window", nil, windowStart).
+		Set("UpdatedAt", now).
+		Set("TTL", ttl).
+		Increment("Count").
+		ReturnValues("ALL_NEW")
+
+	if execErr := update.ExecuteWithResult(current); execErr != nil {
+		return true, limit, resetTime, execErr
+	}
+
+	// Some executors may not support returning results; fall back to a read for the updated count.
+	if current.Count <= 0 && r.apiRateLimits != nil {
+		fetched := &models.APIRateLimit{}
+		if getErr := r.apiRateLimits.Get(ctx, pk, sk, fetched); getErr != nil {
+			return true, limit, resetTime, getErr
+		}
+		current = fetched
+	}
+
+	if current.Count <= limit {
+		allowed = true
+		remaining = limit - current.Count
+	} else {
+		allowed = false
+		remaining = 0
+	}
+
+	return allowed, remaining, resetTime, nil
+}
+
 // updateAPIRateLimit updates an API rate limit record using BaseRepository
 func (r *RateLimitRepository) updateAPIRateLimit(ctx context.Context, limit *models.APIRateLimit) error {
 	// Use BaseRepository Create method which acts like PUT in DynamoDB

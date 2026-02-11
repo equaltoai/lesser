@@ -342,12 +342,13 @@ func initializeGraphQLSpecificServices() {
 	if cfg.GraphQLParserTokenLimit > 0 {
 		server.SetParserTokenLimit(cfg.GraphQLParserTokenLimit)
 	}
-	// Depth enforcement: agents are restricted to shallow queries (max depth 3), humans use configured depth.
+	// Depth enforcement: agents and CLI automation tokens are restricted to shallow queries (max depth 3),
+	// humans use configured depth.
 	if cfg.GraphQLMaxDepth > 0 {
 		server.Use(&gqllimits.DepthLimit{
 			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
 				if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
-					if claims, ok := claimsVal.(*auth.Claims); ok && claims.IsAgent {
+					if claims, ok := claimsVal.(*auth.Claims); ok && (claims.IsAgent || strings.EqualFold(claims.ClientClass, auth.ClientClassCLI)) {
 						return 3
 					}
 				}
@@ -359,7 +360,7 @@ func initializeGraphQLSpecificServices() {
 		server.Use(&gqllimits.DepthLimit{
 			Func: func(ctx context.Context, _ *graphql.OperationContext) int {
 				if claimsVal := ctx.Value(common.ContextKeyClaims); claimsVal != nil {
-					if claims, ok := claimsVal.(*auth.Claims); ok && claims.IsAgent {
+					if claims, ok := claimsVal.(*auth.Claims); ok && (claims.IsAgent || strings.EqualFold(claims.ClientClass, auth.ClientClassCLI)) {
 						return 3
 					}
 				}
