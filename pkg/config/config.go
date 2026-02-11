@@ -101,6 +101,7 @@ type Config struct {
 	AllowRegistration      bool  // Whether new users can register
 	AllowAgents            bool  // Whether agent accounts are enabled
 	AllowAgentRegistration bool  // Whether new agent accounts can be registered/delegated
+	AllowDeviceFlow        bool  // Whether OAuth device authorization is enabled
 
 	// CMS Configuration
 	CMSLongFormPublishingEnabled  bool // Enable Article creation and CMS reads
@@ -348,6 +349,7 @@ func loadConfig() *Config {
 		AllowRegistration:      getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
 		AllowAgents:            getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
 		AllowAgentRegistration: getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
+		AllowDeviceFlow:        getEnvAsBoolOrDefault("ALLOW_DEVICE_FLOW", false),
 
 		// CMS Configuration
 		CMSLongFormPublishingEnabled:  getEnvAsBoolOrDefault("CMS_LONG_FORM_PUBLISHING_ENABLED", cmsEnabledByMode),

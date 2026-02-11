@@ -4,12 +4,32 @@ package models
 type OAuthTokenRequest struct {
 	GrantType    string `json:"grant_type"`
 	Code         string `json:"code,omitempty"`
+	DeviceCode   string `json:"device_code,omitempty"`
 	RedirectURI  string `json:"redirect_uri,omitempty"`
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret,omitempty"`
 	CodeVerifier string `json:"code_verifier,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	Scope        string `json:"scope,omitempty"`
+}
+
+// OAuthDeviceCodeRequest represents a device authorization request (RFC 8628-style).
+//
+// This is sent as application/x-www-form-urlencoded to POST /oauth/device/code.
+type OAuthDeviceCodeRequest struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+}
+
+// OAuthDeviceCodeResponse represents the server response for device authorization initiation.
+type OAuthDeviceCodeResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
 }
 
 // OAuthTokenResponse represents a token response

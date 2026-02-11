@@ -63,6 +63,8 @@ func applyOAuthOverrides(op *operation, route routeDef) {
 	switch {
 	case route.Method == methodPOST && route.Path == "/oauth/token":
 		applyOAuthTokenOverrides(op)
+	case route.Method == methodPOST && route.Path == "/oauth/device/code":
+		applyOAuthDeviceCodeOverrides(op)
 	case route.Method == methodPOST && route.Path == "/oauth/consent":
 		applyOAuthConsentOverrides(op)
 	case route.Method == methodGET && route.Path == "/oauth/authorize":
@@ -87,6 +89,23 @@ func applyOAuthTokenOverrides(op *operation) {
 	}
 
 	ensureJSONResponseSchema(op, "200", "OAuthTokenResponse")
+}
+
+func applyOAuthDeviceCodeOverrides(op *operation) {
+	if op == nil {
+		return
+	}
+
+	op.RequestBody = &requestBody{
+		Required: true,
+		Content: map[string]mediaType{
+			"application/x-www-form-urlencoded": {
+				Schema: schemaRef{Ref: "#/components/schemas/OAuthDeviceCodeRequest"},
+			},
+		},
+	}
+
+	ensureJSONResponseSchema(op, "200", "OAuthDeviceCodeResponse")
 }
 
 func applyOAuthConsentOverrides(op *operation) {

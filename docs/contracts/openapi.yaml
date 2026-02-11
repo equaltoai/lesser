@@ -3267,6 +3267,40 @@ components:
             required:
                 - redirect_uri
             type: object
+        OAuthDeviceCodeRequest:
+            additionalProperties: false
+            properties:
+                client_id:
+                    type: string
+                client_secret:
+                    type: string
+                scope:
+                    type: string
+            required:
+                - client_id
+            type: object
+        OAuthDeviceCodeResponse:
+            additionalProperties: false
+            properties:
+                device_code:
+                    type: string
+                expires_in:
+                    type: integer
+                interval:
+                    type: integer
+                user_code:
+                    type: string
+                verification_uri:
+                    type: string
+                verification_uri_complete:
+                    type: string
+            required:
+                - device_code
+                - expires_in
+                - interval
+                - user_code
+                - verification_uri
+            type: object
         OAuthErrorResponse:
             additionalProperties: false
             properties:
@@ -3305,6 +3339,8 @@ components:
                 code:
                     type: string
                 code_verifier:
+                    type: string
+                device_code:
                     type: string
                 grant_type:
                     type: string
@@ -17061,6 +17097,52 @@ paths:
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleOAuthConsentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /oauth/device/code:
+        post:
+            operationId: post_oauth_device_code
+            tags:
+                - oauth
+            requestBody:
+                required: true
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/OAuthDeviceCodeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OAuthDeviceCodeResponse'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthDeviceCodeLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
