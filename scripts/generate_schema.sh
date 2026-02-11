@@ -5,6 +5,7 @@ CORE="$ROOT_DIR/graph/core.graphql"
 PHASE1="$ROOT_DIR/graph/phase1.graphql"
 PHASE2="$ROOT_DIR/graph/phase2.graphql"
 PHASE3="$ROOT_DIR/graph/phase3.graphql"
+AGENTS="$ROOT_DIR/graph/agents.graphql"
 OUTPUT="$ROOT_DIR/docs/contracts/graphql-schema.graphql"
 
 while [[ $# -gt 0 ]]; do
@@ -44,6 +45,11 @@ if [[ ! -f "$PHASE3" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$AGENTS" ]]; then
+  echo "Agents schema not found at $AGENTS" >&2
+  exit 1
+fi
+
 mkdir -p "$(dirname "$OUTPUT")"
 
 {
@@ -57,6 +63,8 @@ mkdir -p "$(dirname "$OUTPUT")"
   cat "$PHASE2"
   echo
   cat "$PHASE3"
+  echo
+  cat "$AGENTS"
 } > "$OUTPUT"
 
 echo "Wrote aggregated schema to $OUTPUT"
