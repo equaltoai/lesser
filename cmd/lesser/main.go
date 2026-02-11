@@ -35,6 +35,7 @@ var (
 	runDashboardFn    = runDashboard
 	runSmokeFn        = runSmoke
 	runAuthFn         = runAuth
+	runAPIFn          = runAPI
 )
 
 func runCLI(args []string, stderr io.Writer) int {
@@ -109,6 +110,8 @@ func runCLI(args []string, stderr io.Writer) int {
 		return exitCodeFromErr(runSmokeFn(args[2:]), stderr)
 	case "auth":
 		return exitCodeFromErr(runAuthFn(args[2:]), stderr)
+	case "api":
+		return exitCodeFromErr(runAPIFn(args[2:]), stderr)
 	case helpFlagShort, helpFlagLong, helpCommand:
 		printUsageTo(stderr)
 		return 0
@@ -147,6 +150,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser metrics|errors|dashboard --app <slug> [--env dev|staging|live] [--aws-profile <profile>] [--region <aws-region>]")
 	_, _ = fmt.Fprintln(w, "  lesser smoke core|federation [flags...]")
 	_, _ = fmt.Fprintln(w, "  lesser auth login|logout|status|whoami|device [flags...]")
+	_, _ = fmt.Fprintln(w, "  lesser api request --method GET --path /api/v1/accounts/verify_credentials [flags...]")
 }
 
 func exitCodeFromErr(err error, stderr io.Writer) int {
