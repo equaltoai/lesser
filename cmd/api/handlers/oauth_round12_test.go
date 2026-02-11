@@ -511,4 +511,222 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
 	})
+
+	t.Run("device_code grant disabled returns access_denied", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code=dc-1&client_id=client-1"))
+		resp := requireStatus(t, http.StatusForbidden)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "access_denied", body["error"])
+	})
+
+	t.Run("device_code missing params", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		h, _, _ := round11NewHandler(t, cfgDevice, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_request", body["error"])
+	})
+
+	t.Run("device_code invalid_grant when device_code missing", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "missing"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			notFoundPKs: map[string]bool{
+				"OAUTH_DEVICE#" + deviceHash: true,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_grant", body["error"])
+	})
+
+	t.Run("device_code expired_token when device session expired", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "expired"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:  deviceHash,
+					UserCode:        "ABCD-EFGH",
+					ClientID:        "client-1",
+					Scopes:          []string{auth.ScopeRead, auth.ScopeWrite},
+					Status:          "pending",
+					IntervalSeconds: oauthDevicePollIntervalSeconds,
+					CreatedAt:       time.Now().Add(-2 * time.Minute),
+					UpdatedAt:       time.Now().Add(-2 * time.Minute),
+					ExpiresAt:       time.Now().Add(-1 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "expired_token", body["error"])
+	})
+
+	t.Run("device_code authorization_pending when pending", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "pending"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:  deviceHash,
+					UserCode:        "ABCD-EFGH",
+					ClientID:        "client-1",
+					Scopes:          []string{auth.ScopeRead, auth.ScopeWrite},
+					Status:          "pending",
+					IntervalSeconds: oauthDevicePollIntervalSeconds,
+					CreatedAt:       time.Now().Add(-2 * time.Minute),
+					UpdatedAt:       time.Now().Add(-2 * time.Minute),
+					ExpiresAt:       time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "authorization_pending", body["error"])
+	})
+
+	t.Run("device_code slow_down when polled too frequently", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "slow"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+		last := time.Now().UTC()
+
+		state := &round10QueryState{
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:  deviceHash,
+					UserCode:        "ABCD-EFGH",
+					ClientID:        "client-1",
+					Scopes:          []string{auth.ScopeRead, auth.ScopeWrite},
+					Status:          "pending",
+					IntervalSeconds: oauthDevicePollIntervalSeconds,
+					PollCount:       1,
+					LastPolledAt:    &last,
+					CreatedAt:       time.Now().Add(-2 * time.Minute),
+					UpdatedAt:       time.Now().Add(-2 * time.Minute),
+					ExpiresAt:       time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "slow_down", body["error"])
+	})
+
+	t.Run("device_code access_denied when denied", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "denied"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:  deviceHash,
+					UserCode:        "ABCD-EFGH",
+					ClientID:        "client-1",
+					Scopes:          []string{auth.ScopeRead, auth.ScopeWrite},
+					Status:          "denied",
+					IntervalSeconds: oauthDevicePollIntervalSeconds,
+					CreatedAt:       time.Now().Add(-2 * time.Minute),
+					UpdatedAt:       time.Now().Add(-2 * time.Minute),
+					ExpiresAt:       time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "access_denied", body["error"])
+	})
+
+	t.Run("device_code invalid_grant when consumed", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "consumed"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:  deviceHash,
+					UserCode:        "ABCD-EFGH",
+					ClientID:        "client-1",
+					Scopes:          []string{auth.ScopeRead, auth.ScopeWrite},
+					Status:          "consumed",
+					IntervalSeconds: oauthDevicePollIntervalSeconds,
+					CreatedAt:       time.Now().Add(-2 * time.Minute),
+					UpdatedAt:       time.Now().Add(-2 * time.Minute),
+					ExpiresAt:       time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_grant", body["error"])
+	})
+
+	t.Run("device_code approved issues tokens", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "approved"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:   deviceHash,
+					UserCode:         "ABCD-EFGH",
+					ClientID:         "client-1",
+					Scopes:           []string{auth.ScopeRead, auth.ScopeWrite},
+					Status:           "approved",
+					IntervalSeconds:  oauthDevicePollIntervalSeconds,
+					ApprovedUsername: "alice",
+					CreatedAt:        time.Now().Add(-2 * time.Minute),
+					UpdatedAt:        time.Now().Add(-2 * time.Minute),
+					ExpiresAt:        time.Now().Add(5 * time.Minute),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-1"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+	})
 }

@@ -30,56 +30,58 @@ type round10Where struct {
 type round10QueryState struct {
 	wheres []round10Where
 
-	usersByUsername             map[string]storagemodels.User
-	actorsByUser                map[string]storagemodels.Actor
-	actorList                   []storagemodels.Actor
-	activitiesByID              map[string]*storagemodels.Activity
-	statusByID                  map[string]storagemodels.Status
-	statusList                  []storagemodels.Status
-	objectsByID                 map[string]storagemodels.Object
-	objectList                  []storagemodels.Object
-	tombstonesByObjectID        map[string]storagemodels.Tombstone
-	reportsByID                 map[string]storagemodels.Report
-	eventsByID                  map[string]storagemodels.ModerationEvent
-	userMediaByUser             map[string][]*storagemodels.Media
-	sessionsByID                map[string]storagemodels.Session
-	filtersByID                 map[string]storagemodels.Filter
-	filterKeywords              map[string][]storagemodels.FilterKeyword
-	filterStatuses              map[string][]storagemodels.FilterStatus
-	importsByID                 map[string]storagemodels.Import
-	importsByUser               map[string][]storagemodels.Import
-	importBudgetsByPKSK         map[string]storagemodels.ImportBudget
-	pushSubscriptionsByUser     map[string][]storagemodels.PushSubscription
-	webAuthnCredentialsByUser   map[string][]storagemodels.WebAuthnCredential
-	webAuthnCredentialByID      map[string]storagemodels.WebAuthnCredential
-	webAuthnChallengesByID      map[string]storagemodels.WebAuthnChallenge
-	oauthClientsByID            map[string]storagemodels.OAuthClient
-	authorizationCodesByCode    map[string]storagemodels.AuthorizationCode
-	refreshTokensByToken        map[string]storagemodels.RefreshToken
-	setupSessionsByID           map[string]storagemodels.SetupSession
-	pollsByID                   map[string]storagemodels.Poll
-	pollVotesByKey              map[string]storagemodels.PollVote
-	costRecords                 []*storagemodels.DynamoDBCostRecord
-	costAggregations            []*storagemodels.DynamoDBCostAggregation
-	metricRecords               []storagemodels.MetricRecord
-	instanceHistories           []storagemodels.InstanceHistory
-	instanceMetrics             map[string]storagemodels.InstanceMetrics
-	instanceState               *storagemodels.InstanceState
-	agentInstanceConfig         *storagemodels.AgentInstanceConfig
-	quoteRelationships          []storagemodels.QuoteRelationship
-	announcesByKey              map[string]storagemodels.Announce
-	oauthStates                 map[string]storagemodels.OAuthState
-	notificationsByID           map[string]storagemodels.Notification
-	domainBlocks                []storagemodels.InstanceDomainBlock
-	domainAllows                []storagemodels.DomainAllow
-	emailDomainBlocks           []storagemodels.EmailDomainBlock
-	federationInstancesByDomain map[string]storagemodels.FederationInstance
-	federationInstances         []storagemodels.FederationInstance
-	moderationReviews           []storagemodels.ModerationReview
-	moderationDecisionsByObject map[string]storagemodels.ModerationDecision
-	exportsByID                 map[string]storagemodels.Export
-	exportList                  []storagemodels.Export
-	communityNotesByGSI3PK      map[string][]storagemodels.CommunityNote
+	usersByUsername               map[string]storagemodels.User
+	actorsByUser                  map[string]storagemodels.Actor
+	actorList                     []storagemodels.Actor
+	activitiesByID                map[string]*storagemodels.Activity
+	statusByID                    map[string]storagemodels.Status
+	statusList                    []storagemodels.Status
+	objectsByID                   map[string]storagemodels.Object
+	objectList                    []storagemodels.Object
+	tombstonesByObjectID          map[string]storagemodels.Tombstone
+	reportsByID                   map[string]storagemodels.Report
+	eventsByID                    map[string]storagemodels.ModerationEvent
+	userMediaByUser               map[string][]*storagemodels.Media
+	sessionsByID                  map[string]storagemodels.Session
+	filtersByID                   map[string]storagemodels.Filter
+	filterKeywords                map[string][]storagemodels.FilterKeyword
+	filterStatuses                map[string][]storagemodels.FilterStatus
+	importsByID                   map[string]storagemodels.Import
+	importsByUser                 map[string][]storagemodels.Import
+	importBudgetsByPKSK           map[string]storagemodels.ImportBudget
+	pushSubscriptionsByUser       map[string][]storagemodels.PushSubscription
+	webAuthnCredentialsByUser     map[string][]storagemodels.WebAuthnCredential
+	webAuthnCredentialByID        map[string]storagemodels.WebAuthnCredential
+	webAuthnChallengesByID        map[string]storagemodels.WebAuthnChallenge
+	oauthClientsByID              map[string]storagemodels.OAuthClient
+	authorizationCodesByCode      map[string]storagemodels.AuthorizationCode
+	refreshTokensByToken          map[string]storagemodels.RefreshToken
+	oauthDeviceSessionsByHash     map[string]storagemodels.OAuthDeviceSession
+	oauthDeviceSessionsByUserCode map[string]storagemodels.OAuthDeviceSession
+	setupSessionsByID             map[string]storagemodels.SetupSession
+	pollsByID                     map[string]storagemodels.Poll
+	pollVotesByKey                map[string]storagemodels.PollVote
+	costRecords                   []*storagemodels.DynamoDBCostRecord
+	costAggregations              []*storagemodels.DynamoDBCostAggregation
+	metricRecords                 []storagemodels.MetricRecord
+	instanceHistories             []storagemodels.InstanceHistory
+	instanceMetrics               map[string]storagemodels.InstanceMetrics
+	instanceState                 *storagemodels.InstanceState
+	agentInstanceConfig           *storagemodels.AgentInstanceConfig
+	quoteRelationships            []storagemodels.QuoteRelationship
+	announcesByKey                map[string]storagemodels.Announce
+	oauthStates                   map[string]storagemodels.OAuthState
+	notificationsByID             map[string]storagemodels.Notification
+	domainBlocks                  []storagemodels.InstanceDomainBlock
+	domainAllows                  []storagemodels.DomainAllow
+	emailDomainBlocks             []storagemodels.EmailDomainBlock
+	federationInstancesByDomain   map[string]storagemodels.FederationInstance
+	federationInstances           []storagemodels.FederationInstance
+	moderationReviews             []storagemodels.ModerationReview
+	moderationDecisionsByObject   map[string]storagemodels.ModerationDecision
+	exportsByID                   map[string]storagemodels.Export
+	exportList                    []storagemodels.Export
+	communityNotesByGSI3PK        map[string][]storagemodels.CommunityNote
 
 	relationshipRecords []storagemodels.RelationshipRecord
 	trustRelationships  []storagemodels.TrustRelationship
@@ -620,6 +622,28 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				ExpiresAt: time.Now().Add(24 * time.Hour),
 				Scopes:    []string{"read", "write"},
 				CreatedAt: time.Now().Add(-1 * time.Minute),
+			}
+			_ = d.UpdateKeys()
+		case *storagemodels.OAuthDeviceSession:
+			deviceCodeHash := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "OAUTH_DEVICE#") {
+				deviceCodeHash = strings.TrimPrefix(pk, "OAUTH_DEVICE#")
+			}
+			if session, ok := state.oauthDeviceSessionsByHash[deviceCodeHash]; ok {
+				*d = session
+				return
+			}
+			*d = storagemodels.OAuthDeviceSession{
+				DeviceCodeHash:  deviceCodeHash,
+				UserCode:        "ABCD-EFGH",
+				ClientID:        "client-1",
+				Scopes:          []string{"read", "write"},
+				Status:          "pending",
+				IntervalSeconds: oauthDevicePollIntervalSeconds,
+				PollCount:       0,
+				CreatedAt:       time.Now().Add(-1 * time.Minute),
+				UpdatedAt:       time.Now().Add(-1 * time.Minute),
+				ExpiresAt:       time.Now().Add(10 * time.Minute),
 			}
 			_ = d.UpdateKeys()
 		case *storagemodels.SetupSession:
@@ -1201,6 +1225,16 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 			}
 			*d = []storagemodels.AgentMemoryEvent{}
+		case *[]storagemodels.OAuthDeviceSession:
+			gsi1PK, _ := state.whereString("gsi1PK")
+			userCode := strings.TrimPrefix(gsi1PK, "OAUTH_DEVICE_USER_CODE#")
+			if state.oauthDeviceSessionsByUserCode != nil {
+				if session, ok := state.oauthDeviceSessionsByUserCode[userCode]; ok {
+					*d = []storagemodels.OAuthDeviceSession{session}
+					return
+				}
+			}
+			*d = []storagemodels.OAuthDeviceSession{}
 		case *[]storagemodels.User:
 			role, _ := state.whereString("gsi3PK")
 			switch role {

@@ -36,6 +36,8 @@ type authorizeFlow struct {
 	scopes   []string
 }
 
+const oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
 func (h *Handler) isOAuthAuthorizeUIMode(ctx *apptheory.Context) bool {
 	if strings.EqualFold(queryValue(ctx, "mode"), "ui") {
 		return true
@@ -427,6 +429,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 	clientSecret := params["client_secret"]
 	codeVerifier := params["code_verifier"]
 	refreshToken := params["refresh_token"]
+	deviceCode := params["device_code"]
 
 	// Initialize OAuth service
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
@@ -531,10 +534,156 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 			RefreshToken: newRefreshToken,
 		})
 
+	case oauthDeviceCodeGrantType:
+		if h.cfg == nil || !h.cfg.AllowDeviceFlow {
+			return apptheory.JSON(http.StatusForbidden, map[string]string{
+				"error":             "access_denied",
+				"error_description": "device authorization is disabled",
+			})
+		}
+
+		// Validate required parameters using centralized validation
+		if err := common.ValidateMultipleRequiredParams(map[string]string{
+			"device_code": deviceCode,
+			"client_id":   clientID,
+		}); err != nil {
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_request",
+				"error_description": err.Error(),
+			})
+		}
+
+		// Validate client credentials if provided
+		if clientSecret != "" {
+			if err := oauthSvc.ValidateClient(ctx.Context(), clientID, clientSecret); err != nil {
+				return apptheory.JSON(http.StatusBadRequest, map[string]string{
+					"error":             "invalid_client",
+					"error_description": "Invalid client credentials",
+				})
+			}
+		}
+
+		session, err := h.repos.Account().GetOAuthDeviceSession(ctx.Context(), oauthDeviceCodeHash(deviceCode))
+		if err != nil || session == nil {
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_grant",
+				"error_description": "Invalid device_code",
+			})
+		}
+
+		if session.ClientID != clientID {
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_grant",
+				"error_description": "Invalid device_code",
+			})
+		}
+
+		now := time.Now().UTC()
+		if !session.ExpiresAt.IsZero() && now.After(session.ExpiresAt) {
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "expired_token",
+				"error_description": "The device_code has expired",
+			})
+		}
+
+		intervalSeconds := session.IntervalSeconds
+		if intervalSeconds <= 0 {
+			intervalSeconds = oauthDevicePollIntervalSeconds
+		}
+
+		if !session.LastPolledAt.IsZero() {
+			nextAllowed := session.LastPolledAt.Add(time.Duration(intervalSeconds) * time.Second)
+			if now.Before(nextAllowed) {
+				session.PollCount++
+				if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx.Context(), session); updateErr != nil {
+					h.logger.Warn("failed to update oauth device session poll metadata", zap.Error(updateErr))
+				}
+
+				return apptheory.JSON(http.StatusBadRequest, map[string]string{
+					"error":             "slow_down",
+					"error_description": "Polling too frequently",
+				})
+			}
+		}
+
+		session.PollCount++
+		session.LastPolledAt = now
+		if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx.Context(), session); updateErr != nil {
+			h.logger.Warn("failed to update oauth device session poll metadata", zap.Error(updateErr))
+		}
+
+		switch strings.ToLower(strings.TrimSpace(session.Status)) {
+		case "pending":
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "authorization_pending",
+				"error_description": "Authorization is pending",
+			})
+		case "denied":
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "access_denied",
+				"error_description": "Access denied",
+			})
+		case "consumed":
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_grant",
+				"error_description": "Invalid device_code",
+			})
+		case "approved":
+			username := strings.TrimSpace(session.ApprovedUsername)
+			if username == "" {
+				return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+					"error":             "server_error",
+					"error_description": "Device authorization is in an invalid state",
+				})
+			}
+
+			accessToken, refreshTokenOut, err := oauthSvc.GenerateTokens(ctx.Context(), username, clientID, "", session.Scopes)
+			if err != nil {
+				h.logger.Error("failed to generate tokens for device flow", zap.Error(err))
+				return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+					"error":             "server_error",
+					"error_description": "Failed to generate tokens",
+				})
+			}
+
+			oauthRefreshToken := &storage.RefreshToken{
+				Token:     refreshTokenOut,
+				Username:  username,
+				ClientID:  clientID,
+				Scopes:    session.Scopes,
+				CreatedAt: now,
+				ExpiresAt: now.Add(auth.RefreshTokenDuration),
+			}
+			if err := h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken); err != nil {
+				h.logger.Error("failed to store refresh token for device flow", zap.Error(err))
+				// Continue - access token is still valid
+			}
+
+			session.Status = "consumed"
+			session.ConsumedAt = now
+			if updateErr := h.repos.Account().UpdateOAuthDeviceSession(ctx.Context(), session); updateErr != nil {
+				h.logger.Warn("failed to mark oauth device session consumed", zap.Error(updateErr))
+			}
+
+			return okJSON(apimodels.OAuthTokenResponse{
+				AccessToken:  accessToken,
+				TokenType:    "Bearer",
+				Scope:        "read write follow push",
+				CreatedAt:    now.Unix(),
+				ExpiresIn:    3600,
+				RefreshToken: refreshTokenOut,
+			})
+		default:
+			return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+				"error":             "server_error",
+				"error_description": "Device authorization is in an invalid state",
+			})
+		}
+
 	default:
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "unsupported_grant_type",
-			"error_description": "Only authorization_code and refresh_token grant types are supported",
+			"error_description": "Only authorization_code, refresh_token, and device_code grant types are supported",
 		})
 	}
 }

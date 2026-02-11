@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"net/http"
 	"net/url"
 	"strings"
@@ -10,13 +12,14 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
 
 const (
 	oauthDeviceCodeTTLSeconds      = 10 * 60
-	oauthDevicePollIntervalSeconds = 5
+	oauthDevicePollIntervalSeconds = 10
 )
 
 // HandleOAuthDeviceCodeLift handles POST /oauth/device/code.
@@ -72,6 +75,14 @@ func (h *Handler) HandleOAuthDeviceCodeLift(ctx *apptheory.Context) (*apptheory.
 		})
 	}
 
+	scopes, err := h.normalizeAuthorizeScopes(params["scope"])
+	if err != nil {
+		return apptheory.JSON(http.StatusBadRequest, apimodels.OAuthErrorResponse{
+			Error:            "invalid_scope",
+			ErrorDescription: err.Error(),
+		})
+	}
+
 	deviceCode, err := generateOAuthDeviceCode()
 	if err != nil {
 		h.logger.Error("failed to generate device_code", zap.Error(err))
@@ -82,6 +93,32 @@ func (h *Handler) HandleOAuthDeviceCodeLift(ctx *apptheory.Context) (*apptheory.
 	if err != nil {
 		h.logger.Error("failed to generate user_code", zap.Error(err))
 		return common.RespondInternalServerError(ctx)
+	}
+
+	now := time.Now().UTC()
+	session := &storage.OAuthDeviceSession{
+		DeviceCodeHash:  oauthDeviceCodeHash(deviceCode),
+		UserCode:        userCode,
+		ClientID:        clientID,
+		Scopes:          scopes,
+		Status:          "pending",
+		IntervalSeconds: oauthDevicePollIntervalSeconds,
+		PollCount:       0,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		ExpiresAt:       oauthDeviceCodeExpiresAt(now),
+	}
+
+	if err := h.repos.Account().CreateOAuthDeviceSession(ctx.Context(), session); err != nil {
+		// Never log the device_code or user_code; the device_code is a secret, and the user_code is short.
+		h.logger.Error("failed to create oauth device session",
+			zap.Error(err),
+			zap.String("client_id", clientID),
+		)
+		return apptheory.JSON(http.StatusInternalServerError, apimodels.OAuthErrorResponse{
+			Error:            "server_error",
+			ErrorDescription: "unable to start device authorization",
+		})
 	}
 
 	base := strings.TrimRight(h.cfg.BaseURL(), "/")
@@ -126,6 +163,11 @@ func generateOAuthUserCode() (string, error) {
 		out = append(out, alphabet[int(b[i])%len(alphabet)])
 	}
 	return string(out), nil
+}
+
+func oauthDeviceCodeHash(deviceCode string) string {
+	sum := sha256.Sum256([]byte(deviceCode))
+	return hex.EncodeToString(sum[:])
 }
 
 // oauthDeviceCodeExpiresAt returns the TTL cutoff for device sessions.
