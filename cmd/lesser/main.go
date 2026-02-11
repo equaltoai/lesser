@@ -34,6 +34,7 @@ var (
 	runErrorsFn       = runErrors
 	runDashboardFn    = runDashboard
 	runSmokeFn        = runSmoke
+	runAuthFn         = runAuth
 )
 
 func runCLI(args []string, stderr io.Writer) int {
@@ -106,6 +107,8 @@ func runCLI(args []string, stderr io.Writer) int {
 		return exitCodeFromErr(runDashboardFn(args[2:]), stderr)
 	case "smoke":
 		return exitCodeFromErr(runSmokeFn(args[2:]), stderr)
+	case "auth":
+		return exitCodeFromErr(runAuthFn(args[2:]), stderr)
 	case helpFlagShort, helpFlagLong, helpCommand:
 		printUsageTo(stderr)
 		return 0
@@ -143,6 +146,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser logs --app <slug> --function <name> [--env dev|staging|live] [--aws-profile <profile>]")
 	_, _ = fmt.Fprintln(w, "  lesser metrics|errors|dashboard --app <slug> [--env dev|staging|live] [--aws-profile <profile>] [--region <aws-region>]")
 	_, _ = fmt.Fprintln(w, "  lesser smoke core|federation [flags...]")
+	_, _ = fmt.Fprintln(w, "  lesser auth login|logout|status|whoami|device [flags...]")
 }
 
 func exitCodeFromErr(err error, stderr io.Writer) int {
