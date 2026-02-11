@@ -32,6 +32,39 @@ type OAuthDeviceCodeResponse struct {
 	Interval                int    `json:"interval"`
 }
 
+// OAuthDeviceVerifyRequest represents a device verification lookup request.
+//
+// This is sent as application/x-www-form-urlencoded to POST /oauth/device/verify.
+type OAuthDeviceVerifyRequest struct {
+	UserCode string `json:"user_code"`
+}
+
+// OAuthDeviceVerifyResponse represents the device session metadata used by the auth UI to show consent.
+type OAuthDeviceVerifyResponse struct {
+	UserCode   string   `json:"user_code"`
+	ClientID   string   `json:"client_id"`
+	ClientName string   `json:"client_name,omitempty"`
+	ClientURL  string   `json:"client_url,omitempty"`
+	Scopes     []string `json:"scopes,omitempty"`
+	Status     string   `json:"status"`
+	ExpiresIn  int      `json:"expires_in"`
+	Interval   int      `json:"interval"`
+}
+
+// OAuthDeviceConsentRequest represents a device session consent action.
+//
+// This is sent as application/x-www-form-urlencoded to POST /oauth/device/consent.
+type OAuthDeviceConsentRequest struct {
+	UserCode string `json:"user_code"`
+	Action   string `json:"action"` // approve|deny
+}
+
+// OAuthDeviceConsentResponse represents the server response after approving/denying a device session.
+type OAuthDeviceConsentResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
 // OAuthTokenResponse represents a token response
 type OAuthTokenResponse struct {
 	AccessToken  string `json:"access_token"`

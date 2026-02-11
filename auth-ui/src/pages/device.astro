@@ -1,0 +1,15 @@
+---
+/**
+ * ⚠️ STATELESS STATIC APPLICATION - NO SESSIONS OR COOKIES PERMITTED ⚠️
+ *
+ * Device verification is used for OAuth device authorization (CLI bootstrap).
+ * The user logs in via wallet/WebAuthn, then approves the pending device session.
+ */
+import AuthLayout from '../layouts/AuthLayout.astro';
+import OAuthDeviceVerificationScreen from '../components/OAuthDeviceVerificationScreen.svelte';
+---
+
+<AuthLayout title="Authorize Device" subtitle="Connect your CLI client">
+  <OAuthDeviceVerificationScreen client:only="svelte" />
+</AuthLayout>
+

@@ -187,6 +187,8 @@ OPTIONS /auth/wallet/verify
 OPTIONS /oauth/authorize
 OPTIONS /oauth/consent
 OPTIONS /oauth/device/code
+OPTIONS /oauth/device/consent
+OPTIONS /oauth/device/verify
 OPTIONS /oauth/token
 OPTIONS /setup/admin
 OPTIONS /setup/bootstrap/challenge
@@ -293,6 +295,8 @@ POST /auth/wallet/login
 POST /auth/wallet/verify
 POST /oauth/consent
 POST /oauth/device/code
+POST /oauth/device/consent
+POST /oauth/device/verify
 POST /oauth/token
 POST /setup/admin
 POST /setup/bootstrap/challenge

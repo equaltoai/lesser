@@ -83,6 +83,12 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/oauth/device/code", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthDeviceCodeLift,
 		10, time.Minute, logger))
+	app.Post("/oauth/device/verify", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthDeviceVerifyLift,
+		20, 5*time.Minute, logger))
+	app.Post("/oauth/device/consent", ratelimit.ApplyRateLimit(
+		apiHandler.HandleOAuthDeviceConsentLift,
+		20, 5*time.Minute, logger))
 	app.Post("/oauth/token", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthTokenLift,
 		10, time.Minute, logger))
@@ -91,6 +97,8 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("OPTIONS", "/oauth/authorize", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/consent", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/device/code", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/device/verify", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/device/consent", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/token", optionsHandler)
 
 	// NodeInfo endpoints with native Lift implementation
