@@ -37,11 +37,16 @@ exemptions:
         prefixes:
             - /embed
     - id: agents
-      reason: Agent management endpoints are currently REST-only (no GraphQL surface yet).
+      reason: Some agent auth/registration/key-rotation endpoints are REST-only for now.
       match:
-        prefixes:
-            - /api/v1/admin/agents
-            - /api/v1/agents
+        exact:
+            - /api/v1/agents/auth/challenge
+            - /api/v1/agents/auth/token
+            - /api/v1/agents/memory/search
+            - /api/v1/agents/register
+            - /api/v1/agents/register/challenge
+            - /api/v1/agents/{username}/rotate-key
+            - /api/v1/agents/{username}/rotate-key/challenge
     - id: lesser_host_trust
       reason: Managed-instance lesser-host trust proxy endpoints are REST-only for now.
       match:
@@ -222,20 +227,28 @@ routes:
         - Mutation.adminAccountAction
     - method: GET
       path: /api/v1/admin/agents/policy
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.adminAgentPolicy
     - method: PUT
       path: /api/v1/admin/agents/policy
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.updateAdminAgentPolicy
     - method: POST
       path: /api/v1/admin/agents/{username}/unverify
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.adminUnverifyAgent
     - method: POST
       path: /api/v1/admin/agents/{username}/verify
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.adminVerifyAgent
     - method: POST
       path: /api/v1/admin/announcements
       policy: graphql_required
@@ -460,8 +473,10 @@ routes:
         - Mutation.adminSetStatusSensitive
     - method: GET
       path: /api/v1/agents
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.agents
     - method: POST
       path: /api/v1/agents/auth/challenge
       policy: rest_only
@@ -472,8 +487,10 @@ routes:
       exemptedBy: agents
     - method: POST
       path: /api/v1/agents/delegate
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.delegateToAgent
     - method: GET
       path: /api/v1/agents/memory/search
       policy: rest_only
@@ -492,20 +509,28 @@ routes:
       exemptedBy: agents
     - method: DELETE
       path: /api/v1/agents/{username}
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.deleteAgent
     - method: GET
       path: /api/v1/agents/{username}
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.agent
     - method: PATCH
       path: /api/v1/agents/{username}
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.updateAgent
     - method: GET
       path: /api/v1/agents/{username}/activity
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.agentActivity
     - method: POST
       path: /api/v1/agents/{username}/rotate-key
       policy: rest_only
@@ -516,8 +541,10 @@ routes:
       exemptedBy: agents
     - method: POST
       path: /api/v1/agents/{username}/suspend
-      policy: rest_only
-      exemptedBy: agents
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.adminSuspendAgent
     - method: GET
       path: /api/v1/announcements
       policy: graphql_required
@@ -1478,6 +1505,18 @@ routes:
       exemptedBy: protocol_infra
     - method: GET
       path: /oauth/authorize
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
+      path: /oauth/device/code
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
+      path: /oauth/device/consent
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
+      path: /oauth/device/verify
       policy: rest_only
       exemptedBy: oauth_oidc
     - method: POST

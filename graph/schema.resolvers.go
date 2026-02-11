@@ -917,6 +917,12 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		ContentHash:    contentHashForObjectID(note.ID),
 		EstimatedCost:  0,
 		CommunityNotes: r.getCommunityNotesForObject(ctx, note.ID),
+		AgentAttribution: func() *activitypub.AgentPostAttribution {
+			if note == nil {
+				return nil
+			}
+			return note.AgentAttribution
+		}(),
 	}
 }
 
@@ -1201,6 +1207,12 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		ContentHash:   contentHashForObjectID(status.StatusID),
 		EstimatedCost: 1,
 		Boosted:       viewerBoosted,
+		AgentAttribution: func() *activitypub.AgentPostAttribution {
+			if status.Note == nil {
+				return nil
+			}
+			return status.Note.AgentAttribution
+		}(),
 	}
 
 	obj.RelationshipType = model.ObjectRelationshipTypeOriginal
@@ -2995,6 +3007,62 @@ func (r *actorResolver) Fields(_ context.Context, obj *activitypub.Actor) ([]*mo
 		}
 	}
 	return fields, nil
+}
+
+// IsAgent implements ActorResolver
+func (r *actorResolver) IsAgent(ctx context.Context, obj *activitypub.Actor) (bool, error) {
+	if obj == nil {
+		return false, nil
+	}
+
+	if strings.EqualFold(strings.TrimSpace(obj.Type), activitypub.ServiceType) {
+		return true, nil
+	}
+
+	if r.Storage == nil || r.Storage.User() == nil {
+		return false, nil
+	}
+
+	username := strings.TrimSpace(obj.PreferredUsername)
+	if username == "" {
+		username = deriveUsernameFromIRI(obj.ID)
+	}
+	if username == "" {
+		return false, nil
+	}
+
+	user, err := r.Storage.User().GetUser(ctx, username)
+	if err != nil || user == nil {
+		return false, nil
+	}
+
+	return user.IsAgent, nil
+}
+
+// AgentInfo implements ActorResolver
+func (r *actorResolver) AgentInfo(ctx context.Context, obj *activitypub.Actor) (*model.Agent, error) {
+	if obj == nil {
+		return nil, nil
+	}
+
+	if r.Storage == nil || r.Storage.User() == nil {
+		return nil, nil
+	}
+
+	username := strings.TrimSpace(obj.PreferredUsername)
+	if username == "" {
+		username = deriveUsernameFromIRI(obj.ID)
+	}
+	if username == "" {
+		return nil, nil
+	}
+
+	user, err := r.Storage.User().GetUser(ctx, username)
+	if err != nil || user == nil || !user.IsAgent {
+		return nil, nil
+	}
+
+	return r.convertStorageUserToAgent(ctx, user), nil
 }
 
 // TrustScore implements ActorResolver
