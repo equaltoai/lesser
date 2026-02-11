@@ -3879,3 +3879,207 @@ type AdminStatusConnection {
   statuses: [Object!]!
   nextCursor: Cursor
 }
+
+# Lesser GraphQL Schema - LLM Agent Support (Spec v1.1, 2026-01-31)
+
+enum AgentType {
+  CURATOR
+  MODERATOR
+  RESEARCHER
+  ASSISTANT
+  BRIDGE
+  CUSTOM
+}
+
+type AgentCapabilities {
+  canPost: Boolean!
+  canReply: Boolean!
+  canBoost: Boolean!
+  canFollow: Boolean!
+  canDM: Boolean!
+  maxPostsPerHour: Int!
+  requiresApproval: Boolean!
+  restrictedDomains: [String!]
+}
+
+type Agent {
+  id: ID!
+  username: String!
+  displayName: String!
+  bio: String
+
+  # REST/OpenAPI parity fields (preferred)
+  agentType: AgentType!
+  agentVersion: String!
+  agentCapabilities: AgentCapabilities!
+  agentOwner: String
+  delegatedScopes: [String!]!
+  verified: Boolean!
+  verifiedAt: Time
+  ownerActor: Actor
+
+  # Legacy/back-compat (to be removed once Simulacrum migrates)
+  type: AgentType! @deprecated(reason: "Use agentType")
+  version: String! @deprecated(reason: "Use agentVersion")
+  capabilities: AgentCapabilities! @deprecated(reason: "Use agentCapabilities")
+  owner: Actor @deprecated(reason: "Use ownerActor / agentOwner")
+
+  createdAt: Time!
+  activityCount: Int!
+}
+
+type AgentEdge {
+  node: Agent!
+  cursor: Cursor!
+}
+
+type AgentConnection {
+  edges: [AgentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input RegisterAgentInput {
+  username: String!
+  displayName: String!
+  bio: String
+  agentType: AgentType!
+  version: String!
+  publicKey: String
+  keyType: String
+  purpose: String
+}
+
+input UpdateAgentInput {
+  displayName: String
+  bio: String
+  agentType: AgentType
+  agentVersion: String
+  version: String
+  agentCapabilities: AgentCapabilitiesInput
+  exitQuarantine: Boolean
+  purpose: String
+}
+
+input AgentCapabilitiesInput {
+  canPost: Boolean
+  canReply: Boolean
+  canBoost: Boolean
+  canFollow: Boolean
+  canDM: Boolean
+  maxPostsPerHour: Int
+  requiresApproval: Boolean
+  restrictedDomains: [String!]
+}
+
+type RegisterAgentPayload {
+  agent: Agent!
+}
+
+input DelegateToAgentInput {
+  agentUsername: String!
+  displayName: String!
+  bio: String
+  scopes: [String!]!
+  expiresIn: Int
+  agentType: AgentType!
+  agentVersion: String
+  version: String!
+}
+
+type DelegationPayload {
+  agent: Agent!
+  accessToken: String!
+  refreshToken: String!
+  tokenType: String!
+  scope: String!
+  createdAt: Time!
+  expiresIn: Int!
+}
+
+type AgentActivityEvent {
+  eventId: ID!
+  agentUsername: String!
+  action: String!
+  targetId: String
+  metadataJson: String
+  timestamp: Time!
+}
+
+type AgentActivityEdge {
+  node: AgentActivityEvent!
+  cursor: Cursor!
+}
+
+type AgentActivityConnection {
+  edges: [AgentActivityEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type AdminAgentPolicy {
+  allowAgents: Boolean!
+  allowAgentRegistration: Boolean!
+  defaultQuarantineDays: Int!
+  maxAgentsPerOwner: Int!
+  allowRemoteAgents: Boolean!
+  remoteQuarantineDays: Int!
+  blockedAgentDomains: [String!]!
+  trustedAgentDomains: [String!]!
+  agentMaxPostsPerHour: Int!
+  verifiedAgentMaxPostsPerHour: Int!
+  agentMaxFollowsPerHour: Int!
+  verifiedAgentMaxFollowsPerHour: Int!
+  hybridRetrievalEnabled: Boolean!
+  hybridRetrievalMaxCandidates: Int!
+  updatedAt: Time!
+}
+
+input UpdateAdminAgentPolicyInput {
+  allowAgents: Boolean!
+  allowAgentRegistration: Boolean!
+  defaultQuarantineDays: Int!
+  maxAgentsPerOwner: Int!
+  allowRemoteAgents: Boolean!
+  remoteQuarantineDays: Int!
+  blockedAgentDomains: [String!]
+  trustedAgentDomains: [String!]
+  agentMaxPostsPerHour: Int!
+  verifiedAgentMaxPostsPerHour: Int!
+  agentMaxFollowsPerHour: Int!
+  verifiedAgentMaxFollowsPerHour: Int!
+  hybridRetrievalEnabled: Boolean!
+  hybridRetrievalMaxCandidates: Int!
+}
+
+input AdminVerifyAgentInput {
+  reason: String
+  exitQuarantine: Boolean
+}
+
+extend type Query {
+  agent(username: String!): Agent
+  agents(first: Int = 20, after: Cursor, type: AgentType, query: String, verified: Boolean, ownerUsername: String): AgentConnection!
+  myAgents: [Agent!]!
+  agentActivity(username: String!, first: Int = 20, after: Cursor): AgentActivityConnection!
+  adminAgentPolicy: AdminAgentPolicy!
+  agentMemorySearch(query: String!, tags: [String!], dateRange: DateRangeInput, first: Int = 20, after: Cursor): ObjectConnection!
+}
+
+extend type Mutation {
+  registerAgent(input: RegisterAgentInput!): RegisterAgentPayload!
+  updateAgent(username: String!, input: UpdateAgentInput!): Agent!
+  deleteAgent(username: String!): Agent!
+  delegateToAgent(input: DelegateToAgentInput!): DelegationPayload!
+  revokeAgentToken(username: String!): Boolean!
+
+  # Admin flows
+  updateAdminAgentPolicy(input: UpdateAdminAgentPolicyInput!): AdminAgentPolicy!
+  adminVerifyAgent(username: String!, input: AdminVerifyAgentInput): Agent!
+  adminUnverifyAgent(username: String!, input: AdminVerifyAgentInput): Agent!
+  adminSuspendAgent(username: String!): Agent!
+}
+
+extend type Subscription {
+  agentActivity(username: String!): AgentActivityEvent!
+}
