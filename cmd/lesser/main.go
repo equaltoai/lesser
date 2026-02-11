@@ -44,80 +44,75 @@ func runCLI(args []string, stderr io.Writer) int {
 		return 2
 	}
 
-	switch args[1] {
+	cmd := args[1]
+	switch cmd {
 	case "version", "--version":
 		printVersionTo(stderr)
 		return 0
-	case "up":
-		return exitCodeFromErr(runUpFn(args[2:]), stderr)
-	case "down", "destroy":
-		return exitCodeFromErr(runDownFn(args[2:]), stderr)
-	case "init-admin":
-		return exitCodeFromErr(runInitAdminFn(args[2:]), stderr)
 	case "client":
-		if len(args) < 3 {
-			printUsageTo(stderr)
-			return 2
+		return handleClientCommand(args, stderr)
+	case helpFlagShort, helpFlagLong, helpCommand:
+		printUsageTo(stderr)
+		return 0
+	default:
+		if runner, ok := commandRunner(cmd); ok {
+			return exitCodeFromErr(runner(args[2:]), stderr)
 		}
-		switch args[2] {
-		case "deploy":
-			return exitCodeFromErr(runClientDeployFn(args[3:]), stderr)
-		case helpFlagShort, helpFlagLong, helpCommand:
-			printUsageTo(stderr)
-			return 0
-		default:
-			printUsageTo(stderr)
-			_, _ = fmt.Fprintln(stderr, "\nUnknown client command:", args[2])
-			return 2
-		}
-	case "build":
-		return exitCodeFromErr(runBuildFn(args[2:]), stderr)
-	case "generate":
-		return exitCodeFromErr(runGenerateFn(args[2:]), stderr)
-	case "verify":
-		return exitCodeFromErr(runVerifyFn(args[2:]), stderr)
-	case "test":
-		return exitCodeFromErr(runTestFn(args[2:]), stderr)
-	case "coverage":
-		return exitCodeFromErr(runCoverageFn(args[2:]), stderr)
-	case valueDev:
-		return exitCodeFromErr(runDevFn(args[2:]), stderr)
-	case "fmt":
-		return exitCodeFromErr(runFmtFn(args[2:]), stderr)
-	case "lint":
-		return exitCodeFromErr(runLintFn(args[2:]), stderr)
-	case "sec-scan":
-		return exitCodeFromErr(runSecScanFn(args[2:]), stderr)
-	case "vuln-check":
-		return exitCodeFromErr(runVulnCheckFn(args[2:]), stderr)
-	case "gqlgen":
-		return exitCodeFromErr(runGqlgenFn(args[2:]), stderr)
-	case "tidy":
-		return exitCodeFromErr(runTidyFn(args[2:]), stderr)
-	case valueSchema:
-		return exitCodeFromErr(runSchemaFn(args[2:]), stderr)
-	case "export-schema":
-		return exitCodeFromErr(runExportSchemaFn(args[2:]), stderr)
-	case "logs":
-		return exitCodeFromErr(runLogsFn(args[2:]), stderr)
-	case "metrics":
-		return exitCodeFromErr(runMetricsFn(args[2:]), stderr)
-	case "errors":
-		return exitCodeFromErr(runErrorsFn(args[2:]), stderr)
-	case "dashboard":
-		return exitCodeFromErr(runDashboardFn(args[2:]), stderr)
-	case "smoke":
-		return exitCodeFromErr(runSmokeFn(args[2:]), stderr)
-	case "auth":
-		return exitCodeFromErr(runAuthFn(args[2:]), stderr)
-	case "api":
-		return exitCodeFromErr(runAPIFn(args[2:]), stderr)
+
+		printUsageTo(stderr)
+		_, _ = fmt.Fprintln(stderr, "\nUnknown command:", cmd)
+		return 2
+	}
+}
+
+func commandRunner(cmd string) (func([]string) error, bool) {
+	runners := map[string]func([]string) error{
+		"up":            func(argv []string) error { return runUpFn(argv) },
+		"down":          func(argv []string) error { return runDownFn(argv) },
+		"destroy":       func(argv []string) error { return runDownFn(argv) },
+		"init-admin":    func(argv []string) error { return runInitAdminFn(argv) },
+		"build":         func(argv []string) error { return runBuildFn(argv) },
+		"generate":      func(argv []string) error { return runGenerateFn(argv) },
+		"verify":        func(argv []string) error { return runVerifyFn(argv) },
+		"test":          func(argv []string) error { return runTestFn(argv) },
+		"coverage":      func(argv []string) error { return runCoverageFn(argv) },
+		valueDev:        func(argv []string) error { return runDevFn(argv) },
+		"fmt":           func(argv []string) error { return runFmtFn(argv) },
+		"lint":          func(argv []string) error { return runLintFn(argv) },
+		"sec-scan":      func(argv []string) error { return runSecScanFn(argv) },
+		"vuln-check":    func(argv []string) error { return runVulnCheckFn(argv) },
+		"gqlgen":        func(argv []string) error { return runGqlgenFn(argv) },
+		"tidy":          func(argv []string) error { return runTidyFn(argv) },
+		valueSchema:     func(argv []string) error { return runSchemaFn(argv) },
+		"export-schema": func(argv []string) error { return runExportSchemaFn(argv) },
+		"logs":          func(argv []string) error { return runLogsFn(argv) },
+		"metrics":       func(argv []string) error { return runMetricsFn(argv) },
+		"errors":        func(argv []string) error { return runErrorsFn(argv) },
+		"dashboard":     func(argv []string) error { return runDashboardFn(argv) },
+		"smoke":         func(argv []string) error { return runSmokeFn(argv) },
+		"auth":          func(argv []string) error { return runAuthFn(argv) },
+		"api":           func(argv []string) error { return runAPIFn(argv) },
+	}
+
+	runner, ok := runners[cmd]
+	return runner, ok
+}
+
+func handleClientCommand(args []string, stderr io.Writer) int {
+	if len(args) < 3 {
+		printUsageTo(stderr)
+		return 2
+	}
+
+	switch args[2] {
+	case "deploy":
+		return exitCodeFromErr(runClientDeployFn(args[3:]), stderr)
 	case helpFlagShort, helpFlagLong, helpCommand:
 		printUsageTo(stderr)
 		return 0
 	default:
 		printUsageTo(stderr)
-		_, _ = fmt.Fprintln(stderr, "\nUnknown command:", args[1])
+		_, _ = fmt.Fprintln(stderr, "\nUnknown client command:", args[2])
 		return 2
 	}
 }

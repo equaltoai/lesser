@@ -77,27 +77,68 @@ func startDeviceAuthorization(ctx context.Context, baseURL, clientID, scopes str
 }
 
 func pollDeviceToken(ctx context.Context, baseURL, clientID, deviceCode string, interval time.Duration, ttl time.Duration, flags *authFlags) (*apimodels.OAuthTokenResponse, error) {
+	return pollDeviceTokenInternal(ctx, baseURL, clientID, deviceCode, interval, ttl, flags, time.Now, sleepWithContext, exchangeDeviceCodeForToken)
+}
+
+type deviceCodeTokenExchanger func(ctx context.Context, baseURL, clientID, deviceCode string) (*apimodels.OAuthTokenResponse, *apimodels.OAuthErrorResponse, error)
+
+type sleepFunc func(ctx context.Context, d time.Duration) error
+
+type nowFunc func() time.Time
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+func pollDeviceTokenInternal(
+	ctx context.Context,
+	baseURL, clientID, deviceCode string,
+	interval time.Duration,
+	ttl time.Duration,
+	flags *authFlags,
+	now nowFunc,
+	sleep sleepFunc,
+	exchange deviceCodeTokenExchanger,
+) (*apimodels.OAuthTokenResponse, error) {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
 
-	deadline := time.Now().Add(ttl)
+	if now == nil {
+		now = time.Now
+	}
+	if sleep == nil {
+		sleep = sleepWithContext
+	}
+	if exchange == nil {
+		exchange = exchangeDeviceCodeForToken
+	}
+
+	deadline := now().Add(ttl)
 	nextInterval := interval
 	if nextInterval <= 0 {
 		nextInterval = 10 * time.Second
 	}
 
 	for {
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("device authorization timed out")
+		if now().After(deadline) {
+			return nil, errors.New(oauthErrorDeviceAuthorizationTTL)
 		}
 
-		tokenResp, oauthErr, err := exchangeDeviceCodeForToken(ctx, baseURL, clientID, deviceCode)
+		tokenResp, oauthErr, err := exchange(ctx, baseURL, clientID, deviceCode)
 		if err != nil {
 			return nil, err
 		}
 		if tokenResp != nil {
 			return tokenResp, nil
+		}
+		if oauthErr == nil {
+			return nil, errors.New("device token polling returned no oauth error")
 		}
 
 		code := strings.ToLower(strings.TrimSpace(oauthErr.Error))
@@ -111,23 +152,21 @@ func pollDeviceToken(ctx context.Context, baseURL, clientID, deviceCode string, 
 		case "slow_down":
 			nextInterval += defaultDevicePollBackoff
 		case "access_denied":
-			return nil, fmt.Errorf("device authorization denied")
+			return nil, errors.New(oauthErrorDeviceAuthDenied)
 		case "expired_token":
-			return nil, fmt.Errorf("device code expired")
-		case "invalid_grant":
-			return nil, fmt.Errorf("device authorization invalid")
+			return nil, errors.New(oauthErrorDeviceCodeExpired)
+		case oauthErrorInvalidGrant:
+			return nil, errors.New(oauthErrorDeviceAuthInvalid)
 		default:
 			msg := strings.TrimSpace(oauthErr.ErrorDescription)
 			if msg == "" {
-				msg = "oauth error"
+				msg = oauthErrorDescriptionDefault
 			}
 			return nil, fmt.Errorf("%s (%s)", msg, code)
 		}
 
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(nextInterval):
+		if err := sleep(ctx, nextInterval); err != nil {
+			return nil, err
 		}
 	}
 }
@@ -163,8 +202,8 @@ func refreshAccessToken(ctx context.Context, baseURL, clientID, refreshToken str
 		var oauthErr *oauthHTTPError
 		if errors.As(err, &oauthErr) {
 			code := strings.ToLower(strings.TrimSpace(oauthErr.OAuth.Error))
-			if code == "invalid_grant" {
-				return nil, fmt.Errorf("refresh token invalid; re-auth required")
+			if code == oauthErrorInvalidGrant {
+				return nil, errors.New(oauthErrorRefreshReauthRequired)
 			}
 		}
 		return nil, err
@@ -203,7 +242,7 @@ func (e *oauthHTTPError) Error() string {
 	code := strings.TrimSpace(e.OAuth.Error)
 	desc := strings.TrimSpace(e.OAuth.ErrorDescription)
 	if desc == "" {
-		desc = "oauth error"
+		desc = oauthErrorDescriptionDefault
 	}
 	if code == "" {
 		return desc
@@ -226,7 +265,7 @@ func doFormPOST(ctx context.Context, baseURL, path string, form url.Values, out 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if err != nil {
@@ -272,7 +311,7 @@ func doGETJSON(ctx context.Context, baseURL, path, accessToken string, out any) 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if err != nil {

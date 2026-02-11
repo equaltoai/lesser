@@ -101,7 +101,7 @@ func (h *Handler) HandleOAuthDeviceCodeLift(ctx *apptheory.Context) (*apptheory.
 		UserCode:        userCode,
 		ClientID:        clientID,
 		Scopes:          scopes,
-		Status:          "pending",
+		Status:          oauthDeviceSessionStatusPending,
 		IntervalSeconds: oauthDevicePollIntervalSeconds,
 		PollCount:       0,
 		CreatedAt:       now,

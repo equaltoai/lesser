@@ -23,6 +23,17 @@ var errAgentSupportNotImplemented = apperrors.Internal("agent support is not imp
 
 const delegatedAgentClientID = "lesser-agent-delegation"
 
+const (
+	oauthScopeAdmin         = "admin"
+	oauthScopePush          = "push"
+	oauthScopeWrite         = "write"
+	oauthScopeFollow        = "follow"
+	oauthScopeWriteStatuses = "write:statuses"
+	oauthScopeWriteFollows  = "write:follows"
+
+	agentQuarantineStatusApproved = "approved"
+)
+
 // Agent is the resolver for the agent field.
 func (r *queryResolver) Agent(ctx context.Context, username string) (*model.Agent, error) {
 	if err := r.ensureAgentsEnabled(ctx); err != nil {
@@ -46,6 +57,78 @@ func (r *queryResolver) Agent(ctx context.Context, username string) (*model.Agen
 	return r.convertStorageUserToAgent(ctx, user), nil
 }
 
+type agentListFilters struct {
+	typeArg     *model.AgentType
+	queryValue  string
+	verified    *bool
+	ownerFilter string
+}
+
+func agentListLimit(first *int, maxLimit int) int {
+	limit := 20
+	if first != nil && *first > 0 {
+		limit = *first
+	}
+	if maxLimit > 0 && limit > maxLimit {
+		limit = maxLimit
+	}
+	return limit
+}
+
+func agentListLimit32(first *int, maxLimit int32) int32 {
+	limit := int32(20)
+	if first != nil && *first > 0 {
+		value := *first
+		if maxLimit > 0 && value > int(maxLimit) {
+			value = int(maxLimit)
+		}
+		limit = int32(value) // #nosec G115 -- value is clamped above before converting
+	}
+	if maxLimit > 0 && limit > maxLimit {
+		limit = maxLimit
+	}
+	return limit
+}
+
+func agentListCursor(after *model.Cursor) string {
+	if after == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(*after))
+}
+
+func agentUserMatchesListFilters(user *storage.User, filters agentListFilters) bool {
+	if user == nil || !user.IsAgent || user.Suspended {
+		return false
+	}
+
+	if filters.typeArg != nil && normalizeAgentType(user.AgentType) != *filters.typeArg {
+		return false
+	}
+
+	if filters.verified != nil && agentMetadataBool(user, "agent_verified") != *filters.verified {
+		return false
+	}
+
+	if filters.ownerFilter != "" {
+		owner := strings.TrimPrefix(strings.TrimSpace(user.AgentOwner), "@")
+		if !strings.EqualFold(owner, filters.ownerFilter) {
+			return false
+		}
+	}
+
+	if filters.queryValue != "" {
+		displayName := strings.ToLower(strings.TrimSpace(user.DisplayName))
+		bio := strings.ToLower(strings.TrimSpace(user.Note))
+		usernameLower := strings.ToLower(strings.TrimSpace(user.Username))
+		if !strings.Contains(usernameLower, filters.queryValue) && !strings.Contains(displayName, filters.queryValue) && !strings.Contains(bio, filters.queryValue) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Agents is the resolver for the agents field.
 func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) (*model.AgentConnection, error) {
 	if err := r.ensureAgentsEnabled(ctx); err != nil {
@@ -56,20 +139,11 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		return nil, ErrStorageUnavailable
 	}
 
-	limit := 20
-	if first != nil && *first > 0 {
-		limit = *first
-	}
-	if limit > 100 {
-		limit = 100
-	}
+	limit32 := agentListLimit32(first, 100)
+	limit := int(limit32)
+	cursor := agentListCursor(after)
 
-	cursor := ""
-	if after != nil {
-		cursor = strings.TrimSpace(string(*after))
-	}
-
-	users, nextCursor, err := r.Storage.User().ListAgents(ctx, int32(limit), cursor)
+	users, nextCursor, err := r.Storage.User().ListAgents(ctx, limit32, cursor)
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to list agents")
 	}
@@ -77,41 +151,17 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 		users = users[:limit]
 	}
 
-	queryValue := strings.ToLower(strings.TrimSpace(derefString(query)))
-	ownerFilter := strings.TrimPrefix(strings.TrimSpace(derefString(ownerUsername)), "@")
+	filters := agentListFilters{
+		typeArg:     typeArg,
+		queryValue:  strings.ToLower(strings.TrimSpace(derefString(query))),
+		verified:    verified,
+		ownerFilter: strings.TrimPrefix(strings.TrimSpace(derefString(ownerUsername)), "@"),
+	}
 
 	edges := make([]*model.AgentEdge, 0, len(users))
 	for _, user := range users {
-		if user == nil || !user.IsAgent || user.Suspended {
+		if !agentUserMatchesListFilters(user, filters) {
 			continue
-		}
-
-		if typeArg != nil {
-			if normalizeAgentType(user.AgentType) != *typeArg {
-				continue
-			}
-		}
-
-		if verified != nil {
-			if agentMetadataBool(user, "agent_verified") != *verified {
-				continue
-			}
-		}
-
-		if ownerFilter != "" {
-			owner := strings.TrimPrefix(strings.TrimSpace(user.AgentOwner), "@")
-			if !strings.EqualFold(owner, ownerFilter) {
-				continue
-			}
-		}
-
-		if queryValue != "" {
-			displayName := strings.ToLower(strings.TrimSpace(user.DisplayName))
-			bio := strings.ToLower(strings.TrimSpace(user.Note))
-			usernameLower := strings.ToLower(strings.TrimSpace(user.Username))
-			if !strings.Contains(usernameLower, queryValue) && !strings.Contains(displayName, queryValue) && !strings.Contains(bio, queryValue) {
-				continue
-			}
 		}
 
 		agent := r.convertStorageUserToAgent(ctx, user)
@@ -245,13 +295,7 @@ func (r *queryResolver) AgentActivity(ctx context.Context, username string, firs
 		return nil, ErrStorageUnavailable
 	}
 
-	limit := 20
-	if first != nil && *first > 0 {
-		limit = *first
-	}
-	if limit > 200 {
-		limit = 200
-	}
+	limit := agentListLimit(first, 200)
 
 	now := time.Now().UTC()
 	start := now.Add(-30 * 24 * time.Hour)
@@ -260,63 +304,115 @@ func (r *queryResolver) AgentActivity(ctx context.Context, username string, firs
 		return nil, apperrors.InternalWithCause(err, "failed to query agent activity")
 	}
 
+	events := agentActivityEventsFromAuditLogs(username, logs)
+	startIndex := agentActivityAfterCursorIndex(events, after)
+	sliced, hasNext := agentActivitySlice(events, startIndex, limit)
+	edges, startCursor, endCursor := agentActivityEdges(sliced)
+
+	return &model.AgentActivityConnection{
+		Edges: edges,
+		PageInfo: &model.PageInfo{
+			HasNextPage:     hasNext,
+			HasPreviousPage: after != nil,
+			StartCursor:     startCursor,
+			EndCursor:       endCursor,
+		},
+		TotalCount: len(edges),
+	}, nil
+}
+
+func agentActivityEventsFromAuditLogs(username string, logs []*storageModels.AuthAuditLog) []*model.AgentActivityEvent {
 	events := make([]*model.AgentActivityEvent, 0, len(logs))
 	for _, log := range logs {
-		if log == nil {
-			continue
+		event := agentActivityEventFromAuditLog(username, log)
+		if event != nil {
+			events = append(events, event)
 		}
-		if !strings.HasPrefix(strings.TrimSpace(log.EventType), "agent.") {
-			continue
-		}
-
-		var targetID *string
-		metaRaw := strings.TrimSpace(log.Metadata)
-		if metaRaw != "" {
-			var parsed map[string]any
-			if err := json.Unmarshal([]byte(metaRaw), &parsed); err == nil {
-				if v, ok := parsed["target_id"].(string); ok && strings.TrimSpace(v) != "" {
-					clean := strings.TrimSpace(v)
-					targetID = &clean
-				}
-			}
-		}
-
-		var metaPtr *string
-		if metaRaw != "" {
-			metaPtr = &metaRaw
-		}
-
-		events = append(events, &model.AgentActivityEvent{
-			EventID:       log.ID,
-			AgentUsername: username,
-			Action:        log.EventType,
-			TargetID:      targetID,
-			MetadataJSON:  metaPtr,
-			Timestamp:     model.Time(log.Timestamp),
-		})
 	}
 
 	sort.Slice(events, func(i, j int) bool {
 		return time.Time(events[i].Timestamp).After(time.Time(events[j].Timestamp))
 	})
 
-	startIndex := 0
-	if after != nil {
-		needle := strings.TrimSpace(string(*after))
-		for i, evt := range events {
-			if evt != nil && strings.EqualFold(evt.EventID, needle) {
-				startIndex = i + 1
-				break
-			}
+	return events
+}
+
+func agentActivityEventFromAuditLog(username string, log *storageModels.AuthAuditLog) *model.AgentActivityEvent {
+	if log == nil {
+		return nil
+	}
+
+	action := strings.TrimSpace(log.EventType)
+	if !strings.HasPrefix(action, "agent.") {
+		return nil
+	}
+
+	metaRaw := strings.TrimSpace(log.Metadata)
+	targetID := agentActivityTargetID(metaRaw)
+	metaPtr := agentActivityMetadataPtr(metaRaw)
+
+	return &model.AgentActivityEvent{
+		EventID:       log.ID,
+		AgentUsername: username,
+		Action:        action,
+		TargetID:      targetID,
+		MetadataJSON:  metaPtr,
+		Timestamp:     model.Time(log.Timestamp),
+	}
+}
+
+func agentActivityTargetID(metaRaw string) *string {
+	metaRaw = strings.TrimSpace(metaRaw)
+	if metaRaw == "" {
+		return nil
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(metaRaw), &parsed); err != nil {
+		return nil
+	}
+
+	value, ok := parsed["target_id"].(string)
+	if !ok {
+		return nil
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func agentActivityMetadataPtr(metaRaw string) *string {
+	metaRaw = strings.TrimSpace(metaRaw)
+	if metaRaw == "" {
+		return nil
+	}
+	return &metaRaw
+}
+
+func agentActivityAfterCursorIndex(events []*model.AgentActivityEvent, after *model.Cursor) int {
+	if after == nil {
+		return 0
+	}
+
+	needle := strings.TrimSpace(string(*after))
+	if needle == "" {
+		return 0
+	}
+
+	for i, evt := range events {
+		if evt != nil && strings.EqualFold(evt.EventID, needle) {
+			return i + 1
 		}
 	}
 
+	return 0
+}
+
+func agentActivitySlice(events []*model.AgentActivityEvent, startIndex, limit int) ([]*model.AgentActivityEvent, bool) {
 	if startIndex >= len(events) {
-		return &model.AgentActivityConnection{
-			Edges:      []*model.AgentActivityEdge{},
-			PageInfo:   &model.PageInfo{HasNextPage: false, HasPreviousPage: after != nil},
-			TotalCount: 0,
-		}, nil
+		return nil, false
 	}
 
 	sliced := events[startIndex:]
@@ -325,8 +421,12 @@ func (r *queryResolver) AgentActivity(ctx context.Context, username string, firs
 		sliced = sliced[:limit]
 	}
 
-	edges := make([]*model.AgentActivityEdge, 0, len(sliced))
-	for _, evt := range sliced {
+	return sliced, hasNext
+}
+
+func agentActivityEdges(events []*model.AgentActivityEvent) ([]*model.AgentActivityEdge, *model.Cursor, *model.Cursor) {
+	edges := make([]*model.AgentActivityEdge, 0, len(events))
+	for _, evt := range events {
 		if evt == nil {
 			continue
 		}
@@ -342,16 +442,7 @@ func (r *queryResolver) AgentActivity(ctx context.Context, username string, firs
 		endCursor = &edges[len(edges)-1].Cursor
 	}
 
-	return &model.AgentActivityConnection{
-		Edges: edges,
-		PageInfo: &model.PageInfo{
-			HasNextPage:     hasNext,
-			HasPreviousPage: after != nil,
-			StartCursor:     startCursor,
-			EndCursor:       endCursor,
-		},
-		TotalCount: len(edges),
-	}, nil
+	return edges, startCursor, endCursor
 }
 
 // AdminAgentPolicy is the resolver for the adminAgentPolicy field.
@@ -950,7 +1041,7 @@ func validateDelegationScopes(ownerScopes []string, requested []string) ([]strin
 
 		base := strings.Split(scope, ":")[0]
 		switch base {
-		case "admin", "push":
+		case oauthScopeAdmin, oauthScopePush:
 			return nil, apperrors.Forbidden("delegation cannot grant admin or push scopes")
 		}
 
@@ -989,22 +1080,22 @@ func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 	for _, scope := range scopes {
 		base := strings.Split(strings.TrimSpace(scope), ":")[0]
 		switch base {
-		case "write":
+		case oauthScopeWrite:
 			caps.CanPost = true
 			caps.CanReply = true
 			caps.CanBoost = true
 			caps.CanDM = true
-		case "follow":
+		case oauthScopeFollow:
 			caps.CanFollow = true
 		}
 
-		if scope == "write:statuses" {
+		if scope == oauthScopeWriteStatuses {
 			caps.CanPost = true
 			caps.CanReply = true
 			caps.CanBoost = true
 			caps.CanDM = true
 		}
-		if scope == "write:follows" {
+		if scope == oauthScopeWriteFollows {
 			caps.CanFollow = true
 		}
 	}
@@ -1171,7 +1262,7 @@ func applyAgentQuarantineExit(user *storage.User, claims *auth.Claims, exitQuara
 		approvedBy = strings.TrimSpace(claims.Username)
 	}
 
-	user.Metadata["agent_quarantine_status"] = "approved"
+	user.Metadata["agent_quarantine_status"] = agentQuarantineStatusApproved
 	user.Metadata["agent_quarantine_end"] = now.Format(time.RFC3339)
 	user.Metadata["agent_quarantine_approved_by"] = approvedBy
 	user.Metadata["agent_quarantine_approved_at"] = now.Format(time.RFC3339)

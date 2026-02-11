@@ -49,18 +49,22 @@ type OAuthDeviceSession struct {
 	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
 }
 
+// TableName returns the DynamoDB table name for OAuth device sessions.
 func (OAuthDeviceSession) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the DynamoDB partition key for the session.
 func (o *OAuthDeviceSession) GetPK() string {
 	return o.PK
 }
 
+// GetSK returns the DynamoDB sort key for the session.
 func (o *OAuthDeviceSession) GetSK() string {
 	return o.SK
 }
 
+// UpdateKeys derives primary/GSI keys and TTL fields from the session content.
 func (o *OAuthDeviceSession) UpdateKeys() error {
 	if o.DeviceCodeHash != "" {
 		o.PK = "OAUTH_DEVICE#" + o.DeviceCodeHash

@@ -1,5 +1,5 @@
 // Package sync provides thread synchronization utilities for ActivityPub conversation management.
-package sync
+package sync //nolint:revive
 
 import (
 	"context"

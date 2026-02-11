@@ -60,9 +60,9 @@ func (h *Handler) HandleOAuthConsentLift(ctx *apptheory.Context) (*apptheory.Res
 	// Handle user action
 	// Note: We don't create OAuth sessions for client applications - OAuth state is sufficient
 	switch action {
-	case "deny":
+	case oauthConsentActionDeny:
 		return h.handleConsentDenial(ctx, authState)
-	case "approve":
+	case actionApprove:
 		return h.handleConsentApproval(ctx, authState)
 	default:
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{

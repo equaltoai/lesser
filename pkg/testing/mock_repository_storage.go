@@ -1,5 +1,5 @@
 // Package testing provides test utilities and mock implementations for the Lesser application.
-package testing
+package testing //nolint:revive
 
 import (
 	"github.com/equaltoai/lesser/pkg/storage/core"

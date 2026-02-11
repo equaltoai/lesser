@@ -39,23 +39,97 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 	return r.convertStatusToObject(ctx, note), nil
 }
 
+func timelinePaginationOptions(first *int, after *model.Cursor) interfaces.PaginationOptions {
+	pagination := interfaces.PaginationOptions{Limit: 20}
+	if first != nil && *first > 0 && *first <= 100 {
+		pagination.Limit = *first
+	}
+	if after != nil {
+		pagination.Cursor = string(*after)
+	}
+	return pagination
+}
+
+func applyTimelineTypeFilter(username string, timelineType model.TimelineType, hashtag *string, listID *string, actorID *string, query *notes.ListNotesQuery) error {
+	switch timelineType {
+	case model.TimelineTypeHome:
+		if err := common.ValidateRequiredParam("username", username); err != nil {
+			return ErrAuthRequiredForHome
+		}
+		query.TimelineType = TimelineTypeHome
+	case model.TimelineTypePublic:
+		query.TimelineType = StreamNamePublic
+	case model.TimelineTypeLocal:
+		query.TimelineType = common.TimelineLocal
+	case model.TimelineTypeHashtag:
+		if hashtag == nil {
+			return ErrHashtagParameterRequired
+		}
+		if err := common.ValidateRequiredParam("hashtag", *hashtag); err != nil {
+			return ErrHashtagParameterRequired
+		}
+		query.TimelineType = TimelineTypeHashtag
+		query.Hashtag = *hashtag
+	case model.TimelineTypeList:
+		if listID == nil {
+			return ErrListIDParameterRequired
+		}
+		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
+			return ErrListIDParameterRequired
+		}
+		query.TimelineType = TimelineTypeList
+		// List timeline is handled differently - need to get list members
+		// and fetch their posts
+	case model.TimelineTypeDirect:
+		if err := common.ValidateRequiredParam("username", username); err != nil {
+			return ErrAuthRequiredForDirect
+		}
+		query.TimelineType = TimelineTypeDirect
+	case model.TimelineTypeActor:
+		if actorID == nil {
+			return ErrActorIDParameterRequired
+		}
+		if err := common.ValidateRequiredParam("actorID", *actorID); err != nil {
+			return ErrActorIDParameterRequired
+		}
+		query.TimelineType = TimelineTypeUser // Map to internal user timeline
+		query.AuthorID = *actorID
+	default:
+		return ErrUnsupportedTimelineTypeWithValue(timelineType)
+	}
+
+	return nil
+}
+
+func isAgentObject(obj *model.Object) bool {
+	if obj == nil || obj.Actor == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(obj.Actor.Type), activitypub.ServiceType)
+}
+
+func (r *queryResolver) timelineObjectEdges(ctx context.Context, notesIn []*models.Status, excludeAgents bool) []*model.ObjectEdge {
+	edges := make([]*model.ObjectEdge, 0, len(notesIn))
+	for _, note := range notesIn {
+		obj := r.convertStatusToObject(ctx, note)
+		if excludeAgents && isAgentObject(obj) {
+			continue
+		}
+
+		edges = append(edges, &model.ObjectEdge{
+			Node:   obj,
+			Cursor: model.Cursor(note.StatusID),
+		})
+	}
+	return edges
+}
+
 // Timeline is the resolver for the timeline field.
 func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool, excludeAgents *bool) (*model.ObjectConnection, error) {
 	username := r.optionalAuth(ctx)
 	shouldExcludeAgents := excludeAgents != nil && *excludeAgents
 
-	// Build pagination
-	pagination := interfaces.PaginationOptions{
-		Limit: 20,
-	}
-
-	if first != nil && *first > 0 && *first <= 100 {
-		pagination.Limit = *first
-	}
-
-	if after != nil {
-		pagination.Cursor = string(*after)
-	}
+	pagination := timelinePaginationOptions(first, after)
 
 	// Build query based on timeline type
 	query := &notes.ListNotesQuery{
@@ -67,52 +141,8 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 		query.OnlyMedia = true
 	}
 
-	// Set timeline filter
-	switch timelineType {
-	case model.TimelineTypeHome:
-		if err := common.ValidateRequiredParam("username", username); err != nil {
-			return nil, ErrAuthRequiredForHome
-		}
-		query.TimelineType = TimelineTypeHome
-	case model.TimelineTypePublic:
-		query.TimelineType = StreamNamePublic
-	case model.TimelineTypeLocal:
-		query.TimelineType = common.TimelineLocal
-	case model.TimelineTypeHashtag:
-		if hashtag == nil {
-			return nil, ErrHashtagParameterRequired
-		}
-		if err := common.ValidateRequiredParam("hashtag", *hashtag); err != nil {
-			return nil, ErrHashtagParameterRequired
-		}
-		query.TimelineType = TimelineTypeHashtag
-		query.Hashtag = *hashtag
-	case model.TimelineTypeList:
-		if listID == nil {
-			return nil, ErrListIDParameterRequired
-		}
-		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
-			return nil, ErrListIDParameterRequired
-		}
-		query.TimelineType = TimelineTypeList
-		// List timeline is handled differently - need to get list members
-		// and fetch their posts
-	case model.TimelineTypeDirect:
-		if err := common.ValidateRequiredParam("username", username); err != nil {
-			return nil, ErrAuthRequiredForDirect
-		}
-		query.TimelineType = TimelineTypeDirect
-	case model.TimelineTypeActor:
-		if actorID == nil {
-			return nil, ErrActorIDParameterRequired
-		}
-		if err := common.ValidateRequiredParam("actorID", *actorID); err != nil {
-			return nil, ErrActorIDParameterRequired
-		}
-		query.TimelineType = TimelineTypeUser // Map to internal user timeline
-		query.AuthorID = *actorID
-	default:
-		return nil, ErrUnsupportedTimelineTypeWithValue(timelineType)
+	if err := applyTimelineTypeFilter(username, timelineType, hashtag, listID, actorID, query); err != nil {
+		return nil, err
 	}
 
 	// Get timeline using service
@@ -124,19 +154,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 		return nil, errors.Join(errors.New("failed to get timeline"), err)
 	}
 
-	// Convert to GraphQL connection
-	edges := make([]*model.ObjectEdge, 0, len(result.Notes))
-	for _, note := range result.Notes {
-		obj := r.convertStatusToObject(ctx, note)
-		if shouldExcludeAgents && obj != nil && obj.Actor != nil && strings.EqualFold(strings.TrimSpace(obj.Actor.Type), activitypub.ServiceType) {
-			continue
-		}
-
-		edges = append(edges, &model.ObjectEdge{
-			Node:   obj,
-			Cursor: model.Cursor(note.StatusID),
-		})
-	}
+	edges := r.timelineObjectEdges(ctx, result.Notes, shouldExcludeAgents)
 
 	var startCursor, endCursor *model.Cursor
 	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {

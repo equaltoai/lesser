@@ -1,4 +1,4 @@
-package sync
+package sync //nolint:revive // package name is stable despite stdlib collision warning
 
 import (
 	stdErrors "errors"

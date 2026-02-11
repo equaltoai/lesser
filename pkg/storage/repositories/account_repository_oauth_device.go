@@ -16,6 +16,7 @@ const (
 	oauthDeviceSessionSK = "SESSION"
 )
 
+// CreateOAuthDeviceSession stores a new OAuth device authorization session.
 func (r *AccountRepository) CreateOAuthDeviceSession(ctx context.Context, session *storage.OAuthDeviceSession) error {
 	if r == nil || r.db == nil {
 		return ErrorHandler.HandleCreateError(storage.ErrDatabaseConnectionFailed, "oauth device session", "init")
@@ -64,6 +65,7 @@ func (r *AccountRepository) CreateOAuthDeviceSession(ctx context.Context, sessio
 	return nil
 }
 
+// GetOAuthDeviceSession loads an OAuth device session by its device_code hash.
 func (r *AccountRepository) GetOAuthDeviceSession(ctx context.Context, deviceCodeHash string) (*storage.OAuthDeviceSession, error) {
 	if r == nil || r.db == nil {
 		return nil, ErrorHandler.HandleGetError(storage.ErrDatabaseConnectionFailed, "oauth device session", "init")
@@ -102,6 +104,7 @@ func (r *AccountRepository) GetOAuthDeviceSession(ctx context.Context, deviceCod
 	return out, nil
 }
 
+// GetOAuthDeviceSessionByUserCode loads an OAuth device session by its user_code (used by the web approval flow).
 func (r *AccountRepository) GetOAuthDeviceSessionByUserCode(ctx context.Context, userCode string) (*storage.OAuthDeviceSession, error) {
 	if r == nil || r.db == nil {
 		return nil, ErrorHandler.HandleGetError(storage.ErrDatabaseConnectionFailed, "oauth device session", "init")
@@ -141,6 +144,7 @@ func (r *AccountRepository) GetOAuthDeviceSessionByUserCode(ctx context.Context,
 	return out, nil
 }
 
+// UpdateOAuthDeviceSession persists changes to an existing OAuth device session.
 func (r *AccountRepository) UpdateOAuthDeviceSession(ctx context.Context, session *storage.OAuthDeviceSession) error {
 	if r == nil || r.db == nil {
 		return ErrorHandler.HandleUpdateError(storage.ErrDatabaseConnectionFailed, "oauth device session", "init")
