@@ -195,54 +195,53 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 	}
 
 	// Check Accept header for content negotiation
-	acceptHeader := objectsHeaderValue(ctx, "accept")
+	acceptHeader := strings.ToLower(objectsHeaderValue(ctx, "accept"))
+	wantsHTML := strings.Contains(acceptHeader, "text/html")
 
-	// Only enforce authorized fetch for ActivityPub JSON requests
-	if strings.Contains(acceptHeader, "application/activity+json") ||
-		strings.Contains(acceptHeader, "application/ld+json") ||
-		strings.Contains(acceptHeader, "application/json") {
-		// Check if authorized fetch is enabled
-		if h.authorizedFetchService != nil && h.authorizedFetchService.IsAuthorizedFetchEnabled(runCtx) {
-			logger.Debug("authorized fetch enabled, verifying request",
+	authorizedFetchEnabled := h.authorizedFetchService != nil && h.authorizedFetchService.IsAuthorizedFetchEnabled(runCtx)
+
+	// Enforce authorized fetch whenever this handler would return ActivityPub JSON.
+	// Do not rely on client-controlled Accept header substring checks as a security gate.
+	if authorizedFetchEnabled && !wantsHTML {
+		logger.Debug("authorized fetch enabled, verifying request",
+			zap.String("object_id", objectID),
+			zap.String("request_id", requestID),
+		)
+
+		// Convert AppTheory request to http.Request for signature verification.
+		httpReq, err := h.convertAppTheoryRequest(ctx)
+		if err != nil {
+			logger.Error("failed to convert request for authorized fetch",
 				zap.String("object_id", objectID),
 				zap.String("request_id", requestID),
+				zap.Error(err),
 			)
-
-			// Convert AppTheory request to http.Request for signature verification.
-			httpReq, err := h.convertAppTheoryRequest(ctx)
-			if err != nil {
-				logger.Error("failed to convert request for authorized fetch",
-					zap.String("object_id", objectID),
-					zap.String("request_id", requestID),
-					zap.Error(err),
-				)
-				return objectsJSONError(http.StatusBadRequest, "malformed request"), nil
-			}
-
-			// Verify authorized fetch
-			_, err = h.authorizedFetchService.VerifyAuthorizedFetch(runCtx, httpReq)
-			if err != nil {
-				// Check if signature is missing vs invalid
-				if strings.Contains(err.Error(), "missing signature") {
-					logger.Debug("unauthorized request - missing signature",
-						zap.String("object_id", objectID),
-						zap.String("request_id", requestID),
-					)
-					return objectsJSONError(http.StatusUnauthorized, "signature required for authorized fetch"), nil
-				}
-				logger.Debug("authorized fetch verification failed",
-					zap.String("object_id", objectID),
-					zap.String("request_id", requestID),
-					zap.Error(err),
-				)
-				return objectsJSONError(http.StatusForbidden, "signature verification failed"), nil
-			}
-
-			logger.Debug("authorized fetch verification successful",
-				zap.String("object_id", objectID),
-				zap.String("request_id", requestID),
-			)
+			return objectsJSONError(http.StatusBadRequest, "malformed request"), nil
 		}
+
+		// Verify authorized fetch
+		_, err = h.authorizedFetchService.VerifyAuthorizedFetch(runCtx, httpReq)
+		if err != nil {
+			// Check if signature is missing vs invalid
+			if strings.Contains(err.Error(), "missing signature") {
+				logger.Debug("unauthorized request - missing signature",
+					zap.String("object_id", objectID),
+					zap.String("request_id", requestID),
+				)
+				return objectsJSONError(http.StatusUnauthorized, "signature required for authorized fetch"), nil
+			}
+			logger.Debug("authorized fetch verification failed",
+				zap.String("object_id", objectID),
+				zap.String("request_id", requestID),
+				zap.Error(err),
+			)
+			return objectsJSONError(http.StatusForbidden, "signature verification failed"), nil
+		}
+
+		logger.Debug("authorized fetch verification successful",
+			zap.String("object_id", objectID),
+			zap.String("request_id", requestID),
+		)
 	}
 
 	logger.Info("fetching object",
@@ -274,7 +273,17 @@ func (h *Handler) HandleGetObject(ctx *apptheory.Context) (*apptheory.Response, 
 	}
 
 	// Return HTML for browsers
-	if strings.Contains(acceptHeader, "text/html") {
+	if wantsHTML {
+		if authorizedFetchEnabled && !objectsIsPubliclyAddressed(objInterface) {
+			// When Authorized Fetch is enabled, do not expose HTML renderings for non-public objects.
+			// This avoids leaking followers-only (or otherwise restricted) content to unauthenticated browsers.
+			logger.Debug("suppressing HTML response for non-public object while authorized fetch is enabled",
+				zap.String("object_id", objectID),
+				zap.String("request_id", requestID),
+			)
+			return objectsJSONError(http.StatusNotFound, fmt.Sprintf("object %s not found", objectID)), nil
+		}
+
 		logger.Debug("returning HTML representation",
 			zap.String("object_id", objectID),
 			zap.String("request_id", requestID),
@@ -882,6 +891,77 @@ func objectsHeaderValue(ctx *apptheory.Context, key string) string {
 		return ""
 	}
 	return values[0]
+}
+
+func objectsIsPubliclyAddressed(obj any) bool {
+	if obj == nil {
+		return false
+	}
+
+	if note, ok := obj.(*activitypub.Note); ok {
+		return objectsRecipientsContainPublic(note.To) || objectsRecipientsContainPublic(note.CC)
+	}
+
+	if activity, ok := obj.(*activitypub.Activity); ok {
+		return objectsRecipientsContainPublic(activity.To) || objectsRecipientsContainPublic(activity.CC)
+	}
+
+	if objMap, ok := obj.(map[string]any); ok {
+		to := objectsStringSliceFromAny(objMap["to"])
+		cc := objectsStringSliceFromAny(objMap["cc"])
+		return objectsRecipientsContainPublic(to) || objectsRecipientsContainPublic(cc)
+	}
+
+	body, err := json.Marshal(obj)
+	if err != nil {
+		return false
+	}
+
+	var addressing struct {
+		To []string `json:"to"`
+		CC []string `json:"cc"`
+	}
+	if err := json.Unmarshal(body, &addressing); err != nil {
+		return false
+	}
+
+	return objectsRecipientsContainPublic(addressing.To) || objectsRecipientsContainPublic(addressing.CC)
+}
+
+func objectsRecipientsContainPublic(recipients []string) bool {
+	for _, recipient := range recipients {
+		if strings.TrimSpace(recipient) == activitypub.PublicAddress {
+			return true
+		}
+	}
+	return false
+}
+
+func objectsStringSliceFromAny(value any) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []any:
+		values := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				s = strings.TrimSpace(s)
+				if s == "" {
+					continue
+				}
+				values = append(values, s)
+			}
+		}
+		return values
+	case string:
+		value := strings.TrimSpace(v)
+		if value == "" {
+			return nil
+		}
+		return []string{value}
+	default:
+		return nil
+	}
 }
 
 func objectsRequestID(ctx *apptheory.Context, prefix string) string {

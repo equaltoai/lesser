@@ -39,7 +39,7 @@ if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
     pip install -r "$SCRIPT_DIR/requirements.txt"
 else
     echo -e "${YELLOW}⚠ requirements.txt not found, installing basic dependencies...${NC}"
-    pip install requests websocket-client cryptography Pillow jsonschema pytest python-dateutil urllib3 python-dotenv
+    pip install requests websocket-client cryptography "Pillow>=12.1.1" jsonschema pytest python-dateutil urllib3 python-dotenv
 fi
 
 # Verify installation

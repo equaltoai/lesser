@@ -15,6 +15,7 @@ type AuthorizationCode struct {
 	// Core fields from legacy storage.AuthorizationCode
 	Code          string    `theorydb:"attr:code" json:"Code"`
 	ClientID      string    `theorydb:"attr:clientID" json:"ClientID"`
+	RedirectURI   string    `theorydb:"attr:redirectURI" json:"RedirectURI"`
 	Username      string    `theorydb:"attr:username" json:"Username"`
 	CodeChallenge string    `theorydb:"attr:codeChallenge" json:"CodeChallenge"`
 	ExpiresAt     time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`

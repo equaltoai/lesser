@@ -599,6 +599,7 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			*d = storagemodels.AuthorizationCode{
 				Code:          code,
 				ClientID:      "client-1",
+				RedirectURI:   "https://example.com/callback",
 				Username:      "alice",
 				CodeChallenge: "",
 				ExpiresAt:     time.Now().Add(10 * time.Minute),

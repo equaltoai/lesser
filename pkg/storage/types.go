@@ -250,6 +250,7 @@ type Session struct {
 type AuthorizationCode struct {
 	Code          string    `json:"code"`
 	ClientID      string    `json:"client_id"`
+	RedirectURI   string    `json:"redirect_uri"`
 	Username      string    `json:"username"`
 	CodeChallenge string    `json:"code_challenge"`
 	ExpiresAt     time.Time `json:"expires_at"`

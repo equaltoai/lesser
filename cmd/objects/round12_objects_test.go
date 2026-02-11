@@ -179,6 +179,45 @@ func TestHandleGetObject_Round12(t *testing.T) {
 		require.NotNil(t, resp)
 		require.Equal(t, 403, resp.Status)
 	})
+
+	t.Run("authorized fetch missing signature returns 401 when accept is missing", func(t *testing.T) {
+		h := &Handler{
+			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true, verifyErr: errors.New("missing signature")},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"host": {"example.com"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 401, resp.Status)
+	})
+
+	t.Run("authorized fetch missing signature returns 401 for accept */*", func(t *testing.T) {
+		h := &Handler{
+			instanceRepo:           &fakeInstanceRepo{state: &storageModels.InstanceState{Locked: false}},
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true, verifyErr: errors.New("missing signature")},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method: http.MethodGet,
+				Path:   "/objects/123",
+				Headers: map[string][]string{
+					"accept": {"*/*"},
+					"host":   {"example.com"},
+				},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 401, resp.Status)
+	})
 }
 
 func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
@@ -276,6 +315,65 @@ func TestHandleGetObject_FetchResponses_Round12(t *testing.T) {
 		require.Contains(t, body, "<!DOCTYPE html>")
 		require.Contains(t, body, "Content Warning")
 		require.Contains(t, body, "@alice")
+	})
+
+	t.Run("authorized fetch enabled suppresses HTML for non-public objects", func(t *testing.T) {
+		note := &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/objects/123",
+				Type: "Note",
+			},
+			Content:      "secret",
+			AttributedTo: "https://example.com/users/alice",
+		}
+
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             &fakeObjectRepo{obj: note},
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 404, resp.Status)
+	})
+
+	t.Run("authorized fetch enabled still allows HTML for public objects", func(t *testing.T) {
+		note := &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/objects/123",
+				Type: "Note",
+				To:   []string{activitypub.PublicAddress},
+			},
+			Content:      "hello",
+			AttributedTo: "https://example.com/users/alice",
+		}
+
+		h := &Handler{
+			instanceRepo:           instanceRepo,
+			objectRepo:             &fakeObjectRepo{obj: note},
+			authorizedFetchService: &fakeAuthorizedFetch{enabled: true},
+		}
+		resp, err := h.HandleGetObject(&apptheory.Context{
+			Request: apptheory.Request{
+				Method:  http.MethodGet,
+				Path:    "/objects/123",
+				Headers: map[string][]string{"accept": {"text/html"}},
+			},
+			Params: map[string]string{"id": "123"},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, 200, resp.Status)
+		require.Equal(t, []string{"text/html; charset=utf-8"}, resp.Headers["content-type"])
+		require.Contains(t, string(resp.Body), "<!DOCTYPE html>")
 	})
 
 	t.Run("activitypub json response", func(t *testing.T) {
