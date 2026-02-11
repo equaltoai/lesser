@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -33,6 +37,14 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	cmd, quoteTargetID, err := r.buildCreateNoteCommand(username, input)
 	if err != nil {
 		return nil, err
+	}
+
+	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil && claims.IsAgent {
+		attribution, err := r.buildAgentPostAttribution(ctx, claims, input.AgentAttribution)
+		if err != nil {
+			return nil, err
+		}
+		cmd.AgentAttribution = attribution
 	}
 
 	// Handle mentions and tags
@@ -113,6 +125,129 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	return payload, nil
+}
+
+const (
+	agentAttributionMaxMemoryCitations = 20
+	agentAttributionMaxTriggerDetails  = 500
+
+	agentAttributionDefaultTriggerType = "manual"
+	agentAttributionUnknownVersion     = "unknown"
+)
+
+var allowedAgentAttributionTriggerTypes = map[string]struct{}{
+	"scheduled":     {},
+	"mention":       {},
+	"hashtag_watch": {},
+	"manual":        {},
+}
+
+func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims *auth.Claims, input *model.AgentPostAttributionInput) (*activitypub.AgentPostAttribution, error) {
+	if claims == nil || !claims.IsAgent {
+		return nil, nil
+	}
+
+	if r.Storage == nil || r.Storage.User() == nil {
+		return nil, ErrStorageUnavailable
+	}
+
+	agentUser, _ := r.Storage.User().GetUser(ctx, claims.Username)
+	if agentUser == nil || !agentUser.IsAgent {
+		return nil, apperrors.NewAuthError(apperrors.CodeForbidden, "agent attribution is only available for agent accounts")
+	}
+
+	triggerType := agentAttributionDefaultTriggerType
+	triggerDetails := ""
+	var memoryCitations []string
+
+	if input != nil {
+		if t := strings.ToLower(strings.TrimSpace(derefString(input.TriggerType))); t != "" {
+			triggerType = t
+		}
+
+		triggerDetails = strings.TrimSpace(derefString(input.TriggerDetails))
+		if triggerDetails != "" {
+			if err := common.ValidateStringLength("trigger_details", triggerDetails, 0, agentAttributionMaxTriggerDetails); err != nil {
+				return nil, common.ValidationError{Field: "agentAttribution.triggerDetails", Message: "is too long"}
+			}
+		}
+
+		memoryCitations = normalizeMemoryCitations(input.MemoryCitations)
+		if len(memoryCitations) > agentAttributionMaxMemoryCitations {
+			return nil, common.ValidationError{Field: "agentAttribution.memoryCitations", Message: "has too many entries"}
+		}
+		for _, id := range memoryCitations {
+			if err := common.ValidateStatusID(id); err != nil {
+				return nil, common.ValidationError{Field: "agentAttribution.memoryCitations", Message: "contains an invalid status id"}
+			}
+		}
+	}
+
+	if _, ok := allowedAgentAttributionTriggerTypes[triggerType]; !ok {
+		return nil, common.ValidationError{Field: "agentAttribution.triggerType", Message: "must be one of: scheduled, mention, hashtag_watch, manual"}
+	}
+
+	delegatedBy := strings.TrimSpace(claims.DelegatedBy)
+	if delegatedBy == "" {
+		delegatedBy = strings.TrimSpace(agentUser.AgentOwner)
+	}
+
+	modelVersion := strings.TrimSpace(agentUser.AgentVersion)
+	if modelVersion == "" {
+		modelVersion = agentAttributionUnknownVersion
+	}
+
+	return &activitypub.AgentPostAttribution{
+		TriggerType:     triggerType,
+		TriggerDetails:  triggerDetails,
+		MemoryCitations: memoryCitations,
+		DelegatedBy:     delegatedBy,
+		Scopes:          append([]string(nil), claims.Scopes...),
+		Constraints:     buildAgentCapabilityConstraints(agentUser.AgentCapabilities),
+		ModelVersion:    modelVersion,
+	}, nil
+}
+
+func normalizeMemoryCitations(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		key := strings.ToLower(raw)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, raw)
+	}
+
+	return out
+}
+
+func buildAgentCapabilityConstraints(caps *agents.Capabilities) []string {
+	if caps == nil {
+		return nil
+	}
+
+	constraints := make([]string, 0, 4)
+	if caps.MaxPostsPerHour > 0 {
+		constraints = append(constraints, "max_posts_per_hour:"+strconv.Itoa(caps.MaxPostsPerHour))
+	}
+	if caps.RequiresApproval {
+		constraints = append(constraints, "requires_approval")
+	}
+	if len(caps.RestrictedDomains) > 0 {
+		constraints = append(constraints, "restricted_domains:"+strings.Join(caps.RestrictedDomains, ","))
+	}
+
+	return constraints
 }
 
 func (r *mutationResolver) attachQuoteToTarget(ctx context.Context, username, targetStatusID string, quoteStatus *models.Status) error {

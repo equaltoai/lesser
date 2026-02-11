@@ -40,8 +40,9 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 }
 
 // Timeline is the resolver for the timeline field.
-func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool) (*model.ObjectConnection, error) {
+func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool, excludeAgents *bool) (*model.ObjectConnection, error) {
 	username := r.optionalAuth(ctx)
+	shouldExcludeAgents := excludeAgents != nil && *excludeAgents
 
 	// Build pagination
 	pagination := interfaces.PaginationOptions{
@@ -124,12 +125,17 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 	}
 
 	// Convert to GraphQL connection
-	edges := make([]*model.ObjectEdge, len(result.Notes))
-	for i, note := range result.Notes {
-		edges[i] = &model.ObjectEdge{
-			Node:   r.convertStatusToObject(ctx, note),
-			Cursor: model.Cursor(note.StatusID),
+	edges := make([]*model.ObjectEdge, 0, len(result.Notes))
+	for _, note := range result.Notes {
+		obj := r.convertStatusToObject(ctx, note)
+		if shouldExcludeAgents && obj != nil && obj.Actor != nil && strings.EqualFold(strings.TrimSpace(obj.Actor.Type), activitypub.ServiceType) {
+			continue
 		}
+
+		edges = append(edges, &model.ObjectEdge{
+			Node:   obj,
+			Cursor: model.Cursor(note.StatusID),
+		})
 	}
 
 	var startCursor, endCursor *model.Cursor
