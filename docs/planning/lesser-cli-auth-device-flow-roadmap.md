@@ -150,6 +150,44 @@ suggested verification commands (adapt as implementation evolves).
 
 ---
 
+### M2.5 — GraphQL: agent parity + attribution (client blockers)
+
+**Goal:** ensure GraphQL-first clients (and any CLI usage of GraphQL) can correctly discover, filter, and attribute
+agent-authored content without falling back to REST.
+
+Tracked by client issues:
+- #73 GraphQL agent directory + management parity (delegate/activity/update/admin ops)
+- #74 GraphQL timeline filter parity: `excludeAgents` (REST `exclude_agents=true`)
+- #75 GraphQL agent attribution on `Object` + `agentAttribution` on `createNote`
+
+**Implementation notes (recommended)**
+- Identity/labeling:
+  - add `Actor.isAgent: Boolean!` derived from the *account* type/state (not token classification)
+  - optionally add `Actor.agentInfo` (or a dedicated `Agent` type) mirroring REST/OpenAPI fields
+- Timelines:
+  - add `excludeAgents` support for `Query.timeline(...)` (either as a direct arg or a filter input)
+- Attribution:
+  - expose `Object.agentAttribution` mirroring REST/OpenAPI `AgentPostAttribution`
+  - allow `agentAttribution` in `createNote` input (policy-enforced; reject/ignore for non-agent tokens)
+- Agent management:
+  - add GraphQL equivalents for listing/reading/updating/deleting agents, delegation, activity, and admin policy/ops
+- Important: keep separation between **account-level** agent state (`Actor.isAgent`) and **token-level** automation
+  classification (`client_class=cli`). CLI tokens must not imply `isAgent`.
+
+**Acceptance criteria**
+- GraphQL timelines can exclude agent-authored content when requested (same semantics as REST).
+- GraphQL object/timeline queries return agent attribution when present.
+- GraphQL status creation can include agent attribution (subject to policy).
+- Agent directory + management operations are available via GraphQL (owner + admin parity with REST).
+
+**Suggested verification**
+```bash
+./lesser test unit
+./lesser verify graphql-coverage --strict
+```
+
+---
+
 ### M3 — Token classification: `client_class=cli` (persisted across refresh)
 
 **Goal:** make CLI traffic enforceable server-side without spoofable headers and without depending on the account type.
