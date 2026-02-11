@@ -168,15 +168,31 @@ func runAuthLogout(argv []string) error {
 	fs := flag.NewFlagSet("lesser auth logout", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	var baseURL string
-	fs.StringVar(&baseURL, "base-url", os.Getenv("LESSER_BASE_URL"), "instance base url (env: LESSER_BASE_URL)")
+	var args authFlags
+	fs.StringVar(&args.BaseURL, "base-url", os.Getenv("LESSER_BASE_URL"), "instance base url (env: LESSER_BASE_URL)")
+	fs.StringVar(&args.SecretFile, "secret-file", os.Getenv("LESSER_AUTH_SECRET_FILE"), "path to auth secret file (env: LESSER_AUTH_SECRET_FILE)")
+	fs.BoolVar(&args.Debug, "debug", false, "enable debug logging")
 	if err := fs.Parse(argv); err != nil {
 		return err
 	}
 
-	baseURL, err := normalizeBaseURL(baseURL)
+	baseURL, err := normalizeBaseURL(args.BaseURL)
 	if err != nil {
 		return err
+	}
+
+	// Best-effort token revocation (server-side logout). Failures do not block local logout.
+	if secret, err := readAuthSecret(args.SecretFile); err != nil {
+		args.debugf("unable to read auth secret: %v", err)
+	} else {
+		key := deriveAuthKey(baseURL, secret)
+		if session, err := readAuthSession(baseURL, key); err != nil {
+			args.debugf("unable to read auth session for revocation: %v", err)
+		} else if session != nil && strings.TrimSpace(session.RefreshToken) != "" {
+			if err := revokeRefreshToken(context.Background(), baseURL, session.ClientID, session.RefreshToken); err != nil {
+				args.debugf("unable to revoke refresh token: %v", err)
+			}
+		}
 	}
 
 	removed, err := deleteAuthSession(baseURL)

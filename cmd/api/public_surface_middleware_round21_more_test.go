@@ -34,6 +34,7 @@ func TestAPIRequestIsPublic_Round21(t *testing.T) {
 
 		{"apps registration is public", http.MethodPost, "/api/v1/apps", true},
 		{"oauth token is public", http.MethodPost, "/oauth/token", true},
+		{"oauth revoke is public", http.MethodPost, "/oauth/revoke", true},
 		{"wallet login is public", http.MethodPost, "/auth/wallet/login", true},
 		{"post search statuses is public", http.MethodPost, "/api/v1/search/statuses", true},
 		{"notifications not public", http.MethodPost, "/api/v1/notifications", false},
@@ -47,4 +48,3 @@ func TestAPIRequestIsPublic_Round21(t *testing.T) {
 		})
 	}
 }
-

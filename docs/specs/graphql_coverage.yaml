@@ -1527,6 +1527,10 @@ routes:
       path: /oauth/token
       policy: rest_only
       exemptedBy: oauth_oidc
+    - method: POST
+      path: /oauth/revoke
+      policy: rest_only
+      exemptedBy: oauth_oidc
     - method: GET
       path: /robots.txt
       policy: rest_only

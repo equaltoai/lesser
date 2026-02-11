@@ -77,6 +77,7 @@ Options:
 - `device authorization denied`: restart `./lesser auth login` and approve the consent prompt.
 - `refresh token invalid; re-auth required`: run `./lesser auth login` again (tokens were revoked/expired).
 - Clear local session: `./lesser auth logout --base-url https://dev.example.com`.
+  - `logout` attempts best-effort server-side token revocation when the refresh token can be decrypted locally.
 
 ## Server-side safety rails for CLI tokens
 

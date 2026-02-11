@@ -13,6 +13,7 @@ import (
 
 func TestAuthCommands_DeviceFlow_EndToEnd(t *testing.T) {
 	var appCalls atomic.Int32
+	var revokeCalls atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -55,6 +56,14 @@ func TestAuthCommands_DeviceFlow_EndToEnd(t *testing.T) {
 			require.Regexp(t, `^Bearer\s+\S+`, r.Header.Get("Authorization"))
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"username":"alice"}`))
+		case "/oauth/revoke":
+			revokeCalls.Add(1)
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, "refresh_token", r.FormValue("token_type_hint"))
+			require.Equal(t, "client-1", r.FormValue("client_id"))
+			require.NotEmpty(t, r.FormValue("token"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -112,6 +121,7 @@ func TestAuthCommands_DeviceFlow_EndToEnd(t *testing.T) {
 	require.NoError(t, runAuth([]string{"device", "poll", "--base-url", baseURL, "--client-id", "client-1", "--device-code", "dev-1", "--expires-in", "600", "--interval", "0"}))
 
 	require.NoError(t, runAuth([]string{"logout", "--base-url", baseURL}))
+	require.Equal(t, int32(1), revokeCalls.Load())
 	require.NoError(t, runAuth([]string{"logout", "--base-url", baseURL}))
 	require.NoError(t, runAuth([]string{"status", "--base-url", baseURL}))
 	require.Error(t, runAuth([]string{"whoami", "--base-url", baseURL}))

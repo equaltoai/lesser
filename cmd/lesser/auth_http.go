@@ -218,6 +218,18 @@ func refreshAccessToken(ctx context.Context, baseURL, clientID, refreshToken str
 	return &resp, nil
 }
 
+func revokeRefreshToken(ctx context.Context, baseURL, clientID, refreshToken string) error {
+	form := url.Values{}
+	form.Set("token", strings.TrimSpace(refreshToken))
+	form.Set("token_type_hint", "refresh_token")
+	if id := strings.TrimSpace(clientID); id != "" {
+		form.Set("client_id", id)
+	}
+
+	var resp map[string]any
+	return doFormPOST(ctx, baseURL, "/oauth/revoke", form, &resp)
+}
+
 type verifyCredentialsResponse struct {
 	Username string `json:"username"`
 }

@@ -17305,6 +17305,46 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /oauth/revoke:
+        post:
+            operationId: post_oauth_revoke
+            tags:
+                - oauth
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Map7d31df2b'
+                    headers:
+                        X-RateLimit-Limit:
+                            description: Request limit per window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Remaining:
+                            description: Requests remaining in the current window.
+                            schema:
+                                type: integer
+                                format: int32
+                        X-RateLimit-Reset:
+                            description: Unix timestamp (seconds) when the current window resets.
+                            schema:
+                                type: integer
+                                format: int64
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "429":
+                    $ref: '#/components/responses/TooManyRequests'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthRevokeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /oauth/token:
         post:
             operationId: post_oauth_token
