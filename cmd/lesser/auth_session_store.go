@@ -63,7 +63,15 @@ func deriveAuthKey(baseURL, secret string) []byte {
 	if secret != "" {
 		material = secret
 	} else {
-		material = machineDerivedSecret()
+		if keyringEnabled() {
+			if krSecret, err := getOrCreateKeyringSecret(baseURL); err == nil && strings.TrimSpace(krSecret) != "" {
+				material = krSecret
+			} else {
+				material = machineDerivedSecret()
+			}
+		} else {
+			material = machineDerivedSecret()
+		}
 	}
 
 	sum := sha256.Sum256([]byte(material + "|" + baseURL))

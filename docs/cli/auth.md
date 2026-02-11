@@ -70,6 +70,9 @@ Options:
 
 - `LESSER_AUTH_SECRET`: stable secret string used to derive the local encryption key.
 - `LESSER_AUTH_SECRET_FILE` / `--secret-file`: read the secret from a file path.
+- `LESSER_AUTH_KEYRING`: when set (for example `1`), the CLI will try to use an OS keyring-backed secret for local
+  encryption (per `base_url`). If unavailable, it falls back to the machine-derived secret. For headless/CI,
+  prefer `LESSER_AUTH_SECRET` for portability.
 
 ## Troubleshooting
 
