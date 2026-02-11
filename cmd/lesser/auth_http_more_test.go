@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -162,4 +163,253 @@ func TestExchangeDeviceCodeForToken_ErrorBranches(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, token)
 	require.Nil(t, oauthErr)
+}
+
+func TestPollDeviceToken_UsesDeviceStreamWhenAvailable_Round23(t *testing.T) {
+	var tokenCalls atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/streaming/oauth/device":
+			require.Equal(t, "dev-1", r.Header.Get("X-Lesser-Device-Code"))
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: oauth.device\n"))
+			_, _ = w.Write([]byte("data: {\"status\":\"pending\"}\n\n"))
+			_, _ = w.Write([]byte("event: oauth.device\n"))
+			_, _ = w.Write([]byte("data: {\"status\":\"approved\"}\n\n"))
+		case "/oauth/token":
+			tokenCalls.Add(1)
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, "urn:ietf:params:oauth:grant-type:device_code", r.FormValue("grant_type"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"access-1","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-1","scope":"read write","created_at":1}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	token, err := pollDeviceToken(context.Background(), srv.URL, "client-1", "dev-1", time.Second, time.Minute, nil)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.Equal(t, "access-1", token.AccessToken)
+	require.Equal(t, int32(1), tokenCalls.Load())
+}
+
+func TestWaitForDeviceAuthorizationStream_NotSupported_Round23(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/streaming/oauth/device" {
+			http.NotFound(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	status, supported, err := waitForDeviceAuthorizationStream(context.Background(), srv.URL, "dev-1", time.Second, &authFlags{Debug: true})
+	require.NoError(t, err)
+	require.False(t, supported)
+	require.Empty(t, status)
+}
+
+func TestWaitForDeviceAuthorizationStream_BadStatus_Round23(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/streaming/oauth/device" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	t.Cleanup(srv.Close)
+
+	_, supported, err := waitForDeviceAuthorizationStream(context.Background(), srv.URL, "dev-1", time.Second, &authFlags{Debug: true})
+	require.Error(t, err)
+	require.True(t, supported)
+}
+
+func TestDeviceAuthorizationStreamStatusFromData_Round23(t *testing.T) {
+	status, ok := deviceAuthorizationStreamStatusFromData("")
+	require.False(t, ok)
+	require.Empty(t, status)
+
+	status, ok = deviceAuthorizationStreamStatusFromData("not-json")
+	require.False(t, ok)
+	require.Empty(t, status)
+
+	status, ok = deviceAuthorizationStreamStatusFromData(`{"status":"pending"}`)
+	require.False(t, ok)
+	require.Empty(t, status)
+
+	status, ok = deviceAuthorizationStreamStatusFromData(`{"status":"approved"}`)
+	require.True(t, ok)
+	require.Equal(t, "approved", status)
+}
+
+func TestPollDeviceToken_StreamApproved_RetriesTokenOnce_Round23(t *testing.T) {
+	var tokenCalls atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/streaming/oauth/device":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: oauth.device\n"))
+			_, _ = w.Write([]byte("data: {\"status\":\"approved\"}\n\n"))
+		case "/oauth/token":
+			call := tokenCalls.Add(1)
+			require.NoError(t, r.ParseForm())
+			w.Header().Set("Content-Type", "application/json")
+			if call == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"authorization_pending","error_description":"wait"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"access_token":"access-1","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-1","scope":"read write","created_at":1}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	token, err := pollDeviceToken(context.Background(), srv.URL, "client-1", "dev-1", time.Second, time.Minute, &authFlags{Debug: true})
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.Equal(t, int32(2), tokenCalls.Load())
+}
+
+func TestPollDeviceToken_StreamEOF_FallsBackToPolling_Round23(t *testing.T) {
+	var streamCalls atomic.Int32
+	var tokenCalls atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/streaming/oauth/device":
+			streamCalls.Add(1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: oauth.device\n"))
+			_, _ = w.Write([]byte("data: {\"status\":\"pending\"}\n\n"))
+		case "/oauth/token":
+			tokenCalls.Add(1)
+			require.NoError(t, r.ParseForm())
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"access-1","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-1","scope":"read write","created_at":1}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	token, err := pollDeviceToken(context.Background(), srv.URL, "client-1", "dev-1", time.Second, time.Minute, &authFlags{Debug: true})
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.Equal(t, int32(1), streamCalls.Load())
+	require.Equal(t, int32(1), tokenCalls.Load())
+}
+
+func TestWaitForDeviceAuthorizationStream_InvalidBaseURL_Round23(t *testing.T) {
+	_, supported, err := waitForDeviceAuthorizationStream(context.Background(), "http://%", "dev-1", time.Second, &authFlags{Debug: true})
+	require.Error(t, err)
+	require.False(t, supported)
+}
+
+func TestWaitForDeviceAuthorizationStream_RequestFailure_Round23(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv.Close()
+
+	_, supported, err := waitForDeviceAuthorizationStream(context.Background(), srv.URL, "dev-1", time.Second, &authFlags{Debug: true})
+	require.Error(t, err)
+	require.False(t, supported)
+}
+
+func TestPollDeviceToken_StreamApproved_UnknownTokenError_Round23(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/streaming/oauth/device":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: oauth.device\n"))
+			_, _ = w.Write([]byte("data: {\"status\":\"approved\"}\n\n"))
+		case "/oauth/token":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"weird","error_description":"nope"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := pollDeviceToken(context.Background(), srv.URL, "client-1", "dev-1", time.Second, time.Minute, &authFlags{Debug: true})
+	require.Error(t, err)
+	require.Equal(t, "nope (weird)", err.Error())
+}
+
+func TestWaitForDeviceAuthorizationStream_MultilineData_DefaultTTL_Round23(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/streaming/oauth/device" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: oauth.device\n"))
+		_, _ = w.Write([]byte("data: {\"status\":\n"))
+		_, _ = w.Write([]byte("data: \"approved\"}\n\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	status, supported, err := waitForDeviceAuthorizationStream(context.Background(), srv.URL, "dev-1", 0, &authFlags{Debug: true})
+	require.NoError(t, err)
+	require.True(t, supported)
+	require.Equal(t, "approved", status)
+}
+
+func TestExchangeDeviceCodeWithRetries_ErrorMappings_Round23(t *testing.T) {
+	cases := []struct {
+		name string
+		resp string
+		want string
+	}{
+		{name: "access_denied", resp: `{"error":"access_denied","error_description":"no"}`, want: oauthErrorDeviceAuthDenied},
+		{name: "expired_token", resp: `{"error":"expired_token","error_description":"no"}`, want: oauthErrorDeviceCodeExpired},
+		{name: "invalid_grant", resp: `{"error":"invalid_grant","error_description":"no"}`, want: oauthErrorDeviceAuthInvalid},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/oauth/token" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(tc.resp))
+			}))
+			t.Cleanup(srv.Close)
+
+			_, err := exchangeDeviceCodeWithRetries(context.Background(), srv.URL, "client-1", "dev-1")
+			require.Error(t, err)
+			require.Equal(t, tc.want, err.Error())
+		})
+	}
+}
+
+func TestPollDeviceToken_StreamDenied_Round23(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/streaming/oauth/device":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: oauth.device\n"))
+			_, _ = w.Write([]byte("data: {\"status\":\"denied\"}\n\n"))
+		case "/oauth/token":
+			t.Fatal("unexpected token exchange call")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := pollDeviceToken(context.Background(), srv.URL, "client-1", "dev-1", time.Second, time.Minute, &authFlags{Debug: true})
+	require.Error(t, err)
+	require.Equal(t, oauthErrorDeviceAuthDenied, err.Error())
 }

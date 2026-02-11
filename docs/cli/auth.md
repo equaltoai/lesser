@@ -2,7 +2,7 @@
 
 Lesser’s CLI authenticates via an OAuth **device authorization** flow so it works in headless environments and
 does not need to handle wallets locally. Wallet login + consent happen in the web UI, and the CLI polls until
-the user approves.
+the user approves (prefers an SSE completion stream when available; falls back to polling).
 
 ## Quickstart
 

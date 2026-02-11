@@ -14935,6 +14935,35 @@ paths:
                 - cmd/sse/main.go
             x-oauth-scopes:
                 - read
+    /api/v1/streaming/oauth/device:
+        get:
+            operationId: get_api_v1_streaming_oauth_device
+            tags:
+                - streaming
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: SSE stream
+                    content:
+                        text/event-stream:
+                            schema:
+                                type: string
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+                "503":
+                    $ref: '#/components/responses/ServiceUnavailable'
+            x-lesser-lambda: sse
+            x-lesser-routeSources:
+                - cmd/sse/main.go
+            x-oauth-scopes:
+                - read
     /api/v1/streaming/public:
         get:
             operationId: get_api_v1_streaming_public
