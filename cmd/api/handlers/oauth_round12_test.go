@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,20 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
+
+func round12DecodeJWTClaims(t *testing.T, tokenString string) auth.Claims {
+	t.Helper()
+
+	parts := strings.Split(tokenString, ".")
+	require.Len(t, parts, 3)
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	require.NoError(t, err)
+
+	var claims auth.Claims
+	require.NoError(t, json.Unmarshal(payloadBytes, &claims))
+	return claims
+}
 
 func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 	cfg := round11TestConfig()
@@ -728,5 +743,35 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
+
+		claims1 := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, auth.ClientClassCLI, claims1.ClientClass)
+		require.NotEmpty(t, claims1.SessionID)
+
+		// The test harness does not persist Create() mutations, so seed the refresh token lookup explicitly.
+		if state.refreshTokensByToken == nil {
+			state.refreshTokensByToken = map[string]storagemodels.RefreshToken{}
+		}
+		state.refreshTokensByToken[body.RefreshToken] = storagemodels.RefreshToken{
+			Token:       body.RefreshToken,
+			ClientID:    "client-1",
+			Username:    "alice",
+			ExpiresAt:   time.Now().Add(1 * time.Hour),
+			Scopes:      []string{auth.ScopeRead, auth.ScopeWrite},
+			CreatedAt:   time.Now().Add(-1 * time.Minute),
+			ClientClass: auth.ClientClassCLI,
+			SessionID:   claims1.SessionID,
+		}
+
+		ctxRefresh := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token="+url.QueryEscape(body.RefreshToken)+"&client_id=client-1"))
+		respRefresh := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctxRefresh))
+		var refreshBody apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(respRefresh.Body, &refreshBody))
+		require.NotEmpty(t, refreshBody.AccessToken)
+		require.NotEmpty(t, refreshBody.RefreshToken)
+
+		refreshClaims := round12DecodeJWTClaims(t, refreshBody.AccessToken)
+		require.Equal(t, auth.ClientClassCLI, refreshClaims.ClientClass)
+		require.Equal(t, claims1.SessionID, refreshClaims.SessionID)
 	})
 }
