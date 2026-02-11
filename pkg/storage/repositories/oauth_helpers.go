@@ -519,12 +519,14 @@ func (h *OAuthHelper) DeleteAuthorizationCodeGeneric(ctx context.Context, code s
 func (h *OAuthHelper) CreateRefreshTokenGeneric(ctx context.Context, token *storage.RefreshToken) error {
 	// Create DynamORM model
 	model := &models.RefreshToken{
-		Token:     token.Token,
-		ClientID:  token.ClientID,
-		Username:  token.Username,
-		ExpiresAt: token.ExpiresAt,
-		Scopes:    token.Scopes,
-		CreatedAt: time.Now(),
+		Token:       token.Token,
+		ClientID:    token.ClientID,
+		Username:    token.Username,
+		ExpiresAt:   token.ExpiresAt,
+		Scopes:      token.Scopes,
+		ClientClass: token.ClientClass,
+		SessionID:   token.SessionID,
+		CreatedAt:   time.Now(),
 	}
 
 	// BeforeCreate will set up keys and TTL
@@ -580,11 +582,13 @@ func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) 
 
 	// Convert to storage model
 	result := &storage.RefreshToken{
-		Token:     model.Token,
-		ClientID:  model.ClientID,
-		Username:  model.Username,
-		ExpiresAt: model.ExpiresAt,
-		Scopes:    model.Scopes,
+		Token:       model.Token,
+		ClientID:    model.ClientID,
+		Username:    model.Username,
+		ExpiresAt:   model.ExpiresAt,
+		Scopes:      model.Scopes,
+		ClientClass: model.ClientClass,
+		SessionID:   model.SessionID,
 	}
 
 	h.logger.Debug("retrieved refresh token",

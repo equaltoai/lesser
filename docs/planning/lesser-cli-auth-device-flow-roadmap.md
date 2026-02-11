@@ -155,6 +155,9 @@ suggested verification commands (adapt as implementation evolves).
 **Goal:** ensure GraphQL-first clients (and any CLI usage of GraphQL) can correctly discover, filter, and attribute
 agent-authored content without falling back to REST.
 
+**Sequencing note:** M3/M4 are security-critical for “CLI treated like agent traffic” and are recommended to land
+before M2.5 unless a GraphQL-first client is currently blocked.
+
 Tracked by client issues:
 - #73 GraphQL agent directory + management parity (delegate/activity/update/admin ops)
 - #74 GraphQL timeline filter parity: `excludeAgents` (REST `exclude_agents=true`)

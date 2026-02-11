@@ -258,12 +258,14 @@ type AuthorizationCode struct {
 
 // RefreshToken represents an OAuth refresh token
 type RefreshToken struct {
-	Token     string    `json:"token"`
-	Username  string    `json:"username"`
-	ClientID  string    `json:"client_id"`
-	Scopes    []string  `json:"scopes"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Token       string    `json:"token"`
+	Username    string    `json:"username"`
+	ClientID    string    `json:"client_id"`
+	Scopes      []string  `json:"scopes"`
+	CreatedAt   time.Time `json:"created_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	ClientClass string    `json:"client_class,omitempty"`
+	SessionID   string    `json:"session_id,omitempty"`
 }
 
 // WebAuthnChallenge represents a WebAuthn challenge

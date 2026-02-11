@@ -637,7 +637,17 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 				})
 			}
 
-			accessToken, refreshTokenOut, err := oauthSvc.GenerateTokens(ctx.Context(), username, clientID, "", session.Scopes)
+			cliSessionID := common.GenerateSessionIDULID()
+			accessToken, refreshTokenOut, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
+				ctx.Context(),
+				username,
+				clientID,
+				"",
+				session.Scopes,
+				auth.AccessTokenDuration,
+				auth.ClientClassCLI,
+				cliSessionID,
+			)
 			if err != nil {
 				h.logger.Error("failed to generate tokens for device flow", zap.Error(err))
 				return apptheory.JSON(http.StatusInternalServerError, map[string]string{
@@ -647,12 +657,14 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 			}
 
 			oauthRefreshToken := &storage.RefreshToken{
-				Token:     refreshTokenOut,
-				Username:  username,
-				ClientID:  clientID,
-				Scopes:    session.Scopes,
-				CreatedAt: now,
-				ExpiresAt: now.Add(auth.RefreshTokenDuration),
+				Token:       refreshTokenOut,
+				Username:    username,
+				ClientID:    clientID,
+				Scopes:      session.Scopes,
+				CreatedAt:   now,
+				ExpiresAt:   now.Add(auth.RefreshTokenDuration),
+				ClientClass: auth.ClientClassCLI,
+				SessionID:   cliSessionID,
 			}
 			if err := h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken); err != nil {
 				h.logger.Error("failed to store refresh token for device flow", zap.Error(err))
@@ -800,19 +812,21 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		refreshExpiry = storedToken.ExpiresAt
 	}
 
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL)
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, storedToken.ClientClass, storedToken.SessionID)
 	if err != nil {
 		return "", "", errors.Join(failedToGenerateNewTokens(), err)
 	}
 
 	// Create new refresh token record
 	newOAuthRefreshToken := &storage.RefreshToken{
-		Token:     newRefreshToken,
-		Username:  storedToken.Username,
-		ClientID:  clientID,
-		Scopes:    storedToken.Scopes,
-		CreatedAt: time.Now(),
-		ExpiresAt: refreshExpiry,
+		Token:       newRefreshToken,
+		Username:    storedToken.Username,
+		ClientID:    clientID,
+		Scopes:      storedToken.Scopes,
+		CreatedAt:   time.Now(),
+		ExpiresAt:   refreshExpiry,
+		ClientClass: storedToken.ClientClass,
+		SessionID:   storedToken.SessionID,
 	}
 
 	// Store new refresh token

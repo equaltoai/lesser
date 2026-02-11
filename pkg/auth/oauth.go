@@ -63,12 +63,22 @@ const (
 	RefreshTokenFamilyExpiry = 30 * 24 * time.Hour // 30 days for family tracking
 )
 
+// Client classes identify the client category that minted an access token.
+// These are used for server-side policy decisions (e.g., automation safety rails) without relying on spoofable headers.
+const (
+	ClientClassWeb   = "web"
+	ClientClassCLI   = "cli"
+	ClientClassAgent = "agent"
+)
+
 // Claims represents the JWT claims for access tokens with enhanced security
 type Claims struct {
 	jwt.RegisteredClaims
 	Username string   `json:"username"`
 	Scopes   []string `json:"scopes"`
 	ClientID string   `json:"client_id"`
+	// ClientClass categorizes the client that minted the token (e.g., "cli" for device-flow CLI tokens).
+	ClientClass string `json:"client_class,omitempty"`
 	// Enhanced security fields
 	SessionID    string `json:"sid,omitempty"` // Session ID for validation
 	DeviceID     string `json:"did,omitempty"` // Device fingerprint
@@ -259,22 +269,34 @@ func (s *OAuthService) GenerateTokens(ctx context.Context, username, clientID, i
 
 // GenerateTokensWithAccessTokenTTL generates both access and refresh tokens with a custom access token TTL.
 func (s *OAuthService) GenerateTokensWithAccessTokenTTL(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration) (accessToken, refreshToken string, err error) {
+	return s.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, "", "")
+}
+
+// GenerateTokensWithAccessTokenTTLAndClientContext generates tokens with an explicit client class and session ID.
+//
+// This enables downstream middleware to enforce server-side policies (e.g., automation safety rails) based on
+// non-spoofable classification derived at token issuance time. For agent accounts, if a sessionID is not provided,
+// a new session ID is generated.
+func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContext(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration, clientClass, sessionID string) (accessToken, refreshToken string, err error) {
 	if accessTokenTTL <= 0 {
 		accessTokenTTL = AccessTokenDuration
 	}
 
 	isAgent, agentType, delegatedBy := s.resolveAgentClaims(ctx, username)
+	effectiveSessionID := strings.TrimSpace(sessionID)
 	agentSessionID := ""
-	sessionID := ""
 	if isAgent {
-		agentSessionID = generateSecureJTI()
-		sessionID = agentSessionID
+		if effectiveSessionID == "" {
+			effectiveSessionID = generateSecureJTI()
+		}
+		agentSessionID = effectiveSessionID
 	}
 
 	accessToken, err = s.generateAccessTokenWithMetadata(username, clientID, scopes, accessTokenMetadata{
 		ExpiresAt:      time.Now().Add(accessTokenTTL),
 		IPAddress:      ipAddress,
-		SessionID:      sessionID,
+		SessionID:      effectiveSessionID,
+		ClientClass:    clientClass,
 		IsAgent:        isAgent,
 		AgentType:      agentType,
 		DelegatedBy:    delegatedBy,
@@ -314,6 +336,8 @@ type accessTokenMetadata struct {
 	AgentType      string
 	DelegatedBy    string
 	AgentSessionID string
+
+	ClientClass string
 }
 
 // generateAccessTokenWithMetadata creates a JWT access token with enhanced security context.
@@ -336,6 +360,7 @@ func (s *OAuthService) generateAccessTokenWithMetadata(username, clientID string
 		Username:       username,
 		ClientID:       clientID,
 		Scopes:         scopes,
+		ClientClass:    meta.ClientClass,
 		SessionID:      meta.SessionID,
 		DeviceID:       meta.DeviceID,
 		TokenVersion:   meta.TokenVersion,
