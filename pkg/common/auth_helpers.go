@@ -1,6 +1,6 @@
 // Package common provides shared authentication helper functions and types for the Lesser project.
 // These helpers consolidate common authentication patterns found across all services.
-package common
+package common //nolint:revive // package name "common" is intentional and widely used throughout the codebase
 
 import (
 	"fmt"
