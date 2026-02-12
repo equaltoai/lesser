@@ -99,10 +99,11 @@ func authUIInlineScriptHashes() []string {
 
 func authUIInlineStyleHashes() []string {
 	return []string{
+		"'sha256-Eq62DWSZ57jJZCUv6mhFsTpy7vjhvM2oZhAX+bvTTN4='",
+		"'sha256-Np+0wo4qGeEiSfIZluf224zV9nNLY+nOGde1KcwOB8g='",
+		"'sha256-1mD1INqKidrIyg8naC+GEWKaF7uCtCKeBQqXOxf8LM8='",
+		"'sha256-iegu0Wb3dMBfhqOyzQ8kCD9W04jq6I7g1SiDlmvSiSg='",
+		"'sha256-qkbV7mmkk3RRKy6Ha/Sdwvz6VwoEghyumJdMY397/D0='",
 		"'sha256-vv9IoKo7BSLbWcUHr3tNmfNVmm5L/9Cfn2H6LMk7/ow='",
-		"'sha256-Kvbe5KKdv2cGHo4KJK01eJk9hDZVsoTUBvT9jk+rGXk='",
-		"'sha256-MidiNUa5kdpxl2SpSrnhDmWJ8kgApzwzkjnx+3qPfAQ='",
-		"'sha256-M6ZZZEFYxarhKkoC2dpmdcNsH126xrQ7hscemunVkKQ='",
-		"'sha256-Pf213LDBtMPs63dfYF449lKLszal3Ml4UCtfrnNBROE='",
 	}
 }

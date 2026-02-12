@@ -22,18 +22,7 @@ export type {
 	CustomPalette,
 	ColorScale,
 	ColorShade,
-	FontPreset,
 } from 'src/lib/greater/tokens';
-
-// Preset types for strict-CSP-safe APIs
-export type { WidthPreset, HeightPreset } from './components/Skeleton.svelte';
-export type { ContainerSize, GutterPreset } from './components/Container.svelte';
-export type {
-	SpacingPreset,
-	BackgroundPreset,
-	GradientDirection,
-} from './components/Section.svelte';
-export type { Placement } from './components/Tooltip.svelte';
 
 // Import all components (for both export and prop type inference)
 import Button from './components/Button.svelte';

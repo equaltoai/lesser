@@ -24,7 +24,7 @@ const sessionId = Astro.url.searchParams.get('session_id') || '';
     hideRegisterLink={true}
     isRegistration={true}
   />
-  <div class="text-center mt-4" style="font-size: 0.875rem; color: var(--text-muted);">
-    Already have an account? <a href={`${import.meta.env.BASE_URL}login`} style="color: var(--lesser-primary-500); text-decoration: none;">Sign in</a>
+  <div class="auth-footnote text-center mt-4">
+    Already have an account? <a class="auth-link" href={`${import.meta.env.BASE_URL}login`}>Sign in</a>
   </div>
 </AuthLayout>

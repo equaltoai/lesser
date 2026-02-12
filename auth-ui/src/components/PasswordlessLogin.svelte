@@ -734,8 +734,8 @@
       {/if}
       
       {#if !hideRegisterLink}
-        <div class="text-center mt-4" style="font-size: 0.875rem; color: var(--text-muted);">
-          Don't have an account? <a href={registerHref} style="color: var(--lesser-primary-500); text-decoration: none;">Register</a>
+        <div class="auth-footnote text-center mt-4">
+          Don't have an account? <a class="auth-link" href={registerHref}>Register</a>
         </div>
       {/if}
   </div>
