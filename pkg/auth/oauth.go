@@ -557,7 +557,8 @@ func ValidateScopes(scopes []string) error {
 	}
 
 	for _, scope := range scopes {
-		if !validScopes[scope] {
+		baseScope := strings.Split(scope, ":")[0]
+		if !validScopes[baseScope] {
 			return ErrInvalidScope
 		}
 	}

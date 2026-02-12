@@ -137,6 +137,40 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.Contains(t, body.NextURL, "error=invalid_scope")
 	})
 
+	t.Run("admin:read/admin:write scopes are accepted", func(t *testing.T) {
+		var issuedCode string
+		accountsSvc := &AccountsServiceStub{
+			GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+				return &accounts.GetUserAppConsentResult{Consent: &storage.UserAppConsent{Scopes: []string{"read", "write", "follow", "admin", "admin:read", "admin:write"}}}, nil
+			},
+			CreateAuthorizationCodeFunc: func(_ context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error) {
+				issuedCode = cmd.AuthCode.Code
+				return &accounts.CreateAuthorizationCodeResult{}, nil
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{AccountsSvc: accountsSvc})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
+			"response_type": "code",
+			"client_id":     "client-1",
+			"redirect_uri":  "https://example.com/callback",
+			"scope":         "read write follow admin admin:read admin:write",
+			"state":         "state-admin",
+		}, nil)
+		require.NoError(t, err)
+		ctx.Set("username", "alice")
+
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		redirectURL := firstStringValue(resp.Headers, "location")
+		require.NotEmpty(t, redirectURL)
+
+		parsed, parseErr := url.Parse(redirectURL)
+		require.NoError(t, parseErr)
+		require.NotEmpty(t, parsed.Query().Get("code"))
+		require.Empty(t, parsed.Query().Get("error"))
+		require.Equal(t, "state-admin", parsed.Query().Get("state"))
+		require.NotEmpty(t, issuedCode)
+	})
+
 	t.Run("service registry missing returns server_error redirect (handled)", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", nil, map[string]string{
@@ -489,6 +523,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
+		require.Equal(t, "read write", body.Scope)
 	})
 
 	t.Run("authorization_code cli client issues cli tokens", func(t *testing.T) {
@@ -513,6 +548,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
+		require.Equal(t, "read write", body.Scope)
 
 		claims := round12DecodeJWTClaims(t, body.AccessToken)
 		require.Equal(t, auth.ClientClassCLI, claims.ClientClass)
@@ -638,6 +674,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
+		require.Equal(t, "read", body.Scope)
 	})
 
 	t.Run("device_code grant disabled returns access_denied", func(t *testing.T) {
@@ -856,6 +893,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.NotEmpty(t, body.AccessToken)
 		require.NotEmpty(t, body.RefreshToken)
+		require.Equal(t, "read write", body.Scope)
 
 		claims1 := round12DecodeJWTClaims(t, body.AccessToken)
 		require.Equal(t, auth.ClientClassCLI, claims1.ClientClass)
@@ -882,6 +920,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.NoError(t, json.Unmarshal(respRefresh.Body, &refreshBody))
 		require.NotEmpty(t, refreshBody.AccessToken)
 		require.NotEmpty(t, refreshBody.RefreshToken)
+		require.Equal(t, "read write", refreshBody.Scope)
 
 		refreshClaims := round12DecodeJWTClaims(t, refreshBody.AccessToken)
 		require.Equal(t, auth.ClientClassCLI, refreshClaims.ClientClass)
