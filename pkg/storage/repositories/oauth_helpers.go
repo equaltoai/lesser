@@ -419,6 +419,7 @@ func (h *OAuthHelper) CreateAuthorizationCodeGeneric(ctx context.Context, code *
 	model := &models.AuthorizationCode{
 		Code:          code.Code,
 		ClientID:      code.ClientID,
+		RedirectURI:   code.RedirectURI,
 		Username:      code.Username,
 		CodeChallenge: code.CodeChallenge,
 		ExpiresAt:     code.ExpiresAt,
@@ -482,6 +483,7 @@ func (h *OAuthHelper) GetAuthorizationCodeGeneric(ctx context.Context, code stri
 	result := &storage.AuthorizationCode{
 		Code:          model.Code,
 		ClientID:      model.ClientID,
+		RedirectURI:   model.RedirectURI,
 		Username:      model.Username,
 		CodeChallenge: model.CodeChallenge,
 		ExpiresAt:     model.ExpiresAt,

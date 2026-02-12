@@ -267,6 +267,7 @@ func (h *Handler) completeAuthorizationFlow(ctx *apptheory.Context, flow *author
 	authCode := &storage.AuthorizationCode{
 		Code:          code,
 		ClientID:      flow.request.clientID,
+		RedirectURI:   flow.request.redirectURI,
 		Username:      flow.username,
 		CodeChallenge: flow.request.codeChallenge,
 		ExpiresAt:     time.Now().Add(10 * time.Minute),
@@ -775,16 +776,50 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 
 // exchangeAuthorizationCode exchanges an authorization code for access and refresh tokens
 func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret string) (string, string, error) {
-	// Validate client credentials if provided
-	if clientSecret != "" {
+	code = strings.TrimSpace(code)
+	clientID = strings.TrimSpace(clientID)
+	redirectURI = strings.TrimSpace(redirectURI)
+	clientSecret = strings.TrimSpace(clientSecret)
+
+	// Load OAuth client once to enforce confidential client authentication and avoid repeated DB calls.
+	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
+	if err != nil || client == nil {
+		return "", "", auth.ErrInvalidClient
+	}
+
+	// Validate redirect URI for this client (exact match required).
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"clientID":    clientID,
+		"redirectURI": redirectURI,
+		"authCode":    code,
+	}); err != nil {
+		return "", "", auth.ErrInvalidRequest
+	}
+
+	redirectAllowed := false
+	for _, registeredURI := range client.RedirectURIs {
+		if registeredURI == redirectURI {
+			redirectAllowed = true
+			break
+		}
+	}
+	if !redirectAllowed {
+		return "", "", auth.ErrInvalidRequest
+	}
+
+	// Enforce confidential client authentication.
+	if client.Confidential {
+		if clientSecret == "" {
+			return "", "", auth.ErrInvalidClient
+		}
 		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
 			return "", "", err
 		}
-	}
-
-	// Validate redirect URI
-	if err := oauthSvc.ValidateRedirectURI(ctx, clientID, redirectURI); err != nil {
-		return "", "", err
+	} else if clientSecret != "" {
+		// If the client provided a secret anyway, validate it.
+		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
+			return "", "", err
+		}
 	}
 
 	// Get authorization code from storage
@@ -795,6 +830,11 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 
 	// Validate authorization code
 	if authCode.ClientID != clientID {
+		return "", "", auth.ErrInvalidGrant
+	}
+
+	// Validate redirect_uri binding per RFC 6749 Section 4.1.3.
+	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
 		return "", "", auth.ErrInvalidGrant
 	}
 
@@ -814,9 +854,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 
 	clientClass := ""
 	sessionID := ""
-	if client, err := h.repos.Account().GetOAuthClient(ctx, clientID); err == nil && client != nil {
-		clientClass = strings.ToLower(strings.TrimSpace(client.ClientClass))
-	}
+	clientClass = strings.ToLower(strings.TrimSpace(client.ClientClass))
 	if clientClass == auth.ClientClassCLI {
 		sessionID = common.GenerateSessionIDULID()
 	}
@@ -851,10 +889,26 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
 func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (string, string, error) {
-	// Validate client credentials if provided
-	if clientSecret != "" {
-		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-			return "", "", err
+	refreshToken = strings.TrimSpace(refreshToken)
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
+
+	if clientID != delegatedAgentClientID {
+		client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
+		if err != nil || client == nil {
+			return "", "", auth.ErrInvalidClient
+		}
+
+		// Enforce confidential client authentication.
+		if client.Confidential && clientSecret == "" {
+			return "", "", auth.ErrInvalidClient
+		}
+
+		// Validate client credentials if provided (or required).
+		if clientSecret != "" {
+			if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
+				return "", "", err
+			}
 		}
 	}
 

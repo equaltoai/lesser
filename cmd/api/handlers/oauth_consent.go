@@ -129,6 +129,7 @@ func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *stora
 	authCode := &storage.AuthorizationCode{
 		Code:          code,
 		ClientID:      authState.ClientID,
+		RedirectURI:   authState.RedirectURI,
 		Username:      authState.Username,
 		CodeChallenge: authState.CodeChallenge,
 		ExpiresAt:     time.Now().Add(10 * time.Minute),

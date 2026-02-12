@@ -382,9 +382,67 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_client", body["error"])
 	})
 
+	t.Run("authorization_code confidential client requires client_secret", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "Test App",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-1&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
+	})
+
 	t.Run("authorization_code invalid_grant mismatched client", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=code-1&client_id=client-2&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_grant", body["error"])
+	})
+
+	t.Run("authorization_code invalid_grant when redirect_uri does not match authorization request", func(t *testing.T) {
+		redirectA := "https://example.com/callback-a"
+		redirectB := "https://example.com/callback-b"
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "Test App",
+					RedirectURIs: []string{redirectA, redirectB},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+				"swap": {
+					Code:        "swap",
+					ClientID:    "client-1",
+					RedirectURI: redirectA,
+					Username:    "alice",
+					ExpiresAt:   time.Now().Add(5 * time.Minute),
+					Scopes:      []string{auth.ScopeRead, auth.ScopeWrite},
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=swap&client_id=client-1&redirect_uri="+url.QueryEscape(redirectB)))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
@@ -401,6 +459,7 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 				"pkce": {
 					Code:          "pkce",
 					ClientID:      "client-1",
+					RedirectURI:   "https://example.com/callback",
 					Username:      "alice",
 					CodeChallenge: challenge,
 					ExpiresAt:     time.Now().Add(5 * time.Minute),
@@ -490,6 +549,32 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-1&client_id=client-1&client_secret=wrong"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
+	})
+
+	t.Run("refresh_token confidential client requires client_secret", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "Test App",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-1": {Token: "rt-1", ClientID: "client-1", Username: "alice", ExpiresAt: time.Now().Add(1 * time.Hour), Scopes: []string{auth.ScopeRead}},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-1&client_id=client-1"))
 		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
 		var body map[string]string
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
