@@ -61,7 +61,7 @@ func TestMastodonOAuthValidationDemo(t *testing.T) {
 			{"invalid"},
 			{ScopeRead, "nonexistent"},
 			{"custom-scope"},
-			{"read:custom"},
+			{"invalid:custom"},
 		}
 
 		for _, scopes := range invalidScopes {

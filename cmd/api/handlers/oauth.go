@@ -43,7 +43,6 @@ const (
 	oauthGrantTypeRefreshToken      = "refresh_token"
 
 	oauthTokenTypeBearer       = "Bearer"
-	oauthTokenDefaultScope     = "read write follow push" // #nosec G101 -- OAuth scope string, not a credential
 	oauthTokenExpiresInSeconds = 3600
 )
 
@@ -491,7 +490,7 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 		})
 	}
 
-	accessToken, refreshTokenOut, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret)
+	accessToken, refreshTokenOut, grantedScopes, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret)
 	if err != nil {
 		h.logger.Error("failed to exchange authorization code", zap.Error(err))
 		switch err {
@@ -521,7 +520,7 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 	return okJSON(apimodels.OAuthTokenResponse{
 		AccessToken:  accessToken,
 		TokenType:    oauthTokenTypeBearer,
-		Scope:        oauthTokenDefaultScope,
+		Scope:        strings.Join(grantedScopes, " "),
 		CreatedAt:    time.Now().Unix(),
 		ExpiresIn:    oauthTokenExpiresInSeconds,
 		RefreshToken: refreshTokenOut,
@@ -539,7 +538,7 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx context.Context, oauthSvc *au
 		})
 	}
 
-	accessToken, newRefreshToken, err := h.exchangeRefreshToken(ctx, oauthSvc, req.refreshToken, req.clientID, req.clientSecret)
+	accessToken, newRefreshToken, grantedScopes, err := h.exchangeRefreshToken(ctx, oauthSvc, req.refreshToken, req.clientID, req.clientSecret)
 	if err != nil {
 		h.logger.Error("failed to refresh tokens", zap.Error(err))
 		switch err {
@@ -564,7 +563,7 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx context.Context, oauthSvc *au
 	return okJSON(apimodels.OAuthTokenResponse{
 		AccessToken:  accessToken,
 		TokenType:    oauthTokenTypeBearer,
-		Scope:        oauthTokenDefaultScope,
+		Scope:        strings.Join(grantedScopes, " "),
 		CreatedAt:    time.Now().Unix(),
 		ExpiresIn:    oauthTokenExpiresInSeconds,
 		RefreshToken: newRefreshToken,
@@ -767,7 +766,7 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 	return okJSON(apimodels.OAuthTokenResponse{
 		AccessToken:  accessToken,
 		TokenType:    oauthTokenTypeBearer,
-		Scope:        oauthTokenDefaultScope,
+		Scope:        strings.Join(session.Scopes, " "),
 		CreatedAt:    now.Unix(),
 		ExpiresIn:    oauthTokenExpiresInSeconds,
 		RefreshToken: refreshTokenOut,
@@ -775,7 +774,7 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 }
 
 // exchangeAuthorizationCode exchanges an authorization code for access and refresh tokens
-func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret string) (string, string, error) {
+func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret string) (string, string, []string, error) {
 	code = strings.TrimSpace(code)
 	clientID = strings.TrimSpace(clientID)
 	redirectURI = strings.TrimSpace(redirectURI)
@@ -784,7 +783,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	// Load OAuth client once to enforce confidential client authentication and avoid repeated DB calls.
 	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
 	if err != nil || client == nil {
-		return "", "", auth.ErrInvalidClient
+		return "", "", nil, auth.ErrInvalidClient
 	}
 
 	// Validate redirect URI for this client (exact match required).
@@ -793,7 +792,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		"redirectURI": redirectURI,
 		"authCode":    code,
 	}); err != nil {
-		return "", "", auth.ErrInvalidRequest
+		return "", "", nil, auth.ErrInvalidRequest
 	}
 
 	redirectAllowed := false
@@ -804,44 +803,44 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		}
 	}
 	if !redirectAllowed {
-		return "", "", auth.ErrInvalidRequest
+		return "", "", nil, auth.ErrInvalidRequest
 	}
 
 	// Enforce confidential client authentication.
 	if client.Confidential {
 		if clientSecret == "" {
-			return "", "", auth.ErrInvalidClient
+			return "", "", nil, auth.ErrInvalidClient
 		}
 		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 	} else if clientSecret != "" {
 		// If the client provided a secret anyway, validate it.
 		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 	}
 
 	// Get authorization code from storage
 	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
 	if err != nil {
-		return "", "", auth.ErrInvalidGrant
+		return "", "", nil, auth.ErrInvalidGrant
 	}
 
 	// Validate authorization code
 	if authCode.ClientID != clientID {
-		return "", "", auth.ErrInvalidGrant
+		return "", "", nil, auth.ErrInvalidGrant
 	}
 
 	// Validate redirect_uri binding per RFC 6749 Section 4.1.3.
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
-		return "", "", auth.ErrInvalidGrant
+		return "", "", nil, auth.ErrInvalidGrant
 	}
 
 	// Verify PKCE if used
 	if authCode.CodeChallenge != "" || codeVerifier != "" {
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 	}
 
@@ -849,7 +848,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	// concurrent exchanges in the (small) TOCTOU window between read and delete.
 	if err := h.repos.Account().DeleteAuthorizationCode(ctx, code); err != nil {
 		h.logger.Warn("failed to consume authorization code", zap.Error(err))
-		return "", "", auth.ErrInvalidGrant
+		return "", "", nil, auth.ErrInvalidGrant
 	}
 
 	clientClass := ""
@@ -862,7 +861,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	// Generate tokens
 	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, auth.AccessTokenDuration, clientClass, sessionID)
 	if err != nil {
-		return "", "", errors.Join(failedToGenerateTokens(), err)
+		return "", "", nil, errors.Join(failedToGenerateTokens(), err)
 	}
 
 	now := time.Now().UTC()
@@ -884,11 +883,11 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		// Continue - access token is still valid
 	}
 
-	return accessToken, refreshToken, nil
+	return accessToken, refreshToken, authCode.Scopes, nil
 }
 
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
-func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (string, string, error) {
+func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (string, string, []string, error) {
 	refreshToken = strings.TrimSpace(refreshToken)
 	clientID = strings.TrimSpace(clientID)
 	clientSecret = strings.TrimSpace(clientSecret)
@@ -896,18 +895,18 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	if clientID != delegatedAgentClientID {
 		client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
 		if err != nil || client == nil {
-			return "", "", auth.ErrInvalidClient
+			return "", "", nil, auth.ErrInvalidClient
 		}
 
 		// Enforce confidential client authentication.
 		if client.Confidential && clientSecret == "" {
-			return "", "", auth.ErrInvalidClient
+			return "", "", nil, auth.ErrInvalidClient
 		}
 
 		// Validate client credentials if provided (or required).
 		if clientSecret != "" {
 			if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-				return "", "", err
+				return "", "", nil, err
 			}
 		}
 	}
@@ -916,24 +915,24 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return "", "", auth.ErrInvalidToken
+			return "", "", nil, auth.ErrInvalidToken
 		}
 		if strings.Contains(err.Error(), "expired") {
-			return "", "", auth.ErrInvalidToken
+			return "", "", nil, auth.ErrInvalidToken
 		}
-		return "", "", errors.Join(failedToValidateRefreshToken(), err)
+		return "", "", nil, errors.Join(failedToValidateRefreshToken(), err)
 	}
 
 	// Validate refresh token belongs to the client
 	if storedToken.ClientID != clientID {
-		return "", "", auth.ErrInvalidToken
+		return "", "", nil, auth.ErrInvalidToken
 	}
 
 	// Check expiration
 	if time.Now().After(storedToken.ExpiresAt) {
 		// Clean up expired token
 		_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
-		return "", "", auth.ErrInvalidToken
+		return "", "", nil, auth.ErrInvalidToken
 	}
 
 	accessTTL := auth.AccessTokenDuration
@@ -944,7 +943,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		remaining := time.Until(storedToken.ExpiresAt)
 		if remaining <= 0 {
 			_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
-			return "", "", auth.ErrInvalidToken
+			return "", "", nil, auth.ErrInvalidToken
 		}
 		if remaining < accessTTL {
 			accessTTL = remaining
@@ -954,7 +953,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 
 	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, storedToken.ClientClass, storedToken.SessionID)
 	if err != nil {
-		return "", "", errors.Join(failedToGenerateNewTokens(), err)
+		return "", "", nil, errors.Join(failedToGenerateNewTokens(), err)
 	}
 
 	// Create new refresh token record
@@ -972,7 +971,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	// Store new refresh token
 	if err := h.repos.Account().CreateRefreshToken(ctx, newOAuthRefreshToken); err != nil {
 		h.logger.Error("failed to store new refresh token", zap.Error(err))
-		return "", "", errors.Join(failedToStoreNewRefreshToken(), err)
+		return "", "", nil, errors.Join(failedToStoreNewRefreshToken(), err)
 	}
 
 	// Delete the old refresh token to prevent reuse
@@ -981,5 +980,5 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		// Continue - new token is already stored
 	}
 
-	return accessToken, newRefreshToken, nil
+	return accessToken, newRefreshToken, storedToken.Scopes, nil
 }

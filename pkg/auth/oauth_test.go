@@ -312,6 +312,11 @@ func TestValidateScopes(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name:    "valid hierarchical scopes",
+			scopes:  []string{"admin:read", "admin:write"},
+			wantErr: nil,
+		},
+		{
 			name:    "single valid scope",
 			scopes:  []string{ScopeRead},
 			wantErr: nil,
@@ -324,6 +329,11 @@ func TestValidateScopes(t *testing.T) {
 		{
 			name:    "invalid scope",
 			scopes:  []string{ScopeRead, "invalid"},
+			wantErr: ErrInvalidScope,
+		},
+		{
+			name:    "invalid base scope",
+			scopes:  []string{"invalid:scope"},
 			wantErr: ErrInvalidScope,
 		},
 		{
