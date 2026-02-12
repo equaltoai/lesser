@@ -334,6 +334,25 @@ body {
   font-weight: 700;
 }
 
+/* Auth UI footnotes + links (CSP-safe: avoid inline style attributes) */
+.auth-footnote {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.auth-footnote--xs {
+  font-size: 0.75rem;
+}
+
+.auth-link {
+  color: var(--lesser-primary-500);
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
 /* Utility classes */
 .text-center {
   text-align: center;

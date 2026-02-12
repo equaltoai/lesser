@@ -253,7 +253,7 @@
     </div>
     
     <!-- Additional Info -->
-    <div class="text-center mt-4" style="font-size: 0.75rem; color: var(--text-muted);">
+    <div class="auth-footnote auth-footnote--xs text-center mt-4">
       By authorizing, you agree to share your profile information and grant the requested permissions.
     </div>
   </div>
