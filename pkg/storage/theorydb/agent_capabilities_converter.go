@@ -206,17 +206,17 @@ func intFromAttributeMap(m map[string]types.AttributeValue, keys ...string) (int
 
 	switch v := av.(type) {
 	case *types.AttributeValueMemberN:
-		n, err := strconv.ParseInt(strings.TrimSpace(v.Value), 10, 64)
+		n, err := strconv.Atoi(strings.TrimSpace(v.Value))
 		if err != nil {
 			return 0, false
 		}
-		return int(n), true // #nosec G115 -- MaxPostsPerHour is bounded by business logic.
+		return n, true
 	case *types.AttributeValueMemberS:
-		n, err := strconv.ParseInt(strings.TrimSpace(v.Value), 10, 64)
+		n, err := strconv.Atoi(strings.TrimSpace(v.Value))
 		if err != nil {
 			return 0, false
 		}
-		return int(n), true // #nosec G115 -- MaxPostsPerHour is bounded by business logic.
+		return n, true
 	default:
 		return 0, false
 	}
@@ -299,17 +299,17 @@ func intFromAnyMap(m map[string]any, keys ...string) (int, bool) {
 	case float64:
 		return int(v), true
 	case json.Number:
-		n, err := v.Int64()
+		n, err := strconv.Atoi(strings.TrimSpace(v.String()))
 		if err != nil {
 			return 0, false
 		}
-		return int(n), true // #nosec G115 -- MaxPostsPerHour is bounded by business logic.
+		return n, true
 	case string:
-		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		n, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil {
 			return 0, false
 		}
-		return int(n), true // #nosec G115 -- MaxPostsPerHour is bounded by business logic.
+		return n, true
 	default:
 		return 0, false
 	}
