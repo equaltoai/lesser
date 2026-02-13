@@ -2665,6 +2665,9 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
+		if errors.IsNotFound(err) {
+			return []*storage.Report{}, "", nil
+		}
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityReport, "by status")
 	}
 

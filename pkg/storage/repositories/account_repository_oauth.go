@@ -197,6 +197,45 @@ func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string
 	return helper.DeleteRefreshTokenGeneric(ctx, token)
 }
 
+// DeleteRefreshTokensByUsernameAndClientID deletes all OAuth refresh tokens for the given user+client pair.
+// This is intended for revoking delegated/agent tokens where only refresh-token invalidation is required.
+func (r *AccountRepository) DeleteRefreshTokensByUsernameAndClientID(ctx context.Context, username, clientID string) (int, error) {
+	username = strings.TrimSpace(username)
+	clientID = strings.TrimSpace(clientID)
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return 0, err
+	}
+	if err := common.ValidateRequiredParam("clientID", clientID); err != nil {
+		return 0, err
+	}
+
+	var tokenModels []models.RefreshToken
+	query := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
+		Where("Username", "=", username).
+		Where("ClientID", "=", clientID)
+	if err := query.Scan(&tokenModels); err != nil {
+		if errors.IsNotFound(err) {
+			return 0, nil
+		}
+		return 0, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "by username/clientID")
+	}
+
+	helper := NewOAuthHelper(r.db, r.logger)
+	deleted := 0
+	for _, tokenModel := range tokenModels {
+		tokenValue := strings.TrimSpace(tokenModel.Token)
+		if tokenValue == "" {
+			continue
+		}
+		if err := helper.DeleteRefreshTokenGeneric(ctx, tokenValue); err != nil && !errors.IsNotFound(err) {
+			return deleted, err
+		}
+		deleted++
+	}
+
+	return deleted, nil
+}
+
 // ===== OAuth Client Operations =====
 
 // CreateOAuthClient creates a new OAuth client

@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	neturl "net/url"
@@ -148,7 +147,9 @@ func (r *ActorRepository) GetActor(ctx context.Context, username string) (*activ
 		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
-	return actorModel.Actor, nil
+	actor := actorModel.Actor
+	hydrateActivityPubActorTimestamps(actor, actorModel.CreatedAt, actorModel.UpdatedAt)
+	return actor, nil
 }
 
 // GetActorWithMetadata retrieves an actor with metadata
@@ -170,7 +171,9 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 		Fields:       convertActorFields(actorModel.Fields),
 	}
 
-	return actorModel.Actor, metadata, nil
+	actor := actorModel.Actor
+	hydrateActivityPubActorTimestamps(actor, actorModel.CreatedAt, actorModel.UpdatedAt)
+	return actor, metadata, nil
 }
 
 // GetActorByNumericID retrieves an actor by numeric ID
@@ -241,6 +244,25 @@ func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username strin
 	return string(decrypted), nil
 }
 
+func hydrateActivityPubActorTimestamps(actor *activitypub.Actor, createdAt, updatedAt time.Time) {
+	if actor == nil {
+		return
+	}
+
+	if actor.CreatedAt == nil && !createdAt.IsZero() {
+		t := createdAt.UTC()
+		actor.CreatedAt = &t
+	}
+	if actor.Published == nil && !createdAt.IsZero() {
+		t := createdAt.UTC()
+		actor.Published = &t
+	}
+	if actor.Updated == nil && !updatedAt.IsZero() {
+		t := updatedAt.UTC()
+		actor.Updated = &t
+	}
+}
+
 // UpdateActor updates an existing actor
 func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
 	// Validate actor entity using centralized validation
@@ -284,17 +306,7 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 		Where("SK", "=", actorModel.SK).
 		UpdateBuilder()
 
-	actorBytes, err := json.Marshal(actor)
-	if err != nil {
-		return fmt.Errorf("failed to marshal actor: %w", err)
-	}
-
-	var actorMap map[string]interface{}
-	if err := json.Unmarshal(actorBytes, &actorMap); err != nil {
-		return fmt.Errorf("failed to unmarshal actor into map: %w", err)
-	}
-
-	updateBuilder.Set("Actor", actorMap)
+	updateBuilder.Set("Actor", actor)
 	updateBuilder.Set("UpdatedAt", now)
 
 	gsi1PK, gsi1SK := buildActorGSI1Keys(username)

@@ -771,9 +771,42 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 
 // RevokeAgentToken is the resolver for the revokeAgentToken field.
 func (r *mutationResolver) RevokeAgentToken(ctx context.Context, username string) (bool, error) {
-	_ = ctx
-	_ = username
-	return false, errAgentSupportNotImplemented
+	if err := r.ensureAgentsEnabled(ctx); err != nil {
+		return false, err
+	}
+
+	username = strings.TrimSpace(username)
+	if err := common.ValidateUsernameParamID(username); err != nil {
+		return false, err
+	}
+
+	claims, err := r.requireAuthClaims(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !claims.HasScope("write:accounts") && !claims.HasScope(auth.ScopeWrite) {
+		return false, apperrors.InsufficientScope("write:accounts")
+	}
+
+	if r.Storage == nil || r.Storage.Account() == nil {
+		return false, ErrStorageUnavailable
+	}
+
+	account, err := r.Storage.Account().GetAccount(ctx, username)
+	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
+		return false, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
+	}
+
+	if !isAgentOwnerOrAdmin(claims, account.User) {
+		return false, apperrors.Forbidden("not authorized to revoke agent tokens")
+	}
+
+	_, err = r.Storage.Account().DeleteRefreshTokensByUsernameAndClientID(ctx, username, delegatedAgentClientID)
+	if err != nil {
+		return false, apperrors.InternalWithCause(err, "failed to revoke agent tokens")
+	}
+
+	return true, nil
 }
 
 // UpdateAdminAgentPolicy is the resolver for the updateAdminAgentPolicy field.

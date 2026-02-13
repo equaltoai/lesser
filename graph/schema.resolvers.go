@@ -2965,10 +2965,19 @@ func (r *actorResolver) Locked(_ context.Context, obj *activitypub.Actor) (bool,
 
 // CreatedAt implements ActorResolver
 func (r *actorResolver) CreatedAt(_ context.Context, obj *activitypub.Actor) (*model.Time, error) {
-	if obj.Published == nil {
-		return nil, nil
+	if obj.CreatedAt != nil {
+		t := model.Time(*obj.CreatedAt)
+		return &t, nil
 	}
-	t := model.Time(*obj.Published)
+	if obj.Published != nil {
+		t := model.Time(*obj.Published)
+		return &t, nil
+	}
+	if obj.Updated != nil {
+		t := model.Time(*obj.Updated)
+		return &t, nil
+	}
+	t := model.Time(time.Now().UTC())
 	return &t, nil
 }
 

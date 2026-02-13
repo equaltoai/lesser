@@ -108,6 +108,33 @@ func TestWalletHandlers_FullFlow(t *testing.T) {
 	requireStatus(t, http.StatusOK)(handler.HandleGetWalletsLift(ctxList))
 }
 
+func TestWalletHandlers_GetWallets_OAuthTokenDoesNotRequireSession(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Now()
+
+	state := &round10QueryState{
+		notFoundPKs: map[string]bool{
+			// Simulate a production-like behavior where a session lookup for an OAuth token fails.
+			"session#": true,
+		},
+		usersByUsername: map[string]storagemodels.User{
+			"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Role: "user", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour)},
+		},
+		walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
+			"alice": {},
+		},
+	}
+
+	handler, _, _ := round11NewHandler(t, cfg, state)
+
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	ctxList, err := round10NewLiftContext(http.MethodGet, "/auth/wallet/list", headers, nil, nil)
+	require.NoError(t, err)
+	requireStatus(t, http.StatusOK)(handler.HandleGetWalletsLift(ctxList))
+}
+
 func TestWalletHandlers_CreateAndLinkRegistration(t *testing.T) {
 	cfg := round11TestConfig()
 	now := time.Now()
