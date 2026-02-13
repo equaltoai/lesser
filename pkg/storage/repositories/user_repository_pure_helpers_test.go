@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
@@ -33,32 +35,88 @@ func TestUserRepository_modelToStorage(t *testing.T) {
 		{
 			name: "complete user model",
 			userModel: &models.User{
-				Username:        "alice",
-				Email:           "alice@example.com",
-				PasswordHash:    "hashed",
-				DisplayName:     "Alice Wonder",
-				CreatedAt:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-				UpdatedAt:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-				Approved:        true,
-				Suspended:       false,
-				Silenced:        true,
-				Role:            "admin",
-				Locale:          "fr",
-				RecoveryMethods: []string{"email", "passkey"},
+				Username:           "alice",
+				Email:              "alice@example.com",
+				PasswordHash:       "hashed",
+				DisplayName:        "Alice Wonder",
+				Note:               "bio",
+				Avatar:             "avatar.png",
+				Header:             "header.png",
+				URL:                "https://example.com/@alice",
+				Locked:             true,
+				Discoverable:       true,
+				Fields:             []map[string]string{{"name": "x", "value": "y"}},
+				CreatedAt:          time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				UpdatedAt:          time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+				Approved:           true,
+				Suspended:          false,
+				Silenced:           true,
+				Role:               "admin",
+				Locale:             "fr",
+				RecoveryMethods:    []string{"email", "passkey"},
+				AllowNSFW:          true,
+				RequireNSFWWarning: false,
+				Metadata: map[string]interface{}{
+					"agent_verified":         true,
+					"agent_delegated_scopes": []any{"read"},
+				},
+				IsAgent:      true,
+				AgentType:    "assistant",
+				AgentVersion: "1.0.0",
+				AgentOwner:   "@bob",
+				AgentCapabilities: &agents.Capabilities{
+					CanPost:           true,
+					CanReply:          true,
+					CanBoost:          true,
+					CanFollow:         true,
+					CanDM:             true,
+					RestrictedDomains: []string{"example.com"},
+					MaxPostsPerHour:   0,
+					RequiresApproval:  true,
+				},
+				Version: 6,
 			},
 			want: &storage.User{
-				Username:        "alice",
-				Email:           "alice@example.com",
-				PasswordHash:    "hashed",
-				DisplayName:     "Alice Wonder",
-				CreatedAt:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-				UpdatedAt:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-				Approved:        true,
-				Suspended:       false,
-				Silenced:        true,
-				Role:            "admin",
-				Locale:          "fr",
-				RecoveryMethods: []string{"email", "passkey"},
+				Username:           "alice",
+				Email:              "alice@example.com",
+				PasswordHash:       "hashed",
+				DisplayName:        "Alice Wonder",
+				Note:               "bio",
+				Avatar:             "avatar.png",
+				Header:             "header.png",
+				URL:                "https://example.com/@alice",
+				Locked:             true,
+				Discoverable:       true,
+				Fields:             []map[string]string{{"name": "x", "value": "y"}},
+				CreatedAt:          time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				UpdatedAt:          time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+				Approved:           true,
+				Suspended:          false,
+				Silenced:           true,
+				Role:               "admin",
+				Locale:             "fr",
+				RecoveryMethods:    []string{"email", "passkey"},
+				AllowNSFW:          true,
+				RequireNSFWWarning: false,
+				Metadata: map[string]interface{}{
+					"agent_verified":         true,
+					"agent_delegated_scopes": []any{"read"},
+				},
+				IsAgent:      true,
+				AgentType:    "assistant",
+				AgentVersion: "1.0.0",
+				AgentOwner:   "@bob",
+				AgentCapabilities: &agents.Capabilities{
+					CanPost:           true,
+					CanReply:          true,
+					CanBoost:          true,
+					CanFollow:         true,
+					CanDM:             true,
+					RestrictedDomains: []string{"example.com"},
+					MaxPostsPerHour:   0,
+					RequiresApproval:  true,
+				},
+				Version: 6,
 			},
 		},
 		{
@@ -87,10 +145,20 @@ func TestUserRepository_modelToStorage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := repo.modelToStorage(tt.userModel)
+			assert.Equal(t, common.GenerateNumericID(tt.userModel.Username), got.ID)
 			assert.Equal(t, tt.want.Username, got.Username)
 			assert.Equal(t, tt.want.Email, got.Email)
 			assert.Equal(t, tt.want.PasswordHash, got.PasswordHash)
 			assert.Equal(t, tt.want.DisplayName, got.DisplayName)
+			assert.Equal(t, tt.want.Note, got.Note)
+			assert.Equal(t, tt.want.Avatar, got.Avatar)
+			assert.Equal(t, tt.want.Header, got.Header)
+			if tt.want.URL != "" {
+				assert.Equal(t, tt.want.URL, got.URL)
+			}
+			assert.Equal(t, tt.want.Locked, got.Locked)
+			assert.Equal(t, tt.want.Discoverable, got.Discoverable)
+			assert.Equal(t, tt.want.Fields, got.Fields)
 			assert.Equal(t, tt.want.CreatedAt, got.CreatedAt)
 			assert.Equal(t, tt.want.UpdatedAt, got.UpdatedAt)
 			assert.Equal(t, tt.want.Approved, got.Approved)
@@ -99,6 +167,18 @@ func TestUserRepository_modelToStorage(t *testing.T) {
 			assert.Equal(t, tt.want.Role, got.Role)
 			assert.Equal(t, tt.want.Locale, got.Locale)
 			assert.Equal(t, tt.want.RecoveryMethods, got.RecoveryMethods)
+			assert.Equal(t, tt.want.AllowNSFW, got.AllowNSFW)
+			assert.Equal(t, tt.want.RequireNSFWWarning, got.RequireNSFWWarning)
+			assert.Equal(t, tt.want.Metadata, got.Metadata)
+			assert.Equal(t, tt.want.IsAgent, got.IsAgent)
+			assert.Equal(t, tt.want.AgentType, got.AgentType)
+			assert.Equal(t, tt.want.AgentCapabilities, got.AgentCapabilities)
+			assert.Equal(t, tt.want.AgentVersion, got.AgentVersion)
+			assert.Equal(t, tt.want.AgentOwner, got.AgentOwner)
+			assert.Equal(t, tt.want.AgentCreatedBy, got.AgentCreatedBy)
+			assert.Equal(t, tt.want.AgentPublicKey, got.AgentPublicKey)
+			assert.Equal(t, tt.want.AgentKeyType, got.AgentKeyType)
+			assert.Equal(t, tt.want.Version, got.Version)
 		})
 	}
 }

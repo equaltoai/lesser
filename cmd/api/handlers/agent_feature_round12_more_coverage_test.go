@@ -128,7 +128,7 @@ func TestAgentsRound12_DirectoryLifecycleAndActivity(t *testing.T) {
 		var out apimodels.Agent
 		require.NoError(t, json.Unmarshal(resp.Body, &out))
 		require.Equal(t, "alice", out.Username)
-		require.False(t, out.Verified)
+		require.True(t, out.Verified)
 	})
 
 	t.Run("updates_agent_as_owner", func(t *testing.T) {

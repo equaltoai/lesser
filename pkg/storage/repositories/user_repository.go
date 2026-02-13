@@ -503,28 +503,51 @@ func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string
 
 // modelToStorage converts a models.User to storage.User
 func (r *UserRepository) modelToStorage(userModel *models.User) *storage.User {
-	return &storage.User{
-		Username:          userModel.Username,
-		Email:             userModel.Email,
-		PasswordHash:      userModel.PasswordHash,
-		DisplayName:       userModel.DisplayName,
-		IsAgent:           userModel.IsAgent,
-		AgentType:         userModel.AgentType,
-		AgentCapabilities: userModel.AgentCapabilities,
-		AgentVersion:      userModel.AgentVersion,
-		AgentOwner:        userModel.AgentOwner,
-		AgentCreatedBy:    userModel.AgentCreatedBy,
-		AgentPublicKey:    userModel.AgentPublicKey,
-		AgentKeyType:      userModel.AgentKeyType,
-		CreatedAt:         userModel.CreatedAt,
-		UpdatedAt:         userModel.UpdatedAt,
-		Approved:          userModel.Approved,
-		Suspended:         userModel.Suspended,
-		Silenced:          userModel.Silenced,
-		Role:              userModel.Role,
-		Locale:            userModel.Locale,
-		RecoveryMethods:   userModel.RecoveryMethods,
+	user := &storage.User{
+		ID:                 common.GenerateNumericID(userModel.Username),
+		Username:           userModel.Username,
+		Email:              userModel.Email,
+		PasswordHash:       userModel.PasswordHash,
+		DisplayName:        userModel.DisplayName,
+		Note:               userModel.Note,
+		Avatar:             userModel.Avatar,
+		Header:             userModel.Header,
+		URL:                userModel.URL,
+		Locked:             userModel.Locked,
+		Discoverable:       userModel.Discoverable,
+		Fields:             userModel.Fields,
+		CreatedAt:          userModel.CreatedAt,
+		UpdatedAt:          userModel.UpdatedAt,
+		Approved:           userModel.Approved,
+		Suspended:          userModel.Suspended,
+		Silenced:           userModel.Silenced,
+		Role:               userModel.Role,
+		Locale:             userModel.Locale,
+		RecoveryMethods:    userModel.RecoveryMethods,
+		AllowNSFW:          userModel.AllowNSFW,
+		RequireNSFWWarning: userModel.RequireNSFWWarning,
+		Metadata:           userModel.Metadata,
+		IsAgent:            userModel.IsAgent,
+		AgentType:          userModel.AgentType,
+		AgentCapabilities:  userModel.AgentCapabilities,
+		AgentVersion:       userModel.AgentVersion,
+		AgentOwner:         userModel.AgentOwner,
+		AgentCreatedBy:     userModel.AgentCreatedBy,
+		AgentPublicKey:     userModel.AgentPublicKey,
+		AgentKeyType:       userModel.AgentKeyType,
+		Version:            userModel.Version,
 	}
+
+	baseURL := strings.TrimSpace(config.Get().Domain)
+	if baseURL != "" && !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if baseURL != "" && strings.TrimSpace(user.URL) == "" {
+		user.URL = fmt.Sprintf("%s/@%s", baseURL, userModel.Username)
+	}
+
+	return user
 }
 
 type userUpdateApplier func(*models.User, any)
