@@ -48,6 +48,9 @@ func registerDefaultTypeConverters(db core.DB) error {
 	if err := extended.RegisterTypeConverter(sliceAnyType, sliceAnyConverter{}); err != nil {
 		return fmt.Errorf("register []any converter: %w", err)
 	}
+	if err := extended.RegisterTypeConverter(agentsCapabilitiesType, agentCapabilitiesConverter{}); err != nil {
+		return fmt.Errorf("register agents.Capabilities converter: %w", err)
+	}
 
 	return nil
 }
