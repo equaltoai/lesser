@@ -89,6 +89,21 @@ func TestModerationRepository_GetModerationEvent_NotFoundAndError(t *testing.T) 
 	})
 }
 
+func TestModerationRepository_GetReportsByStatus_NotFoundReturnsEmpty(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockQuery.On("All", mock.Anything).Return(errors.ErrItemNotFound).Once()
+	setupPermissiveDynamormMocks(mockDB, mockQuery)
+
+	repo := NewModerationRepository(mockDB, "test-table", zap.NewNop())
+	reports, nextCursor, err := repo.GetReportsByStatus(ctx, storage.ReportStatusOpen, 50, "")
+	require.NoError(t, err)
+	require.Empty(t, nextCursor)
+	require.Empty(t, reports)
+}
+
 func TestModerationRepository_DeleteModerationPattern_NotFoundAndError(t *testing.T) {
 	t.Run("not found returns storage.ErrNotFound", func(t *testing.T) {
 		ctx := context.Background()

@@ -388,14 +388,9 @@ func (h *Handler) getAuthenticatedUserLift(ctx *apptheory.Context) string {
 		return ""
 	}
 
-	// Create auth service and validate token
-	authService, err := auth.NewAuthService(h.cfg, h.repos)
-	if err != nil {
-		return ""
-	}
-
-	claims, err := authService.ValidateAccessToken(token)
-	if err != nil {
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil || claims == nil {
 		return ""
 	}
 
