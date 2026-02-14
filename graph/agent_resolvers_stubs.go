@@ -748,7 +748,7 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 		return nil, apperrors.InternalWithCause(err, "failed to mint delegated agent tokens")
 	}
 
-	refreshExpiry := now.Add(accessTTL)
+	refreshExpiry := now.Add(auth.RefreshTokenDuration)
 	_ = r.Storage.Account().CreateRefreshToken(ctx, &storage.RefreshToken{
 		Token:     refreshToken,
 		Username:  agentUsername,

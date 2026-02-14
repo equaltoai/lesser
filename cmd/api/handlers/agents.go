@@ -327,7 +327,7 @@ func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername
 	}
 
 	now := time.Now()
-	refreshExpiry := now.Add(accessTTL)
+	refreshExpiry := now.Add(auth.RefreshTokenDuration)
 	oauthRefreshToken := &storage.RefreshToken{
 		Token:     refreshToken,
 		Username:  agentUsername,
