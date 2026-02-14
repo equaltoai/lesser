@@ -239,6 +239,11 @@ func (f *RepositoryFactory) setupDependencies() {
 		f.scheduledStatusRepo.SetMediaRepository(f.mediaRepo)
 	}
 
+	// Set up analytics/trending repository dependency on status repository for link lookups.
+	if f.analyticsRepo != nil && f.statusRepo != nil {
+		f.analyticsRepo.SetStatusRepository(f.statusRepo)
+	}
+
 	// Wire bookmark repository dependencies
 	if f.bookmarkRepo != nil {
 		if f.accountRepo != nil {
