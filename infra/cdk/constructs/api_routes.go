@@ -81,6 +81,7 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	}
 
 	gateway.RestApi = apptheorycdk.NewAppTheoryRestApiRouter(scope, jsii.String("RestApi"), restProps)
+	addRestApiGatewayResponses(gateway.RestApi, gateway.RestApi.Api())
 
 	// Add routes
 	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds)
@@ -117,6 +118,68 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	gateway.GraphQLWebSocketApi = createGraphQLWebSocketApi(scope, props, wsDomainName)
 
 	return gateway
+}
+
+func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.RestApi) {
+	if scope == nil || api == nil {
+		return
+	}
+
+	commonHeaders := map[string]*string{
+		"gatewayresponse.header.Access-Control-Allow-Origin":  jsii.String("'*'"),
+		"gatewayresponse.header.Access-Control-Allow-Headers": jsii.String("'*'"),
+		"gatewayresponse.header.Access-Control-Allow-Methods": jsii.String("'*'"),
+	}
+
+	serviceUnavailableTemplate := map[string]*string{
+		"application/json": jsii.String(`{"message":"Service temporarily unavailable","requestId":"$context.requestId"}`),
+	}
+
+	awsapigateway.NewGatewayResponse(scope, jsii.String("Default5xxGatewayResponse"), &awsapigateway.GatewayResponseProps{
+		RestApi:         api,
+		Type:            awsapigateway.ResponseType_DEFAULT_5XX(),
+		StatusCode:      jsii.String("503"),
+		ResponseHeaders: &commonHeaders,
+		Templates:       &serviceUnavailableTemplate,
+	})
+
+	awsapigateway.NewGatewayResponse(scope, jsii.String("IntegrationFailureGatewayResponse"), &awsapigateway.GatewayResponseProps{
+		RestApi:         api,
+		Type:            awsapigateway.ResponseType_INTEGRATION_FAILURE(),
+		StatusCode:      jsii.String("503"),
+		ResponseHeaders: &commonHeaders,
+		Templates:       &serviceUnavailableTemplate,
+	})
+
+	awsapigateway.NewGatewayResponse(scope, jsii.String("IntegrationTimeoutGatewayResponse"), &awsapigateway.GatewayResponseProps{
+		RestApi:         api,
+		Type:            awsapigateway.ResponseType_INTEGRATION_TIMEOUT(),
+		StatusCode:      jsii.String("504"),
+		ResponseHeaders: &commonHeaders,
+		Templates: &map[string]*string{
+			"application/json": jsii.String(`{"message":"Service timed out","requestId":"$context.requestId"}`),
+		},
+	})
+
+	awsapigateway.NewGatewayResponse(scope, jsii.String("ThrottledGatewayResponse"), &awsapigateway.GatewayResponseProps{
+		RestApi:         api,
+		Type:            awsapigateway.ResponseType_THROTTLED(),
+		StatusCode:      jsii.String("429"),
+		ResponseHeaders: &commonHeaders,
+		Templates: &map[string]*string{
+			"application/json": jsii.String(`{"message":"Too Many Requests","requestId":"$context.requestId"}`),
+		},
+	})
+
+	awsapigateway.NewGatewayResponse(scope, jsii.String("QuotaExceededGatewayResponse"), &awsapigateway.GatewayResponseProps{
+		RestApi:         api,
+		Type:            awsapigateway.ResponseType_QUOTA_EXCEEDED(),
+		StatusCode:      jsii.String("429"),
+		ResponseHeaders: &commonHeaders,
+		Templates: &map[string]*string{
+			"application/json": jsii.String(`{"message":"Quota exceeded","requestId":"$context.requestId"}`),
+		},
+	})
 }
 
 func addRestRoutes(api apptheorycdk.AppTheoryRestApiRouter, functions *LambdaFunctions, streamTimeoutSeconds int) {
