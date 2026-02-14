@@ -3,6 +3,7 @@ package reputation
 import (
 	"context"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -217,6 +218,10 @@ func (s *Service) GetReputation(ctx context.Context, actorID string) (*Reputatio
 	// Get reputation from storage
 	storedRep, err := s.userRepo.GetReputation(ctx, actorID)
 	if err != nil {
+		if stdErrors.Is(err, storage.ErrNotFound) {
+			// No reputation history, calculate new.
+			return s.calculateAndStore(ctx, actorID)
+		}
 		return nil, fmt.Errorf("failed to get reputation: %w", err)
 	}
 

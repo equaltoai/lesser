@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/reputation"
+	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -39,9 +41,21 @@ func (h *Handler) HandleGetReputationLift(ctx *apptheory.Context) (*apptheory.Re
 	}
 
 	// Normalize actor ID
-	// If it's just a username, convert to full actor URI
+	// If it's not already a URI, resolve numeric account ID / handle / username to the canonical actor URI.
 	if !strings.Contains(actorID, "://") {
-		actorID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, actorID)
+		actor, resolveErr := h.resolveAccountID(ctx.Context(), actorID)
+		if resolveErr != nil {
+			if errors.Is(resolveErr, storage.ErrNotFound) || errorChainContains(resolveErr, "not found") || errorChainContains(resolveErr, "actor not found") {
+				return common.RespondActorNotFound(ctx)
+			}
+			h.logger.Error("Failed to resolve actor for reputation lookup", zap.Error(resolveErr), zap.String("actor_id", actorID))
+			return common.RespondInternalServerError(ctx)
+		}
+
+		if actor == nil || strings.TrimSpace(actor.ID) == "" {
+			return common.RespondActorNotFound(ctx)
+		}
+		actorID = strings.TrimSpace(actor.ID)
 	}
 
 	// Initialize reputation service
