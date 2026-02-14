@@ -60,6 +60,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -296,6 +297,26 @@ func (r *Registry) validate() error {
 	return nil
 }
 
+func isNilInterface(value any) bool {
+	if value == nil {
+		return true
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
+func (r *Registry) publisherOrNoop() streaming.Publisher {
+	if isNilInterface(r.publisher) {
+		return streaming.NewNoopPublisher()
+	}
+	return r.publisher
+}
+
 // BusinessLogic returns the business logic service, initializing it if necessary
 func (r *Registry) BusinessLogic() BusinessLogicService {
 	r.mu.Lock()
@@ -336,7 +357,7 @@ func (r *Registry) BusinessLogic() BusinessLogicService {
 			federation,
 			timeline,
 			analytics,
-			r.publisher,
+			r.publisherOrNoop(),
 			jobQueue,
 		)
 		r.initialized["BusinessLogic"] = true
@@ -473,7 +494,7 @@ func (r *Registry) Threads() *threads.Service {
 				objectRepo,
 				actorRepo,
 				r.createThreadsFederationAdapterUnlocked(),
-				r.publisher,
+				r.publisherOrNoop(),
 				r.logger,
 				domain,
 			)
@@ -1199,7 +1220,7 @@ func (r *Registry) Notes() *notes.Service {
 				communityNoteRepo,
 				userRepo,
 				pollRepo, // Add poll repository
-				r.publisher,
+				r.publisherOrNoop(),
 				analyticsService,                         // Analytics service
 				r.createNotesFederationAdapterUnlocked(), // Federation service adapter
 				notificationsService,
@@ -1248,7 +1269,7 @@ func (r *Registry) Accounts() *accounts.Service {
 
 		r.accountsService = accounts.NewService(
 			r.storage,
-			r.publisher,
+			r.publisherOrNoop(),
 			federationAdapter,
 			cryptoAdapter,
 			authAdapter,
@@ -1282,7 +1303,7 @@ func (r *Registry) Relationships() *relationships.Service {
 
 		r.relationshipsService = relationships.NewServiceWithStorage(
 			r.storage,
-			r.publisher,
+			r.publisherOrNoop(),
 			r.createRelationshipsFederationAdapterUnlocked(), // federation service adapter
 			r.logger,
 			domainName,
@@ -1322,7 +1343,7 @@ func (r *Registry) Conversations() *conversations.Service {
 				conversationRepo,
 				noteRepo,
 				accountRepo,
-				r.publisher,
+				r.publisherOrNoop(),
 				federationService,
 				r.logger,
 				domainName,
@@ -1364,7 +1385,7 @@ func (r *Registry) Media() *media.Service {
 			r.mediaService = media.NewService(
 				mediaRepo,
 				accountRepo,
-				r.publisher,
+				r.publisherOrNoop(),
 				mediaJobQueue,
 				r.logger,
 				sourceBucket,

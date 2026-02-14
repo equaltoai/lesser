@@ -85,17 +85,13 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		services.WithConfig(serviceConfig),
 	}
 
-	// Add publisher if available (required for event streaming)
+	// Wire streaming events through the Dynamo-backed queue so API requests never
+	// require a direct websocket publisher.
 	if streamQueue != nil {
-		// Convert StreamQueueService to Publisher interface
-		if publisher, ok := streamQueue.(streaming.Publisher); ok {
-			registryOpts = append(registryOpts, services.WithPublisher(publisher))
-			logger.Info("initialized registry with streaming publisher")
-		} else {
-			logger.Warn("streamQueue does not implement Publisher interface")
-		}
+		registryOpts = append(registryOpts, services.WithPublisher(streaming.NewQueuePublisher(streamQueue, logger)))
+		logger.Info("initialized registry with streaming queue publisher")
 	} else {
-		logger.Warn("streamQueue is nil, registry will not have publisher")
+		logger.Warn("streamQueue is nil, registry will use noop publisher")
 	}
 
 	registryImpl, err := services.NewRegistry(registryOpts...)
