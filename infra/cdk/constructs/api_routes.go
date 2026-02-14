@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigateway"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2integrations"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
@@ -60,7 +61,7 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 			StageName:          jsii.String(string(apiStage)),
 			AccessLogging:      logGroup,
 			DetailedMetrics:    jsii.Bool(true),
-			AccessLogFormat:    nil,
+			AccessLogFormat:    awsapigateway.AccessLogFormat_Custom(jsii.String(`{"requestId":"$context.requestId","extendedRequestId":"$context.extendedRequestId","requestTime":"$context.requestTime","ip":"$context.identity.sourceIp","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","path":"$context.path","status":"$context.status","responseLength":"$context.responseLength","integrationStatus":"$context.integration.status","integrationLatency":"$context.integration.latency","integrationError":"$context.integrationErrorMessage","errorMessage":"$context.error.messageString","errorResponseType":"$context.error.responseType"}`)),
 			AccessLogRetention: awslogs.RetentionDays_ONE_WEEK,
 		},
 	}
