@@ -1026,7 +1026,7 @@ class ComprehensiveAPITest:
             return
         
         # Create scheduled status
-        scheduled_time = (datetime.now() + timedelta(hours=1)).isoformat() + 'Z'
+        scheduled_time = (datetime.utcnow() + timedelta(hours=1)).isoformat() + 'Z'
         response = self.api_request('POST', '/statuses', json={
             'status': 'This is a scheduled test status',
             'scheduled_at': scheduled_time,

@@ -567,6 +567,7 @@ func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) 
 	err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
+		ConsistentRead().
 		First(&model)
 
 	if err != nil {
@@ -620,6 +621,101 @@ func (h *OAuthHelper) DeleteRefreshTokenGeneric(ctx context.Context, token strin
 	}
 
 	h.logger.Debug("deleted refresh token", zap.String("token", token))
+	return nil
+}
+
+// RevokeAccessTokenGeneric stores the JWT ID (JTI) of an access token as revoked.
+// The record is TTL'd to the token's expiry, so revocations are self-cleaning.
+func (h *OAuthHelper) RevokeAccessTokenGeneric(ctx context.Context, jti string, expiresAt time.Time) error {
+	jti = strings.TrimSpace(jti)
+	if err := common.ValidateRequiredParam("jti", jti); err != nil {
+		return err
+	}
+
+	model := &models.RevokedAccessToken{
+		JTI:       jti,
+		ExpiresAt: expiresAt,
+		RevokedAt: time.Now().UTC(),
+	}
+
+	if err := model.BeforeCreate(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityRevokedAccessToken, "preparation")
+	}
+
+	// Create the item. Revoke is idempotent, so treat duplicate key as success.
+	if err := h.db.WithContext(ctx).Model(model).Create(); err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
+			return nil
+		}
+		h.logger.Error("failed to revoke access token", zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, EntityRevokedAccessToken, "token")
+	}
+
+	h.logger.Debug("revoked access token", zap.String("jti", jti))
+	return nil
+}
+
+// IsAccessTokenRevokedGeneric reports whether the given JWT ID (JTI) has been revoked.
+func (h *OAuthHelper) IsAccessTokenRevokedGeneric(ctx context.Context, jti string) (bool, error) {
+	if h == nil || h.db == nil {
+		return false, nil
+	}
+
+	jti = strings.TrimSpace(jti)
+	if err := common.ValidateRequiredParam("jti", jti); err != nil {
+		return false, err
+	}
+
+	pk := "REVOKEDTOKEN#" + jti
+	sk := SKToken
+
+	var model models.RevokedAccessToken
+	err := h.db.WithContext(ctx).Model(&models.RevokedAccessToken{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		ConsistentRead().
+		First(&model)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		h.logger.Error("failed to check access token revocation", zap.Error(err))
+		return false, ErrorHandler.HandleGetError(err, EntityRevokedAccessToken, "token")
+	}
+
+	// Defensive: treat malformed records as not revoked.
+	if strings.TrimSpace(model.JTI) == "" || model.ExpiresAt.IsZero() {
+		return false, nil
+	}
+
+	// Treat expired entries as not revoked; best-effort cleanup.
+	if !model.ExpiresAt.IsZero() && time.Now().After(model.ExpiresAt) {
+		_ = h.DeleteRevokedAccessTokenGeneric(ctx, jti)
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// DeleteRevokedAccessTokenGeneric removes a revoked access token record by its JWT ID (JTI).
+func (h *OAuthHelper) DeleteRevokedAccessTokenGeneric(ctx context.Context, jti string) error {
+	jti = strings.TrimSpace(jti)
+	if err := common.ValidateRequiredParam("jti", jti); err != nil {
+		return err
+	}
+
+	pk := "REVOKEDTOKEN#" + jti
+	sk := SKToken
+
+	err := h.db.WithContext(ctx).Model(&models.RevokedAccessToken{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete()
+	if err != nil && !errors.IsNotFound(err) {
+		h.logger.Error("failed to delete revoked access token", zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, EntityRevokedAccessToken, "token")
+	}
+
 	return nil
 }
 

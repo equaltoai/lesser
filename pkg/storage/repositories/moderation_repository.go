@@ -226,9 +226,9 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 
 // GetModerationQueuePaginated retrieves pending moderation events with pagination
 func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, limit int, cursor string) ([]*storage.ModerationQueueItem, string, error) {
-	var models []models.ModerationEvent
+	var eventModels []models.ModerationEvent
 
-	query := r.db.WithContext(ctx).Model(&models).
+	query := r.db.WithContext(ctx).Model(&models.ModerationEvent{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("TYPE#%s#pending", moderation.EventTypeFlagged)).
 		Limit(limit)
@@ -240,12 +240,12 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 	// Get one more item than requested to check if more pages exist
 	query = query.Limit(limit + 1)
 
-	if err := query.All(&models); err != nil {
+	if err := query.All(&eventModels); err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityModerationEvent, "queue paginated")
 	}
 
-	items := make([]*storage.ModerationQueueItem, 0, len(models))
-	for _, model := range models {
+	items := make([]*storage.ModerationQueueItem, 0, len(eventModels))
+	for _, model := range eventModels {
 		// Convert model to storage.ModerationEvent
 		event := &storage.ModerationEvent{
 			ID:              model.ID,
@@ -276,14 +276,14 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 
 	// Generate next cursor
 	var nextCursor string
-	if err := common.ValidateSliceLength("models", models, limit); err != nil {
+	if err := common.ValidateSliceLength("eventModels", eventModels, limit); err != nil {
 		// We got more results than requested, so there are more pages
-		nextCursor = models[limit-1].GSI2SK
-		models = models[:limit] // Trim to requested limit
+		nextCursor = eventModels[limit-1].GSI2SK
+		eventModels = eventModels[:limit] // Trim to requested limit
 
 		// Re-process the trimmed models to create items
-		items = make([]*storage.ModerationQueueItem, 0, len(models))
-		for _, model := range models {
+		items = make([]*storage.ModerationQueueItem, 0, len(eventModels))
+		for _, model := range eventModels {
 			// Convert model to storage.ModerationEvent
 			event := &storage.ModerationEvent{
 				ID:              model.ID,
@@ -2650,9 +2650,9 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 
 // GetReportsByStatus retrieves reports with a specific status
 func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status storage.ReportStatus, limit int, cursor string) ([]*storage.Report, string, error) {
-	var models []models.Report
+	var reportModels []models.Report
 
-	query := r.db.WithContext(ctx).Model(&models).
+	query := r.db.WithContext(ctx).Model(&models.Report{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("STATUS#%s", string(status))).
 		Limit(limit)
@@ -2664,52 +2664,24 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 	// Get one more item than requested to check if more pages exist
 	query = query.Limit(limit + 1)
 
-	if err := query.All(&models); err != nil {
+	if err := query.All(&reportModels); err != nil {
 		if errors.IsNotFound(err) {
 			return []*storage.Report{}, "", nil
 		}
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityReport, "by status")
 	}
 
-	reports := make([]*storage.Report, len(models))
-	for i, model := range models {
-		reports[i] = &storage.Report{
-			ID:              model.ID,
-			ReporterID:      model.ReporterID,
-			TargetAccountID: model.TargetAccountID,
-			StatusIDs:       model.StatusIDs,
-			Comment:         model.Comment,
-			Category:        model.Category,
-			RuleIDs: func() []string {
-				var result []string
-				for _, ruleID := range model.RuleIDs {
-					result = append(result, strconv.Itoa(ruleID))
-				}
-				return result
-			}(),
-			Forwarded:         model.Forwarded,
-			Status:            model.Status,
-			ActionTaken:       model.ActionTaken,
-			ActionTakenAt:     model.ActionTakenAt,
-			ModeratorID:       model.ModeratorID,
-			ModerationEventID: model.ModerationEventID,
-			CreatedAt:         model.CreatedAt,
-			UpdatedAt:         model.UpdatedAt,
-			AssignedTo:        model.AssignedTo,
-		}
-	}
-
 	// Generate next cursor
 	var nextCursor string
-	if err := common.ValidateSliceLength("models", models, limit); err != nil {
+	if err := common.ValidateSliceLength("reportModels", reportModels, limit); err != nil {
 		// We got more results than requested, so there are more pages
-		nextCursor = models[limit-1].GSI3SK
-		models = models[:limit] // Trim to requested limit
+		nextCursor = reportModels[limit-1].GSI3SK
+		reportModels = reportModels[:limit] // Trim to requested limit
 	}
 
 	// Convert to storage types using our helper method
-	reports = make([]*storage.Report, len(models))
-	for i, model := range models {
+	reports := make([]*storage.Report, len(reportModels))
+	for i, model := range reportModels {
 		reports[i] = r.convertReportModelToStorage(model)
 	}
 

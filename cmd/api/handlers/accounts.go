@@ -136,7 +136,158 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheor
 	h.logger.Info("handle verify_credentials: account retrieved",
 		zap.String("username", claims.Username))
 
-	return h.respondOK(ctx, account)
+	mastodonAccount, err := h.mastodonAccountFromStorageAccount(account)
+	if err != nil {
+		h.logger.Error("handle verify_credentials: failed to transform account response",
+			zap.String("username", claims.Username),
+			zap.Error(err))
+		return common.RespondInternalServerError(ctx)
+	}
+
+	return h.respondOK(ctx, mastodonAccount)
+}
+
+func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (models.Account, error) {
+	if account == nil || account.User == nil {
+		return models.Account{}, fmt.Errorf("account is missing user")
+	}
+
+	username := strings.TrimSpace(account.User.Username)
+	if username == "" {
+		return models.Account{}, fmt.Errorf("account is missing username")
+	}
+
+	baseURL := handlerBaseURL(h)
+
+	out := mastodonAccountFromActor(account.Actor, baseURL)
+	applyMastodonIdentity(&out, account.User, username)
+	applyMastodonProfile(&out, account.User, baseURL, username)
+	ensureMastodonAccountCollections(&out)
+	applyMastodonProfileFields(&out, account.User.Fields)
+
+	return out, nil
+}
+
+func handlerBaseURL(h *Handler) string {
+	if h == nil || h.cfg == nil {
+		return ""
+	}
+	return strings.TrimSuffix(strings.TrimSpace(h.cfg.BaseURL()), "/")
+}
+
+func mastodonAccountFromActor(actor *activitypub.Actor, baseURL string) models.Account {
+	if actor == nil {
+		return models.Account{}
+	}
+	return transformations.ActorToAccountWithCounts(actor, baseURL, 0, 0, 0)
+}
+
+func applyMastodonIdentity(out *models.Account, user *storage.User, username string) {
+	if out == nil || user == nil {
+		return
+	}
+
+	out.Username = username
+	out.Acct = username
+	if id := strings.TrimSpace(user.ID); id != "" {
+		out.ID = id
+	} else {
+		out.ID = common.GenerateNumericID(username)
+	}
+}
+
+func applyMastodonProfile(out *models.Account, user *storage.User, baseURL, username string) {
+	if out == nil || user == nil {
+		return
+	}
+
+	if displayName := strings.TrimSpace(user.DisplayName); displayName != "" {
+		out.DisplayName = displayName
+	}
+	if out.DisplayName == "" {
+		out.DisplayName = username
+	}
+	if note := strings.TrimSpace(user.Note); note != "" {
+		out.Note = note
+	}
+
+	out.Locked = user.Locked
+	out.Discoverable = user.Discoverable
+	if user.IsAgent {
+		out.Bot = true
+	}
+
+	if !user.CreatedAt.IsZero() {
+		out.CreatedAt = user.CreatedAt.UTC().Format(time.RFC3339)
+	} else if out.CreatedAt == "" {
+		out.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	if profileURL := strings.TrimSpace(user.URL); profileURL != "" {
+		out.URL = profileURL
+	}
+	if out.URL == "" && baseURL != "" {
+		out.URL = fmt.Sprintf("%s/@%s", baseURL, username)
+	}
+
+	if avatar := strings.TrimSpace(user.Avatar); avatar != "" {
+		out.Avatar = avatar
+		out.AvatarStatic = avatar
+	}
+	if header := strings.TrimSpace(user.Header); header != "" {
+		out.Header = header
+		out.HeaderStatic = header
+	}
+
+	if out.Avatar == "" && baseURL != "" {
+		out.Avatar = baseURL + "/avatars/original/missing.png"
+	}
+	if out.AvatarStatic == "" {
+		out.AvatarStatic = out.Avatar
+	}
+	if out.Header == "" && baseURL != "" {
+		out.Header = baseURL + "/headers/original/missing.png"
+	}
+	if out.HeaderStatic == "" {
+		out.HeaderStatic = out.Header
+	}
+}
+
+func ensureMastodonAccountCollections(out *models.Account) {
+	if out == nil {
+		return
+	}
+
+	// Ensure JSON arrays are serialized as [] not null (OpenAPI).
+	if out.Emojis == nil {
+		out.Emojis = []any{}
+	}
+	if out.Fields == nil {
+		out.Fields = []any{}
+	}
+}
+
+func applyMastodonProfileFields(out *models.Account, storedFields []map[string]string) {
+	if out == nil || len(storedFields) == 0 {
+		return
+	}
+
+	fields := make([]any, 0, len(storedFields))
+	for _, field := range storedFields {
+		if field == nil {
+			continue
+		}
+		m := map[string]any{
+			"name":        field["name"],
+			"value":       field["value"],
+			"verified_at": nil,
+		}
+		if verifiedAt := strings.TrimSpace(field["verified_at"]); verifiedAt != "" {
+			m["verified_at"] = verifiedAt
+		}
+		fields = append(fields, m)
+	}
+	out.Fields = fields
 }
 
 // HandleUpdateCredentialsLift updates the current user's profile

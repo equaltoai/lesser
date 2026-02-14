@@ -121,9 +121,9 @@ func TestScheduledStatusHandlers_Round11(t *testing.T) {
 	require.NoError(t, err)
 	created, resp, err := handler.HandleCreateScheduledStatusLift(ctxCreate, &statusReq)
 	require.NoError(t, err)
-	require.Nil(t, created)
-	require.NotNil(t, resp)
-	require.Equal(t, http.StatusUnprocessableEntity, resp.Status)
+	require.NotNil(t, created)
+	require.Nil(t, resp)
+	require.Equal(t, "sched-new", created.ID)
 }
 
 func TestSearchHandlers_Round11(t *testing.T) {

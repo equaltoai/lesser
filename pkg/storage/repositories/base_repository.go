@@ -1038,7 +1038,7 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 			order = SortOrderAsc
 		}
 
-		query := r.db.WithContext(ctx).Model(new(M)).
+		query := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
 			Index(config.IndexName).
 			Where(gsi.PKField, "=", pkValue).
 			OrderBy(gsi.SKField, order).
@@ -1062,7 +1062,7 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 		pkValue := fmt.Sprintf("%s#%s", config.PKKey, entityID)
 		skPattern := config.SKKey
 
-		query := r.db.WithContext(ctx).Model(new(M)).
+		query := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
 			Where("PK", "=", pkValue).
 			Limit(safeLimit + 1)
 
@@ -1184,7 +1184,7 @@ func QueryHistoryWithDateRange[M BaseModel](
 
 	// Query using GSI
 	var models []M
-	err := r.db.WithContext(ctx).Model(new(M)).
+	err := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
 		Index(config.IndexName).
 		Where(config.PKField, "=", fmt.Sprintf("METRIC#%s", config.MetricType)).
 		Where(config.SKField, ">=", fmt.Sprintf("DATE#%s", startDate)).
@@ -1241,7 +1241,7 @@ func QueryMetricsByTimeRange[M BaseModel](
 	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(new(M)).
+	err := r.db.WithContext(ctx).Model(modelPrototypeOf[M]()).
 		Index(config.IndexName).
 		Where(config.PKField, "=", pkValue).
 		Where(config.SKField, ">=", startSK).

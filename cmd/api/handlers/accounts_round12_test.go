@@ -224,13 +224,11 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 
 		resp := requireStatus(t, http.StatusOK)(h.HandleVerifyCredentialsLift(ctx))
 
-		var got storage.Account
+		var got apimodels.Account
 		require.NoError(t, json.Unmarshal(resp.Body, &got))
-		require.NotNil(t, got.User)
-		require.Equal(t, "alice", got.User.Username)
-		require.NotNil(t, got.Actor)
-		require.Equal(t, cfg.BaseURL()+"/users/alice", got.Actor.ID)
-		require.Equal(t, "alice", got.Actor.PreferredUsername)
+		require.Equal(t, "alice", got.Username)
+		require.Equal(t, "alice", got.Acct)
+		require.NotEmpty(t, got.ID)
 	})
 }
 

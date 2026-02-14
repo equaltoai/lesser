@@ -46,6 +46,16 @@ func TestURLValidator_Round08_ExtractAndValidateURL_TagsAndShorteners(t *testing
 	require.Contains(t, internal.ValidationTags, "internal_url")
 }
 
+func TestURLValidator_Round08_ExtractAndValidateURL_ParseError(t *testing.T) {
+	ctx := context.Background()
+	validator := NewURLValidator(zap.NewNop())
+
+	result, err := validator.ExtractAndValidateURL(ctx, "example.com/%zz")
+	require.NoError(t, err)
+	require.False(t, result.IsValid)
+	require.Contains(t, result.ValidationTags, "invalid_format")
+}
+
 func TestURLValidator_Round08_ValidateAndNormalizeProfileURLs_Warnings(t *testing.T) {
 	ctx := context.Background()
 	validator := NewURLValidator(zap.NewNop())

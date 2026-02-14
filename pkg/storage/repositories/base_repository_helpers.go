@@ -28,7 +28,7 @@ func (r *BaseRepository[T]) BatchCreateHelper(ctx context.Context, items []T, en
 	}
 
 	// Use DynamORM's batch create functionality
-	err := r.db.WithContext(ctx).Model(new(T)).BatchCreate(batchItems)
+	err := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).BatchCreate(batchItems)
 	if err != nil {
 		r.logger.Error("batch create failed",
 			zap.String("entity_type", entityType),
@@ -71,7 +71,7 @@ func (r *BaseRepository[T]) QueryGSIWithTimeRangeHelper(ctx context.Context, ind
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.db.WithContext(ctx).Model(new(T)).
+	query := r.db.WithContext(ctx).Model(modelPrototypeOf[T]()).
 		Index(indexName).
 		Where(gsiPK, "=", pkValue).
 		Where(gsiSK, ">=", startSK).

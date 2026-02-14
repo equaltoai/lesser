@@ -4,6 +4,22 @@
 echo "=== Diagnosing Lesser Test Issues ==="
 echo
 
+# Check AWS Lambda account concurrency (optional)
+if [ -n "$AWS_PROFILE" ] && command -v aws &> /dev/null; then
+    echo "0. Checking AWS Lambda concurrency quota (AWS_PROFILE=$AWS_PROFILE):"
+    AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+    LIMIT=$(aws lambda get-account-settings --region "$AWS_REGION" --query 'AccountLimit.ConcurrentExecutions' --output text 2>/dev/null || true)
+    if [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
+        echo "   ✓ Account concurrency limit: $LIMIT (region: $AWS_REGION)"
+        if [ "$LIMIT" -lt 50 ]; then
+            echo "   ⚠️  This is unusually low; Lambda throttling can show up as intermittent 5xx responses."
+        fi
+    else
+        echo "   ✗ Unable to read account concurrency limit (check AWS credentials/region permissions)"
+    fi
+    echo
+fi
+
 # Check if bc is installed
 echo "1. Checking for bc command (needed for calculations):"
 if command -v bc &> /dev/null; then

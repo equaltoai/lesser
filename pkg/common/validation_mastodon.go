@@ -822,12 +822,42 @@ func validatePollExpiration(pollObj map[string]interface{}) error {
 		return ValidationError{Field: "poll.expires_in", Message: "is required"}
 	}
 
-	expiresNum, ok := expiresIn.(float64)
-	if !ok {
+	var duration int64
+	switch value := expiresIn.(type) {
+	case float64:
+		duration = int64(value)
+	case float32:
+		duration = int64(value)
+	case int:
+		duration = int64(value)
+	case int64:
+		duration = value
+	case int32:
+		duration = int64(value)
+	case uint:
+		if value > uint(MaxPollDuration) {
+			duration = int64(MaxPollDuration) + 1
+			break
+		}
+		duration = int64(value)
+	case uint64:
+		if value > uint64(MaxPollDuration) {
+			duration = int64(MaxPollDuration) + 1
+			break
+		}
+		duration = int64(value)
+	case uint32:
+		duration = int64(value)
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil {
+			return ValidationError{Field: "poll.expires_in", Message: "must be a number"}
+		}
+		duration = parsed
+	default:
 		return ValidationError{Field: "poll.expires_in", Message: "must be a number"}
 	}
 
-	duration := int(expiresNum)
 	if duration < MinPollDuration {
 		return ValidationError{Field: "poll.expires_in", Message: fmt.Sprintf("must be at least %d seconds", MinPollDuration)}
 	}
@@ -869,9 +899,12 @@ func ValidateScheduledTime(scheduledAt string) error {
 		return nil
 	}
 
-	scheduledTime, err := time.Parse(time.RFC3339, scheduledAt)
+	scheduledTime, err := time.Parse(time.RFC3339Nano, scheduledAt)
 	if err != nil {
-		return ValidationError{Field: "scheduled_at", Message: "must be a valid RFC3339 timestamp"}
+		scheduledTime, err = time.Parse(time.RFC3339, scheduledAt)
+		if err != nil {
+			return ValidationError{Field: "scheduled_at", Message: "must be a valid RFC3339 timestamp"}
+		}
 	}
 
 	// Must be in the future

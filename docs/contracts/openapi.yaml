@@ -8100,7 +8100,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/StorageAccount'
+                                $ref: '#/components/schemas/Account'
                 "400":
                     $ref: '#/components/responses/BadRequest'
                 "401":
@@ -17819,4 +17819,3 @@ paths:
             x-lesser-lambda: outbox
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:outbox
-

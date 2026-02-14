@@ -164,6 +164,7 @@ const (
 	EntityOAuthState               = "OAuth state"
 	EntityAuthCode                 = "authorization code"
 	EntityRefreshToken             = "refresh token"
+	EntityRevokedAccessToken       = "revoked access token"
 	EntityOAuthClient              = "OAuth client"
 	EntityOAuthConsent             = "OAuth consent"
 	EntityWebAuthnCredential       = "WebAuthn credential" // #nosec G101 -- entity name string, not a credential

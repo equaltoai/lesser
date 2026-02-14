@@ -419,45 +419,108 @@ func (s *OAuthService) ValidateAccessToken(tokenString string) (*Claims, error) 
 	return s.ValidateAccessTokenWithContext(tokenString, "", "", 0)
 }
 
-// ValidateAccessTokenWithContext validates a JWT token with additional security context
-func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessionID, expectedIP string, expectedTokenVersion int) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
+func (s *OAuthService) parseAccessToken(tokenString string) (*jwt.Token, error) {
+	return jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.Join(ErrUnexpectedSigningMethod, ErrJWTUnexpectedSigningMethod)
 		}
 		return s.jwtSecret, nil
 	})
-	if err != nil {
-		// Log the actual JWT parsing error for debugging
-		if s.auditLogger != nil && s.auditLogger.logger != nil {
-			s.auditLogger.logger.Warn("JWT token parsing failed",
-				zap.Error(err),
-				zap.String("error_type", fmt.Sprintf("%T", err)),
-			)
-		}
-		return nil, ErrInvalidToken
+}
+
+func (s *OAuthService) logJWTParseError(err error) {
+	if s == nil || s.auditLogger == nil || s.auditLogger.logger == nil {
+		return
 	}
 
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		// Enhanced validation checks
-		if err := s.validateEnhancedClaims(claims, expectedSessionID, expectedIP, expectedTokenVersion); err != nil {
-			return nil, err
-		}
-		return claims, nil
+	s.auditLogger.logger.Warn("JWT token parsing failed",
+		zap.Error(err),
+		zap.String("error_type", fmt.Sprintf("%T", err)),
+	)
+}
+
+func (s *OAuthService) logJWTValidationFailed(token *jwt.Token) {
+	if s == nil || s.auditLogger == nil || s.auditLogger.logger == nil {
+		return
 	}
 
-	// Token is not valid or claims type assertion failed
-	if s.auditLogger != nil && s.auditLogger.logger != nil {
-		claimsOK := false
+	tokenValid := false
+	if token != nil {
+		tokenValid = token.Valid
+	}
+
+	claimsOK := false
+	if token != nil {
 		if _, ok := token.Claims.(*Claims); ok {
 			claimsOK = true
 		}
-		s.auditLogger.logger.Warn("JWT token validation failed",
-			zap.Bool("token_valid", token.Valid),
-			zap.Bool("claims_ok", claimsOK),
-		)
 	}
-	return nil, ErrInvalidToken
+
+	s.auditLogger.logger.Warn("JWT token validation failed",
+		zap.Bool("token_valid", tokenValid),
+		zap.Bool("claims_ok", claimsOK),
+	)
+}
+
+func (s *OAuthService) validateAccessTokenNotRevoked(claims *Claims) error {
+	if s == nil || s.repos == nil || claims == nil {
+		return nil
+	}
+
+	accountRepo := s.repos.Account()
+	if accountRepo == nil {
+		return nil
+	}
+
+	jti := strings.TrimSpace(claims.ID)
+	if jti == "" {
+		return nil
+	}
+
+	checkCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	revoked, err := accountRepo.IsAccessTokenRevoked(checkCtx, jti)
+	cancel()
+	if err != nil {
+		if s.auditLogger != nil && s.auditLogger.logger != nil {
+			s.auditLogger.logger.Warn("access token revocation check failed", zap.Error(err))
+		}
+		return nil
+	}
+
+	if revoked {
+		return ErrInvalidToken
+	}
+
+	return nil
+}
+
+// ValidateAccessTokenWithContext validates a JWT token with additional security context
+func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessionID, expectedIP string, expectedTokenVersion int) (*Claims, error) {
+	token, err := s.parseAccessToken(tokenString)
+	if err != nil {
+		s.logJWTParseError(err)
+		return nil, ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		s.logJWTValidationFailed(token)
+		return nil, ErrInvalidToken
+	}
+
+	// Enhanced validation checks
+	if err := s.validateEnhancedClaims(claims, expectedSessionID, expectedIP, expectedTokenVersion); err != nil {
+		return nil, err
+	}
+
+	// Best-effort access token revocation check (RFC 7009).
+	// This is a read-after-parse DynamoDB lookup keyed by token JTI; if storage is unavailable,
+	// we accept the token to avoid turning storage blips into auth outages.
+	if err := s.validateAccessTokenNotRevoked(claims); err != nil {
+		return nil, err
+	}
+
+	return claims, nil
 }
 
 // validateEnhancedClaims performs additional security validation on JWT claims

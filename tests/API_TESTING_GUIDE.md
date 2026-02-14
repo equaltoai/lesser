@@ -144,6 +144,14 @@ test-reports-YYYYMMDD-HHMMSS/
 - Check OAuth app registration is enabled
 - Ensure password grant type is supported
 
+### Intermittent 500s on AWS (Lambda throttling)
+- Symptom: requests intermittently return `500` with a generic body like `{"message":"Internal server error"}` (often missing `x-request-id`)
+- Likely cause: the API Gateway origin Lambda was throttled because the AWS account/region Lambda concurrency quota was too low
+- Quick checks:
+  - Lambda quota: `AWS_PROFILE=... aws lambda get-account-settings --region us-east-1 --query 'AccountLimit.ConcurrentExecutions' --output text`
+  - Throttles: look for `AWS/Lambda` → `Throttles` > 0 on the relevant function(s) during the failure window
+- Fix: increase the account concurrency quota (preferred) or reduce request parallelism during tests
+
 ### Endpoint Not Found (404)
 - Check API version (v1 vs v2)
 - Verify endpoint is implemented
