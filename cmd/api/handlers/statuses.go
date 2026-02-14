@@ -40,48 +40,14 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		return common.RespondBadRequest(ctx, "invalid request format")
 	}
 
-	// Validate status parameters using comprehensive validation
-	statusParams := map[string]interface{}{
-		"status":         req.Status,
-		"visibility":     req.Visibility,
-		"sensitive":      req.Sensitive,
-		"spoiler_text":   req.SpoilerText,
-		"language":       req.Language,
-		"in_reply_to_id": req.InReplyToID,
-	}
-	if len(req.MediaIDs) > 0 {
-		mediaIDs := make([]interface{}, 0, len(req.MediaIDs))
-		for _, id := range req.MediaIDs {
-			mediaIDs = append(mediaIDs, id)
-		}
-		statusParams["media_ids"] = mediaIDs
-	}
-	if req.ScheduledAt != nil {
-		statusParams["scheduled_at"] = *req.ScheduledAt
-	}
-	if req.Poll != nil {
-		options := make([]interface{}, 0, len(req.Poll.Options))
-		for _, opt := range req.Poll.Options {
-			options = append(options, opt)
-		}
-		statusParams["poll"] = map[string]interface{}{
-			"options":     options,
-			"expires_in":  req.Poll.ExpiresIn,
-			"multiple":    req.Poll.Multiple,
-			"hide_totals": req.Poll.HideTotals,
-		}
-	}
-	if err := common.ValidateStatusParams(statusParams); err != nil {
-		return common.RespondBadRequest(ctx, err.Error())
+	if resp, err := validateCreateStatusRequest(ctx, &req); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// Authenticate with write scope
-	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
-	if err != nil {
-		if isInsufficientScopeError(err) {
-			return common.RespondForbidden(ctx, err.Error())
-		}
-		return common.RespondUnauthorized(ctx)
+	claims, authResp, authErr := h.authenticateCreateStatus(ctx)
+	if authResp != nil || authErr != nil {
+		return authResp, authErr
 	}
 
 	// Default visibility
@@ -89,89 +55,17 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		req.Visibility = VisibilityPublic
 	}
 
-	// Agent-specific safety rails (Phase 1).
-	if claims.IsAgent {
-		if resp, normErr := h.normalizeAgentMemoryEventRequest(ctx, claims, &req); resp != nil || normErr != nil {
-			return resp, normErr
-		}
-		if resp, railErr := h.enforceAgentStatusCreateRails(ctx, claims, &req); resp != nil || railErr != nil {
-			return resp, railErr
-		}
-	}
-
-	var agentAttribution *activitypub.AgentPostAttribution
-	if claims.IsAgent {
-		attr, resp, buildErr := h.buildAgentStatusAttribution(ctx, claims, &req)
-		if resp != nil || buildErr != nil {
-			return resp, buildErr
-		}
-		agentAttribution = attr
+	agentAttribution, resp, prepErr := h.prepareAgentStatusCreate(ctx, claims, &req)
+	if resp != nil || prepErr != nil {
+		return resp, prepErr
 	}
 
 	// Create a scheduled status instead of publishing immediately.
 	if req.ScheduledAt != nil {
-		scheduledService := h.registry.Scheduled()
-		if scheduledService == nil {
-			h.logger.Error("scheduled service not available")
-			return common.RespondServiceUnavailable(ctx, "scheduled service")
-		}
-
-		scheduledAt, parseErr := time.Parse(time.RFC3339Nano, *req.ScheduledAt)
-		if parseErr != nil {
-			scheduledAt, parseErr = time.Parse(time.RFC3339, *req.ScheduledAt)
-		}
-		if parseErr != nil {
-			return common.RespondBadRequest(ctx, "scheduled_at must be a valid RFC3339 timestamp")
-		}
-
-		var poll map[string]any
-		if req.Poll != nil {
-			poll = map[string]any{
-				"options":     req.Poll.Options,
-				"expires_in":  req.Poll.ExpiresIn,
-				"multiple":    req.Poll.Multiple,
-				"hide_totals": req.Poll.HideTotals,
-			}
-		}
-
-		scheduledResult, schedErr := scheduledService.CreateScheduledStatus(ctx.Context(), &scheduled.CreateScheduledStatusCommand{
-			Username:    claims.Username,
-			Status:      req.Status,
-			MediaIDs:    req.MediaIDs,
-			Sensitive:   req.Sensitive,
-			SpoilerText: req.SpoilerText,
-			Visibility:  req.Visibility,
-			Language:    req.Language,
-			InReplyToID: req.InReplyToID,
-			Poll:        poll,
-			ScheduledAt: scheduledAt,
-		})
-		if schedErr != nil {
-			h.logger.Error("failed to create scheduled status", zap.Error(schedErr))
-			return common.RespondInternalServerError(ctx, "failed to create scheduled status")
-		}
-
-		apiScheduled := h.convertScheduledStatusToAPIWithMedia(ctx, scheduledResult.ScheduledStatus, scheduledResult.MediaAttachments)
-		return createdJSON(apiScheduled)
+		return h.handleCreateScheduledStatus(ctx, claims, &req)
 	}
 
-	createCmd := &notes.CreateNoteCommand{
-		AuthorID:         claims.Username,
-		Content:          req.Status,
-		Visibility:       req.Visibility,
-		Sensitive:        req.Sensitive,
-		SpoilerText:      req.SpoilerText,
-		Language:         req.Language,
-		InReplyToID:      req.InReplyToID,
-		MediaIDs:         req.MediaIDs,
-		AgentAttribution: agentAttribution,
-	}
-	if req.Poll != nil {
-		createCmd.PollOptions = req.Poll.Options
-		createCmd.PollExpiresIn = req.Poll.ExpiresIn
-		createCmd.PollMultiple = req.Poll.Multiple
-		createCmd.PollHideTotals = req.Poll.HideTotals
-	}
+	createCmd := createNoteCommandFromStatusRequest(claims, &req, agentAttribution)
 
 	// Call Notes service
 	result, err := h.registry.Notes().CreateNote(ctx.Context(), createCmd)
@@ -209,6 +103,170 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 	})
 
 	return createdJSON(apiStatus)
+}
+
+func validateCreateStatusRequest(ctx *apptheory.Context, req *models.CreateStatusRequest) (*apptheory.Response, error) {
+	if req == nil {
+		return common.RespondBadRequest(ctx, "invalid request")
+	}
+
+	// Validate status parameters using comprehensive validation
+	statusParams := buildStatusValidationParams(req)
+	if err := common.ValidateStatusParams(statusParams); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
+	}
+
+	return nil, nil
+}
+
+func buildStatusValidationParams(req *models.CreateStatusRequest) map[string]any {
+	statusParams := map[string]any{
+		"status":         req.Status,
+		"visibility":     req.Visibility,
+		"sensitive":      req.Sensitive,
+		"spoiler_text":   req.SpoilerText,
+		"language":       req.Language,
+		"in_reply_to_id": req.InReplyToID,
+	}
+
+	if len(req.MediaIDs) > 0 {
+		mediaIDs := make([]any, 0, len(req.MediaIDs))
+		for _, id := range req.MediaIDs {
+			mediaIDs = append(mediaIDs, id)
+		}
+		statusParams["media_ids"] = mediaIDs
+	}
+
+	if req.ScheduledAt != nil {
+		statusParams["scheduled_at"] = *req.ScheduledAt
+	}
+
+	if req.Poll != nil {
+		options := make([]any, 0, len(req.Poll.Options))
+		for _, opt := range req.Poll.Options {
+			options = append(options, opt)
+		}
+		statusParams["poll"] = map[string]any{
+			"options":     options,
+			"expires_in":  req.Poll.ExpiresIn,
+			"multiple":    req.Poll.Multiple,
+			"hide_totals": req.Poll.HideTotals,
+		}
+	}
+
+	return statusParams
+}
+
+func (h *Handler) authenticateCreateStatus(ctx *apptheory.Context) (*auth.Claims, *apptheory.Response, error) {
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			resp, respErr := common.RespondForbidden(ctx, err.Error())
+			return nil, resp, respErr
+		}
+		resp, respErr := common.RespondUnauthorized(ctx)
+		return nil, resp, respErr
+	}
+	return claims, nil, nil
+}
+
+func (h *Handler) prepareAgentStatusCreate(ctx *apptheory.Context, claims *auth.Claims, req *models.CreateStatusRequest) (*activitypub.AgentPostAttribution, *apptheory.Response, error) {
+	if claims == nil || !claims.IsAgent {
+		return nil, nil, nil
+	}
+
+	if resp, normErr := h.normalizeAgentMemoryEventRequest(ctx, claims, req); resp != nil || normErr != nil {
+		return nil, resp, normErr
+	}
+	if resp, railErr := h.enforceAgentStatusCreateRails(ctx, claims, req); resp != nil || railErr != nil {
+		return nil, resp, railErr
+	}
+
+	attr, resp, buildErr := h.buildAgentStatusAttribution(ctx, claims, req)
+	if resp != nil || buildErr != nil {
+		return nil, resp, buildErr
+	}
+	return attr, nil, nil
+}
+
+func (h *Handler) handleCreateScheduledStatus(ctx *apptheory.Context, claims *auth.Claims, req *models.CreateStatusRequest) (*apptheory.Response, error) {
+	scheduledService := h.registry.Scheduled()
+	if scheduledService == nil {
+		h.logger.Error("scheduled service not available")
+		return common.RespondServiceUnavailable(ctx, "scheduled service")
+	}
+
+	scheduledAt, err := parseScheduledAt(req.ScheduledAt)
+	if err != nil {
+		return common.RespondBadRequest(ctx, "scheduled_at must be a valid RFC3339 timestamp")
+	}
+
+	scheduledResult, schedErr := scheduledService.CreateScheduledStatus(ctx.Context(), &scheduled.CreateScheduledStatusCommand{
+		Username:    claims.Username,
+		Status:      req.Status,
+		MediaIDs:    req.MediaIDs,
+		Sensitive:   req.Sensitive,
+		SpoilerText: req.SpoilerText,
+		Visibility:  req.Visibility,
+		Language:    req.Language,
+		InReplyToID: req.InReplyToID,
+		Poll:        buildScheduledPoll(req.Poll),
+		ScheduledAt: scheduledAt,
+	})
+	if schedErr != nil {
+		h.logger.Error("failed to create scheduled status", zap.Error(schedErr))
+		return common.RespondInternalServerError(ctx, "failed to create scheduled status")
+	}
+
+	apiScheduled := h.convertScheduledStatusToAPIWithMedia(ctx, scheduledResult.ScheduledStatus, scheduledResult.MediaAttachments)
+	return createdJSON(apiScheduled)
+}
+
+func parseScheduledAt(value *string) (time.Time, error) {
+	if value == nil {
+		return time.Time{}, fmt.Errorf("scheduled_at is nil")
+	}
+
+	scheduledAt, err := time.Parse(time.RFC3339Nano, *value)
+	if err == nil {
+		return scheduledAt, nil
+	}
+
+	return time.Parse(time.RFC3339, *value)
+}
+
+func buildScheduledPoll(poll *models.Poll) map[string]any {
+	if poll == nil {
+		return nil
+	}
+
+	return map[string]any{
+		"options":     poll.Options,
+		"expires_in":  poll.ExpiresIn,
+		"multiple":    poll.Multiple,
+		"hide_totals": poll.HideTotals,
+	}
+}
+
+func createNoteCommandFromStatusRequest(claims *auth.Claims, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) *notes.CreateNoteCommand {
+	createCmd := &notes.CreateNoteCommand{
+		AuthorID:         claims.Username,
+		Content:          req.Status,
+		Visibility:       req.Visibility,
+		Sensitive:        req.Sensitive,
+		SpoilerText:      req.SpoilerText,
+		Language:         req.Language,
+		InReplyToID:      req.InReplyToID,
+		MediaIDs:         req.MediaIDs,
+		AgentAttribution: agentAttribution,
+	}
+	if req.Poll != nil {
+		createCmd.PollOptions = req.Poll.Options
+		createCmd.PollExpiresIn = req.Poll.ExpiresIn
+		createCmd.PollMultiple = req.Poll.Multiple
+		createCmd.PollHideTotals = req.Poll.HideTotals
+	}
+	return createCmd
 }
 
 // HandleDeleteStatusLift deletes a status using the Notes service

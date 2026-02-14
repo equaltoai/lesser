@@ -697,6 +697,7 @@ func (h *OAuthHelper) IsAccessTokenRevokedGeneric(ctx context.Context, jti strin
 	return true, nil
 }
 
+// DeleteRevokedAccessTokenGeneric removes a revoked access token record by its JWT ID (JTI).
 func (h *OAuthHelper) DeleteRevokedAccessTokenGeneric(ctx context.Context, jti string) error {
 	jti = strings.TrimSpace(jti)
 	if err := common.ValidateRequiredParam("jti", jti); err != nil {
