@@ -29,6 +29,7 @@ type round10Where struct {
 
 type round10QueryState struct {
 	wheres []round10Where
+	model  any
 
 	usersByUsername               map[string]storagemodels.User
 	actorsByUser                  map[string]storagemodels.Actor
@@ -56,6 +57,7 @@ type round10QueryState struct {
 	oauthClientsByID              map[string]storagemodels.OAuthClient
 	authorizationCodesByCode      map[string]storagemodels.AuthorizationCode
 	refreshTokensByToken          map[string]storagemodels.RefreshToken
+	revokedAccessTokensByJTI      map[string]storagemodels.RevokedAccessToken
 	oauthDeviceSessionsByHash     map[string]storagemodels.OAuthDeviceSession
 	oauthDeviceSessionsByUserCode map[string]storagemodels.OAuthDeviceSession
 	setupSessionsByID             map[string]storagemodels.SetupSession
@@ -245,8 +247,9 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 
 	// DB wiring
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Run(func(_ mock.Arguments) {
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Run(func(args mock.Arguments) {
 		state.reset()
+		state.model = args.Get(0)
 	}).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
 
@@ -285,7 +288,22 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	if state.createErrorOnce != nil {
 		mockQuery.On("Create").Return(state.createErrorOnce).Once()
 	}
-	mockQuery.On("Create").Return(nil).Maybe()
+	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
+		switch m := state.model.(type) {
+		case *storagemodels.RevokedAccessToken:
+			if m == nil {
+				return
+			}
+			jti := strings.TrimSpace(m.JTI)
+			if jti == "" {
+				return
+			}
+			if state.revokedAccessTokensByJTI == nil {
+				state.revokedAccessTokensByJTI = map[string]storagemodels.RevokedAccessToken{}
+			}
+			state.revokedAccessTokensByJTI[jti] = *m
+		}
+	}).Maybe()
 
 	if state.deleteErrorOnce != nil {
 		mockQuery.On("Delete").Return(state.deleteErrorOnce).Once()
@@ -408,6 +426,27 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		objectID := strings.TrimPrefix(pk, "OBJECT#")
 		if _, ok := state.tombstonesByObjectID[objectID]; ok {
 			return false
+		}
+		return true
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.RevokedAccessToken); !ok {
+			return false
+		}
+		pk, okPK := state.whereString("PK")
+		sk, okSK := state.whereString("SK")
+		if !okPK || !okSK {
+			return false
+		}
+		if !strings.HasPrefix(pk, "REVOKEDTOKEN#") || sk != storagemodels.SKToken {
+			return false
+		}
+		jti := strings.TrimPrefix(pk, "REVOKEDTOKEN#")
+		if state.revokedAccessTokensByJTI != nil {
+			if _, ok := state.revokedAccessTokensByJTI[jti]; ok {
+				return false
+			}
 		}
 		return true
 	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
@@ -625,6 +664,17 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				CreatedAt: time.Now().Add(-1 * time.Minute),
 			}
 			_ = d.UpdateKeys()
+		case *storagemodels.RevokedAccessToken:
+			jti := ""
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "REVOKEDTOKEN#") {
+				jti = strings.TrimPrefix(pk, "REVOKEDTOKEN#")
+			}
+			if state.revokedAccessTokensByJTI != nil {
+				if record, ok := state.revokedAccessTokensByJTI[jti]; ok {
+					*d = record
+					return
+				}
+			}
 		case *storagemodels.OAuthDeviceSession:
 			deviceCodeHash := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "OAUTH_DEVICE#") {

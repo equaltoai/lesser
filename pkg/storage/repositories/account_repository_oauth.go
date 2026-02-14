@@ -197,6 +197,18 @@ func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string
 	return helper.DeleteRefreshTokenGeneric(ctx, token)
 }
 
+// RevokeAccessToken stores the JWT ID (JTI) of an access token as revoked.
+func (r *AccountRepository) RevokeAccessToken(ctx context.Context, jti string, expiresAt time.Time) error {
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.RevokeAccessTokenGeneric(ctx, jti, expiresAt)
+}
+
+// IsAccessTokenRevoked checks whether the given JWT ID (JTI) is revoked.
+func (r *AccountRepository) IsAccessTokenRevoked(ctx context.Context, jti string) (bool, error) {
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.IsAccessTokenRevokedGeneric(ctx, jti)
+}
+
 // DeleteRefreshTokensByUsernameAndClientID deletes all OAuth refresh tokens for the given user+client pair.
 // This is intended for revoking delegated/agent tokens where only refresh-token invalidation is required.
 func (r *AccountRepository) DeleteRefreshTokensByUsernameAndClientID(ctx context.Context, username, clientID string) (int, error) {

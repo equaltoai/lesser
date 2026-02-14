@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -49,6 +51,34 @@ func TestOAuthRevokeLift_Round22(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token=at-1&token_type_hint=access_token"))
 		_ = requireStatus(t, http.StatusOK)(h.HandleOAuthRevokeLift(ctx))
+	})
+
+	t.Run("access_token hint revokes and invalidates token", func(t *testing.T) {
+		state := &round10QueryState{}
+		h, repos, _ := round11NewHandler(t, cfg, state)
+
+		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, repos, h.logger)
+		access, _, err := oauthSvc.GenerateTokens(context.Background(), "alice", "client-1", "192.0.2.10", []string{auth.ScopeRead})
+		require.NoError(t, err)
+
+		claims, err := oauthSvc.ValidateAccessToken(access)
+		require.NoError(t, err)
+		require.NotEmpty(t, claims.ID)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/revoke", nil, nil, []byte("token="+url.QueryEscape(access)+"&token_type_hint=access_token"))
+		_ = requireStatus(t, http.StatusOK)(h.HandleOAuthRevokeLift(ctx))
+
+		record, ok := state.revokedAccessTokensByJTI[claims.ID]
+		require.True(t, ok)
+		require.Equal(t, "REVOKEDTOKEN#"+claims.ID, record.PK)
+		require.Equal(t, storagemodels.SKToken, record.SK)
+		require.Equal(t, claims.ID, record.JTI)
+		require.False(t, record.ExpiresAt.IsZero())
+		require.False(t, record.RevokedAt.IsZero())
+		require.NotZero(t, record.TTL)
+
+		_, err = oauthSvc.ValidateAccessToken(access)
+		require.ErrorIs(t, err, auth.ErrInvalidToken)
 	})
 
 	t.Run("refresh_token returns 200 even when delete fails", func(t *testing.T) {

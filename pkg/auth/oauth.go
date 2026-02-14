@@ -443,6 +443,28 @@ func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessi
 		if err := s.validateEnhancedClaims(claims, expectedSessionID, expectedIP, expectedTokenVersion); err != nil {
 			return nil, err
 		}
+
+		// Best-effort access token revocation check (RFC 7009).
+		// This is a read-after-parse DynamoDB lookup keyed by token JTI; if storage is unavailable,
+		// we accept the token to avoid turning storage blips into auth outages.
+		if s != nil && s.repos != nil && claims != nil {
+			if accountRepo := s.repos.Account(); accountRepo != nil {
+				jti := strings.TrimSpace(claims.ID)
+				if jti != "" {
+					checkCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					revoked, checkErr := accountRepo.IsAccessTokenRevoked(checkCtx, jti)
+					cancel()
+					if checkErr != nil {
+						if s.auditLogger != nil && s.auditLogger.logger != nil {
+							s.auditLogger.logger.Warn("access token revocation check failed", zap.Error(checkErr))
+						}
+					} else if revoked {
+						return nil, ErrInvalidToken
+					}
+				}
+			}
+		}
+
 		return claims, nil
 	}
 

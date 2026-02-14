@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -54,8 +55,27 @@ func (h *Handler) HandleOAuthRevokeLift(ctx *apptheory.Context) (*apptheory.Resp
 		hint = "refresh_token"
 	}
 
-	// Only refresh tokens are revoked right now. For access tokens, return 200 (no-op).
-	if hint != "" && hint != "refresh_token" {
+	// Only access_token + refresh_token are supported. For other hints, return 200 (no-op).
+	if hint != "" && hint != "refresh_token" && hint != "access_token" {
+		return okJSON(map[string]any{})
+	}
+
+	if hint == "access_token" {
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+		claims, err := oauthSvc.ValidateAccessToken(token)
+		if err == nil && claims != nil {
+			jti := strings.TrimSpace(claims.ID)
+			var expiresAt time.Time
+			if claims.ExpiresAt != nil {
+				expiresAt = claims.ExpiresAt.Time
+			}
+			if jti != "" && !expiresAt.IsZero() {
+				if err := h.repos.Account().RevokeAccessToken(ctx.Context(), jti, expiresAt); err != nil {
+					h.logger.Warn("failed to revoke access token", zap.Error(err))
+				}
+			}
+		}
+
 		return okJSON(map[string]any{})
 	}
 
