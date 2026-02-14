@@ -136,7 +136,125 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheor
 	h.logger.Info("handle verify_credentials: account retrieved",
 		zap.String("username", claims.Username))
 
-	return h.respondOK(ctx, account)
+	mastodonAccount, err := h.mastodonAccountFromStorageAccount(account)
+	if err != nil {
+		h.logger.Error("handle verify_credentials: failed to transform account response",
+			zap.String("username", claims.Username),
+			zap.Error(err))
+		return common.RespondInternalServerError(ctx)
+	}
+
+	return h.respondOK(ctx, mastodonAccount)
+}
+
+func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (models.Account, error) {
+	if account == nil || account.User == nil {
+		return models.Account{}, fmt.Errorf("account is missing user")
+	}
+
+	baseURL := ""
+	if h != nil && h.cfg != nil {
+		baseURL = strings.TrimSuffix(strings.TrimSpace(h.cfg.BaseURL()), "/")
+	}
+
+	username := strings.TrimSpace(account.User.Username)
+	if username == "" {
+		return models.Account{}, fmt.Errorf("account is missing username")
+	}
+
+	out := models.Account{}
+	if account.Actor != nil {
+		out = transformations.ActorToAccountWithCounts(account.Actor, baseURL, 0, 0, 0)
+	}
+
+	// Identity + canonical strings.
+	out.Username = username
+	out.Acct = username
+	if id := strings.TrimSpace(account.User.ID); id != "" {
+		out.ID = id
+	} else {
+		out.ID = common.GenerateNumericID(username)
+	}
+
+	// Prefer user profile data when available.
+	if displayName := strings.TrimSpace(account.User.DisplayName); displayName != "" {
+		out.DisplayName = displayName
+	}
+	if out.DisplayName == "" {
+		out.DisplayName = username
+	}
+	if note := strings.TrimSpace(account.User.Note); note != "" {
+		out.Note = note
+	}
+	out.Locked = account.User.Locked
+	out.Discoverable = account.User.Discoverable
+	if account.User.IsAgent {
+		out.Bot = true
+	}
+	if !account.User.CreatedAt.IsZero() {
+		out.CreatedAt = account.User.CreatedAt.UTC().Format(time.RFC3339)
+	} else if out.CreatedAt == "" {
+		out.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	if profileURL := strings.TrimSpace(account.User.URL); profileURL != "" {
+		out.URL = profileURL
+	}
+	if out.URL == "" && baseURL != "" {
+		out.URL = fmt.Sprintf("%s/@%s", baseURL, username)
+	}
+
+	if avatar := strings.TrimSpace(account.User.Avatar); avatar != "" {
+		out.Avatar = avatar
+		out.AvatarStatic = avatar
+	}
+	if header := strings.TrimSpace(account.User.Header); header != "" {
+		out.Header = header
+		out.HeaderStatic = header
+	}
+
+	if out.Avatar == "" && baseURL != "" {
+		out.Avatar = baseURL + "/avatars/original/missing.png"
+	}
+	if out.AvatarStatic == "" {
+		out.AvatarStatic = out.Avatar
+	}
+	if out.Header == "" && baseURL != "" {
+		out.Header = baseURL + "/headers/original/missing.png"
+	}
+	if out.HeaderStatic == "" {
+		out.HeaderStatic = out.Header
+	}
+
+	// Ensure JSON arrays are serialized as [] not null (OpenAPI).
+	if out.Emojis == nil {
+		out.Emojis = []any{}
+	}
+	if out.Fields == nil {
+		out.Fields = []any{}
+	}
+
+	// If profile fields are present in storage, prefer them over actor attachments.
+	if len(account.User.Fields) > 0 {
+		fields := make([]any, 0, len(account.User.Fields))
+		for _, field := range account.User.Fields {
+			if field == nil {
+				continue
+			}
+			m := map[string]any{
+				"name":        field["name"],
+				"value":       field["value"],
+				"verified_at": nil,
+			}
+			if verifiedAt := strings.TrimSpace(field["verified_at"]); verifiedAt != "" {
+				m["verified_at"] = verifiedAt
+			}
+			fields = append(fields, m)
+		}
+		out.Fields = fields
+	}
+
+	return out, nil
 }
 
 // HandleUpdateCredentialsLift updates the current user's profile
