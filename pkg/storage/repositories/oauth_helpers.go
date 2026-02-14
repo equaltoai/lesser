@@ -567,6 +567,7 @@ func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) 
 	err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
+		ConsistentRead().
 		First(&model)
 
 	if err != nil {
