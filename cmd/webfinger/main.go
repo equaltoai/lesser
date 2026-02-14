@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -274,6 +275,13 @@ func init() {
 }
 
 func initializeWebFinger() {
+	// WebFinger is a public endpoint and does not require JWT validation.
+	// Ensure config loading does not attempt to resolve the JWT secret from Secrets
+	// Manager (which may not be permitted for this Lambda role).
+	if os.Getenv("JWT_SECRET") == "" {
+		_ = os.Setenv("JWT_SECRET", "webfinger-noauth")
+	}
+
 	// Standardized Lambda initialization with automatic service detection
 	lambdaCtx = mustInitializeLambdaFn(common.LambdaConfig{
 		ServiceName: "webfinger",
