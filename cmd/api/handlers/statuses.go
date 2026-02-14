@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageMods "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -107,8 +108,54 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		agentAttribution = attr
 	}
 
-	// Call Notes service
-	result, err := h.registry.Notes().CreateNote(ctx.Context(), &notes.CreateNoteCommand{
+	// Create a scheduled status instead of publishing immediately.
+	if req.ScheduledAt != nil {
+		scheduledService := h.registry.Scheduled()
+		if scheduledService == nil {
+			h.logger.Error("scheduled service not available")
+			return common.RespondServiceUnavailable(ctx, "scheduled service")
+		}
+
+		scheduledAt, parseErr := time.Parse(time.RFC3339Nano, *req.ScheduledAt)
+		if parseErr != nil {
+			scheduledAt, parseErr = time.Parse(time.RFC3339, *req.ScheduledAt)
+		}
+		if parseErr != nil {
+			return common.RespondBadRequest(ctx, "scheduled_at must be a valid RFC3339 timestamp")
+		}
+
+		var poll map[string]any
+		if req.Poll != nil {
+			poll = map[string]any{
+				"options":     req.Poll.Options,
+				"expires_in":  req.Poll.ExpiresIn,
+				"multiple":    req.Poll.Multiple,
+				"hide_totals": req.Poll.HideTotals,
+			}
+		}
+
+		scheduledResult, schedErr := scheduledService.CreateScheduledStatus(ctx.Context(), &scheduled.CreateScheduledStatusCommand{
+			Username:    claims.Username,
+			Status:      req.Status,
+			MediaIDs:    req.MediaIDs,
+			Sensitive:   req.Sensitive,
+			SpoilerText: req.SpoilerText,
+			Visibility:  req.Visibility,
+			Language:    req.Language,
+			InReplyToID: req.InReplyToID,
+			Poll:        poll,
+			ScheduledAt: scheduledAt,
+		})
+		if schedErr != nil {
+			h.logger.Error("failed to create scheduled status", zap.Error(schedErr))
+			return common.RespondInternalServerError(ctx, "failed to create scheduled status")
+		}
+
+		apiScheduled := h.convertScheduledStatusToAPIWithMedia(ctx, scheduledResult.ScheduledStatus, scheduledResult.MediaAttachments)
+		return createdJSON(apiScheduled)
+	}
+
+	createCmd := &notes.CreateNoteCommand{
 		AuthorID:         claims.Username,
 		Content:          req.Status,
 		Visibility:       req.Visibility,
@@ -118,7 +165,16 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		InReplyToID:      req.InReplyToID,
 		MediaIDs:         req.MediaIDs,
 		AgentAttribution: agentAttribution,
-	})
+	}
+	if req.Poll != nil {
+		createCmd.PollOptions = req.Poll.Options
+		createCmd.PollExpiresIn = req.Poll.ExpiresIn
+		createCmd.PollMultiple = req.Poll.Multiple
+		createCmd.PollHideTotals = req.Poll.HideTotals
+	}
+
+	// Call Notes service
+	result, err := h.registry.Notes().CreateNote(ctx.Context(), createCmd)
 	if err != nil {
 		h.logger.Error("failed to create note", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to create status")
