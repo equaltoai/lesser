@@ -184,6 +184,9 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 				}
 				return out
 			}(),
+			"translation": map[string]any{
+				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
+			},
 		},
 		ExtendedDescription: extendedDescription,
 		VAPIDKey:            vapidPublicKey,
