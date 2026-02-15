@@ -165,6 +165,12 @@ func (s *Service) ListEmojis(ctx context.Context, query *ListEmojisQuery) (*List
 		return nil, errors.ErrListEmojis
 	}
 
+	// Auto-seed default emojis if none exist
+	if len(emojis) == 0 {
+		s.seedDefaultEmojis(ctx)
+		emojis, _ = s.emojiRepo.GetCustomEmojis(ctx)
+	}
+
 	// Apply filters
 	filtered := s.filterEmojis(emojis, query)
 
@@ -561,4 +567,61 @@ func (s *Service) emitEmojiDeletedEvents(_ context.Context, emoji *storage.Custo
 	s.logger.Info("emoji deleted event",
 		zap.String("shortcode", emoji.Shortcode),
 		zap.String("type", event.Type))
+}
+
+// seedDefaultEmojis creates a default set of custom emojis using Twemoji assets
+func (s *Service) seedDefaultEmojis(ctx context.Context) {
+	const twemojiBase = "https://cdn.jsdelivr.net/gh/twitter/twemoji@latest/assets/72x72/"
+
+	defaults := []struct {
+		shortcode string
+		codepoint string
+		category  string
+	}{
+		{"thumbsup", "1f44d", "Smileys & People"},
+		{"thumbsdown", "1f44e", "Smileys & People"},
+		{"heart", "2764", "Smileys & People"},
+		{"fire", "1f525", "Smileys & People"},
+		{"laughing", "1f606", "Smileys & People"},
+		{"thinking", "1f914", "Smileys & People"},
+		{"clap", "1f44f", "Smileys & People"},
+		{"wave", "1f44b", "Smileys & People"},
+		{"rocket", "1f680", "Travel & Places"},
+		{"eyes", "1f440", "Smileys & People"},
+		{"tada", "1f389", "Objects"},
+		{"100", "1f4af", "Symbols"},
+		{"star", "2b50", "Travel & Places"},
+		{"sparkles", "2728", "Travel & Places"},
+		{"rainbow", "1f308", "Travel & Places"},
+		{"sun", "2600", "Travel & Places"},
+		{"check_mark", "2705", "Symbols"},
+		{"x", "274c", "Symbols"},
+		{"warning", "26a0", "Symbols"},
+		{"coffee", "2615", "Food & Drink"},
+	}
+
+	now := time.Now()
+	seeded := 0
+	for _, d := range defaults {
+		url := twemojiBase + d.codepoint + ".png"
+		emoji := &storage.CustomEmoji{
+			Shortcode:       d.shortcode,
+			URL:             url,
+			StaticURL:       url,
+			VisibleInPicker: true,
+			Category:        d.category,
+			Domain:          "",
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		if err := s.emojiRepo.CreateCustomEmoji(ctx, emoji); err != nil {
+			s.logger.Debug("failed to seed default emoji",
+				zap.String("shortcode", d.shortcode),
+				zap.Error(err))
+			continue
+		}
+		seeded++
+	}
+
+	s.logger.Info("seeded default emojis", zap.Int("count", seeded))
 }
