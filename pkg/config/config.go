@@ -394,7 +394,7 @@ func loadConfig() *Config {
 		EnablePlayground:              getEnvAsBoolOrDefault("ENABLE_PLAYGROUND", false),
 		GraphQLAllowIntrospection:     getEnvAsBoolOrDefault("GRAPHQL_ALLOW_INTROSPECTION", false),
 		GraphQLMaxDepth:               getEnvAsIntOrDefault("GRAPHQL_MAX_DEPTH", 12),
-		GraphQLMaxComplexity:          getEnvAsIntOrDefault("GRAPHQL_MAX_COMPLEXITY", 500),
+		GraphQLMaxComplexity:          getEnvAsIntOrDefault("GRAPHQL_MAX_COMPLEXITY", 2000),
 		GraphQLParserTokenLimit:       getEnvAsIntOrDefault("GRAPHQL_PARSER_TOKEN_LIMIT", 15000),
 		GraphQLRequestTimeout:         getEnvAsDurationOrDefault("GRAPHQL_REQUEST_TIMEOUT", 25*time.Second),
 		TranslationEnabled:            getEnvAsBoolOrDefault("TRANSLATION_ENABLED", false),
