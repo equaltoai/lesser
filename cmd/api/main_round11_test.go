@@ -59,8 +59,11 @@ func newMainTestRepos(t *testing.T) *mainTestRepos {
 	account := repositories.NewAccountRepository(mockDB, "test-table", "example.com", logger)
 	metric := repositories.NewMetricRecordRepository(mockDB, "test-table", logger, nil)
 
+	mockRepos := &apiHandlers.MockRepositoryStorage{}
+	mockRepos.On("PushSubscription").Return((*repositories.PushSubscriptionRepository)(nil)).Maybe()
+
 	return &mainTestRepos{
-		MockRepositoryStorage: &apiHandlers.MockRepositoryStorage{},
+		MockRepositoryStorage: mockRepos,
 		account:               account,
 		metricRecord:          metric,
 	}

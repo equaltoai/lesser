@@ -35,7 +35,7 @@ func (h *Handler) stageURLs() apimodels.SetupStageURLs {
 
 	httpScheme := "https"
 	wsScheme := "wss"
-	if domain == "localhost" || domain == "127.0.0.1" {
+	if domain == localhostDomain || domain == loopbackIPv4 {
 		httpScheme = "http"
 		wsScheme = "ws"
 	}

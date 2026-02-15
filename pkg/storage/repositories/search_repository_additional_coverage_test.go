@@ -684,6 +684,7 @@ func TestSearchRepository_GetRecentStatuses_ErrorReturnsEmpty(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Object")).Return(ErrTestMockError).Once()
 

@@ -14,9 +14,14 @@ import (
 func TestValidateVAPIDKeysForProduction_Round10Coverage(t *testing.T) {
 	logger := round10TestLogger(t)
 
-	t.Run("non-production skips validation", func(t *testing.T) {
-		cfg := &config.Config{Stage: "dev"}
+	t.Run("non-production auto-generates VAPID keys", func(t *testing.T) {
+		cfg := &config.Config{Stage: "dev", Domain: "test.local"}
+		state := &round10QueryState{forceVapidNotFound: true}
+		h := round10NewDynamoHarness(t, state)
+		pushRepo := repositories.NewPushSubscriptionRepository(h.db, "test-table", logger, nil, nil, "", "mailto:test@example.com")
+
 		repos := &MockRepositoryStorage{}
+		repos.On("PushSubscription").Return(pushRepo).Maybe()
 		repos.On("Audit").Return(nil).Maybe()
 		require.NoError(t, ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger))
 	})
@@ -42,8 +47,8 @@ func TestValidateVAPIDKeysForProduction_Round10Coverage(t *testing.T) {
 		require.NoError(t, ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger))
 	})
 
-	t.Run("production returns error when keys missing", func(t *testing.T) {
-		cfg := &config.Config{Stage: "prod", VAPIDPublicKey: "public"}
+	t.Run("production auto-generates VAPID keys when missing", func(t *testing.T) {
+		cfg := &config.Config{Stage: "prod", VAPIDPublicKey: "public", Domain: "prod.example.com"}
 		state := &round10QueryState{forceVapidNotFound: true}
 		h := round10NewDynamoHarness(t, state)
 		pushRepo := repositories.NewPushSubscriptionRepository(h.db, "test-table", logger, nil, nil, "", "mailto:test@example.com")
@@ -52,6 +57,6 @@ func TestValidateVAPIDKeysForProduction_Round10Coverage(t *testing.T) {
 		repos.On("PushSubscription").Return(pushRepo).Maybe()
 		repos.On("Audit").Return(nil).Maybe()
 
-		require.Error(t, ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger))
+		require.NoError(t, ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger))
 	})
 }

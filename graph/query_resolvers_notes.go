@@ -206,6 +206,13 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 
 	accounts := make([]*activitypub.Actor, len(result.Accounts))
 	for i, account := range result.Accounts {
+		if account.Actor != nil && account.Actor.PreferredUsername != "" && r.Registry != nil && r.Registry.Accounts() != nil {
+			fullAccount, err := r.Registry.Accounts().GetAccount(ctx, account.Actor.PreferredUsername)
+			if err == nil && fullAccount != nil {
+				accounts[i] = r.convertAccountToActor(fullAccount)
+				continue
+			}
+		}
 		accounts[i] = account.Actor
 	}
 

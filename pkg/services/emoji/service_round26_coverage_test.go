@@ -77,6 +77,7 @@ func (r *fakeEmojiRepo) CreateCustomEmoji(_ context.Context, emoji *storage.Cust
 		r.customByShortcode = map[string]*storage.CustomEmoji{}
 	}
 	r.customByShortcode[emoji.Shortcode] = emoji
+	r.allEmojis = append(r.allEmojis, emoji)
 	return nil
 }
 
@@ -174,6 +175,25 @@ func TestService_CRUD_round26_coverage(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, result.Emojis, 1)
 		assert.Equal(t, "local", result.Emojis[0].Shortcode)
+	})
+
+	t.Run("ListEmojis_auto_seeds_when_empty", func(t *testing.T) {
+		repo := &fakeEmojiRepo{allEmojis: []*storage.CustomEmoji{}}
+		svc := NewService(repo, nil, zap.NewNop(), "example.com")
+
+		result, err := svc.ListEmojis(ctx, &ListEmojisQuery{})
+		require.NoError(t, err)
+		require.NotEmpty(t, result.Emojis)
+		assert.NotEmpty(t, repo.allEmojis)
+
+		hasThumbsup := false
+		for _, e := range result.Emojis {
+			if e.Shortcode == "thumbsup" {
+				hasThumbsup = true
+				break
+			}
+		}
+		assert.True(t, hasThumbsup)
 	})
 
 	t.Run("CreateEmoji_invalid_shortcode", func(t *testing.T) {

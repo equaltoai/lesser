@@ -21,6 +21,9 @@ const (
 	EnvProduction = "production"
 	// EnvProd represents short production environment name
 	EnvProd = "prod"
+
+	localhostDomain = "localhost"
+	loopbackIPv4    = "127.0.0.1"
 )
 
 // HandleGetInstanceV1Lift returns instance information in v1 (legacy) format
@@ -121,7 +124,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 		Email:            instanceConfig.Email,
 		Version:          instanceConfig.Version,
 		URLs: map[string]any{
-			"streaming_api": h.cfg.BaseURL(),
+			"streaming_api": h.streamingAPIURL(),
 		},
 		Stats: map[string]any{
 			"user_count":   userCount,
@@ -184,6 +187,9 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 				}
 				return out
 			}(),
+			"translation": map[string]any{
+				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
+			},
 		},
 		ExtendedDescription: extendedDescription,
 		VAPIDKey:            vapidPublicKey,
@@ -463,6 +469,32 @@ func (h *Handler) convertMarkdownHeader(trimmed string) string {
 	}
 
 	return ""
+}
+
+// streamingAPIURL returns the WebSocket streaming endpoint for the Mastodon instance API.
+// Mastodon clients use this URL to establish WebSocket connections for real-time updates.
+func (h *Handler) streamingAPIURL() string {
+	if h == nil || h.cfg == nil {
+		return ""
+	}
+
+	if endpoint := strings.TrimSpace(h.cfg.WebSocketEndpoint); endpoint != "" {
+		switch {
+		case strings.HasPrefix(endpoint, "wss://"), strings.HasPrefix(endpoint, "ws://"):
+			return endpoint
+		case strings.HasPrefix(endpoint, "https://"):
+			return "wss://" + strings.TrimPrefix(endpoint, "https://")
+		case strings.HasPrefix(endpoint, "http://"):
+			return "ws://" + strings.TrimPrefix(endpoint, "http://")
+		}
+	}
+
+	domain := strings.TrimSpace(h.cfg.Domain)
+	scheme := "wss"
+	if domain == localhostDomain || domain == loopbackIPv4 {
+		scheme = "ws"
+	}
+	return fmt.Sprintf("%s://ws.%s", scheme, domain)
 }
 
 // Helper methods for getting account statistics

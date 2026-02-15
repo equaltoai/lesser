@@ -847,17 +847,10 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		return r.GetPublicTimeline(ctx, opts)
 	}
 
-	// If user follows no one, return empty timeline (not public timeline)
-	if err := common.ValidateSliceNotEmpty("following_actor_ids", followingActorIDs); err != nil {
-		r.logger.Debug("user follows no accounts, returning empty home timeline",
-			zap.String("user_id", userID))
-		return &interfaces.PaginatedResult[*models.Status]{
-			Items:      []*models.Status{},
-			NextCursor: "",
-			HasMore:    false,
-			Total:      0,
-		}, nil
-	}
+	// Always include the user's own actor ID so their own posts appear in the home timeline
+	cfg := config.Get()
+	ownActorID := cfg.ActorURL(userID)
+	followingActorIDs = appendIfMissing(followingActorIDs, ownActorID)
 
 	allStatuses := r.collectStatusesForActors(ctx, userID, followingActorIDs)
 	limit := sanitizeHomeTimelineLimit(opts.Limit)
@@ -1008,6 +1001,15 @@ func paginateHomeTimeline(allStatuses []models.Status, limit int) *interfaces.Pa
 		HasMore:    hasMore,
 		Total:      int64(len(allStatuses)),
 	}
+}
+
+func appendIfMissing(slice []string, val string) []string {
+	for _, s := range slice {
+		if s == val {
+			return slice
+		}
+	}
+	return append(slice, val)
 }
 
 // queryStatusesByGSI is a consolidated helper for GSI-based status queries

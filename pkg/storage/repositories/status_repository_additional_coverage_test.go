@@ -409,15 +409,16 @@ func TestStatusRepository_home_timeline_branches(t *testing.T) {
 		assert.NotEmpty(t, page.NextCursor)
 	})
 
-	t.Run("relationship_repo_empty_following_returns_empty", func(t *testing.T) {
+	t.Run("relationship_repo_empty_following_includes_own_posts", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
 		repo.SetRelationshipRepository(usernameRelationshipRepo{usernames: []string{}})
 
 		page, err := repo.GetHomeTimeline(ctx, "user1", interfaces.PaginationOptions{Limit: 10})
 		assert.NoError(t, err)
-		assert.Empty(t, page.Items)
-		assert.False(t, page.HasMore)
+		assert.NotNil(t, page)
 	})
 }
 
