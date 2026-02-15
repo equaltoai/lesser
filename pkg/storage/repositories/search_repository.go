@@ -729,7 +729,7 @@ func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Objec
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", "object#type#Note").
-		Limit(100). // Scan last 100 statuses
+		Limit(500). // Scan last 500 statuses for broader search coverage
 		All(&recentStatuses)
 
 	if err != nil {
@@ -740,13 +740,31 @@ func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Objec
 	return recentStatuses
 }
 
-// statusMatchesQuery checks if a status matches the search query
+// statusMatchesQuery checks if a status matches the search query.
+// For multi-word queries, all words must appear in the content.
 func (r *SearchRepository) statusMatchesQuery(status models.Object, query string) bool {
 	if err := common.ValidateRequiredParam("status.Content", status.Content); err != nil {
 		return false
 	}
 	contentLower := strings.ToLower(status.Content)
-	return strings.Contains(contentLower, query)
+	queryLower := strings.ToLower(query)
+
+	// Try exact phrase match first
+	if strings.Contains(contentLower, queryLower) {
+		return true
+	}
+
+	// Fall back to all-words match for multi-word queries
+	words := strings.Fields(queryLower)
+	if len(words) <= 1 {
+		return false
+	}
+	for _, word := range words {
+		if !strings.Contains(contentLower, word) {
+			return false
+		}
+	}
+	return true
 }
 
 // addStatusToResults adds a status to the search results
