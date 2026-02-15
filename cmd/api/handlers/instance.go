@@ -21,6 +21,9 @@ const (
 	EnvProduction = "production"
 	// EnvProd represents short production environment name
 	EnvProd = "prod"
+
+	localhostDomain = "localhost"
+	loopbackIPv4    = "127.0.0.1"
 )
 
 // HandleGetInstanceV1Lift returns instance information in v1 (legacy) format
@@ -488,7 +491,7 @@ func (h *Handler) streamingAPIURL() string {
 
 	domain := strings.TrimSpace(h.cfg.Domain)
 	scheme := "wss"
-	if domain == "localhost" || domain == "127.0.0.1" {
+	if domain == localhostDomain || domain == loopbackIPv4 {
 		scheme = "ws"
 	}
 	return fmt.Sprintf("%s://ws.%s", scheme, domain)

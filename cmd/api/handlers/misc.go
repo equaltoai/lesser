@@ -1216,7 +1216,7 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	// Determine the subject (domain)
 	domain := h.cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
-		domain = "localhost" // fallback for development
+		domain = localhostDomain // fallback for development
 	}
 
 	// Create VAPID keys object
