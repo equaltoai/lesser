@@ -471,6 +471,21 @@ func (h *Handler) convertMarkdownHeader(trimmed string) string {
 // streamingAPIURL returns the WebSocket streaming endpoint for the Mastodon instance API.
 // Mastodon clients use this URL to establish WebSocket connections for real-time updates.
 func (h *Handler) streamingAPIURL() string {
+	if h == nil || h.cfg == nil {
+		return ""
+	}
+
+	if endpoint := strings.TrimSpace(h.cfg.WebSocketEndpoint); endpoint != "" {
+		switch {
+		case strings.HasPrefix(endpoint, "wss://"), strings.HasPrefix(endpoint, "ws://"):
+			return endpoint
+		case strings.HasPrefix(endpoint, "https://"):
+			return "wss://" + strings.TrimPrefix(endpoint, "https://")
+		case strings.HasPrefix(endpoint, "http://"):
+			return "ws://" + strings.TrimPrefix(endpoint, "http://")
+		}
+	}
+
 	domain := strings.TrimSpace(h.cfg.Domain)
 	scheme := "wss"
 	if domain == "localhost" || domain == "127.0.0.1" {

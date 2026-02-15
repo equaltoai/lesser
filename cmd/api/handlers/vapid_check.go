@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -25,8 +26,17 @@ func IsProductionEnvironment(cfg *config.Config) bool {
 
 // ValidateVAPIDKeysForProduction validates that VAPID keys are available in production
 func ValidateVAPIDKeysForProduction(ctx context.Context, cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger) error {
+	pushRepo := repos.PushSubscription()
+	if pushRepo == nil {
+		logger.Warn("push subscription repository unavailable; skipping VAPID key validation")
+		if IsProductionEnvironment(cfg) {
+			return errors.New("push subscription repository unavailable")
+		}
+		return nil
+	}
+
 	// Check if VAPID keys exist in storage
-	_, err := repos.PushSubscription().GetVAPIDKeys(ctx)
+	_, err := pushRepo.GetVAPIDKeys(ctx)
 	if err == nil {
 		// Keys exist, check if config is set
 		vapidPublicKey := cfg.VAPIDPublicKey
@@ -57,7 +67,7 @@ func ValidateVAPIDKeysForProduction(ctx context.Context, cfg *config.Config, rep
 		UpdatedAt:  time.Now().UTC(),
 	}
 
-	if setErr := repos.PushSubscription().SetVAPIDKeys(ctx, keys); setErr != nil {
+	if setErr := pushRepo.SetVAPIDKeys(ctx, keys); setErr != nil {
 		logger.Error("failed to store auto-generated VAPID keys", zap.Error(setErr))
 		if IsProductionEnvironment(cfg) {
 			return setErr

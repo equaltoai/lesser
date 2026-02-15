@@ -729,7 +729,8 @@ func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Objec
 	err := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", "object#type#Note").
-		Limit(500). // Scan last 500 statuses for broader search coverage
+		OrderBy("gsi2SK", "DESC").
+		Limit(500). // Query most recent 500 statuses for broader search coverage
 		All(&recentStatuses)
 
 	if err != nil {
