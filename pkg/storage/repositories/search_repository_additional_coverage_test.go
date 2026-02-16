@@ -282,15 +282,15 @@ func TestSearchRepository_CoverageSweep(t *testing.T) {
 	_, _ = repo.GetSearchTrends(ctx, 1)
 
 	// Pure helpers
-	assert.True(t, repo.isURL("https://example.com"))
-	assert.False(t, repo.isURL("not-a-url"))
-	assert.Equal(t, []string{"tag"}, repo.extractHashtags("hello #Tag"))
-	assert.Equal(t, "alice", repo.extractUsername("https://example.com/users/alice"))
-	assert.True(t, repo.isLocalStatus("status-1"))
-	assert.False(t, repo.isLocalStatus("https://example.com/status/1"))
-	assert.Greater(t, repo.calculateContentScore("hello world", "world"), 0.0)
-	assert.Equal(t, 0.0, repo.cosineSimilarity([]float32{1}, []float32{1, 0}))
-	assert.Equal(t, "[empty]", repo.hashQuery(""))
+		assert.True(t, repo.isURL("https://example.com"))
+		assert.False(t, repo.isURL("not-a-url"))
+		assert.Equal(t, []string{"tag"}, repo.extractHashtags("hello #Tag"))
+		assert.Equal(t, "alice", extractUsernameFromActor("https://example.com/users/alice"))
+		assert.True(t, repo.isLocalStatus("status-1"))
+		assert.False(t, repo.isLocalStatus("https://example.com/status/1"))
+		assert.Greater(t, repo.calculateContentScore("hello world", "world"), 0.0)
+		assert.Equal(t, 0.0, repo.cosineSimilarity([]float32{1}, []float32{1, 0}))
+		assert.Equal(t, "[empty]", repo.hashQuery(""))
 	assert.Equal(t, "[short]", repo.hashQuery("abc"))
 	assert.Contains(t, repo.hashQuery("alice"), "al_hash_")
 }
@@ -488,19 +488,16 @@ func TestSearchRepository_SearchStatusesWithOptionsPaginated_SortOrderMapping(t 
 }
 
 func TestSearchRepository_ExtractUsername_Branches(t *testing.T) {
-	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
-
-	assert.Equal(t, "alice", repo.extractUsername("https://example.com/users/alice"))
-	assert.Equal(t, "alice", repo.extractUsername("alice"))
-	assert.Equal(t, "a/b", repo.extractUsername("https://example.com/users/a/b"))
-	assert.Equal(t, "", repo.extractUsername("https://example.com/users/alice/users/bob"))
+	assert.Equal(t, "alice", extractUsernameFromActor("https://example.com/users/alice"))
+	assert.Equal(t, "alice", extractUsernameFromActor("alice"))
+	assert.Equal(t, "b", extractUsernameFromActor("https://example.com/users/a/b"))
+	assert.Equal(t, "bob", extractUsernameFromActor("https://example.com/users/alice/users/bob"))
 }
 
-func TestSearchRepository_ObjectToSearchResult_ReturnsNilForNonNote(t *testing.T) {
+func TestSearchRepository_StatusModelToSearchResult_ReturnsNilForNilInput(t *testing.T) {
 	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
 
-	assert.Nil(t, repo.objectToSearchResult(nil, 1, "s"))
-	assert.Nil(t, repo.objectToSearchResult(&models.Object{ID: "x", Type: "Announce"}, 1, "s"))
+	assert.Nil(t, repo.statusModelToSearchResult(nil, 1, "s"))
 }
 
 func TestSearchRepository_CompareRelevance_CoversLengthTieBreaker(t *testing.T) {
@@ -681,12 +678,12 @@ func TestSearchRepository_GetRecentStatuses_ErrorReturnsEmpty(t *testing.T) {
 	repo := NewSearchRepository(mockDB, "test-table", zap.NewNop(), nil)
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Return(mockQuery)
+	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.Object")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Return(ErrTestMockError).Once()
 
 	recent := repo.getRecentStatuses(context.Background())
 	assert.Empty(t, recent)
@@ -694,7 +691,7 @@ func TestSearchRepository_GetRecentStatuses_ErrorReturnsEmpty(t *testing.T) {
 
 func TestSearchRepository_StatusMatchesQuery_EmptyContentReturnsFalse(t *testing.T) {
 	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
-	assert.False(t, repo.statusMatchesQuery(models.Object{Content: ""}, "x"))
+	assert.False(t, repo.statusMatchesQuery(models.Status{Content: ""}, "x"))
 }
 
 func TestSearchRepository_GetSearchSuggestions_DedupSortAndTrim(t *testing.T) {
@@ -764,18 +761,18 @@ func TestSearchRepository_SearchStatusesWithPrivacyPaginated_SetsNextCursorWhenM
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
 	// Populate content search with enough matches to create a next cursor.
-	mockQuery.On("All", mock.AnythingOfType("*[]models.Object")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]models.Object)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Status)
 		now := time.Now()
-		out := make([]models.Object, 0, 7)
+		out := make([]models.Status, 0, 7)
 		for i := range 7 {
-			out = append(out, models.Object{
-				ID:           fmt.Sprintf("status-%d", i),
-				Type:         ActivityTypeNote,
-				Content:      "hello world",
-				URL:          fmt.Sprintf("https://example.com/status/%d", i),
-				AttributedTo: "https://example.com/users/alice",
-				Published:    now.Add(time.Duration(-i) * time.Minute),
+			id := fmt.Sprintf("status-%d", i)
+			out = append(out, models.Status{
+				StatusID:       id,
+				Content:        "hello world",
+				AuthorID:       "https://example.com/users/alice",
+				AuthorUsername: "alice",
+				PublishedAt:    now.Add(time.Duration(-i) * time.Minute),
 			})
 		}
 		*dest = out

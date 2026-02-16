@@ -291,7 +291,7 @@ func TestRound07_PushSubscriptionRepository_VAPIDFallbackAndTypeAssertionError(t
 		record := args.Get(0).(*models.VAPIDKeyRecord)
 		record.PK = "INSTANCE#CONFIG"
 		record.SK = "VAPID_KEYS"
-		record.Data = "wrong-type"
+		record.Data = map[string]any{"not": "vapid"}
 	}).Return(nil)
 
 	repo := NewPushSubscriptionRepository(mockDB, "test-table", zap.NewNop(), nil, nil, "", "mailto:default@example.com")

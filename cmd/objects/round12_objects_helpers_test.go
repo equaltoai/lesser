@@ -128,4 +128,3 @@ func TestObjectsPanicRecovery_Round12(t *testing.T) {
 	require.NoError(t, json.Unmarshal(resp.Body, &payload))
 	require.Equal(t, "internal server error", payload["error"])
 }
-

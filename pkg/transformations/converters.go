@@ -42,11 +42,16 @@ func ActorToAccountBase(actor *activitypub.Actor, baseURL string) models.Account
 		createdAt = TransformTimestamp(*actor.Published, time.RFC3339)
 	}
 
+	displayName := actor.Name
+	if displayName == "" {
+		displayName = actor.PreferredUsername
+	}
+
 	return models.Account{
 		ID:             GenerateNumericIDFromUsername(actor.PreferredUsername),
 		Username:       actor.PreferredUsername,
 		Acct:           actor.PreferredUsername,
-		DisplayName:    actor.Name,
+		DisplayName:    displayName,
 		Note:           actor.Summary,
 		URL:            actor.URL,
 		Avatar:         getAvatarURL(actor.Icon, baseURL),

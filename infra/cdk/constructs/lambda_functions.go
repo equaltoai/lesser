@@ -142,7 +142,13 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 
 	// WebSocket endpoint (used by streaming + notifications).
 	wsHost := fmt.Sprintf("ws.%s", domainValue)
-	commonEnv["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", wsHost))
+	// Streaming WebSocket API is path-mapped under /stream (see constructs/api_routes.go).
+	commonEnv["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s/stream", wsHost))
+
+	// Optional feature flags (set only when explicitly configured).
+	if v := getConfigString("translationEnabled"); v != "" {
+		commonEnv["TRANSLATION_ENABLED"] = jsii.String(v)
+	}
 
 	// Set JWT secret ARN from SharedStack (securely passed, never synthesized)
 	if props.JwtSecret != nil {

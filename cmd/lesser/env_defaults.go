@@ -1,0 +1,86 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
+)
+
+const (
+	defaultCLIStage        = "dev"
+	defaultCLIMaxToolJobs  = 8
+	lesserToolJobsEnvVar   = "LESSER_JOBS"
+	goMaxProcsEnvVar       = "GOMAXPROCS"
+	goFlagsEnvVar          = "GOFLAGS"
+	goBuildParallelismFlag = "-p"
+)
+
+func applyCLIDefaultEnv() {
+	applyStageEnvDefaults()
+	applyToolParallelismDefaults()
+}
+
+func applyStageEnvDefaults() {
+	if strings.TrimSpace(os.Getenv("STAGE")) == "" {
+		_ = os.Setenv("STAGE", defaultCLIStage)
+	}
+}
+
+func applyToolParallelismDefaults() {
+	jobs := resolveToolJobs()
+	if jobs <= 0 {
+		return
+	}
+
+	if strings.TrimSpace(os.Getenv(goMaxProcsEnvVar)) == "" {
+		_ = os.Setenv(goMaxProcsEnvVar, fmt.Sprintf("%d", jobs))
+	}
+
+	currentGoFlags := strings.TrimSpace(os.Getenv(goFlagsEnvVar))
+	if goFlagsHasBuildParallelism(currentGoFlags) {
+		return
+	}
+
+	if currentGoFlags == "" {
+		_ = os.Setenv(goFlagsEnvVar, fmt.Sprintf("%s=%d", goBuildParallelismFlag, jobs))
+		return
+	}
+	_ = os.Setenv(goFlagsEnvVar, currentGoFlags+" "+fmt.Sprintf("%s=%d", goBuildParallelismFlag, jobs))
+}
+
+func resolveToolJobs() int {
+	if v := strings.TrimSpace(os.Getenv(lesserToolJobsEnvVar)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+
+	if v := strings.TrimSpace(os.Getenv(goMaxProcsEnvVar)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+
+	n := runtime.NumCPU()
+	if n < 1 {
+		return 1
+	}
+	if n > defaultCLIMaxToolJobs {
+		return defaultCLIMaxToolJobs
+	}
+	return n
+}
+
+func goFlagsHasBuildParallelism(goFlags string) bool {
+	for _, field := range strings.Fields(goFlags) {
+		if field == goBuildParallelismFlag {
+			return true
+		}
+		if strings.HasPrefix(field, goBuildParallelismFlag+"=") {
+			return true
+		}
+	}
+	return false
+}

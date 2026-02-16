@@ -196,6 +196,18 @@ func (s *SharedStack) attachApplicationPolicies(appName string) {
 			},
 		}))
 
+		// KMS decrypt for application secrets encrypted with the shared key.
+		role.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+			Effect: awsiam.Effect_ALLOW,
+			Actions: &[]*string{
+				jsii.String("kms:Decrypt"),
+				jsii.String("kms:DescribeKey"),
+			},
+			Resources: &[]*string{
+				s.EncryptionKey.KeyArn(),
+			},
+		}))
+
 		// CloudWatch Logs
 		role.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 			Effect: awsiam.Effect_ALLOW,

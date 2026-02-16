@@ -172,6 +172,128 @@ func TestProductionConfigValidator_ValidateProductionConfig_AWSResourcesValidati
 	assert.True(t, result.Resources.SecretsManager.Available)
 }
 
+func TestProductionConfigValidator_AWSResourceValidation_ErrorBranches(t *testing.T) {
+	origTableExists := newTableExistsChecker
+	origS3 := newS3Client
+	origSecrets := newSecretsManagerClient
+	t.Cleanup(func() {
+		newTableExistsChecker = origTableExists
+		newS3Client = origS3
+		newSecretsManagerClient = origSecrets
+	})
+
+	v := &ProductionConfigValidator{
+		logger:    zap.NewNop(),
+		awsConfig: aws.Config{Region: "us-east-1"},
+		timeout:   1,
+	}
+
+	t.Run("dynamodb missing table info returns error", func(t *testing.T) {
+		t.Setenv("DYNAMODB_TABLE", "")
+		t.Setenv("DYNAMO_TABLE_NAME", "")
+		t.Setenv("ENVIRONMENT", "")
+		t.Setenv("STAGE", "")
+
+		status := v.validateDynamoDB(context.Background())
+		assert.False(t, status.Available)
+		assert.Contains(t, status.Error, "must be set")
+	})
+
+	t.Run("dynamodb checker init failure returns error", func(t *testing.T) {
+		t.Setenv("DYNAMODB_TABLE", "lesser-main")
+		t.Setenv("DYNAMO_TABLE_NAME", "")
+		t.Setenv("ENVIRONMENT", "")
+		t.Setenv("STAGE", "")
+
+		newTableExistsChecker = func(_ aws.Config) (tableExistsChecker, error) {
+			return nil, errors.New("init boom")
+		}
+		t.Cleanup(func() { newTableExistsChecker = origTableExists })
+
+		status := v.validateDynamoDB(context.Background())
+		assert.False(t, status.Available)
+		assert.Contains(t, status.Error, "failed to initialize TableTheory DynamoDB client")
+		assert.Contains(t, status.Error, "init boom")
+	})
+
+	t.Run("dynamodb table exists checker error returns error", func(t *testing.T) {
+		t.Setenv("DYNAMODB_TABLE", "lesser-main")
+		t.Setenv("DYNAMO_TABLE_NAME", "")
+		t.Setenv("ENVIRONMENT", "")
+		t.Setenv("STAGE", "")
+
+		newTableExistsChecker = func(_ aws.Config) (tableExistsChecker, error) {
+			return stubTableExistsChecker{exists: false, err: errors.New("access boom")}, nil
+		}
+		t.Cleanup(func() { newTableExistsChecker = origTableExists })
+
+		status := v.validateDynamoDB(context.Background())
+		assert.False(t, status.Available)
+		assert.Contains(t, status.Error, "not accessible")
+		assert.Contains(t, status.Error, "access boom")
+	})
+
+	t.Run("dynamodb table missing returns error", func(t *testing.T) {
+		t.Setenv("DYNAMODB_TABLE", "lesser-main")
+		t.Setenv("DYNAMO_TABLE_NAME", "")
+		t.Setenv("ENVIRONMENT", "")
+		t.Setenv("STAGE", "")
+
+		newTableExistsChecker = func(_ aws.Config) (tableExistsChecker, error) {
+			return stubTableExistsChecker{exists: false, err: nil}, nil
+		}
+		t.Cleanup(func() { newTableExistsChecker = origTableExists })
+
+		status := v.validateDynamoDB(context.Background())
+		assert.False(t, status.Available)
+		assert.Contains(t, status.Error, "not found")
+	})
+
+	t.Run("s3 missing bucket is treated as optional", func(t *testing.T) {
+		t.Setenv("S3_BUCKET_NAME", "")
+		t.Setenv("S3_BUCKET", "")
+
+		status := v.validateS3(context.Background())
+		assert.False(t, status.Available)
+		assert.Contains(t, status.Message, "not configured")
+	})
+
+	t.Run("s3 head bucket failure returns error", func(t *testing.T) {
+		t.Setenv("S3_BUCKET_NAME", "bucket-name")
+		t.Setenv("S3_BUCKET", "")
+
+		newS3Client = func(_ aws.Config) s3Client { return stubS3Client{err: errors.New("head boom")} }
+		t.Cleanup(func() { newS3Client = origS3 })
+
+		status := v.validateS3(context.Background())
+		assert.False(t, status.Available)
+		assert.Contains(t, status.Error, "not accessible")
+		assert.Contains(t, status.Error, "head boom")
+	})
+
+	t.Run("secrets manager missing secret name returns error", func(t *testing.T) {
+		t.Setenv("PRIVATE_KEY_SECRET", "")
+
+		status := v.validateSecretsManager(context.Background())
+		assert.False(t, status.Available)
+		assert.Equal(t, "Private key secret name not configured", status.Error)
+	})
+
+	t.Run("secrets manager describe failure returns error", func(t *testing.T) {
+		t.Setenv("PRIVATE_KEY_SECRET", "secret-name")
+
+		newSecretsManagerClient = func(_ aws.Config) secretsManagerClient {
+			return stubSecretsManagerClient{err: errors.New("describe boom")}
+		}
+		t.Cleanup(func() { newSecretsManagerClient = origSecrets })
+
+		status := v.validateSecretsManager(context.Background())
+		assert.False(t, status.Available)
+		assert.Contains(t, status.Error, "not accessible")
+		assert.Contains(t, status.Error, "describe boom")
+	})
+}
+
 func TestProductionConfigValidator_SecurityAndFormatHelpers(t *testing.T) {
 	v := &ProductionConfigValidator{logger: zap.NewNop()}
 
@@ -181,9 +303,57 @@ func TestProductionConfigValidator_SecurityAndFormatHelpers(t *testing.T) {
 		require.NotEmpty(t, result.Warnings)
 	})
 
+	t.Run("domain name format error", func(t *testing.T) {
+		result := &ValidationResult{}
+		v.validateEnvironmentVariableFormat("DOMAIN_NAME", "bad domain", result)
+		require.NotEmpty(t, result.Errors)
+	})
+
+	t.Run("aws region format error", func(t *testing.T) {
+		result := &ValidationResult{}
+		v.validateEnvironmentVariableFormat("AWS_REGION", "not-a-region", result)
+		require.NotEmpty(t, result.Errors)
+	})
+
+	t.Run("environment name warning", func(t *testing.T) {
+		result := &ValidationResult{}
+		v.validateEnvironmentVariableFormat("ENVIRONMENT", "weird", result)
+		require.NotEmpty(t, result.Warnings)
+	})
+
+	t.Run("stage name warning", func(t *testing.T) {
+		result := &ValidationResult{}
+		v.validateEnvironmentVariableFormat("STAGE", "weird", result)
+		require.NotEmpty(t, result.Warnings)
+	})
+
 	t.Run("jwt configured via arn", func(t *testing.T) {
 		t.Setenv("JWT_SECRET", "")
 		t.Setenv("JWT_SECRET_ARN", "arn:aws:secretsmanager:...")
+		status := v.validateJWTConfiguration()
+		assert.True(t, status.Configured)
+		assert.True(t, status.Valid)
+	})
+
+	t.Run("jwt missing is invalid", func(t *testing.T) {
+		t.Setenv("JWT_SECRET", "")
+		t.Setenv("JWT_SECRET_ARN", "")
+		status := v.validateJWTConfiguration()
+		assert.False(t, status.Configured)
+		assert.False(t, status.Valid)
+	})
+
+	t.Run("jwt too short is invalid", func(t *testing.T) {
+		t.Setenv("JWT_SECRET", "short")
+		t.Setenv("JWT_SECRET_ARN", "")
+		status := v.validateJWTConfiguration()
+		assert.True(t, status.Configured)
+		assert.False(t, status.Valid)
+	})
+
+	t.Run("jwt long secret is valid", func(t *testing.T) {
+		t.Setenv("JWT_SECRET", "abcdefghijklmnopqrstuvwxyz0123456789abcdef")
+		t.Setenv("JWT_SECRET_ARN", "")
 		status := v.validateJWTConfiguration()
 		assert.True(t, status.Configured)
 		assert.True(t, status.Valid)
@@ -197,11 +367,47 @@ func TestProductionConfigValidator_SecurityAndFormatHelpers(t *testing.T) {
 		assert.True(t, status.Valid)
 	})
 
+	t.Run("oauth partial configuration is invalid", func(t *testing.T) {
+		t.Setenv("OAUTH_CLIENT_ID", "client")
+		t.Setenv("OAUTH_CLIENT_SECRET", "")
+		status := v.validateOAuthSecrets()
+		assert.True(t, status.Configured)
+		assert.False(t, status.Valid)
+	})
+
+	t.Run("oauth complete configuration is valid", func(t *testing.T) {
+		t.Setenv("OAUTH_CLIENT_ID", "client")
+		t.Setenv("OAUTH_CLIENT_SECRET", "secret")
+		status := v.validateOAuthSecrets()
+		assert.True(t, status.Configured)
+		assert.True(t, status.Valid)
+	})
+
 	t.Run("encryption key too short invalid", func(t *testing.T) {
 		t.Setenv("ENCRYPTION_KEY", "short")
 		status := v.validateEncryptionKeys()
 		assert.True(t, status.Configured)
 		assert.False(t, status.Valid)
+	})
+
+	t.Run("encryption key missing invalid", func(t *testing.T) {
+		t.Setenv("ENCRYPTION_KEY", "")
+		status := v.validateEncryptionKeys()
+		assert.False(t, status.Configured)
+		assert.False(t, status.Valid)
+	})
+
+	t.Run("encryption key long valid", func(t *testing.T) {
+		t.Setenv("ENCRYPTION_KEY", "abcdefghijklmnopqrstuvwxyz0123456789abcdef")
+		status := v.validateEncryptionKeys()
+		assert.True(t, status.Configured)
+		assert.True(t, status.Valid)
+	})
+
+	t.Run("isValidDomain handles schemes", func(t *testing.T) {
+		assert.True(t, v.isValidDomain("https://example.com"))
+		assert.False(t, v.isValidDomain("http://%"))
+		assert.False(t, v.isValidDomain("localhost"))
 	})
 
 	t.Run("domain accessibility warning", func(t *testing.T) {

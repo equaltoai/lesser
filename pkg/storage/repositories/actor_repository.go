@@ -148,6 +148,19 @@ func (r *ActorRepository) GetActor(ctx context.Context, username string) (*activ
 	}
 
 	actor := actorModel.Actor
+	if actor != nil && actor.ID == "" && actor.PreferredUsername == "" {
+		decoded, decErr := loadActivityPubActorFromDynamo(ctx, r.tableName, username)
+		if decErr != nil {
+			r.logger.Warn("failed to decode actor payload from DynamoDB fallback",
+				zap.String("username", username),
+				zap.Error(decErr))
+		} else if decoded != nil {
+			actor = decoded
+		}
+	}
+	if actor == nil {
+		return nil, ErrorHandler.HandleGetError(errors.New("actor data is missing"), EntityActor, username)
+	}
 	hydrateActivityPubActorTimestamps(actor, actorModel.CreatedAt, actorModel.UpdatedAt)
 	return actor, nil
 }
@@ -442,7 +455,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("gsi1").
 			Where("gsi1PK", "=", "USERNAME_SEARCH#"+prefix).
-			Filter("gsi1SK", "BEGINS_WITH", normalizedQuery).
+			Where("gsi1SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
 		if err != nil {
@@ -456,7 +469,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("gsi2").
 			Where("gsi2PK", "=", "NAME_SEARCH#"+prefix).
-			Filter("gsi2SK", "BEGINS_WITH", normalizedQuery).
+			Where("gsi2SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
 		if err != nil {
@@ -466,10 +479,28 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 
 	// Convert to activitypub.Actor slice
 	result := make([]*activitypub.Actor, 0, len(actors))
-	for _, actor := range actors {
-		if actor.Actor != nil {
-			result = append(result, actor.Actor)
+	seen := make(map[string]struct{}, len(actors))
+	for i := range actors {
+		username := resolveActorUsername(&actors[i])
+		if username == "" {
+			continue
 		}
+
+		fullActor := actors[i].Actor
+		// KEYS_ONLY projections can yield nil or incomplete actor payloads.
+		if fullActor == nil || fullActor.ID == "" || fullActor.PreferredUsername == "" {
+			var err error
+			fullActor, err = r.GetActor(ctx, username)
+			if err != nil || fullActor == nil || fullActor.ID == "" {
+				continue
+			}
+		}
+
+		if _, ok := seen[fullActor.ID]; ok {
+			continue
+		}
+		seen[fullActor.ID] = struct{}{}
+		result = append(result, fullActor)
 	}
 
 	return result, nil
@@ -488,7 +519,7 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", "USERNAME_SEARCH#"+prefixKey).
-		Filter("gsi1SK", "BEGINS_WITH", normalizedPrefix).
+		Where("gsi1SK", "BEGINS_WITH", normalizedPrefix).
 		Limit(10).
 		All(&actors)
 	if err != nil {
@@ -497,14 +528,40 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 
 	suggestions := make([]storage.SearchSuggestion, 0, len(actors))
 	for _, actor := range actors {
+		username := actor.Username
+		if username == "" {
+			username = resolveActorUsername(&actor)
+		}
 		suggestions = append(suggestions, storage.SearchSuggestion{
 			Type:  "account",
-			Value: actor.Username,
+			Value: username,
 			Score: 100, // Could be based on follower count or activity
 		})
 	}
 
 	return suggestions, nil
+}
+
+func resolveActorUsername(actor *models.Actor) string {
+	if actor == nil {
+		return ""
+	}
+	if actor.Username != "" {
+		return actor.Username
+	}
+	if strings.HasPrefix(actor.PK, "ACTOR#") {
+		return strings.TrimPrefix(actor.PK, "ACTOR#")
+	}
+	// gsi1SK is lowercase username; use it when that's all we have (e.g., KEYS_ONLY projections).
+	if actor.GSI1SK != "" {
+		return actor.GSI1SK
+	}
+	// gsi2SK format: "{lowercase_name}#{username}"
+	if actor.GSI2SK != "" {
+		parts := strings.Split(actor.GSI2SK, "#")
+		return parts[len(parts)-1]
+	}
+	return ""
 }
 
 // Helper functions
@@ -637,6 +694,17 @@ func (r *ActorRepository) GetActorByUsername(ctx context.Context, username strin
 			return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 		}
 		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
+	}
+
+	if actorModel.Actor != nil && actorModel.Actor.ID == "" && actorModel.Actor.PreferredUsername == "" {
+		decoded, decErr := loadActivityPubActorFromDynamo(ctx, r.tableName, username)
+		if decErr != nil {
+			r.logger.Warn("failed to decode actor payload from DynamoDB fallback",
+				zap.String("username", username),
+				zap.Error(decErr))
+		} else if decoded != nil {
+			actorModel.Actor = decoded
+		}
 	}
 
 	// Convert to ActivityPub actor

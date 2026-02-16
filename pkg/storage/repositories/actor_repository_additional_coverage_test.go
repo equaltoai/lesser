@@ -425,6 +425,17 @@ func TestActorRepository_numeric_id_and_account_search_queries(t *testing.T) {
 			{Username: "nilactor", Actor: nil},
 		}
 	}).Once()
+	// SearchAccounts now loads full actor records (GSI projections may be KEYS_ONLY).
+	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.Actor)
+		m.Username = "alice"
+		m.Actor = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice"},
+			PreferredUsername: "alice",
+			Discoverable:      true,
+		}
+	}).Once()
+	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 	results, err := repo.SearchAccounts(ctx, "al", 10, false, 0)
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
@@ -436,6 +447,15 @@ func TestActorRepository_numeric_id_and_account_search_queries(t *testing.T) {
 	mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		out := args.Get(0).(*[]models.Actor)
 		*out = []models.Actor{{Username: "bob", Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/bob"}, PreferredUsername: "bob", Discoverable: true}}}
+	}).Once()
+	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.Actor)
+		m.Username = "bob"
+		m.Actor = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/bob"},
+			PreferredUsername: "bob",
+			Discoverable:      true,
+		}
 	}).Once()
 	results, err = repo.SearchAccounts(ctx, "bo", 10, false, 0)
 	assert.NoError(t, err)

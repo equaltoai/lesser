@@ -39,6 +39,8 @@ var (
 )
 
 func runCLI(args []string, stderr io.Writer) int {
+	applyCLIDefaultEnv()
+
 	if len(args) < 2 {
 		printUsageTo(stderr)
 		return 2

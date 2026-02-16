@@ -264,11 +264,14 @@ func TestEnsureSubscriptionManagerStarted_StartOnce(t *testing.T) {
 func TestHandleConnect_TokenValidationAndState(t *testing.T) {
 	setDummyAWSEnv(t)
 
-	// Missing token => unauthorized.
+	// Missing token => accepted (auth may arrive via connection_init), but unauthenticated.
 	server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil)
 	app := newWebSocketApp(server)
 	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{}, map[string]string{}))
-	require.Equal(t, 401, resp.StatusCode)
+	require.Equal(t, 200, resp.StatusCode)
+	state, err := server.getConnection(context.Background(), "c1")
+	require.NoError(t, err)
+	require.Equal(t, "", state.username)
 
 	// Token present but oauth service missing => internal error.
 	server = newServer(nil, nil, nil, zap.NewNop(), nil, nil)
@@ -298,7 +301,7 @@ func TestHandleConnect_TokenValidationAndState(t *testing.T) {
 	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
 	require.Equal(t, 200, resp.StatusCode)
 
-	state, err := server.getConnection(context.Background(), "c1")
+	state, err = server.getConnection(context.Background(), "c1")
 	require.NoError(t, err)
 	require.Equal(t, "user", state.username)
 	require.NotNil(t, server.wsContexts["c1"])

@@ -331,7 +331,13 @@ func (sh *StreamingHandler) HandleWebSocketDefault(ctx *apptheory.Context) (*app
 	}
 
 	wsCtx := ctx.AsWebSocket()
-	endpoint := strings.TrimSpace(wsCtx.ManagementEndpoint)
+	endpoint := ""
+	if sh != nil && sh.cfg != nil {
+		endpoint = strings.TrimSpace(sh.cfg.WebSocketEndpoint)
+	}
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(wsCtx.ManagementEndpoint)
+	}
 	if endpoint == "" {
 		return apptheory.Text(500, "missing websocket management endpoint"), nil
 	}

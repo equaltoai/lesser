@@ -103,6 +103,8 @@ func TestHandleDefault_SendsExpectedMessages(t *testing.T) {
 
 	var bodies [][]byte
 	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	// Pretend $connect already authenticated so connection_init can ACK.
+	s.connections["c1"] = &connectionState{username: "user", claims: &auth.Claims{Username: "user"}, subscriptions: map[string]*subscriptionState{}}
 	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, err := json.Marshal(payload)
 		require.NoError(t, err)

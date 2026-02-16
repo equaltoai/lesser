@@ -96,4 +96,3 @@ func TestCLIAPIClient_RefreshTokens_EmptyBodyUsesStatusText(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Internal Server Error")
 }
-

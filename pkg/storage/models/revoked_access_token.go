@@ -55,4 +55,3 @@ func (r *RevokedAccessToken) UpdateKeys() error {
 	r.SK = SKToken
 	return nil
 }
-

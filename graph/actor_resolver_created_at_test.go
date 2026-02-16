@@ -44,4 +44,3 @@ func TestActorResolver_CreatedAt_Fallbacks(t *testing.T) {
 	require.False(t, time.Time(*got).Before(before))
 	require.False(t, time.Time(*got).After(after))
 }
-

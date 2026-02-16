@@ -121,4 +121,3 @@ func TestActorPanicRecovery_Round22(t *testing.T) {
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	require.Equal(t, "internal server error", body["error"])
 }
-

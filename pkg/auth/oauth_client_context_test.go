@@ -13,23 +13,23 @@ import (
 
 type reposStub struct{}
 
-func (reposStub) Account() *repositories.AccountRepository                 { return nil }
-func (reposStub) Actor() interfaces.ActorRepository                        { return nil }
-func (reposStub) Activity() interfaces.ActivityRepository                  { return nil }
-func (reposStub) Notification() interfaces.NotificationRepository          { return nil }
-func (reposStub) Recovery() *repositories.RecoveryRepository               { return nil }
-func (reposStub) Audit() *repositories.AuditRepository                     { return nil }
+func (reposStub) Account() *repositories.AccountRepository        { return nil }
+func (reposStub) Actor() interfaces.ActorRepository               { return nil }
+func (reposStub) Activity() interfaces.ActivityRepository         { return nil }
+func (reposStub) Notification() interfaces.NotificationRepository { return nil }
+func (reposStub) Recovery() *repositories.RecoveryRepository      { return nil }
+func (reposStub) Audit() *repositories.AuditRepository            { return nil }
 
 type reposWithAccount struct {
 	account *repositories.AccountRepository
 }
 
-func (r reposWithAccount) Account() *repositories.AccountRepository        { return r.account }
-func (reposWithAccount) Actor() interfaces.ActorRepository                 { return nil }
-func (reposWithAccount) Activity() interfaces.ActivityRepository           { return nil }
-func (reposWithAccount) Notification() interfaces.NotificationRepository   { return nil }
-func (reposWithAccount) Recovery() *repositories.RecoveryRepository        { return nil }
-func (reposWithAccount) Audit() *repositories.AuditRepository              { return nil }
+func (r reposWithAccount) Account() *repositories.AccountRepository      { return r.account }
+func (reposWithAccount) Actor() interfaces.ActorRepository               { return nil }
+func (reposWithAccount) Activity() interfaces.ActivityRepository         { return nil }
+func (reposWithAccount) Notification() interfaces.NotificationRepository { return nil }
+func (reposWithAccount) Recovery() *repositories.RecoveryRepository      { return nil }
+func (reposWithAccount) Audit() *repositories.AuditRepository            { return nil }
 
 func TestOAuthService_GenerateTokensWithAccessTokenTTLAndClientContext(t *testing.T) {
 	t.Parallel()
@@ -100,4 +100,3 @@ func TestNormalizeDelegatedBy(t *testing.T) {
 	require.Equal(t, "@owner", normalizeDelegatedBy("@owner"))
 	require.Equal(t, "@owner", normalizeDelegatedBy(" @owner "))
 }
-

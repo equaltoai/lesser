@@ -109,6 +109,20 @@ func main() {
 			"appName":     appName,
 			"domain":      stageDomain,
 		}
+		// Optional per-deployment config (passed via CDK context).
+		for _, key := range []string{
+			"lesserHostUrl",
+			"lesserHostInstanceKeyArn",
+			"lesserHostAttestationsUrl",
+			"translationEnabled",
+			"tipEnabled",
+			"tipChainId",
+			"tipContractAddress",
+		} {
+			if v := getContextString(app, key); v != "" {
+				config[key] = v
+			}
+		}
 
 		stackName := naming.StageStackName(appName, naming.Stage(stage))
 		_ = stacks.NewLesserApiStack(app, stackName, &stacks.LesserApiStackProps{

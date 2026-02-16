@@ -75,6 +75,10 @@ func runLint(argv []string) error {
 		args = append(args, "--fix")
 	}
 
+	if jobs := resolveToolJobs(); jobs > 0 {
+		args = append(args, "--concurrency", fmt.Sprintf("%d", jobs))
+	}
+
 	return runCommandFn(context.Background(), "golangci-lint", args, execOptions{
 		Dir: repoRoot,
 		Env: map[string]string{

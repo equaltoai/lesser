@@ -62,8 +62,8 @@ type WebSocketConnection struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // CONN#{connectionID}
 
 	// GSI keys for querying
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // CONN#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk,omitempty"` // USER#{userID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk,omitempty"` // CONN#{timestamp}
 
 	// GSI2 for state-based queries
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // STATE#{state}
@@ -71,8 +71,8 @@ type WebSocketConnection struct {
 
 	// Business fields
 	ConnectionID string    `theorydb:"attr:connectionID" json:"connection_id"`
-	UserID       string    `theorydb:"attr:userID" json:"user_id"`
-	Username     string    `theorydb:"attr:username" json:"username"`
+	UserID       string    `theorydb:"attr:userID,omitempty" json:"user_id,omitempty"`
+	Username     string    `theorydb:"attr:username,omitempty" json:"username,omitempty"`
 	Streams      []string  `theorydb:"attr:streams" json:"streams"` // subscribed streams
 	Established  time.Time `theorydb:"attr:established" json:"established"`
 	LastActivity time.Time `theorydb:"attr:lastActivity" json:"last_activity"`

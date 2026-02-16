@@ -711,7 +711,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 				"max_expiration":            2629746,
 			},
 			"translation": map[string]any{
-				"enabled": false,
+				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
 			},
 			"tips": func() map[string]any {
 				enabled := false
