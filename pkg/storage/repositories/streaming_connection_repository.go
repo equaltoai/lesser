@@ -40,7 +40,7 @@ type StreamingConnectionRepository struct {
 func NewStreamingConnectionRepository(db core.DB, tableName string, subscriptionDB core.DB, subscriptionTable string, logger *zap.Logger, costService *cost.TrackingService) *StreamingConnectionRepository {
 	// Create enhanced repository for WebSocket connections
 	connectionRepo := NewEnhancedBaseRepository[*models.WebSocketConnection](db, tableName, logger, costService, "StreamingConnectionRepository", "streamingconnection")
-	connectionRepo.SetValidationService(NewDefaultValidationService())
+	connectionRepo.SetValidationService(NewWebSocketConnectionValidationService())
 	connectionRepo.SetPermissionService(NewDefaultPermissionService())
 	connectionRepo.SetCachingService(NewInMemoryCachingService()) // Connections cached for real-time performance
 	connectionRepo.SetEventService(NewDefaultEventService())

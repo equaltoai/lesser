@@ -92,6 +92,24 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		fmt.Sprintf("hostedZoneId=%s", req.HostedZoneID),
 	}
 
+	// Optional deployment configuration from environment variables.
+	// This keeps `lesser up` ergonomic while allowing one-off instance config without editing CDK code.
+	envContexts := map[string]string{
+		"lesserHostUrl":             strings.TrimSpace(os.Getenv("LESSER_HOST_URL")),
+		"lesserHostInstanceKeyArn":  strings.TrimSpace(os.Getenv("LESSER_HOST_INSTANCE_KEY_ARN")),
+		"lesserHostAttestationsUrl": strings.TrimSpace(os.Getenv("LESSER_HOST_ATTESTATIONS_URL")),
+		"translationEnabled":        strings.TrimSpace(os.Getenv("TRANSLATION_ENABLED")),
+		"tipEnabled":                strings.TrimSpace(os.Getenv("TIP_ENABLED")),
+		"tipChainId":                strings.TrimSpace(os.Getenv("TIP_CHAIN_ID")),
+		"tipContractAddress":        strings.TrimSpace(os.Getenv("TIP_CONTRACT_ADDRESS")),
+	}
+	for key, value := range envContexts {
+		if value == "" {
+			continue
+		}
+		args = append(args, "--context", fmt.Sprintf("%s=%s", key, value))
+	}
+
 	stage := strings.TrimSpace(strings.ToLower(req.StageFilter))
 	if stage != "" {
 		args = append(args, "--context", fmt.Sprintf("stage=%s", stage))

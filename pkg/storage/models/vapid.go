@@ -8,10 +8,10 @@ import (
 type VAPIDKeyRecord struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
-	PK        string      `theorydb:"pk,attr:PK"`            // INSTANCE#CONFIG
-	SK        string      `theorydb:"sk,attr:SK"`            // VAPID_KEYS
-	Data      interface{} `theorydb:"attr:data" json:"data"` // The actual VAPID keys data (storage.VAPIDKeys)
-	UpdatedAt time.Time   `theorydb:"attr:updatedAt" json:"updated_at"`
+	PK        string         `theorydb:"pk,attr:PK"`            // INSTANCE#CONFIG
+	SK        string         `theorydb:"sk,attr:SK"`            // VAPID_KEYS
+	Data      map[string]any `theorydb:"attr:data" json:"data"` // The actual VAPID keys data (storage.VAPIDKeys-compatible)
+	UpdatedAt time.Time      `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
 // UpdateKeys updates any GSI keys - VAPID doesn't use GSIs so this is no-op

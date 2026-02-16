@@ -227,12 +227,25 @@ func (r *PushSubscriptionRepository) GetVAPIDKeys(ctx context.Context) (*storage
 	}
 
 	// Convert interface{} back to storage.VAPIDKeys
-	keys, ok := record.Data.(storage.VAPIDKeys)
-	if !ok {
-		typeErr := errors.New("type assertion failed for VAPID keys data")
+	if record.Data == nil {
+		typeErr := errors.New("VAPID keys data is nil")
 		return nil, ErrorHandler.HandleGetError(typeErr, "VAPID keys", "data conversion")
 	}
 
+	// Convert via JSON to ensure stable decoding into the strongly-typed struct.
+	raw, err := json.Marshal(record.Data)
+	if err != nil {
+		return nil, ErrorHandler.HandleGetError(err, "VAPID keys", "marshal data")
+	}
+
+	var keys storage.VAPIDKeys
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return nil, ErrorHandler.HandleGetError(err, "VAPID keys", "unmarshal data")
+	}
+	if keys.PublicKey == "" {
+		typeErr := errors.New("VAPID keys data missing public_key")
+		return nil, ErrorHandler.HandleGetError(typeErr, "VAPID keys", "data conversion")
+	}
 	return &keys, nil
 }
 
@@ -258,16 +271,25 @@ func (r *PushSubscriptionRepository) SetVAPIDKeys(ctx context.Context, keys *sto
 			zap.Error(err))
 	}
 
+	raw, err := json.Marshal(keys)
+	if err != nil {
+		return ErrorHandler.HandleCreateError(err, "VAPID keys", "marshal payload")
+	}
+	var recordData map[string]any
+	if err := json.Unmarshal(raw, &recordData); err != nil {
+		return ErrorHandler.HandleCreateError(err, "VAPID keys", "unmarshal payload")
+	}
+
 	// Create the VAPID key record
 	record := &models.VAPIDKeyRecord{
 		PK:        "INSTANCE#CONFIG",
 		SK:        "VAPID_KEYS",
-		Data:      *keys,
+		Data:      recordData,
 		UpdatedAt: time.Now(),
 	}
 
 	// Try to update first, if not found then create
-	err := r.vapidRepo.Update(ctx, record)
+	err = r.vapidRepo.Update(ctx, record)
 	if err != nil {
 		if ddbErrors.IsNotFound(err) {
 			// Create new record if not found

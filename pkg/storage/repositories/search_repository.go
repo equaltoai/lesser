@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -210,16 +211,12 @@ func (r *SearchRepository) searchExactUsername(ctx context.Context, query string
 		return
 	}
 
-	var exactMatch models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s", query)).
-		Where("SK", "=", "PROFILE").
-		First(&exactMatch)
-
-	if err == nil && exactMatch.Actor != nil && !seen[exactMatch.Actor.ID] {
-		*results = append(*results, exactMatch.Actor)
-		seen[exactMatch.Actor.ID] = true
+	actor, err := r.getFullActorByUsername(ctx, query)
+	if err != nil || actor == nil || actor.ID == "" || seen[actor.ID] {
+		return
 	}
+	*results = append(*results, actor)
+	seen[actor.ID] = true
 }
 
 // searchUsernamePrefix searches for usernames starting with the query
@@ -230,7 +227,7 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("USERNAME_SEARCH#%s", prefixKey)).
-		Filter("gsi1SK", "BEGINS_WITH", query).
+		Where("gsi1SK", "BEGINS_WITH", query).
 		Limit(limit + offset).
 		All(&prefixMatches)
 
@@ -240,10 +237,35 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 	}
 
 	for _, match := range prefixMatches {
-		if match.Actor != nil && !seen[match.Actor.ID] {
-			*results = append(*results, match.Actor)
-			seen[match.Actor.ID] = true
+		actor := match.Actor
+		// Some deployments project KEYS_ONLY into the search GSIs, which means the
+		// `Actor` payload may be nil or incomplete. Prefer it when it looks valid,
+		// otherwise fetch the full actor record by username.
+		if actor == nil || actor.ID == "" || actor.PreferredUsername == "" {
+			username := match.Username
+			if username == "" {
+				// gsi1SK is the normalized username (lowercase).
+				username = match.GSI1SK
+			}
+			if username == "" && strings.HasPrefix(match.PK, "ACTOR#") {
+				username = strings.TrimPrefix(match.PK, "ACTOR#")
+			}
+			if username == "" {
+				continue
+			}
+
+			var err error
+			actor, err = r.getFullActorByUsername(ctx, username)
+			if err != nil {
+				continue
+			}
 		}
+
+		if actor == nil || actor.ID == "" || seen[actor.ID] {
+			continue
+		}
+		*results = append(*results, actor)
+		seen[actor.ID] = true
 	}
 }
 
@@ -259,7 +281,7 @@ func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("gsi2").
 		Where("gsi2PK", "=", fmt.Sprintf("NAME_SEARCH#%s", displayNameKey)).
-		Filter("gsi2SK", "BEGINS_WITH", query).
+		Where("gsi2SK", "BEGINS_WITH", query).
 		Limit(limit).
 		All(&displayNameMatches)
 
@@ -269,11 +291,73 @@ func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, 
 	}
 
 	for _, match := range displayNameMatches {
-		if match.Actor != nil && !seen[match.Actor.ID] {
-			*results = append(*results, match.Actor)
-			seen[match.Actor.ID] = true
+		actor := match.Actor
+		if actor == nil || actor.ID == "" || actor.PreferredUsername == "" {
+			username := match.Username
+			if username == "" {
+				username = extractUsernameFromSearchSK(match.GSI2SK)
+			}
+			if username == "" && strings.HasPrefix(match.PK, "ACTOR#") {
+				username = strings.TrimPrefix(match.PK, "ACTOR#")
+			}
+			if username == "" {
+				continue
+			}
+
+			var err error
+			actor, err = r.getFullActorByUsername(ctx, username)
+			if err != nil {
+				continue
+			}
+		}
+
+		if actor == nil || actor.ID == "" || seen[actor.ID] {
+			continue
+		}
+		*results = append(*results, actor)
+		seen[actor.ID] = true
+	}
+}
+
+func extractUsernameFromSearchSK(sk string) string {
+	if sk == "" {
+		return ""
+	}
+	parts := strings.Split(sk, "#")
+	return parts[len(parts)-1]
+}
+
+func (r *SearchRepository) getFullActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, err
+	}
+
+	var actorModel models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
+		Where("SK", "=", "PROFILE").
+		First(&actorModel)
+	if err != nil {
+		return nil, err
+	}
+
+	actor := actorModel.Actor
+	if actor != nil && actor.ID != "" && actor.PreferredUsername != "" {
+		return actor, nil
+	}
+
+	if actor != nil && actor.ID == "" && actor.PreferredUsername == "" {
+		decoded, decErr := loadActivityPubActorFromDynamo(ctx, r.tableName, username)
+		if decErr != nil {
+			r.logger.Warn("failed to decode actor payload from DynamoDB fallback",
+				zap.String("username", username),
+				zap.Error(decErr))
+		} else if decoded != nil {
+			return decoded, nil
 		}
 	}
+
+	return actor, nil
 }
 
 // applyFollowingFilter filters results to only include followed accounts
@@ -640,17 +724,32 @@ func (r *SearchRepository) isURL(query string) bool {
 
 // searchByURL searches for a status by its URL
 func (r *SearchRepository) searchByURL(ctx context.Context, url string, result *statusSearchResult) {
-	var object models.Object
-	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Where("URL", "=", url).
-		First(&object)
-
-	if err == nil && object.Type == ActivityTypeNote {
-		searchResult := r.objectToSearchResult(&object, 1.0, "url_match")
-		result.mu.Lock()
-		result.resultMap[object.ID] = searchResult
-		result.mu.Unlock()
+	// Statuses are stored as `models.Status` (PK/SK = status#{id}). If a user searches by a
+	// status URL, try to extract the status ID and load it directly.
+	statusID, ok := r.extractStatusIDFromURL(url)
+	if !ok {
+		return
 	}
+
+	var status models.Status
+	pk := fmt.Sprintf("status#%s", statusID)
+	sk := pk
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&status)
+	if err != nil {
+		return
+	}
+
+	searchResult := r.statusModelToSearchResult(&status, 1.0, "url_match")
+	if searchResult == nil {
+		return
+	}
+
+	result.mu.Lock()
+	result.resultMap[status.StatusID] = searchResult
+	result.mu.Unlock()
 }
 
 // executeHashtagSearch searches for statuses by hashtags
@@ -724,18 +823,18 @@ func (r *SearchRepository) searchByContent(ctx context.Context, query string, re
 }
 
 // getRecentStatuses fetches recent status objects
-func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Object {
-	var recentStatuses []models.Object
-	err := r.db.WithContext(ctx).Model(&models.Object{}).
+func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Status {
+	var recentStatuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("gsi2").
-		Where("gsi2PK", "=", "object#type#Note").
+		Where("gsi2PK", "=", "PUBLIC_TIMELINE").
 		OrderBy("gsi2SK", "DESC").
 		Limit(500). // Query most recent 500 statuses for broader search coverage
 		All(&recentStatuses)
 
 	if err != nil {
 		r.logger.Warn("content search failed", zap.Error(err))
-		return []models.Object{}
+		return []models.Status{}
 	}
 
 	return recentStatuses
@@ -743,7 +842,7 @@ func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Objec
 
 // statusMatchesQuery checks if a status matches the search query.
 // For multi-word queries, all words must appear in the content.
-func (r *SearchRepository) statusMatchesQuery(status models.Object, query string) bool {
+func (r *SearchRepository) statusMatchesQuery(status models.Status, query string) bool {
 	if err := common.ValidateRequiredParam("status.Content", status.Content); err != nil {
 		return false
 	}
@@ -769,16 +868,16 @@ func (r *SearchRepository) statusMatchesQuery(status models.Object, query string
 }
 
 // addStatusToResults adds a status to the search results
-func (r *SearchRepository) addStatusToResults(status models.Object, query string, result *statusSearchResult) {
+func (r *SearchRepository) addStatusToResults(status models.Status, query string, result *statusSearchResult) {
 	contentLower := strings.ToLower(status.Content)
 	score := r.calculateContentScore(contentLower, query)
-	searchResult := r.objectToSearchResult(&status, score, "content_match")
+	searchResult := r.statusModelToSearchResult(&status, score, "content_match")
 
 	result.mu.Lock()
 	defer result.mu.Unlock()
 
-	if existing, ok := result.resultMap[status.ID]; !ok || searchResult.Score > existing.Score {
-		result.resultMap[status.ID] = searchResult
+	if existing, ok := result.resultMap[status.StatusID]; !ok || searchResult.Score > existing.Score {
+		result.resultMap[status.StatusID] = searchResult
 	}
 }
 
@@ -1010,7 +1109,7 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 	err := r.db.WithContext(ctx).Model(&models.Hashtag{}).
 		Index("gsi1").
 		Where("gsi1PK", "=", "HASHTAG").
-		Filter("gsi1SK", "BEGINS_WITH", normalizedQuery).
+		Where("gsi1SK", "BEGINS_WITH", normalizedQuery).
 		Limit(limit).
 		All(&hashtags)
 
@@ -1074,12 +1173,12 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 	hashtagQuery := r.db.WithContext(ctx).Model(&models.Hashtag{}).
 		Index("gsi3").
 		Where("gsi3PK", "=", fmt.Sprintf("HASHTAG_SEARCH#%s", normalizedQuery[:2])).
-		Filter("gsi3SK", "BEGINS_WITH", normalizedQuery).
+		Where("gsi3SK", "BEGINS_WITH", normalizedQuery).
 		OrderBy("gsi3SK", "ASC")
 
 	// Resume from the last returned GSI value when a cursor is provided
 	if cursorData.LastID != "" {
-		hashtagQuery = hashtagQuery.Filter("gsi3SK", ">", cursorData.LastID)
+		hashtagQuery = hashtagQuery.Where("gsi3SK", ">", cursorData.LastID)
 	}
 
 	// Execute query with limit + 1 to check for more results
@@ -1160,6 +1259,49 @@ func (r *SearchRepository) objectToSearchResult(obj *models.Object, score float6
 		Score:          score,
 		Highlights:     []string{strategy},
 	}
+}
+
+func (r *SearchRepository) statusModelToSearchResult(status *models.Status, score float64, strategy string) *storage.StatusSearchResult {
+	if status == nil {
+		return nil
+	}
+
+	url := ""
+	if status.Note != nil {
+		url = status.Note.ID
+	}
+
+	return &storage.StatusSearchResult{
+		StatusID:       status.StatusID,
+		Content:        status.Content,
+		URL:            url,
+		AuthorID:       status.AuthorID,
+		AuthorUsername: status.AuthorUsername,
+		Published:      status.PublishedAt,
+		Score:          score,
+		Highlights:     []string{strategy},
+	}
+}
+
+func (r *SearchRepository) extractStatusIDFromURL(rawURL string) (string, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Path == "" {
+		return "", false
+	}
+
+	path := strings.TrimSuffix(u.Path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return "", false
+	}
+
+	// Support typical Mastodon-style URL: /users/<username>/statuses/<id>
+	// and tolerate other shapes by taking the last path segment.
+	statusID := parts[len(parts)-1]
+	if statusID == "" {
+		return "", false
+	}
+	return statusID, true
 }
 
 func (r *SearchRepository) calculateContentScore(content, query string) float64 {
@@ -1579,13 +1721,12 @@ func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag 
 func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID string, limit int) ([]*storage.StatusSearchResult, error) {
 	results := make([]*storage.StatusSearchResult, 0)
 
-	// Query statuses by author using GSI4
-	var statuses []models.Object
-
-	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Index("gsi4").
-		Where("gsi4PK", "=", fmt.Sprintf("author#%s", authorID)).
-		Filter("Type", "=", ActivityTypeNote).
+	// Query statuses by author using GSI1 (AUTHOR#{author_id})
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("gsi1").
+		Where("gsi1PK", "=", "AUTHOR#"+authorID).
+		OrderBy("gsi1SK", "DESC").
 		Limit(limit).
 		All(&statuses)
 
@@ -1595,7 +1736,7 @@ func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID 
 
 	// Convert to search results
 	for _, status := range statuses {
-		result := r.objectToSearchResult(&status, 1.0, "author_match")
+		result := r.statusModelToSearchResult(&status, 1.0, "author_match")
 		if result != nil {
 			results = append(results, result)
 		}

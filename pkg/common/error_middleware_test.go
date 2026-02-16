@@ -32,4 +32,3 @@ func TestAppTheoryStatusForErrorCode(t *testing.T) {
 		})
 	}
 }
-

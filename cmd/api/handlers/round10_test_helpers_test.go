@@ -1030,7 +1030,13 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 					UpdatedAt:  time.Now(),
 				}
 			}
-			d.Data = *state.vapidKeys
+			d.Data = map[string]any{
+				"public_key":  state.vapidKeys.PublicKey,
+				"private_key": state.vapidKeys.PrivateKey,
+				"subject":     state.vapidKeys.Subject,
+				"created_at":  state.vapidKeys.CreatedAt.Format(time.RFC3339Nano),
+				"updated_at":  state.vapidKeys.UpdatedAt.Format(time.RFC3339Nano),
+			}
 			d.PK = "INSTANCE#CONFIG"
 			d.SK = "VAPID_KEYS"
 		case *storagemodels.Export:

@@ -58,8 +58,14 @@ func TestActorRepository_SearchAccounts_and_numericID_branches(t *testing.T) {
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			out := args.Get(0).(*[]models.Actor)
 			*out = []models.Actor{
-				{Username: "alice", Actor: &activitypub.Actor{PreferredUsername: "alice"}},
+				{Username: "alice", Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "alice-id"}, PreferredUsername: "alice"}},
 			}
+		}).Once()
+		// SearchAccounts loads full actor records via GetActor.
+		mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			m := args.Get(0).(*models.Actor)
+			m.Username = "alice"
+			m.Actor = &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "alice-id"}, PreferredUsername: "alice"}
 		}).Once()
 
 		repo := NewActorRepository(mockDB, "test-table", logger)

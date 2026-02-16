@@ -93,6 +93,62 @@ type wsMessage struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+func extractAccessTokenFromInitPayload(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+
+	// Common shapes seen in GraphQL WS clients:
+	// - { "authorization": "Bearer <token>" }
+	// - { "Authorization": "Bearer <token>" }
+	// - { "access_token": "<token>" } / { "token": "<token>" }
+	// - { "headers": { "Authorization": "Bearer <token>" } }
+	readString := func(key string) string {
+		if v, ok := payload[key]; ok {
+			if s, ok := v.(string); ok {
+				return strings.TrimSpace(s)
+			}
+		}
+		return ""
+	}
+
+	if v := readString("access_token"); v != "" {
+		return cleanToken(v)
+	}
+	if v := readString("accessToken"); v != "" {
+		return cleanToken(v)
+	}
+	if v := readString("token"); v != "" {
+		return cleanToken(v)
+	}
+	if v := readString("authToken"); v != "" {
+		return cleanToken(v)
+	}
+
+	if v := readString("authorization"); v != "" {
+		return normalizeAuthToken(v)
+	}
+	if v := readString("Authorization"); v != "" {
+		return normalizeAuthToken(v)
+	}
+
+	if headers, ok := payload["headers"].(map[string]any); ok {
+		if v, ok := headers["authorization"].(string); ok && strings.TrimSpace(v) != "" {
+			return normalizeAuthToken(v)
+		}
+		if v, ok := headers["Authorization"].(string); ok && strings.TrimSpace(v) != "" {
+			return normalizeAuthToken(v)
+		}
+	}
+
+	return ""
+}
+
 type subscribePayload struct {
 	Query         string                 `json:"query"`
 	OperationName string                 `json:"operationName,omitempty"`
@@ -486,10 +542,43 @@ func (s *wsServer) handleConnect(ctx *apptheory.Context) (*apptheory.Response, e
 	}
 
 	if tokenValue == "" {
-		log.Warn("websocket connect missing authentication token",
-			zap.Any("query", ctx.Request.Query),
-			zap.Any("headers", ctx.Request.Headers))
-		return nil, appError("app.unauthorized", "Access token required")
+		// Browser WebSocket clients cannot set custom headers during the handshake.
+		// Many GraphQL WS libraries send auth via `connection_init` payload instead.
+		// Accept the connection and require auth before allowing subscriptions.
+		log.Info("websocket connect missing authentication token; deferring auth to connection_init",
+			zap.Any("query", ctx.Request.Query))
+
+		// Store WebSocket context for later message sending
+		s.mu.Lock()
+		s.wsContexts[connectionID] = wsCtx
+		s.mu.Unlock()
+
+		// Persist a placeholder connection record so $default invocations can load state across Lambda containers.
+		if s.connRepo != nil {
+			streams := []string{"graphql"}
+			conn, err := s.connRepo.WriteConnection(ctx.Context(), connectionID, "", "", streams)
+			if err != nil {
+				log.Warn("failed to write pending graphql connection record", zap.Error(err))
+			} else if conn != nil {
+				conn.Streams = streams
+				conn.Info.Protocol = "graphql-ws"
+				conn.Info.AuthMethod = "pending"
+				conn.LastActivity = time.Now()
+				conn.Established = time.Now()
+				conn.UpdateState(models.ConnectionStateConnected)
+				_ = s.connRepo.UpdateConnection(ctx.Context(), conn)
+			}
+		}
+
+		s.mu.Lock()
+		s.connections[connectionID] = &connectionState{
+			username:      "",
+			claims:        nil,
+			subscriptions: make(map[string]*subscriptionState),
+		}
+		s.mu.Unlock()
+
+		return okWebSocketResponse(), nil
 	}
 
 	if s.oauthService == nil {
@@ -590,8 +679,103 @@ func (s *wsServer) handleDefault(ctx *apptheory.Context) (*apptheory.Response, e
 
 	switch strings.ToLower(msg.Type) {
 	case "connection_init":
-		s.logger.Info("received connection_init",
-			zap.String("connection_id", connectionID))
+		log := s.logger.With(zap.String("connection_id", connectionID))
+
+		// If the connection is already authenticated (token provided at $connect), just ACK.
+		if state, err := s.getConnection(ctx.Context(), connectionID); err == nil && state != nil && state.username != "" {
+			log.Info("received connection_init for authenticated connection")
+			if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
+				return nil, err
+			}
+			return okWebSocketResponse(), nil
+		}
+
+		tokenValue := extractAccessTokenFromInitPayload(msg.Payload)
+		if tokenValue == "" {
+			log.Warn("connection_init missing access token")
+			_ = s.sendJSON(wsCtx, responseEnvelope{
+				Type: "connection_error",
+				Payload: errorPayload{
+					Message: "Access token required",
+					Code:    "unauthorized",
+				},
+			})
+			return okWebSocketResponse(), nil
+		}
+
+		if s.oauthService == nil {
+			log.Error("oauth service not configured for graphql websocket server")
+			return nil, appError("app.internal", "OAuth service unavailable")
+		}
+
+		claims, err := s.oauthService.ValidateAccessToken(tokenValue)
+		if err != nil {
+			log.Warn("connection_init failed token validation", zap.Error(err))
+			_ = s.sendJSON(wsCtx, responseEnvelope{
+				Type: "connection_error",
+				Payload: errorPayload{
+					Message: "Invalid or expired token",
+					Code:    "unauthorized",
+				},
+			})
+			return okWebSocketResponse(), nil
+		}
+
+		username := claims.GetUsername()
+		if username == "" {
+			username = claims.Username
+		}
+		if username == "" {
+			log.Warn("connection_init missing username in claims")
+			_ = s.sendJSON(wsCtx, responseEnvelope{
+				Type: "connection_error",
+				Payload: errorPayload{
+					Message: "Missing username in token claims",
+					Code:    "forbidden",
+				},
+			})
+			return okWebSocketResponse(), nil
+		}
+
+		// Persist/refresh connection metadata with authenticated identity.
+		if s.connRepo != nil {
+			conn, getErr := s.connRepo.GetConnection(ctx.Context(), connectionID)
+			if getErr != nil || conn == nil {
+				_, _ = s.connRepo.WriteConnection(ctx.Context(), connectionID, username, username, []string{"graphql"})
+				conn, _ = s.connRepo.GetConnection(ctx.Context(), connectionID)
+			}
+			if conn != nil {
+				conn.UserID = username
+				conn.Username = username
+				conn.Streams = []string{"graphql"}
+				conn.Info.Protocol = "graphql-ws"
+				conn.Info.AuthMethod = "oauth"
+				if conn.Info.CustomHeaders == nil {
+					conn.Info.CustomHeaders = make(map[string]string)
+				}
+				if claims != nil && len(claims.Scopes) > 0 {
+					conn.Info.CustomHeaders["scopes"] = strings.Join(claims.Scopes, " ")
+				}
+				conn.LastActivity = time.Now()
+				conn.UpdateState(models.ConnectionStateConnected)
+				_ = s.connRepo.UpdateConnection(ctx.Context(), conn)
+			}
+		}
+
+		s.mu.Lock()
+		existing := s.connections[connectionID]
+		subscriptions := make(map[string]*subscriptionState)
+		if existing != nil && existing.subscriptions != nil {
+			subscriptions = existing.subscriptions
+		}
+		s.connections[connectionID] = &connectionState{
+			username:      username,
+			claims:        claims,
+			subscriptions: subscriptions,
+		}
+		s.mu.Unlock()
+
+		log.Info("connection_init authenticated", zap.String("username", username))
 		if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
 			return nil, err
 		}
@@ -687,6 +871,11 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 			zap.String("connection_id", connectionID),
 			zap.Error(err))
 		s.sendError(wsCtx, msg.ID, "unauthorized", "connection context not found")
+		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
+		return
+	}
+	if state == nil || state.username == "" || state.claims == nil || state.claims.GetUsername() == "" {
+		s.sendError(wsCtx, msg.ID, "unauthorized", "connection not authenticated")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
 		return
 	}

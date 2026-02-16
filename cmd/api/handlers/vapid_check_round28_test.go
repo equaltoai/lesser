@@ -49,4 +49,3 @@ func TestValidateVAPIDKeysForProduction_round28_more_coverage(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
-

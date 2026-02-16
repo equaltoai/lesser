@@ -86,4 +86,3 @@ func TestContextHelpers_AdditionalCoverage(t *testing.T) {
 		assert.False(t, IsRetryable(stdErrors.New("nope")))
 	})
 }
-

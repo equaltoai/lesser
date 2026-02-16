@@ -681,12 +681,12 @@ func TestSearchRepository_GetRecentStatuses_ErrorReturnsEmpty(t *testing.T) {
 	repo := NewSearchRepository(mockDB, "test-table", zap.NewNop(), nil)
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
-	mockDB.On("Model", mock.AnythingOfType("*models.Object")).Return(mockQuery)
+	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(mockQuery)
 	mockQuery.On("Index", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.AnythingOfType("*[]models.Object")).Return(ErrTestMockError).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Return(ErrTestMockError).Once()
 
 	recent := repo.getRecentStatuses(context.Background())
 	assert.Empty(t, recent)
@@ -694,7 +694,7 @@ func TestSearchRepository_GetRecentStatuses_ErrorReturnsEmpty(t *testing.T) {
 
 func TestSearchRepository_StatusMatchesQuery_EmptyContentReturnsFalse(t *testing.T) {
 	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
-	assert.False(t, repo.statusMatchesQuery(models.Object{Content: ""}, "x"))
+	assert.False(t, repo.statusMatchesQuery(models.Status{Content: ""}, "x"))
 }
 
 func TestSearchRepository_GetSearchSuggestions_DedupSortAndTrim(t *testing.T) {
@@ -764,18 +764,18 @@ func TestSearchRepository_SearchStatusesWithPrivacyPaginated_SetsNextCursorWhenM
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 
 	// Populate content search with enough matches to create a next cursor.
-	mockQuery.On("All", mock.AnythingOfType("*[]models.Object")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]models.Object)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Status)
 		now := time.Now()
-		out := make([]models.Object, 0, 7)
+		out := make([]models.Status, 0, 7)
 		for i := range 7 {
-			out = append(out, models.Object{
-				ID:           fmt.Sprintf("status-%d", i),
-				Type:         ActivityTypeNote,
-				Content:      "hello world",
-				URL:          fmt.Sprintf("https://example.com/status/%d", i),
-				AttributedTo: "https://example.com/users/alice",
-				Published:    now.Add(time.Duration(-i) * time.Minute),
+			id := fmt.Sprintf("status-%d", i)
+			out = append(out, models.Status{
+				StatusID:       id,
+				Content:        "hello world",
+				AuthorID:       "https://example.com/users/alice",
+				AuthorUsername: "alice",
+				PublishedAt:    now.Add(time.Duration(-i) * time.Minute),
 			})
 		}
 		*dest = out

@@ -12,7 +12,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -350,12 +349,14 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 	case *models.VAPIDKeyRecord:
 		v.PK = "INSTANCE#CONFIG"
 		v.SK = "VAPID_KEYS"
-		v.Data = storage.VAPIDKeys{
-			PublicKey:  "test-public-key",
-			PrivateKey: "test-private-key",
-			Subject:    "mailto:admin@localhost",
-			CreatedAt:  time.Now().Add(-time.Hour).UTC(),
-			UpdatedAt:  time.Now().Add(-time.Minute).UTC(),
+		createdAt := time.Now().Add(-time.Hour).UTC()
+		updatedAt := time.Now().Add(-time.Minute).UTC()
+		v.Data = map[string]any{
+			"public_key":  "test-public-key",
+			"private_key": "test-private-key",
+			"subject":     "mailto:admin@localhost",
+			"created_at":  createdAt.Format(time.RFC3339Nano),
+			"updated_at":  updatedAt.Format(time.RFC3339Nano),
 		}
 		v.UpdatedAt = time.Now().Add(-time.Minute)
 		return

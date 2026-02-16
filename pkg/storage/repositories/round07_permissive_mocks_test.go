@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
@@ -139,12 +138,12 @@ func populateRound07StructForCoverage(target any, idx int, baseTime time.Time) {
 	case *models.VAPIDKeyRecord:
 		model.PK = "INSTANCE#CONFIG"
 		model.SK = "VAPID_KEYS"
-		model.Data = storage.VAPIDKeys{
-			PublicKey:  "public",
-			PrivateKey: "private",
-			Subject:    "mailto:test@example.com",
-			CreatedAt:  now,
-			UpdatedAt:  now,
+		model.Data = map[string]any{
+			"public_key":  "public",
+			"private_key": "private",
+			"subject":     "mailto:test@example.com",
+			"created_at":  now.UTC().Format(time.RFC3339Nano),
+			"updated_at":  now.UTC().Format(time.RFC3339Nano),
 		}
 		model.UpdatedAt = now
 

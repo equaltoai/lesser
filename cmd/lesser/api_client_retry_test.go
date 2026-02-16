@@ -88,4 +88,3 @@ func TestCLIAPIClient_DoRequestWithRetries_BackoffOn5xx(t *testing.T) {
 	require.Equal(t, int32(2), calls.Load())
 	require.Equal(t, 250*time.Millisecond, slept)
 }
-

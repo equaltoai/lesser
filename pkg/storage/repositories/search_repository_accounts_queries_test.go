@@ -209,7 +209,7 @@ func TestSearchUsernamePrefix_Success(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USERNAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit+offset).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -261,7 +261,7 @@ func TestSearchUsernamePrefix_DeduplicatesByActorID(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USERNAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit+offset).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -312,7 +312,7 @@ func TestSearchUsernamePrefix_SkipsNilActors(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USERNAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit+offset).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -359,7 +359,7 @@ func TestSearchUsernamePrefix_ErrorDoesNotPanic(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", "gsi1PK", "=", "USERNAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit+offset).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Return(ErrTestMockError)
 
@@ -399,7 +399,7 @@ func TestSearchDisplayName_Success(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "NAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -471,7 +471,7 @@ func TestSearchDisplayName_DeduplicatesByActorID(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "NAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -522,7 +522,7 @@ func TestSearchDisplayName_SkipsNilActors(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "NAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -567,7 +567,7 @@ func TestSearchDisplayName_ErrorDoesNotPanic(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQuery)
 	mockQuery.On("Index", "gsi2").Return(mockQuery)
 	mockQuery.On("Where", "gsi2PK", "=", "NAME_SEARCH#al").Return(mockQuery)
-	mockQuery.On("Filter", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
+	mockQuery.On("Where", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQuery)
 	mockQuery.On("Limit", limit).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]models.Actor")).Return(ErrTestMockError)
 
@@ -622,7 +622,7 @@ func TestExecuteSearchStrategies_CallsAllThreeStrategies(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQueryPrefix).Once()
 	mockQueryPrefix.On("Index", "gsi1").Return(mockQueryPrefix)
 	mockQueryPrefix.On("Where", "gsi1PK", "=", "USERNAME_SEARCH#al").Return(mockQueryPrefix)
-	mockQueryPrefix.On("Filter", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQueryPrefix)
+	mockQueryPrefix.On("Where", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQueryPrefix)
 	mockQueryPrefix.On("Limit", limit+offset).Return(mockQueryPrefix)
 	mockQueryPrefix.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -640,7 +640,7 @@ func TestExecuteSearchStrategies_CallsAllThreeStrategies(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQueryName).Once()
 	mockQueryName.On("Index", "gsi2").Return(mockQueryName)
 	mockQueryName.On("Where", "gsi2PK", "=", "NAME_SEARCH#al").Return(mockQueryName)
-	mockQueryName.On("Filter", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQueryName)
+	mockQueryName.On("Where", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQueryName)
 	mockQueryName.On("Limit", limit).Return(mockQueryName)
 	mockQueryName.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -706,7 +706,7 @@ func TestExecuteSearchStrategies_DeduplicatesAcrossStrategies(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQueryPrefix).Once()
 	mockQueryPrefix.On("Index", "gsi1").Return(mockQueryPrefix)
 	mockQueryPrefix.On("Where", "gsi1PK", "=", "USERNAME_SEARCH#al").Return(mockQueryPrefix)
-	mockQueryPrefix.On("Filter", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQueryPrefix)
+	mockQueryPrefix.On("Where", "gsi1SK", "BEGINS_WITH", "alice").Return(mockQueryPrefix)
 	mockQueryPrefix.On("Limit", limit+offset).Return(mockQueryPrefix)
 	mockQueryPrefix.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)
@@ -724,7 +724,7 @@ func TestExecuteSearchStrategies_DeduplicatesAcrossStrategies(t *testing.T) {
 	mockDB.On("Model", mock.AnythingOfType("*models.Actor")).Return(mockQueryName).Once()
 	mockQueryName.On("Index", "gsi2").Return(mockQueryName)
 	mockQueryName.On("Where", "gsi2PK", "=", "NAME_SEARCH#al").Return(mockQueryName)
-	mockQueryName.On("Filter", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQueryName)
+	mockQueryName.On("Where", "gsi2SK", "BEGINS_WITH", "alice").Return(mockQueryName)
 	mockQueryName.On("Limit", limit).Return(mockQueryName)
 	mockQueryName.On("All", mock.AnythingOfType("*[]models.Actor")).Run(func(args mock.Arguments) {
 		actors := args.Get(0).(*[]models.Actor)

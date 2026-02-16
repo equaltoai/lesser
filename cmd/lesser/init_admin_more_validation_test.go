@@ -104,4 +104,3 @@ func TestRunInitAdmin_AdditionalValidationBranches(t *testing.T) {
 		require.Contains(t, err.Error(), "message is required")
 	})
 }
-
