@@ -1241,26 +1241,6 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 
 // Helper methods
 
-func (r *SearchRepository) objectToSearchResult(obj *models.Object, score float64, strategy string) *storage.StatusSearchResult {
-	if obj == nil || obj.Type != ActivityTypeNote {
-		return nil
-	}
-
-	// Extract author username from AttributedTo
-	authorUsername := r.extractUsername(obj.AttributedTo)
-
-	return &storage.StatusSearchResult{
-		StatusID:       obj.ID,
-		Content:        obj.Content,
-		URL:            obj.URL,
-		AuthorID:       obj.AttributedTo,
-		AuthorUsername: authorUsername,
-		Published:      obj.Published,
-		Score:          score,
-		Highlights:     []string{strategy},
-	}
-}
-
 func (r *SearchRepository) statusModelToSearchResult(status *models.Status, score float64, strategy string) *storage.StatusSearchResult {
 	if status == nil {
 		return nil
@@ -1348,24 +1328,6 @@ func (r *SearchRepository) extractHashtags(text string) []string {
 	}
 
 	return hashtags
-}
-
-func (r *SearchRepository) extractUsername(actorID string) string {
-	// Extract username from actor ID
-	// Format: https://domain.com/users/username -> username
-	if strings.Contains(actorID, "/users/") {
-		parts := strings.Split(actorID, "/users/")
-		if len(parts) == 2 {
-			return parts[1]
-		}
-	}
-
-	// For simple usernames
-	if !strings.Contains(actorID, "://") {
-		return actorID
-	}
-
-	return ""
 }
 
 func (r *SearchRepository) isLocalStatus(statusID string) bool {

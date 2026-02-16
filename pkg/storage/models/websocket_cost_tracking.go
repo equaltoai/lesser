@@ -25,15 +25,15 @@ type WebSocketCostRecord struct {
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - User-based queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "WS_USER#{user_id}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // Format: "WS_USER#{user_id}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk,omitempty"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// Core cost tracking data
 	ID            string    `theorydb:"attr:id" json:"id"`
-	OperationType string    `theorydb:"attr:operationType" json:"operation_type"` // connect, disconnect, message_in, message_out, idle_time
-	ConnectionID  string    `theorydb:"attr:connectionID" json:"connection_id"`   // API Gateway connection ID
-	UserID        string    `theorydb:"attr:userID" json:"user_id"`               // User associated with connection
-	Username      string    `theorydb:"attr:username" json:"username"`            // Username for easier queries
+	OperationType string    `theorydb:"attr:operationType" json:"operation_type"`          // connect, disconnect, message_in, message_out, idle_time
+	ConnectionID  string    `theorydb:"attr:connectionID" json:"connection_id"`            // API Gateway connection ID
+	UserID        string    `theorydb:"attr:userID,omitempty" json:"user_id,omitempty"`    // User associated with connection
+	Username      string    `theorydb:"attr:username,omitempty" json:"username,omitempty"` // Username for easier queries
 	Timestamp     time.Time `theorydb:"attr:timestamp" json:"timestamp"`
 
 	// Connection details

@@ -97,6 +97,7 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	})
 
 	ensureToolAvailableFn = func(string) error { return nil }
+	t.Setenv("LESSER_JOBS", "8")
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
@@ -134,7 +135,7 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	}
 
 	require.NoError(t, runVerify([]string{"ci"}))
-	require.Contains(t, calls, "golangci-lint run --config .golangci.yml --disable gosec")
+	require.Contains(t, calls, "golangci-lint run --config .golangci.yml --disable gosec --concurrency 8")
 	require.Contains(t, calls, "go run ./tools/audit_gates --check")
 	require.Contains(t, calls, "gosec -quiet")
 	require.Contains(t, calls, "govulncheck ./...")

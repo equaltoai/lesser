@@ -282,15 +282,15 @@ func TestSearchRepository_CoverageSweep(t *testing.T) {
 	_, _ = repo.GetSearchTrends(ctx, 1)
 
 	// Pure helpers
-	assert.True(t, repo.isURL("https://example.com"))
-	assert.False(t, repo.isURL("not-a-url"))
-	assert.Equal(t, []string{"tag"}, repo.extractHashtags("hello #Tag"))
-	assert.Equal(t, "alice", repo.extractUsername("https://example.com/users/alice"))
-	assert.True(t, repo.isLocalStatus("status-1"))
-	assert.False(t, repo.isLocalStatus("https://example.com/status/1"))
-	assert.Greater(t, repo.calculateContentScore("hello world", "world"), 0.0)
-	assert.Equal(t, 0.0, repo.cosineSimilarity([]float32{1}, []float32{1, 0}))
-	assert.Equal(t, "[empty]", repo.hashQuery(""))
+		assert.True(t, repo.isURL("https://example.com"))
+		assert.False(t, repo.isURL("not-a-url"))
+		assert.Equal(t, []string{"tag"}, repo.extractHashtags("hello #Tag"))
+		assert.Equal(t, "alice", extractUsernameFromActor("https://example.com/users/alice"))
+		assert.True(t, repo.isLocalStatus("status-1"))
+		assert.False(t, repo.isLocalStatus("https://example.com/status/1"))
+		assert.Greater(t, repo.calculateContentScore("hello world", "world"), 0.0)
+		assert.Equal(t, 0.0, repo.cosineSimilarity([]float32{1}, []float32{1, 0}))
+		assert.Equal(t, "[empty]", repo.hashQuery(""))
 	assert.Equal(t, "[short]", repo.hashQuery("abc"))
 	assert.Contains(t, repo.hashQuery("alice"), "al_hash_")
 }
@@ -488,19 +488,16 @@ func TestSearchRepository_SearchStatusesWithOptionsPaginated_SortOrderMapping(t 
 }
 
 func TestSearchRepository_ExtractUsername_Branches(t *testing.T) {
-	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
-
-	assert.Equal(t, "alice", repo.extractUsername("https://example.com/users/alice"))
-	assert.Equal(t, "alice", repo.extractUsername("alice"))
-	assert.Equal(t, "a/b", repo.extractUsername("https://example.com/users/a/b"))
-	assert.Equal(t, "", repo.extractUsername("https://example.com/users/alice/users/bob"))
+	assert.Equal(t, "alice", extractUsernameFromActor("https://example.com/users/alice"))
+	assert.Equal(t, "alice", extractUsernameFromActor("alice"))
+	assert.Equal(t, "b", extractUsernameFromActor("https://example.com/users/a/b"))
+	assert.Equal(t, "bob", extractUsernameFromActor("https://example.com/users/alice/users/bob"))
 }
 
-func TestSearchRepository_ObjectToSearchResult_ReturnsNilForNonNote(t *testing.T) {
+func TestSearchRepository_StatusModelToSearchResult_ReturnsNilForNilInput(t *testing.T) {
 	repo := NewSearchRepository(nil, "test-table", zap.NewNop(), nil)
 
-	assert.Nil(t, repo.objectToSearchResult(nil, 1, "s"))
-	assert.Nil(t, repo.objectToSearchResult(&models.Object{ID: "x", Type: "Announce"}, 1, "s"))
+	assert.Nil(t, repo.statusModelToSearchResult(nil, 1, "s"))
 }
 
 func TestSearchRepository_CompareRelevance_CoversLengthTieBreaker(t *testing.T) {

@@ -843,7 +843,9 @@ func resolveDynamoTableName() string {
 		if isRunningTests() {
 			return "test-table"
 		}
-		panic("DYNAMODB_TABLE or DYNAMO_TABLE_NAME or ENVIRONMENT/STAGE must be set to determine the DynamoDB table name")
+		// Default to dev for local tooling (CLI/help/tests outside `go test`) to avoid hard-failing on missing env.
+		// Production environments should always provide an explicit table name.
+		derived = "dev"
 	}
 	return fmt.Sprintf("lesser-%s", strings.ToLower(derived))
 }

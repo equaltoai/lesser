@@ -23,6 +23,18 @@ func (s stubSecretsManagerGetter) GetSecretValue(_ context.Context, _ *secretsma
 	return s.output, s.err
 }
 
+type assertingSecretsManagerGetter struct {
+	t          *testing.T
+	expectedID string
+	secret     *string
+}
+
+func (s assertingSecretsManagerGetter) GetSecretValue(_ context.Context, input *secretsmanager.GetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+	require.NotNil(s.t, input.SecretId)
+	require.Equal(s.t, s.expectedID, *input.SecretId)
+	return &secretsmanager.GetSecretValueOutput{SecretString: s.secret}, nil
+}
+
 func TestConfig_URLHelpers(t *testing.T) {
 	cfg := &Config{Domain: "example.com"}
 	assert.Equal(t, "https://example.com", cfg.BaseURL())
@@ -103,6 +115,43 @@ func TestEnvParsingHelpers(t *testing.T) {
 	assert.Equal(t, uint8(3), getEnvAsUint8OrDefault("U8_KEY", 3))
 	t.Setenv("U8_KEY", "7")
 	assert.Equal(t, uint8(7), getEnvAsUint8OrDefault("U8_KEY", 3))
+
+	t.Setenv("F64_KEY", "")
+	assert.Equal(t, 1.5, getEnvAsFloat64OrDefault("F64_KEY", 1.5))
+	t.Setenv("F64_KEY", "not-a-float")
+	assert.Equal(t, 1.5, getEnvAsFloat64OrDefault("F64_KEY", 1.5))
+	t.Setenv("F64_KEY", "2.25")
+	assert.Equal(t, 2.25, getEnvAsFloat64OrDefault("F64_KEY", 1.5))
+}
+
+func TestResolveHelpers_UseEnvOrDefault(t *testing.T) {
+	t.Setenv("DOMAIN_NAME", "")
+	t.Setenv("DOMAIN", "")
+	assert.Equal(t, "default-domain", resolveDomain("default-domain"))
+
+	t.Setenv("DOMAIN_NAME", "example.com")
+	assert.Equal(t, "example.com", resolveDomain("default-domain"))
+
+	t.Setenv("S3_BUCKET_NAME", "bucket-1")
+	t.Setenv("S3_BUCKET", "")
+	assert.Equal(t, "bucket-1", resolveMediaBucketName("fallback-bucket"))
+
+	t.Setenv("S3_BUCKET_NAME", "")
+	t.Setenv("S3_BUCKET", "bucket-2")
+	assert.Equal(t, "bucket-2", resolveMediaBucketName("fallback-bucket"))
+
+	t.Setenv("S3_BUCKET", "")
+	assert.Equal(t, "fallback-bucket", resolveMediaBucketName("fallback-bucket"))
+
+	t.Setenv("QUEUE_CANON", "canon")
+	t.Setenv("QUEUE_ALIAS", "alias")
+	assert.Equal(t, "canon", resolveQueueURL("QUEUE_CANON", "QUEUE_ALIAS"))
+
+	t.Setenv("QUEUE_CANON", "")
+	assert.Equal(t, "alias", resolveQueueURL("QUEUE_CANON", "QUEUE_ALIAS"))
+
+	t.Setenv("QUEUE_ALIAS", "")
+	assert.Equal(t, "", resolveQueueURL("QUEUE_CANON", "QUEUE_ALIAS"))
 }
 
 func TestEnvironmentResolutionHelpers(t *testing.T) {
@@ -167,7 +216,7 @@ func TestResolveDynamoTableName(t *testing.T) {
 		t.Setenv("ENVIRONMENT", "")
 		t.Setenv("STAGE", "")
 
-		require.Panics(t, func() { _ = resolveDynamoTableName() })
+		assert.Equal(t, "lesser-dev", resolveDynamoTableName())
 	})
 }
 
@@ -230,6 +279,39 @@ func TestMustGetJWTSecret_SecretsManagerPath(t *testing.T) {
 	}
 
 	assert.Equal(t, "from-secrets-manager", mustGetJWTSecret())
+}
+
+func TestMustGetJWTSecret_DefaultARNWhenUnset(t *testing.T) {
+	ResetForTests()
+
+	origLoad := loadDefaultAWSConfig
+	origNew := newSecretsManagerValueGetter
+	origArgs := os.Args
+	t.Cleanup(func() {
+		loadDefaultAWSConfig = origLoad
+		newSecretsManagerValueGetter = origNew
+		os.Args = origArgs
+		ResetForTests()
+	})
+
+	os.Args = []string{"app"}
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("JWT_SECRET_ARN", "")
+
+	loadDefaultAWSConfig = func(_ context.Context, _ ...func(*awsconfig.LoadOptions) error) (aws.Config, error) {
+		return aws.Config{Region: "us-east-1"}, nil
+	}
+
+	secretString := `{"secret":"from-default-arn"}`
+	newSecretsManagerValueGetter = func(_ aws.Config) secretsManagerValueGetter {
+		return assertingSecretsManagerGetter{
+			t:          t,
+			expectedID: "lesser/jwt-secret",
+			secret:     &secretString,
+		}
+	}
+
+	assert.Equal(t, "from-default-arn", mustGetJWTSecret())
 }
 
 func TestMustGetJWTSecret_PlaintextAndTestDummy(t *testing.T) {

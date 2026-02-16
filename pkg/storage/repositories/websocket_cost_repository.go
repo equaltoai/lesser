@@ -26,7 +26,7 @@ type WebSocketCostRepository struct {
 func NewWebSocketCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WebSocketCostRepository {
 	// Create enhanced repositories for WebSocket cost components
 	baseRepo := NewEnhancedBaseRepository[*models.WebSocketCostRecord](db, tableName, logger, costService, "WebSocketCostRepository", "websocketcost")
-	baseRepo.SetValidationService(NewDefaultValidationService())
+	baseRepo.SetValidationService(newWebSocketCostRecordValidationService())
 	baseRepo.SetPermissionService(NewDefaultPermissionService())
 	baseRepo.SetCachingService(NewInMemoryCachingService())
 	baseRepo.SetEventService(NewDefaultEventService())
