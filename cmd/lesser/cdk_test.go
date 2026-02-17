@@ -117,6 +117,71 @@ func TestCdkDeployWithOutputs_WrapsRunCommandError(t *testing.T) {
 	require.Contains(t, err.Error(), "cdk deploy demo")
 }
 
+func TestCdkDeployWithOutputs_PrefersExplicitContexts(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	t.Setenv("LESSER_HOST_URL", "https://env.lesser.host")
+	t.Setenv("TRANSLATION_ENABLED", "true")
+
+	repoRoot := t.TempDir()
+	var gotArgs []string
+	runCommandFn = func(_ context.Context, _ string, args []string, _ execOptions) error {
+		gotArgs = append([]string(nil), args...)
+		outputsPath := ""
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == "--outputs-file" {
+				outputsPath = args[i+1]
+				break
+			}
+		}
+		if outputsPath != "" {
+			return os.WriteFile(outputsPath, []byte(`{"demo":{"Key":"Value"}}`), 0o644)
+		}
+		return nil
+	}
+
+	_, err := cdkDeployWithOutputs(context.Background(), repoRoot, "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+		Contexts: map[string]string{
+			"lesserHostUrl":      "https://override.lesser.host/",
+			"translationEnabled": "false",
+		},
+	})
+	require.NoError(t, err)
+	require.Contains(t, gotArgs, "lesserHostUrl=https://override.lesser.host")
+	require.NotContains(t, gotArgs, "lesserHostUrl=https://env.lesser.host")
+	require.Contains(t, gotArgs, "translationEnabled=false")
+	require.NotContains(t, gotArgs, "translationEnabled=true")
+}
+
+func TestCdkDeployWithOutputs_RejectsLambdaFunctionURLHost(t *testing.T) {
+	previousRunCommand := runCommandFn
+	t.Cleanup(func() { runCommandFn = previousRunCommand })
+
+	runCommandFn = func(context.Context, string, []string, execOptions) error {
+		t.Fatal("runCommandFn should not be called when contexts are invalid")
+		return nil
+	}
+
+	_, err := cdkDeployWithOutputs(context.Background(), t.TempDir(), "profile", cdkDeployRequest{
+		StackName:    "demo",
+		App:          "app",
+		BaseDomain:   "example.com",
+		HostedZoneID: "Z1",
+		Region:       "us-east-1",
+		Contexts: map[string]string{
+			"lesserHostUrl": "https://abc.lambda-url.us-east-1.on.aws",
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "LESSER_HOST_URL")
+}
+
 func TestCdkBootstrap_RunsCdkBootstrap(t *testing.T) {
 	previousRunCommand := runCommandFn
 	t.Cleanup(func() { runCommandFn = previousRunCommand })

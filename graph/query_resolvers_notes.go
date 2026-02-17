@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
@@ -10,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/search"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -204,42 +206,138 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 		return nil, errors.Join(errors.New("search failed"), err)
 	}
 
-	accounts := make([]*activitypub.Actor, len(result.Accounts))
-	for i, account := range result.Accounts {
-		if account.Actor != nil && account.Actor.PreferredUsername != "" && r.Registry != nil && r.Registry.Accounts() != nil {
-			fullAccount, err := r.Registry.Accounts().GetAccount(ctx, account.Actor.PreferredUsername)
+	return r.searchResultToGraphQL(ctx, result), nil
+}
+
+func (r *queryResolver) searchResultToGraphQL(ctx context.Context, result *search.Result) *model.SearchResult {
+	accounts := make([]*activitypub.Actor, 0)
+	statuses := make([]*model.Object, 0)
+	hashtags := make([]*activitypub.Tag, 0)
+
+	if result == nil {
+		return &model.SearchResult{
+			Accounts: accounts,
+			Statuses: statuses,
+			Hashtags: hashtags,
+		}
+	}
+
+	accounts = make([]*activitypub.Actor, 0, len(result.Accounts))
+	for _, account := range result.Accounts {
+		actor := account.Actor
+		if actor != nil && actor.PreferredUsername != "" && r.Registry != nil && r.Registry.Accounts() != nil {
+			fullAccount, err := r.Registry.Accounts().GetAccount(ctx, actor.PreferredUsername)
 			if err == nil && fullAccount != nil {
-				accounts[i] = r.convertAccountToActor(fullAccount)
-				continue
+				actor = r.convertAccountToActor(fullAccount)
 			}
 		}
-		accounts[i] = account.Actor
-	}
-
-	statuses := make([]*model.Object, len(result.Statuses))
-	for i, statusResult := range result.Statuses {
-		// Status is an interface{}, need to type assert
-		if s, ok := statusResult.Status.(*models.Status); ok {
-			statuses[i] = r.convertStatusToObject(ctx, s)
-		} else if n, ok := statusResult.Status.(*activitypub.Note); ok {
-			statuses[i] = r.convertNoteToObject(ctx, n)
+		if actor != nil {
+			accounts = append(accounts, actor)
 		}
 	}
 
-	hashtags := make([]*activitypub.Tag, len(result.Hashtags))
-	for i, tag := range result.Hashtags {
-		hashtags[i] = &activitypub.Tag{
+	statuses = make([]*model.Object, 0, len(result.Statuses))
+	for _, statusResult := range result.Statuses {
+		obj := r.convertSearchStatusToObject(ctx, statusResult.Status)
+		if obj != nil {
+			statuses = append(statuses, obj)
+		}
+	}
+
+	hashtags = make([]*activitypub.Tag, 0, len(result.Hashtags))
+	for _, tag := range result.Hashtags {
+		hashtags = append(hashtags, &activitypub.Tag{
 			Type: "Hashtag",
 			Name: tag.Name,
 			Href: tag.URL,
-		}
+		})
 	}
 
 	return &model.SearchResult{
 		Accounts: accounts,
 		Statuses: statuses,
 		Hashtags: hashtags,
-	}, nil
+	}
+}
+
+func (r *queryResolver) convertSearchStatusToObject(ctx context.Context, status any) *model.Object {
+	switch v := status.(type) {
+	case *models.Status:
+		return r.convertStatusToObject(ctx, v)
+	case *activitypub.Note:
+		return r.convertNoteToObject(ctx, v)
+	case *storage.StatusSearchResult:
+		return r.loadStatusSearchResult(ctx, v)
+	case storage.StatusSearchResult:
+		return r.loadStatusSearchResult(ctx, &v)
+	case map[string]any:
+		statusID := ""
+		if vID, ok := v["status_id"].(string); ok {
+			statusID = strings.TrimSpace(vID)
+		}
+		if statusID == "" {
+			if vID, ok := v["id"].(string); ok {
+				statusID = strings.TrimSpace(vID)
+			}
+		}
+		if statusID == "" {
+			return nil
+		}
+		notesSvc := r.notesService()
+		if notesSvc == nil {
+			return nil
+		}
+		full, err := notesSvc.GetNote(ctx, statusID)
+		if err != nil || full == nil {
+			return nil
+		}
+		return r.convertStatusToObject(ctx, full)
+	default:
+		return nil
+	}
+}
+
+func (r *queryResolver) loadStatusSearchResult(ctx context.Context, result *storage.StatusSearchResult) *model.Object {
+	if result == nil {
+		return nil
+	}
+
+	statusID := strings.TrimSpace(result.StatusID)
+	if statusID == "" {
+		statusID = strings.TrimSpace(result.ID)
+	}
+	if statusID == "" && strings.TrimSpace(result.URL) != "" {
+		statusID = statusIDFromURL(result.URL)
+	}
+	if statusID == "" {
+		return nil
+	}
+
+	notesSvc := r.notesService()
+	if notesSvc == nil {
+		return nil
+	}
+
+	full, err := notesSvc.GetNote(ctx, statusID)
+	if err != nil || full == nil {
+		return nil
+	}
+	return r.convertStatusToObject(ctx, full)
+}
+
+func statusIDFromURL(rawURL string) string {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Path == "" {
+		return ""
+	}
+
+	path := strings.TrimSuffix(u.Path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	statusID := parts[len(parts)-1]
+	return strings.TrimSpace(statusID)
 }
 
 // ThreadContext returns the context of a thread

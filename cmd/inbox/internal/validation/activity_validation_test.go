@@ -29,6 +29,10 @@ func TestValidateRequestBody(t *testing.T) {
 	require.Equal(t, "app.too_large", err.(*apptheory.AppError).Code)
 }
 
+func TestValidateRequestBody_Round24_AcceptsValidBody(t *testing.T) {
+	require.NoError(t, ValidateRequestBody(zap.NewNop(), []byte("ok")))
+}
+
 func TestParseActivity_InvalidTimestamp(t *testing.T) {
 	logger := zap.NewNop()
 
@@ -387,6 +391,30 @@ func TestValidateCreateActivityObject_Branches(t *testing.T) {
 
 		require.Error(t, ValidateCreateActivityObject(activity))
 	})
+
+	t.Run("valid Note objects are accepted", func(t *testing.T) {
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/activities/1",
+				Type: activitypub.CreateType,
+			},
+			Actor: "https://remote.example/users/bob",
+			Object: map[string]any{
+				"@context":     []interface{}(activitypub.Context),
+				"type":         "Note",
+				"id":           "https://example.com/objects/1",
+				"content":      "hello",
+				"attributedTo": "https://remote.example/users/bob",
+				"published":    "2026-01-01T00:00:00Z",
+				"to":           []interface{}{activitypub.PublicAddress},
+				"cc":           []interface{}{"https://example.com/users/alice"},
+				"inReplyTo":    "https://example.com/objects/0",
+				"summary":      "cw",
+			},
+		}
+
+		require.NoError(t, ValidateCreateActivityObject(activity))
+	})
 }
 
 func TestValidateComprehensiveAddressingAndTargeting(t *testing.T) {
@@ -445,4 +473,114 @@ func TestValidateComprehensiveAddressingAndTargeting(t *testing.T) {
 
 		require.NoError(t, ValidateActivity(logger, activity, actor))
 	})
+}
+
+func TestParseActivity_InvalidIDURL_Round24(t *testing.T) {
+	logger := zap.NewNop()
+
+	raw := map[string]any{
+		"@context": activitypub.Context,
+		"type":     activitypub.CreateType,
+		"id":       "not-a-url",
+		"actor":    "https://remote.example/users/bob",
+		"to":       []string{"https://example.com/users/alice"},
+		"object":   "https://example.com/objects/1",
+	}
+	body, err := json.Marshal(raw)
+	require.NoError(t, err)
+
+	_, err = ParseActivity(logger, body)
+	require.Error(t, err)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
+}
+
+func TestParseActivity_UnmarshalError_Round24(t *testing.T) {
+	logger := zap.NewNop()
+
+	raw := map[string]any{
+		"@context": activitypub.Context,
+		"type":     activitypub.CreateType,
+		"id":       123,
+		"actor":    "https://remote.example/users/bob",
+		"to":       []string{"https://example.com/users/alice"},
+		"object":   "https://example.com/objects/1",
+	}
+	body, err := json.Marshal(raw)
+	require.NoError(t, err)
+
+	_, err = ParseActivity(logger, body)
+	require.Error(t, err)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
+}
+
+func TestValidateActivity_Round24_InvalidActorUsername(t *testing.T) {
+	logger := zap.NewNop()
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://example.com/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+		Inbox:             "https://example.com/users/alice/inbox",
+		Outbox:            "https://example.com/users/alice/outbox",
+	}
+
+	published := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:        "https://example.com/activities/1",
+			Type:      activitypub.CreateType,
+			To:        []string{actor.ID},
+			Published: &published,
+		},
+		Actor:  "https://remote.example/",
+		Object: "https://example.com/objects/1",
+	}
+
+	err := ValidateActivity(logger, activity, actor)
+	require.Error(t, err)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
+}
+
+func TestValidateActivity_Round24_TargetingFailure(t *testing.T) {
+	logger := zap.NewNop()
+
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "https://example.com/users/alice",
+			Type: activitypub.PersonType,
+		},
+		PreferredUsername: "alice",
+		Inbox:             "https://example.com/users/alice/inbox",
+		Outbox:            "https://example.com/users/alice/outbox",
+	}
+
+	published := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:        "https://example.com/activities/1",
+			Type:      activitypub.CreateType,
+			To:        []string{"https://elsewhere.example/users/other"},
+			Published: &published,
+		},
+		Actor:  "https://remote.example/users/bob",
+		Object: "https://example.com/objects/1",
+	}
+
+	err := ValidateActivity(logger, activity, actor)
+	require.Error(t, err)
+	appErr, ok := pkgErrors.AsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, pkgErrors.CodeValidationFailed, appErr.Code)
+	require.Equal(t, 400, appErr.HTTPStatusCode)
 }

@@ -711,7 +711,7 @@ func safeHTTPURL(raw string) (string, bool) {
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
+	if scheme != schemeHTTP && scheme != schemeHTTPS {
 		return "", false
 	}
 	if strings.TrimSpace(parsed.Host) == "" {

@@ -54,6 +54,16 @@ func newWebSocketAppTheoryServerContext(t *testing.T, routeKey, connectionID, bo
 	return app.ServeWebSocket(context.Background(), newWebSocketEvent(routeKey, connectionID, body, nil, nil))
 }
 
+func previewToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	if len(token) <= 10 {
+		return token
+	}
+	return token[:5] + "..." + token[len(token)-5:]
+}
+
 func TestTokenHelpers(t *testing.T) {
 	require.Equal(t, "", cleanToken("  "))
 	require.Equal(t, "a+b", cleanToken("a b"))

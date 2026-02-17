@@ -60,9 +60,17 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST \
 
 - `wss://ws.<stage-domain>`
 
-Browser clients typically must pass auth via query string:
+Browser clients must use the `graphql-transport-ws` subprotocol and pass auth via the `connection_init` payload
+(`connectionParams` in most clients). Query string tokens are ignored for GraphQL subscriptions.
 
-- `wss://ws.<stage-domain>?access_token=<token>`
+Example (`graphql-ws`):
+
+```js
+createClient({
+  url: "wss://ws.<stage-domain>",
+  connectionParams: { Authorization: "Bearer <token>" },
+});
+```
 
 ## Debugging with CloudWatch
 

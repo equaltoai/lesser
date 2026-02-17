@@ -190,10 +190,3 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 		require.Equal(t, "read", repo.lastUpdated.Info.CustomHeaders["scopes"])
 	})
 }
-
-func TestPersistGraphQLConnectionIdentity_NoRepoDoesNotPanic(t *testing.T) {
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
-	require.NotPanics(t, func() {
-		s.persistGraphQLConnectionIdentity(context.Background(), "c1", "user", &auth.Claims{Username: "user", Scopes: []string{"read"}})
-	})
-}

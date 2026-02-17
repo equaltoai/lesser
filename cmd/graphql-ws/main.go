@@ -35,6 +35,7 @@ import (
 )
 
 const graphqlWSName = "graphql-ws"
+const graphqlTransportWSSubprotocol = "graphql-transport-ws"
 
 type connectionState struct {
 	username      string
@@ -263,10 +264,14 @@ func (s *wsServer) registerConnection(ctx context.Context, connectionID, usernam
 	}
 
 	s.mu.Lock()
+	subscriptions := make(map[string]*subscriptionState)
+	if existing := s.connections[connectionID]; existing != nil && existing.subscriptions != nil {
+		subscriptions = existing.subscriptions
+	}
 	s.connections[connectionID] = &connectionState{
 		username:      username,
 		claims:        claims,
-		subscriptions: make(map[string]*subscriptionState),
+		subscriptions: subscriptions,
 	}
 	s.mu.Unlock()
 
@@ -508,6 +513,33 @@ func okWebSocketResponse() *apptheory.Response {
 	return &apptheory.Response{Status: 200}
 }
 
+func parseWebSocketSubprotocols(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		p := strings.TrimSpace(part)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func selectGraphQLSubprotocol(requested []string) (string, bool) {
+	for _, protocol := range requested {
+		if strings.EqualFold(protocol, graphqlTransportWSSubprotocol) {
+			return graphqlTransportWSSubprotocol, true
+		}
+	}
+	return "", false
+}
+
 func (s *wsServer) handleConnect(ctx *apptheory.Context) (*apptheory.Response, error) {
 	if ctx == nil {
 		return nil, appError("app.bad_request", "Invalid WebSocket event")
@@ -523,111 +555,66 @@ func (s *wsServer) handleConnect(ctx *apptheory.Context) (*apptheory.Response, e
 		zap.String("route", "$connect"),
 	)
 
-	// Priority order: access_token (Mastodon standard) > token (alternative)
+	// Protocol negotiation for browser GraphQL clients:
+	// Echo "graphql-transport-ws" back in the handshake when the client requests it.
+	rawProtocols := headerValue(ctx, "sec-websocket-protocol")
+	requestedProtocols := parseWebSocketSubprotocols(rawProtocols)
+	selectedProtocol, ok := selectGraphQLSubprotocol(requestedProtocols)
+	if len(requestedProtocols) > 0 && !ok {
+		log.Warn("unsupported websocket subprotocol",
+			zap.String("requested", rawProtocols))
+		return nil, appError("app.bad_request", fmt.Sprintf("unsupported Sec-WebSocket-Protocol (expected %q)", graphqlTransportWSSubprotocol))
+	}
+
+	resp := okWebSocketResponse()
+	if selectedProtocol != "" {
+		resp.Headers = map[string][]string{
+			"sec-websocket-protocol": {selectedProtocol},
+		}
+	}
+
+	// Auth contract: authenticate via `connection_init` payload (not handshake query/header).
 	rawAccessToken := strings.TrimSpace(queryValue(ctx, "access_token"))
-	sanitizedAccessToken := cleanToken(rawAccessToken)
 	rawToken := strings.TrimSpace(queryValue(ctx, "token"))
-	sanitizedToken := cleanToken(rawToken)
-	log.Info("graphql ws token probes",
-		zap.Bool("has_access_token_param", rawAccessToken != ""),
-		zap.Bool("has_token_param", rawToken != ""),
-		zap.Int("query_param_count", len(ctx.Request.Query)),
-		zap.String("access_token_preview", previewToken(sanitizedAccessToken)))
-
-	tokenValue := sanitizedAccessToken
-	if tokenValue == "" {
-		tokenValue = sanitizedToken
-	}
-	if tokenValue == "" {
-		authHeader := headerValue(ctx, "authorization")
-		tokenValue = normalizeAuthToken(authHeader)
+	authHeader := strings.TrimSpace(headerValue(ctx, "authorization"))
+	if rawAccessToken != "" || rawToken != "" || authHeader != "" {
+		log.Info("websocket connect includes handshake auth token; ignored (use connection_init payload)",
+			zap.Bool("has_access_token_param", rawAccessToken != ""),
+			zap.Bool("has_token_param", rawToken != ""),
+			zap.Bool("has_authorization_header", authHeader != ""))
+	} else {
+		log.Info("websocket connect pending authentication; expecting connection_init")
 	}
 
-	if tokenValue == "" {
-		// Browser WebSocket clients cannot set custom headers during the handshake.
-		// Many GraphQL WS libraries send auth via `connection_init` payload instead.
-		// Accept the connection and require auth before allowing subscriptions.
-		log.Info("websocket connect missing authentication token; deferring auth to connection_init",
-			zap.Any("query", ctx.Request.Query))
+	// Store WebSocket context for later message sending.
+	s.rememberWebSocketContext(connectionID, wsCtx)
 
-		// Store WebSocket context for later message sending
-		s.mu.Lock()
-		s.wsContexts[connectionID] = wsCtx
-		s.mu.Unlock()
-
-		// Persist a placeholder connection record so $default invocations can load state across Lambda containers.
-		if s.connRepo != nil {
-			streams := []string{"graphql"}
-			conn, err := s.connRepo.WriteConnection(ctx.Context(), connectionID, "", "", streams)
-			if err != nil {
-				log.Warn("failed to write pending graphql connection record", zap.Error(err))
-			} else if conn != nil {
-				conn.Streams = streams
-				conn.Info.Protocol = graphqlWSName
-				conn.Info.AuthMethod = "pending"
-				conn.LastActivity = time.Now()
-				conn.Established = time.Now()
-				conn.UpdateState(models.ConnectionStateConnected)
-				_ = s.connRepo.UpdateConnection(ctx.Context(), conn)
-			}
+	// Persist a placeholder connection record so $default invocations can load state across Lambda containers.
+	if s.connRepo != nil {
+		streams := []string{"graphql"}
+		conn, err := s.connRepo.WriteConnection(ctx.Context(), connectionID, "", "", streams)
+		if err != nil {
+			log.Warn("failed to write pending graphql connection record", zap.Error(err))
+		} else if conn != nil {
+			conn.Streams = streams
+			conn.Info.Protocol = graphqlWSName
+			conn.Info.AuthMethod = "pending"
+			conn.LastActivity = time.Now()
+			conn.Established = time.Now()
+			conn.UpdateState(models.ConnectionStateConnected)
+			_ = s.connRepo.UpdateConnection(ctx.Context(), conn)
 		}
-
-		s.mu.Lock()
-		s.connections[connectionID] = &connectionState{
-			username:      "",
-			claims:        nil,
-			subscriptions: make(map[string]*subscriptionState),
-		}
-		s.mu.Unlock()
-
-		return okWebSocketResponse(), nil
 	}
 
-	if s.oauthService == nil {
-		log.Error("oauth service not configured for graphql websocket server")
-		return nil, appError("app.internal", "OAuth service unavailable")
-	}
-
-	claims, err := s.oauthService.ValidateAccessToken(tokenValue)
-	if err != nil {
-		log.Warn("websocket connect failed token validation",
-			zap.Error(err))
-		return nil, appError("app.unauthorized", "Invalid or expired token")
-	}
-
-	username := claims.GetUsername()
-	if username == "" {
-		username = claims.Username
-	}
-
-	if username == "" {
-		log.Warn("websocket connect missing username in claims")
-		return nil, appError("app.forbidden", "Missing username in token claims")
-	}
-
-	// Store WebSocket context for later message sending
 	s.mu.Lock()
-	s.wsContexts[connectionID] = wsCtx
+	s.connections[connectionID] = &connectionState{
+		username:      "",
+		claims:        nil,
+		subscriptions: make(map[string]*subscriptionState),
+	}
 	s.mu.Unlock()
 
-	// Register connection
-	if err := s.registerConnection(ctx.Context(), connectionID, username, claims); err != nil {
-		log.Error("failed to persist websocket connection",
-			zap.String("username", username),
-			zap.Error(err))
-
-		// Clean up stored context on error
-		s.mu.Lock()
-		delete(s.wsContexts, connectionID)
-		s.mu.Unlock()
-
-		return nil, appError("app.internal", "Failed to persist connection")
-	}
-
-	log.Info("websocket connection established",
-		zap.String("username", username))
-
-	return okWebSocketResponse(), nil
+	return resp, nil
 }
 
 func (s *wsServer) handleDisconnect(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -730,7 +717,7 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 		_ = s.sendJSON(wsCtx, responseEnvelope{
 			Type: "connection_error",
 			Payload: errorPayload{
-				Message: "Access token required",
+				Message: "Access token required in connection_init payload",
 				Code:    "unauthorized",
 			},
 		})
@@ -771,8 +758,9 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 		return okWebSocketResponse(), nil
 	}
 
-	s.persistGraphQLConnectionIdentity(ctx, connectionID, username, claims)
-	s.setAuthenticatedConnectionState(connectionID, username, claims)
+	if err := s.registerConnection(ctx, connectionID, username, claims); err != nil {
+		log.Warn("failed to persist graphql connection identity", zap.Error(err))
+	}
 
 	log.Info("connection_init authenticated", zap.String("username", username))
 	if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
@@ -784,53 +772,6 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 func (s *wsServer) isAuthenticatedConnection(ctx context.Context, connectionID string) bool {
 	state, err := s.getConnection(ctx, connectionID)
 	return err == nil && state != nil && state.username != ""
-}
-
-func (s *wsServer) persistGraphQLConnectionIdentity(ctx context.Context, connectionID, username string, claims *auth.Claims) {
-	if s.connRepo == nil {
-		return
-	}
-
-	streams := []string{"graphql"}
-	conn, getErr := s.connRepo.GetConnection(ctx, connectionID)
-	if getErr != nil || conn == nil {
-		_, _ = s.connRepo.WriteConnection(ctx, connectionID, username, username, streams)
-		conn, _ = s.connRepo.GetConnection(ctx, connectionID)
-	}
-	if conn == nil {
-		return
-	}
-
-	conn.UserID = username
-	conn.Username = username
-	conn.Streams = streams
-	conn.Info.Protocol = graphqlWSName
-	conn.Info.AuthMethod = "oauth"
-	if conn.Info.CustomHeaders == nil {
-		conn.Info.CustomHeaders = make(map[string]string)
-	}
-	if claims != nil && len(claims.Scopes) > 0 {
-		conn.Info.CustomHeaders["scopes"] = strings.Join(claims.Scopes, " ")
-	}
-	conn.LastActivity = time.Now()
-	conn.UpdateState(models.ConnectionStateConnected)
-	_ = s.connRepo.UpdateConnection(ctx, conn)
-}
-
-func (s *wsServer) setAuthenticatedConnectionState(connectionID, username string, claims *auth.Claims) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	subscriptions := make(map[string]*subscriptionState)
-	if existing := s.connections[connectionID]; existing != nil && existing.subscriptions != nil {
-		subscriptions = existing.subscriptions
-	}
-
-	s.connections[connectionID] = &connectionState{
-		username:      username,
-		claims:        claims,
-		subscriptions: subscriptions,
-	}
 }
 
 func (s *wsServer) handleComplete(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, msg wsMessage) (*apptheory.Response, error) {
@@ -872,16 +813,6 @@ func cleanToken(raw string) string {
 
 	token = strings.ReplaceAll(token, " ", "+")
 	return token
-}
-
-func previewToken(token string) string {
-	if token == "" {
-		return ""
-	}
-	if len(token) <= 10 {
-		return token
-	}
-	return token[:5] + "..." + token[len(token)-5:]
 }
 
 func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *apptheory.WebSocketContext) {

@@ -256,6 +256,16 @@ func (s *SharedStack) attachApplicationPolicies(appName string) {
 			},
 			Resources: &[]*string{jsii.String("*")},
 		}))
+
+		// Translate (used by the optional translation feature).
+		role.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+			Effect: awsiam.Effect_ALLOW,
+			Actions: &[]*string{
+				jsii.String("translate:TranslateText"),
+				jsii.String("translate:ListLanguages"),
+			},
+			Resources: &[]*string{jsii.String("*")},
+		}))
 	}
 }
 

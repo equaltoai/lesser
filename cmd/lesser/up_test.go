@@ -92,7 +92,10 @@ func TestParseUpArgs(t *testing.T) {
   "slug": "app",
   "stage": "dev",
   "admin_wallet_address": "0x3333333333333333333333333333333333333333",
-  "admin_username": "app"
+  "admin_username": "app",
+  "lesser_host_url": "https://lab.lesser.host",
+  "lesser_host_instance_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey",
+  "translation_enabled": true
 }
 `), 0o600))
 
@@ -105,6 +108,10 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "app", args.App)
 		require.Equal(t, "dev", args.Stage)
 		require.Equal(t, "0x3333333333333333333333333333333333333333", args.BootstrapWalletAddress)
+		require.Equal(t, "https://lab.lesser.host", args.LesserHostURL)
+		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", args.LesserHostInstanceKeyARN)
+		require.NotNil(t, args.TranslationEnabled)
+		require.True(t, *args.TranslationEnabled)
 	})
 
 	t.Run("rejects reserved wallet via provisioning input", func(t *testing.T) {

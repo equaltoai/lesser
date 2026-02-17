@@ -312,15 +312,18 @@ GraphQL subscriptions are served from:
 ✅ CORRECT: use a GraphQL WebSocket client that supports the `graphql-transport-ws` protocol (for example, the
 `graphql-ws` npm package).
 
-Browser clients typically pass auth via query string (WebSocket handshake can’t set custom headers reliably):
+Browser clients should pass auth via the `connection_init` payload (called `connectionParams` in `graphql-ws`).
+Query string tokens are ignored for GraphQL subscriptions.
 
 ```js
 import { createClient } from "graphql-ws";
 
-const url = new URL("wss://ws.dev.example.com");
-url.searchParams.set("access_token", token);
-
-const client = createClient({ url: url.toString() });
+const client = createClient({
+  url: "wss://ws.dev.example.com",
+  connectionParams: async () => ({
+    Authorization: `Bearer ${token}`,
+  }),
+});
 client.subscribe(
   { query: "subscription { timelineUpdates(type: HOME) { id url } }" },
   { next: (data) => console.log(data), error: console.error, complete: () => {} },

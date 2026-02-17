@@ -19,6 +19,11 @@ type managedProvisioningInput struct {
 	AdminWalletChainID int    `json:"admin_wallet_chain_id,omitempty"`
 	ConsentMessage     string `json:"consent_message,omitempty"`
 	ConsentSignature   string `json:"consent_signature,omitempty"`
+
+	LesserHostURL             string `json:"lesser_host_url,omitempty"`
+	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
+	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
+	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
 }
 
 func readManagedProvisioningInput(path string) (managedProvisioningInput, error) {
@@ -54,6 +59,9 @@ func readManagedProvisioningInput(path string) (managedProvisioningInput, error)
 	in.AdminUsername = strings.TrimSpace(in.AdminUsername)
 	in.ConsentMessage = strings.TrimSpace(in.ConsentMessage)
 	in.ConsentSignature = strings.TrimSpace(in.ConsentSignature)
+	in.LesserHostURL = strings.TrimRight(strings.TrimSpace(in.LesserHostURL), "/")
+	in.LesserHostAttestationsURL = strings.TrimRight(strings.TrimSpace(in.LesserHostAttestationsURL), "/")
+	in.LesserHostInstanceKeyARN = strings.TrimSpace(in.LesserHostInstanceKeyARN)
 	if in.AdminUsername == "" {
 		in.AdminUsername = in.Slug
 	}

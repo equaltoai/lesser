@@ -138,7 +138,7 @@ func (h *Handler) executeStatusSearch(ctx *apptheory.Context, params *SearchPara
 		return
 	}
 
-	if strings.HasPrefix(params.Query, "http") {
+	if strings.HasPrefix(params.Query, schemeHTTP) {
 		h.searchStatusByURL(ctx, params.Query, result)
 	} else {
 		h.searchStatusByContent(ctx, params, result)
@@ -713,6 +713,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 			"translation": map[string]any{
 				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
 			},
+			"trust": h.instanceTrustConfig(),
 			"tips": func() map[string]any {
 				enabled := false
 				chainID := 0

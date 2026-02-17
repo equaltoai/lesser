@@ -261,50 +261,26 @@ func TestEnsureSubscriptionManagerStarted_StartOnce(t *testing.T) {
 	require.Equal(t, int32(0), atomic.LoadInt32(&alreadyRunning.startCalls))
 }
 
-func TestHandleConnect_TokenValidationAndState(t *testing.T) {
+func TestHandleConnect_AuthContract_ConnectionInitOnly(t *testing.T) {
 	setDummyAWSEnv(t)
 
-	// Missing token => accepted (auth may arrive via connection_init), but unauthenticated.
 	server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil)
 	app := newWebSocketApp(server)
+
+	// Missing token => accepted, unauthenticated (auth happens via connection_init).
 	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{}, map[string]string{}))
 	require.Equal(t, 200, resp.StatusCode)
 	state, err := server.getConnection(context.Background(), "c1")
 	require.NoError(t, err)
 	require.Equal(t, "", state.username)
-
-	// Token present but oauth service missing => internal error.
-	server = newServer(nil, nil, nil, zap.NewNop(), nil, nil)
-	app = newWebSocketApp(server)
-	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Equal(t, 500, resp.StatusCode)
-
-	// Invalid token => unauthorized.
-	badValidator := &fakeTokenValidator{err: errors.New("bad")}
-	server = newServer(badValidator, nil, nil, zap.NewNop(), nil, nil)
-	app = newWebSocketApp(server)
-	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Equal(t, 401, resp.StatusCode)
-
-	// Missing username => forbidden.
-	noUserValidator := &fakeTokenValidator{claims: &auth.Claims{}}
-	server = newServer(noUserValidator, nil, nil, zap.NewNop(), nil, nil)
-	app = newWebSocketApp(server)
-	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Equal(t, 403, resp.StatusCode)
-
-	// Success.
-	connRepo := &fakeConnRepo{}
-	okValidator := &fakeTokenValidator{claims: &auth.Claims{Username: "user"}}
-	server = newServer(okValidator, nil, nil, zap.NewNop(), connRepo, nil)
-	app = newWebSocketApp(server)
-	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Equal(t, 200, resp.StatusCode)
-
-	state, err = server.getConnection(context.Background(), "c1")
-	require.NoError(t, err)
-	require.Equal(t, "user", state.username)
 	require.NotNil(t, server.wsContexts["c1"])
+
+	// Handshake tokens are ignored (auth must arrive via connection_init).
+	resp = app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c2", "", map[string]string{"access_token": "t"}, map[string]string{}))
+	require.Equal(t, 200, resp.StatusCode)
+	state, err = server.getConnection(context.Background(), "c2")
+	require.NoError(t, err)
+	require.Equal(t, "", state.username)
 }
 
 func TestHandleDisconnect_CleansUpAndPersists(t *testing.T) {

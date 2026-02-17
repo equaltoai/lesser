@@ -75,10 +75,7 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
-		userToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
-		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations", map[string]string{
-			"Authorization": "Bearer " + userToken,
-		}, map[string]string{
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations", nil, map[string]string{
 			"actor_uri":      "https://example.com/users/alice",
 			"object_uri":     "https://example.com/objects/1",
 			"content_hash":   "0xdeadbeef",
@@ -91,7 +88,7 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		require.Equal(t, []string{"public, max-age=3600"}, resp.Headers["cache-control"])
 	})
 
-	t.Run("missing_instance_key_returns_503", func(t *testing.T) {
+	t.Run("missing_instance_key_returns_409", func(t *testing.T) {
 		cfg := round11TestConfig()
 		cfg.LesserHostURL = "https://example.com"
 		cfg.LesserHostInstanceKey = ""
@@ -103,7 +100,7 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 			"Authorization": "Bearer " + userToken,
 		}, nil, []byte(`{"text":"hello","evidence":[{"source_id":"s1","text":"x"}]}`))
 
-		requireStatus(t, http.StatusServiceUnavailable)(h.HandleTrustAIClaimVerifyLift(ctx))
+		requireStatus(t, http.StatusConflict)(h.HandleTrustAIClaimVerifyLift(ctx))
 	})
 
 	t.Run("rewrites_image_and_render_urls_with_nested_payload", func(t *testing.T) {
@@ -449,15 +446,11 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		getAIJobCtx.Params["jobId"] = "j1"
 		requireStatus(t, http.StatusOK)(h.HandleTrustGetAIJobLift(getAIJobCtx))
 
-		jwksCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/jwks.json", map[string]string{
-			"Authorization": "Bearer " + readToken,
-		}, nil, nil)
+		jwksCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/jwks.json", nil, nil, nil)
 		require.NoError(t, err)
 		requireStatus(t, http.StatusOK)(h.HandleTrustJWKSJSONLift(jwksCtx))
 
-		attCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations/"+attestationID, map[string]string{
-			"Authorization": "Bearer " + readToken,
-		}, nil, nil)
+		attCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/trust/attestations/"+attestationID, nil, nil, nil)
 		require.NoError(t, err)
 		attCtx.Params["id"] = attestationID
 		requireStatus(t, http.StatusOK)(h.HandleTrustGetAttestationLift(attCtx))
@@ -490,6 +483,33 @@ func TestLesserHostTrustProxyRound20(t *testing.T) {
 		}, nil, []byte(`{"text":"hello","evidence":[{"source_id":"s1","text":"x"}]}`))
 
 		requireStatus(t, http.StatusServiceUnavailable)(h.HandleTrustAIClaimVerifyLift(ctx))
+	})
+
+	t.Run("upstream_unauthorized_maps_to_409", func(t *testing.T) {
+		const instanceKey = "instance-key-raw"
+
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, http.MethodPost, r.Method)
+			require.Equal(t, "/api/v1/ai/claims/verify", r.URL.Path)
+			require.Equal(t, "Bearer "+instanceKey, r.Header.Get("Authorization"))
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
+		}))
+		t.Cleanup(upstream.Close)
+
+		cfg := round11TestConfig()
+		cfg.LesserHostURL = upstream.URL
+		cfg.LesserHostInstanceKey = instanceKey
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		userToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/trust/ai/claims/verify", map[string]string{
+			"Authorization": "Bearer " + userToken,
+		}, nil, []byte(`{"text":"hello","evidence":[{"source_id":"s1","text":"x"}]}`))
+
+		requireStatus(t, http.StatusConflict)(h.HandleTrustAIClaimVerifyLift(ctx))
 	})
 
 	t.Run("upstream_response_too_large_returns_503", func(t *testing.T) {
@@ -644,7 +664,7 @@ func TestLesserHostTrustProxyHelpersRound20(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/x", nil, nil, nil)
 		require.NoError(t, err)
 
-		resp := requireStatus(t, http.StatusServiceUnavailable)(h.proxyToLesserHost(ctx, lesserHostProxyTarget{
+		resp := requireStatus(t, http.StatusUnprocessableEntity)(h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 			method:  http.MethodGet,
 			baseURL: "",
 			path:    "/api/v1/previews",
