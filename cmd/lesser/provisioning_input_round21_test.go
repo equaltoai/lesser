@@ -79,4 +79,25 @@ func TestReadManagedProvisioningInput_ValidationAndDefaults(t *testing.T) {
 		require.Equal(t, "consent", in.ConsentMessage)
 		require.Equal(t, "0xdeadbeef", in.ConsentSignature)
 	})
+
+	t.Run("captures integration config when provided", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "in.json")
+		require.NoError(t, os.WriteFile(path, []byte(`{
+  "schema": 1,
+  "slug": "app",
+  "stage": "dev",
+  "admin_wallet_address": "0x1111111111111111111111111111111111111111",
+  "lesser_host_url": " https://lab.lesser.host/ ",
+  "lesser_host_attestations_url": " https://attest.lab.lesser.host/ ",
+  "lesser_host_instance_key_arn": " arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey ",
+  "translation_enabled": false
+}`), 0o600))
+		in, err := readManagedProvisioningInput(path)
+		require.NoError(t, err)
+		require.Equal(t, "https://lab.lesser.host", in.LesserHostURL)
+		require.Equal(t, "https://attest.lab.lesser.host", in.LesserHostAttestationsURL)
+		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", in.LesserHostInstanceKeyARN)
+		require.NotNil(t, in.TranslationEnabled)
+		require.False(t, *in.TranslationEnabled)
+	})
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	"go.uber.org/zap"
 )
 
 const (
@@ -71,6 +72,14 @@ func (h *Handler) proxyToLesserHost(ctx *apptheory.Context, target lesserHostPro
 	}
 
 	base := strings.TrimRight(strings.TrimSpace(target.baseURL), "/")
+	if base == "" {
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: missing LESSER_HOST_URL", zap.String("upstream_path", target.path))
+		return common.RespondServiceUnavailable(ctx, "lesser-host")
+	}
+	if !strings.HasPrefix(base, "https://") && !strings.HasPrefix(base, "http://") {
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: LESSER_HOST_URL must include scheme (https://)", zap.String("lesser_host_url", base))
+		return common.RespondServiceUnavailable(ctx, "lesser-host")
+	}
 	if !isValidLesserHostProxyTarget(target, base) {
 		return common.RespondServiceUnavailable(ctx, "lesser-host")
 	}
@@ -79,7 +88,7 @@ func (h *Handler) proxyToLesserHost(ctx *apptheory.Context, target lesserHostPro
 		return nil, err
 	}
 
-	instanceKey, resp := h.resolveLesserHostProxyInstanceKey(ctx, target.useInstanceAuth)
+	instanceKey, resp := h.resolveLesserHostProxyInstanceKey(ctx, target)
 	if resp != nil {
 		return resp, nil
 	}
@@ -126,17 +135,25 @@ func isValidLesserHostProxyTarget(target lesserHostProxyTarget, base string) boo
 	return strings.HasPrefix(target.path, "/")
 }
 
-func (h *Handler) resolveLesserHostProxyInstanceKey(ctx *apptheory.Context, required bool) (string, *apptheory.Response) {
-	if !required {
+func (h *Handler) resolveLesserHostProxyInstanceKey(ctx *apptheory.Context, target lesserHostProxyTarget) (string, *apptheory.Response) {
+	if !target.useInstanceAuth {
 		return "", nil
 	}
 
 	key := h.lesserHostInstanceKey()
 	if key == "" {
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: missing LESSER_HOST_INSTANCE_KEY/LESSER_HOST_INSTANCE_KEY_ARN", zap.String("upstream_path", target.path))
 		resp, _ := common.RespondServiceUnavailable(ctx, "lesser-host")
 		return "", resp
 	}
 	return key, nil
+}
+
+func (h *Handler) warnTrustProxyMisconfigured(message string, fields ...zap.Field) {
+	if h == nil || h.logger == nil {
+		return
+	}
+	h.logger.Warn(message, fields...)
 }
 
 func buildLesserHostProxyURL(ctx *apptheory.Context, base, path string) (*url.URL, *apptheory.Response) {

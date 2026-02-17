@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,11 @@ type upArgs struct {
 	WithStaging            bool
 	OutPath                string
 	RebuildLambdas         bool
+
+	LesserHostURL             string
+	LesserHostAttestationsURL string
+	LesserHostInstanceKeyARN  string
+	TranslationEnabled        *bool
 }
 
 func runUp(argv []string) error {
@@ -266,9 +272,24 @@ func (e *upEnv) handleBootstrapOutput() error {
 
 func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	receipt := newUpReceipt(e.app, e.baseDomain, e.awsProfile, e.accountID, e.awsCfg.Region, e.stages, e.hostedZone)
+	receipt.Integration = resolveIntegrationReceipt(e.args)
 
 	if err := cdkBootstrapFn(ctx, e.repoRoot, e.awsProfile, e.accountID, e.awsCfg.Region); err != nil {
 		return nil, err
+	}
+
+	contexts := map[string]string{}
+	if v := strings.TrimSpace(e.args.LesserHostURL); v != "" {
+		contexts["lesserHostUrl"] = v
+	}
+	if v := strings.TrimSpace(e.args.LesserHostAttestationsURL); v != "" {
+		contexts["lesserHostAttestationsUrl"] = v
+	}
+	if v := strings.TrimSpace(e.args.LesserHostInstanceKeyARN); v != "" {
+		contexts["lesserHostInstanceKeyArn"] = v
+	}
+	if e.args.TranslationEnabled != nil {
+		contexts["translationEnabled"] = strconv.FormatBool(*e.args.TranslationEnabled)
 	}
 
 	fmt.Println("\nEnsuring API Gateway account logging role...")
@@ -286,6 +307,7 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 		Region:       e.awsCfg.Region,
 		StageFilter:  string(naming.StageShared),
 		WithStaging:  e.args.WithStaging,
+		Contexts:     contexts,
 	})
 	if err != nil {
 		return nil, err
@@ -303,6 +325,7 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 			Region:       e.awsCfg.Region,
 			StageFilter:  string(stage),
 			WithStaging:  e.args.WithStaging,
+			Contexts:     contexts,
 		})
 		if err != nil {
 			return nil, err
@@ -384,6 +407,18 @@ func parseUpArgs(argv []string) (upArgs, error) {
 		}
 		if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
 			args.BootstrapWalletAddress = in.AdminWalletAddress
+		}
+		if strings.TrimSpace(args.LesserHostURL) == "" {
+			args.LesserHostURL = in.LesserHostURL
+		}
+		if strings.TrimSpace(args.LesserHostAttestationsURL) == "" {
+			args.LesserHostAttestationsURL = in.LesserHostAttestationsURL
+		}
+		if strings.TrimSpace(args.LesserHostInstanceKeyARN) == "" {
+			args.LesserHostInstanceKeyARN = in.LesserHostInstanceKeyARN
+		}
+		if args.TranslationEnabled == nil {
+			args.TranslationEnabled = in.TranslationEnabled
 		}
 	}
 

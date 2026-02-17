@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -17,6 +18,7 @@ type cdkDeployRequest struct {
 	Region       string
 	StageFilter  string
 	WithStaging  bool
+	Contexts     map[string]string
 }
 
 type cdkDestroyRequest struct {
@@ -103,11 +105,42 @@ func cdkDeployWithOutputs(ctx context.Context, repoRoot string, awsProfile strin
 		"tipChainId":                strings.TrimSpace(os.Getenv("TIP_CHAIN_ID")),
 		"tipContractAddress":        strings.TrimSpace(os.Getenv("TIP_CONTRACT_ADDRESS")),
 	}
-	for key, value := range envContexts {
+	normalizeContext := func(key, value string) string {
+		value = strings.TrimSpace(value)
 		if value == "" {
-			continue
+			return ""
 		}
-		args = append(args, "--context", fmt.Sprintf("%s=%s", key, value))
+		switch key {
+		case "lesserHostUrl", "lesserHostAttestationsUrl":
+			return strings.TrimRight(value, "/")
+		default:
+			return value
+		}
+	}
+
+	contexts := map[string]string{}
+	for key, value := range envContexts {
+		if v := normalizeContext(key, value); v != "" {
+			contexts[key] = v
+		}
+	}
+	for key, value := range req.Contexts {
+		if v := normalizeContext(key, value); v != "" {
+			contexts[key] = v
+		}
+	}
+
+	if err := rejectLambdaFunctionURLHost(contexts["lesserHostUrl"]); err != nil {
+		return cdkDeployResult{}, err
+	}
+
+	keys := make([]string, 0, len(contexts))
+	for key := range contexts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		args = append(args, "--context", fmt.Sprintf("%s=%s", key, contexts[key]))
 	}
 
 	stage := strings.TrimSpace(strings.ToLower(req.StageFilter))

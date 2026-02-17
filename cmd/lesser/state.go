@@ -23,8 +23,16 @@ type upReceipt struct {
 	HostedZone    hostedZoneReceipt        `json:"hosted_zone"`
 	SharedStack   string                   `json:"shared_stack"`
 	SharedOutputs map[string]string        `json:"shared_outputs,omitempty"`
+	Integration   *integrationReceipt      `json:"integration,omitempty"`
 	Stages        map[string]*stageReceipt `json:"stages"`
 	CreatedAt     time.Time                `json:"created_at"`
+}
+
+type integrationReceipt struct {
+	LesserHostURL             string `json:"lesser_host_url,omitempty"`
+	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
+	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
+	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
 }
 
 type hostedZoneReceipt struct {

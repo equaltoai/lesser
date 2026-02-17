@@ -30,6 +30,10 @@ Example:
   "admin_wallet_address": "0x4444444444444444444444444444444444444444",
   "admin_username": "my-instance",
   "admin_wallet_chain_id": 1,
+  "lesser_host_url": "https://lab.lesser.host",
+  "lesser_host_attestations_url": "https://lab.lesser.host",
+  "lesser_host_instance_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey",
+  "translation_enabled": false,
   "consent_message": "lesser.host requests your consent to provision a managed instance...\n",
   "consent_signature": "0x..."
 }
@@ -39,6 +43,7 @@ Notes:
 - `admin_username` defaults to `slug` when omitted.
 - `stage` supports `dev|staging|live` (managed runners typically use `dev` and `live`).
 - `admin_wallet_chain_id` overrides `--chain-id` for `init-admin` when supplied.
+- `lesser_host_*` and `translation_enabled` are optional integration config passed through `./lesser up` to the CDK deploy.
 - `consent_message` and `consent_signature` can satisfy `init-admin` without extra flags.
 - `--aws-profile` is optional when AWS ambient credentials are available.
 
