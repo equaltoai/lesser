@@ -713,6 +713,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 			"translation": map[string]any{
 				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
 			},
+			"trust": h.instanceTrustConfig(),
 			"tips": func() map[string]any {
 				enabled := false
 				chainID := 0
