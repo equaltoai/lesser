@@ -73,12 +73,15 @@ func (h *Handler) proxyToLesserHost(ctx *apptheory.Context, target lesserHostPro
 
 	base := strings.TrimRight(strings.TrimSpace(target.baseURL), "/")
 	if base == "" {
-		h.warnTrustProxyMisconfigured("trust proxy misconfigured: missing LESSER_HOST_URL", zap.String("upstream_path", target.path))
-		return common.RespondServiceUnavailable(ctx, "lesser-host")
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: missing lesser-host base URL", zap.String("upstream_path", target.path))
+		return common.RespondUnprocessableEntity(ctx, "trust not configured: set LESSER_HOST_URL (or LESSER_HOST_ATTESTATIONS_URL) to a domain-only https://<stage>.lesser.host endpoint")
 	}
-	if !strings.HasPrefix(base, "https://") && !strings.HasPrefix(base, "http://") {
-		h.warnTrustProxyMisconfigured("trust proxy misconfigured: LESSER_HOST_URL must include scheme (https://)", zap.String("lesser_host_url", base))
-		return common.RespondServiceUnavailable(ctx, "lesser-host")
+	if err := validateTrustBaseURL(base); err != nil {
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: invalid lesser-host base URL",
+			zap.String("lesser_host_url", base),
+			zap.Error(err),
+		)
+		return common.RespondUnprocessableEntity(ctx, "trust not configured: invalid lesser-host base URL (check LESSER_HOST_URL / LESSER_HOST_ATTESTATIONS_URL)")
 	}
 	if !isValidLesserHostProxyTarget(target, base) {
 		return common.RespondServiceUnavailable(ctx, "lesser-host")
@@ -113,6 +116,14 @@ func (h *Handler) proxyToLesserHost(ctx *apptheory.Context, target lesserHostPro
 		return resp, nil
 	}
 
+	if target.useInstanceAuth && (status == http.StatusUnauthorized || status == http.StatusForbidden) {
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: lesser-host rejected instance key",
+			zap.Int("upstream_status", status),
+			zap.String("upstream_path", target.path),
+		)
+		return common.RespondConflict(ctx, "trust not configured: instance key invalid or revoked")
+	}
+
 	return buildLesserHostProxyResponse(target, status, upstreamHeaders, respBody), nil
 }
 
@@ -143,7 +154,7 @@ func (h *Handler) resolveLesserHostProxyInstanceKey(ctx *apptheory.Context, targ
 	key := h.lesserHostInstanceKey()
 	if key == "" {
 		h.warnTrustProxyMisconfigured("trust proxy misconfigured: missing LESSER_HOST_INSTANCE_KEY/LESSER_HOST_INSTANCE_KEY_ARN", zap.String("upstream_path", target.path))
-		resp, _ := common.RespondServiceUnavailable(ctx, "lesser-host")
+		resp, _ := common.RespondConflict(ctx, "trust not configured: missing instance key (set LESSER_HOST_INSTANCE_KEY_ARN or LESSER_HOST_INSTANCE_KEY)")
 		return "", resp
 	}
 	return key, nil
@@ -586,7 +597,7 @@ func (h *Handler) HandleTrustJWKSJSONLift(ctx *apptheory.Context) (*apptheory.Re
 		method:              http.MethodGet,
 		baseURL:             h.lesserHostAttestationsBaseURL(),
 		path:                "/.well-known/jwks.json",
-		requiredScope:       auth.ScopeRead,
+		requiredScope:       "",
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -598,7 +609,7 @@ func (h *Handler) HandleTrustLookupAttestationLift(ctx *apptheory.Context) (*app
 		method:              http.MethodGet,
 		baseURL:             h.lesserHostAttestationsBaseURL(),
 		path:                "/attestations",
-		requiredScope:       auth.ScopeRead,
+		requiredScope:       "",
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})
@@ -614,7 +625,7 @@ func (h *Handler) HandleTrustGetAttestationLift(ctx *apptheory.Context) (*appthe
 		method:              http.MethodGet,
 		baseURL:             h.lesserHostAttestationsBaseURL(),
 		path:                "/attestations/" + url.PathEscape(id),
-		requiredScope:       auth.ScopeRead,
+		requiredScope:       "",
 		useInstanceAuth:     false,
 		rewriteResponseURLs: false,
 	})

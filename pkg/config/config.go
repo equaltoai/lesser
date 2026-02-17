@@ -328,7 +328,7 @@ func loadConfig() *Config {
 		VAPIDSubject:         getEnvOrDefault("VAPID_SUBJECT", ""),
 		AdminUsername:        getEnvOrDefault("ADMIN_USERNAME", ""),
 		SystemActorPublicKey: getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
-		LesserHostURL:        strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "https://lesser.host")), "/"),
+		LesserHostURL:        strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "")), "/"),
 		LesserHostInstanceKey: getOptionalSecretFromEnvOrARN(
 			"LESSER_HOST_INSTANCE_KEY",
 			"LESSER_HOST_INSTANCE_KEY_ARN",
