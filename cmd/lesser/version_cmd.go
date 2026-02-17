@@ -46,7 +46,7 @@ func vcsInfo(settings []debug.BuildSetting) (string, bool) {
 		case "vcs.revision":
 			revision = strings.TrimSpace(setting.Value)
 		case "vcs.modified":
-			modified = strings.TrimSpace(setting.Value) == "true"
+			modified = strings.TrimSpace(setting.Value) == flagTrue
 		}
 	}
 	return revision, modified

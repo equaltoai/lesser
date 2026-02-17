@@ -152,6 +152,9 @@ func checkGraphQLWS(ctx context.Context, urlStr string, accessToken string, inse
 	}
 
 	conn, resp, err := dialer.DialContext(ctx, urlStr, nil)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err != nil {
 		return fmt.Errorf("graphql ws dial failed: %w (http=%s)", err, httpStatus(resp))
 	}
@@ -236,6 +239,9 @@ func checkStreamingWS(ctx context.Context, urlStr string, insecure bool) error {
 	}
 
 	conn, resp, err := dialer.DialContext(ctx, urlStr, nil)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err != nil {
 		return fmt.Errorf("streaming ws dial failed: %w (http=%s)", err, httpStatus(resp))
 	}

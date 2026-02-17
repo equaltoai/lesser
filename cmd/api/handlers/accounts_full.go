@@ -300,7 +300,7 @@ func (h *Handler) HandleGetAccountFollowingFull(ctx *apptheory.Context) (*appthe
 
 func (h *Handler) resolveAccountIDFull(ctx context.Context, accountID string) (*activitypub.Actor, error) {
 	// Check if it's a local username or full actor ID
-	if strings.HasPrefix(accountID, "http") {
+	if strings.HasPrefix(accountID, schemeHTTP) {
 		// Full actor ID - extract username from URL
 		parts := strings.Split(accountID, "/")
 		if len(parts) > 0 {

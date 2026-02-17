@@ -96,7 +96,7 @@ func runCoverageScoreboard(argv []string) error {
 
 func boolToFlag(value bool) string {
 	if value {
-		return "true"
+		return flagTrue
 	}
-	return "false"
+	return flagFalse
 }

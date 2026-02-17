@@ -33,10 +33,10 @@ func instanceStateString(locked bool) string {
 func (h *Handler) stageURLs() apimodels.SetupStageURLs {
 	domain := strings.TrimSpace(h.cfg.Domain)
 
-	httpScheme := "https"
+	httpScheme := schemeHTTPS
 	wsScheme := "wss"
 	if domain == localhostDomain || domain == loopbackIPv4 {
-		httpScheme = "http"
+		httpScheme = schemeHTTP
 		wsScheme = "ws"
 	}
 

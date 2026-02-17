@@ -264,10 +264,14 @@ func (s *wsServer) registerConnection(ctx context.Context, connectionID, usernam
 	}
 
 	s.mu.Lock()
+	subscriptions := make(map[string]*subscriptionState)
+	if existing := s.connections[connectionID]; existing != nil && existing.subscriptions != nil {
+		subscriptions = existing.subscriptions
+	}
 	s.connections[connectionID] = &connectionState{
 		username:      username,
 		claims:        claims,
-		subscriptions: make(map[string]*subscriptionState),
+		subscriptions: subscriptions,
 	}
 	s.mu.Unlock()
 
@@ -754,8 +758,9 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 		return okWebSocketResponse(), nil
 	}
 
-	s.persistGraphQLConnectionIdentity(ctx, connectionID, username, claims)
-	s.setAuthenticatedConnectionState(connectionID, username, claims)
+	if err := s.registerConnection(ctx, connectionID, username, claims); err != nil {
+		log.Warn("failed to persist graphql connection identity", zap.Error(err))
+	}
 
 	log.Info("connection_init authenticated", zap.String("username", username))
 	if err := s.sendJSON(wsCtx, responseEnvelope{Type: "connection_ack"}); err != nil {
@@ -767,53 +772,6 @@ func (s *wsServer) handleConnectionInit(ctx context.Context, wsCtx *apptheory.We
 func (s *wsServer) isAuthenticatedConnection(ctx context.Context, connectionID string) bool {
 	state, err := s.getConnection(ctx, connectionID)
 	return err == nil && state != nil && state.username != ""
-}
-
-func (s *wsServer) persistGraphQLConnectionIdentity(ctx context.Context, connectionID, username string, claims *auth.Claims) {
-	if s.connRepo == nil {
-		return
-	}
-
-	streams := []string{"graphql"}
-	conn, getErr := s.connRepo.GetConnection(ctx, connectionID)
-	if getErr != nil || conn == nil {
-		_, _ = s.connRepo.WriteConnection(ctx, connectionID, username, username, streams)
-		conn, _ = s.connRepo.GetConnection(ctx, connectionID)
-	}
-	if conn == nil {
-		return
-	}
-
-	conn.UserID = username
-	conn.Username = username
-	conn.Streams = streams
-	conn.Info.Protocol = graphqlWSName
-	conn.Info.AuthMethod = "oauth"
-	if conn.Info.CustomHeaders == nil {
-		conn.Info.CustomHeaders = make(map[string]string)
-	}
-	if claims != nil && len(claims.Scopes) > 0 {
-		conn.Info.CustomHeaders["scopes"] = strings.Join(claims.Scopes, " ")
-	}
-	conn.LastActivity = time.Now()
-	conn.UpdateState(models.ConnectionStateConnected)
-	_ = s.connRepo.UpdateConnection(ctx, conn)
-}
-
-func (s *wsServer) setAuthenticatedConnectionState(connectionID, username string, claims *auth.Claims) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	subscriptions := make(map[string]*subscriptionState)
-	if existing := s.connections[connectionID]; existing != nil && existing.subscriptions != nil {
-		subscriptions = existing.subscriptions
-	}
-
-	s.connections[connectionID] = &connectionState{
-		username:      username,
-		claims:        claims,
-		subscriptions: subscriptions,
-	}
 }
 
 func (s *wsServer) handleComplete(ctx context.Context, wsCtx *apptheory.WebSocketContext, connectionID string, msg wsMessage) (*apptheory.Response, error) {
@@ -855,16 +813,6 @@ func cleanToken(raw string) string {
 
 	token = strings.ReplaceAll(token, " ", "+")
 	return token
-}
-
-func previewToken(token string) string {
-	if token == "" {
-		return ""
-	}
-	if len(token) <= 10 {
-		return token
-	}
-	return token[:5] + "..." + token[len(token)-5:]
 }
 
 func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *apptheory.WebSocketContext) {

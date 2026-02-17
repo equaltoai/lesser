@@ -15,7 +15,7 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 	if args.TranslationEnabled != nil {
 		out.TranslationEnabled = args.TranslationEnabled
 	} else if raw := strings.TrimSpace(os.Getenv("TRANSLATION_ENABLED")); raw != "" {
-		enabled := raw == "true" || raw == "1" || raw == "yes"
+		enabled := raw == flagTrue || raw == "1" || raw == "yes"
 		out.TranslationEnabled = &enabled
 	}
 

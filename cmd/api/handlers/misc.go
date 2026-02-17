@@ -138,7 +138,7 @@ func (h *Handler) executeStatusSearch(ctx *apptheory.Context, params *SearchPara
 		return
 	}
 
-	if strings.HasPrefix(params.Query, "http") {
+	if strings.HasPrefix(params.Query, schemeHTTP) {
 		h.searchStatusByURL(ctx, params.Query, result)
 	} else {
 		h.searchStatusByContent(ctx, params, result)

@@ -10,4 +10,7 @@ const (
 
 	valueDev     = "dev"
 	valueStaging = "staging"
+
+	flagTrue  = "true"
+	flagFalse = "false"
 )

@@ -71,7 +71,7 @@ func validateTrustBaseURL(raw string) error {
 	if err != nil {
 		return err
 	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+	if parsed.Scheme != schemeHTTPS && parsed.Scheme != schemeHTTP {
 		return errors.New("base URL must include http(s) scheme")
 	}
 
@@ -80,7 +80,7 @@ func validateTrustBaseURL(raw string) error {
 		return errors.New("base URL missing hostname")
 	}
 	if isLambdaFunctionURLHost(host) {
-		return errors.New("Lambda Function URL hosts are not supported")
+		return errors.New("lambda function URL hosts are not supported")
 	}
 
 	return nil

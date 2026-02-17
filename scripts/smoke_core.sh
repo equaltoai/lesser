@@ -73,6 +73,36 @@ translation_enabled_from_v2_instance() {
   echo ""
 }
 
+trust_enabled_from_v2_instance() {
+  local file="$1"
+
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.configuration.trust.enabled // empty' "${file}" 2>/dev/null
+    return
+  fi
+
+  # jq-less fallback: look for a trust.enabled boolean near the trust block.
+  local compact
+  compact="$(tr -d '\n' <"${file}")"
+  if [[ "${compact}" =~ \"trust\"[[:space:]]*:[[:space:]]*\\{[^\\}]*\"enabled\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return
+  fi
+
+  echo ""
+}
+
+graphql_response_has_errors() {
+  local file="$1"
+
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '((.errors // []) | length) > 0' "${file}" >/dev/null 2>&1
+    return
+  fi
+
+  grep -q '"errors"' "${file}"
+}
+
 json_first_public_status_id() {
   local file="$1"
 
@@ -166,11 +196,12 @@ case "${code}" in
 esac
 echo
 
-echo "4) GET /api/v2/instance (translation config)"
+echo "4) GET /api/v2/instance (translation + trust config)"
 resp="$(request instance_v2 GET "${BASE}/api/v2/instance")"
 code="${resp%%:*}"
 file="${resp#*:}"
 translation_enabled=""
+trust_enabled=""
 
 if [[ "${code}" != "200" ]]; then
   echo "  ✗ expected 200, got ${code}"
@@ -185,7 +216,13 @@ else
       echo "  ✗ expected .configuration.translation.enabled boolean"
       failures=$((failures + 1))
     else
-      echo "  ✓ ok (translation.enabled=${translation_enabled})"
+      trust_enabled="$(trust_enabled_from_v2_instance "${file}")"
+      if [[ "${trust_enabled}" != "true" && "${trust_enabled}" != "false" ]]; then
+        echo "  ✗ expected .configuration.trust.enabled boolean"
+        failures=$((failures + 1))
+      else
+        echo "  ✓ ok (translation.enabled=${translation_enabled}, trust.enabled=${trust_enabled})"
+      fi
     fi
   fi
 fi
@@ -324,7 +361,160 @@ else
 fi
 echo
 
-echo "7) WebSockets (GraphQL subscriptions + streaming)"
+echo "7) GET /api/v1/trust/jwks.json"
+resp="$(request trust_jwks GET "${BASE}/api/v1/trust/jwks.json")"
+code="${resp%%:*}"
+file="${resp#*:}"
+
+if [[ "${trust_enabled}" == "true" ]]; then
+  if [[ "${code}" != "200" ]]; then
+    echo "  ✗ expected 200 (trust enabled), got ${code}"
+    failures=$((failures + 1))
+  else
+    if ! require_json "${file}"; then
+      echo "  ✗ expected JSON body"
+      failures=$((failures + 1))
+    else
+      if command -v jq >/dev/null 2>&1; then
+        if ! jq -e '.keys | type == "array"' "${file}" >/dev/null 2>&1; then
+          echo "  ✗ expected JWKS JSON with .keys array"
+          failures=$((failures + 1))
+        else
+          echo "  ✓ ok"
+        fi
+      else
+        echo "  ✓ ok"
+      fi
+    fi
+  fi
+else
+  case "${code}" in
+    200)
+      if ! require_json "${file}"; then
+        echo "  ✗ expected JSON body"
+        failures=$((failures + 1))
+      else
+        echo "  ✓ ok (trust disabled; jwks reachable)"
+      fi
+      ;;
+    422|409)
+      if ! require_json "${file}"; then
+        echo "  ✗ expected JSON body"
+        failures=$((failures + 1))
+      else
+        echo "  ✓ ok (trust disabled)"
+      fi
+      ;;
+    *)
+      echo "  ✗ unexpected status (${code})"
+      failures=$((failures + 1))
+      ;;
+  esac
+fi
+echo
+
+echo "8) GET /api/v1/trust/attestations"
+resp="$(request trust_attestations GET "${BASE}/api/v1/trust/attestations")"
+code="${resp%%:*}"
+file="${resp#*:}"
+
+if [[ "${trust_enabled}" == "true" ]]; then
+  if [[ "${code}" != "200" ]]; then
+    echo "  ✗ expected 200 (trust enabled), got ${code}"
+    failures=$((failures + 1))
+  else
+    if ! require_json "${file}"; then
+      echo "  ✗ expected JSON body"
+      failures=$((failures + 1))
+    else
+      echo "  ✓ ok"
+    fi
+  fi
+else
+  case "${code}" in
+    200)
+      if ! require_json "${file}"; then
+        echo "  ✗ expected JSON body"
+        failures=$((failures + 1))
+      else
+        echo "  ✓ ok (trust disabled; attestations reachable)"
+      fi
+      ;;
+    422|409)
+      if ! require_json "${file}"; then
+        echo "  ✗ expected JSON body"
+        failures=$((failures + 1))
+      else
+        echo "  ✓ ok (trust disabled)"
+      fi
+      ;;
+    *)
+      echo "  ✗ unexpected status (${code})"
+      failures=$((failures + 1))
+      ;;
+  esac
+fi
+echo
+
+echo "9) POST /api/graphql (search)"
+graphql_search_body='{"query":"query SmokeSearch($q: String!){ search(query: $q, first: 1){ accounts { id } statuses { id } hashtags { name } } }","variables":{"q":"smoke"}}'
+resp="$(request graphql_search POST "${BASE}/api/graphql" "${graphql_search_body}")"
+code="${resp%%:*}"
+file="${resp#*:}"
+
+case "${code}" in
+  200)
+    if ! require_json "${file}"; then
+      echo "  ✗ expected JSON body"
+      failures=$((failures + 1))
+    else
+      if graphql_response_has_errors "${file}"; then
+        echo "  ✗ graphql search returned errors"
+        failures=$((failures + 1))
+      else
+        if command -v jq >/dev/null 2>&1; then
+          if ! jq -e '.data.search.accounts | type == "array"' "${file}" >/dev/null 2>&1; then
+            echo "  ✗ expected .data.search.accounts array"
+            failures=$((failures + 1))
+          elif ! jq -e '.data.search.statuses | type == "array"' "${file}" >/dev/null 2>&1; then
+            echo "  ✗ expected .data.search.statuses array"
+            failures=$((failures + 1))
+          elif ! jq -e '.data.search.hashtags | type == "array"' "${file}" >/dev/null 2>&1; then
+            echo "  ✗ expected .data.search.hashtags array"
+            failures=$((failures + 1))
+          else
+            echo "  ✓ ok"
+          fi
+        else
+          echo "  ✓ ok"
+        fi
+      fi
+    fi
+    ;;
+  401|403)
+    if [[ -n "${SMOKE_TOKEN}" ]]; then
+      echo "  ✗ expected 200 (token provided), got ${code}"
+      failures=$((failures + 1))
+    else
+      echo "  ✓ ok (http ${code})"
+    fi
+    ;;
+  404)
+    echo "  ✗ route missing (404)"
+    failures=$((failures + 1))
+    ;;
+  5*)
+    echo "  ✗ server error (${code})"
+    failures=$((failures + 1))
+    ;;
+  *)
+    echo "  ✗ unexpected status (${code})"
+    failures=$((failures + 1))
+    ;;
+esac
+echo
+
+echo "10) WebSockets (GraphQL subscriptions + streaming)"
 ws_args=(--base-url="${BASE}" --timeout-seconds="${SMOKE_TIMEOUT_SECONDS}")
 if [[ -n "${SMOKE_TOKEN}" ]]; then
   ws_args+=(--token="${SMOKE_TOKEN}")
