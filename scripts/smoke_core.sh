@@ -324,6 +324,23 @@ else
 fi
 echo
 
+echo "7) WebSockets (GraphQL subscriptions + streaming)"
+ws_args=(--base-url="${BASE}" --timeout-seconds="${SMOKE_TIMEOUT_SECONDS}")
+if [[ -n "${SMOKE_TOKEN}" ]]; then
+  ws_args+=(--token="${SMOKE_TOKEN}")
+fi
+if [[ "${SMOKE_INSECURE}" == "1" ]]; then
+  ws_args+=(--insecure)
+fi
+
+if go run ./tools/ws_smoke "${ws_args[@]}"; then
+  echo "  ✓ ok"
+else
+  echo "  ✗ websocket smoke failed"
+  failures=$((failures + 1))
+fi
+echo
+
 if [[ "${failures}" -eq 0 ]]; then
   echo "✅ smoke-core passed"
 else

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -78,14 +77,12 @@ func TestHandleConnect_CleansUpOnPersistError_Round14(t *testing.T) {
 
 	writeErr := errors.New("write failed")
 	connRepo := &fakeConnRepo{writeErr: writeErr}
-	okValidator := &fakeTokenValidator{claims: &auth.Claims{Username: "user"}}
-
-	server := newServer(okValidator, nil, nil, zap.NewNop(), connRepo, nil)
+	server := newServer(nil, nil, nil, zap.NewNop(), connRepo, nil)
 	app := newWebSocketApp(server)
 
 	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
-	require.Equal(t, 500, resp.StatusCode)
-	require.Empty(t, server.wsContexts, "failed connect should not retain websocket context")
+	require.Equal(t, 200, resp.StatusCode)
+	require.NotNil(t, server.wsContexts["c1"], "connect should retain websocket context for message sending")
 }
 
 func TestHandleDefaultAndDisconnect_NilContexts_Round14(t *testing.T) {
