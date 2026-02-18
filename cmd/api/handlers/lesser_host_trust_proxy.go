@@ -2,13 +2,19 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -20,6 +26,27 @@ const (
 	lesserHostProxyMaxRequestBytes  = 1 * 1024 * 1024  // 1MB
 	lesserHostProxyMaxResponseBytes = 10 * 1024 * 1024 // 10MB
 )
+
+const trustInstanceKeyCacheTTL = 5 * time.Minute
+
+type cachedTrustSecret struct {
+	value     string
+	expiresAt time.Time
+}
+
+var (
+	trustSecretCacheMu sync.RWMutex
+	trustSecretCache   = map[string]cachedTrustSecret{}
+
+	loadAWSConfigForTrustSecrets          = awsconfig.LoadDefaultConfig
+	newSecretsManagerClientForTrustSecret = func(cfg aws.Config) trustSecretsManagerClient {
+		return secretsmanager.NewFromConfig(cfg)
+	}
+)
+
+type trustSecretsManagerClient interface {
+	GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error)
+}
 
 type lesserHostProxyTarget struct {
 	method string
@@ -64,6 +91,139 @@ func (h *Handler) lesserHostInstanceKey() string {
 		return ""
 	}
 	return strings.TrimSpace(h.cfg.LesserHostInstanceKey)
+}
+
+func (h *Handler) effectiveLesserHostTrustBaseURL(ctx context.Context) string {
+	if h == nil || h.cfg == nil {
+		return ""
+	}
+	if h.repos == nil {
+		return h.lesserHostTrustBaseURL()
+	}
+
+	exists, err := h.repos.Instance().TrustConfigExists(ctx)
+	if err != nil {
+		h.warnTrustProxyMisconfigured("failed to check persisted trust config; disabling trust proxy base URL", zap.Error(err))
+		return ""
+	}
+	if !exists {
+		h.warnLegacyTrustConfig()
+		return h.lesserHostTrustBaseURL()
+	}
+
+	effective, err := h.repos.Instance().EffectiveTrustConfig(ctx)
+	if err != nil {
+		h.warnTrustProxyMisconfigured("failed to resolve effective trust config; disabling trust proxy base URL", zap.Error(err))
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSpace(effective.TrustBaseURL), "/")
+}
+
+func (h *Handler) effectiveLesserHostAttestationsBaseURL(ctx context.Context) string {
+	if h == nil || h.cfg == nil {
+		return ""
+	}
+	if h.repos == nil {
+		return h.lesserHostAttestationsBaseURL()
+	}
+
+	exists, err := h.repos.Instance().TrustConfigExists(ctx)
+	if err != nil {
+		h.warnTrustProxyMisconfigured("failed to check persisted trust config; disabling attestations base URL", zap.Error(err))
+		return ""
+	}
+	if !exists {
+		h.warnLegacyTrustConfig()
+		return h.lesserHostAttestationsBaseURL()
+	}
+
+	effective, err := h.repos.Instance().EffectiveTrustConfig(ctx)
+	if err != nil {
+		h.warnTrustProxyMisconfigured("failed to resolve effective trust config; disabling attestations base URL", zap.Error(err))
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSpace(effective.AttestationsBaseURL), "/")
+}
+
+func (h *Handler) effectiveLesserHostInstanceKey(ctx context.Context) (string, error) {
+	if h == nil || h.cfg == nil {
+		return "", nil
+	}
+	if h.repos == nil {
+		return h.lesserHostInstanceKey(), nil
+	}
+
+	exists, err := h.repos.Instance().TrustConfigExists(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		h.warnLegacyTrustConfig()
+		return h.lesserHostInstanceKey(), nil
+	}
+
+	effective, err := h.repos.Instance().EffectiveTrustConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	secretARN := strings.TrimSpace(effective.InstanceKeySecretARN)
+	if secretARN == "" {
+		return "", nil
+	}
+
+	return resolveTrustSecretValue(ctx, secretARN)
+}
+
+func resolveTrustSecretValue(ctx context.Context, secretID string) (string, error) {
+	secretID = strings.TrimSpace(secretID)
+	if secretID == "" {
+		return "", errors.New("missing secret id")
+	}
+
+	now := time.Now()
+	trustSecretCacheMu.RLock()
+	if cached, ok := trustSecretCache[secretID]; ok && now.Before(cached.expiresAt) {
+		trustSecretCacheMu.RUnlock()
+		return cached.value, nil
+	}
+	trustSecretCacheMu.RUnlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	awsCfg, err := loadAWSConfigForTrustSecrets(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	client := newSecretsManagerClientForTrustSecret(awsCfg)
+	out, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{SecretId: &secretID})
+	if err != nil {
+		return "", err
+	}
+	if out.SecretString == nil {
+		return "", errors.New("secret does not contain SecretString")
+	}
+
+	val := strings.TrimSpace(*out.SecretString)
+	if strings.HasPrefix(val, "{") {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(val), &payload); err == nil {
+			if s, ok := payload["secret"].(string); ok && strings.TrimSpace(s) != "" {
+				val = strings.TrimSpace(s)
+			}
+		}
+	}
+	if val == "" {
+		return "", errors.New("secret value is empty")
+	}
+
+	trustSecretCacheMu.Lock()
+	trustSecretCache[secretID] = cachedTrustSecret{value: val, expiresAt: now.Add(trustInstanceKeyCacheTTL)}
+	trustSecretCacheMu.Unlock()
+
+	return val, nil
 }
 
 func (h *Handler) proxyToLesserHost(ctx *apptheory.Context, target lesserHostProxyTarget) (*apptheory.Response, error) {
@@ -151,10 +311,15 @@ func (h *Handler) resolveLesserHostProxyInstanceKey(ctx *apptheory.Context, targ
 		return "", nil
 	}
 
-	key := h.lesserHostInstanceKey()
+	key, err := h.effectiveLesserHostInstanceKey(ctx.Context())
+	if err != nil {
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: failed to resolve instance key", zap.Error(err), zap.String("upstream_path", target.path))
+		resp, _ := common.RespondServiceUnavailable(ctx, "lesser-host")
+		return "", resp
+	}
 	if key == "" {
-		h.warnTrustProxyMisconfigured("trust proxy misconfigured: missing LESSER_HOST_INSTANCE_KEY/LESSER_HOST_INSTANCE_KEY_ARN", zap.String("upstream_path", target.path))
-		resp, _ := common.RespondConflict(ctx, "trust not configured: missing instance key (set LESSER_HOST_INSTANCE_KEY_ARN or LESSER_HOST_INSTANCE_KEY)")
+		h.warnTrustProxyMisconfigured("trust proxy misconfigured: missing instance key", zap.String("upstream_path", target.path))
+		resp, _ := common.RespondConflict(ctx, "trust not configured: missing instance key secret ARN (or legacy LESSER_HOST_INSTANCE_KEY)")
 		return "", resp
 	}
 	return key, nil
@@ -430,7 +595,7 @@ func rewriteURLsInJSON(v *any) bool {
 func (h *Handler) HandleTrustCreateLinkPreviewLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodPost,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/previews",
 		requiredScope:       auth.ScopeWrite,
 		useInstanceAuth:     true,
@@ -446,7 +611,7 @@ func (h *Handler) HandleTrustGetLinkPreviewLift(ctx *apptheory.Context) (*appthe
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/previews/" + url.PathEscape(id),
 		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     true,
@@ -463,7 +628,7 @@ func (h *Handler) HandleTrustGetLinkPreviewImageLift(ctx *apptheory.Context) (*a
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/previews/images/" + url.PathEscape(imageID),
 		accept:              "*/*",
 		requiredScope:       "",
@@ -476,7 +641,7 @@ func (h *Handler) HandleTrustGetLinkPreviewImageLift(ctx *apptheory.Context) (*a
 func (h *Handler) HandleTrustCreatePublishJobLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodPost,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/publish/jobs",
 		requiredScope:       auth.ScopeWrite,
 		useInstanceAuth:     true,
@@ -492,7 +657,7 @@ func (h *Handler) HandleTrustGetPublishJobLift(ctx *apptheory.Context) (*apptheo
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/publish/jobs/" + url.PathEscape(jobID),
 		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     true,
@@ -504,7 +669,7 @@ func (h *Handler) HandleTrustGetPublishJobLift(ctx *apptheory.Context) (*apptheo
 func (h *Handler) HandleTrustCreateRenderLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodPost,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/renders",
 		requiredScope:       auth.ScopeWrite,
 		useInstanceAuth:     true,
@@ -520,7 +685,7 @@ func (h *Handler) HandleTrustGetRenderLift(ctx *apptheory.Context) (*apptheory.R
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/renders/" + url.PathEscape(renderID),
 		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     true,
@@ -537,7 +702,7 @@ func (h *Handler) HandleTrustGetRenderThumbnailLift(ctx *apptheory.Context) (*ap
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/renders/" + url.PathEscape(renderID) + "/thumbnail",
 		accept:              "*/*",
 		requiredScope:       "",
@@ -554,7 +719,7 @@ func (h *Handler) HandleTrustGetRenderSnapshotLift(ctx *apptheory.Context) (*app
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/renders/" + url.PathEscape(renderID) + "/snapshot",
 		accept:              "*/*",
 		requiredScope:       auth.ScopeRead,
@@ -567,7 +732,7 @@ func (h *Handler) HandleTrustGetRenderSnapshotLift(ctx *apptheory.Context) (*app
 func (h *Handler) HandleTrustAIClaimVerifyLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodPost,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/ai/claims/verify",
 		requiredScope:       auth.ScopeWrite,
 		useInstanceAuth:     true,
@@ -583,7 +748,7 @@ func (h *Handler) HandleTrustGetAIJobLift(ctx *apptheory.Context) (*apptheory.Re
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostTrustBaseURL(),
+		baseURL:             h.effectiveLesserHostTrustBaseURL(ctx.Context()),
 		path:                "/api/v1/ai/jobs/" + url.PathEscape(jobID),
 		requiredScope:       auth.ScopeRead,
 		useInstanceAuth:     true,
@@ -595,7 +760,7 @@ func (h *Handler) HandleTrustGetAIJobLift(ctx *apptheory.Context) (*apptheory.Re
 func (h *Handler) HandleTrustJWKSJSONLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostAttestationsBaseURL(),
+		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/.well-known/jwks.json",
 		requiredScope:       "",
 		useInstanceAuth:     false,
@@ -607,7 +772,7 @@ func (h *Handler) HandleTrustJWKSJSONLift(ctx *apptheory.Context) (*apptheory.Re
 func (h *Handler) HandleTrustLookupAttestationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostAttestationsBaseURL(),
+		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/attestations",
 		requiredScope:       "",
 		useInstanceAuth:     false,
@@ -623,7 +788,7 @@ func (h *Handler) HandleTrustGetAttestationLift(ctx *apptheory.Context) (*appthe
 	}
 	return h.proxyToLesserHost(ctx, lesserHostProxyTarget{
 		method:              http.MethodGet,
-		baseURL:             h.lesserHostAttestationsBaseURL(),
+		baseURL:             h.effectiveLesserHostAttestationsBaseURL(ctx.Context()),
 		path:                "/attestations/" + url.PathEscape(id),
 		requiredScope:       "",
 		useInstanceAuth:     false,

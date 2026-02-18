@@ -92,6 +92,28 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *apptheory.Context) (*apptheor
 		})
 	}
 
+	if h.repos != nil && h.repos.Instance() != nil {
+		exists, err := h.repos.Instance().AIConfigExists(ctx.Context())
+		if err != nil {
+			return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "failed to resolve AI configuration",
+			})
+		}
+		if exists {
+			effectiveAI, err := h.repos.Instance().EffectiveAIConfig(ctx.Context())
+			if err != nil {
+				return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "failed to resolve AI configuration",
+				})
+			}
+			if effectiveAI != nil && !effectiveAI.AIEnabled {
+				return apptheory.JSON(http.StatusUnprocessableEntity, map[string]string{
+					"error": "AI analysis is not enabled on this instance",
+				})
+			}
+		}
+	}
+
 	var req struct {
 		ObjectID   string `json:"object_id"`
 		ObjectType string `json:"object_type"`

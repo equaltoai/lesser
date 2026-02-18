@@ -47,7 +47,7 @@ var newTranslationService translationServiceFactory = func(ctx context.Context, 
 // HandleTranslateStatusLift handles POST /api/v1/statuses/:id/translate
 func (h *Handler) HandleTranslateStatusLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check if translation is enabled
-	if !h.isTranslationEnabled() {
+	if !h.isTranslationEnabled(ctx.Context()) {
 		return common.RespondUnprocessableEntity(ctx, "translation service is not enabled")
 	}
 
@@ -89,8 +89,28 @@ func (h *Handler) HandleTranslateStatusLift(ctx *apptheory.Context) (*apptheory.
 }
 
 // isTranslationEnabled checks if translation service is enabled
-func (h *Handler) isTranslationEnabled() bool {
-	return h.cfg.TranslationEnabled
+func (h *Handler) isTranslationEnabled(ctx context.Context) bool {
+	legacyEnabled := h != nil && h.cfg != nil && h.cfg.TranslationEnabled
+	if h == nil || h.repos == nil {
+		return legacyEnabled
+	}
+
+	exists, err := h.repos.Instance().TranslationConfigExists(ctx)
+	if err != nil {
+		h.logger.Warn("failed to check persisted translation config; falling back to legacy config", zap.Error(err))
+		return legacyEnabled
+	}
+	if !exists {
+		h.warnLegacyTranslationConfig()
+		return legacyEnabled
+	}
+
+	enabled, err := h.repos.Instance().EffectiveTranslationEnabled(ctx)
+	if err != nil {
+		h.logger.Warn("failed to resolve effective translation config; falling back to legacy config", zap.Error(err))
+		return legacyEnabled
+	}
+	return enabled
 }
 
 // getTranslationStatusID gets and validates the status ID
@@ -298,8 +318,7 @@ func (h *Handler) translateSpoilerText(ctx *apptheory.Context, svc translationSe
 // HandleGetTranslationLanguagesLift handles GET /api/v1/instance/translation_languages
 func (h *Handler) HandleGetTranslationLanguagesLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Check if translation is enabled
-	translationEnabled := h.cfg.TranslationEnabled
-	if !translationEnabled {
+	if !h.isTranslationEnabled(ctx.Context()) {
 		return common.RespondUnprocessableEntity(ctx, "translation service is not enabled")
 	}
 

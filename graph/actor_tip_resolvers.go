@@ -6,8 +6,85 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
 )
+
+type resolvedTipsConfig struct {
+	enabled         bool
+	chainID         int
+	contractAddress string
+}
+
+func (r *actorResolver) effectiveTipsConfig(ctx context.Context) resolvedTipsConfig {
+	if r == nil || r.Config == nil {
+		return resolvedTipsConfig{}
+	}
+
+	out := resolvedTipsConfig{
+		enabled:         r.Config.TipEnabled,
+		chainID:         r.Config.TipChainID,
+		contractAddress: strings.TrimSpace(r.Config.TipContractAddress),
+	}
+
+	if r.Storage == nil || r.Storage.Instance() == nil {
+		return out
+	}
+
+	exists, err := r.Storage.Instance().TipsConfigExists(ctx)
+	if err != nil || !exists {
+		return out
+	}
+
+	effective, err := r.Storage.Instance().EffectiveTipsConfig(ctx)
+	if err != nil || effective == nil {
+		return out
+	}
+
+	out.enabled = effective.Enabled
+	out.chainID = effective.ChainID
+	out.contractAddress = strings.TrimSpace(effective.ContractAddress)
+	return out
+}
+
+func (r *actorResolver) actorIDLocalToInstance(id string) bool {
+	if id == "" || !strings.Contains(id, "://") {
+		return true
+	}
+
+	parsed, err := neturl.Parse(id)
+	if err != nil || parsed.Host == "" {
+		return true
+	}
+
+	return r != nil && r.Config != nil && strings.EqualFold(parsed.Host, r.Config.Domain)
+}
+
+func bestEthereumWalletAddress(wallets []*storage.WalletCredential) string {
+	var bestAddress string
+	var bestLastUsed int64
+
+	for _, w := range wallets {
+		if w == nil {
+			continue
+		}
+		if w.Type != "" && w.Type != "ethereum" {
+			continue
+		}
+		addr := strings.TrimSpace(w.Address)
+		if addr == "" {
+			continue
+		}
+
+		lastUsed := w.LastUsed.UnixNano()
+		if bestAddress == "" || lastUsed > bestLastUsed {
+			bestAddress = addr
+			bestLastUsed = lastUsed
+		}
+	}
+
+	return bestAddress
+}
 
 func (r *actorResolver) TipAddress(ctx context.Context, obj *activitypub.Actor) (*string, error) {
 	if obj == nil || r.Config == nil || r.Storage == nil || r.Storage.Account() == nil {
@@ -15,16 +92,14 @@ func (r *actorResolver) TipAddress(ctx context.Context, obj *activitypub.Actor) 
 	}
 
 	// Tips are instance-scoped: only expose a tip recipient when tipping is configured/enabled.
-	if !r.Config.TipEnabled || r.Config.TipChainID == 0 || strings.TrimSpace(r.Config.TipContractAddress) == "" {
+	config := r.effectiveTipsConfig(ctx)
+	if !config.enabled || config.chainID == 0 || config.contractAddress == "" {
 		return nil, nil
 	}
 
 	// Only local actors have instance-managed tip recipients.
-	if obj.ID != "" && strings.Contains(obj.ID, "://") {
-		parsed, err := neturl.Parse(obj.ID)
-		if err == nil && parsed.Host != "" && !strings.EqualFold(parsed.Host, r.Config.Domain) {
-			return nil, nil
-		}
+	if !r.actorIDLocalToInstance(obj.ID) {
+		return nil, nil
 	}
 
 	username := strings.TrimSpace(obj.PreferredUsername)
@@ -42,39 +117,23 @@ func (r *actorResolver) TipAddress(ctx context.Context, obj *activitypub.Actor) 
 		return nil, nil
 	}
 
-	var bestAddress string
-	var bestLastUsed int64
-	for _, w := range wallets {
-		if w == nil {
-			continue
-		}
-		if w.Type != "" && w.Type != "ethereum" {
-			continue
-		}
-		addr := strings.TrimSpace(w.Address)
-		if addr == "" {
-			continue
-		}
-		lastUsed := w.LastUsed.UnixNano()
-		if bestAddress == "" || lastUsed > bestLastUsed {
-			bestAddress = addr
-			bestLastUsed = lastUsed
-		}
-	}
-
+	bestAddress := bestEthereumWalletAddress(wallets)
 	if bestAddress == "" {
 		return nil, nil
 	}
 	return &bestAddress, nil
 }
 
-func (r *actorResolver) TipChainID(_ context.Context, _ *activitypub.Actor) (*int, error) {
+func (r *actorResolver) TipChainID(ctx context.Context, _ *activitypub.Actor) (*int, error) {
 	if r.Config == nil {
 		return nil, nil
 	}
-	if !r.Config.TipEnabled || r.Config.TipChainID == 0 || strings.TrimSpace(r.Config.TipContractAddress) == "" {
+
+	config := r.effectiveTipsConfig(ctx)
+	if !config.enabled || config.chainID == 0 || config.contractAddress == "" {
 		return nil, nil
 	}
-	chainID := r.Config.TipChainID
-	return &chainID, nil
+
+	cid := config.chainID
+	return &cid, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/equaltoai/lesser/graph"
@@ -39,6 +40,10 @@ type Handler struct {
 	commonBusinessLogic *common.BusinessLogicService
 	activityPubLogic    *common.ActivityPubBusinessLogic
 	mastodonLogic       *common.MastodonBusinessLogic
+
+	legacyTrustConfigWarnOnce       sync.Once
+	legacyTranslationConfigWarnOnce sync.Once
+	legacyTipsConfigWarnOnce        sync.Once
 }
 
 // streamingEventEmitter adapts streaming.StreamQueueService to common.EventEmitter interface

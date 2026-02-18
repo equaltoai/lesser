@@ -1,6 +1,9 @@
 # Configuration Reference
 
-Lesser runtime configuration is primarily managed through environment variables (loaded via `pkg/config`).
+Lesser runtime configuration is managed through:
+
+- **Baseline environment variables** (injected by CDK; loaded via `pkg/config`)
+- **Instance-owned configuration** persisted in DynamoDB for feature switches that must survive redeploys
 
 - **Deployed stacks**: `lesser up` deploys CDK stacks that inject required environment variables into Lambda.
 - **Local development**: run `./lesser dev init` to create `.env`, then `./lesser dev`.
@@ -14,6 +17,43 @@ Lesser runtime configuration is primarily managed through environment variables 
 - `--aws-profile <profile>`
 
 If a bootstrap mnemonic is generated on first deploy, `--out <path>` is required to persist it locally.
+
+## Instance-owned configuration (persistent)
+
+Certain feature flags and integration URLs are stored in DynamoDB under `PK="INSTANCE#CONFIG"` so they do **not**
+silently disappear when a deploy runner omits an env var.
+
+Well-known config records:
+
+- `SK="TRUST_CONFIG"`: replaces `LESSER_HOST_URL`, `LESSER_HOST_ATTESTATIONS_URL`, `LESSER_HOST_INSTANCE_KEY_ARN`
+- `SK="TRANSLATION_CONFIG"`: replaces `TRANSLATION_ENABLED`
+- `SK="TIPS_CONFIG"`: replaces `TIP_ENABLED`, `TIP_CHAIN_ID`, `TIP_CONTRACT_ADDRESS`
+- `SK="AI_CONFIG"`: AI feature gating and defaults
+
+### Precedence model
+
+Effective values resolve as:
+
+1. `override` (set by instance operator/admin)
+2. `managed` (set by provisioning/deploy tooling)
+3. built-in defaults
+
+Managed updates must never clobber overrides.
+
+### Provisioning and updates
+
+- `lesser up --provisioning-input` writes **managed defaults** into the instance table after deploy (merge-safe; missing
+  inputs do not clear existing managed fields).
+- If `--provisioning-input` is not provided, legacy env vars may seed managed defaults once (deprecated). The API also
+  attempts a best-effort one-time migration from env vars on cold start when records are missing.
+
+### Deprecated env vars (bootstrap/migration only)
+
+These env vars are still read as a temporary bootstrap path, but should not be relied on in production:
+
+- `LESSER_HOST_URL`, `LESSER_HOST_ATTESTATIONS_URL`, `LESSER_HOST_INSTANCE_KEY_ARN` (do not persist plaintext `LESSER_HOST_INSTANCE_KEY`)
+- `TRANSLATION_ENABLED`
+- `TIP_ENABLED`, `TIP_CHAIN_ID`, `TIP_CONTRACT_ADDRESS`
 
 ## Runtime Environment Variables
 

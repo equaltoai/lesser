@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"os"
@@ -9,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (h *Handler) instanceTrustConfig() map[string]any {
+func (h *Handler) instanceTrustConfig(ctx context.Context) map[string]any {
 	trust := map[string]any{
 		"enabled": false,
 	}
@@ -18,9 +19,42 @@ func (h *Handler) instanceTrustConfig() map[string]any {
 		return trust
 	}
 
-	baseURL, ok := resolveExplicitLesserHostTrustBaseURL()
-	if !ok {
+	exists, err := h.repos.Instance().TrustConfigExists(ctx)
+	if err != nil {
+		h.logger.Warn("failed to check persisted trust config; disabling trust in instance config", zap.Error(err))
 		return trust
+	}
+
+	var (
+		baseURL           string
+		trustProxyEnabled bool
+	)
+
+	if exists {
+		effective, err := h.repos.Instance().EffectiveTrustConfig(ctx)
+		if err != nil {
+			h.logger.Warn("failed to resolve effective trust config; disabling trust in instance config", zap.Error(err))
+			return trust
+		}
+
+		baseURL = effective.AttestationsBaseURL
+		trustProxyEnabled = effective.TrustProxyEnabled
+	} else {
+		h.warnLegacyTrustConfig()
+
+		var ok bool
+		baseURL, ok = resolveExplicitLesserHostTrustBaseURL()
+		if !ok {
+			return trust
+		}
+
+		if strings.TrimSpace(h.cfg.LesserHostInstanceKey) == "" {
+			h.logger.Warn("trust config missing instance key; disabling trust in instance config",
+				zap.String("lesser_host_url", baseURL),
+			)
+			return trust
+		}
+		trustProxyEnabled = true
 	}
 
 	if err := validateTrustBaseURL(baseURL); err != nil {
@@ -31,8 +65,8 @@ func (h *Handler) instanceTrustConfig() map[string]any {
 		return trust
 	}
 
-	if strings.TrimSpace(h.cfg.LesserHostInstanceKey) == "" {
-		h.logger.Warn("trust config missing instance key; disabling trust in instance config",
+	if !trustProxyEnabled {
+		h.logger.Warn("trust config missing instance key secret ARN; disabling trust in instance config",
 			zap.String("lesser_host_url", baseURL),
 		)
 		return trust

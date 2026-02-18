@@ -603,8 +603,7 @@ func (h *Handler) setNotificationPaginationHeader(ctx *apptheory.Context, cursor
 func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
-	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context())
-	locked := stateErr != nil || state.Locked
+	locked := h.instanceLocked(ctx.Context())
 
 	// Log configuration values
 	h.logger.Info("HandleGetInstanceV2Lift called",
@@ -614,46 +613,17 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 		zap.String("instanceConfig.Version", instanceConfig.Version),
 	)
 
-	// Get rules from storage
-	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context())
-	if err != nil {
-		h.logger.Warn("failed to get instance rules", zap.Error(err))
-		rules = []storage.InstanceRule{}
-	}
+	rules := h.instanceRules(ctx.Context())
 
-	// Get VAPID public key
-	var vapidPublicKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
-	if err != nil {
-		// Check if we're in production mode
-		env := h.cfg.Stage
-		if env == "production" || env == "prod" {
-			// In production, VAPID keys are required for push notifications
-			h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
-			return common.RespondInternalServerError(ctx, "VAPID keys not configured - push notifications unavailable")
-		}
-
-		// In non-production, auto-generate VAPID keys if they don't exist
-		h.logger.Info("VAPID keys not found in non-production environment, generating new keys")
-		vapidKeys, err = h.generateAndStoreVAPIDKeys(ctx.Context())
-		if err != nil {
-			h.logger.Error("failed to generate VAPID keys", zap.Error(err))
-			// Return empty vapid key to disable push notifications
-			vapidPublicKey = ""
-		} else {
-			vapidPublicKey = vapidKeys.PublicKey
-		}
-	} else {
-		vapidPublicKey = vapidKeys.PublicKey
+	vapidPublicKey, vapidResp, err := h.resolveVAPIDPublicKey(ctx, true)
+	if vapidResp != nil || err != nil {
+		return vapidResp, err
 	}
 
 	// Convert rules for API response
-	apiRules := make([]models.Rule, len(rules))
-	for i, rule := range rules {
-		apiRules[i] = models.Rule{ID: rule.ID, Text: rule.Text}
-	}
+	apiRules := instanceRulesToAPIRules(rules)
 
-	resp := models.InstanceV2Response{
+	instanceResp := models.InstanceV2Response{
 		Domain:      h.cfg.Domain,
 		Title:       instanceConfig.Title,
 		Version:     instanceConfig.Version,
@@ -711,35 +681,10 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 				"max_expiration":            2629746,
 			},
 			"translation": map[string]any{
-				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
+				"enabled": h.isTranslationEnabled(ctx.Context()),
 			},
-			"trust": h.instanceTrustConfig(),
-			"tips": func() map[string]any {
-				enabled := false
-				chainID := 0
-				contractAddress := ""
-				if h.cfg != nil {
-					enabled = h.cfg.TipEnabled
-					chainID = h.cfg.TipChainID
-					contractAddress = strings.TrimSpace(h.cfg.TipContractAddress)
-				}
-
-				if enabled && (chainID == 0 || contractAddress == "") {
-					h.logger.Warn("tips enabled but missing chain ID or contract address; disabling tips in instance config",
-						zap.Int("chain_id", chainID),
-						zap.String("contract_address", contractAddress))
-					enabled = false
-				}
-
-				out := map[string]any{
-					"enabled": enabled,
-				}
-				if enabled {
-					out["chain_id"] = chainID
-					out["contract_address"] = contractAddress
-				}
-				return out
-			}(),
+			"trust":              h.instanceTrustConfig(ctx.Context()),
+			"tips":               h.instanceTipsConfig(ctx.Context()),
 			"limited_federation": false,
 		},
 		Registrations: map[string]any{
@@ -761,12 +706,20 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 
 	// Log the response to debug
 	h.logger.Info("HandleGetInstanceV2Lift response",
-		zap.String("domain", resp.Domain),
-		zap.String("title", resp.Title),
-		zap.String("version", resp.Version),
+		zap.String("domain", instanceResp.Domain),
+		zap.String("title", instanceResp.Title),
+		zap.String("version", instanceResp.Version),
 	)
 
-	return okJSON(resp)
+	return okJSON(instanceResp)
+}
+
+func instanceRulesToAPIRules(rules []storage.InstanceRule) []models.Rule {
+	apiRules := make([]models.Rule, len(rules))
+	for i, rule := range rules {
+		apiRules[i] = models.Rule{ID: rule.ID, Text: rule.Text}
+	}
+	return apiRules
 }
 
 // HandleGetNotificationLift handles GET /api/v1/notifications/:id

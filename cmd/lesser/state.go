@@ -33,6 +33,17 @@ type integrationReceipt struct {
 	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
 	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
 	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
+
+	TipEnabled         *bool  `json:"tip_enabled,omitempty"`
+	TipChainID         *int   `json:"tip_chain_id,omitempty"`
+	TipContractAddress string `json:"tip_contract_address,omitempty"`
+
+	AIEnabled                 *bool `json:"ai_enabled,omitempty"`
+	AIModerationEnabled       *bool `json:"ai_moderation_enabled,omitempty"`
+	AINsfwDetectionEnabled    *bool `json:"ai_nsfw_detection_enabled,omitempty"`
+	AISpamDetectionEnabled    *bool `json:"ai_spam_detection_enabled,omitempty"`
+	AIPiiDetectionEnabled     *bool `json:"ai_pii_detection_enabled,omitempty"`
+	AIContentDetectionEnabled *bool `json:"ai_content_detection_enabled,omitempty"`
 }
 
 type hostedZoneReceipt struct {

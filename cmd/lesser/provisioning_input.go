@@ -24,6 +24,17 @@ type managedProvisioningInput struct {
 	LesserHostAttestationsURL string `json:"lesser_host_attestations_url,omitempty"`
 	LesserHostInstanceKeyARN  string `json:"lesser_host_instance_key_arn,omitempty"`
 	TranslationEnabled        *bool  `json:"translation_enabled,omitempty"`
+
+	TipEnabled         *bool  `json:"tip_enabled,omitempty"`
+	TipChainID         *int   `json:"tip_chain_id,omitempty"`
+	TipContractAddress string `json:"tip_contract_address,omitempty"`
+
+	AIEnabled                 *bool `json:"ai_enabled,omitempty"`
+	AIModerationEnabled       *bool `json:"ai_moderation_enabled,omitempty"`
+	AINsfwDetectionEnabled    *bool `json:"ai_nsfw_detection_enabled,omitempty"`
+	AISpamDetectionEnabled    *bool `json:"ai_spam_detection_enabled,omitempty"`
+	AIPiiDetectionEnabled     *bool `json:"ai_pii_detection_enabled,omitempty"`
+	AIContentDetectionEnabled *bool `json:"ai_content_detection_enabled,omitempty"`
 }
 
 func readManagedProvisioningInput(path string) (managedProvisioningInput, error) {
@@ -49,8 +60,8 @@ func readManagedProvisioningInput(path string) (managedProvisioningInput, error)
 	if in.Schema == 0 {
 		in.Schema = 1
 	}
-	if in.Schema != 1 {
-		return managedProvisioningInput{}, fmt.Errorf("unsupported managed provisioning input schema %d (expected 1)", in.Schema)
+	if in.Schema != 1 && in.Schema != 2 {
+		return managedProvisioningInput{}, fmt.Errorf("unsupported managed provisioning input schema %d (expected 1 or 2)", in.Schema)
 	}
 
 	in.Slug = strings.TrimSpace(in.Slug)
@@ -62,6 +73,7 @@ func readManagedProvisioningInput(path string) (managedProvisioningInput, error)
 	in.LesserHostURL = strings.TrimRight(strings.TrimSpace(in.LesserHostURL), "/")
 	in.LesserHostAttestationsURL = strings.TrimRight(strings.TrimSpace(in.LesserHostAttestationsURL), "/")
 	in.LesserHostInstanceKeyARN = strings.TrimSpace(in.LesserHostInstanceKeyARN)
+	in.TipContractAddress = strings.TrimSpace(in.TipContractAddress)
 	if in.AdminUsername == "" {
 		in.AdminUsername = in.Slug
 	}

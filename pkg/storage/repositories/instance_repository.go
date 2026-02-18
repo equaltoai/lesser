@@ -27,10 +27,18 @@ type InstanceRepository struct {
 	activityRepo *BaseRepository[*models.WeeklyActivity]
 	stateRepo    *BaseRepository[*models.InstanceState]
 	agentRepo    *BaseRepository[*models.AgentInstanceConfig]
+	trustRepo    *BaseRepository[*models.InstanceTrustConfig]
+	translationRepo *BaseRepository[*models.InstanceTranslationConfig]
+	tipsRepo     *BaseRepository[*models.InstanceTipsConfig]
+	aiConfigRepo *BaseRepository[*models.AIInstanceConfig]
 	logger       *zap.Logger
 
 	stateCache instanceStateCache
 	agentCache agentInstanceConfigCache
+	trustCache instanceTrustConfigCache
+	translationCache instanceTranslationConfigCache
+	tipsCache instanceTipsConfigCache
+	aiConfigCache aiInstanceConfigCache
 }
 
 type instanceStateCache struct {
@@ -48,6 +56,32 @@ type agentInstanceConfigCache struct {
 }
 
 const agentConfigCacheTTL = 5 * time.Second
+
+type instanceTrustConfigCache struct {
+	mu        sync.RWMutex
+	cfg       *models.InstanceTrustConfig
+	expiresAt time.Time
+}
+
+type instanceTranslationConfigCache struct {
+	mu        sync.RWMutex
+	cfg       *models.InstanceTranslationConfig
+	expiresAt time.Time
+}
+
+type instanceTipsConfigCache struct {
+	mu        sync.RWMutex
+	cfg       *models.InstanceTipsConfig
+	expiresAt time.Time
+}
+
+type aiInstanceConfigCache struct {
+	mu        sync.RWMutex
+	cfg       *models.AIInstanceConfig
+	expiresAt time.Time
+}
+
+const instanceFeatureConfigCacheTTL = 5 * time.Second
 
 // NewInstanceRepository creates a new instance repository with enhanced functionality
 func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceRepository {
@@ -67,6 +101,10 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 		activityRepo:           NewBaseRepository[*models.WeeklyActivity](db, tableName, logger),
 		stateRepo:              NewBaseRepository[*models.InstanceState](db, tableName, logger),
 		agentRepo:              NewBaseRepository[*models.AgentInstanceConfig](db, tableName, logger),
+		trustRepo:              NewBaseRepository[*models.InstanceTrustConfig](db, tableName, logger),
+		translationRepo:        NewBaseRepository[*models.InstanceTranslationConfig](db, tableName, logger),
+		tipsRepo:               NewBaseRepository[*models.InstanceTipsConfig](db, tableName, logger),
+		aiConfigRepo:           NewBaseRepository[*models.AIInstanceConfig](db, tableName, logger),
 		logger:                 logger,
 	}
 }
@@ -89,6 +127,10 @@ func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger 
 		activityRepo:           NewBaseRepositoryWithCostTracking[*models.WeeklyActivity](db, tableName, logger, costService, "instance_activity"),
 		stateRepo:              NewBaseRepositoryWithCostTracking[*models.InstanceState](db, tableName, logger, costService, "instance_state"),
 		agentRepo:              NewBaseRepositoryWithCostTracking[*models.AgentInstanceConfig](db, tableName, logger, costService, "agent_instance_config"),
+		trustRepo:              NewBaseRepositoryWithCostTracking[*models.InstanceTrustConfig](db, tableName, logger, costService, "instance_trust_config"),
+		translationRepo:        NewBaseRepositoryWithCostTracking[*models.InstanceTranslationConfig](db, tableName, logger, costService, "instance_translation_config"),
+		tipsRepo:               NewBaseRepositoryWithCostTracking[*models.InstanceTipsConfig](db, tableName, logger, costService, "instance_tips_config"),
+		aiConfigRepo:           NewBaseRepositoryWithCostTracking[*models.AIInstanceConfig](db, tableName, logger, costService, "instance_ai_config"),
 		logger:                 logger,
 	}
 }

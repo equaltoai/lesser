@@ -111,6 +111,41 @@ type AddFilterKeywordInput struct {
 	WholeWord *bool  `json:"wholeWord,omitempty"`
 }
 
+type AdminAIConfig struct {
+	RecordExists bool                        `json:"recordExists"`
+	UpdatedAt    Time                        `json:"updatedAt"`
+	Managed      *AdminAIConfigLayer         `json:"managed"`
+	Override     *AdminAIConfigLayerOverride `json:"override,omitempty"`
+	Effective    *AdminAIConfigLayer         `json:"effective"`
+}
+
+type AdminAIConfigLayer struct {
+	AiEnabled            bool `json:"aiEnabled"`
+	ModerationEnabled    bool `json:"moderationEnabled"`
+	NsfwDetectionEnabled bool `json:"nsfwDetectionEnabled"`
+	SpamDetectionEnabled bool `json:"spamDetectionEnabled"`
+	PiiDetectionEnabled  bool `json:"piiDetectionEnabled"`
+	AiContentDetection   bool `json:"aiContentDetection"`
+}
+
+type AdminAIConfigLayerOverride struct {
+	AiEnabled            *bool `json:"aiEnabled,omitempty"`
+	ModerationEnabled    *bool `json:"moderationEnabled,omitempty"`
+	NsfwDetectionEnabled *bool `json:"nsfwDetectionEnabled,omitempty"`
+	SpamDetectionEnabled *bool `json:"spamDetectionEnabled,omitempty"`
+	PiiDetectionEnabled  *bool `json:"piiDetectionEnabled,omitempty"`
+	AiContentDetection   *bool `json:"aiContentDetection,omitempty"`
+}
+
+type AdminAIConfigPatchInput struct {
+	AiEnabled            *bool `json:"aiEnabled,omitempty"`
+	ModerationEnabled    *bool `json:"moderationEnabled,omitempty"`
+	NsfwDetectionEnabled *bool `json:"nsfwDetectionEnabled,omitempty"`
+	SpamDetectionEnabled *bool `json:"spamDetectionEnabled,omitempty"`
+	PiiDetectionEnabled  *bool `json:"piiDetectionEnabled,omitempty"`
+	AiContentDetection   *bool `json:"aiContentDetection,omitempty"`
+}
+
 type AdminAccount struct {
 	ID                   string             `json:"id"`
 	Username             string             `json:"username"`
@@ -222,6 +257,14 @@ type AdminDomainBlockUpdateInput struct {
 	Obfuscate      *bool   `json:"obfuscate,omitempty"`
 }
 
+type AdminEffectiveTrustConfig struct {
+	BaseURL                   string `json:"baseUrl"`
+	AttestationsURL           string `json:"attestationsUrl"`
+	InstanceKeySecretArn      string `json:"instanceKeySecretArn"`
+	TrustProxyEnabled         bool   `json:"trustProxyEnabled"`
+	PublicAttestationsEnabled bool   `json:"publicAttestationsEnabled"`
+}
+
 type AdminEmailDomainBlock struct {
 	ID        string `json:"id"`
 	Domain    string `json:"domain"`
@@ -271,6 +314,13 @@ type AdminFederationStatisticsTimeRange struct {
 type AdminIP struct {
 	IP     string `json:"ip"`
 	UsedAt Time   `json:"usedAt"`
+}
+
+type AdminInstanceConfig struct {
+	Trust       *AdminTrustConfig       `json:"trust"`
+	Translation *AdminTranslationConfig `json:"translation"`
+	Tips        *AdminTipsConfig        `json:"tips"`
+	Ai          *AdminAIConfig          `json:"ai"`
 }
 
 type AdminModerationEvent struct {
@@ -375,6 +425,70 @@ type AdminStatusFilter struct {
 	Sensitive  *bool   `json:"sensitive,omitempty"`
 	MinDate    *Time   `json:"minDate,omitempty"`
 	MaxDate    *Time   `json:"maxDate,omitempty"`
+}
+
+type AdminTipsConfig struct {
+	RecordExists bool                          `json:"recordExists"`
+	UpdatedAt    Time                          `json:"updatedAt"`
+	Managed      *AdminTipsConfigLayer         `json:"managed"`
+	Override     *AdminTipsConfigLayerOverride `json:"override,omitempty"`
+	Effective    *TipsConfig                   `json:"effective"`
+}
+
+type AdminTipsConfigLayer struct {
+	Enabled         bool   `json:"enabled"`
+	ChainID         int    `json:"chainId"`
+	ContractAddress string `json:"contractAddress"`
+}
+
+type AdminTipsConfigLayerOverride struct {
+	Enabled         *bool   `json:"enabled,omitempty"`
+	ChainID         *int    `json:"chainId,omitempty"`
+	ContractAddress *string `json:"contractAddress,omitempty"`
+}
+
+type AdminTipsConfigPatchInput struct {
+	Enabled         *bool   `json:"enabled,omitempty"`
+	ChainID         *int    `json:"chainId,omitempty"`
+	ContractAddress *string `json:"contractAddress,omitempty"`
+}
+
+type AdminTranslationConfig struct {
+	RecordExists     bool  `json:"recordExists"`
+	UpdatedAt        Time  `json:"updatedAt"`
+	ManagedEnabled   bool  `json:"managedEnabled"`
+	OverrideEnabled  *bool `json:"overrideEnabled,omitempty"`
+	EffectiveEnabled bool  `json:"effectiveEnabled"`
+}
+
+type AdminTranslationConfigPatchInput struct {
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+type AdminTrustConfig struct {
+	RecordExists bool                           `json:"recordExists"`
+	UpdatedAt    Time                           `json:"updatedAt"`
+	Managed      *AdminTrustConfigLayer         `json:"managed"`
+	Override     *AdminTrustConfigLayerOverride `json:"override,omitempty"`
+	Effective    *AdminEffectiveTrustConfig     `json:"effective"`
+}
+
+type AdminTrustConfigLayer struct {
+	BaseURL              string `json:"baseUrl"`
+	AttestationsURL      string `json:"attestationsUrl"`
+	InstanceKeySecretArn string `json:"instanceKeySecretArn"`
+}
+
+type AdminTrustConfigLayerOverride struct {
+	BaseURL              *string `json:"baseUrl,omitempty"`
+	AttestationsURL      *string `json:"attestationsUrl,omitempty"`
+	InstanceKeySecretArn *string `json:"instanceKeySecretArn,omitempty"`
+}
+
+type AdminTrustConfigPatchInput struct {
+	BaseURL              *string `json:"baseUrl,omitempty"`
+	AttestationsURL      *string `json:"attestationsUrl,omitempty"`
+	InstanceKeySecretArn *string `json:"instanceKeySecretArn,omitempty"`
 }
 
 type AdminTrustGraph struct {
@@ -2427,6 +2541,20 @@ type UpdateAdminAgentPolicyInput struct {
 	HybridRetrievalMaxCandidates   int      `json:"hybridRetrievalMaxCandidates"`
 }
 
+type UpdateAdminInstanceManagedDefaultsInput struct {
+	Trust       *AdminTrustConfigPatchInput       `json:"trust,omitempty"`
+	Translation *AdminTranslationConfigPatchInput `json:"translation,omitempty"`
+	Tips        *AdminTipsConfigPatchInput        `json:"tips,omitempty"`
+	Ai          *AdminAIConfigPatchInput          `json:"ai,omitempty"`
+}
+
+type UpdateAdminInstanceOverridesInput struct {
+	Trust       *AdminTrustConfigPatchInput       `json:"trust,omitempty"`
+	Translation *AdminTranslationConfigPatchInput `json:"translation,omitempty"`
+	Tips        *AdminTipsConfigPatchInput        `json:"tips,omitempty"`
+	Ai          *AdminAIConfigPatchInput          `json:"ai,omitempty"`
+}
+
 type UpdateAgentInput struct {
 	DisplayName       *string                 `json:"displayName,omitempty"`
 	Bio               *string                 `json:"bio,omitempty"`
@@ -2550,6 +2678,11 @@ type UserPreferences struct {
 	Notifications *NotificationPreferences `json:"notifications"`
 	Privacy       *PrivacyPreferences      `json:"privacy"`
 	ReblogFilters []*ReblogFilter          `json:"reblogFilters"`
+}
+
+type ViewerRole struct {
+	Role    string `json:"role"`
+	IsAdmin bool   `json:"isAdmin"`
 }
 
 type Vouch struct {
@@ -3822,6 +3955,65 @@ func (e *InfrastructureEventType) UnmarshalJSON(b []byte) error {
 }
 
 func (e InfrastructureEventType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type InstanceConfigFeature string
+
+const (
+	InstanceConfigFeatureTrust       InstanceConfigFeature = "TRUST"
+	InstanceConfigFeatureTranslation InstanceConfigFeature = "TRANSLATION"
+	InstanceConfigFeatureTips        InstanceConfigFeature = "TIPS"
+	InstanceConfigFeatureAi          InstanceConfigFeature = "AI"
+)
+
+var AllInstanceConfigFeature = []InstanceConfigFeature{
+	InstanceConfigFeatureTrust,
+	InstanceConfigFeatureTranslation,
+	InstanceConfigFeatureTips,
+	InstanceConfigFeatureAi,
+}
+
+func (e InstanceConfigFeature) IsValid() bool {
+	switch e {
+	case InstanceConfigFeatureTrust, InstanceConfigFeatureTranslation, InstanceConfigFeatureTips, InstanceConfigFeatureAi:
+		return true
+	}
+	return false
+}
+
+func (e InstanceConfigFeature) String() string {
+	return string(e)
+}
+
+func (e *InstanceConfigFeature) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = InstanceConfigFeature(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid InstanceConfigFeature", str)
+	}
+	return nil
+}
+
+func (e InstanceConfigFeature) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *InstanceConfigFeature) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e InstanceConfigFeature) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

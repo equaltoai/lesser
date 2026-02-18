@@ -95,7 +95,11 @@ func TestParseUpArgs(t *testing.T) {
   "admin_username": "app",
   "lesser_host_url": "https://lab.lesser.host",
   "lesser_host_instance_key_arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey",
-  "translation_enabled": true
+  "translation_enabled": true,
+  "tip_enabled": true,
+  "tip_chain_id": 10,
+  "tip_contract_address": "0xabc",
+  "ai_enabled": true
 }
 `), 0o600))
 
@@ -112,6 +116,13 @@ func TestParseUpArgs(t *testing.T) {
 		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", args.LesserHostInstanceKeyARN)
 		require.NotNil(t, args.TranslationEnabled)
 		require.True(t, *args.TranslationEnabled)
+		require.NotNil(t, args.TipEnabled)
+		require.True(t, *args.TipEnabled)
+		require.NotNil(t, args.TipChainID)
+		require.Equal(t, 10, *args.TipChainID)
+		require.Equal(t, "0xabc", args.TipContractAddress)
+		require.NotNil(t, args.AIEnabled)
+		require.True(t, *args.AIEnabled)
 	})
 
 	t.Run("rejects reserved wallet via provisioning input", func(t *testing.T) {

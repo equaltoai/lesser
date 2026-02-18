@@ -31,92 +31,19 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 	// Get static config
 	instanceConfig := config.GetInstanceConfig()
 
-	state, stateErr := h.repos.Instance().GetInstanceState(ctx.Context())
-	locked := stateErr != nil || state.Locked
+	locked := h.instanceLocked(ctx.Context())
+	rules := h.instanceRules(ctx.Context())
+	extendedDescription := h.instanceExtendedDescription(ctx.Context())
 
-	// Get rules from storage
-	rules, err := h.repos.Instance().GetInstanceRules(ctx.Context())
-	if err != nil {
-		h.logger.Warn("failed to get instance rules", zap.Error(err))
-		rules = []storage.InstanceRule{}
+	vapidPublicKey, vapidResp, err := h.resolveVAPIDPublicKey(ctx, false)
+	if vapidResp != nil || err != nil {
+		return vapidResp, err
 	}
 
-	// Get extended description
-	extendedDescription, _, err := h.repos.Instance().GetExtendedDescription(ctx.Context())
-	if err != nil {
-		h.logger.Warn("failed to get extended description", zap.Error(err))
-		extendedDescription = ""
-	}
+	userCount, statusCount, domainCount := h.instanceCounts(ctx.Context())
+	contactAccount := h.instanceContactAccount(ctx.Context())
 
-	// Get VAPID public key
-	var vapidPublicKey string
-	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context())
-	if err != nil {
-		// Check if we're in production mode
-		env := h.cfg.Stage
-		if env == EnvProduction || env == EnvProd {
-			// In production, VAPID keys are required for push notifications
-			h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
-			return common.RespondInternalServerError(ctx, "VAPID keys not configured - push notifications unavailable")
-		}
-
-		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
-		vapidPublicKey = ""
-	} else {
-		vapidPublicKey = vapidKeys.PublicKey
-	}
-
-	// Get real instance metrics
-	userCount, err := h.repos.Analytics().GetTotalUserCount(ctx.Context())
-	if err != nil {
-		h.logger.Warn("failed to get user count", zap.Error(err))
-		userCount = 0
-	}
-
-	statusCount, err := h.repos.Instance().GetTotalStatusCount(ctx.Context())
-	if err != nil {
-		h.logger.Warn("failed to get status count", zap.Error(err))
-		statusCount = 0
-	}
-
-	domainCount, err := h.repos.Instance().GetTotalDomainCount(ctx.Context())
-	if err != nil {
-		h.logger.Warn("failed to get domain count", zap.Error(err))
-		domainCount = 0
-	}
-
-	// Get contact account (admin)
-	var contactAccount map[string]any
-	adminActor, err := h.repos.Instance().GetContactAccount(ctx.Context())
-	if err != nil {
-		h.logger.Warn("failed to get contact account", zap.Error(err))
-	} else if adminActor != nil {
-		contactAccount = map[string]any{
-			"id":              adminActor.ID,
-			"username":        adminActor.Username,
-			"acct":            adminActor.Username,
-			"display_name":    adminActor.DisplayName,
-			"locked":          false, // Default to false as ActorRecord doesn't have this field
-			"bot":             false, // Default to false as ActorRecord doesn't have Bot field
-			"discoverable":    true,  // Default to true as ActorRecord doesn't have this field
-			"group":           adminActor.ActorType == actorTypeGroup,
-			"created_at":      adminActor.CreatedAt.Format(time.RFC3339),
-			"note":            "", // ActorRecord doesn't have summary
-			"url":             fmt.Sprintf("https://%s/@%s", h.cfg.Domain, adminActor.Username),
-			"uri":             adminActor.ID,
-			"avatar":          adminActor.Avatar,
-			"avatar_static":   adminActor.Avatar,
-			"header":          "", // ActorRecord doesn't have header
-			"header_static":   "", // ActorRecord doesn't have header
-			"followers_count": h.getAccountFollowersCountLift(ctx.Context(), adminActor.Username),
-			"following_count": h.getAccountFollowingCountLift(ctx.Context(), adminActor.Username),
-			"statuses_count":  h.getAccountStatusesCountLift(ctx.Context(), adminActor.Username),
-			"emojis":          []any{},
-			"fields":          []any{}, // ActorRecord doesn't have fields
-		}
-	}
-
-	resp := apimodels.InstanceV1Response{
+	instanceResp := apimodels.InstanceV1Response{
 		URI:              h.cfg.Domain,
 		Title:            instanceConfig.Title,
 		ShortDescription: instanceConfig.ShortDescription,
@@ -161,34 +88,10 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 				"min_expiration":            300,
 				"max_expiration":            2629746,
 			},
-			"tips": func() map[string]any {
-				enabled := false
-				chainID := 0
-				contractAddress := ""
-				if h.cfg != nil {
-					enabled = h.cfg.TipEnabled
-					chainID = h.cfg.TipChainID
-					contractAddress = strings.TrimSpace(h.cfg.TipContractAddress)
-				}
-
-				if enabled && (chainID == 0 || contractAddress == "") {
-					h.logger.Warn("tips enabled but missing chain ID or contract address; disabling tips in instance config",
-						zap.Int("chain_id", chainID),
-						zap.String("contract_address", contractAddress))
-					enabled = false
-				}
-
-				out := map[string]any{
-					"enabled": enabled,
-				}
-				if enabled {
-					out["chain_id"] = chainID
-					out["contract_address"] = contractAddress
-				}
-				return out
-			}(),
+			"trust": h.instanceTrustConfig(ctx.Context()),
+			"tips":  h.instanceTipsConfig(ctx.Context()),
 			"translation": map[string]any{
-				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
+				"enabled": h.isTranslationEnabled(ctx.Context()),
 			},
 		},
 		ExtendedDescription: extendedDescription,
@@ -196,7 +99,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 		Rules:               rules,
 	}
 
-	return okJSON(resp)
+	return okJSON(instanceResp)
 }
 
 // HandleGetInstancePeersLift returns connected domains (federation peers)

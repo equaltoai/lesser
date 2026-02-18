@@ -303,6 +303,9 @@ func initializeAPISpecificServices() {
 
 	// Create API handler for all endpoints
 	apiHandler = newAPIHandler(cfg, repos, logger, streamQueue)
+	if apiHandler != nil {
+		apiHandler.MigrateInstanceFeatureConfigFromEnv(context.Background())
+	}
 
 	logger.Info("initialized API-specific services")
 }

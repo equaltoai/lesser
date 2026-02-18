@@ -70,14 +70,40 @@ type AIInstanceConfig struct {
 	PK string `theorydb:"pk,attr:PK" json:"-"` // INSTANCE#CONFIG
 	SK string `theorydb:"sk,attr:SK" json:"-"` // AI_CONFIG
 
-	// AI Configuration
-	AIEnabled            bool      `theorydb:"attr:aiEnabled" json:"ai_enabled"`
-	ModerationEnabled    bool      `theorydb:"attr:moderationEnabled" json:"moderation_enabled"`
-	NSFWDetectionEnabled bool      `theorydb:"attr:nsfwDetectionEnabled" json:"nsfw_detection_enabled"`
-	SpamDetectionEnabled bool      `theorydb:"attr:spamDetectionEnabled" json:"spam_detection_enabled"`
-	PIIDetectionEnabled  bool      `theorydb:"attr:piiDetectionEnabled" json:"pii_detection_enabled"`
-	AIContentDetection   bool      `theorydb:"attr:aiContentDetection" json:"ai_content_detection_enabled"`
-	UpdatedAt            time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+	Managed  *AIInstanceConfigManaged  `theorydb:"attr:managed" json:"managed"`
+	Override *AIInstanceConfigOverride `theorydb:"attr:override,omitempty" json:"override,omitempty"`
+
+	// Legacy flat attributes (read-only).
+	// These are preserved for backwards compatibility when reading older records.
+	LegacyAIEnabled            bool `theorydb:"attr:aiEnabled" json:"-"`
+	LegacyModerationEnabled    bool `theorydb:"attr:moderationEnabled" json:"-"`
+	LegacyNSFWDetectionEnabled bool `theorydb:"attr:nsfwDetectionEnabled" json:"-"`
+	LegacySpamDetectionEnabled bool `theorydb:"attr:spamDetectionEnabled" json:"-"`
+	LegacyPIIDetectionEnabled  bool `theorydb:"attr:piiDetectionEnabled" json:"-"`
+	LegacyAIContentDetection   bool `theorydb:"attr:aiContentDetection" json:"-"`
+
+	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
+}
+
+// AIInstanceConfigManaged stores managed/default AI configuration values for an instance.
+type AIInstanceConfigManaged struct {
+	AIEnabled            bool `theorydb:"attr:aiEnabled" json:"ai_enabled"`
+	ModerationEnabled    bool `theorydb:"attr:moderationEnabled" json:"moderation_enabled"`
+	NSFWDetectionEnabled bool `theorydb:"attr:nsfwDetectionEnabled" json:"nsfw_detection_enabled"`
+	SpamDetectionEnabled bool `theorydb:"attr:spamDetectionEnabled" json:"spam_detection_enabled"`
+	PIIDetectionEnabled  bool `theorydb:"attr:piiDetectionEnabled" json:"pii_detection_enabled"`
+	AIContentDetection   bool `theorydb:"attr:aiContentDetection" json:"ai_content_detection_enabled"`
+}
+
+// AIInstanceConfigOverride stores operator overrides for AI configuration values.
+// Nil fields mean "no override".
+type AIInstanceConfigOverride struct {
+	AIEnabled            *bool `theorydb:"attr:aiEnabled,omitempty" json:"ai_enabled,omitempty"`
+	ModerationEnabled    *bool `theorydb:"attr:moderationEnabled,omitempty" json:"moderation_enabled,omitempty"`
+	NSFWDetectionEnabled *bool `theorydb:"attr:nsfwDetectionEnabled,omitempty" json:"nsfw_detection_enabled,omitempty"`
+	SpamDetectionEnabled *bool `theorydb:"attr:spamDetectionEnabled,omitempty" json:"spam_detection_enabled,omitempty"`
+	PIIDetectionEnabled  *bool `theorydb:"attr:piiDetectionEnabled,omitempty" json:"pii_detection_enabled,omitempty"`
+	AIContentDetection   *bool `theorydb:"attr:aiContentDetection,omitempty" json:"ai_content_detection_enabled,omitempty"`
 }
 
 // TableName returns the DynamoDB table backing AIInstanceConfig.
@@ -88,7 +114,10 @@ func (AIInstanceConfig) TableName() string {
 // UpdateKeys updates the DynamoDB keys
 func (c *AIInstanceConfig) UpdateKeys() error {
 	c.PK = instanceConfigPK
-	c.SK = "AI_CONFIG"
+	c.SK = SKAIConfig
+	if c.Managed == nil {
+		c.Managed = &AIInstanceConfigManaged{}
+	}
 	return nil
 }
 
@@ -105,14 +134,17 @@ func (c *AIInstanceConfig) GetSK() string {
 // NewAIInstanceConfig creates a new AI config with defaults
 func NewAIInstanceConfig() *AIInstanceConfig {
 	return &AIInstanceConfig{
-		PK:                   instanceConfigPK,
-		SK:                   "AI_CONFIG",
-		AIEnabled:            true,  // Default to enabled
-		ModerationEnabled:    true,  // Default to enabled
-		NSFWDetectionEnabled: true,  // Default to enabled
-		SpamDetectionEnabled: true,  // Default to enabled
-		PIIDetectionEnabled:  false, // Default to disabled (privacy)
-		AIContentDetection:   false, // Default to disabled
-		UpdatedAt:            time.Now(),
+		PK: instanceConfigPK,
+		SK: SKAIConfig,
+		Managed: &AIInstanceConfigManaged{
+			AIEnabled:            true,  // Default to enabled
+			ModerationEnabled:    true,  // Default to enabled
+			NSFWDetectionEnabled: true,  // Default to enabled
+			SpamDetectionEnabled: true,  // Default to enabled
+			PIIDetectionEnabled:  false, // Default to disabled (privacy)
+			AIContentDetection:   false, // Default to disabled
+		},
+		Override:  nil,
+		UpdatedAt: time.Now(),
 	}
 }

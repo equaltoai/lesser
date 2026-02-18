@@ -875,9 +875,10 @@ func TestInstanceConfig_TimelineEntry_InstanceMetrics_Article_Activity(t *testin
 		assert.Equal(t, "desc", desc.ExtendedDescription)
 
 		ai := NewAIInstanceConfig()
-		assert.True(t, ai.AIEnabled)
-		assert.True(t, ai.ModerationEnabled)
-		assert.False(t, ai.PIIDetectionEnabled)
+		require.NotNil(t, ai.Managed)
+		assert.True(t, ai.Managed.AIEnabled)
+		assert.True(t, ai.Managed.ModerationEnabled)
+		assert.False(t, ai.Managed.PIIDetectionEnabled)
 		require.NoError(t, ai.UpdateKeys())
 		assert.Equal(t, instanceConfigPK, ai.PK)
 		assert.Equal(t, "AI_CONFIG", ai.SK)

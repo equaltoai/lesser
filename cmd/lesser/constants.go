@@ -13,4 +13,5 @@ const (
 
 	flagTrue  = "true"
 	flagFalse = "false"
+	flagYes   = "yes"
 )
