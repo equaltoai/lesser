@@ -469,6 +469,9 @@ extend type Query {
   adminReport(id: ID!): AdminReport
   adminStatuses(filter: AdminStatusFilter, first: Int = 20, after: Cursor): AdminStatusConnection!
   adminStatus(id: ID!): Object
+
+  # Instance-owned configuration (admin)
+  adminInstanceConfig: AdminInstanceConfig!
 }
 
 # Phase 3 Mutation Extensions
@@ -494,6 +497,146 @@ extend type Mutation {
   adminReportAction(id: ID!, action: AdminReportAction!): AdminReport!
   adminDeleteStatus(id: ID!): Boolean!
   adminSetStatusSensitive(id: ID!, sensitive: Boolean!): Object!
+
+  # Instance-owned configuration (admin)
+  updateAdminInstanceManagedDefaults(input: UpdateAdminInstanceManagedDefaultsInput!): AdminInstanceConfig!
+  updateAdminInstanceOverrides(input: UpdateAdminInstanceOverridesInput!): AdminInstanceConfig!
+  clearAdminInstanceOverrides(features: [InstanceConfigFeature!]!): AdminInstanceConfig!
+}
+
+enum InstanceConfigFeature {
+  TRUST
+  TRANSLATION
+  TIPS
+  AI
+}
+
+type AdminInstanceConfig {
+  trust: AdminTrustConfig!
+  translation: AdminTranslationConfig!
+  tips: AdminTipsConfig!
+  ai: AdminAIConfig!
+}
+
+type AdminTrustConfigLayer {
+  baseUrl: String!
+  attestationsUrl: String!
+  instanceKeySecretArn: String!
+}
+
+type AdminTrustConfigLayerOverride {
+  baseUrl: String
+  attestationsUrl: String
+  instanceKeySecretArn: String
+}
+
+type AdminEffectiveTrustConfig {
+  baseUrl: String!
+  attestationsUrl: String!
+  instanceKeySecretArn: String!
+  trustProxyEnabled: Boolean!
+  publicAttestationsEnabled: Boolean!
+}
+
+type AdminTrustConfig {
+  recordExists: Boolean!
+  updatedAt: Time!
+  managed: AdminTrustConfigLayer!
+  override: AdminTrustConfigLayerOverride
+  effective: AdminEffectiveTrustConfig!
+}
+
+type AdminTranslationConfig {
+  recordExists: Boolean!
+  updatedAt: Time!
+  managedEnabled: Boolean!
+  overrideEnabled: Boolean
+  effectiveEnabled: Boolean!
+}
+
+type AdminTipsConfigLayer {
+  enabled: Boolean!
+  chainId: Int!
+  contractAddress: String!
+}
+
+type AdminTipsConfigLayerOverride {
+  enabled: Boolean
+  chainId: Int
+  contractAddress: String
+}
+
+type AdminTipsConfig {
+  recordExists: Boolean!
+  updatedAt: Time!
+  managed: AdminTipsConfigLayer!
+  override: AdminTipsConfigLayerOverride
+  effective: TipsConfig!
+}
+
+type AdminAIConfigLayer {
+  aiEnabled: Boolean!
+  moderationEnabled: Boolean!
+  nsfwDetectionEnabled: Boolean!
+  spamDetectionEnabled: Boolean!
+  piiDetectionEnabled: Boolean!
+  aiContentDetection: Boolean!
+}
+
+type AdminAIConfigLayerOverride {
+  aiEnabled: Boolean
+  moderationEnabled: Boolean
+  nsfwDetectionEnabled: Boolean
+  spamDetectionEnabled: Boolean
+  piiDetectionEnabled: Boolean
+  aiContentDetection: Boolean
+}
+
+type AdminAIConfig {
+  recordExists: Boolean!
+  updatedAt: Time!
+  managed: AdminAIConfigLayer!
+  override: AdminAIConfigLayerOverride
+  effective: AdminAIConfigLayer!
+}
+
+input AdminTrustConfigPatchInput {
+  baseUrl: String
+  attestationsUrl: String
+  instanceKeySecretArn: String
+}
+
+input AdminTranslationConfigPatchInput {
+  enabled: Boolean
+}
+
+input AdminTipsConfigPatchInput {
+  enabled: Boolean
+  chainId: Int
+  contractAddress: String
+}
+
+input AdminAIConfigPatchInput {
+  aiEnabled: Boolean
+  moderationEnabled: Boolean
+  nsfwDetectionEnabled: Boolean
+  spamDetectionEnabled: Boolean
+  piiDetectionEnabled: Boolean
+  aiContentDetection: Boolean
+}
+
+input UpdateAdminInstanceManagedDefaultsInput {
+  trust: AdminTrustConfigPatchInput
+  translation: AdminTranslationConfigPatchInput
+  tips: AdminTipsConfigPatchInput
+  ai: AdminAIConfigPatchInput
+}
+
+input UpdateAdminInstanceOverridesInput {
+  trust: AdminTrustConfigPatchInput
+  translation: AdminTranslationConfigPatchInput
+  tips: AdminTipsConfigPatchInput
+  ai: AdminAIConfigPatchInput
 }
 
 # Phase 3 Subscription Extensions

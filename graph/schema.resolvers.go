@@ -1883,6 +1883,25 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 		return nil, err
 	}
 
+	if r.Storage == nil || r.Storage.Instance() == nil {
+		return nil, ErrStorageUnavailable
+	}
+
+	exists, err := r.Storage.Instance().AIConfigExists(ctx)
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to resolve AI configuration"), err)
+	}
+
+	if exists {
+		effectiveAI, err := r.Storage.Instance().EffectiveAIConfig(ctx)
+		if err != nil {
+			return nil, errors.Join(errors.New("failed to resolve AI configuration"), err)
+		}
+		if effectiveAI != nil && !effectiveAI.AIEnabled {
+			return nil, apperrors.NewAppError(apperrors.CodeUnprocessableEntity, apperrors.CategoryAPI, "AI analysis is not enabled on this instance")
+		}
+	}
+
 	// Get AI service from registry
 	aiSvc := r.Registry.AI()
 	if aiSvc == nil {

@@ -194,6 +194,32 @@ type ComplexityRoot struct {
 		TotalCount func(childComplexity int) int
 	}
 
+	AdminAIConfig struct {
+		Effective    func(childComplexity int) int
+		Managed      func(childComplexity int) int
+		Override     func(childComplexity int) int
+		RecordExists func(childComplexity int) int
+		UpdatedAt    func(childComplexity int) int
+	}
+
+	AdminAIConfigLayer struct {
+		AiContentDetection   func(childComplexity int) int
+		AiEnabled            func(childComplexity int) int
+		ModerationEnabled    func(childComplexity int) int
+		NsfwDetectionEnabled func(childComplexity int) int
+		PiiDetectionEnabled  func(childComplexity int) int
+		SpamDetectionEnabled func(childComplexity int) int
+	}
+
+	AdminAIConfigLayerOverride struct {
+		AiContentDetection   func(childComplexity int) int
+		AiEnabled            func(childComplexity int) int
+		ModerationEnabled    func(childComplexity int) int
+		NsfwDetectionEnabled func(childComplexity int) int
+		PiiDetectionEnabled  func(childComplexity int) int
+		SpamDetectionEnabled func(childComplexity int) int
+	}
+
 	AdminAccount struct {
 		Actor                func(childComplexity int) int
 		Approved             func(childComplexity int) int
@@ -264,6 +290,14 @@ type ComplexityRoot struct {
 		NextCursor func(childComplexity int) int
 	}
 
+	AdminEffectiveTrustConfig struct {
+		AttestationsURL           func(childComplexity int) int
+		BaseURL                   func(childComplexity int) int
+		InstanceKeySecretArn      func(childComplexity int) int
+		PublicAttestationsEnabled func(childComplexity int) int
+		TrustProxyEnabled         func(childComplexity int) int
+	}
+
 	AdminEmailDomainBlock struct {
 		CreatedAt func(childComplexity int) int
 		Domain    func(childComplexity int) int
@@ -313,6 +347,13 @@ type ComplexityRoot struct {
 	AdminIP struct {
 		IP     func(childComplexity int) int
 		UsedAt func(childComplexity int) int
+	}
+
+	AdminInstanceConfig struct {
+		Ai          func(childComplexity int) int
+		Tips        func(childComplexity int) int
+		Translation func(childComplexity int) int
+		Trust       func(childComplexity int) int
 	}
 
 	AdminModerationEvent struct {
@@ -390,6 +431,54 @@ type ComplexityRoot struct {
 	AdminStatusConnection struct {
 		NextCursor func(childComplexity int) int
 		Statuses   func(childComplexity int) int
+	}
+
+	AdminTipsConfig struct {
+		Effective    func(childComplexity int) int
+		Managed      func(childComplexity int) int
+		Override     func(childComplexity int) int
+		RecordExists func(childComplexity int) int
+		UpdatedAt    func(childComplexity int) int
+	}
+
+	AdminTipsConfigLayer struct {
+		ChainID         func(childComplexity int) int
+		ContractAddress func(childComplexity int) int
+		Enabled         func(childComplexity int) int
+	}
+
+	AdminTipsConfigLayerOverride struct {
+		ChainID         func(childComplexity int) int
+		ContractAddress func(childComplexity int) int
+		Enabled         func(childComplexity int) int
+	}
+
+	AdminTranslationConfig struct {
+		EffectiveEnabled func(childComplexity int) int
+		ManagedEnabled   func(childComplexity int) int
+		OverrideEnabled  func(childComplexity int) int
+		RecordExists     func(childComplexity int) int
+		UpdatedAt        func(childComplexity int) int
+	}
+
+	AdminTrustConfig struct {
+		Effective    func(childComplexity int) int
+		Managed      func(childComplexity int) int
+		Override     func(childComplexity int) int
+		RecordExists func(childComplexity int) int
+		UpdatedAt    func(childComplexity int) int
+	}
+
+	AdminTrustConfigLayer struct {
+		AttestationsURL      func(childComplexity int) int
+		BaseURL              func(childComplexity int) int
+		InstanceKeySecretArn func(childComplexity int) int
+	}
+
+	AdminTrustConfigLayerOverride struct {
+		AttestationsURL      func(childComplexity int) int
+		BaseURL              func(childComplexity int) int
+		InstanceKeySecretArn func(childComplexity int) int
 	}
 
 	AdminTrustGraph struct {
@@ -1594,159 +1683,162 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AcceptFollowRequest           func(childComplexity int, accountID string) int
-		AcknowledgeSeverance          func(childComplexity int, id string) int
-		AddAccountsToList             func(childComplexity int, id string, accountIds []string) int
-		AddAnnouncementReaction       func(childComplexity int, id string, name string) int
-		AddArticleToCategory          func(childComplexity int, categoryID string, articleID string) int
-		AddArticleToSeries            func(childComplexity int, seriesID string, articleID string, order *int) int
-		AddCommunityNote              func(childComplexity int, input model.CommunityNoteInput) int
-		AddDomainBlock                func(childComplexity int, domain string) int
-		AddFilterKeyword              func(childComplexity int, filterID string, input model.AddFilterKeywordInput) int
-		AddFilterStatus               func(childComplexity int, filterID string, statusID string) int
-		AdminAccountAction            func(childComplexity int, input model.AdminAccountActionInput) int
-		AdminCreateAnnouncement       func(childComplexity int, input model.AdminCreateAnnouncementInput) int
-		AdminCreateDomainAllow        func(childComplexity int, domain string) int
-		AdminCreateDomainBlock        func(childComplexity int, input model.AdminDomainBlockCreateInput) int
-		AdminCreateEmailDomainBlock   func(childComplexity int, domain string) int
-		AdminCreateUser               func(childComplexity int, input model.AdminCreateUserInput) int
-		AdminDeleteDomainAllow        func(childComplexity int, id string) int
-		AdminDeleteDomainBlock        func(childComplexity int, id string) int
-		AdminDeleteEmailDomainBlock   func(childComplexity int, id string) int
-		AdminDeleteStatus             func(childComplexity int, id string) int
-		AdminDemoteReviewer           func(childComplexity int, id string) int
-		AdminOverrideModerationEvent  func(childComplexity int, input model.AdminModerationEventOverrideInput) int
-		AdminPromoteReviewer          func(childComplexity int, id string) int
-		AdminReportAction             func(childComplexity int, id string, action model.AdminReportAction) int
-		AdminSetStatusSensitive       func(childComplexity int, id string, sensitive bool) int
-		AdminSuspendAgent             func(childComplexity int, username string) int
-		AdminUnverifyAgent            func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
-		AdminUpdateDomainBlock        func(childComplexity int, id string, input model.AdminDomainBlockUpdateInput) int
-		AdminUpdateTrust              func(childComplexity int, input model.AdminUpdateTrustInput) int
-		AdminVerifyAgent              func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
-		AttemptReconnection           func(childComplexity int, id string) int
-		AutosaveDraft                 func(childComplexity int, id string, content string) int
-		BlockActor                    func(childComplexity int, id string) int
-		BookmarkObject                func(childComplexity int, id string) int
-		CancelImport                  func(childComplexity int, id string) int
-		CancelScheduledDraft          func(childComplexity int, id string) int
-		CancelScheduledStatus         func(childComplexity int, id string) int
-		ClearNotifications            func(childComplexity int) int
-		CreateArticle                 func(childComplexity int, input model.CreateArticleInput) int
-		CreateCategory                func(childComplexity int, input model.CreateCategoryInput) int
-		CreateDraft                   func(childComplexity int, input model.CreateDraftInput) int
-		CreateEmoji                   func(childComplexity int, input model.CreateEmojiInput) int
-		CreateExport                  func(childComplexity int, input model.CreateExportInput) int
-		CreateFilter                  func(childComplexity int, input model.CreateFilterInput) int
-		CreateImport                  func(childComplexity int, input model.CreateImportInput) int
-		CreateList                    func(childComplexity int, input model.CreateListInput) int
-		CreateModerationPattern       func(childComplexity int, input model.ModerationPatternInput) int
-		CreateNote                    func(childComplexity int, input model.CreateNoteInput) int
-		CreatePublication             func(childComplexity int, input model.CreatePublicationInput) int
-		CreateQuoteNote               func(childComplexity int, input model.CreateQuoteNoteInput) int
-		CreateReport                  func(childComplexity int, input model.CreateReportInput) int
-		CreateSeries                  func(childComplexity int, input model.CreateSeriesInput) int
-		CreateVouch                   func(childComplexity int, input model.CreateVouchInput) int
-		DelegateToAgent               func(childComplexity int, input model.DelegateToAgentInput) int
-		DeleteAgent                   func(childComplexity int, username string) int
-		DeleteArticle                 func(childComplexity int, id string) int
-		DeleteCategory                func(childComplexity int, id string) int
-		DeleteConversation            func(childComplexity int, id string) int
-		DeleteDraft                   func(childComplexity int, id string) int
-		DeleteEmoji                   func(childComplexity int, shortcode string) int
-		DeleteFilter                  func(childComplexity int, id string) int
-		DeleteFilterKeyword           func(childComplexity int, filterID string, keywordID string) int
-		DeleteFilterStatus            func(childComplexity int, filterID string, filterStatusID string) int
-		DeleteList                    func(childComplexity int, id string) int
-		DeleteModerationPattern       func(childComplexity int, id string) int
-		DeleteObject                  func(childComplexity int, id string) int
-		DeletePushSubscription        func(childComplexity int) int
-		DeleteSeries                  func(childComplexity int, id string) int
-		DismissAnnouncement           func(childComplexity int, id string) int
-		DismissNotification           func(childComplexity int, id string) int
-		ExportReputation              func(childComplexity int) int
-		FlagObject                    func(childComplexity int, input model.FlagInput) int
-		FollowActor                   func(childComplexity int, id string) int
-		FollowHashtag                 func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
-		ImportReputation              func(childComplexity int, document string) int
-		InvitePublicationMember       func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
-		LikeObject                    func(childComplexity int, id string) int
-		MarkConversationAsRead        func(childComplexity int, id string) int
-		MarkNotificationGroupAsRead   func(childComplexity int, groupID string) int
-		MuteActor                     func(childComplexity int, id string, notifications *bool) int
-		MuteHashtag                   func(childComplexity int, hashtag string, until *model.Time) int
-		MuteStatus                    func(childComplexity int, id string, durationSeconds *int) int
-		OptimizeFederationCosts       func(childComplexity int, threshold float64) int
-		PauseFederation               func(childComplexity int, domain string, reason string, until *model.Time) int
-		PinObject                     func(childComplexity int, id string) int
-		PreloadMedia                  func(childComplexity int, mediaIds []string) int
-		PublishDraft                  func(childComplexity int, id string) int
-		RegisterAccount               func(childComplexity int, input model.RegisterAccountInput) int
-		RegisterAgent                 func(childComplexity int, input model.RegisterAgentInput) int
-		RegisterPushSubscription      func(childComplexity int, input model.RegisterPushSubscriptionInput) int
-		RejectFollowRequest           func(childComplexity int, accountID string) int
-		RemoveAccountsFromList        func(childComplexity int, id string, accountIds []string) int
-		RemoveAnnouncementReaction    func(childComplexity int, id string, name string) int
-		RemoveArticleFromCategory     func(childComplexity int, categoryID string, articleID string) int
-		RemoveArticleFromSeries       func(childComplexity int, seriesID string, articleID string) int
-		RemoveDomainBlock             func(childComplexity int, domain string) int
-		RemovePublicationMember       func(childComplexity int, publicationID string, userID string) int
-		ReorderSeriesArticles         func(childComplexity int, seriesID string, articleIds []string) int
-		ReportStreamingQuality        func(childComplexity int, input model.StreamingQualityInput) int
-		RequestAIAnalysis             func(childComplexity int, objectID string, objectType *string, force *bool) int
-		RequestStreamingURL           func(childComplexity int, mediaID string, quality *model.StreamQuality) int
-		RestoreRevision               func(childComplexity int, objectID string, version int) int
-		ResumeFederation              func(childComplexity int, domain string) int
-		RevokeAgentToken              func(childComplexity int, username string) int
-		RevokeVouch                   func(childComplexity int, id string) int
-		SaveMarkers                   func(childComplexity int, input []*model.SaveMarkerInput) int
-		ScheduleDraft                 func(childComplexity int, id string, scheduledAt model.Time) int
-		ScheduleStatus                func(childComplexity int, input model.ScheduleStatusInput) int
-		SetFederationLimit            func(childComplexity int, domain string, limit model.FederationLimitInput) int
-		SetInstanceBudget             func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
-		ShareObject                   func(childComplexity int, id string) int
-		SubmitModerationReview        func(childComplexity int, input model.ModerationReviewInput) int
-		SyncMissingReplies            func(childComplexity int, noteID string) int
-		SyncThread                    func(childComplexity int, noteURL string, depth *int) int
-		TestFilters                   func(childComplexity int, input model.FilterTestInput) int
-		TrainModerationModel          func(childComplexity int, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) int
-		UnblockActor                  func(childComplexity int, id string) int
-		UnbookmarkObject              func(childComplexity int, id string) int
-		UnfollowActor                 func(childComplexity int, id string) int
-		UnfollowHashtag               func(childComplexity int, hashtag string) int
-		UnlikeObject                  func(childComplexity int, id string) int
-		UnmuteActor                   func(childComplexity int, id string) int
-		UnmuteStatus                  func(childComplexity int, id string) int
-		UnpinObject                   func(childComplexity int, id string) int
-		UnshareObject                 func(childComplexity int, id string) int
-		UpdateAccountQuotePermissions func(childComplexity int, input model.UpdateAccountQuotePermissionsInput) int
-		UpdateAdminAgentPolicy        func(childComplexity int, input model.UpdateAdminAgentPolicyInput) int
-		UpdateAgent                   func(childComplexity int, username string, input model.UpdateAgentInput) int
-		UpdateArticle                 func(childComplexity int, id string, input model.UpdateArticleInput) int
-		UpdateCategory                func(childComplexity int, id string, input model.UpdateCategoryInput) int
-		UpdateDraft                   func(childComplexity int, id string, input model.UpdateDraftInput) int
-		UpdateEmoji                   func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
-		UpdateFilter                  func(childComplexity int, id string, input model.UpdateFilterInput) int
-		UpdateHashtagNotifications    func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
-		UpdateList                    func(childComplexity int, id string, input model.UpdateListInput) int
-		UpdateMedia                   func(childComplexity int, id string, input model.UpdateMediaInput) int
-		UpdateModerationPattern       func(childComplexity int, id string, input model.ModerationPatternInput) int
-		UpdateProfile                 func(childComplexity int, input model.UpdateProfileInput) int
-		UpdatePublication             func(childComplexity int, id string, input model.UpdatePublicationInput) int
-		UpdatePublicationMemberRole   func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
-		UpdatePushSubscription        func(childComplexity int, input model.UpdatePushSubscriptionInput) int
-		UpdateQuotePermissions        func(childComplexity int, noteID string, quoteable bool, permission model.QuotePermission) int
-		UpdateRelationship            func(childComplexity int, id string, input model.UpdateRelationshipInput) int
-		UpdateScheduledStatus         func(childComplexity int, id string, input model.UpdateScheduledStatusInput) int
-		UpdateSeries                  func(childComplexity int, id string, input model.UpdateSeriesInput) int
-		UpdateStatus                  func(childComplexity int, id string, input model.UpdateStatusInput) int
-		UpdateStreamingPreferences    func(childComplexity int, input model.StreamingPreferencesInput) int
-		UpdateTrust                   func(childComplexity int, input model.TrustInput) int
-		UpdateUserPreferences         func(childComplexity int, input model.UpdateUserPreferencesInput) int
-		UploadMedia                   func(childComplexity int, input model.UploadMediaInput) int
-		VerifyReputation              func(childComplexity int, document string) int
-		VoteCommunityNote             func(childComplexity int, id string, helpful bool) int
-		WithdrawFromQuotes            func(childComplexity int, noteID string) int
+		AcceptFollowRequest                func(childComplexity int, accountID string) int
+		AcknowledgeSeverance               func(childComplexity int, id string) int
+		AddAccountsToList                  func(childComplexity int, id string, accountIds []string) int
+		AddAnnouncementReaction            func(childComplexity int, id string, name string) int
+		AddArticleToCategory               func(childComplexity int, categoryID string, articleID string) int
+		AddArticleToSeries                 func(childComplexity int, seriesID string, articleID string, order *int) int
+		AddCommunityNote                   func(childComplexity int, input model.CommunityNoteInput) int
+		AddDomainBlock                     func(childComplexity int, domain string) int
+		AddFilterKeyword                   func(childComplexity int, filterID string, input model.AddFilterKeywordInput) int
+		AddFilterStatus                    func(childComplexity int, filterID string, statusID string) int
+		AdminAccountAction                 func(childComplexity int, input model.AdminAccountActionInput) int
+		AdminCreateAnnouncement            func(childComplexity int, input model.AdminCreateAnnouncementInput) int
+		AdminCreateDomainAllow             func(childComplexity int, domain string) int
+		AdminCreateDomainBlock             func(childComplexity int, input model.AdminDomainBlockCreateInput) int
+		AdminCreateEmailDomainBlock        func(childComplexity int, domain string) int
+		AdminCreateUser                    func(childComplexity int, input model.AdminCreateUserInput) int
+		AdminDeleteDomainAllow             func(childComplexity int, id string) int
+		AdminDeleteDomainBlock             func(childComplexity int, id string) int
+		AdminDeleteEmailDomainBlock        func(childComplexity int, id string) int
+		AdminDeleteStatus                  func(childComplexity int, id string) int
+		AdminDemoteReviewer                func(childComplexity int, id string) int
+		AdminOverrideModerationEvent       func(childComplexity int, input model.AdminModerationEventOverrideInput) int
+		AdminPromoteReviewer               func(childComplexity int, id string) int
+		AdminReportAction                  func(childComplexity int, id string, action model.AdminReportAction) int
+		AdminSetStatusSensitive            func(childComplexity int, id string, sensitive bool) int
+		AdminSuspendAgent                  func(childComplexity int, username string) int
+		AdminUnverifyAgent                 func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
+		AdminUpdateDomainBlock             func(childComplexity int, id string, input model.AdminDomainBlockUpdateInput) int
+		AdminUpdateTrust                   func(childComplexity int, input model.AdminUpdateTrustInput) int
+		AdminVerifyAgent                   func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
+		AttemptReconnection                func(childComplexity int, id string) int
+		AutosaveDraft                      func(childComplexity int, id string, content string) int
+		BlockActor                         func(childComplexity int, id string) int
+		BookmarkObject                     func(childComplexity int, id string) int
+		CancelImport                       func(childComplexity int, id string) int
+		CancelScheduledDraft               func(childComplexity int, id string) int
+		CancelScheduledStatus              func(childComplexity int, id string) int
+		ClearAdminInstanceOverrides        func(childComplexity int, features []model.InstanceConfigFeature) int
+		ClearNotifications                 func(childComplexity int) int
+		CreateArticle                      func(childComplexity int, input model.CreateArticleInput) int
+		CreateCategory                     func(childComplexity int, input model.CreateCategoryInput) int
+		CreateDraft                        func(childComplexity int, input model.CreateDraftInput) int
+		CreateEmoji                        func(childComplexity int, input model.CreateEmojiInput) int
+		CreateExport                       func(childComplexity int, input model.CreateExportInput) int
+		CreateFilter                       func(childComplexity int, input model.CreateFilterInput) int
+		CreateImport                       func(childComplexity int, input model.CreateImportInput) int
+		CreateList                         func(childComplexity int, input model.CreateListInput) int
+		CreateModerationPattern            func(childComplexity int, input model.ModerationPatternInput) int
+		CreateNote                         func(childComplexity int, input model.CreateNoteInput) int
+		CreatePublication                  func(childComplexity int, input model.CreatePublicationInput) int
+		CreateQuoteNote                    func(childComplexity int, input model.CreateQuoteNoteInput) int
+		CreateReport                       func(childComplexity int, input model.CreateReportInput) int
+		CreateSeries                       func(childComplexity int, input model.CreateSeriesInput) int
+		CreateVouch                        func(childComplexity int, input model.CreateVouchInput) int
+		DelegateToAgent                    func(childComplexity int, input model.DelegateToAgentInput) int
+		DeleteAgent                        func(childComplexity int, username string) int
+		DeleteArticle                      func(childComplexity int, id string) int
+		DeleteCategory                     func(childComplexity int, id string) int
+		DeleteConversation                 func(childComplexity int, id string) int
+		DeleteDraft                        func(childComplexity int, id string) int
+		DeleteEmoji                        func(childComplexity int, shortcode string) int
+		DeleteFilter                       func(childComplexity int, id string) int
+		DeleteFilterKeyword                func(childComplexity int, filterID string, keywordID string) int
+		DeleteFilterStatus                 func(childComplexity int, filterID string, filterStatusID string) int
+		DeleteList                         func(childComplexity int, id string) int
+		DeleteModerationPattern            func(childComplexity int, id string) int
+		DeleteObject                       func(childComplexity int, id string) int
+		DeletePushSubscription             func(childComplexity int) int
+		DeleteSeries                       func(childComplexity int, id string) int
+		DismissAnnouncement                func(childComplexity int, id string) int
+		DismissNotification                func(childComplexity int, id string) int
+		ExportReputation                   func(childComplexity int) int
+		FlagObject                         func(childComplexity int, input model.FlagInput) int
+		FollowActor                        func(childComplexity int, id string) int
+		FollowHashtag                      func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
+		ImportReputation                   func(childComplexity int, document string) int
+		InvitePublicationMember            func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
+		LikeObject                         func(childComplexity int, id string) int
+		MarkConversationAsRead             func(childComplexity int, id string) int
+		MarkNotificationGroupAsRead        func(childComplexity int, groupID string) int
+		MuteActor                          func(childComplexity int, id string, notifications *bool) int
+		MuteHashtag                        func(childComplexity int, hashtag string, until *model.Time) int
+		MuteStatus                         func(childComplexity int, id string, durationSeconds *int) int
+		OptimizeFederationCosts            func(childComplexity int, threshold float64) int
+		PauseFederation                    func(childComplexity int, domain string, reason string, until *model.Time) int
+		PinObject                          func(childComplexity int, id string) int
+		PreloadMedia                       func(childComplexity int, mediaIds []string) int
+		PublishDraft                       func(childComplexity int, id string) int
+		RegisterAccount                    func(childComplexity int, input model.RegisterAccountInput) int
+		RegisterAgent                      func(childComplexity int, input model.RegisterAgentInput) int
+		RegisterPushSubscription           func(childComplexity int, input model.RegisterPushSubscriptionInput) int
+		RejectFollowRequest                func(childComplexity int, accountID string) int
+		RemoveAccountsFromList             func(childComplexity int, id string, accountIds []string) int
+		RemoveAnnouncementReaction         func(childComplexity int, id string, name string) int
+		RemoveArticleFromCategory          func(childComplexity int, categoryID string, articleID string) int
+		RemoveArticleFromSeries            func(childComplexity int, seriesID string, articleID string) int
+		RemoveDomainBlock                  func(childComplexity int, domain string) int
+		RemovePublicationMember            func(childComplexity int, publicationID string, userID string) int
+		ReorderSeriesArticles              func(childComplexity int, seriesID string, articleIds []string) int
+		ReportStreamingQuality             func(childComplexity int, input model.StreamingQualityInput) int
+		RequestAIAnalysis                  func(childComplexity int, objectID string, objectType *string, force *bool) int
+		RequestStreamingURL                func(childComplexity int, mediaID string, quality *model.StreamQuality) int
+		RestoreRevision                    func(childComplexity int, objectID string, version int) int
+		ResumeFederation                   func(childComplexity int, domain string) int
+		RevokeAgentToken                   func(childComplexity int, username string) int
+		RevokeVouch                        func(childComplexity int, id string) int
+		SaveMarkers                        func(childComplexity int, input []*model.SaveMarkerInput) int
+		ScheduleDraft                      func(childComplexity int, id string, scheduledAt model.Time) int
+		ScheduleStatus                     func(childComplexity int, input model.ScheduleStatusInput) int
+		SetFederationLimit                 func(childComplexity int, domain string, limit model.FederationLimitInput) int
+		SetInstanceBudget                  func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
+		ShareObject                        func(childComplexity int, id string) int
+		SubmitModerationReview             func(childComplexity int, input model.ModerationReviewInput) int
+		SyncMissingReplies                 func(childComplexity int, noteID string) int
+		SyncThread                         func(childComplexity int, noteURL string, depth *int) int
+		TestFilters                        func(childComplexity int, input model.FilterTestInput) int
+		TrainModerationModel               func(childComplexity int, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) int
+		UnblockActor                       func(childComplexity int, id string) int
+		UnbookmarkObject                   func(childComplexity int, id string) int
+		UnfollowActor                      func(childComplexity int, id string) int
+		UnfollowHashtag                    func(childComplexity int, hashtag string) int
+		UnlikeObject                       func(childComplexity int, id string) int
+		UnmuteActor                        func(childComplexity int, id string) int
+		UnmuteStatus                       func(childComplexity int, id string) int
+		UnpinObject                        func(childComplexity int, id string) int
+		UnshareObject                      func(childComplexity int, id string) int
+		UpdateAccountQuotePermissions      func(childComplexity int, input model.UpdateAccountQuotePermissionsInput) int
+		UpdateAdminAgentPolicy             func(childComplexity int, input model.UpdateAdminAgentPolicyInput) int
+		UpdateAdminInstanceManagedDefaults func(childComplexity int, input model.UpdateAdminInstanceManagedDefaultsInput) int
+		UpdateAdminInstanceOverrides       func(childComplexity int, input model.UpdateAdminInstanceOverridesInput) int
+		UpdateAgent                        func(childComplexity int, username string, input model.UpdateAgentInput) int
+		UpdateArticle                      func(childComplexity int, id string, input model.UpdateArticleInput) int
+		UpdateCategory                     func(childComplexity int, id string, input model.UpdateCategoryInput) int
+		UpdateDraft                        func(childComplexity int, id string, input model.UpdateDraftInput) int
+		UpdateEmoji                        func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
+		UpdateFilter                       func(childComplexity int, id string, input model.UpdateFilterInput) int
+		UpdateHashtagNotifications         func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
+		UpdateList                         func(childComplexity int, id string, input model.UpdateListInput) int
+		UpdateMedia                        func(childComplexity int, id string, input model.UpdateMediaInput) int
+		UpdateModerationPattern            func(childComplexity int, id string, input model.ModerationPatternInput) int
+		UpdateProfile                      func(childComplexity int, input model.UpdateProfileInput) int
+		UpdatePublication                  func(childComplexity int, id string, input model.UpdatePublicationInput) int
+		UpdatePublicationMemberRole        func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
+		UpdatePushSubscription             func(childComplexity int, input model.UpdatePushSubscriptionInput) int
+		UpdateQuotePermissions             func(childComplexity int, noteID string, quoteable bool, permission model.QuotePermission) int
+		UpdateRelationship                 func(childComplexity int, id string, input model.UpdateRelationshipInput) int
+		UpdateScheduledStatus              func(childComplexity int, id string, input model.UpdateScheduledStatusInput) int
+		UpdateSeries                       func(childComplexity int, id string, input model.UpdateSeriesInput) int
+		UpdateStatus                       func(childComplexity int, id string, input model.UpdateStatusInput) int
+		UpdateStreamingPreferences         func(childComplexity int, input model.StreamingPreferencesInput) int
+		UpdateTrust                        func(childComplexity int, input model.TrustInput) int
+		UpdateUserPreferences              func(childComplexity int, input model.UpdateUserPreferencesInput) int
+		UploadMedia                        func(childComplexity int, input model.UploadMediaInput) int
+		VerifyReputation                   func(childComplexity int, document string) int
+		VoteCommunityNote                  func(childComplexity int, id string, helpful bool) int
+		WithdrawFromQuotes                 func(childComplexity int, noteID string) int
 	}
 
 	MuteHashtagPayload struct {
@@ -2030,6 +2122,7 @@ type ComplexityRoot struct {
 		AdminFederationInstance   func(childComplexity int, domain string) int
 		AdminFederationInstances  func(childComplexity int, first *int, after *model.Cursor) int
 		AdminFederationStatistics func(childComplexity int, start *model.Time, end *model.Time) int
+		AdminInstanceConfig       func(childComplexity int) int
 		AdminModerationEvents     func(childComplexity int, filter *model.AdminModerationEventFilter, first *int, after *model.Cursor) int
 		AdminModerationReviewers  func(childComplexity int) int
 		AdminReport               func(childComplexity int, id string) int
@@ -2158,6 +2251,7 @@ type ComplexityRoot struct {
 		TrustGraph                func(childComplexity int, actorID string, category *models.TrustCategory) int
 		UserPreferences           func(childComplexity int) int
 		Viewer                    func(childComplexity int) int
+		ViewerRole                func(childComplexity int) int
 		Vouches                   func(childComplexity int, actorID string) int
 	}
 
@@ -2716,6 +2810,11 @@ type ComplexityRoot struct {
 		Streaming     func(childComplexity int) int
 	}
 
+	ViewerRole struct {
+		IsAdmin func(childComplexity int) int
+		Role    func(childComplexity int) int
+	}
+
 	Vouch struct {
 		Active            func(childComplexity int) int
 		Confidence        func(childComplexity int) int
@@ -2960,6 +3059,9 @@ type MutationResolver interface {
 	AdminReportAction(ctx context.Context, id string, action model.AdminReportAction) (*model.AdminReport, error)
 	AdminDeleteStatus(ctx context.Context, id string) (bool, error)
 	AdminSetStatusSensitive(ctx context.Context, id string, sensitive bool) (*model.Object, error)
+	UpdateAdminInstanceManagedDefaults(ctx context.Context, input model.UpdateAdminInstanceManagedDefaultsInput) (*model.AdminInstanceConfig, error)
+	UpdateAdminInstanceOverrides(ctx context.Context, input model.UpdateAdminInstanceOverridesInput) (*model.AdminInstanceConfig, error)
+	ClearAdminInstanceOverrides(ctx context.Context, features []model.InstanceConfigFeature) (*model.AdminInstanceConfig, error)
 	RegisterAgent(ctx context.Context, input model.RegisterAgentInput) (*model.RegisterAgentPayload, error)
 	UpdateAgent(ctx context.Context, username string, input model.UpdateAgentInput) (*model.Agent, error)
 	DeleteAgent(ctx context.Context, username string) (*model.Agent, error)
@@ -2977,6 +3079,7 @@ type ObjectResolver interface {
 }
 type QueryResolver interface {
 	Viewer(ctx context.Context) (*activitypub.Actor, error)
+	ViewerRole(ctx context.Context) (*model.ViewerRole, error)
 	Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error)
 	Object(ctx context.Context, id string) (*model.Object, error)
 	Timeline(ctx context.Context, typeArg model.TimelineType, hashtag *string, listID *string, actorID *string, first *int, after *model.Cursor, mediaOnly *bool, excludeAgents *bool) (*model.ObjectConnection, error)
@@ -3111,6 +3214,7 @@ type QueryResolver interface {
 	AdminReport(ctx context.Context, id string) (*model.AdminReport, error)
 	AdminStatuses(ctx context.Context, filter *model.AdminStatusFilter, first *int, after *model.Cursor) (*model.AdminStatusConnection, error)
 	AdminStatus(ctx context.Context, id string) (*model.Object, error)
+	AdminInstanceConfig(ctx context.Context) (*model.AdminInstanceConfig, error)
 	Agent(ctx context.Context, username string) (*model.Agent, error)
 	Agents(ctx context.Context, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) (*model.AgentConnection, error)
 	MyAgents(ctx context.Context) ([]*model.Agent, error)
@@ -3796,6 +3900,125 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ActorListPage.TotalCount(childComplexity), true
 
+	case "AdminAIConfig.effective":
+		if e.complexity.AdminAIConfig.Effective == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfig.Effective(childComplexity), true
+
+	case "AdminAIConfig.managed":
+		if e.complexity.AdminAIConfig.Managed == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfig.Managed(childComplexity), true
+
+	case "AdminAIConfig.override":
+		if e.complexity.AdminAIConfig.Override == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfig.Override(childComplexity), true
+
+	case "AdminAIConfig.recordExists":
+		if e.complexity.AdminAIConfig.RecordExists == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfig.RecordExists(childComplexity), true
+
+	case "AdminAIConfig.updatedAt":
+		if e.complexity.AdminAIConfig.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfig.UpdatedAt(childComplexity), true
+
+	case "AdminAIConfigLayer.aiContentDetection":
+		if e.complexity.AdminAIConfigLayer.AiContentDetection == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayer.AiContentDetection(childComplexity), true
+
+	case "AdminAIConfigLayer.aiEnabled":
+		if e.complexity.AdminAIConfigLayer.AiEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayer.AiEnabled(childComplexity), true
+
+	case "AdminAIConfigLayer.moderationEnabled":
+		if e.complexity.AdminAIConfigLayer.ModerationEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayer.ModerationEnabled(childComplexity), true
+
+	case "AdminAIConfigLayer.nsfwDetectionEnabled":
+		if e.complexity.AdminAIConfigLayer.NsfwDetectionEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayer.NsfwDetectionEnabled(childComplexity), true
+
+	case "AdminAIConfigLayer.piiDetectionEnabled":
+		if e.complexity.AdminAIConfigLayer.PiiDetectionEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayer.PiiDetectionEnabled(childComplexity), true
+
+	case "AdminAIConfigLayer.spamDetectionEnabled":
+		if e.complexity.AdminAIConfigLayer.SpamDetectionEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayer.SpamDetectionEnabled(childComplexity), true
+
+	case "AdminAIConfigLayerOverride.aiContentDetection":
+		if e.complexity.AdminAIConfigLayerOverride.AiContentDetection == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayerOverride.AiContentDetection(childComplexity), true
+
+	case "AdminAIConfigLayerOverride.aiEnabled":
+		if e.complexity.AdminAIConfigLayerOverride.AiEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayerOverride.AiEnabled(childComplexity), true
+
+	case "AdminAIConfigLayerOverride.moderationEnabled":
+		if e.complexity.AdminAIConfigLayerOverride.ModerationEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayerOverride.ModerationEnabled(childComplexity), true
+
+	case "AdminAIConfigLayerOverride.nsfwDetectionEnabled":
+		if e.complexity.AdminAIConfigLayerOverride.NsfwDetectionEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayerOverride.NsfwDetectionEnabled(childComplexity), true
+
+	case "AdminAIConfigLayerOverride.piiDetectionEnabled":
+		if e.complexity.AdminAIConfigLayerOverride.PiiDetectionEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayerOverride.PiiDetectionEnabled(childComplexity), true
+
+	case "AdminAIConfigLayerOverride.spamDetectionEnabled":
+		if e.complexity.AdminAIConfigLayerOverride.SpamDetectionEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminAIConfigLayerOverride.SpamDetectionEnabled(childComplexity), true
+
 	case "AdminAccount.actor":
 		if e.complexity.AdminAccount.Actor == nil {
 			break
@@ -4139,6 +4362,41 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.AdminDomainBlockConnection.NextCursor(childComplexity), true
 
+	case "AdminEffectiveTrustConfig.attestationsUrl":
+		if e.complexity.AdminEffectiveTrustConfig.AttestationsURL == nil {
+			break
+		}
+
+		return e.complexity.AdminEffectiveTrustConfig.AttestationsURL(childComplexity), true
+
+	case "AdminEffectiveTrustConfig.baseUrl":
+		if e.complexity.AdminEffectiveTrustConfig.BaseURL == nil {
+			break
+		}
+
+		return e.complexity.AdminEffectiveTrustConfig.BaseURL(childComplexity), true
+
+	case "AdminEffectiveTrustConfig.instanceKeySecretArn":
+		if e.complexity.AdminEffectiveTrustConfig.InstanceKeySecretArn == nil {
+			break
+		}
+
+		return e.complexity.AdminEffectiveTrustConfig.InstanceKeySecretArn(childComplexity), true
+
+	case "AdminEffectiveTrustConfig.publicAttestationsEnabled":
+		if e.complexity.AdminEffectiveTrustConfig.PublicAttestationsEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminEffectiveTrustConfig.PublicAttestationsEnabled(childComplexity), true
+
+	case "AdminEffectiveTrustConfig.trustProxyEnabled":
+		if e.complexity.AdminEffectiveTrustConfig.TrustProxyEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminEffectiveTrustConfig.TrustProxyEnabled(childComplexity), true
+
 	case "AdminEmailDomainBlock.createdAt":
 		if e.complexity.AdminEmailDomainBlock.CreatedAt == nil {
 			break
@@ -4327,6 +4585,34 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AdminIP.UsedAt(childComplexity), true
+
+	case "AdminInstanceConfig.ai":
+		if e.complexity.AdminInstanceConfig.Ai == nil {
+			break
+		}
+
+		return e.complexity.AdminInstanceConfig.Ai(childComplexity), true
+
+	case "AdminInstanceConfig.tips":
+		if e.complexity.AdminInstanceConfig.Tips == nil {
+			break
+		}
+
+		return e.complexity.AdminInstanceConfig.Tips(childComplexity), true
+
+	case "AdminInstanceConfig.translation":
+		if e.complexity.AdminInstanceConfig.Translation == nil {
+			break
+		}
+
+		return e.complexity.AdminInstanceConfig.Translation(childComplexity), true
+
+	case "AdminInstanceConfig.trust":
+		if e.complexity.AdminInstanceConfig.Trust == nil {
+			break
+		}
+
+		return e.complexity.AdminInstanceConfig.Trust(childComplexity), true
 
 	case "AdminModerationEvent.actorId":
 		if e.complexity.AdminModerationEvent.ActorID == nil {
@@ -4677,6 +4963,195 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AdminStatusConnection.Statuses(childComplexity), true
+
+	case "AdminTipsConfig.effective":
+		if e.complexity.AdminTipsConfig.Effective == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfig.Effective(childComplexity), true
+
+	case "AdminTipsConfig.managed":
+		if e.complexity.AdminTipsConfig.Managed == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfig.Managed(childComplexity), true
+
+	case "AdminTipsConfig.override":
+		if e.complexity.AdminTipsConfig.Override == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfig.Override(childComplexity), true
+
+	case "AdminTipsConfig.recordExists":
+		if e.complexity.AdminTipsConfig.RecordExists == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfig.RecordExists(childComplexity), true
+
+	case "AdminTipsConfig.updatedAt":
+		if e.complexity.AdminTipsConfig.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfig.UpdatedAt(childComplexity), true
+
+	case "AdminTipsConfigLayer.chainId":
+		if e.complexity.AdminTipsConfigLayer.ChainID == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfigLayer.ChainID(childComplexity), true
+
+	case "AdminTipsConfigLayer.contractAddress":
+		if e.complexity.AdminTipsConfigLayer.ContractAddress == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfigLayer.ContractAddress(childComplexity), true
+
+	case "AdminTipsConfigLayer.enabled":
+		if e.complexity.AdminTipsConfigLayer.Enabled == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfigLayer.Enabled(childComplexity), true
+
+	case "AdminTipsConfigLayerOverride.chainId":
+		if e.complexity.AdminTipsConfigLayerOverride.ChainID == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfigLayerOverride.ChainID(childComplexity), true
+
+	case "AdminTipsConfigLayerOverride.contractAddress":
+		if e.complexity.AdminTipsConfigLayerOverride.ContractAddress == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfigLayerOverride.ContractAddress(childComplexity), true
+
+	case "AdminTipsConfigLayerOverride.enabled":
+		if e.complexity.AdminTipsConfigLayerOverride.Enabled == nil {
+			break
+		}
+
+		return e.complexity.AdminTipsConfigLayerOverride.Enabled(childComplexity), true
+
+	case "AdminTranslationConfig.effectiveEnabled":
+		if e.complexity.AdminTranslationConfig.EffectiveEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminTranslationConfig.EffectiveEnabled(childComplexity), true
+
+	case "AdminTranslationConfig.managedEnabled":
+		if e.complexity.AdminTranslationConfig.ManagedEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminTranslationConfig.ManagedEnabled(childComplexity), true
+
+	case "AdminTranslationConfig.overrideEnabled":
+		if e.complexity.AdminTranslationConfig.OverrideEnabled == nil {
+			break
+		}
+
+		return e.complexity.AdminTranslationConfig.OverrideEnabled(childComplexity), true
+
+	case "AdminTranslationConfig.recordExists":
+		if e.complexity.AdminTranslationConfig.RecordExists == nil {
+			break
+		}
+
+		return e.complexity.AdminTranslationConfig.RecordExists(childComplexity), true
+
+	case "AdminTranslationConfig.updatedAt":
+		if e.complexity.AdminTranslationConfig.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.AdminTranslationConfig.UpdatedAt(childComplexity), true
+
+	case "AdminTrustConfig.effective":
+		if e.complexity.AdminTrustConfig.Effective == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfig.Effective(childComplexity), true
+
+	case "AdminTrustConfig.managed":
+		if e.complexity.AdminTrustConfig.Managed == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfig.Managed(childComplexity), true
+
+	case "AdminTrustConfig.override":
+		if e.complexity.AdminTrustConfig.Override == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfig.Override(childComplexity), true
+
+	case "AdminTrustConfig.recordExists":
+		if e.complexity.AdminTrustConfig.RecordExists == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfig.RecordExists(childComplexity), true
+
+	case "AdminTrustConfig.updatedAt":
+		if e.complexity.AdminTrustConfig.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfig.UpdatedAt(childComplexity), true
+
+	case "AdminTrustConfigLayer.attestationsUrl":
+		if e.complexity.AdminTrustConfigLayer.AttestationsURL == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfigLayer.AttestationsURL(childComplexity), true
+
+	case "AdminTrustConfigLayer.baseUrl":
+		if e.complexity.AdminTrustConfigLayer.BaseURL == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfigLayer.BaseURL(childComplexity), true
+
+	case "AdminTrustConfigLayer.instanceKeySecretArn":
+		if e.complexity.AdminTrustConfigLayer.InstanceKeySecretArn == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfigLayer.InstanceKeySecretArn(childComplexity), true
+
+	case "AdminTrustConfigLayerOverride.attestationsUrl":
+		if e.complexity.AdminTrustConfigLayerOverride.AttestationsURL == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfigLayerOverride.AttestationsURL(childComplexity), true
+
+	case "AdminTrustConfigLayerOverride.baseUrl":
+		if e.complexity.AdminTrustConfigLayerOverride.BaseURL == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfigLayerOverride.BaseURL(childComplexity), true
+
+	case "AdminTrustConfigLayerOverride.instanceKeySecretArn":
+		if e.complexity.AdminTrustConfigLayerOverride.InstanceKeySecretArn == nil {
+			break
+		}
+
+		return e.complexity.AdminTrustConfigLayerOverride.InstanceKeySecretArn(childComplexity), true
 
 	case "AdminTrustGraph.edges":
 		if e.complexity.AdminTrustGraph.Edges == nil {
@@ -10636,6 +11111,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.CancelScheduledStatus(childComplexity, args["id"].(string)), true
 
+	case "Mutation.clearAdminInstanceOverrides":
+		if e.complexity.Mutation.ClearAdminInstanceOverrides == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_clearAdminInstanceOverrides_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.ClearAdminInstanceOverrides(childComplexity, args["features"].([]model.InstanceConfigFeature)), true
+
 	case "Mutation.clearNotifications":
 		if e.complexity.Mutation.ClearNotifications == nil {
 			break
@@ -11700,6 +12187,30 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UpdateAdminAgentPolicy(childComplexity, args["input"].(model.UpdateAdminAgentPolicyInput)), true
+
+	case "Mutation.updateAdminInstanceManagedDefaults":
+		if e.complexity.Mutation.UpdateAdminInstanceManagedDefaults == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateAdminInstanceManagedDefaults_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateAdminInstanceManagedDefaults(childComplexity, args["input"].(model.UpdateAdminInstanceManagedDefaultsInput)), true
+
+	case "Mutation.updateAdminInstanceOverrides":
+		if e.complexity.Mutation.UpdateAdminInstanceOverrides == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateAdminInstanceOverrides_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdateAdminInstanceOverrides(childComplexity, args["input"].(model.UpdateAdminInstanceOverridesInput)), true
 
 	case "Mutation.updateAgent":
 		if e.complexity.Mutation.UpdateAgent == nil {
@@ -13382,6 +13893,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.AdminFederationStatistics(childComplexity, args["start"].(*model.Time), args["end"].(*model.Time)), true
 
+	case "Query.adminInstanceConfig":
+		if e.complexity.Query.AdminInstanceConfig == nil {
+			break
+		}
+
+		return e.complexity.Query.AdminInstanceConfig(childComplexity), true
+
 	case "Query.adminModerationEvents":
 		if e.complexity.Query.AdminModerationEvents == nil {
 			break
@@ -14832,6 +15350,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Viewer(childComplexity), true
+
+	case "Query.viewerRole":
+		if e.complexity.Query.ViewerRole == nil {
+			break
+		}
+
+		return e.complexity.Query.ViewerRole(childComplexity), true
 
 	case "Query.vouches":
 		if e.complexity.Query.Vouches == nil {
@@ -17418,6 +17943,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.UserPreferences.Streaming(childComplexity), true
 
+	case "ViewerRole.isAdmin":
+		if e.complexity.ViewerRole.IsAdmin == nil {
+			break
+		}
+
+		return e.complexity.ViewerRole.IsAdmin(childComplexity), true
+
+	case "ViewerRole.role":
+		if e.complexity.ViewerRole.Role == nil {
+			break
+		}
+
+		return e.complexity.ViewerRole.Role(childComplexity), true
+
 	case "Vouch.active":
 		if e.complexity.Vouch.Active == nil {
 			break
@@ -17525,6 +18064,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	ec := executionContext{opCtx, e, 0, 0, make(chan graphql.DeferredResult)}
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputAddFilterKeywordInput,
+		ec.unmarshalInputAdminAIConfigPatchInput,
 		ec.unmarshalInputAdminAccountActionInput,
 		ec.unmarshalInputAdminCreateAnnouncementInput,
 		ec.unmarshalInputAdminCreateUserInput,
@@ -17533,6 +18073,9 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputAdminModerationEventFilter,
 		ec.unmarshalInputAdminModerationEventOverrideInput,
 		ec.unmarshalInputAdminStatusFilter,
+		ec.unmarshalInputAdminTipsConfigPatchInput,
+		ec.unmarshalInputAdminTranslationConfigPatchInput,
+		ec.unmarshalInputAdminTrustConfigPatchInput,
 		ec.unmarshalInputAdminUpdateTrustInput,
 		ec.unmarshalInputAdminVerifyAgentInput,
 		ec.unmarshalInputAgentCapabilitiesInput,
@@ -17586,6 +18129,8 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputTrustInput,
 		ec.unmarshalInputUpdateAccountQuotePermissionsInput,
 		ec.unmarshalInputUpdateAdminAgentPolicyInput,
+		ec.unmarshalInputUpdateAdminInstanceManagedDefaultsInput,
+		ec.unmarshalInputUpdateAdminInstanceOverridesInput,
 		ec.unmarshalInputUpdateAgentInput,
 		ec.unmarshalInputUpdateArticleInput,
 		ec.unmarshalInputUpdateCategoryInput,
@@ -18225,6 +18770,17 @@ func (ec *executionContext) field_Mutation_cancelScheduledStatus_args(ctx contex
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_clearAdminInstanceOverrides_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "features", ec.unmarshalNInstanceConfigFeature2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConfigFeatureᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["features"] = arg0
 	return args, nil
 }
 
@@ -19308,6 +19864,28 @@ func (ec *executionContext) field_Mutation_updateAdminAgentPolicy_args(ctx conte
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNUpdateAdminAgentPolicyInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAdminAgentPolicyInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updateAdminInstanceManagedDefaults_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNUpdateAdminInstanceManagedDefaultsInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAdminInstanceManagedDefaultsInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updateAdminInstanceOverrides_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNUpdateAdminInstanceOverridesInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAdminInstanceOverridesInput)
 	if err != nil {
 		return nil, err
 	}
@@ -26107,6 +26685,775 @@ func (ec *executionContext) fieldContext_ActorListPage_totalCount(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _AdminAIConfig_recordExists(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfig_recordExists(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RecordExists, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfig_recordExists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfig_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfig_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfig_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfig_managed(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfig_managed(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Managed, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminAIConfigLayer)
+	fc.Result = res
+	return ec.marshalNAdminAIConfigLayer2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigLayer(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfig_managed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "aiEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_aiEnabled(ctx, field)
+			case "moderationEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_moderationEnabled(ctx, field)
+			case "nsfwDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_nsfwDetectionEnabled(ctx, field)
+			case "spamDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_spamDetectionEnabled(ctx, field)
+			case "piiDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_piiDetectionEnabled(ctx, field)
+			case "aiContentDetection":
+				return ec.fieldContext_AdminAIConfigLayer_aiContentDetection(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminAIConfigLayer", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfig_override(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfig_override(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Override, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminAIConfigLayerOverride)
+	fc.Result = res
+	return ec.marshalOAdminAIConfigLayerOverride2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigLayerOverride(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfig_override(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "aiEnabled":
+				return ec.fieldContext_AdminAIConfigLayerOverride_aiEnabled(ctx, field)
+			case "moderationEnabled":
+				return ec.fieldContext_AdminAIConfigLayerOverride_moderationEnabled(ctx, field)
+			case "nsfwDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayerOverride_nsfwDetectionEnabled(ctx, field)
+			case "spamDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayerOverride_spamDetectionEnabled(ctx, field)
+			case "piiDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayerOverride_piiDetectionEnabled(ctx, field)
+			case "aiContentDetection":
+				return ec.fieldContext_AdminAIConfigLayerOverride_aiContentDetection(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminAIConfigLayerOverride", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfig_effective(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfig_effective(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Effective, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminAIConfigLayer)
+	fc.Result = res
+	return ec.marshalNAdminAIConfigLayer2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigLayer(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfig_effective(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "aiEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_aiEnabled(ctx, field)
+			case "moderationEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_moderationEnabled(ctx, field)
+			case "nsfwDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_nsfwDetectionEnabled(ctx, field)
+			case "spamDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_spamDetectionEnabled(ctx, field)
+			case "piiDetectionEnabled":
+				return ec.fieldContext_AdminAIConfigLayer_piiDetectionEnabled(ctx, field)
+			case "aiContentDetection":
+				return ec.fieldContext_AdminAIConfigLayer_aiContentDetection(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminAIConfigLayer", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayer_aiEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayer_aiEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AiEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayer_aiEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayer_moderationEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayer_moderationEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ModerationEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayer_moderationEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayer_nsfwDetectionEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayer_nsfwDetectionEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.NsfwDetectionEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayer_nsfwDetectionEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayer_spamDetectionEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayer_spamDetectionEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SpamDetectionEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayer_spamDetectionEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayer_piiDetectionEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayer_piiDetectionEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PiiDetectionEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayer_piiDetectionEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayer_aiContentDetection(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayer_aiContentDetection(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AiContentDetection, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayer_aiContentDetection(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayerOverride_aiEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayerOverride_aiEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AiEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayerOverride_aiEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayerOverride_moderationEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayerOverride_moderationEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ModerationEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayerOverride_moderationEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayerOverride_nsfwDetectionEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayerOverride_nsfwDetectionEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.NsfwDetectionEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayerOverride_nsfwDetectionEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayerOverride_spamDetectionEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayerOverride_spamDetectionEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SpamDetectionEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayerOverride_spamDetectionEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayerOverride_piiDetectionEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayerOverride_piiDetectionEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PiiDetectionEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayerOverride_piiDetectionEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminAIConfigLayerOverride_aiContentDetection(ctx context.Context, field graphql.CollectedField, obj *model.AdminAIConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminAIConfigLayerOverride_aiContentDetection(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AiContentDetection, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminAIConfigLayerOverride_aiContentDetection(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminAIConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _AdminAccount_id(ctx context.Context, field graphql.CollectedField, obj *model.AdminAccount) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_AdminAccount_id(ctx, field)
 	if err != nil {
@@ -28364,6 +29711,226 @@ func (ec *executionContext) fieldContext_AdminDomainBlockConnection_nextCursor(_
 	return fc, nil
 }
 
+func (ec *executionContext) _AdminEffectiveTrustConfig_baseUrl(ctx context.Context, field graphql.CollectedField, obj *model.AdminEffectiveTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminEffectiveTrustConfig_baseUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BaseURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminEffectiveTrustConfig_baseUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminEffectiveTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminEffectiveTrustConfig_attestationsUrl(ctx context.Context, field graphql.CollectedField, obj *model.AdminEffectiveTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminEffectiveTrustConfig_attestationsUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AttestationsURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminEffectiveTrustConfig_attestationsUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminEffectiveTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminEffectiveTrustConfig_instanceKeySecretArn(ctx context.Context, field graphql.CollectedField, obj *model.AdminEffectiveTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminEffectiveTrustConfig_instanceKeySecretArn(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.InstanceKeySecretArn, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminEffectiveTrustConfig_instanceKeySecretArn(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminEffectiveTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminEffectiveTrustConfig_trustProxyEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminEffectiveTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminEffectiveTrustConfig_trustProxyEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TrustProxyEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminEffectiveTrustConfig_trustProxyEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminEffectiveTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminEffectiveTrustConfig_publicAttestationsEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminEffectiveTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminEffectiveTrustConfig_publicAttestationsEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PublicAttestationsEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminEffectiveTrustConfig_publicAttestationsEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminEffectiveTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _AdminEmailDomainBlock_id(ctx context.Context, field graphql.CollectedField, obj *model.AdminEmailDomainBlock) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_AdminEmailDomainBlock_id(ctx, field)
 	if err != nil {
@@ -29590,6 +31157,230 @@ func (ec *executionContext) fieldContext_AdminIP_usedAt(_ context.Context, field
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminInstanceConfig_trust(ctx context.Context, field graphql.CollectedField, obj *model.AdminInstanceConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminInstanceConfig_trust(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Trust, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminTrustConfig)
+	fc.Result = res
+	return ec.marshalNAdminTrustConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminInstanceConfig_trust(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminInstanceConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "recordExists":
+				return ec.fieldContext_AdminTrustConfig_recordExists(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AdminTrustConfig_updatedAt(ctx, field)
+			case "managed":
+				return ec.fieldContext_AdminTrustConfig_managed(ctx, field)
+			case "override":
+				return ec.fieldContext_AdminTrustConfig_override(ctx, field)
+			case "effective":
+				return ec.fieldContext_AdminTrustConfig_effective(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminTrustConfig", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminInstanceConfig_translation(ctx context.Context, field graphql.CollectedField, obj *model.AdminInstanceConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminInstanceConfig_translation(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Translation, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminTranslationConfig)
+	fc.Result = res
+	return ec.marshalNAdminTranslationConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTranslationConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminInstanceConfig_translation(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminInstanceConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "recordExists":
+				return ec.fieldContext_AdminTranslationConfig_recordExists(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AdminTranslationConfig_updatedAt(ctx, field)
+			case "managedEnabled":
+				return ec.fieldContext_AdminTranslationConfig_managedEnabled(ctx, field)
+			case "overrideEnabled":
+				return ec.fieldContext_AdminTranslationConfig_overrideEnabled(ctx, field)
+			case "effectiveEnabled":
+				return ec.fieldContext_AdminTranslationConfig_effectiveEnabled(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminTranslationConfig", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminInstanceConfig_tips(ctx context.Context, field graphql.CollectedField, obj *model.AdminInstanceConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminInstanceConfig_tips(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Tips, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminTipsConfig)
+	fc.Result = res
+	return ec.marshalNAdminTipsConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminInstanceConfig_tips(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminInstanceConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "recordExists":
+				return ec.fieldContext_AdminTipsConfig_recordExists(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AdminTipsConfig_updatedAt(ctx, field)
+			case "managed":
+				return ec.fieldContext_AdminTipsConfig_managed(ctx, field)
+			case "override":
+				return ec.fieldContext_AdminTipsConfig_override(ctx, field)
+			case "effective":
+				return ec.fieldContext_AdminTipsConfig_effective(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminTipsConfig", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminInstanceConfig_ai(ctx context.Context, field graphql.CollectedField, obj *model.AdminInstanceConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminInstanceConfig_ai(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Ai, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminAIConfig)
+	fc.Result = res
+	return ec.marshalNAdminAIConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminInstanceConfig_ai(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminInstanceConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "recordExists":
+				return ec.fieldContext_AdminAIConfig_recordExists(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AdminAIConfig_updatedAt(ctx, field)
+			case "managed":
+				return ec.fieldContext_AdminAIConfig_managed(ctx, field)
+			case "override":
+				return ec.fieldContext_AdminAIConfig_override(ctx, field)
+			case "effective":
+				return ec.fieldContext_AdminAIConfig_effective(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminAIConfig", field.Name)
 		},
 	}
 	return fc, nil
@@ -32137,6 +33928,1219 @@ func (ec *executionContext) fieldContext_AdminStatusConnection_nextCursor(_ cont
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Cursor does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfig_recordExists(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfig_recordExists(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RecordExists, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfig_recordExists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfig_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfig_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfig_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfig_managed(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfig_managed(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Managed, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminTipsConfigLayer)
+	fc.Result = res
+	return ec.marshalNAdminTipsConfigLayer2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfigLayer(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfig_managed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "enabled":
+				return ec.fieldContext_AdminTipsConfigLayer_enabled(ctx, field)
+			case "chainId":
+				return ec.fieldContext_AdminTipsConfigLayer_chainId(ctx, field)
+			case "contractAddress":
+				return ec.fieldContext_AdminTipsConfigLayer_contractAddress(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminTipsConfigLayer", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfig_override(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfig_override(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Override, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminTipsConfigLayerOverride)
+	fc.Result = res
+	return ec.marshalOAdminTipsConfigLayerOverride2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfigLayerOverride(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfig_override(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "enabled":
+				return ec.fieldContext_AdminTipsConfigLayerOverride_enabled(ctx, field)
+			case "chainId":
+				return ec.fieldContext_AdminTipsConfigLayerOverride_chainId(ctx, field)
+			case "contractAddress":
+				return ec.fieldContext_AdminTipsConfigLayerOverride_contractAddress(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminTipsConfigLayerOverride", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfig_effective(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfig_effective(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Effective, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.TipsConfig)
+	fc.Result = res
+	return ec.marshalNTipsConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTipsConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfig_effective(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "enabled":
+				return ec.fieldContext_TipsConfig_enabled(ctx, field)
+			case "chainId":
+				return ec.fieldContext_TipsConfig_chainId(ctx, field)
+			case "contractAddress":
+				return ec.fieldContext_TipsConfig_contractAddress(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type TipsConfig", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfigLayer_enabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfigLayer_enabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Enabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfigLayer_enabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfigLayer_chainId(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfigLayer_chainId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ChainID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfigLayer_chainId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfigLayer_contractAddress(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfigLayer_contractAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContractAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfigLayer_contractAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfigLayerOverride_enabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfigLayerOverride_enabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Enabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfigLayerOverride_enabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfigLayerOverride_chainId(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfigLayerOverride_chainId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ChainID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfigLayerOverride_chainId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTipsConfigLayerOverride_contractAddress(ctx context.Context, field graphql.CollectedField, obj *model.AdminTipsConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTipsConfigLayerOverride_contractAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContractAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTipsConfigLayerOverride_contractAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTipsConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTranslationConfig_recordExists(ctx context.Context, field graphql.CollectedField, obj *model.AdminTranslationConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTranslationConfig_recordExists(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RecordExists, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTranslationConfig_recordExists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTranslationConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTranslationConfig_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.AdminTranslationConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTranslationConfig_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTranslationConfig_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTranslationConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTranslationConfig_managedEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminTranslationConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTranslationConfig_managedEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ManagedEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTranslationConfig_managedEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTranslationConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTranslationConfig_overrideEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminTranslationConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTranslationConfig_overrideEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.OverrideEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTranslationConfig_overrideEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTranslationConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTranslationConfig_effectiveEnabled(ctx context.Context, field graphql.CollectedField, obj *model.AdminTranslationConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTranslationConfig_effectiveEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EffectiveEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTranslationConfig_effectiveEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTranslationConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfig_recordExists(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfig_recordExists(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RecordExists, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfig_recordExists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfig_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfig_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfig_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfig_managed(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfig_managed(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Managed, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminTrustConfigLayer)
+	fc.Result = res
+	return ec.marshalNAdminTrustConfigLayer2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfigLayer(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfig_managed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "baseUrl":
+				return ec.fieldContext_AdminTrustConfigLayer_baseUrl(ctx, field)
+			case "attestationsUrl":
+				return ec.fieldContext_AdminTrustConfigLayer_attestationsUrl(ctx, field)
+			case "instanceKeySecretArn":
+				return ec.fieldContext_AdminTrustConfigLayer_instanceKeySecretArn(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminTrustConfigLayer", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfig_override(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfig_override(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Override, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminTrustConfigLayerOverride)
+	fc.Result = res
+	return ec.marshalOAdminTrustConfigLayerOverride2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfigLayerOverride(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfig_override(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "baseUrl":
+				return ec.fieldContext_AdminTrustConfigLayerOverride_baseUrl(ctx, field)
+			case "attestationsUrl":
+				return ec.fieldContext_AdminTrustConfigLayerOverride_attestationsUrl(ctx, field)
+			case "instanceKeySecretArn":
+				return ec.fieldContext_AdminTrustConfigLayerOverride_instanceKeySecretArn(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminTrustConfigLayerOverride", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfig_effective(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfig_effective(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Effective, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminEffectiveTrustConfig)
+	fc.Result = res
+	return ec.marshalNAdminEffectiveTrustConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminEffectiveTrustConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfig_effective(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "baseUrl":
+				return ec.fieldContext_AdminEffectiveTrustConfig_baseUrl(ctx, field)
+			case "attestationsUrl":
+				return ec.fieldContext_AdminEffectiveTrustConfig_attestationsUrl(ctx, field)
+			case "instanceKeySecretArn":
+				return ec.fieldContext_AdminEffectiveTrustConfig_instanceKeySecretArn(ctx, field)
+			case "trustProxyEnabled":
+				return ec.fieldContext_AdminEffectiveTrustConfig_trustProxyEnabled(ctx, field)
+			case "publicAttestationsEnabled":
+				return ec.fieldContext_AdminEffectiveTrustConfig_publicAttestationsEnabled(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminEffectiveTrustConfig", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfigLayer_baseUrl(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfigLayer_baseUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BaseURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfigLayer_baseUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfigLayer_attestationsUrl(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfigLayer_attestationsUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AttestationsURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfigLayer_attestationsUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfigLayer_instanceKeySecretArn(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfigLayer) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfigLayer_instanceKeySecretArn(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.InstanceKeySecretArn, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfigLayer_instanceKeySecretArn(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfigLayer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfigLayerOverride_baseUrl(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfigLayerOverride_baseUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.BaseURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfigLayerOverride_baseUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfigLayerOverride_attestationsUrl(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfigLayerOverride_attestationsUrl(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AttestationsURL, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfigLayerOverride_attestationsUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminTrustConfigLayerOverride_instanceKeySecretArn(ctx context.Context, field graphql.CollectedField, obj *model.AdminTrustConfigLayerOverride) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AdminTrustConfigLayerOverride_instanceKeySecretArn(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.InstanceKeySecretArn, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AdminTrustConfigLayerOverride_instanceKeySecretArn(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminTrustConfigLayerOverride",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -79490,6 +82494,201 @@ func (ec *executionContext) fieldContext_Mutation_adminSetStatusSensitive(ctx co
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_updateAdminInstanceManagedDefaults(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateAdminInstanceManagedDefaults(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateAdminInstanceManagedDefaults(rctx, fc.Args["input"].(model.UpdateAdminInstanceManagedDefaultsInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminInstanceConfig)
+	fc.Result = res
+	return ec.marshalNAdminInstanceConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminInstanceConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateAdminInstanceManagedDefaults(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "trust":
+				return ec.fieldContext_AdminInstanceConfig_trust(ctx, field)
+			case "translation":
+				return ec.fieldContext_AdminInstanceConfig_translation(ctx, field)
+			case "tips":
+				return ec.fieldContext_AdminInstanceConfig_tips(ctx, field)
+			case "ai":
+				return ec.fieldContext_AdminInstanceConfig_ai(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminInstanceConfig", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateAdminInstanceManagedDefaults_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateAdminInstanceOverrides(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_updateAdminInstanceOverrides(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().UpdateAdminInstanceOverrides(rctx, fc.Args["input"].(model.UpdateAdminInstanceOverridesInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminInstanceConfig)
+	fc.Result = res
+	return ec.marshalNAdminInstanceConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminInstanceConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateAdminInstanceOverrides(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "trust":
+				return ec.fieldContext_AdminInstanceConfig_trust(ctx, field)
+			case "translation":
+				return ec.fieldContext_AdminInstanceConfig_translation(ctx, field)
+			case "tips":
+				return ec.fieldContext_AdminInstanceConfig_tips(ctx, field)
+			case "ai":
+				return ec.fieldContext_AdminInstanceConfig_ai(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminInstanceConfig", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateAdminInstanceOverrides_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_clearAdminInstanceOverrides(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_clearAdminInstanceOverrides(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().ClearAdminInstanceOverrides(rctx, fc.Args["features"].([]model.InstanceConfigFeature))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminInstanceConfig)
+	fc.Result = res
+	return ec.marshalNAdminInstanceConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminInstanceConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_clearAdminInstanceOverrides(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "trust":
+				return ec.fieldContext_AdminInstanceConfig_trust(ctx, field)
+			case "translation":
+				return ec.fieldContext_AdminInstanceConfig_translation(ctx, field)
+			case "tips":
+				return ec.fieldContext_AdminInstanceConfig_tips(ctx, field)
+			case "ai":
+				return ec.fieldContext_AdminInstanceConfig_ai(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminInstanceConfig", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_clearAdminInstanceOverrides_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_registerAgent(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_registerAgent(ctx, field)
 	if err != nil {
@@ -88938,6 +92137,56 @@ func (ec *executionContext) fieldContext_Query_viewer(_ context.Context, field g
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_viewerRole(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_viewerRole(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().ViewerRole(rctx)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ViewerRole)
+	fc.Result = res
+	return ec.marshalNViewerRole2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐViewerRole(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_viewerRole(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "role":
+				return ec.fieldContext_ViewerRole_role(ctx, field)
+			case "isAdmin":
+				return ec.fieldContext_ViewerRole_isAdmin(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ViewerRole", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_actor(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_actor(ctx, field)
 	if err != nil {
@@ -98244,6 +101493,60 @@ func (ec *executionContext) fieldContext_Query_adminStatus(ctx context.Context, 
 	if fc.Args, err = ec.field_Query_adminStatus_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_adminInstanceConfig(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_adminInstanceConfig(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().AdminInstanceConfig(rctx)
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AdminInstanceConfig)
+	fc.Result = res
+	return ec.marshalNAdminInstanceConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminInstanceConfig(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_adminInstanceConfig(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "trust":
+				return ec.fieldContext_AdminInstanceConfig_trust(ctx, field)
+			case "translation":
+				return ec.fieldContext_AdminInstanceConfig_translation(ctx, field)
+			case "tips":
+				return ec.fieldContext_AdminInstanceConfig_tips(ctx, field)
+			case "ai":
+				return ec.fieldContext_AdminInstanceConfig_ai(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminInstanceConfig", field.Name)
+		},
 	}
 	return fc, nil
 }
@@ -116901,6 +120204,94 @@ func (ec *executionContext) fieldContext_UserPreferences_reblogFilters(_ context
 	return fc, nil
 }
 
+func (ec *executionContext) _ViewerRole_role(ctx context.Context, field graphql.CollectedField, obj *model.ViewerRole) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ViewerRole_role(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Role, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ViewerRole_role(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ViewerRole",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ViewerRole_isAdmin(ctx context.Context, field graphql.CollectedField, obj *model.ViewerRole) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ViewerRole_isAdmin(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IsAdmin, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ViewerRole_isAdmin(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ViewerRole",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Vouch_id(ctx context.Context, field graphql.CollectedField, obj *model.Vouch) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Vouch_id(ctx, field)
 	if err != nil {
@@ -119667,6 +123058,68 @@ func (ec *executionContext) unmarshalInputAddFilterKeywordInput(ctx context.Cont
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputAdminAIConfigPatchInput(ctx context.Context, obj any) (model.AdminAIConfigPatchInput, error) {
+	var it model.AdminAIConfigPatchInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"aiEnabled", "moderationEnabled", "nsfwDetectionEnabled", "spamDetectionEnabled", "piiDetectionEnabled", "aiContentDetection"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "aiEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("aiEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AiEnabled = data
+		case "moderationEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("moderationEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ModerationEnabled = data
+		case "nsfwDetectionEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("nsfwDetectionEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.NsfwDetectionEnabled = data
+		case "spamDetectionEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("spamDetectionEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SpamDetectionEnabled = data
+		case "piiDetectionEnabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("piiDetectionEnabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PiiDetectionEnabled = data
+		case "aiContentDetection":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("aiContentDetection"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AiContentDetection = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputAdminAccountActionInput(ctx context.Context, obj any) (model.AdminAccountActionInput, error) {
 	var it model.AdminAccountActionInput
 	asMap := map[string]any{}
@@ -120122,6 +123575,115 @@ func (ec *executionContext) unmarshalInputAdminStatusFilter(ctx context.Context,
 				return it, err
 			}
 			it.MaxDate = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputAdminTipsConfigPatchInput(ctx context.Context, obj any) (model.AdminTipsConfigPatchInput, error) {
+	var it model.AdminTipsConfigPatchInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"enabled", "chainId", "contractAddress"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "enabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("enabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Enabled = data
+		case "chainId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("chainId"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ChainID = data
+		case "contractAddress":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("contractAddress"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ContractAddress = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputAdminTranslationConfigPatchInput(ctx context.Context, obj any) (model.AdminTranslationConfigPatchInput, error) {
+	var it model.AdminTranslationConfigPatchInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"enabled"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "enabled":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("enabled"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Enabled = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputAdminTrustConfigPatchInput(ctx context.Context, obj any) (model.AdminTrustConfigPatchInput, error) {
+	var it model.AdminTrustConfigPatchInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"baseUrl", "attestationsUrl", "instanceKeySecretArn"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "baseUrl":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("baseUrl"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.BaseURL = data
+		case "attestationsUrl":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("attestationsUrl"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AttestationsURL = data
+		case "instanceKeySecretArn":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("instanceKeySecretArn"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.InstanceKeySecretArn = data
 		}
 	}
 
@@ -123085,6 +126647,102 @@ func (ec *executionContext) unmarshalInputUpdateAdminAgentPolicyInput(ctx contex
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputUpdateAdminInstanceManagedDefaultsInput(ctx context.Context, obj any) (model.UpdateAdminInstanceManagedDefaultsInput, error) {
+	var it model.UpdateAdminInstanceManagedDefaultsInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"trust", "translation", "tips", "ai"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "trust":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("trust"))
+			data, err := ec.unmarshalOAdminTrustConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Trust = data
+		case "translation":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("translation"))
+			data, err := ec.unmarshalOAdminTranslationConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTranslationConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Translation = data
+		case "tips":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("tips"))
+			data, err := ec.unmarshalOAdminTipsConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Tips = data
+		case "ai":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("ai"))
+			data, err := ec.unmarshalOAdminAIConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Ai = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputUpdateAdminInstanceOverridesInput(ctx context.Context, obj any) (model.UpdateAdminInstanceOverridesInput, error) {
+	var it model.UpdateAdminInstanceOverridesInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"trust", "translation", "tips", "ai"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "trust":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("trust"))
+			data, err := ec.unmarshalOAdminTrustConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Trust = data
+		case "translation":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("translation"))
+			data, err := ec.unmarshalOAdminTranslationConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTranslationConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Translation = data
+		case "tips":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("tips"))
+			data, err := ec.unmarshalOAdminTipsConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Tips = data
+		case "ai":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("ai"))
+			data, err := ec.unmarshalOAdminAIConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigPatchInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Ai = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputUpdateAgentInput(ctx context.Context, obj any) (model.UpdateAgentInput, error) {
 	var it model.UpdateAgentInput
 	asMap := map[string]any{}
@@ -125736,6 +129394,172 @@ func (ec *executionContext) _ActorListPage(ctx context.Context, sel ast.Selectio
 	return out
 }
 
+var adminAIConfigImplementors = []string{"AdminAIConfig"}
+
+func (ec *executionContext) _AdminAIConfig(ctx context.Context, sel ast.SelectionSet, obj *model.AdminAIConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminAIConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminAIConfig")
+		case "recordExists":
+			out.Values[i] = ec._AdminAIConfig_recordExists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._AdminAIConfig_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "managed":
+			out.Values[i] = ec._AdminAIConfig_managed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "override":
+			out.Values[i] = ec._AdminAIConfig_override(ctx, field, obj)
+		case "effective":
+			out.Values[i] = ec._AdminAIConfig_effective(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminAIConfigLayerImplementors = []string{"AdminAIConfigLayer"}
+
+func (ec *executionContext) _AdminAIConfigLayer(ctx context.Context, sel ast.SelectionSet, obj *model.AdminAIConfigLayer) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminAIConfigLayerImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminAIConfigLayer")
+		case "aiEnabled":
+			out.Values[i] = ec._AdminAIConfigLayer_aiEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "moderationEnabled":
+			out.Values[i] = ec._AdminAIConfigLayer_moderationEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "nsfwDetectionEnabled":
+			out.Values[i] = ec._AdminAIConfigLayer_nsfwDetectionEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "spamDetectionEnabled":
+			out.Values[i] = ec._AdminAIConfigLayer_spamDetectionEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "piiDetectionEnabled":
+			out.Values[i] = ec._AdminAIConfigLayer_piiDetectionEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "aiContentDetection":
+			out.Values[i] = ec._AdminAIConfigLayer_aiContentDetection(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminAIConfigLayerOverrideImplementors = []string{"AdminAIConfigLayerOverride"}
+
+func (ec *executionContext) _AdminAIConfigLayerOverride(ctx context.Context, sel ast.SelectionSet, obj *model.AdminAIConfigLayerOverride) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminAIConfigLayerOverrideImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminAIConfigLayerOverride")
+		case "aiEnabled":
+			out.Values[i] = ec._AdminAIConfigLayerOverride_aiEnabled(ctx, field, obj)
+		case "moderationEnabled":
+			out.Values[i] = ec._AdminAIConfigLayerOverride_moderationEnabled(ctx, field, obj)
+		case "nsfwDetectionEnabled":
+			out.Values[i] = ec._AdminAIConfigLayerOverride_nsfwDetectionEnabled(ctx, field, obj)
+		case "spamDetectionEnabled":
+			out.Values[i] = ec._AdminAIConfigLayerOverride_spamDetectionEnabled(ctx, field, obj)
+		case "piiDetectionEnabled":
+			out.Values[i] = ec._AdminAIConfigLayerOverride_piiDetectionEnabled(ctx, field, obj)
+		case "aiContentDetection":
+			out.Values[i] = ec._AdminAIConfigLayerOverride_aiContentDetection(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var adminAccountImplementors = []string{"AdminAccount"}
 
 func (ec *executionContext) _AdminAccount(ctx context.Context, sel ast.SelectionSet, obj *model.AdminAccount) graphql.Marshaler {
@@ -126198,6 +130022,65 @@ func (ec *executionContext) _AdminDomainBlockConnection(ctx context.Context, sel
 	return out
 }
 
+var adminEffectiveTrustConfigImplementors = []string{"AdminEffectiveTrustConfig"}
+
+func (ec *executionContext) _AdminEffectiveTrustConfig(ctx context.Context, sel ast.SelectionSet, obj *model.AdminEffectiveTrustConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminEffectiveTrustConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminEffectiveTrustConfig")
+		case "baseUrl":
+			out.Values[i] = ec._AdminEffectiveTrustConfig_baseUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "attestationsUrl":
+			out.Values[i] = ec._AdminEffectiveTrustConfig_attestationsUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "instanceKeySecretArn":
+			out.Values[i] = ec._AdminEffectiveTrustConfig_instanceKeySecretArn(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "trustProxyEnabled":
+			out.Values[i] = ec._AdminEffectiveTrustConfig_trustProxyEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "publicAttestationsEnabled":
+			out.Values[i] = ec._AdminEffectiveTrustConfig_publicAttestationsEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var adminEmailDomainBlockImplementors = []string{"AdminEmailDomainBlock"}
 
 func (ec *executionContext) _AdminEmailDomainBlock(ctx context.Context, sel ast.SelectionSet, obj *model.AdminEmailDomainBlock) graphql.Marshaler {
@@ -126564,6 +130447,60 @@ func (ec *executionContext) _AdminIP(ctx context.Context, sel ast.SelectionSet, 
 			}
 		case "usedAt":
 			out.Values[i] = ec._AdminIP_usedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminInstanceConfigImplementors = []string{"AdminInstanceConfig"}
+
+func (ec *executionContext) _AdminInstanceConfig(ctx context.Context, sel ast.SelectionSet, obj *model.AdminInstanceConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminInstanceConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminInstanceConfig")
+		case "trust":
+			out.Values[i] = ec._AdminInstanceConfig_trust(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "translation":
+			out.Values[i] = ec._AdminInstanceConfig_translation(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tips":
+			out.Values[i] = ec._AdminInstanceConfig_tips(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ai":
+			out.Values[i] = ec._AdminInstanceConfig_ai(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -127090,6 +131027,352 @@ func (ec *executionContext) _AdminStatusConnection(ctx context.Context, sel ast.
 			}
 		case "nextCursor":
 			out.Values[i] = ec._AdminStatusConnection_nextCursor(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminTipsConfigImplementors = []string{"AdminTipsConfig"}
+
+func (ec *executionContext) _AdminTipsConfig(ctx context.Context, sel ast.SelectionSet, obj *model.AdminTipsConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminTipsConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminTipsConfig")
+		case "recordExists":
+			out.Values[i] = ec._AdminTipsConfig_recordExists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._AdminTipsConfig_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "managed":
+			out.Values[i] = ec._AdminTipsConfig_managed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "override":
+			out.Values[i] = ec._AdminTipsConfig_override(ctx, field, obj)
+		case "effective":
+			out.Values[i] = ec._AdminTipsConfig_effective(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminTipsConfigLayerImplementors = []string{"AdminTipsConfigLayer"}
+
+func (ec *executionContext) _AdminTipsConfigLayer(ctx context.Context, sel ast.SelectionSet, obj *model.AdminTipsConfigLayer) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminTipsConfigLayerImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminTipsConfigLayer")
+		case "enabled":
+			out.Values[i] = ec._AdminTipsConfigLayer_enabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "chainId":
+			out.Values[i] = ec._AdminTipsConfigLayer_chainId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contractAddress":
+			out.Values[i] = ec._AdminTipsConfigLayer_contractAddress(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminTipsConfigLayerOverrideImplementors = []string{"AdminTipsConfigLayerOverride"}
+
+func (ec *executionContext) _AdminTipsConfigLayerOverride(ctx context.Context, sel ast.SelectionSet, obj *model.AdminTipsConfigLayerOverride) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminTipsConfigLayerOverrideImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminTipsConfigLayerOverride")
+		case "enabled":
+			out.Values[i] = ec._AdminTipsConfigLayerOverride_enabled(ctx, field, obj)
+		case "chainId":
+			out.Values[i] = ec._AdminTipsConfigLayerOverride_chainId(ctx, field, obj)
+		case "contractAddress":
+			out.Values[i] = ec._AdminTipsConfigLayerOverride_contractAddress(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminTranslationConfigImplementors = []string{"AdminTranslationConfig"}
+
+func (ec *executionContext) _AdminTranslationConfig(ctx context.Context, sel ast.SelectionSet, obj *model.AdminTranslationConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminTranslationConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminTranslationConfig")
+		case "recordExists":
+			out.Values[i] = ec._AdminTranslationConfig_recordExists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._AdminTranslationConfig_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "managedEnabled":
+			out.Values[i] = ec._AdminTranslationConfig_managedEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "overrideEnabled":
+			out.Values[i] = ec._AdminTranslationConfig_overrideEnabled(ctx, field, obj)
+		case "effectiveEnabled":
+			out.Values[i] = ec._AdminTranslationConfig_effectiveEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminTrustConfigImplementors = []string{"AdminTrustConfig"}
+
+func (ec *executionContext) _AdminTrustConfig(ctx context.Context, sel ast.SelectionSet, obj *model.AdminTrustConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminTrustConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminTrustConfig")
+		case "recordExists":
+			out.Values[i] = ec._AdminTrustConfig_recordExists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._AdminTrustConfig_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "managed":
+			out.Values[i] = ec._AdminTrustConfig_managed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "override":
+			out.Values[i] = ec._AdminTrustConfig_override(ctx, field, obj)
+		case "effective":
+			out.Values[i] = ec._AdminTrustConfig_effective(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminTrustConfigLayerImplementors = []string{"AdminTrustConfigLayer"}
+
+func (ec *executionContext) _AdminTrustConfigLayer(ctx context.Context, sel ast.SelectionSet, obj *model.AdminTrustConfigLayer) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminTrustConfigLayerImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminTrustConfigLayer")
+		case "baseUrl":
+			out.Values[i] = ec._AdminTrustConfigLayer_baseUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "attestationsUrl":
+			out.Values[i] = ec._AdminTrustConfigLayer_attestationsUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "instanceKeySecretArn":
+			out.Values[i] = ec._AdminTrustConfigLayer_instanceKeySecretArn(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminTrustConfigLayerOverrideImplementors = []string{"AdminTrustConfigLayerOverride"}
+
+func (ec *executionContext) _AdminTrustConfigLayerOverride(ctx context.Context, sel ast.SelectionSet, obj *model.AdminTrustConfigLayerOverride) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminTrustConfigLayerOverrideImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminTrustConfigLayerOverride")
+		case "baseUrl":
+			out.Values[i] = ec._AdminTrustConfigLayerOverride_baseUrl(ctx, field, obj)
+		case "attestationsUrl":
+			out.Values[i] = ec._AdminTrustConfigLayerOverride_attestationsUrl(ctx, field, obj)
+		case "instanceKeySecretArn":
+			out.Values[i] = ec._AdminTrustConfigLayerOverride_instanceKeySecretArn(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -137368,6 +141651,27 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "updateAdminInstanceManagedDefaults":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateAdminInstanceManagedDefaults(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateAdminInstanceOverrides":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateAdminInstanceOverrides(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "clearAdminInstanceOverrides":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_clearAdminInstanceOverrides(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "registerAgent":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_registerAgent(ctx, field)
@@ -139427,6 +143731,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_viewer(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "viewerRole":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_viewerRole(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -142291,6 +146617,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_adminStatus(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "adminInstanceConfig":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_adminInstanceConfig(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 
@@ -146789,6 +151137,50 @@ func (ec *executionContext) _UserPreferences(ctx context.Context, sel ast.Select
 	return out
 }
 
+var viewerRoleImplementors = []string{"ViewerRole"}
+
+func (ec *executionContext) _ViewerRole(ctx context.Context, sel ast.SelectionSet, obj *model.ViewerRole) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, viewerRoleImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ViewerRole")
+		case "role":
+			out.Values[i] = ec._ViewerRole_role(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "isAdmin":
+			out.Values[i] = ec._ViewerRole_isAdmin(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var vouchImplementors = []string{"Vouch"}
 
 func (ec *executionContext) _Vouch(ctx context.Context, sel ast.SelectionSet, obj *model.Vouch) graphql.Marshaler {
@@ -147562,6 +151954,26 @@ func (ec *executionContext) unmarshalNAddFilterKeywordInput2githubᚗcomᚋequal
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNAdminAIConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfig(ctx context.Context, sel ast.SelectionSet, v *model.AdminAIConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminAIConfig(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminAIConfigLayer2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigLayer(ctx context.Context, sel ast.SelectionSet, v *model.AdminAIConfigLayer) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminAIConfigLayer(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNAdminAccount2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAccount(ctx context.Context, sel ast.SelectionSet, v model.AdminAccount) graphql.Marshaler {
 	return ec._AdminAccount(ctx, sel, &v)
 }
@@ -147817,6 +152229,16 @@ func (ec *executionContext) unmarshalNAdminDomainBlockUpdateInput2githubᚗcom�
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNAdminEffectiveTrustConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminEffectiveTrustConfig(ctx context.Context, sel ast.SelectionSet, v *model.AdminEffectiveTrustConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminEffectiveTrustConfig(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNAdminEmailDomainBlock2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminEmailDomainBlock(ctx context.Context, sel ast.SelectionSet, v model.AdminEmailDomainBlock) graphql.Marshaler {
 	return ec._AdminEmailDomainBlock(ctx, sel, &v)
 }
@@ -148047,6 +152469,20 @@ func (ec *executionContext) marshalNAdminIP2ᚖgithubᚗcomᚋequaltoaiᚋlesser
 		return graphql.Null
 	}
 	return ec._AdminIP(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminInstanceConfig2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminInstanceConfig(ctx context.Context, sel ast.SelectionSet, v model.AdminInstanceConfig) graphql.Marshaler {
+	return ec._AdminInstanceConfig(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAdminInstanceConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminInstanceConfig(ctx context.Context, sel ast.SelectionSet, v *model.AdminInstanceConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminInstanceConfig(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNAdminModerationEvent2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminModerationEventᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.AdminModerationEvent) graphql.Marshaler {
@@ -148308,6 +152744,56 @@ func (ec *executionContext) marshalNAdminStatusConnection2ᚖgithubᚗcomᚋequa
 		return graphql.Null
 	}
 	return ec._AdminStatusConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminTipsConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfig(ctx context.Context, sel ast.SelectionSet, v *model.AdminTipsConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminTipsConfig(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminTipsConfigLayer2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfigLayer(ctx context.Context, sel ast.SelectionSet, v *model.AdminTipsConfigLayer) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminTipsConfigLayer(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminTranslationConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTranslationConfig(ctx context.Context, sel ast.SelectionSet, v *model.AdminTranslationConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminTranslationConfig(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminTrustConfig2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfig(ctx context.Context, sel ast.SelectionSet, v *model.AdminTrustConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminTrustConfig(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminTrustConfigLayer2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfigLayer(ctx context.Context, sel ast.SelectionSet, v *model.AdminTrustConfigLayer) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminTrustConfigLayer(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNAdminTrustGraph2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustGraph(ctx context.Context, sel ast.SelectionSet, v model.AdminTrustGraph) graphql.Marshaler {
@@ -151886,6 +156372,75 @@ func (ec *executionContext) marshalNInstanceCluster2ᚖgithubᚗcomᚋequaltoai�
 		return graphql.Null
 	}
 	return ec._InstanceCluster(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNInstanceConfigFeature2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConfigFeature(ctx context.Context, v any) (model.InstanceConfigFeature, error) {
+	var res model.InstanceConfigFeature
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNInstanceConfigFeature2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConfigFeature(ctx context.Context, sel ast.SelectionSet, v model.InstanceConfigFeature) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) unmarshalNInstanceConfigFeature2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConfigFeatureᚄ(ctx context.Context, v any) ([]model.InstanceConfigFeature, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]model.InstanceConfigFeature, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNInstanceConfigFeature2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConfigFeature(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNInstanceConfigFeature2ᚕgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConfigFeatureᚄ(ctx context.Context, sel ast.SelectionSet, v []model.InstanceConfigFeature) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNInstanceConfigFeature2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConfigFeature(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) marshalNInstanceConnection2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐInstanceConnectionᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.InstanceConnection) graphql.Marshaler {
@@ -156304,6 +160859,16 @@ func (ec *executionContext) unmarshalNUpdateAdminAgentPolicyInput2githubᚗcom�
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNUpdateAdminInstanceManagedDefaultsInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAdminInstanceManagedDefaultsInput(ctx context.Context, v any) (model.UpdateAdminInstanceManagedDefaultsInput, error) {
+	res, err := ec.unmarshalInputUpdateAdminInstanceManagedDefaultsInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalNUpdateAdminInstanceOverridesInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAdminInstanceOverridesInput(ctx context.Context, v any) (model.UpdateAdminInstanceOverridesInput, error) {
+	res, err := ec.unmarshalInputUpdateAdminInstanceOverridesInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNUpdateAgentInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐUpdateAgentInput(ctx context.Context, v any) (model.UpdateAgentInput, error) {
 	res, err := ec.unmarshalInputUpdateAgentInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -156459,6 +161024,20 @@ func (ec *executionContext) marshalNUserPreferences2ᚖgithubᚗcomᚋequaltoai�
 		return graphql.Null
 	}
 	return ec._UserPreferences(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNViewerRole2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐViewerRole(ctx context.Context, sel ast.SelectionSet, v model.ViewerRole) graphql.Marshaler {
+	return ec._ViewerRole(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNViewerRole2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐViewerRole(ctx context.Context, sel ast.SelectionSet, v *model.ViewerRole) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ViewerRole(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNVisibility2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐVisibility(ctx context.Context, v any) (model.Visibility, error) {
@@ -156882,6 +161461,21 @@ func (ec *executionContext) marshalOActor2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 	return ec._Actor(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalOAdminAIConfigLayerOverride2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigLayerOverride(ctx context.Context, sel ast.SelectionSet, v *model.AdminAIConfigLayerOverride) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._AdminAIConfigLayerOverride(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOAdminAIConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAIConfigPatchInput(ctx context.Context, v any) (*model.AdminAIConfigPatchInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAdminAIConfigPatchInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalOAdminAccount2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminAccount(ctx context.Context, sel ast.SelectionSet, v *model.AdminAccount) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -156932,6 +161526,44 @@ func (ec *executionContext) unmarshalOAdminStatusFilter2ᚖgithubᚗcomᚋequalt
 		return nil, nil
 	}
 	res, err := ec.unmarshalInputAdminStatusFilter(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOAdminTipsConfigLayerOverride2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfigLayerOverride(ctx context.Context, sel ast.SelectionSet, v *model.AdminTipsConfigLayerOverride) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._AdminTipsConfigLayerOverride(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOAdminTipsConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTipsConfigPatchInput(ctx context.Context, v any) (*model.AdminTipsConfigPatchInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAdminTipsConfigPatchInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalOAdminTranslationConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTranslationConfigPatchInput(ctx context.Context, v any) (*model.AdminTranslationConfigPatchInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAdminTranslationConfigPatchInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOAdminTrustConfigLayerOverride2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfigLayerOverride(ctx context.Context, sel ast.SelectionSet, v *model.AdminTrustConfigLayerOverride) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._AdminTrustConfigLayerOverride(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOAdminTrustConfigPatchInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAdminTrustConfigPatchInput(ctx context.Context, v any) (*model.AdminTrustConfigPatchInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAdminTrustConfigPatchInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 

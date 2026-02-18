@@ -95,6 +95,11 @@ type Actor {
   vouches: [Vouch!]!
 }
 
+type ViewerRole {
+  role: String!
+  isAdmin: Boolean!
+}
+
 type Field {
   name: String!
   value: String!
@@ -1083,6 +1088,7 @@ type CostUpdate {
 type Query {
   # Mastodon compatibility
   viewer: Actor!
+  viewerRole: ViewerRole!
   actor(id: ID, username: String): Actor
   object(id: ID!): Object
   timeline(
