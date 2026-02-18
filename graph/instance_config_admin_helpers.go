@@ -18,85 +18,22 @@ func (r *Resolver) resolveAdminInstanceConfig(ctx context.Context) (*model.Admin
 
 	instanceRepo := r.Storage.Instance()
 
-	trustExists, err := instanceRepo.TrustConfigExists(ctx)
-	if err != nil {
-		return nil, err
-	}
-	trustCfg, err := instanceRepo.GetTrustConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if trustCfg == nil || strings.TrimSpace(trustCfg.PK) == "" || strings.TrimSpace(trustCfg.SK) == "" {
-		trustCfg = models.NewInstanceTrustConfig()
-	}
-	if trustCfg.Managed == nil {
-		trustCfg.Managed = &models.InstanceTrustConfigManaged{}
-	}
-	trustEffective, err := instanceRepo.EffectiveTrustConfig(ctx)
+	trustCfg, trustEffective, trustExists, err := resolveAdminTrustConfig(ctx, instanceRepo)
 	if err != nil {
 		return nil, err
 	}
 
-	translationExists, err := instanceRepo.TranslationConfigExists(ctx)
-	if err != nil {
-		return nil, err
-	}
-	translationCfg, err := instanceRepo.GetTranslationConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if translationCfg == nil || strings.TrimSpace(translationCfg.PK) == "" || strings.TrimSpace(translationCfg.SK) == "" {
-		translationCfg = models.NewInstanceTranslationConfig()
-	}
-	if translationCfg.Managed == nil {
-		translationCfg.Managed = &models.InstanceTranslationConfigManaged{}
-	}
-	translationEffective, err := instanceRepo.EffectiveTranslationEnabled(ctx)
+	translationCfg, translationEffective, translationExists, err := resolveAdminTranslationConfig(ctx, instanceRepo)
 	if err != nil {
 		return nil, err
 	}
 
-	tipsExists, err := instanceRepo.TipsConfigExists(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tipsCfg, err := instanceRepo.GetTipsConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if tipsCfg == nil || strings.TrimSpace(tipsCfg.PK) == "" || strings.TrimSpace(tipsCfg.SK) == "" {
-		tipsCfg = models.NewInstanceTipsConfig()
-	}
-	if tipsCfg.Managed == nil {
-		tipsCfg.Managed = &models.InstanceTipsConfigManaged{}
-	}
-	tipsEffective, err := instanceRepo.EffectiveTipsConfig(ctx)
+	tipsCfg, tipsEffective, tipsExists, err := resolveAdminTipsConfig(ctx, instanceRepo)
 	if err != nil {
 		return nil, err
 	}
 
-	aiExists, err := instanceRepo.AIConfigExists(ctx)
-	if err != nil {
-		return nil, err
-	}
-	aiCfg, err := instanceRepo.GetAIInstanceConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if aiCfg == nil || strings.TrimSpace(aiCfg.PK) == "" || strings.TrimSpace(aiCfg.SK) == "" {
-		aiCfg = models.NewAIInstanceConfig()
-	}
-	if aiCfg.Managed == nil {
-		aiCfg.Managed = &models.AIInstanceConfigManaged{
-			AIEnabled:            aiCfg.LegacyAIEnabled,
-			ModerationEnabled:    aiCfg.LegacyModerationEnabled,
-			NSFWDetectionEnabled: aiCfg.LegacyNSFWDetectionEnabled,
-			SpamDetectionEnabled: aiCfg.LegacySpamDetectionEnabled,
-			PIIDetectionEnabled:  aiCfg.LegacyPIIDetectionEnabled,
-			AIContentDetection:   aiCfg.LegacyAIContentDetection,
-		}
-	}
-	aiEffective, err := instanceRepo.EffectiveAIConfig(ctx)
+	aiCfg, aiEffective, aiExists, err := resolveAdminAIConfig(ctx, instanceRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +50,143 @@ func (r *Resolver) resolveAdminInstanceConfig(ctx context.Context) (*model.Admin
 		Tips: buildAdminTipsConfig(tipsCfg, tipsEffective, tipsExists),
 		Ai:   buildAdminAIConfig(aiCfg, aiEffective, aiExists),
 	}, nil
+}
+
+func resolveAdminTrustConfig(ctx context.Context, instanceRepo interface {
+	TrustConfigExists(context.Context) (bool, error)
+	GetTrustConfig(context.Context) (*models.InstanceTrustConfig, error)
+	EffectiveTrustConfig(context.Context) (*models.EffectiveTrustConfig, error)
+}) (*models.InstanceTrustConfig, *models.EffectiveTrustConfig, bool, error) {
+	return resolveAdminConfigRecord(ctx, instanceRepo.TrustConfigExists, instanceRepo.GetTrustConfig, models.NewInstanceTrustConfig, hasTrustConfigKeys, ensureTrustConfigManaged, instanceRepo.EffectiveTrustConfig)
+}
+
+func hasTrustConfigKeys(cfg *models.InstanceTrustConfig) bool {
+	return cfg != nil && strings.TrimSpace(cfg.PK) != "" && strings.TrimSpace(cfg.SK) != ""
+}
+
+func ensureTrustConfigManaged(cfg *models.InstanceTrustConfig) {
+	if cfg != nil && cfg.Managed == nil {
+		cfg.Managed = &models.InstanceTrustConfigManaged{}
+	}
+}
+
+func resolveAdminConfigRecord[T any, E any](
+	ctx context.Context,
+	existsFn func(context.Context) (bool, error),
+	getFn func(context.Context) (T, error),
+	newDefault func() T,
+	hasKeys func(T) bool,
+	ensureManaged func(T),
+	effectiveFn func(context.Context) (E, error),
+) (T, E, bool, error) {
+	var zeroT T
+	var zeroE E
+
+	exists, err := existsFn(ctx)
+	if err != nil {
+		return zeroT, zeroE, false, err
+	}
+
+	cfg, err := getFn(ctx)
+	if err != nil {
+		return zeroT, zeroE, false, err
+	}
+	if hasKeys != nil && !hasKeys(cfg) {
+		cfg = newDefault()
+	}
+	if ensureManaged != nil {
+		ensureManaged(cfg)
+	}
+
+	effective, err := effectiveFn(ctx)
+	if err != nil {
+		return zeroT, zeroE, false, err
+	}
+
+	return cfg, effective, exists, nil
+}
+
+func resolveAdminTranslationConfig(ctx context.Context, instanceRepo interface {
+	TranslationConfigExists(context.Context) (bool, error)
+	GetTranslationConfig(context.Context) (*models.InstanceTranslationConfig, error)
+	EffectiveTranslationEnabled(context.Context) (bool, error)
+}) (*models.InstanceTranslationConfig, bool, bool, error) {
+	exists, err := instanceRepo.TranslationConfigExists(ctx)
+	if err != nil {
+		return nil, false, false, err
+	}
+
+	cfg, err := instanceRepo.GetTranslationConfig(ctx)
+	if err != nil {
+		return nil, false, false, err
+	}
+	if cfg == nil || strings.TrimSpace(cfg.PK) == "" || strings.TrimSpace(cfg.SK) == "" {
+		cfg = models.NewInstanceTranslationConfig()
+	}
+	if cfg.Managed == nil {
+		cfg.Managed = &models.InstanceTranslationConfigManaged{}
+	}
+
+	effective, err := instanceRepo.EffectiveTranslationEnabled(ctx)
+	if err != nil {
+		return nil, false, false, err
+	}
+
+	return cfg, effective, exists, nil
+}
+
+func resolveAdminTipsConfig(ctx context.Context, instanceRepo interface {
+	TipsConfigExists(context.Context) (bool, error)
+	GetTipsConfig(context.Context) (*models.InstanceTipsConfig, error)
+	EffectiveTipsConfig(context.Context) (*models.EffectiveTipsConfig, error)
+}) (*models.InstanceTipsConfig, *models.EffectiveTipsConfig, bool, error) {
+	return resolveAdminConfigRecord(ctx, instanceRepo.TipsConfigExists, instanceRepo.GetTipsConfig, models.NewInstanceTipsConfig, hasTipsConfigKeys, ensureTipsConfigManaged, instanceRepo.EffectiveTipsConfig)
+}
+
+func hasTipsConfigKeys(cfg *models.InstanceTipsConfig) bool {
+	return cfg != nil && strings.TrimSpace(cfg.PK) != "" && strings.TrimSpace(cfg.SK) != ""
+}
+
+func ensureTipsConfigManaged(cfg *models.InstanceTipsConfig) {
+	if cfg != nil && cfg.Managed == nil {
+		cfg.Managed = &models.InstanceTipsConfigManaged{}
+	}
+}
+
+func resolveAdminAIConfig(ctx context.Context, instanceRepo interface {
+	AIConfigExists(context.Context) (bool, error)
+	GetAIInstanceConfig(context.Context) (*models.AIInstanceConfig, error)
+	EffectiveAIConfig(context.Context) (*models.EffectiveAIInstanceConfig, error)
+}) (*models.AIInstanceConfig, *models.EffectiveAIInstanceConfig, bool, error) {
+	exists, err := instanceRepo.AIConfigExists(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	cfg, err := instanceRepo.GetAIInstanceConfig(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if cfg == nil || strings.TrimSpace(cfg.PK) == "" || strings.TrimSpace(cfg.SK) == "" {
+		cfg = models.NewAIInstanceConfig()
+	}
+	if cfg.Managed == nil {
+		cfg.Managed = &models.AIInstanceConfigManaged{
+			AIEnabled:            cfg.LegacyAIEnabled,
+			ModerationEnabled:    cfg.LegacyModerationEnabled,
+			NSFWDetectionEnabled: cfg.LegacyNSFWDetectionEnabled,
+			SpamDetectionEnabled: cfg.LegacySpamDetectionEnabled,
+			PIIDetectionEnabled:  cfg.LegacyPIIDetectionEnabled,
+			AIContentDetection:   cfg.LegacyAIContentDetection,
+		}
+	}
+
+	effective, err := instanceRepo.EffectiveAIConfig(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	return cfg, effective, exists, nil
 }
 
 func buildAdminTrustConfig(cfg *models.InstanceTrustConfig, effective *models.EffectiveTrustConfig, exists bool) *model.AdminTrustConfig {

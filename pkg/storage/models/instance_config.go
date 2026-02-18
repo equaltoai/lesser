@@ -85,6 +85,7 @@ type AIInstanceConfig struct {
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
+// AIInstanceConfigManaged stores managed/default AI configuration values for an instance.
 type AIInstanceConfigManaged struct {
 	AIEnabled            bool `theorydb:"attr:aiEnabled" json:"ai_enabled"`
 	ModerationEnabled    bool `theorydb:"attr:moderationEnabled" json:"moderation_enabled"`
@@ -94,6 +95,8 @@ type AIInstanceConfigManaged struct {
 	AIContentDetection   bool `theorydb:"attr:aiContentDetection" json:"ai_content_detection_enabled"`
 }
 
+// AIInstanceConfigOverride stores operator overrides for AI configuration values.
+// Nil fields mean "no override".
 type AIInstanceConfigOverride struct {
 	AIEnabled            *bool `theorydb:"attr:aiEnabled,omitempty" json:"ai_enabled,omitempty"`
 	ModerationEnabled    *bool `theorydb:"attr:moderationEnabled,omitempty" json:"moderation_enabled,omitempty"`
@@ -131,8 +134,8 @@ func (c *AIInstanceConfig) GetSK() string {
 // NewAIInstanceConfig creates a new AI config with defaults
 func NewAIInstanceConfig() *AIInstanceConfig {
 	return &AIInstanceConfig{
-		PK:                   instanceConfigPK,
-		SK:                   SKAIConfig,
+		PK: instanceConfigPK,
+		SK: SKAIConfig,
 		Managed: &AIInstanceConfigManaged{
 			AIEnabled:            true,  // Default to enabled
 			ModerationEnabled:    true,  // Default to enabled

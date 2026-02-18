@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,4 +91,65 @@ func TestListPackagesForPkgCoverage_FiltersPkgTesting(t *testing.T) {
 		"github.com/equaltoai/lesser/pkg/a",
 		"github.com/equaltoai/lesser/pkg/z",
 	}, pkgs)
+}
+
+func TestFilterCoverageData_ReturnsErrorWhenScannerTokenTooLong(t *testing.T) {
+	repoRoot := t.TempDir()
+	modulePrefix := "github.com/equaltoai/lesser/"
+
+	longLine := modulePrefix + "pkg/foo.go:" + strings.Repeat("a", 70*1024)
+	in := "mode: set\n" + longLine + "\n"
+
+	var buf bytes.Buffer
+	w := bufio.NewWriter(&buf)
+	err := filterCoverageData(strings.NewReader(in), w, repoRoot, modulePrefix)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "read coverprofile")
+}
+
+func TestFilterCoverageData_ReturnsErrorWhenWriteFails(t *testing.T) {
+	repoRoot := t.TempDir()
+	modulePrefix := "github.com/equaltoai/lesser/"
+
+	expectedErr := errors.New("write failed")
+	w := bufio.NewWriterSize(failingWriter{err: expectedErr}, 1)
+
+	err := filterCoverageData(strings.NewReader("mode: set\n"), w, repoRoot, modulePrefix)
+	require.ErrorIs(t, err, expectedErr)
+	require.Contains(t, err.Error(), "write coverprofile")
+}
+
+type failingWriter struct {
+	err error
+}
+
+func (w failingWriter) Write(_ []byte) (int, error) {
+	return 0, w.err
+}
+
+func TestIsGeneratedFile_FalseWhenReadReturnsError(t *testing.T) {
+	repoRoot := t.TempDir()
+	modulePrefix := "github.com/equaltoai/lesser/"
+
+	dirPath := filepath.Join(repoRoot, "pkg", "dir")
+	require.NoError(t, os.MkdirAll(dirPath, 0o755))
+
+	require.False(t, isGeneratedFile(repoRoot, modulePrefix, modulePrefix+"pkg/dir"))
+}
+
+func TestFilterGeneratedFilesFromCoverProfile_ReturnsErrorWhenTempDirIsNotWritable(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n"), 0o644))
+
+	coverFile, err := os.CreateTemp(repoRoot, "coverage-*.out")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = coverFile.Close() })
+	_, err = coverFile.WriteString("mode: set\n")
+	require.NoError(t, err)
+
+	coverProfilePath := fmt.Sprintf("/proc/self/fd/%d", coverFile.Fd())
+
+	err = filterGeneratedFilesFromCoverProfile(repoRoot, coverProfilePath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create temp coverprofile")
 }

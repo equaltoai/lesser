@@ -17,10 +17,13 @@ type InstanceTranslationConfig struct {
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
+// InstanceTranslationConfigManaged stores managed/default translation configuration values.
 type InstanceTranslationConfigManaged struct {
 	Enabled bool `theorydb:"attr:enabled" json:"enabled"`
 }
 
+// InstanceTranslationConfigOverride stores operator overrides for translation configuration values.
+// Nil fields mean "no override".
 type InstanceTranslationConfigOverride struct {
 	Enabled *bool `theorydb:"attr:enabled,omitempty" json:"enabled,omitempty"`
 }
@@ -60,4 +63,3 @@ func NewInstanceTranslationConfig() *InstanceTranslationConfig {
 		UpdatedAt: time.Now(),
 	}
 }
-

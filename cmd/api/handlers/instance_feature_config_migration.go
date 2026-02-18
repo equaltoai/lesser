@@ -181,7 +181,7 @@ func (h *Handler) migrateTipsConfigFromEnv(ctx context.Context, instanceRepo int
 
 func parseEnvBool(raw string) bool {
 	raw = strings.ToLower(strings.TrimSpace(raw))
-	return raw == "true" || raw == "1" || raw == "yes"
+	return raw == boolTrue || raw == "1" || raw == "yes"
 }
 
 func stringPtr(raw string) *string {

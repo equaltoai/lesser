@@ -17,12 +17,15 @@ type InstanceTrustConfig struct {
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
+// InstanceTrustConfigManaged stores managed/default trust configuration values.
 type InstanceTrustConfigManaged struct {
 	BaseURL              string `theorydb:"attr:baseURL,omitempty" json:"base_url,omitempty"`
 	AttestationsURL      string `theorydb:"attr:attestationsURL,omitempty" json:"attestations_url,omitempty"`
 	InstanceKeySecretARN string `theorydb:"attr:instanceKeySecretARN,omitempty" json:"instance_key_secret_arn,omitempty"`
 }
 
+// InstanceTrustConfigOverride stores operator overrides for trust configuration values.
+// Nil fields mean "no override".
 type InstanceTrustConfigOverride struct {
 	BaseURL              *string `theorydb:"attr:baseURL,omitempty" json:"base_url,omitempty"`
 	AttestationsURL      *string `theorydb:"attr:attestationsURL,omitempty" json:"attestations_url,omitempty"`
@@ -64,4 +67,3 @@ func NewInstanceTrustConfig() *InstanceTrustConfig {
 		UpdatedAt: time.Now(),
 	}
 }
-

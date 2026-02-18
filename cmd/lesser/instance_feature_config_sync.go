@@ -141,57 +141,80 @@ func seedManagedConfigFromEnvOnce(ctx context.Context, instanceRepo *repositorie
 		return nil
 	}
 
+	if err := seedTrustManagedDefaultsFromEnvOnce(ctx, instanceRepo, stageName, tableName); err != nil {
+		return err
+	}
+	if err := seedTranslationManagedDefaultsFromEnvOnce(ctx, instanceRepo, stageName, tableName); err != nil {
+		return err
+	}
+	if err := seedTipsManagedDefaultsFromEnvOnce(ctx, instanceRepo, stageName, tableName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func seedTrustManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repositories.InstanceRepository, stageName, tableName string) error {
 	trustExists, err := instanceRepo.TrustConfigExists(ctx)
 	if err != nil {
 		return err
 	}
-	if !trustExists {
-		trustPatch := envTrustPatch()
-		if trustPatch.BaseURL != nil || trustPatch.AttestationsURL != nil || trustPatch.InstanceKeySecretARN != nil {
-			if _, err := instanceRepo.EnsureTrustConfig(ctx); err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "WARNING: seeding TRUST_CONFIG managed defaults from env for %s (%s)\n", stageName, tableName)
-			if err := instanceRepo.SetTrustManagedDefaults(ctx, trustPatch); err != nil {
-				return err
-			}
-		}
+	if trustExists {
+		return nil
 	}
 
+	trustPatch := envTrustPatch()
+	if trustPatch.BaseURL == nil && trustPatch.AttestationsURL == nil && trustPatch.InstanceKeySecretARN == nil {
+		return nil
+	}
+
+	if _, err := instanceRepo.EnsureTrustConfig(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "WARNING: seeding TRUST_CONFIG managed defaults from env for %s (%s)\n", stageName, tableName)
+	return instanceRepo.SetTrustManagedDefaults(ctx, trustPatch)
+}
+
+func seedTranslationManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repositories.InstanceRepository, stageName, tableName string) error {
 	translationExists, err := instanceRepo.TranslationConfigExists(ctx)
 	if err != nil {
 		return err
 	}
-	if !translationExists {
-		if enabled := envBoolPtr("TRANSLATION_ENABLED"); enabled != nil {
-			if _, err := instanceRepo.EnsureTranslationConfig(ctx); err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "WARNING: seeding TRANSLATION_CONFIG managed defaults from env for %s (%s)\n", stageName, tableName)
-			if err := instanceRepo.SetTranslationManagedDefaults(ctx, models.InstanceTranslationConfigPatch{Enabled: enabled}); err != nil {
-				return err
-			}
-		}
+	if translationExists {
+		return nil
 	}
 
+	enabled := envBoolPtr("TRANSLATION_ENABLED")
+	if enabled == nil {
+		return nil
+	}
+
+	if _, err := instanceRepo.EnsureTranslationConfig(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "WARNING: seeding TRANSLATION_CONFIG managed defaults from env for %s (%s)\n", stageName, tableName)
+	return instanceRepo.SetTranslationManagedDefaults(ctx, models.InstanceTranslationConfigPatch{Enabled: enabled})
+}
+
+func seedTipsManagedDefaultsFromEnvOnce(ctx context.Context, instanceRepo *repositories.InstanceRepository, stageName, tableName string) error {
 	tipsExists, err := instanceRepo.TipsConfigExists(ctx)
 	if err != nil {
 		return err
 	}
-	if !tipsExists {
-		tipsPatch := envTipsPatch()
-		if tipsPatch.Enabled != nil || tipsPatch.ChainID != nil || tipsPatch.ContractAddress != nil {
-			if _, err := instanceRepo.EnsureTipsConfig(ctx); err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "WARNING: seeding TIPS_CONFIG managed defaults from env for %s (%s)\n", stageName, tableName)
-			if err := instanceRepo.SetTipsManagedDefaults(ctx, tipsPatch); err != nil {
-				return err
-			}
-		}
+	if tipsExists {
+		return nil
 	}
 
-	return nil
+	tipsPatch := envTipsPatch()
+	if tipsPatch.Enabled == nil && tipsPatch.ChainID == nil && tipsPatch.ContractAddress == nil {
+		return nil
+	}
+
+	if _, err := instanceRepo.EnsureTipsConfig(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "WARNING: seeding TIPS_CONFIG managed defaults from env for %s (%s)\n", stageName, tableName)
+	return instanceRepo.SetTipsManagedDefaults(ctx, tipsPatch)
 }
 
 func envTrustPatch() models.InstanceTrustConfigPatch {
@@ -225,7 +248,7 @@ func envBoolPtr(envKey string) *bool {
 	}
 
 	raw = strings.ToLower(raw)
-	v := raw == flagTrue || raw == "1" || raw == "yes"
+	v := raw == flagTrue || raw == "1" || raw == flagYes
 	return &v
 }
 

@@ -17,12 +17,15 @@ type InstanceTipsConfig struct {
 	UpdatedAt time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 }
 
+// InstanceTipsConfigManaged stores managed/default tips configuration values.
 type InstanceTipsConfigManaged struct {
 	Enabled         bool   `theorydb:"attr:enabled" json:"enabled"`
 	ChainID         int    `theorydb:"attr:chainID" json:"chain_id"`
 	ContractAddress string `theorydb:"attr:contractAddress,omitempty" json:"contract_address,omitempty"`
 }
 
+// InstanceTipsConfigOverride stores operator overrides for tips configuration values.
+// Nil fields mean "no override".
 type InstanceTipsConfigOverride struct {
 	Enabled         *bool   `theorydb:"attr:enabled,omitempty" json:"enabled,omitempty"`
 	ChainID         *int    `theorydb:"attr:chainID,omitempty" json:"chain_id,omitempty"`
@@ -64,4 +67,3 @@ func NewInstanceTipsConfig() *InstanceTipsConfig {
 		UpdatedAt: time.Now(),
 	}
 }
-

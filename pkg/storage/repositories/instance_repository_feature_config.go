@@ -11,6 +11,52 @@ import (
 	"go.uber.org/zap"
 )
 
+func ensureInstanceConfigRecord[T BaseModel](
+	ctx context.Context,
+	repo *BaseRepository[T],
+	pk string,
+	sk string,
+	newEmpty func() T,
+	newDefault func() T,
+	setCache func(T),
+) (T, error) {
+	cfg := newEmpty()
+	err := repo.Get(ctx, pk, sk, cfg)
+	if err == nil {
+		if setCache != nil {
+			setCache(cfg)
+		}
+		return cfg, nil
+	}
+
+	if !appErrors.HasCode(err, appErrors.CodeNotFound) {
+		var zero T
+		return zero, err
+	}
+
+	cfg = newDefault()
+	if createErr := repo.Create(ctx, cfg); createErr != nil {
+		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) || appErrors.HasCode(createErr, appErrors.CodeConflict) {
+			cfg = newEmpty()
+			if err := repo.Get(ctx, pk, sk, cfg); err != nil {
+				var zero T
+				return zero, err
+			}
+			if setCache != nil {
+				setCache(cfg)
+			}
+			return cfg, nil
+		}
+		var zero T
+		return zero, createErr
+	}
+
+	if setCache != nil {
+		setCache(cfg)
+	}
+	return cfg, nil
+}
+
 func (r *InstanceRepository) getCachedTrustConfig() (*models.InstanceTrustConfig, bool) {
 	r.trustCache.mu.RLock()
 	cfg := r.trustCache.cfg
@@ -30,6 +76,7 @@ func (r *InstanceRepository) setCachedTrustConfig(cfg *models.InstanceTrustConfi
 	r.trustCache.mu.Unlock()
 }
 
+//nolint:unused // Reserved for future cache invalidation hooks.
 func (r *InstanceRepository) invalidateTrustConfigCache() {
 	r.trustCache.mu.Lock()
 	r.trustCache.cfg = nil
@@ -56,6 +103,7 @@ func (r *InstanceRepository) setCachedTranslationConfig(cfg *models.InstanceTran
 	r.translationCache.mu.Unlock()
 }
 
+//nolint:unused // Reserved for future cache invalidation hooks.
 func (r *InstanceRepository) invalidateTranslationConfigCache() {
 	r.translationCache.mu.Lock()
 	r.translationCache.cfg = nil
@@ -82,6 +130,7 @@ func (r *InstanceRepository) setCachedTipsConfig(cfg *models.InstanceTipsConfig)
 	r.tipsCache.mu.Unlock()
 }
 
+//nolint:unused // Reserved for future cache invalidation hooks.
 func (r *InstanceRepository) invalidateTipsConfigCache() {
 	r.tipsCache.mu.Lock()
 	r.tipsCache.cfg = nil
@@ -108,6 +157,7 @@ func (r *InstanceRepository) setCachedAIConfig(cfg *models.AIInstanceConfig) {
 	r.aiConfigCache.mu.Unlock()
 }
 
+//nolint:unused // Reserved for future cache invalidation hooks.
 func (r *InstanceRepository) invalidateAIConfigCache() {
 	r.aiConfigCache.mu.Lock()
 	r.aiConfigCache.cfg = nil
@@ -208,32 +258,15 @@ func (r *InstanceRepository) GetTrustConfig(ctx context.Context) (*models.Instan
 
 // EnsureTrustConfig ensures the instance trust config record exists and returns it.
 func (r *InstanceRepository) EnsureTrustConfig(ctx context.Context) (*models.InstanceTrustConfig, error) {
-	cfg := &models.InstanceTrustConfig{}
-	err := r.trustRepo.Get(ctx, storage.InstanceConfigKey, models.SKTrustConfig, cfg)
-	if err == nil {
-		r.setCachedTrustConfig(cfg)
-		return cfg, nil
-	}
-
-	if !appErrors.HasCode(err, appErrors.CodeNotFound) {
-		return nil, err
-	}
-
-	cfg = models.NewInstanceTrustConfig()
-	if createErr := r.trustRepo.Create(ctx, cfg); createErr != nil {
-		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) || appErrors.HasCode(createErr, appErrors.CodeConflict) {
-			cfg = &models.InstanceTrustConfig{}
-			if err := r.trustRepo.Get(ctx, storage.InstanceConfigKey, models.SKTrustConfig, cfg); err != nil {
-				return nil, err
-			}
-			r.setCachedTrustConfig(cfg)
-			return cfg, nil
-		}
-		return nil, createErr
-	}
-
-	r.setCachedTrustConfig(cfg)
-	return cfg, nil
+	return ensureInstanceConfigRecord[*models.InstanceTrustConfig](
+		ctx,
+		r.trustRepo,
+		storage.InstanceConfigKey,
+		models.SKTrustConfig,
+		func() *models.InstanceTrustConfig { return &models.InstanceTrustConfig{} },
+		models.NewInstanceTrustConfig,
+		r.setCachedTrustConfig,
+	)
 }
 
 // SetTrustManagedDefaults merges managed trust defaults into instance config.
@@ -417,32 +450,15 @@ func (r *InstanceRepository) GetTranslationConfig(ctx context.Context) (*models.
 
 // EnsureTranslationConfig ensures the instance translation config record exists and returns it.
 func (r *InstanceRepository) EnsureTranslationConfig(ctx context.Context) (*models.InstanceTranslationConfig, error) {
-	cfg := &models.InstanceTranslationConfig{}
-	err := r.translationRepo.Get(ctx, storage.InstanceConfigKey, models.SKTranslationConfig, cfg)
-	if err == nil {
-		r.setCachedTranslationConfig(cfg)
-		return cfg, nil
-	}
-
-	if !appErrors.HasCode(err, appErrors.CodeNotFound) {
-		return nil, err
-	}
-
-	cfg = models.NewInstanceTranslationConfig()
-	if createErr := r.translationRepo.Create(ctx, cfg); createErr != nil {
-		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) || appErrors.HasCode(createErr, appErrors.CodeConflict) {
-			cfg = &models.InstanceTranslationConfig{}
-			if err := r.translationRepo.Get(ctx, storage.InstanceConfigKey, models.SKTranslationConfig, cfg); err != nil {
-				return nil, err
-			}
-			r.setCachedTranslationConfig(cfg)
-			return cfg, nil
-		}
-		return nil, createErr
-	}
-
-	r.setCachedTranslationConfig(cfg)
-	return cfg, nil
+	return ensureInstanceConfigRecord[*models.InstanceTranslationConfig](
+		ctx,
+		r.translationRepo,
+		storage.InstanceConfigKey,
+		models.SKTranslationConfig,
+		func() *models.InstanceTranslationConfig { return &models.InstanceTranslationConfig{} },
+		models.NewInstanceTranslationConfig,
+		r.setCachedTranslationConfig,
+	)
 }
 
 // SetTranslationManagedDefaults merges managed translation defaults into instance config.
@@ -573,32 +589,15 @@ func (r *InstanceRepository) GetTipsConfig(ctx context.Context) (*models.Instanc
 
 // EnsureTipsConfig ensures the instance tips config record exists and returns it.
 func (r *InstanceRepository) EnsureTipsConfig(ctx context.Context) (*models.InstanceTipsConfig, error) {
-	cfg := &models.InstanceTipsConfig{}
-	err := r.tipsRepo.Get(ctx, storage.InstanceConfigKey, models.SKTipsConfig, cfg)
-	if err == nil {
-		r.setCachedTipsConfig(cfg)
-		return cfg, nil
-	}
-
-	if !appErrors.HasCode(err, appErrors.CodeNotFound) {
-		return nil, err
-	}
-
-	cfg = models.NewInstanceTipsConfig()
-	if createErr := r.tipsRepo.Create(ctx, cfg); createErr != nil {
-		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) || appErrors.HasCode(createErr, appErrors.CodeConflict) {
-			cfg = &models.InstanceTipsConfig{}
-			if err := r.tipsRepo.Get(ctx, storage.InstanceConfigKey, models.SKTipsConfig, cfg); err != nil {
-				return nil, err
-			}
-			r.setCachedTipsConfig(cfg)
-			return cfg, nil
-		}
-		return nil, createErr
-	}
-
-	r.setCachedTipsConfig(cfg)
-	return cfg, nil
+	return ensureInstanceConfigRecord[*models.InstanceTipsConfig](
+		ctx,
+		r.tipsRepo,
+		storage.InstanceConfigKey,
+		models.SKTipsConfig,
+		func() *models.InstanceTipsConfig { return &models.InstanceTipsConfig{} },
+		models.NewInstanceTipsConfig,
+		r.setCachedTipsConfig,
+	)
 }
 
 // SetTipsManagedDefaults merges managed tips defaults into instance config.
@@ -772,32 +771,15 @@ func (r *InstanceRepository) GetAIInstanceConfig(ctx context.Context) (*models.A
 
 // EnsureAIInstanceConfig ensures the instance AI config record exists and returns it.
 func (r *InstanceRepository) EnsureAIInstanceConfig(ctx context.Context) (*models.AIInstanceConfig, error) {
-	cfg := &models.AIInstanceConfig{}
-	err := r.aiConfigRepo.Get(ctx, storage.InstanceConfigKey, models.SKAIConfig, cfg)
-	if err == nil {
-		r.setCachedAIConfig(cfg)
-		return cfg, nil
-	}
-
-	if !appErrors.HasCode(err, appErrors.CodeNotFound) {
-		return nil, err
-	}
-
-	cfg = models.NewAIInstanceConfig()
-	if createErr := r.aiConfigRepo.Create(ctx, cfg); createErr != nil {
-		if appErrors.HasCode(createErr, appErrors.CodeAlreadyExists) || appErrors.HasCode(createErr, appErrors.CodeConflict) {
-			cfg = &models.AIInstanceConfig{}
-			if err := r.aiConfigRepo.Get(ctx, storage.InstanceConfigKey, models.SKAIConfig, cfg); err != nil {
-				return nil, err
-			}
-			r.setCachedAIConfig(cfg)
-			return cfg, nil
-		}
-		return nil, createErr
-	}
-
-	r.setCachedAIConfig(cfg)
-	return cfg, nil
+	return ensureInstanceConfigRecord[*models.AIInstanceConfig](
+		ctx,
+		r.aiConfigRepo,
+		storage.InstanceConfigKey,
+		models.SKAIConfig,
+		func() *models.AIInstanceConfig { return &models.AIInstanceConfig{} },
+		models.NewAIInstanceConfig,
+		r.setCachedAIConfig,
+	)
 }
 
 // SetAIManagedDefaults merges managed AI defaults into instance config.
@@ -987,6 +969,7 @@ func (r *InstanceRepository) EffectiveAIConfig(ctx context.Context) (*models.Eff
 	return out, nil
 }
 
+//nolint:unused // Reserved for future effective-config validation logging.
 func (r *InstanceRepository) warnInvalidEffectiveConfig(message string, fields ...zap.Field) {
 	if r == nil || r.logger == nil {
 		return

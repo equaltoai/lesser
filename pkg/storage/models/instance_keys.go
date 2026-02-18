@@ -3,9 +3,15 @@ package models
 const (
 	instanceConfigPK = "INSTANCE#CONFIG"
 
-	// Well-known instance-owned configuration records (PK=INSTANCE#CONFIG).
-	SKTrustConfig       = "TRUST_CONFIG"
+	// SKTrustConfig is the sort key for the trust configuration record (PK="INSTANCE#CONFIG").
+	SKTrustConfig = "TRUST_CONFIG"
+
+	// SKTranslationConfig is the sort key for the translation configuration record (PK="INSTANCE#CONFIG").
 	SKTranslationConfig = "TRANSLATION_CONFIG"
-	SKTipsConfig        = "TIPS_CONFIG"
-	SKAIConfig          = "AI_CONFIG"
+
+	// SKTipsConfig is the sort key for the tips configuration record (PK="INSTANCE#CONFIG").
+	SKTipsConfig = "TIPS_CONFIG"
+
+	// SKAIConfig is the sort key for the AI configuration record (PK="INSTANCE#CONFIG").
+	SKAIConfig = "AI_CONFIG"
 )

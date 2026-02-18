@@ -9,6 +9,85 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+type (
+	trustPatchSetter       func(context.Context, storagemodels.InstanceTrustConfigPatch) error
+	translationPatchSetter func(context.Context, storagemodels.InstanceTranslationConfigPatch) error
+	tipsPatchSetter        func(context.Context, storagemodels.InstanceTipsConfigPatch) error
+	aiPatchSetter          func(context.Context, storagemodels.AIInstanceConfigPatch) error
+)
+
+func applyAdminInstanceConfigPatches(
+	ctx context.Context,
+	trust *model.AdminTrustConfigPatchInput,
+	translation *model.AdminTranslationConfigPatchInput,
+	tips *model.AdminTipsConfigPatchInput,
+	ai *model.AdminAIConfigPatchInput,
+	setTrust trustPatchSetter,
+	setTranslation translationPatchSetter,
+	setTips tipsPatchSetter,
+	setAI aiPatchSetter,
+) error {
+	if trust != nil && setTrust != nil {
+		if trust.BaseURL != nil {
+			if err := validateAdminTrustBaseURL(*trust.BaseURL); err != nil {
+				return apperrors.BadRequest(err.Error())
+			}
+		}
+		if trust.AttestationsURL != nil {
+			if err := validateAdminTrustBaseURL(*trust.AttestationsURL); err != nil {
+				return apperrors.BadRequest(err.Error())
+			}
+		}
+
+		patch := storagemodels.InstanceTrustConfigPatch{
+			BaseURL:              trust.BaseURL,
+			AttestationsURL:      trust.AttestationsURL,
+			InstanceKeySecretARN: trust.InstanceKeySecretArn,
+		}
+		if err := setTrust(ctx, patch); err != nil {
+			return err
+		}
+	}
+
+	if translation != nil && setTranslation != nil {
+		patch := storagemodels.InstanceTranslationConfigPatch{Enabled: translation.Enabled}
+		if err := setTranslation(ctx, patch); err != nil {
+			return err
+		}
+	}
+
+	if tips != nil && setTips != nil {
+		if err := validateAdminTipsPatch(tips.Enabled, tips.ChainID, tips.ContractAddress); err != nil {
+			return err
+		}
+
+		patch := storagemodels.InstanceTipsConfigPatch{
+			Enabled:         tips.Enabled,
+			ChainID:         tips.ChainID,
+			ContractAddress: tips.ContractAddress,
+		}
+		if err := setTips(ctx, patch); err != nil {
+			return err
+		}
+	}
+
+	if ai != nil && setAI != nil {
+		patch := storagemodels.AIInstanceConfigPatch{
+			AIEnabled:            ai.AiEnabled,
+			ModerationEnabled:    ai.ModerationEnabled,
+			NSFWDetectionEnabled: ai.NsfwDetectionEnabled,
+			SpamDetectionEnabled: ai.SpamDetectionEnabled,
+			PIIDetectionEnabled:  ai.PiiDetectionEnabled,
+			AIContentDetection:   ai.AiContentDetection,
+		}
+		if err := setAI(ctx, patch); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (r *mutationResolver) UpdateAdminInstanceManagedDefaults(ctx context.Context, input model.UpdateAdminInstanceManagedDefaultsInput) (*model.AdminInstanceConfig, error) {
 	if _, err := r.requireAdmin(ctx); err != nil {
 		return nil, err
@@ -19,62 +98,18 @@ func (r *mutationResolver) UpdateAdminInstanceManagedDefaults(ctx context.Contex
 
 	instanceRepo := r.Storage.Instance()
 
-	if input.Trust != nil {
-		if input.Trust.BaseURL != nil {
-			if err := validateAdminTrustBaseURL(*input.Trust.BaseURL); err != nil {
-				return nil, apperrors.BadRequest(err.Error())
-			}
-		}
-		if input.Trust.AttestationsURL != nil {
-			if err := validateAdminTrustBaseURL(*input.Trust.AttestationsURL); err != nil {
-				return nil, apperrors.BadRequest(err.Error())
-			}
-		}
-
-		patch := storagemodels.InstanceTrustConfigPatch{
-			BaseURL:              input.Trust.BaseURL,
-			AttestationsURL:      input.Trust.AttestationsURL,
-			InstanceKeySecretARN: input.Trust.InstanceKeySecretArn,
-		}
-		if err := instanceRepo.SetTrustManagedDefaults(ctx, patch); err != nil {
-			return nil, err
-		}
-	}
-
-	if input.Translation != nil {
-		patch := storagemodels.InstanceTranslationConfigPatch{Enabled: input.Translation.Enabled}
-		if err := instanceRepo.SetTranslationManagedDefaults(ctx, patch); err != nil {
-			return nil, err
-		}
-	}
-
-	if input.Tips != nil {
-		if err := validateAdminTipsPatch(input.Tips.Enabled, input.Tips.ChainID, input.Tips.ContractAddress); err != nil {
-			return nil, err
-		}
-
-		patch := storagemodels.InstanceTipsConfigPatch{
-			Enabled:         input.Tips.Enabled,
-			ChainID:         input.Tips.ChainID,
-			ContractAddress: input.Tips.ContractAddress,
-		}
-		if err := instanceRepo.SetTipsManagedDefaults(ctx, patch); err != nil {
-			return nil, err
-		}
-	}
-
-	if input.Ai != nil {
-		patch := storagemodels.AIInstanceConfigPatch{
-			AIEnabled:            input.Ai.AiEnabled,
-			ModerationEnabled:    input.Ai.ModerationEnabled,
-			NSFWDetectionEnabled: input.Ai.NsfwDetectionEnabled,
-			SpamDetectionEnabled: input.Ai.SpamDetectionEnabled,
-			PIIDetectionEnabled:  input.Ai.PiiDetectionEnabled,
-			AIContentDetection:   input.Ai.AiContentDetection,
-		}
-		if err := instanceRepo.SetAIManagedDefaults(ctx, patch); err != nil {
-			return nil, err
-		}
+	if err := applyAdminInstanceConfigPatches(
+		ctx,
+		input.Trust,
+		input.Translation,
+		input.Tips,
+		input.Ai,
+		instanceRepo.SetTrustManagedDefaults,
+		instanceRepo.SetTranslationManagedDefaults,
+		instanceRepo.SetTipsManagedDefaults,
+		instanceRepo.SetAIManagedDefaults,
+	); err != nil {
+		return nil, err
 	}
 
 	return r.resolveAdminInstanceConfig(ctx)
@@ -90,62 +125,18 @@ func (r *mutationResolver) UpdateAdminInstanceOverrides(ctx context.Context, inp
 
 	instanceRepo := r.Storage.Instance()
 
-	if input.Trust != nil {
-		if input.Trust.BaseURL != nil {
-			if err := validateAdminTrustBaseURL(*input.Trust.BaseURL); err != nil {
-				return nil, apperrors.BadRequest(err.Error())
-			}
-		}
-		if input.Trust.AttestationsURL != nil {
-			if err := validateAdminTrustBaseURL(*input.Trust.AttestationsURL); err != nil {
-				return nil, apperrors.BadRequest(err.Error())
-			}
-		}
-
-		patch := storagemodels.InstanceTrustConfigPatch{
-			BaseURL:              input.Trust.BaseURL,
-			AttestationsURL:      input.Trust.AttestationsURL,
-			InstanceKeySecretARN: input.Trust.InstanceKeySecretArn,
-		}
-		if err := instanceRepo.SetTrustOverride(ctx, patch); err != nil {
-			return nil, err
-		}
-	}
-
-	if input.Translation != nil {
-		patch := storagemodels.InstanceTranslationConfigPatch{Enabled: input.Translation.Enabled}
-		if err := instanceRepo.SetTranslationOverride(ctx, patch); err != nil {
-			return nil, err
-		}
-	}
-
-	if input.Tips != nil {
-		if err := validateAdminTipsPatch(input.Tips.Enabled, input.Tips.ChainID, input.Tips.ContractAddress); err != nil {
-			return nil, err
-		}
-
-		patch := storagemodels.InstanceTipsConfigPatch{
-			Enabled:         input.Tips.Enabled,
-			ChainID:         input.Tips.ChainID,
-			ContractAddress: input.Tips.ContractAddress,
-		}
-		if err := instanceRepo.SetTipsOverride(ctx, patch); err != nil {
-			return nil, err
-		}
-	}
-
-	if input.Ai != nil {
-		patch := storagemodels.AIInstanceConfigPatch{
-			AIEnabled:            input.Ai.AiEnabled,
-			ModerationEnabled:    input.Ai.ModerationEnabled,
-			NSFWDetectionEnabled: input.Ai.NsfwDetectionEnabled,
-			SpamDetectionEnabled: input.Ai.SpamDetectionEnabled,
-			PIIDetectionEnabled:  input.Ai.PiiDetectionEnabled,
-			AIContentDetection:   input.Ai.AiContentDetection,
-		}
-		if err := instanceRepo.SetAIOverride(ctx, patch); err != nil {
-			return nil, err
-		}
+	if err := applyAdminInstanceConfigPatches(
+		ctx,
+		input.Trust,
+		input.Translation,
+		input.Tips,
+		input.Ai,
+		instanceRepo.SetTrustOverride,
+		instanceRepo.SetTranslationOverride,
+		instanceRepo.SetTipsOverride,
+		instanceRepo.SetAIOverride,
+	); err != nil {
+		return nil, err
 	}
 
 	return r.resolveAdminInstanceConfig(ctx)

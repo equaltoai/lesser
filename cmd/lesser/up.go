@@ -423,54 +423,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 		if err != nil {
 			return upArgs{}, err
 		}
-		if strings.TrimSpace(args.App) == "" {
-			args.App = in.Slug
-		}
-		if strings.TrimSpace(args.Stage) == "" {
-			args.Stage = in.Stage
-		}
-		if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
-			args.BootstrapWalletAddress = in.AdminWalletAddress
-		}
-		if strings.TrimSpace(args.LesserHostURL) == "" {
-			args.LesserHostURL = in.LesserHostURL
-		}
-		if strings.TrimSpace(args.LesserHostAttestationsURL) == "" {
-			args.LesserHostAttestationsURL = in.LesserHostAttestationsURL
-		}
-		if strings.TrimSpace(args.LesserHostInstanceKeyARN) == "" {
-			args.LesserHostInstanceKeyARN = in.LesserHostInstanceKeyARN
-		}
-		if args.TranslationEnabled == nil {
-			args.TranslationEnabled = in.TranslationEnabled
-		}
-		if args.TipEnabled == nil {
-			args.TipEnabled = in.TipEnabled
-		}
-		if args.TipChainID == nil {
-			args.TipChainID = in.TipChainID
-		}
-		if strings.TrimSpace(args.TipContractAddress) == "" {
-			args.TipContractAddress = in.TipContractAddress
-		}
-		if args.AIEnabled == nil {
-			args.AIEnabled = in.AIEnabled
-		}
-		if args.AIModerationEnabled == nil {
-			args.AIModerationEnabled = in.AIModerationEnabled
-		}
-		if args.AINsfwDetectionEnabled == nil {
-			args.AINsfwDetectionEnabled = in.AINsfwDetectionEnabled
-		}
-		if args.AISpamDetectionEnabled == nil {
-			args.AISpamDetectionEnabled = in.AISpamDetectionEnabled
-		}
-		if args.AIPiiDetectionEnabled == nil {
-			args.AIPiiDetectionEnabled = in.AIPiiDetectionEnabled
-		}
-		if args.AIContentDetectionEnabled == nil {
-			args.AIContentDetectionEnabled = in.AIContentDetectionEnabled
-		}
+		applyManagedProvisioningDefaults(&args, in)
 	}
 
 	if strings.TrimSpace(args.App) == "" || strings.TrimSpace(args.BaseDomain) == "" {
@@ -491,6 +444,61 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	}
 
 	return args, nil
+}
+
+func applyManagedProvisioningDefaults(args *upArgs, in managedProvisioningInput) {
+	if args == nil {
+		return
+	}
+
+	if strings.TrimSpace(args.App) == "" {
+		args.App = in.Slug
+	}
+	if strings.TrimSpace(args.Stage) == "" {
+		args.Stage = in.Stage
+	}
+	if strings.TrimSpace(args.BootstrapWalletAddress) == "" {
+		args.BootstrapWalletAddress = in.AdminWalletAddress
+	}
+	if strings.TrimSpace(args.LesserHostURL) == "" {
+		args.LesserHostURL = in.LesserHostURL
+	}
+	if strings.TrimSpace(args.LesserHostAttestationsURL) == "" {
+		args.LesserHostAttestationsURL = in.LesserHostAttestationsURL
+	}
+	if strings.TrimSpace(args.LesserHostInstanceKeyARN) == "" {
+		args.LesserHostInstanceKeyARN = in.LesserHostInstanceKeyARN
+	}
+	if args.TranslationEnabled == nil {
+		args.TranslationEnabled = in.TranslationEnabled
+	}
+	if args.TipEnabled == nil {
+		args.TipEnabled = in.TipEnabled
+	}
+	if args.TipChainID == nil {
+		args.TipChainID = in.TipChainID
+	}
+	if strings.TrimSpace(args.TipContractAddress) == "" {
+		args.TipContractAddress = in.TipContractAddress
+	}
+	if args.AIEnabled == nil {
+		args.AIEnabled = in.AIEnabled
+	}
+	if args.AIModerationEnabled == nil {
+		args.AIModerationEnabled = in.AIModerationEnabled
+	}
+	if args.AINsfwDetectionEnabled == nil {
+		args.AINsfwDetectionEnabled = in.AINsfwDetectionEnabled
+	}
+	if args.AISpamDetectionEnabled == nil {
+		args.AISpamDetectionEnabled = in.AISpamDetectionEnabled
+	}
+	if args.AIPiiDetectionEnabled == nil {
+		args.AIPiiDetectionEnabled = in.AIPiiDetectionEnabled
+	}
+	if args.AIContentDetectionEnabled == nil {
+		args.AIContentDetectionEnabled = in.AIContentDetectionEnabled
+	}
 }
 
 func normalizeBootstrapWalletAddress(input string) (string, error) {
