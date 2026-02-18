@@ -39,7 +39,7 @@ func TestReadManagedProvisioningInput_ValidationAndDefaults(t *testing.T) {
 
 	t.Run("unsupported schema errors", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "in.json")
-		require.NoError(t, os.WriteFile(path, []byte(`{"schema":2,"slug":"app","stage":"dev","admin_wallet_address":"0x1"}`), 0o600))
+		require.NoError(t, os.WriteFile(path, []byte(`{"schema":3,"slug":"app","stage":"dev","admin_wallet_address":"0x1"}`), 0o600))
 		_, err := readManagedProvisioningInput(path)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported")
@@ -90,7 +90,11 @@ func TestReadManagedProvisioningInput_ValidationAndDefaults(t *testing.T) {
   "lesser_host_url": " https://lab.lesser.host/ ",
   "lesser_host_attestations_url": " https://attest.lab.lesser.host/ ",
   "lesser_host_instance_key_arn": " arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey ",
-  "translation_enabled": false
+  "translation_enabled": false,
+  "tip_enabled": true,
+  "tip_chain_id": 10,
+  "tip_contract_address": " 0xabc ",
+  "ai_enabled": true
 }`), 0o600))
 		in, err := readManagedProvisioningInput(path)
 		require.NoError(t, err)
@@ -99,5 +103,12 @@ func TestReadManagedProvisioningInput_ValidationAndDefaults(t *testing.T) {
 		require.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instanceKey", in.LesserHostInstanceKeyARN)
 		require.NotNil(t, in.TranslationEnabled)
 		require.False(t, *in.TranslationEnabled)
+		require.NotNil(t, in.TipEnabled)
+		require.True(t, *in.TipEnabled)
+		require.NotNil(t, in.TipChainID)
+		require.Equal(t, 10, *in.TipChainID)
+		require.Equal(t, "0xabc", in.TipContractAddress)
+		require.NotNil(t, in.AIEnabled)
+		require.True(t, *in.AIEnabled)
 	})
 }

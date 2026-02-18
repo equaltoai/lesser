@@ -201,7 +201,7 @@ func parseInitAdminArgs(argv []string) (initAdminArgs, error) {
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
 	fs.StringVar(&args.AWSProfile, "aws-profile", "", "AWS profile name to use (sets AWS_PROFILE)")
 	fs.StringVar(&args.Stage, "stage", "", "target stage (dev|staging|live)")
-	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1)")
+	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1|2)")
 	fs.StringVar(&args.Username, "username", "", "admin username (default: exactly to --app)")
 	fs.StringVar(&args.WalletAddr, "wallet-address", "", "admin wallet address (0x...)")
 	fs.IntVar(&args.ChainID, "chain-id", 1, "wallet chain id (default: 1)")

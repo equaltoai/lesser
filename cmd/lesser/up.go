@@ -34,6 +34,17 @@ type upArgs struct {
 	LesserHostAttestationsURL string
 	LesserHostInstanceKeyARN  string
 	TranslationEnabled        *bool
+
+	TipEnabled         *bool
+	TipChainID         *int
+	TipContractAddress string
+
+	AIEnabled                 *bool
+	AIModerationEnabled       *bool
+	AINsfwDetectionEnabled    *bool
+	AISpamDetectionEnabled    *bool
+	AIPiiDetectionEnabled     *bool
+	AIContentDetectionEnabled *bool
 }
 
 func runUp(argv []string) error {
@@ -240,6 +251,10 @@ func (e *upEnv) run(ctx context.Context) error {
 		return err
 	}
 
+	if err := e.syncInstanceFeatureConfig(ctx, receipt); err != nil {
+		return err
+	}
+
 	statePath := filepath.Join(e.stateDir, "state.json")
 	if err := writeReceiptFn(statePath, receipt); err != nil {
 		return err
@@ -290,6 +305,15 @@ func (e *upEnv) deploy(ctx context.Context) (*upReceipt, error) {
 	}
 	if e.args.TranslationEnabled != nil {
 		contexts["translationEnabled"] = strconv.FormatBool(*e.args.TranslationEnabled)
+	}
+	if e.args.TipEnabled != nil {
+		contexts["tipEnabled"] = strconv.FormatBool(*e.args.TipEnabled)
+	}
+	if e.args.TipChainID != nil {
+		contexts["tipChainId"] = strconv.Itoa(*e.args.TipChainID)
+	}
+	if v := strings.TrimSpace(e.args.TipContractAddress); v != "" {
+		contexts["tipContractAddress"] = v
 	}
 
 	fmt.Println("\nEnsuring API Gateway account logging role...")
@@ -384,7 +408,7 @@ func parseUpArgs(argv []string) (upArgs, error) {
 	fs.StringVar(&args.BaseDomain, "base-domain", "", "base domain with an existing public hosted zone (e.g. example.com)")
 	fs.StringVar(&args.AWSProfile, "aws-profile", os.Getenv("AWS_PROFILE"), "AWS profile name to use (sets AWS_PROFILE)")
 	fs.StringVar(&args.Stage, "stage", "", "deploy a single stage (dev|staging|live); default deploys dev+live")
-	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1)")
+	fs.StringVar(&args.ProvisioningInputPath, "provisioning-input", "", "managed provisioning input JSON (schema=1|2)")
 	fs.StringVar(&args.BootstrapWalletAddress, "bootstrap-wallet-address", "", "use this bootstrap wallet address instead of generating a mnemonic (env: LESSER_BOOTSTRAP_WALLET_ADDRESS)")
 	fs.BoolVar(&args.WithStaging, "with-staging", false, "also deploy staging")
 	fs.StringVar(&args.OutPath, "out", "", "write bootstrap key material to this path (0600). Required on first deploy.")
@@ -419,6 +443,33 @@ func parseUpArgs(argv []string) (upArgs, error) {
 		}
 		if args.TranslationEnabled == nil {
 			args.TranslationEnabled = in.TranslationEnabled
+		}
+		if args.TipEnabled == nil {
+			args.TipEnabled = in.TipEnabled
+		}
+		if args.TipChainID == nil {
+			args.TipChainID = in.TipChainID
+		}
+		if strings.TrimSpace(args.TipContractAddress) == "" {
+			args.TipContractAddress = in.TipContractAddress
+		}
+		if args.AIEnabled == nil {
+			args.AIEnabled = in.AIEnabled
+		}
+		if args.AIModerationEnabled == nil {
+			args.AIModerationEnabled = in.AIModerationEnabled
+		}
+		if args.AINsfwDetectionEnabled == nil {
+			args.AINsfwDetectionEnabled = in.AINsfwDetectionEnabled
+		}
+		if args.AISpamDetectionEnabled == nil {
+			args.AISpamDetectionEnabled = in.AISpamDetectionEnabled
+		}
+		if args.AIPiiDetectionEnabled == nil {
+			args.AIPiiDetectionEnabled = in.AIPiiDetectionEnabled
+		}
+		if args.AIContentDetectionEnabled == nil {
+			args.AIContentDetectionEnabled = in.AIContentDetectionEnabled
 		}
 	}
 

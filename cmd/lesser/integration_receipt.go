@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -19,7 +20,43 @@ func resolveIntegrationReceipt(args upArgs) *integrationReceipt {
 		out.TranslationEnabled = &enabled
 	}
 
-	if out.LesserHostURL == "" && out.LesserHostAttestationsURL == "" && out.LesserHostInstanceKeyARN == "" && out.TranslationEnabled == nil {
+	if args.TipEnabled != nil {
+		out.TipEnabled = args.TipEnabled
+	} else if raw := strings.TrimSpace(os.Getenv("TIP_ENABLED")); raw != "" {
+		enabled := raw == flagTrue || raw == "1" || raw == "yes"
+		out.TipEnabled = &enabled
+	}
+
+	if args.TipChainID != nil {
+		out.TipChainID = args.TipChainID
+	} else if raw := strings.TrimSpace(os.Getenv("TIP_CHAIN_ID")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			out.TipChainID = &v
+		}
+	}
+
+	out.TipContractAddress = strings.TrimSpace(firstNonEmpty(args.TipContractAddress, os.Getenv("TIP_CONTRACT_ADDRESS")))
+
+	out.AIEnabled = args.AIEnabled
+	out.AIModerationEnabled = args.AIModerationEnabled
+	out.AINsfwDetectionEnabled = args.AINsfwDetectionEnabled
+	out.AISpamDetectionEnabled = args.AISpamDetectionEnabled
+	out.AIPiiDetectionEnabled = args.AIPiiDetectionEnabled
+	out.AIContentDetectionEnabled = args.AIContentDetectionEnabled
+
+	if out.LesserHostURL == "" &&
+		out.LesserHostAttestationsURL == "" &&
+		out.LesserHostInstanceKeyARN == "" &&
+		out.TranslationEnabled == nil &&
+		out.TipEnabled == nil &&
+		out.TipChainID == nil &&
+		strings.TrimSpace(out.TipContractAddress) == "" &&
+		out.AIEnabled == nil &&
+		out.AIModerationEnabled == nil &&
+		out.AINsfwDetectionEnabled == nil &&
+		out.AISpamDetectionEnabled == nil &&
+		out.AIPiiDetectionEnabled == nil &&
+		out.AIContentDetectionEnabled == nil {
 		return nil
 	}
 	return out
