@@ -711,15 +711,45 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 				"max_expiration":            2629746,
 			},
 			"translation": map[string]any{
-				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
+				"enabled": func() bool {
+					legacyEnabled := h.cfg != nil && h.cfg.TranslationEnabled
+					exists, err := h.repos.Instance().TranslationConfigExists(ctx.Context())
+					if err != nil {
+						h.logger.Warn("failed to check persisted translation config; falling back to legacy config", zap.Error(err))
+						return legacyEnabled
+					}
+					if !exists {
+						return legacyEnabled
+					}
+					enabled, err := h.repos.Instance().EffectiveTranslationEnabled(ctx.Context())
+					if err != nil {
+						h.logger.Warn("failed to resolve effective translation config; falling back to legacy config", zap.Error(err))
+						return legacyEnabled
+					}
+					return enabled
+				}(),
 			},
-			"trust": h.instanceTrustConfig(),
+			"trust": h.instanceTrustConfig(ctx.Context()),
 			"tips": func() map[string]any {
-				enabled := false
+				enabled := h.cfg != nil && h.cfg.TipEnabled
 				chainID := 0
 				contractAddress := ""
-				if h.cfg != nil {
-					enabled = h.cfg.TipEnabled
+
+				exists, err := h.repos.Instance().TipsConfigExists(ctx.Context())
+				if err != nil {
+					h.logger.Warn("failed to check persisted tips config; falling back to legacy config", zap.Error(err))
+				} else if exists {
+					effective, err := h.repos.Instance().EffectiveTipsConfig(ctx.Context())
+					if err != nil {
+						h.logger.Warn("failed to resolve effective tips config; falling back to legacy config", zap.Error(err))
+					} else if effective != nil {
+						enabled = effective.Enabled
+						chainID = effective.ChainID
+						contractAddress = strings.TrimSpace(effective.ContractAddress)
+					}
+				}
+
+				if !exists && h.cfg != nil {
 					chainID = h.cfg.TipChainID
 					contractAddress = strings.TrimSpace(h.cfg.TipContractAddress)
 				}

@@ -155,18 +155,33 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 				"image_size_limit": instanceConfig.MaxMediaSize,
 				"video_size_limit": instanceConfig.MaxVideoSize,
 			},
-			"polls": map[string]any{
-				"max_options":               4,
-				"max_characters_per_option": 50,
-				"min_expiration":            300,
-				"max_expiration":            2629746,
-			},
-			"tips": func() map[string]any {
-				enabled := false
-				chainID := 0
-				contractAddress := ""
-				if h.cfg != nil {
-					enabled = h.cfg.TipEnabled
+				"polls": map[string]any{
+					"max_options":               4,
+					"max_characters_per_option": 50,
+					"min_expiration":            300,
+					"max_expiration":            2629746,
+				},
+				"trust": h.instanceTrustConfig(ctx.Context()),
+				"tips": func() map[string]any {
+					enabled := h.cfg != nil && h.cfg.TipEnabled
+					chainID := 0
+					contractAddress := ""
+
+				exists, err := h.repos.Instance().TipsConfigExists(ctx.Context())
+				if err != nil {
+					h.logger.Warn("failed to check persisted tips config; falling back to legacy config", zap.Error(err))
+				} else if exists {
+					effective, err := h.repos.Instance().EffectiveTipsConfig(ctx.Context())
+					if err != nil {
+						h.logger.Warn("failed to resolve effective tips config; falling back to legacy config", zap.Error(err))
+					} else if effective != nil {
+						enabled = effective.Enabled
+						chainID = effective.ChainID
+						contractAddress = strings.TrimSpace(effective.ContractAddress)
+					}
+				}
+
+				if !exists && h.cfg != nil {
 					chainID = h.cfg.TipChainID
 					contractAddress = strings.TrimSpace(h.cfg.TipContractAddress)
 				}
@@ -188,7 +203,23 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *apptheory.Context) (*apptheory.Re
 				return out
 			}(),
 			"translation": map[string]any{
-				"enabled": h.cfg != nil && h.cfg.TranslationEnabled,
+				"enabled": func() bool {
+					legacyEnabled := h.cfg != nil && h.cfg.TranslationEnabled
+					exists, err := h.repos.Instance().TranslationConfigExists(ctx.Context())
+					if err != nil {
+						h.logger.Warn("failed to check persisted translation config; falling back to legacy config", zap.Error(err))
+						return legacyEnabled
+					}
+					if !exists {
+						return legacyEnabled
+					}
+					enabled, err := h.repos.Instance().EffectiveTranslationEnabled(ctx.Context())
+					if err != nil {
+						h.logger.Warn("failed to resolve effective translation config; falling back to legacy config", zap.Error(err))
+						return legacyEnabled
+					}
+					return enabled
+				}(),
 			},
 		},
 		ExtendedDescription: extendedDescription,

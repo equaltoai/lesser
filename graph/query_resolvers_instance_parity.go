@@ -76,6 +76,18 @@ func (r *queryResolver) Instance(ctx context.Context) (*model.InstanceInfo, erro
 		chainID := r.Config.TipChainID
 		contractAddress := strings.TrimSpace(r.Config.TipContractAddress)
 
+		if r.Storage != nil && r.Storage.Instance() != nil {
+			exists, err := r.Storage.Instance().TipsConfigExists(ctx)
+			if err == nil && exists {
+				effective, err := r.Storage.Instance().EffectiveTipsConfig(ctx)
+				if err == nil && effective != nil {
+					enabled = effective.Enabled
+					chainID = effective.ChainID
+					contractAddress = strings.TrimSpace(effective.ContractAddress)
+				}
+			}
+		}
+
 		if enabled && (chainID == 0 || contractAddress == "") {
 			enabled = false
 		}
@@ -259,7 +271,21 @@ func (r *queryResolver) InstanceDomainBlocks(ctx context.Context, limit *int) ([
 
 // TranslationLanguages returns supported translation languages.
 func (r *queryResolver) TranslationLanguages(ctx context.Context) ([]*model.TranslationLanguage, error) {
-	if r.Config == nil || !r.Config.TranslationEnabled {
+	if r.Config == nil {
+		return nil, errors.New("translation service is not enabled")
+	}
+
+	enabled := r.Config.TranslationEnabled
+	if r.Storage != nil && r.Storage.Instance() != nil {
+		exists, err := r.Storage.Instance().TranslationConfigExists(ctx)
+		if err == nil && exists {
+			if effectiveEnabled, err := r.Storage.Instance().EffectiveTranslationEnabled(ctx); err == nil {
+				enabled = effectiveEnabled
+			}
+		}
+	}
+
+	if !enabled {
 		return nil, errors.New("translation service is not enabled")
 	}
 	if r.Storage == nil {

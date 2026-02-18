@@ -15,7 +15,23 @@ func (r *actorResolver) TipAddress(ctx context.Context, obj *activitypub.Actor) 
 	}
 
 	// Tips are instance-scoped: only expose a tip recipient when tipping is configured/enabled.
-	if !r.Config.TipEnabled || r.Config.TipChainID == 0 || strings.TrimSpace(r.Config.TipContractAddress) == "" {
+	enabled := r.Config.TipEnabled
+	chainID := r.Config.TipChainID
+	contractAddress := strings.TrimSpace(r.Config.TipContractAddress)
+
+	if r.Storage.Instance() != nil {
+		exists, err := r.Storage.Instance().TipsConfigExists(ctx)
+		if err == nil && exists {
+			effective, err := r.Storage.Instance().EffectiveTipsConfig(ctx)
+			if err == nil && effective != nil {
+				enabled = effective.Enabled
+				chainID = effective.ChainID
+				contractAddress = strings.TrimSpace(effective.ContractAddress)
+			}
+		}
+	}
+
+	if !enabled || chainID == 0 || contractAddress == "" {
 		return nil, nil
 	}
 
@@ -68,13 +84,31 @@ func (r *actorResolver) TipAddress(ctx context.Context, obj *activitypub.Actor) 
 	return &bestAddress, nil
 }
 
-func (r *actorResolver) TipChainID(_ context.Context, _ *activitypub.Actor) (*int, error) {
+func (r *actorResolver) TipChainID(ctx context.Context, _ *activitypub.Actor) (*int, error) {
 	if r.Config == nil {
 		return nil, nil
 	}
-	if !r.Config.TipEnabled || r.Config.TipChainID == 0 || strings.TrimSpace(r.Config.TipContractAddress) == "" {
+
+	enabled := r.Config.TipEnabled
+	chainID := r.Config.TipChainID
+	contractAddress := strings.TrimSpace(r.Config.TipContractAddress)
+
+	if r.Storage != nil && r.Storage.Instance() != nil {
+		exists, err := r.Storage.Instance().TipsConfigExists(ctx)
+		if err == nil && exists {
+			effective, err := r.Storage.Instance().EffectiveTipsConfig(ctx)
+			if err == nil && effective != nil {
+				enabled = effective.Enabled
+				chainID = effective.ChainID
+				contractAddress = strings.TrimSpace(effective.ContractAddress)
+			}
+		}
+	}
+
+	if !enabled || chainID == 0 || contractAddress == "" {
 		return nil, nil
 	}
-	chainID := r.Config.TipChainID
-	return &chainID, nil
+
+	cid := chainID
+	return &cid, nil
 }

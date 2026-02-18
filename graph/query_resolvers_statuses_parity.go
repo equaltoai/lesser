@@ -256,7 +256,21 @@ func (r *queryResolver) TranslateStatus(ctx context.Context, id string, targetLa
 		return nil, err
 	}
 
-	if r.Config == nil || !r.Config.TranslationEnabled {
+	if r.Config == nil {
+		return nil, errors.New("translation service is not enabled")
+	}
+
+	enabled := r.Config.TranslationEnabled
+	if r.Storage != nil && r.Storage.Instance() != nil {
+		exists, err := r.Storage.Instance().TranslationConfigExists(ctx)
+		if err == nil && exists {
+			if effectiveEnabled, err := r.Storage.Instance().EffectiveTranslationEnabled(ctx); err == nil {
+				enabled = effectiveEnabled
+			}
+		}
+	}
+
+	if !enabled {
 		return nil, errors.New("translation service is not enabled")
 	}
 
