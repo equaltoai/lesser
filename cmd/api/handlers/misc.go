@@ -719,6 +719,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 						return legacyEnabled
 					}
 					if !exists {
+						h.warnLegacyTranslationConfig()
 						return legacyEnabled
 					}
 					enabled, err := h.repos.Instance().EffectiveTranslationEnabled(ctx.Context())
@@ -747,6 +748,10 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *apptheory.Context) (*apptheory.Re
 						chainID = effective.ChainID
 						contractAddress = strings.TrimSpace(effective.ContractAddress)
 					}
+				}
+
+				if !exists {
+					h.warnLegacyTipsConfig()
 				}
 
 				if !exists && h.cfg != nil {

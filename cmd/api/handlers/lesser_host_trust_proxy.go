@@ -107,6 +107,7 @@ func (h *Handler) effectiveLesserHostTrustBaseURL(ctx context.Context) string {
 		return ""
 	}
 	if !exists {
+		h.warnLegacyTrustConfig()
 		return h.lesserHostTrustBaseURL()
 	}
 
@@ -132,6 +133,7 @@ func (h *Handler) effectiveLesserHostAttestationsBaseURL(ctx context.Context) st
 		return ""
 	}
 	if !exists {
+		h.warnLegacyTrustConfig()
 		return h.lesserHostAttestationsBaseURL()
 	}
 
@@ -156,6 +158,7 @@ func (h *Handler) effectiveLesserHostInstanceKey(ctx context.Context) (string, e
 		return "", err
 	}
 	if !exists {
+		h.warnLegacyTrustConfig()
 		return h.lesserHostInstanceKey(), nil
 	}
 

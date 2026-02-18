@@ -101,6 +101,7 @@ func (h *Handler) isTranslationEnabled(ctx context.Context) bool {
 		return legacyEnabled
 	}
 	if !exists {
+		h.warnLegacyTranslationConfig()
 		return legacyEnabled
 	}
 

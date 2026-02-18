@@ -40,6 +40,8 @@ func (h *Handler) instanceTrustConfig(ctx context.Context) map[string]any {
 		baseURL = effective.AttestationsBaseURL
 		trustProxyEnabled = effective.TrustProxyEnabled
 	} else {
+		h.warnLegacyTrustConfig()
+
 		var ok bool
 		baseURL, ok = resolveExplicitLesserHostTrustBaseURL()
 		if !ok {
