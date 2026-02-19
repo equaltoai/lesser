@@ -339,9 +339,9 @@ func (r *ValidationResult) Format() string {
 		sb.WriteString("\nErrors:\n")
 		for _, err := range r.Errors {
 			if err.MigrationID != "" {
-				sb.WriteString(fmt.Sprintf("  - [%s] %s: %s\n", err.MigrationID, err.Type, err.Message))
+				_, _ = fmt.Fprintf(&sb, "  - [%s] %s: %s\n", err.MigrationID, err.Type, err.Message)
 			} else {
-				sb.WriteString(fmt.Sprintf("  - %s: %s\n", err.Type, err.Message))
+				_, _ = fmt.Fprintf(&sb, "  - %s: %s\n", err.Type, err.Message)
 			}
 		}
 	}
@@ -350,9 +350,9 @@ func (r *ValidationResult) Format() string {
 		sb.WriteString("\nWarnings:\n")
 		for _, warn := range r.Warnings {
 			if warn.MigrationID != "" {
-				sb.WriteString(fmt.Sprintf("  - [%s] %s: %s\n", warn.MigrationID, warn.Type, warn.Message))
+				_, _ = fmt.Fprintf(&sb, "  - [%s] %s: %s\n", warn.MigrationID, warn.Type, warn.Message)
 			} else {
-				sb.WriteString(fmt.Sprintf("  - %s: %s\n", warn.Type, warn.Message))
+				_, _ = fmt.Fprintf(&sb, "  - %s: %s\n", warn.Type, warn.Message)
 			}
 		}
 	}

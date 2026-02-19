@@ -706,83 +706,67 @@ func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*
 
 // checkViewPermissions implements comprehensive privacy checking
 func (s *Service) checkViewPermissions(ctx context.Context, status *models.Status, viewerID string) (bool, error) {
-	// Public and unlisted posts are viewable by anyone
-	if status.Visibility == models.VisibilityPublic || status.Visibility == models.VisibilityUnlisted {
+	switch status.Visibility {
+	case models.VisibilityPublic, models.VisibilityUnlisted:
 		return true, nil
 	}
 
-	// Unauthenticated users can only see public/unlisted posts
 	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false, nil
 	}
 
-	// Status author can always view their own posts
 	if status.AuthorUsername == viewerID {
 		return true, nil
 	}
 
-	// Handle private (followers-only) posts
-	if status.Visibility == models.VisibilityPrivate {
-		// Check if viewer follows the author using relationship repository
-		isFollowing, err := s.relationshipRepo.IsFollowing(ctx, viewerID, status.AuthorUsername)
-		if err != nil {
-			s.logger.Error("failed to check following relationship",
-				zap.String("status_id", status.StatusID),
-				zap.String("viewer_id", viewerID),
-				zap.String("author", status.AuthorUsername),
-				zap.Error(err))
-			return false, ErrCheckFollowingRelationship
-		}
-		return isFollowing, nil
-	}
-
-	// Handle direct messages
-	if status.Visibility == models.VisibilityDirect {
-		viewerUsername, viewerActorID := s.resolveViewerActorID(viewerID)
-		if viewerUsername == "" || viewerActorID == "" {
-			return false, nil
-		}
-
-		// Check if viewer is explicitly mentioned (username-level).
-		for _, mention := range status.Mentions {
-			if mention == viewerUsername {
-				return true, nil
-			}
-		}
-
-		// Check explicit recipients (actor ID URL-level).
-		for _, recipient := range status.ToRecipients {
-			if recipient == viewerActorID {
-				return true, nil
-			}
-		}
-
-		for _, recipient := range status.CcRecipients {
-			if recipient == viewerActorID {
-				return true, nil
-			}
-		}
-
-		for _, recipient := range status.BtoRecipients {
-			if recipient == viewerActorID {
-				return true, nil
-			}
-		}
-
-		for _, recipient := range status.BccRecipients {
-			if recipient == viewerActorID {
-				return true, nil
-			}
-		}
-
+	switch status.Visibility {
+	case models.VisibilityPrivate:
+		return s.canViewPrivateStatus(ctx, status, viewerID)
+	case models.VisibilityDirect:
+		return s.canViewDirectMessage(status, viewerID), nil
+	default:
+		s.logger.Warn("unknown visibility level",
+			zap.String("status_id", status.StatusID),
+			zap.String("visibility", status.Visibility))
 		return false, nil
 	}
+}
 
-	// Unknown visibility - default deny
-	s.logger.Warn("unknown visibility level",
-		zap.String("status_id", status.StatusID),
-		zap.String("visibility", status.Visibility))
-	return false, nil
+func (s *Service) canViewPrivateStatus(ctx context.Context, status *models.Status, viewerID string) (bool, error) {
+	isFollowing, err := s.relationshipRepo.IsFollowing(ctx, viewerID, status.AuthorUsername)
+	if err != nil {
+		s.logger.Error("failed to check following relationship",
+			zap.String("status_id", status.StatusID),
+			zap.String("viewer_id", viewerID),
+			zap.String("author", status.AuthorUsername),
+			zap.Error(err))
+		return false, ErrCheckFollowingRelationship
+	}
+	return isFollowing, nil
+}
+
+func (s *Service) canViewDirectMessage(status *models.Status, viewerID string) bool {
+	viewerUsername, viewerActorID := s.resolveViewerActorID(viewerID)
+	if viewerUsername == "" || viewerActorID == "" {
+		return false
+	}
+
+	if stringSliceContains(status.Mentions, viewerUsername) {
+		return true
+	}
+	return stringSliceContains(status.ToRecipients, viewerActorID) ||
+		stringSliceContains(status.CcRecipients, viewerActorID) ||
+		stringSliceContains(status.BtoRecipients, viewerActorID) ||
+		stringSliceContains(status.BccRecipients, viewerActorID)
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) resolveViewerActorID(viewerID string) (viewerUsername string, viewerActorID string) {

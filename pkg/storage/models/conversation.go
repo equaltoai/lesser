@@ -12,8 +12,11 @@ import (
 type DmRequestState string
 
 const (
+	// DmRequestStatePending indicates the participant has not yet accepted or declined the request.
 	DmRequestStatePending  DmRequestState = "PENDING"
+	// DmRequestStateAccepted indicates the participant has accepted the request.
 	DmRequestStateAccepted DmRequestState = "ACCEPTED"
+	// DmRequestStateDeclined indicates the participant has declined the request.
 	DmRequestStateDeclined DmRequestState = "DECLINED"
 )
 

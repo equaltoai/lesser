@@ -21,6 +21,7 @@ type DirectMessageTombstoneRepository struct {
 	logger    *zap.Logger
 }
 
+// NewDirectMessageTombstoneRepository creates a new DirectMessageTombstoneRepository.
 func NewDirectMessageTombstoneRepository(db core.DB, tableName string, logger *zap.Logger) *DirectMessageTombstoneRepository {
 	if logger == nil {
 		logger = zap.NewNop()
@@ -33,6 +34,7 @@ func NewDirectMessageTombstoneRepository(db core.DB, tableName string, logger *z
 	}
 }
 
+// CreateTombstone records that viewerUsername has deleted statusID "for me".
 func (r *DirectMessageTombstoneRepository) CreateTombstone(ctx context.Context, viewerUsername, statusID string) error {
 	viewerUsername = strings.TrimSpace(viewerUsername)
 	statusID = strings.TrimSpace(statusID)

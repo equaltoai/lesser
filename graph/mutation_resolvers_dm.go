@@ -32,7 +32,7 @@ func (r *mutationResolver) CreateConversation(ctx context.Context, participantID
 }
 
 // SendDirectMessage is the resolver for the sendDirectMessage field.
-func (r *mutationResolver) SendDirectMessage(ctx context.Context, to string, content string, mediaIds []string) (*model.SendMessagePayload, error) {
+func (r *mutationResolver) SendDirectMessage(ctx context.Context, to string, content string, mediaIDs []string) (*model.SendMessagePayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (r *mutationResolver) SendDirectMessage(ctx context.Context, to string, con
 		SenderID:   username,
 		Recipients: []string{to},
 		Content:    content,
-		MediaIDs:   mediaIds,
+		MediaIDs:   mediaIDs,
 	})
 	if err != nil {
 		r.Logger.Error("Failed to send direct message",
@@ -59,7 +59,7 @@ func (r *mutationResolver) SendDirectMessage(ctx context.Context, to string, con
 }
 
 // SendMessage is the resolver for the sendMessage field.
-func (r *mutationResolver) SendMessage(ctx context.Context, conversationID string, content string, mediaIds []string) (*model.SendMessagePayload, error) {
+func (r *mutationResolver) SendMessage(ctx context.Context, conversationID string, content string, mediaIDs []string) (*model.SendMessagePayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (r *mutationResolver) SendMessage(ctx context.Context, conversationID strin
 		SenderID:   username,
 		Recipients: []string{recipientID},
 		Content:    content,
-		MediaIDs:   mediaIds,
+		MediaIDs:   mediaIDs,
 	})
 	if err != nil {
 		r.Logger.Error("Failed to send message",

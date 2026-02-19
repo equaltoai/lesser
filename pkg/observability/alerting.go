@@ -583,26 +583,26 @@ func (a *AlertingSystem) sendSNSAlert(ctx context.Context, alert *models.Alert) 
 func (a *AlertingSystem) formatSNSMessage(alert *models.Alert) string {
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("Alert: %s\n", alert.Title))
-	builder.WriteString(fmt.Sprintf("Type: %s\n", alert.Type))
-	builder.WriteString(fmt.Sprintf("Severity: %s\n", alert.Severity))
-	builder.WriteString(fmt.Sprintf("Priority: %s\n", alert.Priority))
-	builder.WriteString(fmt.Sprintf("Service: %s\n", alert.Service))
+	_, _ = fmt.Fprintf(&builder, "Alert: %s\n", alert.Title)
+	_, _ = fmt.Fprintf(&builder, "Type: %s\n", alert.Type)
+	_, _ = fmt.Fprintf(&builder, "Severity: %s\n", alert.Severity)
+	_, _ = fmt.Fprintf(&builder, "Priority: %s\n", alert.Priority)
+	_, _ = fmt.Fprintf(&builder, "Service: %s\n", alert.Service)
 	if alert.Region != "" {
-		builder.WriteString(fmt.Sprintf("Region: %s\n", alert.Region))
+		_, _ = fmt.Fprintf(&builder, "Region: %s\n", alert.Region)
 	}
-	builder.WriteString(fmt.Sprintf("Time: %s\n", alert.FiredAt.Format(time.RFC3339)))
-	builder.WriteString(fmt.Sprintf("\nDescription:\n%s\n", alert.Description))
+	_, _ = fmt.Fprintf(&builder, "Time: %s\n", alert.FiredAt.Format(time.RFC3339))
+	_, _ = fmt.Fprintf(&builder, "\nDescription:\n%s\n", alert.Description)
 
 	if len(alert.Metadata) > 0 {
 		builder.WriteString("\nAdditional Details:\n")
 		for key, value := range alert.Metadata {
-			builder.WriteString(fmt.Sprintf("  %s: %v\n", key, value))
+			_, _ = fmt.Fprintf(&builder, "  %s: %v\n", key, value)
 		}
 	}
 
 	if alert.RunbookURL != "" {
-		builder.WriteString(fmt.Sprintf("\nRunbook: %s\n", alert.RunbookURL))
+		_, _ = fmt.Fprintf(&builder, "\nRunbook: %s\n", alert.RunbookURL)
 	}
 
 	return builder.String()

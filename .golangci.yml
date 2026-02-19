@@ -12,24 +12,6 @@ run:
   # Build tags to apply
   build-tags:
     - integration
-  
-  # Directories to exclude (use absolute patterns)
-  skip-dirs:
-    - docs
-    - examples
-    - infra
-    - tests
-    - build
-    - bin
-    - dist
-    - vendor
-    - .git
-    - scripts
-    
-  # Files to exclude (patterns)
-  skip-files:
-    - ".*_generated\\.go$"
-    - "^scripts/.*\\.go$"
 
 output:
   # Format: colored-line-number, line-number, json, checkstyle, code-climate
@@ -78,6 +60,65 @@ linters:
     # Documentation linters - enable later
     - godot         # Comment periods
 
+  exclusions:
+    paths:
+      - docs
+      - examples
+      - infra
+      - tests
+      - build
+      - bin
+      - dist
+      - vendor
+      - .git
+      - scripts
+      - graph/generated
+    rules:
+      # Generated files
+      - path: "generated\\.go"
+        linters:
+          - gocyclo
+          - gocognit
+          - errcheck
+          - gosec
+          - goconst
+          - gofmt
+          - goimports
+
+      # Lambda main files - often have initialization complexity
+      - path: "cmd/.*/main\\.go"
+        linters:
+          - gocyclo
+          - gocognit
+        text: "cyclomatic complexity|cognitive complexity"
+
+      # Exclude common false positives
+      - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
+        linters:
+          - errcheck
+
+      # Exclude defer in loop - often intentional
+      - text: "defer in a loop"
+        linters:
+          - gocritic
+
+      # G104: Errors unhandled - too many false positives
+      - text: "G104"
+        linters:
+          - gosec
+
+      # Common package name is part of public API; suppress revive var-naming warnings there
+      - path: "(^|.*/)pkg/common/.*\\.go$"
+        text: "var-naming: avoid meaningless package names"
+        linters:
+          - revive
+
+      # interfaces package name is part of public API; suppress revive package-name warnings there
+      - path: "^pkg/storage/interfaces"
+        text: "avoid meaningless package names"
+        linters:
+          - revive
+
 linters-settings:
   errcheck:
     # Check type assertions
@@ -123,7 +164,7 @@ linters-settings:
     
   staticcheck:
     # Go version
-    go: "1.25"
+    go: "1.26"
     # Checks to run
     checks: ["all"]
   
@@ -177,89 +218,6 @@ issues:
   
   # Show only new issues
   new: false
-  
-  # Use default excludes (vendor, etc) and add our own
-  exclude-dirs-use-default: true
-  exclude-dirs:
-    - scripts
-    - "^scripts/"
-  
-  # Exclude known false positives
-  exclude-rules:
-    # Scripts directory - development tools - exclude all linters
-    - path: scripts/
-      linters:
-        - gocognit
-        - revive
-        - goconst
-        - gocyclo
-        - gosec
-        - errcheck
-        - ineffassign
-        - unused
-        - staticcheck
-        - bodyclose
-        - govet
-        - misspell
-    
-    # Test files
-    - path: "_test\\.go"
-      linters:
-        - gocyclo
-        - gocognit
-        - errcheck
-        - gosec
-        - goconst
-    
-    # Generated files
-    - path: "generated\\.go"
-      linters:
-        - gocyclo
-        - gocognit
-        - errcheck
-        - gosec
-        - goconst
-        - gofmt
-        - goimports
-    
-    # Lambda main files - often have initialization complexity
-    - path: "cmd/.*/main\\.go"
-      linters:
-        - gocyclo
-        - gocognit
-      text: "cyclomatic complexity|cognitive complexity"
-    
-    # GraphQL generated
-    - path: "graph/generated"
-      linters:
-        - all
-    
-    # Exclude common false positives
-    - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*print(f|ln)?|os\\.(Un)?Setenv). is not checked"
-      linters:
-        - errcheck
-    
-    # Exclude defer in loop - often intentional
-    - text: "defer in a loop"
-      linters:
-        - gocritic
-    
-    # G104: Errors unhandled - too many false positives
-    - text: "G104"
-      linters:
-        - gosec
-    
-    # Common package name is part of public API; suppress revive var-naming warnings there
-    - path: "(^|.*/)pkg/common/.*\\.go$"
-      text: "var-naming: avoid meaningless package names"
-      linters:
-        - revive
-
-    # interfaces package name is part of public API; suppress revive package-name warnings there
-    - path: "pkg/storage/interfaces"
-      text: "avoid meaningless package names"
-      linters:
-        - revive
     
 severity:
   # Default severity for all linters

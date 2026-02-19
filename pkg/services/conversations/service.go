@@ -178,7 +178,9 @@ type DeclineMessageRequestCommand struct {
 type ConversationFolder string
 
 const (
-	ConversationFolderInbox    ConversationFolder = "INBOX"
+	// ConversationFolderInbox is the user's accepted DM inbox.
+	ConversationFolderInbox ConversationFolder = "INBOX"
+	// ConversationFolderRequests is the user's pending message requests folder.
 	ConversationFolderRequests ConversationFolder = "REQUESTS"
 )
 
@@ -323,76 +325,82 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 	}, nil
 }
 
-// SendDirectMessage creates or updates a conversation, creates a direct message, and emits events
-func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageCommand) (*MessageResult, error) {
-	s.logger.Info("sending direct message",
-		zap.String("sender_id", cmd.SenderID),
-		zap.Strings("recipients", cmd.Recipients),
-		zap.Int("content_length", len(cmd.Content)))
-
-	// Validate the command (basic validation only - accounts validated below)
+func (s *Service) validateSendDirectMessageCommand(ctx context.Context, cmd *SendDirectMessageCommand) (string, error) {
 	if err := s.validateSendMessageCommandBasic(ctx, cmd); err != nil {
 		s.logger.Error("validation failed", zap.Error(err))
 		s.auditDMEvent(ctx, cmd, "", false, "validation_failed", map[string]any{
 			"content_length": len(cmd.Content),
 		})
-		return nil, errors.Join(ErrConversationValidationFailed, err)
+		return "", errors.Join(ErrConversationValidationFailed, err)
 	}
 
 	if len(cmd.Recipients) != 1 {
 		s.auditDMEvent(ctx, cmd, "", false, "invalid_recipient_count", nil)
-		return nil, errors.Join(ErrConversationValidationFailed, ErrDirectMessageRequiresSingleRecipient)
+		return "", errors.Join(ErrConversationValidationFailed, ErrDirectMessageRequiresSingleRecipient)
 	}
+
 	recipientID := cmd.Recipients[0]
 	if strings.TrimSpace(recipientID) == "" || recipientID == cmd.SenderID {
 		s.auditDMEvent(ctx, cmd, "", false, "invalid_recipient", map[string]any{
 			"recipient_id": recipientID,
 		})
-		return nil, errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
+		return "", errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
 	}
 
-	// Block enforcement: blocked users cannot send requests or messages.
-	if s.relationshipRepo != nil {
-		blocked, err := s.relationshipRepo.IsBlockedBidirectional(ctx, cmd.SenderID, recipientID)
-		if err != nil {
-			s.logger.Warn("failed to check block status for DM send",
-				zap.String("sender_id", cmd.SenderID),
-				zap.String("recipient_id", recipientID),
-				zap.Error(err))
-			s.auditDMEvent(ctx, cmd, "", false, "block_check_failed", map[string]any{
-				"recipient_id": recipientID,
-			})
-			return nil, errors.Join(ErrConversationValidationFailed, err)
-		}
-		if blocked {
-			s.auditDMEvent(ctx, cmd, "", false, "blocked", map[string]any{
-				"recipient_id": recipientID,
-			})
-			return nil, ErrDirectMessageBlocked
-		}
+	return recipientID, nil
+}
+
+func (s *Service) enforceDirectMessageNotBlocked(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) error {
+	if s.relationshipRepo == nil {
+		return nil
 	}
 
-	// Global DM throughput throttling (per-sender).
-	if s.rateLimitRepo != nil && !config.Get().DisableRateLimiting {
-		if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), "dm_send_total", dmSendTotalLimit, dmSendTotalWindow); err != nil {
-			s.auditDMEvent(ctx, cmd, "", false, "rate_limited_send_total", map[string]any{
-				"recipient_id": recipientID,
-			})
-			return nil, err
-		}
+	blocked, err := s.relationshipRepo.IsBlockedBidirectional(ctx, cmd.SenderID, recipientID)
+	if err != nil {
+		s.logger.Warn("failed to check block status for DM send",
+			zap.String("sender_id", cmd.SenderID),
+			zap.String("recipient_id", recipientID),
+			zap.Error(err))
+		s.auditDMEvent(ctx, cmd, "", false, "block_check_failed", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return errors.Join(ErrConversationValidationFailed, err)
+	}
+	if blocked {
+		s.auditDMEvent(ctx, cmd, "", false, "blocked", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return ErrDirectMessageBlocked
 	}
 
-	// Get sender account - also validates it exists
+	return nil
+}
+
+func (s *Service) enforceDirectMessageTotalRateLimit(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) error {
+	if s.rateLimitRepo == nil || config.Get().DisableRateLimiting {
+		return nil
+	}
+
+	if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), "dm_send_total", dmSendTotalLimit, dmSendTotalWindow); err != nil {
+		s.auditDMEvent(ctx, cmd, "", false, "rate_limited_send_total", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (s *Service) getDirectMessageAccounts(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*storage.Account, map[string]*storage.Account, error) {
 	sender, err := s.accountRepo.GetAccount(ctx, cmd.SenderID)
 	if err != nil {
 		s.logger.Error("failed to get sender account", zap.String("sender_id", cmd.SenderID), zap.Error(err))
 		s.auditDMEvent(ctx, cmd, "", false, "get_sender_account_failed", map[string]any{
 			"recipient_id": recipientID,
 		})
-		return nil, errors.Join(ErrGetSenderAccount, err)
+		return nil, nil, errors.Join(ErrGetSenderAccount, err)
 	}
 
-	// Get recipient account - also validates it exists
 	recipientAccounts := make(map[string]*storage.Account, 1)
 	recipient, err := s.accountRepo.GetAccount(ctx, recipientID)
 	if err != nil {
@@ -400,15 +408,17 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		s.auditDMEvent(ctx, cmd, "", false, "get_recipient_account_failed", map[string]any{
 			"recipient_id": recipientID,
 		})
-		return nil, errors.Join(ErrInvalidRecipient, err)
+		return nil, nil, errors.Join(ErrInvalidRecipient, err)
 	}
 	recipientAccounts[recipientID] = recipient
 
-	// Create participant list (sender + recipients)
-	allParticipants := append([]string{cmd.SenderID}, cmd.Recipients...)
-	sort.Strings(allParticipants) // Ensure consistent ordering for lookup
+	return sender, recipientAccounts, nil
+}
 
-	// Try to find existing conversation with these exact participants
+func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*models.Conversation, error) {
+	allParticipants := append([]string{cmd.SenderID}, cmd.Recipients...)
+	sort.Strings(allParticipants)
+
 	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, allParticipants)
 	if err != nil && !isNotFoundError(err) {
 		s.logger.Error("failed to lookup existing conversation", zap.Strings("participants", allParticipants), zap.Error(err))
@@ -418,85 +428,103 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		return nil, errors.Join(ErrLookupExistingConversation, err)
 	}
 
-	// Create new conversation if none exists
-	if conversation == nil {
-		conversationID := uuid.New().String()
-		conversation = &models.Conversation{
-			ID:           conversationID,
-			Participants: allParticipants,
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
-		}
-
-		if err := s.conversationRepo.CreateConversation(ctx, conversation, allParticipants); err != nil {
-			s.logger.Error("failed to create conversation", zap.String("conversation_id", conversationID), zap.Error(err))
-			s.auditDMEvent(ctx, cmd, conversationID, false, "create_conversation_failed", map[string]any{
-				"recipient_id": recipientID,
-			})
-			return nil, errors.Join(ErrCreateConversation, err)
-		}
-
-		s.logger.Info("created new conversation",
-			zap.String("conversation_id", conversationID),
-			zap.Strings("participants", allParticipants))
+	if conversation != nil {
+		return conversation, nil
 	}
 
-	// Determine whether this message should be treated as a request (Requests folder) for the recipient.
-	deliversToInbox := s.shouldDeliverToInbox(ctx, recipientID, cmd.SenderID)
-	var recipientRequestState models.DmRequestState
-	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, recipientID); err == nil && record != nil {
-		recipientRequestState = record.RequestState
+	conversationID := uuid.New().String()
+	conversation = &models.Conversation{
+		ID:           conversationID,
+		Participants: allParticipants,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
-	willBeRequest := false
+	if err := s.conversationRepo.CreateConversation(ctx, conversation, allParticipants); err != nil {
+		s.logger.Error("failed to create conversation", zap.String("conversation_id", conversationID), zap.Error(err))
+		s.auditDMEvent(ctx, cmd, conversationID, false, "create_conversation_failed", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return nil, errors.Join(ErrCreateConversation, err)
+	}
+
+	s.logger.Info("created new conversation",
+		zap.String("conversation_id", conversationID),
+		zap.Strings("participants", allParticipants))
+
+	return conversation, nil
+}
+
+func (s *Service) directMessageRecipientRequestState(ctx context.Context, conversationID, recipientID string) models.DmRequestState {
+	record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversationID, recipientID)
+	if err != nil || record == nil {
+		return ""
+	}
+	return record.RequestState
+}
+
+func (s *Service) enforceDirectMessageRequestRateLimit(ctx context.Context, cmd *SendDirectMessageCommand, conversationID, recipientID string) error {
+	if s.rateLimitRepo == nil || config.Get().DisableRateLimiting {
+		return nil
+	}
+
+	if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow); err != nil {
+		s.auditDMEvent(ctx, cmd, conversationID, false, "rate_limited_request_total", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return err
+	}
+
+	if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), fmt.Sprintf("dm_request_to:%s", recipientID), dmRequestPerRecipientLimit, dmRequestPerRecipientWindow); err != nil {
+		s.auditDMEvent(ctx, cmd, conversationID, false, "rate_limited_request_to_recipient", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return err
+	}
+
+	return nil
+}
+
+func (s *Service) evaluateDirectMessageRequestPolicy(ctx context.Context, cmd *SendDirectMessageCommand, conversationID, recipientID string) (willBeRequest bool, deliversToInbox bool, recipientRequestState models.DmRequestState, _ error) {
+	deliversToInbox = s.shouldDeliverToInbox(ctx, recipientID, cmd.SenderID)
+	recipientRequestState = s.directMessageRecipientRequestState(ctx, conversationID, recipientID)
+
 	switch recipientRequestState {
 	case models.DmRequestStateAccepted:
 		willBeRequest = false
 	case models.DmRequestStateDeclined:
 		willBeRequest = true
 	default:
-		// Pending or unset -> apply inbox policy.
 		willBeRequest = !deliversToInbox
 	}
 
-	// Prevent request spam: if a request is already pending and the inbox policy does not allow delivery,
-	// do not allow additional messages until the recipient accepts.
 	if recipientRequestState == models.DmRequestStatePending && !deliversToInbox {
-		s.auditDMEvent(ctx, cmd, conversation.ID, false, "request_pending", map[string]any{
+		s.auditDMEvent(ctx, cmd, conversationID, false, "request_pending", map[string]any{
 			"recipient_id": recipientID,
 		})
-		return nil, ErrMessageRequestPending
+		return false, deliversToInbox, recipientRequestState, ErrMessageRequestPending
 	}
 
-	// Content safety: disallow media in message requests until accepted.
 	if willBeRequest && len(cmd.MediaIDs) > 0 {
-		s.auditDMEvent(ctx, cmd, conversation.ID, false, "media_not_allowed_in_request", map[string]any{
+		s.auditDMEvent(ctx, cmd, conversationID, false, "media_not_allowed_in_request", map[string]any{
 			"recipient_id": recipientID,
 			"media_count":  len(cmd.MediaIDs),
 		})
-		return nil, ErrMessageRequestMediaNotAllowed
+		return false, deliversToInbox, recipientRequestState, ErrMessageRequestMediaNotAllowed
 	}
 
-	// Rate limit DM request creation attempts (per-sender overall + per recipient).
-	if willBeRequest && s.rateLimitRepo != nil && !config.Get().DisableRateLimiting {
-		if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow); err != nil {
-			s.auditDMEvent(ctx, cmd, conversation.ID, false, "rate_limited_request_total", map[string]any{
-				"recipient_id": recipientID,
-			})
-			return nil, err
-		}
-		if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), fmt.Sprintf("dm_request_to:%s", recipientID), dmRequestPerRecipientLimit, dmRequestPerRecipientWindow); err != nil {
-			s.auditDMEvent(ctx, cmd, conversation.ID, false, "rate_limited_request_to_recipient", map[string]any{
-				"recipient_id": recipientID,
-			})
-			return nil, err
+	if willBeRequest {
+		if err := s.enforceDirectMessageRequestRateLimit(ctx, cmd, conversationID, recipientID); err != nil {
+			return false, deliversToInbox, recipientRequestState, err
 		}
 	}
 
-	// Generate unique message ID
+	return willBeRequest, deliversToInbox, recipientRequestState, nil
+}
+
+func (s *Service) createDirectMessageStatus(ctx context.Context, cmd *SendDirectMessageCommand, sender *storage.Account, recipientAccounts map[string]*storage.Account, conversationID, recipientID string) (*models.Status, string, error) {
 	messageID := uuid.New().String()
 
-	// Create direct message as a status with direct visibility
 	status := &models.Status{
 		StatusID:       messageID,
 		AuthorID:       cmd.SenderID,
@@ -505,12 +533,11 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		Visibility:     VisibilityDirect,
 		Sensitive:      cmd.Sensitive,
 		Language:       cmd.Language,
-		ConversationID: conversation.ID,
+		ConversationID: conversationID,
 		InReplyToID:    cmd.InReplyToID,
 		PublishedAt:    time.Now(),
 	}
 
-	// Set direct message recipients in To field for ActivityPub
 	recipientURLs := make([]string, 0, len(cmd.Recipients))
 	for _, recipientID := range cmd.Recipients {
 		recipient := recipientAccounts[recipientID]
@@ -518,36 +545,38 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	}
 	status.ToRecipients = recipientURLs
 
-	// Create ActivityPub Note
-	status.Note = s.buildActivityPubNote(cmd, messageID, sender, conversation.ID, recipientAccounts)
+	status.Note = s.buildActivityPubNote(cmd, messageID, sender, conversationID, recipientAccounts)
 
-	// Store the message
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
 		s.logger.Error("failed to create direct message", zap.String("message_id", messageID), zap.Error(err))
-		s.auditDMEvent(ctx, cmd, conversation.ID, false, "create_status_failed", map[string]any{
+		s.auditDMEvent(ctx, cmd, conversationID, false, "create_status_failed", map[string]any{
 			"recipient_id":   recipientID,
 			"message_id":     messageID,
 			"content_length": len(cmd.Content),
 		})
-		return nil, errors.Join(ErrCreateDirectMessage, err)
+		return nil, "", errors.Join(ErrCreateDirectMessage, err)
 	}
 
-	// Update conversation with latest message
+	return status, messageID, nil
+}
+
+func (s *Service) updateConversationLastStatus(ctx context.Context, conversation *models.Conversation, messageID string) {
 	conversation.LastStatusID = messageID
 	conversation.UpdatedAt = time.Now()
 	if err := s.conversationRepo.UpdateConversation(ctx, conversation); err != nil {
 		s.logger.Warn("failed to update conversation", zap.Error(err))
-		// Don't fail the whole operation for this
 	}
+}
 
-	// Update DM request lifecycle state.
+func (s *Service) updateDirectMessageParticipantStateAfterSend(ctx context.Context, conversationID, senderID, recipientID string, deliversToInbox bool) {
 	now := time.Now().UTC()
-	if err := s.updateParticipantRecord(ctx, conversation.ID, cmd.SenderID, func(record *models.ConversationParticipantRecord) {
+
+	if err := s.updateParticipantRecord(ctx, conversationID, senderID, func(record *models.ConversationParticipantRecord) {
 		if record == nil {
 			return
 		}
+
 		record.DeletedAt = nil
-		// Sending (or replying) always places the sender-side view in Inbox.
 		record.RequestState = models.DmRequestStateAccepted
 		if record.AcceptedAt == nil {
 			t := now
@@ -556,19 +585,19 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		record.DeclinedAt = nil
 	}); err != nil {
 		s.logger.Warn("failed to update sender DM request state",
-			zap.String("conversation_id", conversation.ID),
-			zap.String("sender_id", cmd.SenderID),
+			zap.String("conversation_id", conversationID),
+			zap.String("sender_id", senderID),
 			zap.Error(err))
 	}
 
-	if err := s.updateParticipantRecord(ctx, conversation.ID, recipientID, func(record *models.ConversationParticipantRecord) {
+	if err := s.updateParticipantRecord(ctx, conversationID, recipientID, func(record *models.ConversationParticipantRecord) {
 		if record == nil {
 			return
 		}
+
 		record.DeletedAt = nil
 		switch record.RequestState {
 		case models.DmRequestStateAccepted:
-			// No-op: already accepted.
 			return
 		case models.DmRequestStateDeclined:
 			// v1 semantics: declined threads stay hidden; the next inbound message reopens as a new request.
@@ -580,7 +609,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 			return
 		default:
 			// PENDING or unset -> apply inbox policy.
-			if s.shouldDeliverToInbox(ctx, recipientID, cmd.SenderID) {
+			if deliversToInbox {
 				record.RequestState = models.DmRequestStateAccepted
 				record.RequestedAt = nil
 				t := now
@@ -597,16 +626,17 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		}
 	}); err != nil {
 		s.logger.Warn("failed to update recipient DM request state",
-			zap.String("conversation_id", conversation.ID),
+			zap.String("conversation_id", conversationID),
 			zap.String("recipient_id", recipientID),
 			zap.Error(err))
 	}
+}
 
-	// Update per-user unread state.
-	if err := s.conversationRepo.MarkConversationRead(ctx, conversation.ID, cmd.SenderID); err != nil {
+func (s *Service) updateConversationUnreadAfterSend(ctx context.Context, conversation *models.Conversation, senderID, recipientID string) {
+	if err := s.conversationRepo.MarkConversationRead(ctx, conversation.ID, senderID); err != nil {
 		s.logger.Warn("failed to mark DM conversation read for sender",
 			zap.String("conversation_id", conversation.ID),
-			zap.String("sender_id", cmd.SenderID),
+			zap.String("sender_id", senderID),
 			zap.Error(err))
 	} else {
 		conversation.Unread = false
@@ -618,6 +648,55 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 			zap.String("recipient_id", recipientID),
 			zap.Error(err))
 	}
+}
+
+// SendDirectMessage creates or updates a conversation, creates a direct message, and emits events
+func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageCommand) (*MessageResult, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
+	s.logger.Info("sending direct message",
+		zap.String("sender_id", cmd.SenderID),
+		zap.Strings("recipients", cmd.Recipients),
+		zap.Int("content_length", len(cmd.Content)))
+
+	recipientID, err := s.validateSendDirectMessageCommand(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.enforceDirectMessageNotBlocked(ctx, cmd, recipientID); err != nil {
+		return nil, err
+	}
+
+	if err := s.enforceDirectMessageTotalRateLimit(ctx, cmd, recipientID); err != nil {
+		return nil, err
+	}
+
+	sender, recipientAccounts, err := s.getDirectMessageAccounts(ctx, cmd, recipientID)
+	if err != nil {
+		return nil, err
+	}
+
+	conversation, err := s.getOrCreateDirectMessageConversation(ctx, cmd, recipientID)
+	if err != nil {
+		return nil, err
+	}
+
+	willBeRequest, deliversToInbox, _, err := s.evaluateDirectMessageRequestPolicy(ctx, cmd, conversation.ID, recipientID)
+	if err != nil {
+		return nil, err
+	}
+
+	status, messageID, err := s.createDirectMessageStatus(ctx, cmd, sender, recipientAccounts, conversation.ID, recipientID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.updateConversationLastStatus(ctx, conversation, messageID)
+	s.updateDirectMessageParticipantStateAfterSend(ctx, conversation.ID, cmd.SenderID, recipientID, deliversToInbox)
+	s.updateConversationUnreadAfterSend(ctx, conversation, cmd.SenderID, recipientID)
 
 	s.logger.Info("sent direct message successfully",
 		zap.String("message_id", messageID),
@@ -642,37 +721,35 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	}, nil
 }
 
-// SendMessage sends a message in an existing 1:1 conversation, enforcing strict participant authz.
-func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*MessageResult, error) {
-	if cmd == nil {
-		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
-	}
-
-	// Load conversation and enforce participant access.
+func (s *Service) loadConversationAndRecipientForSendMessage(ctx context.Context, cmd *SendMessageCommand) (*models.Conversation, string, error) {
 	conversation, err := s.conversationRepo.GetConversation(ctx, cmd.ConversationID)
 	if err != nil {
-		return nil, errors.Join(ErrGetConversation, err)
+		return nil, "", errors.Join(ErrGetConversation, err)
 	}
 
 	if len(conversation.Participants) != 2 {
-		return nil, errors.Join(ErrConversationValidationFailed, ErrConversationMustBeOneToOne)
+		return nil, "", errors.Join(ErrConversationValidationFailed, ErrConversationMustBeOneToOne)
 	}
 	if !s.isParticipant(cmd.SenderID, conversation.Participants) {
-		return nil, ErrNotConversationParticipant
+		return nil, "", ErrNotConversationParticipant
 	}
 
 	recipientID := ""
-	for _, p := range conversation.Participants {
-		if p != cmd.SenderID {
-			recipientID = p
+	for _, participantID := range conversation.Participants {
+		if participantID != cmd.SenderID {
+			recipientID = participantID
 			break
 		}
 	}
 	if strings.TrimSpace(recipientID) == "" {
-		return nil, errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
+		return nil, "", errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
 	}
 
-	sendCmd := &SendDirectMessageCommand{
+	return conversation, recipientID, nil
+}
+
+func sendDirectMessageCommandFromSendMessage(cmd *SendMessageCommand, recipientID string) *SendDirectMessageCommand {
+	return &SendDirectMessageCommand{
 		SenderID:    cmd.SenderID,
 		Recipients:  []string{recipientID},
 		Content:     cmd.Content,
@@ -681,31 +758,39 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		MediaIDs:    cmd.MediaIDs,
 		InReplyToID: cmd.InReplyToID,
 	}
-	if err := s.validateSendMessageCommandBasic(ctx, sendCmd); err != nil {
-		return nil, errors.Join(ErrConversationValidationFailed, err)
+}
+
+func (s *Service) validateSendMessageReplyTarget(ctx context.Context, inReplyToID, conversationID string) error {
+	if inReplyToID == "" {
+		return nil
 	}
 
-	// If replying, ensure the parent is in the same conversation.
-	if cmd.InReplyToID != "" {
-		parentMessage, err := s.noteRepo.GetStatus(ctx, cmd.InReplyToID)
-		if err != nil {
-			return nil, errors.Join(ErrInvalidInReplyToIDConversation, err)
-		}
-		if parentMessage.ConversationID != "" && parentMessage.ConversationID != conversation.ID {
-			return nil, errors.Join(ErrInvalidInReplyToIDConversation, errors.New("reply target is in a different conversation"))
-		}
-	}
-
-	// Get sender and recipient accounts.
-	sender, err := s.accountRepo.GetAccount(ctx, cmd.SenderID)
+	parentMessage, err := s.noteRepo.GetStatus(ctx, inReplyToID)
 	if err != nil {
-		return nil, errors.Join(ErrGetSenderAccount, err)
+		return errors.Join(ErrInvalidInReplyToIDConversation, err)
 	}
+	if parentMessage.ConversationID != "" && parentMessage.ConversationID != conversationID {
+		return errors.Join(ErrInvalidInReplyToIDConversation, errors.New("reply target is in a different conversation"))
+	}
+
+	return nil
+}
+
+func (s *Service) getSendMessageAccounts(ctx context.Context, senderID, recipientID string) (*storage.Account, *storage.Account, error) {
+	sender, err := s.accountRepo.GetAccount(ctx, senderID)
+	if err != nil {
+		return nil, nil, errors.Join(ErrGetSenderAccount, err)
+	}
+
 	recipient, err := s.accountRepo.GetAccount(ctx, recipientID)
 	if err != nil {
-		return nil, errors.Join(ErrInvalidRecipient, err)
+		return nil, nil, errors.Join(ErrInvalidRecipient, err)
 	}
 
+	return sender, recipient, nil
+}
+
+func (s *Service) createSendMessageStatus(ctx context.Context, cmd *SendMessageCommand, sendCmd *SendDirectMessageCommand, sender *storage.Account, recipient *storage.Account, conversationID, recipientID string) (*models.Status, string, error) {
 	messageID := uuid.New().String()
 	status := &models.Status{
 		StatusID:       messageID,
@@ -715,31 +800,28 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		Visibility:     VisibilityDirect,
 		Sensitive:      cmd.Sensitive,
 		Language:       cmd.Language,
-		ConversationID: conversation.ID,
+		ConversationID: conversationID,
 		InReplyToID:    cmd.InReplyToID,
 		PublishedAt:    time.Now(),
 	}
 
 	recipientURL := fmt.Sprintf("https://%s/users/%s", s.domainName, recipient.User.Username)
 	status.ToRecipients = []string{recipientURL}
-	status.Note = s.buildActivityPubNote(sendCmd, messageID, sender, conversation.ID, map[string]*storage.Account{
+	status.Note = s.buildActivityPubNote(sendCmd, messageID, sender, conversationID, map[string]*storage.Account{
 		recipientID: recipient,
 	})
 
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-		return nil, errors.Join(ErrCreateDirectMessage, err)
+		return nil, "", errors.Join(ErrCreateDirectMessage, err)
 	}
 
-	// Update conversation with latest message.
-	conversation.LastStatusID = messageID
-	conversation.UpdatedAt = time.Now()
-	if err := s.conversationRepo.UpdateConversation(ctx, conversation); err != nil {
-		s.logger.Warn("failed to update conversation", zap.Error(err))
-	}
+	return status, messageID, nil
+}
 
-	// Update DM request lifecycle state (sender always in inbox).
+func (s *Service) updateSendMessageParticipantStateAfterSend(ctx context.Context, conversationID, senderID, recipientID string) {
 	now := time.Now().UTC()
-	if err := s.updateParticipantRecord(ctx, conversation.ID, cmd.SenderID, func(record *models.ConversationParticipantRecord) {
+
+	if err := s.updateParticipantRecord(ctx, conversationID, senderID, func(record *models.ConversationParticipantRecord) {
 		if record == nil {
 			return
 		}
@@ -751,12 +833,12 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		record.DeclinedAt = nil
 	}); err != nil {
 		s.logger.Warn("failed to update sender DM request state",
-			zap.String("conversation_id", conversation.ID),
-			zap.String("sender_id", cmd.SenderID),
+			zap.String("conversation_id", conversationID),
+			zap.String("sender_id", senderID),
 			zap.Error(err))
 	}
 
-	if err := s.updateParticipantRecord(ctx, conversation.ID, recipientID, func(record *models.ConversationParticipantRecord) {
+	if err := s.updateParticipantRecord(ctx, conversationID, recipientID, func(record *models.ConversationParticipantRecord) {
 		if record == nil {
 			return
 		}
@@ -772,7 +854,7 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 			record.RequestedAt = &t
 			return
 		default:
-			if s.shouldDeliverToInbox(ctx, recipientID, cmd.SenderID) {
+			if s.shouldDeliverToInbox(ctx, recipientID, senderID) {
 				record.RequestState = models.DmRequestStateAccepted
 				record.RequestedAt = nil
 				t := now
@@ -789,27 +871,45 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		}
 	}); err != nil {
 		s.logger.Warn("failed to update recipient DM request state",
-			zap.String("conversation_id", conversation.ID),
+			zap.String("conversation_id", conversationID),
 			zap.String("recipient_id", recipientID),
 			zap.Error(err))
 	}
+}
 
-	// Update per-user unread state.
-	if err := s.conversationRepo.MarkConversationRead(ctx, conversation.ID, cmd.SenderID); err != nil {
-		s.logger.Warn("failed to mark DM conversation read for sender",
-			zap.String("conversation_id", conversation.ID),
-			zap.String("sender_id", cmd.SenderID),
-			zap.Error(err))
-	} else {
-		conversation.Unread = false
+// SendMessage sends a message in an existing 1:1 conversation, enforcing strict participant authz.
+func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*MessageResult, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
 	}
 
-	if err := s.conversationRepo.MarkConversationUnread(ctx, conversation.ID, recipientID); err != nil {
-		s.logger.Warn("failed to mark DM conversation unread for recipient",
-			zap.String("conversation_id", conversation.ID),
-			zap.String("recipient_id", recipientID),
-			zap.Error(err))
+	conversation, recipientID, err := s.loadConversationAndRecipientForSendMessage(ctx, cmd)
+	if err != nil {
+		return nil, err
 	}
+
+	sendCmd := sendDirectMessageCommandFromSendMessage(cmd, recipientID)
+	if err := s.validateSendMessageCommandBasic(ctx, sendCmd); err != nil {
+		return nil, errors.Join(ErrConversationValidationFailed, err)
+	}
+
+	if err := s.validateSendMessageReplyTarget(ctx, cmd.InReplyToID, conversation.ID); err != nil {
+		return nil, err
+	}
+
+	sender, recipient, err := s.getSendMessageAccounts(ctx, cmd.SenderID, recipientID)
+	if err != nil {
+		return nil, err
+	}
+
+	status, messageID, err := s.createSendMessageStatus(ctx, cmd, sendCmd, sender, recipient, conversation.ID, recipientID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.updateConversationLastStatus(ctx, conversation, messageID)
+	s.updateSendMessageParticipantStateAfterSend(ctx, conversation.ID, cmd.SenderID, recipientID)
+	s.updateConversationUnreadAfterSend(ctx, conversation, cmd.SenderID, recipientID)
 
 	events := s.emitMessageSentEvents(ctx, status, conversation)
 	s.queueFederationDelivery(ctx, status)
@@ -827,41 +927,7 @@ func (s *Service) AcceptMessageRequest(ctx context.Context, cmd *AcceptMessageRe
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
 	}
 
-	conversation, err := s.conversationRepo.GetConversation(ctx, cmd.ConversationID)
-	if err != nil {
-		return nil, errors.Join(ErrGetConversation, err)
-	}
-
-	if !s.isParticipant(cmd.UserID, conversation.Participants) {
-		return nil, ErrNotConversationParticipant
-	}
-
-	now := time.Now().UTC()
-	if err := s.updateParticipantRecord(ctx, conversation.ID, cmd.UserID, func(record *models.ConversationParticipantRecord) {
-		if record == nil {
-			return
-		}
-		record.RequestState = models.DmRequestStateAccepted
-		record.RequestedAt = nil
-		record.DeclinedAt = nil
-		t := now
-		record.AcceptedAt = &t
-	}); err != nil {
-		return nil, errors.Join(ErrMarkConversationRead, err)
-	}
-
-	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, cmd.UserID); err == nil && record != nil {
-		conversation.Unread = record.Unread
-	}
-
-	s.auditDMRequestEvent(ctx, "dm.request.accept", cmd.UserID, conversation.ID, true, "", map[string]any{
-		"conversation_id": conversation.ID,
-	})
-
-	return &ConversationResult{
-		Conversation: conversation,
-		Events:       []*streaming.Event{},
-	}, nil
+	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, models.DmRequestStateAccepted, "dm.request.accept")
 }
 
 // DeclineMessageRequest hides a request thread from the recipient by setting requestState=DECLINED.
@@ -870,34 +936,48 @@ func (s *Service) DeclineMessageRequest(ctx context.Context, cmd *DeclineMessage
 		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
 	}
 
-	conversation, err := s.conversationRepo.GetConversation(ctx, cmd.ConversationID)
+	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, models.DmRequestStateDeclined, "dm.request.decline")
+}
+
+func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationID, userID string, state models.DmRequestState, auditEvent string) (*ConversationResult, error) {
+	conversation, err := s.conversationRepo.GetConversation(ctx, conversationID)
 	if err != nil {
 		return nil, errors.Join(ErrGetConversation, err)
 	}
 
-	if !s.isParticipant(cmd.UserID, conversation.Participants) {
+	if !s.isParticipant(userID, conversation.Participants) {
 		return nil, ErrNotConversationParticipant
 	}
 
 	now := time.Now().UTC()
-	if err := s.updateParticipantRecord(ctx, conversation.ID, cmd.UserID, func(record *models.ConversationParticipantRecord) {
+	if err := s.updateParticipantRecord(ctx, conversation.ID, userID, func(record *models.ConversationParticipantRecord) {
 		if record == nil {
 			return
 		}
-		record.RequestState = models.DmRequestStateDeclined
-		record.RequestedAt = nil
-		record.AcceptedAt = nil
-		t := now
-		record.DeclinedAt = &t
+
+		switch state {
+		case models.DmRequestStateAccepted:
+			record.RequestState = models.DmRequestStateAccepted
+			record.RequestedAt = nil
+			record.DeclinedAt = nil
+			t := now
+			record.AcceptedAt = &t
+		case models.DmRequestStateDeclined:
+			record.RequestState = models.DmRequestStateDeclined
+			record.RequestedAt = nil
+			record.AcceptedAt = nil
+			t := now
+			record.DeclinedAt = &t
+		}
 	}); err != nil {
 		return nil, errors.Join(ErrMarkConversationRead, err)
 	}
 
-	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, cmd.UserID); err == nil && record != nil {
+	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, userID); err == nil && record != nil {
 		conversation.Unread = record.Unread
 	}
 
-	s.auditDMRequestEvent(ctx, "dm.request.decline", cmd.UserID, conversation.ID, true, "", map[string]any{
+	s.auditDMRequestEvent(ctx, auditEvent, userID, conversation.ID, true, "", map[string]any{
 		"conversation_id": conversation.ID,
 	})
 
@@ -1006,59 +1086,19 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 		conversation.Unread = record.Unread
 	}
 
-	// Get conversation messages (these are statuses with this conversation ID)
+	// Get conversation messages (these are statuses with this conversation ID).
 	messages, err := s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
 	if err != nil {
 		s.logger.Error("failed to get conversation messages", zap.String("conversation_id", query.ConversationID), zap.Error(err))
 		return nil, errors.Join(ErrGetConversationMessages, err)
 	}
 
-	// Filter messages to ensure they're all direct messages visible to the viewer.
-	// NOTE: Status.AuthorID is not consistently an actor URL across the codebase, so we must
-	// treat AuthorUsername as the canonical author check here and validate recipient addressing
-	// using the viewer's actor URL.
 	viewerUsername := strings.TrimSpace(query.ViewerID)
 	viewerActorID := s.actorURLForUsername(viewerUsername)
-	filteredMessages := make([]*models.Status, 0, len(messages.Items))
-	for _, message := range messages.Items {
-		if message.Visibility != VisibilityDirect {
-			continue
-		}
-		if message.AuthorUsername != viewerUsername && !message.IsRecipient(viewerActorID) {
-			continue
-		}
-		filteredMessages = append(filteredMessages, message.SanitizeForActor(viewerActorID))
-	}
-
-	if s.dmTombstoneRepo != nil && viewerUsername != "" && len(filteredMessages) > 0 {
-		ids := make([]string, 0, len(filteredMessages))
-		for _, message := range filteredMessages {
-			if message == nil {
-				continue
-			}
-			if id := strings.TrimSpace(message.StatusID); id != "" {
-				ids = append(ids, id)
-			}
-		}
-
-		if len(ids) > 0 {
-			tombstoned, err := s.dmTombstoneRepo.TombstonesByStatusID(ctx, viewerUsername, ids)
-			if err != nil {
-				return nil, errors.Join(ErrGetConversationMessages, err)
-			}
-
-			kept := filteredMessages[:0]
-			for _, message := range filteredMessages {
-				if message == nil {
-					continue
-				}
-				if tombstoned[message.StatusID] {
-					continue
-				}
-				kept = append(kept, message)
-			}
-			filteredMessages = kept
-		}
+	filteredMessages := s.filterConversationMessagesForViewer(messages.Items, viewerUsername, viewerActorID)
+	filteredMessages, err = s.filterTombstonedConversationMessages(ctx, viewerUsername, filteredMessages)
+	if err != nil {
+		return nil, errors.Join(ErrGetConversationMessages, err)
 	}
 
 	// Update the messages result with filtered items
@@ -1077,6 +1117,62 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 }
 
 // Private helper methods
+
+// filterConversationMessagesForViewer filters a conversation thread to direct messages that the viewer is allowed to see.
+// NOTE: Status.AuthorID is not consistently an actor URL across the codebase, so we must treat AuthorUsername as the
+// canonical author check and validate recipient addressing using the viewer's actor URL.
+func (s *Service) filterConversationMessagesForViewer(messages []*models.Status, viewerUsername, viewerActorID string) []*models.Status {
+	filteredMessages := make([]*models.Status, 0, len(messages))
+	for _, message := range messages {
+		if message == nil {
+			continue
+		}
+		if message.Visibility != VisibilityDirect {
+			continue
+		}
+		if message.AuthorUsername != viewerUsername && !message.IsRecipient(viewerActorID) {
+			continue
+		}
+		filteredMessages = append(filteredMessages, message.SanitizeForActor(viewerActorID))
+	}
+	return filteredMessages
+}
+
+func (s *Service) filterTombstonedConversationMessages(ctx context.Context, viewerUsername string, messages []*models.Status) ([]*models.Status, error) {
+	if s.dmTombstoneRepo == nil || viewerUsername == "" || len(messages) == 0 {
+		return messages, nil
+	}
+
+	ids := make([]string, 0, len(messages))
+	for _, message := range messages {
+		if message == nil {
+			continue
+		}
+		if id := strings.TrimSpace(message.StatusID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return messages, nil
+	}
+
+	tombstoned, err := s.dmTombstoneRepo.TombstonesByStatusID(ctx, viewerUsername, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	kept := messages[:0]
+	for _, message := range messages {
+		if message == nil {
+			continue
+		}
+		if tombstoned[message.StatusID] {
+			continue
+		}
+		kept = append(kept, message)
+	}
+	return kept, nil
+}
 
 func (s *Service) auditEvent(ctx context.Context, eventType, severity, username, userID string, success bool, failureReason string, metadata map[string]any) {
 	if s == nil || s.auditRepo == nil {
@@ -1538,6 +1634,50 @@ func (s *Service) DeleteMessage(ctx context.Context, cmd *DeleteMessageCommand) 
 	return true, nil
 }
 
+func (s *Service) getConversationLastStatusFromPage(ctx context.Context, viewerUsername, viewerActorID string, items []*models.Status) (*models.Status, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	candidates := make([]*models.Status, 0, len(items))
+	ids := make([]string, 0, len(items))
+	for _, message := range items {
+		if message == nil {
+			continue
+		}
+		if message.Visibility != models.VisibilityDirect {
+			continue
+		}
+		if message.AuthorUsername != viewerUsername && !message.IsRecipient(viewerActorID) {
+			continue
+		}
+		candidates = append(candidates, message)
+		ids = append(ids, message.StatusID)
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	tombstoned := map[string]bool{}
+	if s.dmTombstoneRepo != nil && len(ids) > 0 {
+		var err error
+		tombstoned, err = s.dmTombstoneRepo.TombstonesByStatusID(ctx, viewerUsername, ids)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, message := range candidates {
+		if tombstoned[message.StatusID] {
+			continue
+		}
+		return message.SanitizeForActor(viewerActorID), nil
+	}
+
+	return nil, nil
+}
+
 // GetConversationLastStatus returns the latest direct message in the conversation that is visible
 // to the viewer and is not deleted-for-viewer.
 func (s *Service) GetConversationLastStatus(ctx context.Context, conversationID, viewerID string) (*models.Status, error) {
@@ -1569,35 +1709,10 @@ func (s *Service) GetConversationLastStatus(ctx context.Context, conversationID,
 			return nil, nil
 		}
 
-		candidates := make([]*models.Status, 0, len(page.Items))
-		ids := make([]string, 0, len(page.Items))
-		for _, message := range page.Items {
-			if message == nil {
-				continue
-			}
-			if message.Visibility != models.VisibilityDirect {
-				continue
-			}
-			if message.AuthorUsername != viewerUsername && !message.IsRecipient(viewerActorID) {
-				continue
-			}
-			candidates = append(candidates, message)
-			ids = append(ids, message.StatusID)
-		}
-
-		tombstoned := map[string]bool{}
-		if s.dmTombstoneRepo != nil && len(ids) > 0 {
-			tombstoned, err = s.dmTombstoneRepo.TombstonesByStatusID(ctx, viewerUsername, ids)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		for _, message := range candidates {
-			if tombstoned[message.StatusID] {
-				continue
-			}
-			return message.SanitizeForActor(viewerActorID), nil
+		if message, err := s.getConversationLastStatusFromPage(ctx, viewerUsername, viewerActorID, page.Items); err != nil {
+			return nil, err
+		} else if message != nil {
+			return message, nil
 		}
 
 		if !page.HasMore || strings.TrimSpace(page.NextCursor) == "" {

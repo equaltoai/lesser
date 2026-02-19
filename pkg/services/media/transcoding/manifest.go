@@ -140,14 +140,14 @@ func (m *ManifestService) GenerateHLSMasterPlaylist(ctx context.Context, mediaID
 
 	for _, variant := range variants {
 		// Write stream info
-		content.WriteString(fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"%s\"\n",
-			variant.Bitrate,
-			variant.Width,
-			variant.Height,
-			variant.Codec))
+			_, _ = fmt.Fprintf(&content, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"%s\"\n",
+				variant.Bitrate,
+				variant.Width,
+				variant.Height,
+				variant.Codec)
 
 		// Write variant playlist filename
-		content.WriteString(fmt.Sprintf("%s.m3u8\n", variant.Quality))
+		_, _ = fmt.Fprintf(&content, "%s.m3u8\n", variant.Quality)
 	}
 
 	// Upload master playlist to S3
@@ -178,7 +178,7 @@ func (m *ManifestService) GenerateDASHManifest(ctx context.Context, mediaID stri
 	content.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	content.WriteString("<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" ")
 	content.WriteString("type=\"static\" ")
-	content.WriteString(fmt.Sprintf("mediaPresentationDuration=\"PT%dS\" ", duration))
+	_, _ = fmt.Fprintf(&content, "mediaPresentationDuration=\"PT%dS\" ", duration)
 	content.WriteString("minBufferTime=\"PT2S\" ")
 	content.WriteString("profiles=\"urn:mpeg:dash:profile:isoff-main:2011\">\n")
 
@@ -186,16 +186,16 @@ func (m *ManifestService) GenerateDASHManifest(ctx context.Context, mediaID stri
 
 	// Add video adaptation set
 	content.WriteString("    <AdaptationSet mimeType=\"video/mp4\" contentType=\"video\">\n")
-	for _, variant := range variants {
-		content.WriteString(fmt.Sprintf("      <Representation id=\"%s\" bandwidth=\"%d\" width=\"%d\" height=\"%d\" codecs=\"%s\">\n",
-			variant.Quality,
-			variant.Bitrate,
-			variant.Width,
-			variant.Height,
-			variant.Codec))
-		content.WriteString(fmt.Sprintf("        <BaseURL>%s.mp4</BaseURL>\n", variant.Quality))
-		content.WriteString("      </Representation>\n")
-	}
+		for _, variant := range variants {
+			_, _ = fmt.Fprintf(&content, "      <Representation id=\"%s\" bandwidth=\"%d\" width=\"%d\" height=\"%d\" codecs=\"%s\">\n",
+				variant.Quality,
+				variant.Bitrate,
+				variant.Width,
+				variant.Height,
+				variant.Codec)
+			_, _ = fmt.Fprintf(&content, "        <BaseURL>%s.mp4</BaseURL>\n", variant.Quality)
+			content.WriteString("      </Representation>\n")
+		}
 	content.WriteString("    </AdaptationSet>\n")
 
 	content.WriteString("  </Period>\n")

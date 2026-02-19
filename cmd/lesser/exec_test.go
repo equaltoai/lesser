@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -14,10 +15,28 @@ func TestMergeEnvAndSetEnv(t *testing.T) {
 		"B": "3",
 		"C": "4",
 	})
-	require.ElementsMatch(t, []string{"A=1", "B=3", "C=4"}, merged)
+	require.ElementsMatch(t, []string{"A=1", "B=3", "C=4", "GOTOOLCHAIN=auto"}, merged)
 
 	require.Equal(t, []string{"A=1", "B=2", "C=4"}, setEnv(base, "C", "4"))
 	require.Equal(t, []string{"A=1", "B=9"}, setEnv(base, "B", "9"))
+}
+
+func TestMergeEnv_PrependsGoBinToPath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GOPATH", root)
+
+	merged := mergeEnv([]string{"PATH=/usr/bin"}, map[string]string{})
+	require.Contains(t, merged, "GOTOOLCHAIN=auto")
+	require.Contains(t, merged, "PATH="+filepath.Join(root, "bin")+string(os.PathListSeparator)+"/usr/bin")
+}
+
+func TestMergeEnv_EmptyPathUsesGoBin(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GOPATH", root)
+
+	merged := mergeEnv([]string{"PATH="}, map[string]string{})
+	require.Contains(t, merged, "GOTOOLCHAIN=auto")
+	require.Contains(t, merged, "PATH="+filepath.Join(root, "bin"))
 }
 
 func TestRunCommand_SuccessAndFailure(t *testing.T) {
@@ -26,6 +45,50 @@ func TestRunCommand_SuccessAndFailure(t *testing.T) {
 	err := runCommand(context.Background(), "bash", []string{"-lc", "exit 3"}, execOptions{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bash -lc exit 3:")
+}
+
+func TestRunCommand_MissingToolReturnsError(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GOPATH", root)
+	t.Setenv("PATH", t.TempDir())
+
+	err := runCommand(context.Background(), "definitely-not-a-tool", nil, execOptions{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "definitely-not-a-tool")
+}
+
+func TestLookPathInEnvAndIsExecutable(t *testing.T) {
+	t.Run("returns_name_when_contains_separator", func(t *testing.T) {
+		path, err := lookPathInEnv("./tool", []string{"PATH=/usr/bin"})
+		require.NoError(t, err)
+		require.Equal(t, "./tool", path)
+	})
+
+	t.Run("missing_path_returns_error", func(t *testing.T) {
+		_, err := lookPathInEnv("tool", []string{"PATH="})
+		require.Error(t, err)
+	})
+
+	t.Run("finds_executable_on_path", func(t *testing.T) {
+		dir := t.TempDir()
+		candidate := filepath.Join(dir, "tool")
+		require.NoError(t, os.WriteFile(candidate, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+
+		path, err := lookPathInEnv("tool", []string{"PATH=" + dir})
+		require.NoError(t, err)
+		require.Equal(t, candidate, path)
+		require.True(t, isExecutable(path))
+	})
+
+	t.Run("non_executable_is_not_selected", func(t *testing.T) {
+		dir := t.TempDir()
+		candidate := filepath.Join(dir, "tool")
+		require.NoError(t, os.WriteFile(candidate, []byte("nope"), 0o644))
+
+		require.False(t, isExecutable(candidate))
+		_, err := lookPathInEnv("tool", []string{"PATH=" + dir})
+		require.Error(t, err)
+	})
 }
 
 func TestCacheDirHelpers(t *testing.T) {

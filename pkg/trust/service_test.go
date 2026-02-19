@@ -304,3 +304,97 @@ func TestService_GetTrustSummary_ReputationLevels(t *testing.T) {
 		assert.NotEmpty(t, summary.ReputationLevel)
 	})
 }
+
+func TestService_GetTrustScore_PropagatesUnexpectedErrors(t *testing.T) {
+	t.Run("relationship_lookup_error", func(t *testing.T) {
+		repo := &stubTrustRepo{
+			getRelationshipFn: func(_ context.Context, _, _, _ string) (*storage.TrustRelationship, error) {
+				return nil, errors.New("boom")
+			},
+		}
+		svc := NewService(repo, zap.NewNop())
+		_, err := svc.GetTrustScore(context.Background(), "alice", "bob")
+		require.Error(t, err)
+	})
+
+	t.Run("score_lookup_error", func(t *testing.T) {
+		repo := &stubTrustRepo{
+			getRelationshipFn: func(_ context.Context, _, _, _ string) (*storage.TrustRelationship, error) {
+				return nil, storage.ErrNotFound
+			},
+			getScoreFn: func(_ context.Context, _, _ string) (*storage.TrustScore, error) {
+				return nil, errors.New("boom")
+			},
+		}
+		svc := NewService(repo, zap.NewNop())
+		_, err := svc.GetTrustScore(context.Background(), "alice", "bob")
+		require.Error(t, err)
+	})
+}
+
+func TestService_GetTrustRelationships_ConvertsStorageResults(t *testing.T) {
+	repo := &stubTrustRepo{
+		getRelsFn: func(_ context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+			require.Equal(t, "alice", trusterID)
+			require.Equal(t, 10, limit)
+			require.Equal(t, "cur", cursor)
+			return []*storage.TrustRelationship{
+				{
+					ID:         "r1",
+					TrusterID:  "alice",
+					TrusteeID:  "bob",
+					Category:   TrustCategoryGeneral,
+					Score:      0.7,
+					Confidence: 0.9,
+					Evidence:   []storage.TrustEvidence{{Type: "x", Score: 0.1, Description: "y"}},
+				},
+			}, "next", nil
+		},
+	}
+	svc := NewService(repo, zap.NewNop())
+
+	rels, next, err := svc.GetTrustRelationships(context.Background(), "alice", 10, "cur")
+	require.NoError(t, err)
+	require.Equal(t, "next", next)
+	require.Len(t, rels, 1)
+	require.Equal(t, "r1", rels[0].ID)
+	require.Equal(t, []TrustEvidence{{Type: "x", Score: 0.1, Description: "y"}}, rels[0].Evidence)
+}
+
+func TestService_GetTrustedByRelationships_ConvertsStorageResults(t *testing.T) {
+	repo := &stubTrustRepo{
+		getTrustedByFn: func(_ context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
+			require.Equal(t, "bob", trusteeID)
+			require.Equal(t, 5, limit)
+			require.Equal(t, "cur", cursor)
+			return []*storage.TrustRelationship{
+				{
+					ID:        "r1",
+					TrusterID: "alice",
+					TrusteeID: "bob",
+					Category:  TrustCategoryGeneral,
+				},
+			}, "next", nil
+		},
+	}
+	svc := NewService(repo, zap.NewNop())
+
+	rels, next, err := svc.GetTrustedByRelationships(context.Background(), "bob", 5, "cur")
+	require.NoError(t, err)
+	require.Equal(t, "next", next)
+	require.Len(t, rels, 1)
+	require.Equal(t, "r1", rels[0].ID)
+}
+
+func TestService_GetUserTrustScore_ProxiesRepository(t *testing.T) {
+	repo := &stubTrustRepo{userTrustScore: 0.7}
+	svc := NewService(repo, zap.NewNop())
+
+	score, err := svc.GetUserTrustScore(context.Background(), "alice")
+	require.NoError(t, err)
+	require.Equal(t, 0.7, score)
+
+	repo.userTrustScoreErr = errors.New("boom")
+	_, err = svc.GetUserTrustScore(context.Background(), "alice")
+	require.Error(t, err)
+}

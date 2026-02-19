@@ -180,7 +180,7 @@ func (r *ConversationRepository) GetConversationByParticipants(_ context.Context
 
 // GetConversationParticipantRecord retrieves the participant record for a conversation.
 // The in-memory repository does not persist participant records; return not found.
-func (r *ConversationRepository) GetConversationParticipantRecord(_ context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
+func (r *ConversationRepository) GetConversationParticipantRecord(_ context.Context, _, _ string) (*models.ConversationParticipantRecord, error) {
 	return nil, storage.ErrNotFound
 }
 

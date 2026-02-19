@@ -301,6 +301,7 @@ func (r *StatusRepository) GetConversationThread(_ context.Context, conversation
 	return r.paginateStatuses(thread, opts)
 }
 
+// GetConversationThreadReverse retrieves a conversation thread in reverse order.
 func (r *StatusRepository) GetConversationThreadReverse(_ context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

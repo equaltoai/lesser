@@ -921,7 +921,7 @@ func (r *RelationshipRepository) GetMove(_ context.Context, actor string) (*stor
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if r.moves[actor] == nil || len(r.moves[actor]) == 0 {
+	if len(r.moves[actor]) == 0 {
 		return nil, storage.ErrNotFound
 	}
 

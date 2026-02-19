@@ -72,6 +72,58 @@ func TestDepthLimit_FragmentCyclesDoNotPanic(t *testing.T) {
 	_ = dl.MutateOperationContext(context.Background(), opCtx)
 }
 
+func TestDepthLimit_ExtensionNameAndValidateNilFunc(t *testing.T) {
+	require.Equal(t, depthExtension, FixedDepthLimit(1).ExtensionName())
+	require.Error(t, (&DepthLimit{}).Validate(nil))
+}
+
+func TestDepthLimit_MutateOperationContext_NilAndMissingOperation(t *testing.T) {
+	dl := FixedDepthLimit(1)
+	require.NoError(t, dl.Validate(nil))
+
+	require.Nil(t, dl.MutateOperationContext(context.Background(), nil))
+	require.Nil(t, dl.MutateOperationContext(context.Background(), &graphql.OperationContext{}))
+
+	opCtx := mustNamedOpCtx(t, `query GetMe { me { id } }`, "GetMe")
+	opCtx.Operation = nil
+	opCtx.OperationName = "does-not-exist"
+	require.Nil(t, dl.MutateOperationContext(context.Background(), opCtx))
+}
+
+func TestDepthLimit_GetDepthStats(t *testing.T) {
+	opCtx := mustOpCtx(t, `{ me { id } }`)
+	ctx := graphql.WithOperationContext(context.Background(), opCtx)
+	require.Nil(t, GetDepthStats(ctx))
+
+	dl := FixedDepthLimit(10)
+	require.NoError(t, dl.Validate(nil))
+	require.Nil(t, dl.MutateOperationContext(context.Background(), opCtx))
+
+	stats := GetDepthStats(ctx)
+	require.NotNil(t, stats)
+	require.Equal(t, 2, stats.Depth)
+	require.Equal(t, 10, stats.DepthLimit)
+}
+
+func TestDepthLimit_HelperDepthFunctions_NilAndInlineFragments(t *testing.T) {
+	require.Equal(t, defaultIgnoreDepth, calculateOperationDepth(nil, nil))
+
+	doc := &ast.QueryDocument{}
+	require.Equal(t, 2, fieldSelectionDepth(doc, &ast.Field{}, 1, map[string]bool{}))
+	require.Equal(t, 1, fieldSelectionDepth(doc, nil, 1, map[string]bool{}))
+
+	require.Equal(t, 3, fragmentSpreadDepth(doc, nil, 3, map[string]bool{}))
+	require.Equal(t, 3, fragmentSpreadDepth(nil, &ast.FragmentSpread{Name: "A"}, 3, map[string]bool{}))
+	require.Equal(t, 3, fragmentSpreadDepth(doc, &ast.FragmentSpread{}, 3, map[string]bool{}))
+	require.Equal(t, 3, fragmentSpreadDepth(doc, &ast.FragmentSpread{Name: "Missing"}, 3, map[string]bool{}))
+
+	stack := map[string]bool{"A": true}
+	require.Equal(t, 3, fragmentSpreadDepth(doc, &ast.FragmentSpread{Name: "A"}, 3, stack))
+
+	inline := &ast.InlineFragment{SelectionSet: ast.SelectionSet{&ast.Field{}}}
+	require.Equal(t, 1, selectionDepth(doc, inline, 0, map[string]bool{}))
+}
+
 func mustOpCtx(t *testing.T, query string) *graphql.OperationContext {
 	t.Helper()
 	doc := mustParseDoc(t, query)

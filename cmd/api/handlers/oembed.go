@@ -307,14 +307,14 @@ func (h *Handler) generateOEmbedHTML(note *activitypub.Note, maxWidth int) strin
 
 	// Iframe wrapper
 	embedSrc := htmlpkg.EscapeString(fmt.Sprintf("%s/embed/%s", h.cfg.BaseURL(), statusID))
-	htmlBuilder.WriteString(fmt.Sprintf(`<iframe src="%s" class="mastodon-embed" style="max-width: 100%%; border: 0" width="%d" allowfullscreen="allowfullscreen"></iframe>`,
+	_, _ = fmt.Fprintf(&htmlBuilder, `<iframe src="%s" class="mastodon-embed" style="max-width: 100%%; border: 0" width="%d" allowfullscreen="allowfullscreen"></iframe>`,
 		embedSrc,
 		maxWidth,
-	))
+	)
 
 	// Add script for dynamic resizing
 	scriptSrc := htmlpkg.EscapeString(fmt.Sprintf("%s/embed.js", h.cfg.BaseURL()))
-	htmlBuilder.WriteString(fmt.Sprintf(`<script src="%s" async="async"></script>`, scriptSrc))
+	_, _ = fmt.Fprintf(&htmlBuilder, `<script src="%s" async="async"></script>`, scriptSrc)
 
 	return htmlBuilder.String()
 }
@@ -325,31 +325,31 @@ func (h *Handler) sendXMLResponseLift(_ *apptheory.Context, oembed *apimodels.OE
 	var xml strings.Builder
 	xml.WriteString(`<?xml version="1.0" encoding="utf-8"?>`)
 	xml.WriteString("\n<oembed>")
-	xml.WriteString(fmt.Sprintf("\n  <type>%s</type>", oembed.Type))
-	xml.WriteString(fmt.Sprintf("\n  <version>%s</version>", oembed.Version))
-	xml.WriteString(fmt.Sprintf("\n  <author_name>%s</author_name>", htmlpkg.EscapeString(oembed.AuthorName)))
-	xml.WriteString(fmt.Sprintf("\n  <author_url>%s</author_url>", htmlpkg.EscapeString(oembed.AuthorURL)))
-	xml.WriteString(fmt.Sprintf("\n  <provider_name>%s</provider_name>", htmlpkg.EscapeString(oembed.ProviderName)))
-	xml.WriteString(fmt.Sprintf("\n  <provider_url>%s</provider_url>", htmlpkg.EscapeString(oembed.ProviderURL)))
-	xml.WriteString(fmt.Sprintf("\n  <cache_age>%d</cache_age>", oembed.CacheAge))
-	xml.WriteString(fmt.Sprintf("\n  <html><![CDATA[%s]]></html>", oembed.HTML))
-	xml.WriteString(fmt.Sprintf("\n  <width>%d</width>", oembed.Width))
+	_, _ = fmt.Fprintf(&xml, "\n  <type>%s</type>", oembed.Type)
+	_, _ = fmt.Fprintf(&xml, "\n  <version>%s</version>", oembed.Version)
+	_, _ = fmt.Fprintf(&xml, "\n  <author_name>%s</author_name>", htmlpkg.EscapeString(oembed.AuthorName))
+	_, _ = fmt.Fprintf(&xml, "\n  <author_url>%s</author_url>", htmlpkg.EscapeString(oembed.AuthorURL))
+	_, _ = fmt.Fprintf(&xml, "\n  <provider_name>%s</provider_name>", htmlpkg.EscapeString(oembed.ProviderName))
+	_, _ = fmt.Fprintf(&xml, "\n  <provider_url>%s</provider_url>", htmlpkg.EscapeString(oembed.ProviderURL))
+	_, _ = fmt.Fprintf(&xml, "\n  <cache_age>%d</cache_age>", oembed.CacheAge)
+	_, _ = fmt.Fprintf(&xml, "\n  <html><![CDATA[%s]]></html>", oembed.HTML)
+	_, _ = fmt.Fprintf(&xml, "\n  <width>%d</width>", oembed.Width)
 
 	if oembed.Height != nil {
-		xml.WriteString(fmt.Sprintf("\n  <height>%d</height>", *oembed.Height))
+		_, _ = fmt.Fprintf(&xml, "\n  <height>%d</height>", *oembed.Height)
 	}
 
 	if oembed.Title != "" {
-		xml.WriteString(fmt.Sprintf("\n  <title>%s</title>", htmlpkg.EscapeString(oembed.Title)))
+		_, _ = fmt.Fprintf(&xml, "\n  <title>%s</title>", htmlpkg.EscapeString(oembed.Title))
 	}
 
 	if oembed.ThumbnailURL != "" {
-		xml.WriteString(fmt.Sprintf("\n  <thumbnail_url>%s</thumbnail_url>", htmlpkg.EscapeString(oembed.ThumbnailURL)))
+		_, _ = fmt.Fprintf(&xml, "\n  <thumbnail_url>%s</thumbnail_url>", htmlpkg.EscapeString(oembed.ThumbnailURL))
 		if oembed.ThumbnailWidth != nil {
-			xml.WriteString(fmt.Sprintf("\n  <thumbnail_width>%d</thumbnail_width>", *oembed.ThumbnailWidth))
+			_, _ = fmt.Fprintf(&xml, "\n  <thumbnail_width>%d</thumbnail_width>", *oembed.ThumbnailWidth)
 		}
 		if oembed.ThumbnailHeight != nil {
-			xml.WriteString(fmt.Sprintf("\n  <thumbnail_height>%d</thumbnail_height>", *oembed.ThumbnailHeight))
+			_, _ = fmt.Fprintf(&xml, "\n  <thumbnail_height>%d</thumbnail_height>", *oembed.ThumbnailHeight)
 		}
 	}
 

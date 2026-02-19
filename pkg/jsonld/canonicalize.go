@@ -450,7 +450,7 @@ func (c *Canonicalizer) escapeStringLiteral(s string) string {
 			result.WriteString(`\t`)
 		default:
 			if r < 0x20 || r == 0x7F {
-				result.WriteString(fmt.Sprintf(`\u%04X`, r))
+				_, _ = fmt.Fprintf(&result, `\u%04X`, r)
 			} else {
 				result.WriteRune(r)
 			}

@@ -23,6 +23,7 @@ type GraphQLStreamSubscriptionRepository struct {
 	logger    *zap.Logger
 }
 
+// NewGraphQLStreamSubscriptionRepository creates a new GraphQLStreamSubscriptionRepository.
 func NewGraphQLStreamSubscriptionRepository(db core.DB, tableName string, logger *zap.Logger) *GraphQLStreamSubscriptionRepository {
 	if logger == nil {
 		logger = zap.NewNop()
@@ -34,6 +35,7 @@ func NewGraphQLStreamSubscriptionRepository(db core.DB, tableName string, logger
 	}
 }
 
+// Put stores a subscription record for a stream.
 func (r *GraphQLStreamSubscriptionRepository) Put(ctx context.Context, record *models.GraphQLStreamSubscription) error {
 	if record == nil {
 		return storage.ErrInvalidInput

@@ -388,9 +388,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	graphqlEndpoint := strings.TrimSpace(os.Getenv("GRAPHQL_WEBSOCKET_ENDPOINT"))
 	if graphqlEndpoint == "" {
 		graphqlEndpoint = strings.TrimRight(wsEndpoint, "/")
-		if strings.HasSuffix(graphqlEndpoint, "/stream") {
-			graphqlEndpoint = strings.TrimSuffix(graphqlEndpoint, "/stream")
-		}
+		graphqlEndpoint = strings.TrimSuffix(graphqlEndpoint, "/stream")
 	}
 	if strings.HasPrefix(graphqlEndpoint, "wss://") {
 		graphqlEndpoint = "https://" + strings.TrimPrefix(graphqlEndpoint, "wss://")

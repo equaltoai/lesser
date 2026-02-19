@@ -27,10 +27,12 @@ type DirectMessageTombstone struct {
 	CreatedAt      time.Time `theorydb:"attr:createdAt" json:"created_at"`
 }
 
+// TableName returns the DynamoDB table name.
 func (DirectMessageTombstone) TableName() string {
 	return MainTableName
 }
 
+// UpdateKeys populates keys and timestamps before persistence.
 func (t *DirectMessageTombstone) UpdateKeys() error {
 	if err := common.ValidateRequiredParam("viewerUsername", t.ViewerUsername); err != nil {
 		return err
@@ -48,5 +50,8 @@ func (t *DirectMessageTombstone) UpdateKeys() error {
 	return nil
 }
 
+// GetPK returns the record's partition key.
 func (t *DirectMessageTombstone) GetPK() string { return t.PK }
+
+// GetSK returns the record's sort key.
 func (t *DirectMessageTombstone) GetSK() string { return t.SK }
