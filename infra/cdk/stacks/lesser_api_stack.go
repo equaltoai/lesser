@@ -319,6 +319,7 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	overridePathRoutedFrontendRewriteFunction(frontend)
 
 	s.FrontendDistribution = frontend.Distribution()
+	addSoulIngressBehavior(s.FrontendDistribution, s.Environment)
 	s.ClientBucket = clientAssetsBucket
 	s.AuthUIBucket = authAssetsBucket
 }
