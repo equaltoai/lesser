@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -89,6 +92,54 @@ func TestLookPathInEnvAndIsExecutable(t *testing.T) {
 		_, err := lookPathInEnv("tool", []string{"PATH=" + dir})
 		require.Error(t, err)
 	})
+}
+
+func TestGoPathBin_UsesGoEnvWhenGOPATHUnset(t *testing.T) {
+	goExe, err := exec.LookPath("go")
+	require.NoError(t, err)
+
+	t.Setenv("GOPATH", "")
+	t.Setenv("PATH", filepath.Dir(goExe))
+
+	bin := goPathBin()
+	require.NotEmpty(t, bin)
+	require.True(t, strings.HasSuffix(bin, string(os.PathSeparator)+"bin"))
+}
+
+func TestCacheDirVersionKey_FallsBackWhenGoMissing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	key := cacheDirVersionKey()
+	require.Equal(t, sanitizeCacheKey(runtime.Version()), key)
+}
+
+func TestSanitizeCacheKey_EmptyReturnsUnknown(t *testing.T) {
+	require.Equal(t, "unknown", sanitizeCacheKey("   "))
+}
+
+func TestGetEnv_MissingKeyReturnsEmpty(t *testing.T) {
+	require.Empty(t, getEnv([]string{"A=1"}, "B"))
+}
+
+func TestIsExecutable_DirectoryIsFalse(t *testing.T) {
+	dir := t.TempDir()
+	require.False(t, isExecutable(dir))
+}
+
+func TestLookPathInEnv_EmptyDirUsesDot(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	workDir := t.TempDir()
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	candidate := filepath.Join(workDir, "tool")
+	require.NoError(t, os.WriteFile(candidate, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+
+	got, err := lookPathInEnv("tool", []string{"PATH=:" + t.TempDir()})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(".", "tool"), got)
 }
 
 func TestCacheDirHelpers(t *testing.T) {
