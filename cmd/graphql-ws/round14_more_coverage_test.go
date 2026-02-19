@@ -14,12 +14,12 @@ import (
 
 func TestGraphQLWSHelpers_Round14(t *testing.T) {
 	t.Run("sendJSON rejects nil websocket context", func(t *testing.T) {
-		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 		require.Error(t, s.sendJSON(nil, map[string]any{"ok": true}))
 	})
 
 	t.Run("sendJSON uses injected sender when available", func(t *testing.T) {
-		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 		calls := 0
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 			calls++
@@ -59,7 +59,7 @@ func TestGraphQLWSHelpers_Round14(t *testing.T) {
 		wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 		var payload []byte
 
-		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, env any) error {
 			b, err := json.Marshal(env)
 			require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestHandleConnect_CleansUpOnPersistError_Round14(t *testing.T) {
 
 	writeErr := errors.New("write failed")
 	connRepo := &fakeConnRepo{writeErr: writeErr}
-	server := newServer(nil, nil, nil, zap.NewNop(), connRepo, nil)
+	server := newServer(nil, nil, nil, zap.NewNop(), connRepo, nil, nil)
 	app := newWebSocketApp(server)
 
 	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$connect", "c1", "", map[string]string{"access_token": "t"}, map[string]string{}))
@@ -86,7 +86,7 @@ func TestHandleConnect_CleansUpOnPersistError_Round14(t *testing.T) {
 }
 
 func TestHandleDefaultAndDisconnect_NilContexts_Round14(t *testing.T) {
-	server := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	server := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 
 	resp, err := server.handleDisconnect(nil)
 	require.NoError(t, err)

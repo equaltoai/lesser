@@ -245,6 +245,11 @@ func TestDirectStreamName(t *testing.T) {
 	assert.Equal(t, "direct:bob", DirectStreamName("bob"))
 }
 
+func TestDMFolderStreamNames(t *testing.T) {
+	assert.Equal(t, "dm:inbox:alice", DMInboxStreamName("alice"))
+	assert.Equal(t, "dm:requests:alice", DMRequestsStreamName("alice"))
+}
+
 func TestConversationStreamName(t *testing.T) {
 	assert.Equal(t, "conversation:123", ConversationStreamName("123"))
 	assert.Equal(t, "conversation:conv-abc", ConversationStreamName("conv-abc"))
@@ -302,6 +307,7 @@ func TestIsValidStreamName(t *testing.T) {
 		"user:alice", "user:bob",
 		"user:notification:alice", "user:notification:bob",
 		"direct:alice", "direct:bob",
+		"dm:inbox:alice", "dm:requests:alice",
 		"conversation:123", "conversation:conv-abc",
 	}
 

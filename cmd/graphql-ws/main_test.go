@@ -49,7 +49,7 @@ func newWebSocketApp(s *wsServer) *apptheory.App {
 func newWebSocketAppTheoryServerContext(t *testing.T, routeKey, connectionID, body string) events.APIGatewayProxyResponse {
 	t.Helper()
 
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	app := newWebSocketApp(s)
 	return app.ServeWebSocket(context.Background(), newWebSocketEvent(routeKey, connectionID, body, nil, nil))
 }
@@ -79,7 +79,7 @@ func TestTokenHelpers(t *testing.T) {
 }
 
 func TestSubscriptionHelpers(t *testing.T) {
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	require.NotNil(t, s)
 
 	err := s.registerConnection(context.Background(), "c1", "user", &auth.Claims{Username: "user"})
@@ -112,7 +112,7 @@ func TestHandleDefault_SendsExpectedMessages(t *testing.T) {
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 
 	var bodies [][]byte
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	// Pretend $connect already authenticated so connection_init can ACK.
 	s.connections["c1"] = &connectionState{username: "user", claims: &auth.Claims{Username: "user"}, subscriptions: map[string]*subscriptionState{}}
 	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {

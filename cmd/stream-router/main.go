@@ -82,14 +82,17 @@ type StreamRouterHandler struct {
 	tableName          string
 	logger             *zap.Logger
 	apiClient          streamer.Client
+	graphqlClient      streamer.Client
 	subscriptionsTable string
 	wsEndpoint         string
+	graphqlEndpoint    string
 	userRepo           *repositories.UserRepository
 	actorRepo          *repositories.ActorRepository
 	accountRepo        followerActorRepository
 	statusRepo         statusRepository
 	publisher          streaming.Publisher
 	streamingRepo      streamConnectionRepository
+	gqlSubRepo         graphqlStreamSubscriptionRepository
 	domain             string
 	streamEventLog     *streaming.StreamEventLog
 }
@@ -108,6 +111,11 @@ type streamConnectionRepository interface {
 	GetSubscriptionsForStream(ctx context.Context, stream string) ([]models.WebSocketSubscription, error)
 	DeleteSubscription(ctx context.Context, connectionID, stream string) error
 	DeleteConnection(ctx context.Context, connectionID string) error
+}
+
+type graphqlStreamSubscriptionRepository interface {
+	ListByStream(ctx context.Context, stream string) ([]models.GraphQLStreamSubscription, error)
+	DeleteAllForConnection(ctx context.Context, connectionID string) error
 }
 
 // connectionRepositoryAdapter adapts StreamingConnectionRepository to streaming.ConnectionRepository
@@ -377,6 +385,17 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		return nil, WebSocketEndpointNotSet()
 	}
 
+	graphqlEndpoint := strings.TrimSpace(os.Getenv("GRAPHQL_WEBSOCKET_ENDPOINT"))
+	if graphqlEndpoint == "" {
+		graphqlEndpoint = strings.TrimRight(wsEndpoint, "/")
+		if strings.HasSuffix(graphqlEndpoint, "/stream") {
+			graphqlEndpoint = strings.TrimSuffix(graphqlEndpoint, "/stream")
+		}
+	}
+	if strings.HasPrefix(graphqlEndpoint, "wss://") {
+		graphqlEndpoint = "https://" + strings.TrimPrefix(graphqlEndpoint, "wss://")
+	}
+
 	// Get domain from config
 	domain := lambdaCtx.Config.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
@@ -394,8 +413,17 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		return nil, fmt.Errorf("failed to create WebSocket client: %w", err)
 	}
 
+	var graphqlClient streamer.Client
+	if graphqlEndpoint != "" {
+		graphqlClient, err = newStreamerClient(context.Background(), graphqlEndpoint, streamer.WithAWSConfig(globalCfg))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GraphQL WebSocket client: %w", err)
+		}
+	}
+
 	// Initialize streaming repository
 	streamingRepo := repositories.NewStreamingConnectionRepository(db, tableName, db, subscriptionsTable, lambdaCtx.Logger, nil)
+	gqlSubRepo := repositories.NewGraphQLStreamSubscriptionRepository(db, tableName, lambdaCtx.Logger)
 
 	// Create connection repository adapter
 	connRepoAdapter := &connectionRepositoryAdapter{
@@ -419,14 +447,17 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		tableName:          tableName,
 		logger:             lambdaCtx.Logger,
 		apiClient:          apiClient,
+		graphqlClient:      graphqlClient,
 		subscriptionsTable: subscriptionsTable,
 		wsEndpoint:         wsEndpoint,
+		graphqlEndpoint:    graphqlEndpoint,
 		userRepo:           userRepo,
 		actorRepo:          actorRepo,
 		accountRepo:        accountRepo,
 		statusRepo:         statusRepo,
 		publisher:          publisher,
 		streamingRepo:      streamingRepo,
+		gqlSubRepo:         gqlSubRepo,
 		domain:             domain,
 		streamEventLog:     streamEventLog,
 	}, nil
@@ -487,12 +518,95 @@ func (h *StreamRouterHandler) processRecord(ctx context.Context, requestID strin
 		return h.processNotificationEvent(ctx, requestID, record)
 	case "USER", "ACTOR":
 		return h.processAccountEvent(ctx, requestID, record)
+	case "USER_CONVERSATIONS":
+		return h.processConversationParticipantEvent(ctx, requestID, record)
 	case "TOMBSTONE":
 		return h.processTombstoneEvent(ctx, requestID, record)
 	default:
 		logger.Debug("ignoring event for unknown entity type")
 		return nil
 	}
+}
+
+func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
+	if h == nil || h.gqlSubRepo == nil || h.graphqlClient == nil {
+		return nil
+	}
+
+	var participant models.ConversationParticipantRecord
+	if err := stream.UnmarshalItem(record, &participant); err != nil {
+		h.logger.Debug("failed to unmarshal conversation participant record",
+			zap.String("request_id", requestID),
+			zap.Error(err))
+		return nil
+	}
+
+	parts := common.SplitKey(participant.PK)
+	if len(parts) < 2 {
+		return nil
+	}
+	username := strings.TrimSpace(parts[1])
+	if username == "" {
+		return nil
+	}
+
+	conv := participant.Conversation
+	if conv == nil || strings.TrimSpace(conv.ID) == "" {
+		return nil
+	}
+
+	requestState := strings.ToUpper(strings.TrimSpace(string(participant.RequestState)))
+	streamName := streaming.DMInboxStreamName(username)
+	switch requestState {
+	case string(models.DmRequestStatePending), string(models.DmRequestStateDeclined):
+		streamName = streaming.DMRequestsStreamName(username)
+	}
+
+	subs, err := h.gqlSubRepo.ListByStream(ctx, streamName)
+	if err != nil || len(subs) == 0 {
+		return nil
+	}
+
+	envelopePayload := map[string]any{
+		"data": map[string]any{
+			"conversationUpdates": map[string]any{
+				"id": conv.ID,
+			},
+		},
+	}
+
+	type gqlEnvelope struct {
+		ID      string `json:"id,omitempty"`
+		Type    string `json:"type"`
+		Payload any    `json:"payload,omitempty"`
+	}
+
+	var staleConns []string
+	for _, sub := range subs {
+		msgBytes, mErr := json.Marshal(gqlEnvelope{
+			ID:      sub.SubscriptionID,
+			Type:    "next",
+			Payload: envelopePayload,
+		})
+		if mErr != nil {
+			continue
+		}
+
+		if err := h.graphqlClient.PostToConnection(ctx, sub.ConnectionID, msgBytes); err != nil {
+			if isStaleConnection(err) {
+				staleConns = append(staleConns, sub.ConnectionID)
+			}
+		}
+	}
+
+	for _, connID := range staleConns {
+		_ = h.gqlSubRepo.DeleteAllForConnection(ctx, connID)
+		if h.streamingRepo != nil {
+			_ = h.streamingRepo.DeleteConnection(ctx, connID)
+		}
+	}
+
+	return nil
 }
 
 // processStatusEvent processes status/object events using DynamORM stream utilities

@@ -104,6 +104,12 @@ const (
 	// Direct Messages
 	DirectStream = "direct" // Direct messages for the user
 
+	// DM folder-scoped streams (Lesser GraphQL DM subscriptions).
+	// These are distinct from the Mastodon-compatible `direct:<username>` stream and are intended
+	// to power GraphQL-first DM UIs (Inbox vs Requests).
+	DMInboxStreamPrefix    = "dm:inbox"
+	DMRequestsStreamPrefix = "dm:requests"
+
 	// Hashtag Streams (template - append hashtag name)
 	HashtagStreamPrefix = "hashtag" // Use as "hashtag:name"
 
@@ -351,6 +357,16 @@ func DirectStreamName(userID string) string {
 	return fmt.Sprintf("%s:%s", DirectStream, userID)
 }
 
+// DMInboxStreamName returns the inbox DM stream name for a user.
+func DMInboxStreamName(userID string) string {
+	return fmt.Sprintf("%s:%s", DMInboxStreamPrefix, userID)
+}
+
+// DMRequestsStreamName returns the requests DM stream name for a user.
+func DMRequestsStreamName(userID string) string {
+	return fmt.Sprintf("%s:%s", DMRequestsStreamPrefix, userID)
+}
+
 // ConversationStreamName returns the conversation stream name for a specific conversation
 func ConversationStreamName(conversationID string) string {
 	return fmt.Sprintf("conversation:%s", conversationID)
@@ -411,6 +427,8 @@ func IsValidStreamName(streamName string) bool {
 		UserStream + ":",
 		UserNotificationStream + ":",
 		DirectStream + ":",
+		DMInboxStreamPrefix + ":",
+		DMRequestsStreamPrefix + ":",
 		"conversation:",
 	}
 

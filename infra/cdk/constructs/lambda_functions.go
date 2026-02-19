@@ -144,6 +144,8 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 	wsHost := fmt.Sprintf("ws.%s", domainValue)
 	// Streaming WebSocket API is path-mapped under /stream (see constructs/api_routes.go).
 	commonEnv["WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s/stream", wsHost))
+	// GraphQL WebSocket API is mapped at the root of ws.<domain> (see constructs/api_routes.go).
+	commonEnv["GRAPHQL_WEBSOCKET_ENDPOINT"] = jsii.String(fmt.Sprintf("https://%s", wsHost))
 
 	// Optional feature flags (set only when explicitly configured).
 	if v := getConfigString("translationEnabled"); v != "" {
