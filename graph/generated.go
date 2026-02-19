@@ -763,12 +763,20 @@ type ComplexityRoot struct {
 	}
 
 	Conversation struct {
-		Accounts   func(childComplexity int) int
-		CreatedAt  func(childComplexity int) int
-		ID         func(childComplexity int) int
-		LastStatus func(childComplexity int) int
-		Unread     func(childComplexity int) int
-		UpdatedAt  func(childComplexity int) int
+		Accounts       func(childComplexity int) int
+		CreatedAt      func(childComplexity int) int
+		ID             func(childComplexity int) int
+		LastStatus     func(childComplexity int) int
+		Unread         func(childComplexity int) int
+		UpdatedAt      func(childComplexity int) int
+		ViewerMetadata func(childComplexity int) int
+	}
+
+	ConversationViewerMetadata struct {
+		AcceptedAt   func(childComplexity int) int
+		DeclinedAt   func(childComplexity int) int
+		RequestState func(childComplexity int) int
+		RequestedAt  func(childComplexity int) int
 	}
 
 	Coordinates struct {
@@ -1684,6 +1692,7 @@ type ComplexityRoot struct {
 
 	Mutation struct {
 		AcceptFollowRequest                func(childComplexity int, accountID string) int
+		AcceptMessageRequest               func(childComplexity int, conversationID string) int
 		AcknowledgeSeverance               func(childComplexity int, id string) int
 		AddAccountsToList                  func(childComplexity int, id string, accountIds []string) int
 		AddAnnouncementReaction            func(childComplexity int, id string, name string) int
@@ -1724,6 +1733,7 @@ type ComplexityRoot struct {
 		ClearNotifications                 func(childComplexity int) int
 		CreateArticle                      func(childComplexity int, input model.CreateArticleInput) int
 		CreateCategory                     func(childComplexity int, input model.CreateCategoryInput) int
+		CreateConversation                 func(childComplexity int, participantID string) int
 		CreateDraft                        func(childComplexity int, input model.CreateDraftInput) int
 		CreateEmoji                        func(childComplexity int, input model.CreateEmojiInput) int
 		CreateExport                       func(childComplexity int, input model.CreateExportInput) int
@@ -1737,17 +1747,19 @@ type ComplexityRoot struct {
 		CreateReport                       func(childComplexity int, input model.CreateReportInput) int
 		CreateSeries                       func(childComplexity int, input model.CreateSeriesInput) int
 		CreateVouch                        func(childComplexity int, input model.CreateVouchInput) int
+		DeclineMessageRequest              func(childComplexity int, conversationID string) int
 		DelegateToAgent                    func(childComplexity int, input model.DelegateToAgentInput) int
 		DeleteAgent                        func(childComplexity int, username string) int
 		DeleteArticle                      func(childComplexity int, id string) int
 		DeleteCategory                     func(childComplexity int, id string) int
-		DeleteConversation                 func(childComplexity int, id string) int
+		DeleteConversation                 func(childComplexity int, conversationID string) int
 		DeleteDraft                        func(childComplexity int, id string) int
 		DeleteEmoji                        func(childComplexity int, shortcode string) int
 		DeleteFilter                       func(childComplexity int, id string) int
 		DeleteFilterKeyword                func(childComplexity int, filterID string, keywordID string) int
 		DeleteFilterStatus                 func(childComplexity int, filterID string, filterStatusID string) int
 		DeleteList                         func(childComplexity int, id string) int
+		DeleteMessage                      func(childComplexity int, messageID string) int
 		DeleteModerationPattern            func(childComplexity int, id string) int
 		DeleteObject                       func(childComplexity int, id string) int
 		DeletePushSubscription             func(childComplexity int) int
@@ -1792,6 +1804,8 @@ type ComplexityRoot struct {
 		SaveMarkers                        func(childComplexity int, input []*model.SaveMarkerInput) int
 		ScheduleDraft                      func(childComplexity int, id string, scheduledAt model.Time) int
 		ScheduleStatus                     func(childComplexity int, input model.ScheduleStatusInput) int
+		SendDirectMessage                  func(childComplexity int, to string, content string, mediaIds []string) int
+		SendMessage                        func(childComplexity int, conversationID string, content string, mediaIds []string) int
 		SetFederationLimit                 func(childComplexity int, domain string, limit model.FederationLimitInput) int
 		SetInstanceBudget                  func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
 		ShareObject                        func(childComplexity int, id string) int
@@ -2034,9 +2048,10 @@ type ComplexityRoot struct {
 	}
 
 	PrivacyPreferences struct {
-		DefaultVisibility func(childComplexity int) int
-		Indexable         func(childComplexity int) int
-		ShowOnlineStatus  func(childComplexity int) int
+		DefaultVisibility  func(childComplexity int) int
+		DirectMessagesFrom func(childComplexity int) int
+		Indexable          func(childComplexity int) int
+		ShowOnlineStatus   func(childComplexity int) int
 	}
 
 	ProfileDirectory struct {
@@ -2151,7 +2166,8 @@ type ComplexityRoot struct {
 		CategoryBySlug            func(childComplexity int, slug string) int
 		CommunityNotesByAuthor    func(childComplexity int, username string, first *int, after *model.Cursor) int
 		Conversation              func(childComplexity int, id string) int
-		Conversations             func(childComplexity int, first *int, after *model.Cursor) int
+		ConversationMessages      func(childComplexity int, conversationID string, first *int, after *model.Cursor) int
+		Conversations             func(childComplexity int, folder *model.ConversationFolder, first *int, after *model.Cursor) int
 		CostBreakdown             func(childComplexity int, period *model.Period) int
 		CostProjections           func(childComplexity int, period model.Period) int
 		CustomEmojis              func(childComplexity int) int
@@ -2443,6 +2459,11 @@ type ComplexityRoot struct {
 		Accounts func(childComplexity int) int
 		Hashtags func(childComplexity int) int
 		Statuses func(childComplexity int) int
+	}
+
+	SendMessagePayload struct {
+		Conversation func(childComplexity int) int
+		Message      func(childComplexity int) int
 	}
 
 	SentimentScores struct {
@@ -2951,8 +2972,14 @@ type MutationResolver interface {
 	DeleteList(ctx context.Context, id string) (bool, error)
 	AddAccountsToList(ctx context.Context, id string, accountIds []string) (*model.List, error)
 	RemoveAccountsFromList(ctx context.Context, id string, accountIds []string) (*model.List, error)
+	CreateConversation(ctx context.Context, participantID string) (*model.Conversation, error)
+	SendDirectMessage(ctx context.Context, to string, content string, mediaIds []string) (*model.SendMessagePayload, error)
+	SendMessage(ctx context.Context, conversationID string, content string, mediaIds []string) (*model.SendMessagePayload, error)
+	AcceptMessageRequest(ctx context.Context, conversationID string) (*model.Conversation, error)
+	DeclineMessageRequest(ctx context.Context, conversationID string) (bool, error)
 	MarkConversationAsRead(ctx context.Context, id string) (*model.Conversation, error)
-	DeleteConversation(ctx context.Context, id string) (bool, error)
+	DeleteConversation(ctx context.Context, conversationID string) (bool, error)
+	DeleteMessage(ctx context.Context, messageID string) (bool, error)
 	UploadMedia(ctx context.Context, input model.UploadMediaInput) (*model.UploadMediaPayload, error)
 	UpdateMedia(ctx context.Context, id string, input model.UpdateMediaInput) (*model.Media, error)
 	DismissNotification(ctx context.Context, id string) (bool, error)
@@ -3107,8 +3134,9 @@ type QueryResolver interface {
 	Favourites(ctx context.Context, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 	Bookmarks(ctx context.Context, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 	CommunityNotesByAuthor(ctx context.Context, username string, first *int, after *model.Cursor) (*model.CommunityNoteConnection, error)
-	Conversations(ctx context.Context, first *int, after *model.Cursor) ([]*model.Conversation, error)
+	Conversations(ctx context.Context, folder *model.ConversationFolder, first *int, after *model.Cursor) ([]*model.Conversation, error)
 	Conversation(ctx context.Context, id string) (*model.Conversation, error)
+	ConversationMessages(ctx context.Context, conversationID string, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 	Lists(ctx context.Context) ([]*model.List, error)
 	List(ctx context.Context, id string) (*model.List, error)
 	ListAccounts(ctx context.Context, id string) ([]*activitypub.Actor, error)
@@ -6468,6 +6496,41 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Conversation.UpdatedAt(childComplexity), true
+
+	case "Conversation.viewerMetadata":
+		if e.complexity.Conversation.ViewerMetadata == nil {
+			break
+		}
+
+		return e.complexity.Conversation.ViewerMetadata(childComplexity), true
+
+	case "ConversationViewerMetadata.acceptedAt":
+		if e.complexity.ConversationViewerMetadata.AcceptedAt == nil {
+			break
+		}
+
+		return e.complexity.ConversationViewerMetadata.AcceptedAt(childComplexity), true
+
+	case "ConversationViewerMetadata.declinedAt":
+		if e.complexity.ConversationViewerMetadata.DeclinedAt == nil {
+			break
+		}
+
+		return e.complexity.ConversationViewerMetadata.DeclinedAt(childComplexity), true
+
+	case "ConversationViewerMetadata.requestState":
+		if e.complexity.ConversationViewerMetadata.RequestState == nil {
+			break
+		}
+
+		return e.complexity.ConversationViewerMetadata.RequestState(childComplexity), true
+
+	case "ConversationViewerMetadata.requestedAt":
+		if e.complexity.ConversationViewerMetadata.RequestedAt == nil {
+			break
+		}
+
+		return e.complexity.ConversationViewerMetadata.RequestedAt(childComplexity), true
 
 	case "Coordinates.x":
 		if e.complexity.Coordinates.X == nil {
@@ -10679,6 +10742,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.AcceptFollowRequest(childComplexity, args["accountId"].(string)), true
 
+	case "Mutation.acceptMessageRequest":
+		if e.complexity.Mutation.AcceptMessageRequest == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_acceptMessageRequest_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AcceptMessageRequest(childComplexity, args["conversationId"].(string)), true
+
 	case "Mutation.acknowledgeSeverance":
 		if e.complexity.Mutation.AcknowledgeSeverance == nil {
 			break
@@ -11154,6 +11229,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.CreateCategory(childComplexity, args["input"].(model.CreateCategoryInput)), true
 
+	case "Mutation.createConversation":
+		if e.complexity.Mutation.CreateConversation == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createConversation_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateConversation(childComplexity, args["participantId"].(string)), true
+
 	case "Mutation.createDraft":
 		if e.complexity.Mutation.CreateDraft == nil {
 			break
@@ -11310,6 +11397,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.CreateVouch(childComplexity, args["input"].(model.CreateVouchInput)), true
 
+	case "Mutation.declineMessageRequest":
+		if e.complexity.Mutation.DeclineMessageRequest == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_declineMessageRequest_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.DeclineMessageRequest(childComplexity, args["conversationId"].(string)), true
+
 	case "Mutation.delegateToAgent":
 		if e.complexity.Mutation.DelegateToAgent == nil {
 			break
@@ -11368,7 +11467,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.DeleteConversation(childComplexity, args["id"].(string)), true
+		return e.complexity.Mutation.DeleteConversation(childComplexity, args["conversationId"].(string)), true
 
 	case "Mutation.deleteDraft":
 		if e.complexity.Mutation.DeleteDraft == nil {
@@ -11441,6 +11540,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.DeleteList(childComplexity, args["id"].(string)), true
+
+	case "Mutation.deleteMessage":
+		if e.complexity.Mutation.DeleteMessage == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_deleteMessage_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.DeleteMessage(childComplexity, args["messageId"].(string)), true
 
 	case "Mutation.deleteModerationPattern":
 		if e.complexity.Mutation.DeleteModerationPattern == nil {
@@ -11959,6 +12070,30 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.ScheduleStatus(childComplexity, args["input"].(model.ScheduleStatusInput)), true
+
+	case "Mutation.sendDirectMessage":
+		if e.complexity.Mutation.SendDirectMessage == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_sendDirectMessage_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.SendDirectMessage(childComplexity, args["to"].(string), args["content"].(string), args["mediaIds"].([]string)), true
+
+	case "Mutation.sendMessage":
+		if e.complexity.Mutation.SendMessage == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_sendMessage_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.SendMessage(childComplexity, args["conversationId"].(string), args["content"].(string), args["mediaIds"].([]string)), true
 
 	case "Mutation.setFederationLimit":
 		if e.complexity.Mutation.SetFederationLimit == nil {
@@ -13418,6 +13553,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.PrivacyPreferences.DefaultVisibility(childComplexity), true
 
+	case "PrivacyPreferences.directMessagesFrom":
+		if e.complexity.PrivacyPreferences.DirectMessagesFrom == nil {
+			break
+		}
+
+		return e.complexity.PrivacyPreferences.DirectMessagesFrom(childComplexity), true
+
 	case "PrivacyPreferences.indexable":
 		if e.complexity.PrivacyPreferences.Indexable == nil {
 			break
@@ -14221,6 +14363,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.Conversation(childComplexity, args["id"].(string)), true
 
+	case "Query.conversationMessages":
+		if e.complexity.Query.ConversationMessages == nil {
+			break
+		}
+
+		args, err := ec.field_Query_conversationMessages_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.ConversationMessages(childComplexity, args["conversationId"].(string), args["first"].(*int), args["after"].(*model.Cursor)), true
+
 	case "Query.conversations":
 		if e.complexity.Query.Conversations == nil {
 			break
@@ -14231,7 +14385,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Query.Conversations(childComplexity, args["first"].(*int), args["after"].(*model.Cursor)), true
+		return e.complexity.Query.Conversations(childComplexity, args["folder"].(*model.ConversationFolder), args["first"].(*int), args["after"].(*model.Cursor)), true
 
 	case "Query.costBreakdown":
 		if e.complexity.Query.CostBreakdown == nil {
@@ -16216,6 +16370,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.SearchResult.Statuses(childComplexity), true
+
+	case "SendMessagePayload.conversation":
+		if e.complexity.SendMessagePayload.Conversation == nil {
+			break
+		}
+
+		return e.complexity.SendMessagePayload.Conversation(childComplexity), true
+
+	case "SendMessagePayload.message":
+		if e.complexity.SendMessagePayload.Message == nil {
+			break
+		}
+
+		return e.complexity.SendMessagePayload.Message(childComplexity), true
 
 	case "SentimentScores.mixed":
 		if e.complexity.SentimentScores.Mixed == nil {
@@ -18312,6 +18480,17 @@ func (ec *executionContext) field_Mutation_acceptFollowRequest_args(ctx context.
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_acceptMessageRequest_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "conversationId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["conversationId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_acknowledgeSeverance_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -18806,6 +18985,17 @@ func (ec *executionContext) field_Mutation_createCategory_args(ctx context.Conte
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_createConversation_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "participantId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["participantId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_createDraft_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -18949,6 +19139,17 @@ func (ec *executionContext) field_Mutation_createVouch_args(ctx context.Context,
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_declineMessageRequest_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "conversationId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["conversationId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_delegateToAgent_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -18996,11 +19197,11 @@ func (ec *executionContext) field_Mutation_deleteCategory_args(ctx context.Conte
 func (ec *executionContext) field_Mutation_deleteConversation_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "conversationId", ec.unmarshalNID2string)
 	if err != nil {
 		return nil, err
 	}
-	args["id"] = arg0
+	args["conversationId"] = arg0
 	return args, nil
 }
 
@@ -19077,6 +19278,17 @@ func (ec *executionContext) field_Mutation_deleteList_args(ctx context.Context, 
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_deleteMessage_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "messageId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["messageId"] = arg0
 	return args, nil
 }
 
@@ -19634,6 +19846,48 @@ func (ec *executionContext) field_Mutation_scheduleStatus_args(ctx context.Conte
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_sendDirectMessage_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "to", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["to"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "content", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["content"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "mediaIds", ec.unmarshalOID2ᚕstringᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaIds"] = arg2
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_sendMessage_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "conversationId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["conversationId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "content", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["content"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "mediaIds", ec.unmarshalOID2ᚕstringᚄ)
+	if err != nil {
+		return nil, err
+	}
+	args["mediaIds"] = arg2
 	return args, nil
 }
 
@@ -20861,6 +21115,27 @@ func (ec *executionContext) field_Query_communityNotesByAuthor_args(ctx context.
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_conversationMessages_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "conversationId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["conversationId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_conversation_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -20875,16 +21150,21 @@ func (ec *executionContext) field_Query_conversation_args(ctx context.Context, r
 func (ec *executionContext) field_Query_conversations_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "folder", ec.unmarshalOConversationFolder2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationFolder)
 	if err != nil {
 		return nil, err
 	}
-	args["first"] = arg0
-	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	args["folder"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
 	if err != nil {
 		return nil, err
 	}
-	args["after"] = arg1
+	args["first"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOCursor2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCursor)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg2
 	return args, nil
 }
 
@@ -44065,6 +44345,60 @@ func (ec *executionContext) fieldContext_Conversation_accounts(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _Conversation_viewerMetadata(ctx context.Context, field graphql.CollectedField, obj *model.Conversation) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Conversation_viewerMetadata(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ViewerMetadata, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ConversationViewerMetadata)
+	fc.Result = res
+	return ec.marshalNConversationViewerMetadata2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationViewerMetadata(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Conversation_viewerMetadata(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Conversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "requestState":
+				return ec.fieldContext_ConversationViewerMetadata_requestState(ctx, field)
+			case "requestedAt":
+				return ec.fieldContext_ConversationViewerMetadata_requestedAt(ctx, field)
+			case "acceptedAt":
+				return ec.fieldContext_ConversationViewerMetadata_acceptedAt(ctx, field)
+			case "declinedAt":
+				return ec.fieldContext_ConversationViewerMetadata_declinedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ConversationViewerMetadata", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Conversation_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Conversation) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Conversation_createdAt(ctx, field)
 	if err != nil {
@@ -44143,6 +44477,173 @@ func (ec *executionContext) _Conversation_updatedAt(ctx context.Context, field g
 func (ec *executionContext) fieldContext_Conversation_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Conversation",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationViewerMetadata_requestState(ctx context.Context, field graphql.CollectedField, obj *model.ConversationViewerMetadata) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationViewerMetadata_requestState(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RequestState, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.DmRequestState)
+	fc.Result = res
+	return ec.marshalNDmRequestState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDmRequestState(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationViewerMetadata_requestState(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationViewerMetadata",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type DmRequestState does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationViewerMetadata_requestedAt(ctx context.Context, field graphql.CollectedField, obj *model.ConversationViewerMetadata) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationViewerMetadata_requestedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RequestedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationViewerMetadata_requestedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationViewerMetadata",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationViewerMetadata_acceptedAt(ctx context.Context, field graphql.CollectedField, obj *model.ConversationViewerMetadata) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationViewerMetadata_acceptedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AcceptedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationViewerMetadata_acceptedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationViewerMetadata",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ConversationViewerMetadata_declinedAt(ctx context.Context, field graphql.CollectedField, obj *model.ConversationViewerMetadata) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ConversationViewerMetadata_declinedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeclinedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ConversationViewerMetadata_declinedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ConversationViewerMetadata",
 		Field:      field,
 		IsMethod:   false,
 		IsResolver: false,
@@ -74895,6 +75396,325 @@ func (ec *executionContext) fieldContext_Mutation_removeAccountsFromList(ctx con
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_createConversation(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_createConversation(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateConversation(rctx, fc.Args["participantId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Conversation)
+	fc.Result = res
+	return ec.marshalNConversation2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversation(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createConversation(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Conversation_id(ctx, field)
+			case "lastStatus":
+				return ec.fieldContext_Conversation_lastStatus(ctx, field)
+			case "unread":
+				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "accounts":
+				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Conversation_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Conversation_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createConversation_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_sendDirectMessage(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_sendDirectMessage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().SendDirectMessage(rctx, fc.Args["to"].(string), fc.Args["content"].(string), fc.Args["mediaIds"].([]string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.SendMessagePayload)
+	fc.Result = res
+	return ec.marshalNSendMessagePayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSendMessagePayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_sendDirectMessage(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "conversation":
+				return ec.fieldContext_SendMessagePayload_conversation(ctx, field)
+			case "message":
+				return ec.fieldContext_SendMessagePayload_message(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SendMessagePayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_sendDirectMessage_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_sendMessage(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_sendMessage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().SendMessage(rctx, fc.Args["conversationId"].(string), fc.Args["content"].(string), fc.Args["mediaIds"].([]string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.SendMessagePayload)
+	fc.Result = res
+	return ec.marshalNSendMessagePayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSendMessagePayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_sendMessage(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "conversation":
+				return ec.fieldContext_SendMessagePayload_conversation(ctx, field)
+			case "message":
+				return ec.fieldContext_SendMessagePayload_message(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SendMessagePayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_sendMessage_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_acceptMessageRequest(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_acceptMessageRequest(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AcceptMessageRequest(rctx, fc.Args["conversationId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Conversation)
+	fc.Result = res
+	return ec.marshalNConversation2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversation(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_acceptMessageRequest(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Conversation_id(ctx, field)
+			case "lastStatus":
+				return ec.fieldContext_Conversation_lastStatus(ctx, field)
+			case "unread":
+				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "accounts":
+				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Conversation_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Conversation_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_acceptMessageRequest_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_declineMessageRequest(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_declineMessageRequest(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().DeclineMessageRequest(rctx, fc.Args["conversationId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_declineMessageRequest(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_declineMessageRequest_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_markConversationAsRead(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_markConversationAsRead(ctx, field)
 	if err != nil {
@@ -74942,6 +75762,8 @@ func (ec *executionContext) fieldContext_Mutation_markConversationAsRead(ctx con
 				return ec.fieldContext_Conversation_unread(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
 			case "createdAt":
 				return ec.fieldContext_Conversation_createdAt(ctx, field)
 			case "updatedAt":
@@ -74978,7 +75800,7 @@ func (ec *executionContext) _Mutation_deleteConversation(ctx context.Context, fi
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().DeleteConversation(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Mutation().DeleteConversation(rctx, fc.Args["conversationId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -75013,6 +75835,61 @@ func (ec *executionContext) fieldContext_Mutation_deleteConversation(ctx context
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_deleteConversation_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_deleteMessage(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_deleteMessage(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().DeleteMessage(rctx, fc.Args["messageId"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_deleteMessage(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_deleteMessage_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -89875,6 +90752,50 @@ func (ec *executionContext) fieldContext_PrivacyPreferences_showOnlineStatus(_ c
 	return fc, nil
 }
 
+func (ec *executionContext) _PrivacyPreferences_directMessagesFrom(ctx context.Context, field graphql.CollectedField, obj *model.PrivacyPreferences) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_PrivacyPreferences_directMessagesFrom(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DirectMessagesFrom, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.DirectMessagesFrom)
+	fc.Result = res
+	return ec.marshalNDirectMessagesFrom2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDirectMessagesFrom(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_PrivacyPreferences_directMessagesFrom(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PrivacyPreferences",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type DirectMessagesFrom does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ProfileDirectory_accounts(ctx context.Context, field graphql.CollectedField, obj *model.ProfileDirectory) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_ProfileDirectory_accounts(ctx, field)
 	if err != nil {
@@ -94043,7 +94964,7 @@ func (ec *executionContext) _Query_conversations(ctx context.Context, field grap
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Conversations(rctx, fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+		return ec.resolvers.Query().Conversations(rctx, fc.Args["folder"].(*model.ConversationFolder), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -94076,6 +94997,8 @@ func (ec *executionContext) fieldContext_Query_conversations(ctx context.Context
 				return ec.fieldContext_Conversation_unread(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
 			case "createdAt":
 				return ec.fieldContext_Conversation_createdAt(ctx, field)
 			case "updatedAt":
@@ -94142,6 +95065,8 @@ func (ec *executionContext) fieldContext_Query_conversation(ctx context.Context,
 				return ec.fieldContext_Conversation_unread(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
 			case "createdAt":
 				return ec.fieldContext_Conversation_createdAt(ctx, field)
 			case "updatedAt":
@@ -94158,6 +95083,69 @@ func (ec *executionContext) fieldContext_Query_conversation(ctx context.Context,
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_conversation_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_conversationMessages(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_conversationMessages(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().ConversationMessages(rctx, fc.Args["conversationId"].(string), fc.Args["first"].(*int), fc.Args["after"].(*model.Cursor))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.ObjectConnection)
+	fc.Result = res
+	return ec.marshalNObjectConnection2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObjectConnection(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_conversationMessages(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_ObjectConnection_edges(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_ObjectConnection_pageInfo(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_ObjectConnection_totalCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ObjectConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_conversationMessages_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -108213,6 +109201,182 @@ func (ec *executionContext) fieldContext_SearchResult_hashtags(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _SendMessagePayload_conversation(ctx context.Context, field graphql.CollectedField, obj *model.SendMessagePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SendMessagePayload_conversation(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Conversation, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Conversation)
+	fc.Result = res
+	return ec.marshalNConversation2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversation(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SendMessagePayload_conversation(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SendMessagePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Conversation_id(ctx, field)
+			case "lastStatus":
+				return ec.fieldContext_Conversation_lastStatus(ctx, field)
+			case "unread":
+				return ec.fieldContext_Conversation_unread(ctx, field)
+			case "accounts":
+				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Conversation_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Conversation_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SendMessagePayload_message(ctx context.Context, field graphql.CollectedField, obj *model.SendMessagePayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_SendMessagePayload_message(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Message, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Object)
+	fc.Result = res
+	return ec.marshalNObject2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐObject(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_SendMessagePayload_message(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SendMessagePayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Object_id(ctx, field)
+			case "type":
+				return ec.fieldContext_Object_type(ctx, field)
+			case "actor":
+				return ec.fieldContext_Object_actor(ctx, field)
+			case "content":
+				return ec.fieldContext_Object_content(ctx, field)
+			case "contentMap":
+				return ec.fieldContext_Object_contentMap(ctx, field)
+			case "inReplyTo":
+				return ec.fieldContext_Object_inReplyTo(ctx, field)
+			case "visibility":
+				return ec.fieldContext_Object_visibility(ctx, field)
+			case "sensitive":
+				return ec.fieldContext_Object_sensitive(ctx, field)
+			case "spoilerText":
+				return ec.fieldContext_Object_spoilerText(ctx, field)
+			case "attachments":
+				return ec.fieldContext_Object_attachments(ctx, field)
+			case "tags":
+				return ec.fieldContext_Object_tags(ctx, field)
+			case "mentions":
+				return ec.fieldContext_Object_mentions(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Object_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_Object_updatedAt(ctx, field)
+			case "poll":
+				return ec.fieldContext_Object_poll(ctx, field)
+			case "repliesCount":
+				return ec.fieldContext_Object_repliesCount(ctx, field)
+			case "likesCount":
+				return ec.fieldContext_Object_likesCount(ctx, field)
+			case "sharesCount":
+				return ec.fieldContext_Object_sharesCount(ctx, field)
+			case "boosted":
+				return ec.fieldContext_Object_boosted(ctx, field)
+			case "viewerFavourited":
+				return ec.fieldContext_Object_viewerFavourited(ctx, field)
+			case "viewerBookmarked":
+				return ec.fieldContext_Object_viewerBookmarked(ctx, field)
+			case "viewerPinned":
+				return ec.fieldContext_Object_viewerPinned(ctx, field)
+			case "relationshipType":
+				return ec.fieldContext_Object_relationshipType(ctx, field)
+			case "boostedObject":
+				return ec.fieldContext_Object_boostedObject(ctx, field)
+			case "contentHash":
+				return ec.fieldContext_Object_contentHash(ctx, field)
+			case "estimatedCost":
+				return ec.fieldContext_Object_estimatedCost(ctx, field)
+			case "moderationScore":
+				return ec.fieldContext_Object_moderationScore(ctx, field)
+			case "communityNotes":
+				return ec.fieldContext_Object_communityNotes(ctx, field)
+			case "agentAttribution":
+				return ec.fieldContext_Object_agentAttribution(ctx, field)
+			case "quoteUrl":
+				return ec.fieldContext_Object_quoteUrl(ctx, field)
+			case "quoteable":
+				return ec.fieldContext_Object_quoteable(ctx, field)
+			case "quotePermissions":
+				return ec.fieldContext_Object_quotePermissions(ctx, field)
+			case "quoteContext":
+				return ec.fieldContext_Object_quoteContext(ctx, field)
+			case "quoteCount":
+				return ec.fieldContext_Object_quoteCount(ctx, field)
+			case "quotes":
+				return ec.fieldContext_Object_quotes(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SentimentScores_positive(ctx context.Context, field graphql.CollectedField, obj *model.SentimentScores) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_SentimentScores_positive(ctx, field)
 	if err != nil {
@@ -112929,6 +114093,8 @@ func (ec *executionContext) fieldContext_Subscription_conversationUpdates(_ cont
 				return ec.fieldContext_Conversation_unread(ctx, field)
 			case "accounts":
 				return ec.fieldContext_Conversation_accounts(ctx, field)
+			case "viewerMetadata":
+				return ec.fieldContext_Conversation_viewerMetadata(ctx, field)
 			case "createdAt":
 				return ec.fieldContext_Conversation_createdAt(ctx, field)
 			case "updatedAt":
@@ -120147,6 +121313,8 @@ func (ec *executionContext) fieldContext_UserPreferences_privacy(_ context.Conte
 				return ec.fieldContext_PrivacyPreferences_indexable(ctx, field)
 			case "showOnlineStatus":
 				return ec.fieldContext_PrivacyPreferences_showOnlineStatus(ctx, field)
+			case "directMessagesFrom":
+				return ec.fieldContext_PrivacyPreferences_directMessagesFrom(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type PrivacyPreferences", field.Name)
 		},
@@ -127596,7 +128764,7 @@ func (ec *executionContext) unmarshalInputUpdateUserPreferencesInput(ctx context
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"language", "defaultPostingVisibility", "defaultMediaSensitive", "expandSpoilers", "expandMedia", "autoplayGifs", "showFollowCounts", "preferredTimelineOrder", "searchSuggestionsEnabled", "personalizedSearchEnabled", "reblogFilters", "streaming"}
+	fieldsInOrder := [...]string{"language", "defaultPostingVisibility", "directMessagesFrom", "defaultMediaSensitive", "expandSpoilers", "expandMedia", "autoplayGifs", "showFollowCounts", "preferredTimelineOrder", "searchSuggestionsEnabled", "personalizedSearchEnabled", "reblogFilters", "streaming"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -127617,6 +128785,13 @@ func (ec *executionContext) unmarshalInputUpdateUserPreferencesInput(ctx context
 				return it, err
 			}
 			it.DefaultPostingVisibility = data
+		case "directMessagesFrom":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("directMessagesFrom"))
+			data, err := ec.unmarshalODirectMessagesFrom2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDirectMessagesFrom(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DirectMessagesFrom = data
 		case "defaultMediaSensitive":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("defaultMediaSensitive"))
 			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
@@ -133485,6 +134660,11 @@ func (ec *executionContext) _Conversation(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "viewerMetadata":
+			out.Values[i] = ec._Conversation_viewerMetadata(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "createdAt":
 			out.Values[i] = ec._Conversation_createdAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -133495,6 +134675,51 @@ func (ec *executionContext) _Conversation(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var conversationViewerMetadataImplementors = []string{"ConversationViewerMetadata"}
+
+func (ec *executionContext) _ConversationViewerMetadata(ctx context.Context, sel ast.SelectionSet, obj *model.ConversationViewerMetadata) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, conversationViewerMetadataImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ConversationViewerMetadata")
+		case "requestState":
+			out.Values[i] = ec._ConversationViewerMetadata_requestState(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requestedAt":
+			out.Values[i] = ec._ConversationViewerMetadata_requestedAt(ctx, field, obj)
+		case "acceptedAt":
+			out.Values[i] = ec._ConversationViewerMetadata_acceptedAt(ctx, field, obj)
+		case "declinedAt":
+			out.Values[i] = ec._ConversationViewerMetadata_declinedAt(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -140895,6 +142120,41 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "createConversation":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createConversation(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sendDirectMessage":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_sendDirectMessage(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sendMessage":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_sendMessage(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "acceptMessageRequest":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_acceptMessageRequest(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "declineMessageRequest":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_declineMessageRequest(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "markConversationAsRead":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_markConversationAsRead(ctx, field)
@@ -140905,6 +142165,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "deleteConversation":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_deleteConversation(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deleteMessage":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_deleteMessage(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -143207,6 +144474,11 @@ func (ec *executionContext) _PrivacyPreferences(ctx context.Context, sel ast.Sel
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "directMessagesFrom":
+			out.Values[i] = ec._PrivacyPreferences_directMessagesFrom(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -144382,6 +145654,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_conversation(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "conversationMessages":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_conversationMessages(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 
@@ -148214,6 +149508,50 @@ func (ec *executionContext) _SearchResult(ctx context.Context, sel ast.Selection
 			}
 		case "hashtags":
 			out.Values[i] = ec._SearchResult_hashtags(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var sendMessagePayloadImplementors = []string{"SendMessagePayload"}
+
+func (ec *executionContext) _SendMessagePayload(ctx context.Context, sel ast.SelectionSet, obj *model.SendMessagePayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, sendMessagePayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SendMessagePayload")
+		case "conversation":
+			out.Values[i] = ec._SendMessagePayload_conversation(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "message":
+			out.Values[i] = ec._SendMessagePayload_message(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -154091,6 +155429,16 @@ func (ec *executionContext) marshalNConversation2ᚖgithubᚗcomᚋequaltoaiᚋl
 	return ec._Conversation(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNConversationViewerMetadata2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationViewerMetadata(ctx context.Context, sel ast.SelectionSet, v *model.ConversationViewerMetadata) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ConversationViewerMetadata(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNCoordinates2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCoordinates(ctx context.Context, sel ast.SelectionSet, v *model.Coordinates) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -154465,6 +155813,16 @@ func (ec *executionContext) marshalNDigestFrequency2githubᚗcomᚋequaltoaiᚋl
 	return v
 }
 
+func (ec *executionContext) unmarshalNDirectMessagesFrom2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDirectMessagesFrom(ctx context.Context, v any) (model.DirectMessagesFrom, error) {
+	var res model.DirectMessagesFrom
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNDirectMessagesFrom2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDirectMessagesFrom(ctx context.Context, sel ast.SelectionSet, v model.DirectMessagesFrom) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) marshalNDiscoveryPreferences2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDiscoveryPreferences(ctx context.Context, sel ast.SelectionSet, v *model.DiscoveryPreferences) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -154473,6 +155831,16 @@ func (ec *executionContext) marshalNDiscoveryPreferences2ᚖgithubᚗcomᚋequal
 		return graphql.Null
 	}
 	return ec._DiscoveryPreferences(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNDmRequestState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDmRequestState(ctx context.Context, v any) (model.DmRequestState, error) {
+	var res model.DmRequestState
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNDmRequestState2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDmRequestState(ctx context.Context, sel ast.SelectionSet, v model.DmRequestState) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) marshalNDomainBlockPage2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDomainBlockPage(ctx context.Context, sel ast.SelectionSet, v model.DomainBlockPage) graphql.Marshaler {
@@ -159515,6 +160883,20 @@ func (ec *executionContext) marshalNSearchResult2ᚖgithubᚗcomᚋequaltoaiᚋl
 	return ec._SearchResult(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNSendMessagePayload2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSendMessagePayload(ctx context.Context, sel ast.SelectionSet, v model.SendMessagePayload) graphql.Marshaler {
+	return ec._SendMessagePayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNSendMessagePayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSendMessagePayload(ctx context.Context, sel ast.SelectionSet, v *model.SendMessagePayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SendMessagePayload(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNSentiment2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐSentiment(ctx context.Context, v any) (model.Sentiment, error) {
 	var res model.Sentiment
 	err := res.UnmarshalGQL(v)
@@ -161717,6 +163099,22 @@ func (ec *executionContext) marshalOConversation2ᚖgithubᚗcomᚋequaltoaiᚋl
 	return ec._Conversation(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalOConversationFolder2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationFolder(ctx context.Context, v any) (*model.ConversationFolder, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.ConversationFolder)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOConversationFolder2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐConversationFolder(ctx context.Context, sel ast.SelectionSet, v *model.ConversationFolder) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
+}
+
 func (ec *executionContext) unmarshalOCostOrderBy2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCostOrderBy(ctx context.Context, v any) (*model.CostOrderBy, error) {
 	if v == nil {
 		return nil, nil
@@ -161773,6 +163171,22 @@ func (ec *executionContext) unmarshalODateRangeInput2ᚖgithubᚗcomᚋequaltoai
 	}
 	res, err := ec.unmarshalInputDateRangeInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalODirectMessagesFrom2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDirectMessagesFrom(ctx context.Context, v any) (*model.DirectMessagesFrom, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.DirectMessagesFrom)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalODirectMessagesFrom2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDirectMessagesFrom(ctx context.Context, sel ast.SelectionSet, v *model.DirectMessagesFrom) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) unmarshalODirectoryFiltersInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐDirectoryFiltersInput(ctx context.Context, v any) (*model.DirectoryFiltersInput, error) {

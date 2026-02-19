@@ -524,35 +524,129 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 		return nil
 	}
 
-	// Convert participant IDs to actors
-	accounts := make([]*activitypub.Actor, 0, len(conv.Participants))
-	for _, participantID := range conv.Participants {
+	viewerUsername := getUsernameFromContext(ctx)
+
+	viewerMetadata := r.conversationViewerMetadata(ctx, conv.ID, viewerUsername)
+	accounts := r.conversationAccounts(ctx, conv.Participants)
+	lastStatus := r.conversationLastStatus(ctx, conv, viewerUsername)
+
+	return &model.Conversation{
+		ID:             conv.ID,
+		LastStatus:     lastStatus,
+		Unread:         conv.Unread,
+		Accounts:       accounts,
+		ViewerMetadata: viewerMetadata,
+		CreatedAt:      model.Time(conv.CreatedAt),
+		UpdatedAt:      model.Time(conv.UpdatedAt),
+	}
+}
+
+func (r *Resolver) conversationAccounts(ctx context.Context, participantIDs []string) []*activitypub.Actor {
+	accounts := make([]*activitypub.Actor, 0, len(participantIDs))
+	for _, participantID := range participantIDs {
 		result, err := r.Registry.Accounts().GetAccount(ctx, participantID)
 		if err == nil && result != nil {
 			accounts = append(accounts, r.convertAccountToActor(result))
 		}
 	}
+	return accounts
+}
 
-	var lastStatus *model.Object
-	if conv.LastStatusID != "" {
-		viewerUsername := getUsernameFromContext(ctx)
-		result, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
-			StatusID: conv.LastStatusID,
-			ViewerID: viewerUsername,
-		})
-		if err == nil && result != nil {
-			lastStatus = r.convertStatusToObject(ctx, result)
-		}
+func (r *Resolver) conversationViewerMetadata(ctx context.Context, conversationID, viewerUsername string) *model.ConversationViewerMetadata {
+	viewerMetadata := &model.ConversationViewerMetadata{
+		RequestState: model.DmRequestStateAccepted,
+	}
+	if viewerUsername == "" {
+		return viewerMetadata
 	}
 
-	return &model.Conversation{
-		ID:         conv.ID,
-		LastStatus: lastStatus,
-		Unread:     conv.Unread,
-		Accounts:   accounts,
-		CreatedAt:  model.Time(conv.CreatedAt),
-		UpdatedAt:  model.Time(conv.UpdatedAt),
+	storage := r.Registry.GetStorage()
+	if storage == nil || storage.Conversation() == nil {
+		return viewerMetadata
 	}
+
+	record, err := storage.Conversation().GetConversationParticipantRecord(ctx, conversationID, viewerUsername)
+	if err != nil || record == nil {
+		return viewerMetadata
+	}
+
+	if record.RequestState != "" {
+		viewerMetadata.RequestState = model.DmRequestState(record.RequestState)
+	}
+	viewerMetadata.RequestedAt = modelTimePtr(record.RequestedAt)
+	viewerMetadata.AcceptedAt = modelTimePtr(record.AcceptedAt)
+	viewerMetadata.DeclinedAt = modelTimePtr(record.DeclinedAt)
+	return viewerMetadata
+}
+
+func modelTimePtr(t *time.Time) *model.Time {
+	if t == nil {
+		return nil
+	}
+	mt := model.Time(*t)
+	return &mt
+}
+
+func (r *Resolver) conversationLastStatus(ctx context.Context, conv *models.Conversation, viewerUsername string) *model.Object {
+	if conv.LastStatusID == "" {
+		return nil
+	}
+	if r.dmStatusTombstoned(ctx, viewerUsername, conv.LastStatusID) {
+		return nil
+	}
+
+	if obj := r.noteObject(ctx, conv.LastStatusID, viewerUsername); obj != nil {
+		return obj
+	}
+
+	return r.conversationLastStatusFallback(ctx, conv.ID, viewerUsername)
+}
+
+func (r *Resolver) dmStatusTombstoned(ctx context.Context, viewerUsername, statusID string) bool {
+	if viewerUsername == "" || statusID == "" {
+		return false
+	}
+
+	storage := r.Registry.GetStorage()
+	if storage == nil {
+		return false
+	}
+
+	repo := repositories.NewDirectMessageTombstoneRepository(storage.GetDB(), storage.GetTableName(), r.Logger)
+	if repo == nil {
+		return false
+	}
+
+	set, err := repo.TombstonesByStatusID(ctx, viewerUsername, []string{statusID})
+	return err == nil && set[statusID]
+}
+
+func (r *Resolver) noteObject(ctx context.Context, statusID, viewerUsername string) *model.Object {
+	result, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+		StatusID: statusID,
+		ViewerID: viewerUsername,
+	})
+	if err != nil || result == nil {
+		return nil
+	}
+	return r.convertStatusToObject(ctx, result)
+}
+
+func (r *Resolver) conversationLastStatusFallback(ctx context.Context, conversationID, viewerUsername string) *model.Object {
+	if viewerUsername == "" {
+		return nil
+	}
+
+	svc := r.Registry.Conversations()
+	if svc == nil {
+		return nil
+	}
+
+	status, err := svc.GetConversationLastStatus(ctx, conversationID, viewerUsername)
+	if err != nil || status == nil {
+		return nil
+	}
+	return r.convertStatusToObject(ctx, status)
 }
 
 func (r *Resolver) convertListToGraphQL(ctx context.Context, list *models.List) *model.List {

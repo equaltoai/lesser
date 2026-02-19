@@ -61,7 +61,7 @@ func TestRound12ConversationResolvers_QueryAndMutations(t *testing.T) {
 
 	ctx := round12AuthContext("alice")
 
-	convos, err := resolver.Query().Conversations(ctx, nil, nil)
+	convos, err := resolver.Query().Conversations(ctx, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, convos)
 

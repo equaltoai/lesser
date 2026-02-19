@@ -16,6 +16,7 @@ type UserPreferences struct {
 	Language                  string          `theorydb:"attr:language" json:"language"`
 	DefaultPostingVisibility  string          `theorydb:"attr:defaultPostingVisibility" json:"default_posting_visibility"`
 	DefaultMediaSensitive     bool            `theorydb:"attr:defaultMediaSensitive" json:"default_media_sensitive"`
+	DirectMessagesFrom        string          `theorydb:"attr:directMessagesFrom" json:"direct_messages_from"`
 	ExpandSpoilers            bool            `theorydb:"attr:expandSpoilers" json:"expand_spoilers"`
 	ExpandMedia               string          `theorydb:"attr:expandMedia" json:"expand_media"`
 	AutoplayGifs              bool            `theorydb:"attr:autoplayGifs" json:"autoplay_gifs"`
@@ -53,6 +54,7 @@ type UserPreferencesStorage struct {
 	Language                  string          `json:"language"`
 	DefaultPostingVisibility  string          `json:"default_posting_visibility"`
 	DefaultMediaSensitive     bool            `json:"default_media_sensitive"`
+	DirectMessagesFrom        string          `json:"direct_messages_from"`
 	ExpandSpoilers            bool            `json:"expand_spoilers"`
 	ExpandMedia               string          `json:"expand_media"`
 	AutoplayGifs              bool            `json:"autoplay_gifs"`
@@ -78,6 +80,7 @@ func (up *UserPreferences) ToStorage() *UserPreferencesStorage {
 		Language:                  up.Language,
 		DefaultPostingVisibility:  up.DefaultPostingVisibility,
 		DefaultMediaSensitive:     up.DefaultMediaSensitive,
+		DirectMessagesFrom:        up.DirectMessagesFrom,
 		ExpandSpoilers:            up.ExpandSpoilers,
 		ExpandMedia:               up.ExpandMedia,
 		AutoplayGifs:              up.AutoplayGifs,
@@ -99,6 +102,7 @@ func (up *UserPreferences) FromStorage(username string, prefs *UserPreferencesSt
 	up.Language = prefs.Language
 	up.DefaultPostingVisibility = prefs.DefaultPostingVisibility
 	up.DefaultMediaSensitive = prefs.DefaultMediaSensitive
+	up.DirectMessagesFrom = prefs.DirectMessagesFrom
 	up.ExpandSpoilers = prefs.ExpandSpoilers
 	up.ExpandMedia = prefs.ExpandMedia
 	up.AutoplayGifs = prefs.AutoplayGifs
@@ -121,6 +125,7 @@ func GetDefaultPreferences() *UserPreferencesStorage {
 		Language:                  "en",
 		DefaultPostingVisibility:  "public",
 		DefaultMediaSensitive:     false,
+		DirectMessagesFrom:        "FOLLOWING_ONLY",
 		ExpandSpoilers:            false,
 		ExpandMedia:               "default",
 		AutoplayGifs:              true,

@@ -153,6 +153,7 @@ type UserPreferences struct {
 	UpdatedAt                 time.Time         `json:"updated_at"`
 	DefaultPostingVisibility  string            `json:"default_posting_visibility"`
 	DefaultMediaSensitive     bool              `json:"default_media_sensitive"`
+	DirectMessagesFrom        string            `json:"direct_messages_from"`
 	ExpandSpoilers            bool              `json:"expand_spoilers"`
 	ExpandMedia               string            `json:"expand_media"`
 	AutoplayGifs              bool              `json:"autoplay_gifs"`

@@ -63,7 +63,7 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 
 	t.Run("missing_token_sends_connection_error", func(t *testing.T) {
 		var bodies [][]byte
-		s := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil)
+		s := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 			b, err := json.Marshal(payload)
 			require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 	})
 
 	t.Run("oauth_missing_returns_app_error", func(t *testing.T) {
-		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+		s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 		resp, err := s.handleConnectionInit(context.Background(), wsCtx, "c1", wsMessage{Type: "connection_init", Payload: json.RawMessage(`{"access_token":"t"}`)})
 		require.Error(t, err)
 		require.Nil(t, resp)
@@ -96,7 +96,7 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 	t.Run("invalid_token_sends_connection_error", func(t *testing.T) {
 		var bodies [][]byte
 		validator := &fakeTokenValidator{err: errors.New("bad token")}
-		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil)
+		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 			b, err := json.Marshal(payload)
 			require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 	t.Run("missing_username_sends_connection_error", func(t *testing.T) {
 		var bodies [][]byte
 		validator := &fakeTokenValidator{claims: &auth.Claims{}}
-		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil)
+		s := newServer(validator, nil, nil, zap.NewNop(), nil, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 			b, err := json.Marshal(payload)
 			require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestHandleConnectionInit_UnauthenticatedBranches(t *testing.T) {
 			conn:         &models.WebSocketConnection{ConnectionID: "c1"},
 		}
 		validator := &fakeTokenValidator{claims: &auth.Claims{Username: "user", Scopes: []string{"read"}}}
-		s := newServer(validator, nil, nil, zap.NewNop(), repo, nil)
+		s := newServer(validator, nil, nil, zap.NewNop(), repo, nil, nil)
 		s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 			b, err := json.Marshal(payload)
 			require.NoError(t, err)

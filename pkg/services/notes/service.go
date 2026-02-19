@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -590,17 +591,24 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		return nil // Idempotent operation
 	}
 
-	// Verify permission (author or admin)
-	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
-	if status.AuthorUsername != cmd.DeleterID {
-		// Check if deleter is an admin
-		isAdmin := false
+	// Direct messages (visibility=direct) must not be globally deleted by the author.
+	// DM v1 supports delete-for-me only (see conversations.DeleteMessage).
+	isAdmin := false
+	if status.Visibility == models.VisibilityDirect || status.AuthorUsername != cmd.DeleterID {
 		if s.userRepo != nil {
 			if deleter, err := s.userRepo.GetUser(ctx, cmd.DeleterID); err == nil && deleter != nil {
 				isAdmin = deleter.Role == "admin"
 			}
 		}
+	}
+	if status.Visibility == models.VisibilityDirect && !isAdmin {
+		return common.ErrForbidden(errors.New("direct messages cannot be deleted via deleteObject; use deleteMessage"))
+	}
 
+	// Verify permission (author or admin)
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if status.AuthorUsername != cmd.DeleterID {
+		// Check if deleter is an admin
 		if !isAdmin {
 			s.logger.Warn("user cannot delete post owned by another user without admin privileges",
 				zap.String("deleter_id", cmd.DeleterID),
@@ -698,68 +706,96 @@ func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*
 
 // checkViewPermissions implements comprehensive privacy checking
 func (s *Service) checkViewPermissions(ctx context.Context, status *models.Status, viewerID string) (bool, error) {
-	// Public and unlisted posts are viewable by anyone
-	if status.Visibility == models.VisibilityPublic || status.Visibility == models.VisibilityUnlisted {
+	switch status.Visibility {
+	case models.VisibilityPublic, models.VisibilityUnlisted:
 		return true, nil
 	}
 
-	// Unauthenticated users can only see public/unlisted posts
 	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false, nil
 	}
 
-	// Status author can always view their own posts
 	if status.AuthorUsername == viewerID {
 		return true, nil
 	}
 
-	// Handle private (followers-only) posts
-	if status.Visibility == models.VisibilityPrivate {
-		// Check if viewer follows the author using relationship repository
-		isFollowing, err := s.relationshipRepo.IsFollowing(ctx, viewerID, status.AuthorUsername)
-		if err != nil {
-			s.logger.Error("failed to check following relationship",
-				zap.String("status_id", status.StatusID),
-				zap.String("viewer_id", viewerID),
-				zap.String("author", status.AuthorUsername),
-				zap.Error(err))
-			return false, ErrCheckFollowingRelationship
-		}
-		return isFollowing, nil
-	}
-
-	// Handle direct messages
-	if status.Visibility == models.VisibilityDirect {
-		// Check if viewer is explicitly mentioned
-		for _, mention := range status.Mentions {
-			if mention == viewerID {
-				return true, nil
-			}
-		}
-
-		// Check explicit recipients (simplified - in full implementation would check actor IDs)
-		viewerUsername := viewerID
-		for _, recipient := range status.ToRecipients {
-			if strings.Contains(recipient, viewerUsername) {
-				return true, nil
-			}
-		}
-
-		for _, recipient := range status.CcRecipients {
-			if strings.Contains(recipient, viewerUsername) {
-				return true, nil
-			}
-		}
-
-		// Not a recipient of direct message
+	switch status.Visibility {
+	case models.VisibilityPrivate:
+		return s.canViewPrivateStatus(ctx, status, viewerID)
+	case models.VisibilityDirect:
+		return s.canViewDirectMessage(status, viewerID), nil
+	default:
+		s.logger.Warn("unknown visibility level",
+			zap.String("status_id", status.StatusID),
+			zap.String("visibility", status.Visibility))
 		return false, nil
 	}
+}
 
-	// Unknown visibility - default deny
-	s.logger.Warn("unknown visibility level",
-		zap.String("status_id", status.StatusID),
-		zap.String("visibility", status.Visibility))
-	return false, nil
+func (s *Service) canViewPrivateStatus(ctx context.Context, status *models.Status, viewerID string) (bool, error) {
+	isFollowing, err := s.relationshipRepo.IsFollowing(ctx, viewerID, status.AuthorUsername)
+	if err != nil {
+		s.logger.Error("failed to check following relationship",
+			zap.String("status_id", status.StatusID),
+			zap.String("viewer_id", viewerID),
+			zap.String("author", status.AuthorUsername),
+			zap.Error(err))
+		return false, ErrCheckFollowingRelationship
+	}
+	return isFollowing, nil
+}
+
+func (s *Service) canViewDirectMessage(status *models.Status, viewerID string) bool {
+	viewerUsername, viewerActorID := s.resolveViewerActorID(viewerID)
+	if viewerUsername == "" || viewerActorID == "" {
+		return false
+	}
+
+	if stringSliceContains(status.Mentions, viewerUsername) {
+		return true
+	}
+	return stringSliceContains(status.ToRecipients, viewerActorID) ||
+		stringSliceContains(status.CcRecipients, viewerActorID) ||
+		stringSliceContains(status.BtoRecipients, viewerActorID) ||
+		stringSliceContains(status.BccRecipients, viewerActorID)
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) resolveViewerActorID(viewerID string) (viewerUsername string, viewerActorID string) {
+	cleaned := strings.TrimSpace(viewerID)
+	if cleaned == "" {
+		return "", ""
+	}
+
+	if strings.Contains(cleaned, "://") {
+		actorID := strings.TrimRight(cleaned, "/")
+		username := ""
+		if parsed, err := url.Parse(actorID); err == nil {
+			path := strings.Trim(parsed.Path, "/")
+			if path != "" {
+				segments := strings.Split(path, "/")
+				username = segments[len(segments)-1]
+			}
+		}
+		if username == "" {
+			username = cleaned
+		}
+		return username, actorID
+	}
+
+	username := cleaned
+	if strings.TrimSpace(s.domainName) == "" {
+		return username, username
+	}
+	return username, fmt.Sprintf("https://%s/users/%s", s.domainName, username)
 }
 
 // ListNotes retrieves notes based on various timeline types and filters
@@ -970,6 +1006,11 @@ func (s *Service) shouldIncludeStatus(ctx context.Context, status *models.Status
 	if status.Deleted {
 		s.logger.Debug("skipping deleted status",
 			zap.String("status_id", status.StatusID))
+		return false
+	}
+
+	// Direct messages must never appear outside DM-specific timelines.
+	if status.Visibility == models.VisibilityDirect && query.TimelineType != "direct" && query.TimelineType != "conversations" {
 		return false
 	}
 

@@ -740,12 +740,20 @@ type ContentMapInput struct {
 }
 
 type Conversation struct {
-	ID         string               `json:"id"`
-	LastStatus *Object              `json:"lastStatus,omitempty"`
-	Unread     bool                 `json:"unread"`
-	Accounts   []*activitypub.Actor `json:"accounts"`
-	CreatedAt  Time                 `json:"createdAt"`
-	UpdatedAt  Time                 `json:"updatedAt"`
+	ID             string                      `json:"id"`
+	LastStatus     *Object                     `json:"lastStatus,omitempty"`
+	Unread         bool                        `json:"unread"`
+	Accounts       []*activitypub.Actor        `json:"accounts"`
+	ViewerMetadata *ConversationViewerMetadata `json:"viewerMetadata"`
+	CreatedAt      Time                        `json:"createdAt"`
+	UpdatedAt      Time                        `json:"updatedAt"`
+}
+
+type ConversationViewerMetadata struct {
+	RequestState DmRequestState `json:"requestState"`
+	RequestedAt  *Time          `json:"requestedAt,omitempty"`
+	AcceptedAt   *Time          `json:"acceptedAt,omitempty"`
+	DeclinedAt   *Time          `json:"declinedAt,omitempty"`
 }
 
 type Coordinates struct {
@@ -1952,9 +1960,10 @@ type PostingPreferences struct {
 }
 
 type PrivacyPreferences struct {
-	DefaultVisibility Visibility `json:"defaultVisibility"`
-	Indexable         bool       `json:"indexable"`
-	ShowOnlineStatus  bool       `json:"showOnlineStatus"`
+	DefaultVisibility  Visibility         `json:"defaultVisibility"`
+	Indexable          bool               `json:"indexable"`
+	ShowOnlineStatus   bool               `json:"showOnlineStatus"`
+	DirectMessagesFrom DirectMessagesFrom `json:"directMessagesFrom"`
 }
 
 type ProfileDirectory struct {
@@ -2235,6 +2244,11 @@ type SearchResult struct {
 	Accounts []*activitypub.Actor `json:"accounts"`
 	Statuses []*Object            `json:"statuses"`
 	Hashtags []*activitypub.Tag   `json:"hashtags"`
+}
+
+type SendMessagePayload struct {
+	Conversation *Conversation `json:"conversation"`
+	Message      *Object       `json:"message"`
 }
 
 type SentimentScores struct {
@@ -2641,6 +2655,7 @@ type UpdateStatusInput struct {
 type UpdateUserPreferencesInput struct {
 	Language                  *string                    `json:"language,omitempty"`
 	DefaultPostingVisibility  *Visibility                `json:"defaultPostingVisibility,omitempty"`
+	DirectMessagesFrom        *DirectMessagesFrom        `json:"directMessagesFrom,omitempty"`
 	DefaultMediaSensitive     *bool                      `json:"defaultMediaSensitive,omitempty"`
 	ExpandSpoilers            *bool                      `json:"expandSpoilers,omitempty"`
 	ExpandMedia               *ExpandMediaPreference     `json:"expandMedia,omitempty"`
@@ -3195,6 +3210,61 @@ func (e ConnectionType) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type ConversationFolder string
+
+const (
+	ConversationFolderInbox    ConversationFolder = "INBOX"
+	ConversationFolderRequests ConversationFolder = "REQUESTS"
+)
+
+var AllConversationFolder = []ConversationFolder{
+	ConversationFolderInbox,
+	ConversationFolderRequests,
+}
+
+func (e ConversationFolder) IsValid() bool {
+	switch e {
+	case ConversationFolderInbox, ConversationFolderRequests:
+		return true
+	}
+	return false
+}
+
+func (e ConversationFolder) String() string {
+	return string(e)
+}
+
+func (e *ConversationFolder) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ConversationFolder(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ConversationFolder", str)
+	}
+	return nil
+}
+
+func (e ConversationFolder) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ConversationFolder) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ConversationFolder) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type CostOrderBy string
 
 const (
@@ -3315,6 +3385,61 @@ func (e DigestFrequency) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type DirectMessagesFrom string
+
+const (
+	DirectMessagesFromFollowingOnly DirectMessagesFrom = "FOLLOWING_ONLY"
+	DirectMessagesFromAnyone        DirectMessagesFrom = "ANYONE"
+)
+
+var AllDirectMessagesFrom = []DirectMessagesFrom{
+	DirectMessagesFromFollowingOnly,
+	DirectMessagesFromAnyone,
+}
+
+func (e DirectMessagesFrom) IsValid() bool {
+	switch e {
+	case DirectMessagesFromFollowingOnly, DirectMessagesFromAnyone:
+		return true
+	}
+	return false
+}
+
+func (e DirectMessagesFrom) String() string {
+	return string(e)
+}
+
+func (e *DirectMessagesFrom) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DirectMessagesFrom(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DirectMessagesFrom", str)
+	}
+	return nil
+}
+
+func (e DirectMessagesFrom) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DirectMessagesFrom) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DirectMessagesFrom) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type DirectoryOrder string
 
 const (
@@ -3365,6 +3490,63 @@ func (e *DirectoryOrder) UnmarshalJSON(b []byte) error {
 }
 
 func (e DirectoryOrder) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type DmRequestState string
+
+const (
+	DmRequestStatePending  DmRequestState = "PENDING"
+	DmRequestStateAccepted DmRequestState = "ACCEPTED"
+	DmRequestStateDeclined DmRequestState = "DECLINED"
+)
+
+var AllDmRequestState = []DmRequestState{
+	DmRequestStatePending,
+	DmRequestStateAccepted,
+	DmRequestStateDeclined,
+}
+
+func (e DmRequestState) IsValid() bool {
+	switch e {
+	case DmRequestStatePending, DmRequestStateAccepted, DmRequestStateDeclined:
+		return true
+	}
+	return false
+}
+
+func (e DmRequestState) String() string {
+	return string(e)
+}
+
+func (e *DmRequestState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DmRequestState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DmRequestState", str)
+	}
+	return nil
+}
+
+func (e DmRequestState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DmRequestState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DmRequestState) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

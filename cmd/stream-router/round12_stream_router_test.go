@@ -112,6 +112,24 @@ func (c *fakeStreamerClient) GetConnection(context.Context, string) (streamer.Co
 	return streamer.Connection{}, nil
 }
 
+type fakeGraphQLSubRepo struct {
+	subsByStream map[string][]models.GraphQLStreamSubscription
+
+	deleteAllCalls []string
+}
+
+func (r *fakeGraphQLSubRepo) ListByStream(_ context.Context, stream string) ([]models.GraphQLStreamSubscription, error) {
+	if r.subsByStream == nil {
+		return []models.GraphQLStreamSubscription{}, nil
+	}
+	return r.subsByStream[stream], nil
+}
+
+func (r *fakeGraphQLSubRepo) DeleteAllForConnection(_ context.Context, connectionID string) error {
+	r.deleteAllCalls = append(r.deleteAllCalls, connectionID)
+	return nil
+}
+
 type fakeFollowerRepo struct {
 	actors []*activitypub.Actor
 	cursor string
@@ -170,6 +188,25 @@ func newNotificationInsertRecord(username string) events.DynamoDBEventRecord {
 				"SK":           events.NewStringAttribute("NOTIFICATION#1"),
 				"Notification": events.NewMapAttribute(notificationMap),
 				"CreatedAt":    events.NewStringAttribute(now.Format(time.RFC3339)),
+			},
+		},
+	}
+}
+
+func newConversationParticipantRecord(username, conversationID, requestState string) events.DynamoDBEventRecord {
+	return events.DynamoDBEventRecord{
+		EventID:   "evt-conversation-participant-1",
+		EventName: eventNameInsert,
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK":           events.NewStringAttribute("USER_CONVERSATIONS#" + username),
+				"SK":           events.NewStringAttribute("2026-02-19T00:00:00Z#" + conversationID),
+				"gsi1PK":       events.NewStringAttribute("CONVERSATION#" + conversationID),
+				"gsi1SK":       events.NewStringAttribute("PARTICIPANT#" + username),
+				"requestState": events.NewStringAttribute(requestState),
+				"conversation": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
+					"id": events.NewStringAttribute(conversationID),
+				}),
 			},
 		},
 	}
@@ -910,6 +947,75 @@ func TestStreamRouterHandler_ProcessAccountEvent_EarlyReturn_Round12(t *testing.
 	h := &StreamRouterHandler{logger: zap.NewNop(), domain: "example.com", accountRepo: fakeFollowerRepo{}}
 	ctx := context.Background()
 	require.NoError(t, h.processAccountEvent(ctx, "req-account", events.DynamoDBEventRecord{EventName: eventNameInsert}))
+}
+
+func TestStreamRouterHandler_ProcessConversationParticipantEvent_BroadcastsGraphQL_Round12(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		requestState string
+		streamName   string
+	}{
+		{
+			name:         "pending_routes_to_requests_stream",
+			requestState: "PENDING",
+			streamName:   streaming.DMRequestsStreamName("alice"),
+		},
+		{
+			name:         "accepted_routes_to_inbox_stream",
+			requestState: "ACCEPTED",
+			streamName:   streaming.DMInboxStreamName("alice"),
+		},
+		{
+			name:         "declined_routes_to_requests_stream",
+			requestState: "DECLINED",
+			streamName:   streaming.DMRequestsStreamName("alice"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeStreamerClient{}
+			subRepo := &fakeGraphQLSubRepo{
+				subsByStream: map[string][]models.GraphQLStreamSubscription{
+					tc.streamName: {
+						{
+							ConnectionID:   "conn-1",
+							SubscriptionID: "sub-1",
+							Stream:         tc.streamName,
+							Field:          "conversationUpdates",
+							UserID:         "alice",
+						},
+					},
+				},
+			}
+
+			h := &StreamRouterHandler{
+				logger:        zap.NewNop(),
+				graphqlClient: client,
+				gqlSubRepo:    subRepo,
+			}
+
+			record := newConversationParticipantRecord("alice", "conv-1", tc.requestState)
+			require.NoError(t, h.processConversationParticipantEvent(context.Background(), "req-1", record))
+
+			require.Equal(t, []string{"conn-1"}, client.postCalls)
+
+			var envelope map[string]any
+			require.NoError(t, json.Unmarshal(client.lastPayloads["conn-1"], &envelope))
+			require.Equal(t, "sub-1", envelope["id"])
+			require.Equal(t, "next", envelope["type"])
+
+			payload, ok := envelope["payload"].(map[string]any)
+			require.True(t, ok)
+			data, ok := payload["data"].(map[string]any)
+			require.True(t, ok)
+			updates, ok := data["conversationUpdates"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "conv-1", updates["id"])
+		})
+	}
 }
 
 func TestNewStreamRouterHandler_StreamClientFailure_Round12(t *testing.T) {

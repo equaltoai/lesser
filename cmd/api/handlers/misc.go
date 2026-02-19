@@ -1158,12 +1158,9 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
 
-	// Encode private key (32 bytes)
-	privateKeyBytes := privateKey.D.Bytes()
-	// Pad to 32 bytes if necessary
-	if len(privateKeyBytes) < 32 {
-		padding := make([]byte, 32-len(privateKeyBytes))
-		privateKeyBytes = append(padding, privateKeyBytes...)
+	privateKeyBytes, err := privateKey.Bytes()
+	if err != nil {
+		return nil, errors.Join(failedToGenerateVAPIDPrivateKey(), err)
 	}
 	privateKeyBase64 := base64.RawURLEncoding.EncodeToString(privateKeyBytes)
 

@@ -81,6 +81,7 @@ type wsServer struct {
 	exec                gqlExecutor
 	startOnce           sync.Once
 	connRepo            graphqlConnectionRepo
+	gqlSubRepo          *repositories.GraphQLStreamSubscriptionRepository
 	instanceRepo        instanceStateRepo
 
 	mu          sync.RWMutex
@@ -177,10 +178,11 @@ var (
 	repos          core.RepositoryStorage
 	oauth          *auth.OAuthService
 	connectionRepo *repositories.StreamingConnectionRepository
+	gqlSubRepo     *repositories.GraphQLStreamSubscriptionRepository
 	server         *wsServer
 )
 
-func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlExecutor, log *zap.Logger, connRepo graphqlConnectionRepo, instanceRepo instanceStateRepo) *wsServer {
+func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlExecutor, log *zap.Logger, connRepo graphqlConnectionRepo, gqlSubRepo *repositories.GraphQLStreamSubscriptionRepository, instanceRepo instanceStateRepo) *wsServer {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -196,6 +198,7 @@ func newServer(oauthService tokenValidator, resolver *graph.Resolver, exec gqlEx
 		subscriptionManager: subManager,
 		exec:                exec,
 		connRepo:            connRepo,
+		gqlSubRepo:          gqlSubRepo,
 		instanceRepo:        instanceRepo,
 		connections:         make(map[string]*connectionState),
 		wsContexts:          make(map[string]*apptheory.WebSocketContext),
@@ -301,6 +304,14 @@ func (s *wsServer) removeConnection(ctx context.Context, connectionID string) {
 			s.logger.Warn("failed to purge graphql subscriptions for connection",
 				zap.String("connection_id", connectionID),
 				zap.Error(err))
+		}
+
+		if s.gqlSubRepo != nil {
+			if err := s.gqlSubRepo.DeleteAllForConnection(ctx, connectionID); err != nil {
+				s.logger.Warn("failed to purge graphql stream subscriptions for connection",
+					zap.String("connection_id", connectionID),
+					zap.Error(err))
+			}
 		}
 
 		if err := s.connRepo.DeleteConnection(ctx, connectionID); err != nil {
@@ -779,6 +790,15 @@ func (s *wsServer) handleComplete(ctx context.Context, wsCtx *apptheory.WebSocke
 		zap.String("connection_id", connectionID),
 		zap.String("subscription_id", msg.ID))
 
+	if s.gqlSubRepo != nil && msg.ID != "" {
+		if err := s.gqlSubRepo.DeleteSubscription(ctx, connectionID, msg.ID); err != nil {
+			s.logger.Warn("failed to delete graphql stream subscription records",
+				zap.String("connection_id", connectionID),
+				zap.String("subscription_id", msg.ID),
+				zap.Error(err))
+		}
+	}
+
 	if !s.cancelSubscription(ctx, connectionID, msg.ID) {
 		_ = s.sendJSON(wsCtx, responseEnvelope{
 			ID:   msg.ID,
@@ -908,6 +928,56 @@ func (s *wsServer) handleSubscribe(ctx context.Context, msg wsMessage, wsCtx *ap
 			zap.String("subscription_id", msg.ID))
 		s.sendError(wsCtx, msg.ID, "invalid_operation", "operation must be a subscription")
 		_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
+		return
+	}
+
+	// Serverless subscription handling: for `conversationUpdates`, persist the client-provided
+	// subscribe.id to DynamoDB so out-of-band processors can post `next` frames to the connection.
+	//
+	// Note: gqlgen's in-process channel-based subscriptions are not reliable in API Gateway WebSocket Lambdas.
+	rootField := ""
+	for _, sel := range opCtx.Operation.SelectionSet {
+		if field, ok := sel.(*ast.Field); ok {
+			rootField = field.Name
+			break
+		}
+	}
+
+	if rootField == "conversationUpdates" && s.gqlSubRepo != nil {
+		// Replace any prior records for this subscription id (defensive in case of retries).
+		_ = s.gqlSubRepo.DeleteSubscription(ctx, connectionID, msg.ID)
+
+		streams := []string{
+			streaming.DMInboxStreamName(state.username),
+			streaming.DMRequestsStreamName(state.username),
+		}
+
+		for _, streamName := range streams {
+			record := &models.GraphQLStreamSubscription{
+				ConnectionID:   connectionID,
+				SubscriptionID: msg.ID,
+				Stream:         streamName,
+				Field:          rootField,
+				UserID:         state.username,
+			}
+
+			if err := s.gqlSubRepo.Put(ctx, record); err != nil {
+				s.logger.Warn("failed to persist graphql stream subscription",
+					zap.String("connection_id", connectionID),
+					zap.String("subscription_id", msg.ID),
+					zap.String("stream", streamName),
+					zap.Error(err))
+				s.sendError(wsCtx, msg.ID, "internal_error", "failed to register subscription")
+				_ = s.sendJSON(wsCtx, responseEnvelope{ID: msg.ID, Type: "complete"})
+				return
+			}
+		}
+
+		s.logger.Info("registered serverless subscription",
+			zap.String("connection_id", connectionID),
+			zap.String("subscription_id", msg.ID),
+			zap.String("field", rootField),
+			zap.String("user", state.username))
 		return
 	}
 
@@ -1240,6 +1310,7 @@ func initializeConnectionRepository() {
 	}
 
 	connectionRepo = repositories.NewStreamingConnectionRepository(dynamo, connectionsTable, dynamo, subscriptionsTable, logger, nil)
+	gqlSubRepo = repositories.NewGraphQLStreamSubscriptionRepository(dynamo, subscriptionsTable, logger)
 }
 
 func resolveStreamQueue() streaming.StreamQueueService {
@@ -1324,7 +1395,7 @@ func initializeGraphQLWS() {
 	if repos != nil {
 		instanceRepo = repos.Instance()
 	}
-	server = newServer(oauth, resolver, exec, logger, connectionRepo, instanceRepo)
+	server = newServer(oauth, resolver, exec, logger, connectionRepo, gqlSubRepo, instanceRepo)
 
 	logger.Info("graphql-ws lambda initialized")
 }

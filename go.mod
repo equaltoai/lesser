@@ -1,8 +1,6 @@
 module github.com/equaltoai/lesser
 
-go 1.25.0
-
-toolchain go1.25.7
+go 1.26.0
 
 require (
 	github.com/99designs/gqlgen v0.17.85

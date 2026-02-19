@@ -79,11 +79,11 @@ func (g *HLSGenerator) GenerateMasterPlaylistContent(manifest *HLSManifest) stri
 
 	// Write each variant
 	for _, variant := range manifest.Variants {
-		builder.WriteString(fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\"\n",
+		_, _ = fmt.Fprintf(&builder, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\"\n",
 			variant.Bandwidth,
 			variant.Resolution,
 			variant.Codecs,
-		))
+		)
 		builder.WriteString(variant.PlaylistURL + "\n")
 	}
 
@@ -104,7 +104,7 @@ func (g *HLSGenerator) GenerateVariantPlaylist(mediaID string, quality Quality, 
 	// Write HLS header
 	builder.WriteString("#EXTM3U\n")
 	builder.WriteString("#EXT-X-VERSION:6\n")
-	builder.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", g.config.SegmentDuration))
+	_, _ = fmt.Fprintf(&builder, "#EXT-X-TARGETDURATION:%d\n", g.config.SegmentDuration)
 	builder.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
 	builder.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
 
@@ -119,7 +119,7 @@ func (g *HLSGenerator) GenerateVariantPlaylist(mediaID string, quality Quality, 
 			}
 		}
 
-		builder.WriteString(fmt.Sprintf("#EXTINF:%.3f,\n", duration))
+		_, _ = fmt.Fprintf(&builder, "#EXTINF:%.3f,\n", duration)
 		builder.WriteString(g.getSegmentURL(mediaID, quality, i) + "\n")
 	}
 
@@ -136,14 +136,14 @@ func (g *HLSGenerator) GenerateLivePlaylist(mediaID string, quality Quality, sta
 	// Write HLS header for live
 	builder.WriteString("#EXTM3U\n")
 	builder.WriteString("#EXT-X-VERSION:6\n")
-	builder.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", g.config.SegmentDuration))
+	_, _ = fmt.Fprintf(&builder, "#EXT-X-TARGETDURATION:%d\n", g.config.SegmentDuration)
 	builder.WriteString("#EXT-X-PLAYLIST-TYPE:EVENT\n")
-	builder.WriteString(fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d\n", startSegment))
+	_, _ = fmt.Fprintf(&builder, "#EXT-X-MEDIA-SEQUENCE:%d\n", startSegment)
 
 	// Write segments in the window
 	for i := 0; i < windowSize; i++ {
 		segmentIndex := startSegment + i
-		builder.WriteString(fmt.Sprintf("#EXTINF:%.1f,\n", float64(g.config.SegmentDuration)))
+		_, _ = fmt.Fprintf(&builder, "#EXTINF:%.1f,\n", float64(g.config.SegmentDuration))
 		builder.WriteString(g.getSegmentURL(mediaID, quality, segmentIndex) + "\n")
 	}
 
@@ -185,13 +185,13 @@ func (g *HLSGenerator) GenerateIFramePlaylist(mediaID string, quality Quality, m
 	if targetDuration < 1 {
 		targetDuration = g.config.SegmentDuration * 2
 	}
-	builder.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", targetDuration))
+	_, _ = fmt.Fprintf(&builder, "#EXT-X-TARGETDURATION:%d\n", targetDuration)
 
 	// Add I-frame entries with precise byte ranges
 	for _, keyframe := range keyframes {
 		// Each keyframe includes a byte range that captures just the I-frame data
-		builder.WriteString(fmt.Sprintf("#EXT-X-BYTERANGE:%d@%d\n", keyframe.ByteLength, keyframe.ByteOffset))
-		builder.WriteString(fmt.Sprintf("#EXTINF:%.3f,\n", keyframe.Duration))
+		_, _ = fmt.Fprintf(&builder, "#EXT-X-BYTERANGE:%d@%d\n", keyframe.ByteLength, keyframe.ByteOffset)
+		_, _ = fmt.Fprintf(&builder, "#EXTINF:%.3f,\n", keyframe.Duration)
 		builder.WriteString(keyframe.URI + "\n")
 	}
 
@@ -250,13 +250,13 @@ func (g *HLSGenerator) GenerateWebVTTPlaylist(mediaID string, language string, s
 
 	builder.WriteString("#EXTM3U\n")
 	builder.WriteString("#EXT-X-VERSION:6\n")
-	builder.WriteString(fmt.Sprintf("#EXT-X-TARGETDURATION:%d\n", g.config.SegmentDuration))
+	_, _ = fmt.Fprintf(&builder, "#EXT-X-TARGETDURATION:%d\n", g.config.SegmentDuration)
 	builder.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
 
 	for i := 0; i < segments; i++ {
-		builder.WriteString(fmt.Sprintf("#EXTINF:%.1f,\n", float64(g.config.SegmentDuration)))
-		builder.WriteString(fmt.Sprintf("%s/media/%s/subtitles/%s/segment%03d.vtt\n",
-			g.config.CDNBaseURL, mediaID, language, i))
+		_, _ = fmt.Fprintf(&builder, "#EXTINF:%.1f,\n", float64(g.config.SegmentDuration))
+		_, _ = fmt.Fprintf(&builder, "%s/media/%s/subtitles/%s/segment%03d.vtt\n",
+			g.config.CDNBaseURL, mediaID, language, i)
 	}
 
 	builder.WriteString("#EXT-X-ENDLIST\n")
@@ -274,23 +274,23 @@ func (g *HLSGenerator) GenerateMasterPlaylistWithSubtitles(manifest *HLSManifest
 
 	// Add subtitle tracks
 	for _, subtitle := range subtitles {
-		builder.WriteString(fmt.Sprintf("#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"%s\",DEFAULT=%s,AUTOSELECT=%s,FORCED=%s,LANGUAGE=\"%s\",URI=\"%s\"\n",
+		_, _ = fmt.Fprintf(&builder, "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"%s\",DEFAULT=%s,AUTOSELECT=%s,FORCED=%s,LANGUAGE=\"%s\",URI=\"%s\"\n",
 			subtitle.Name,
 			boolToYesNo(subtitle.Default),
 			boolToYesNo(subtitle.AutoSelect),
 			boolToYesNo(subtitle.Forced),
 			subtitle.Language,
 			subtitle.URI,
-		))
+		)
 	}
 
 	// Write each variant with subtitle group
 	for _, variant := range manifest.Variants {
-		builder.WriteString(fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\",SUBTITLES=\"subs\"\n",
+		_, _ = fmt.Fprintf(&builder, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\",SUBTITLES=\"subs\"\n",
 			variant.Bandwidth,
 			variant.Resolution,
 			variant.Codecs,
-		))
+		)
 		builder.WriteString(variant.PlaylistURL + "\n")
 	}
 
@@ -526,21 +526,21 @@ func (g *HLSGenerator) GenerateIFrameMasterPlaylist(manifest *HLSManifest) strin
 		// I-frame playlists have higher bandwidth requirements for smooth scrubbing
 		iframeBandwidth := variant.Bandwidth / 10 // Roughly 10% for I-frames only
 
-		builder.WriteString(fmt.Sprintf("#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\",URI=\"%s\"\n",
+		_, _ = fmt.Fprintf(&builder, "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\",URI=\"%s\"\n",
 			iframeBandwidth,
 			variant.Resolution,
 			variant.Codecs,
 			g.getIFramePlaylistURL(manifest.MediaID, variant.Quality),
-		))
+		)
 	}
 
 	// Add regular variants
 	for _, variant := range manifest.Variants {
-		builder.WriteString(fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\"\n",
+		_, _ = fmt.Fprintf(&builder, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%s,CODECS=\"%s\"\n",
 			variant.Bandwidth,
 			variant.Resolution,
 			variant.Codecs,
-		))
+		)
 		builder.WriteString(variant.PlaylistURL + "\n")
 	}
 

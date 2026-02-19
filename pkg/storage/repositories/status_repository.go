@@ -1096,6 +1096,11 @@ func (r *StatusRepository) GetConversationThread(ctx context.Context, conversati
 	return r.queryStatusesByGSI(ctx, "gsi3", "gsi3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "gsi3SK", "ASC", opts, "failed to get conversation thread")
 }
 
+// GetConversationThreadReverse retrieves all statuses in a conversation thread in reverse chronological order.
+func (r *StatusRepository) GetConversationThreadReverse(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	return r.queryStatusesByGSI(ctx, "gsi3", "gsi3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "gsi3SK", "DESC", opts, "failed to get conversation thread")
+}
+
 // SearchStatuses searches statuses by query string
 func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	// This is a basic implementation using scan with filter

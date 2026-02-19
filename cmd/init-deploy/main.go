@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"time"
@@ -210,6 +211,11 @@ func runInitDeploy(ctx context.Context, args []string) error {
 
 // generateVAPIDKeys generates ECDSA P-256 keys for VAPID
 func generateVAPIDKeys() (string, string, error) {
+	var entropyProbe [1]byte
+	if _, err := io.ReadFull(rand.Reader, entropyProbe[:]); err != nil {
+		return "", "", pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to read entropy")
+	}
+
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

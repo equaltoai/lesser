@@ -28,12 +28,12 @@ func setupVerifyCIRound20Harness(t *testing.T) string {
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
 	ensureToolAvailableFn = func(string) error { return nil }
 
-	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.25\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.26\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
 	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, name string, args ...string) (string, error) {
 		if name == "golangci-lint" && firstArgOrEmpty(args) == "version" {
-			return "golangci-lint has version v2.8.0\n", nil
+			return "golangci-lint has version v2.10.1\n", nil
 		}
 		if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
 			return strings.Join([]string{

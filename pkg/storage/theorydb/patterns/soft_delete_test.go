@@ -2,6 +2,7 @@ package patterns
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -425,4 +426,99 @@ func TestSoftDeleteModel_Integration(t *testing.T) {
 	assert.Equal(t, "test@example.com", model.Email)
 	assert.Equal(t, "EXAMPLE#test-id", model.PK)
 	assert.Equal(t, "PROFILE", model.SK)
+}
+
+func TestSoftDeleteRepository_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("NewSoftDeleteRepository defaults logger", func(t *testing.T) {
+		db := new(mocks.MockDB)
+		repo := NewSoftDeleteRepository(db, nil)
+		assert.NotNil(t, repo)
+		assert.NotNil(t, repo.logger)
+		assert.False(t, repo.includeDeleted)
+	})
+
+	t.Run("SoftDelete rejects nil model", func(t *testing.T) {
+		repo := NewSoftDeleteRepository(new(mocks.MockDB), zaptest.NewLogger(t))
+		assert.Error(t, repo.SoftDelete(ctx, nil, "admin"))
+	})
+
+	t.Run("SoftDelete propagates update error", func(t *testing.T) {
+		db := new(mocks.MockDB)
+		query := new(mocks.MockQuery)
+		repo := NewSoftDeleteRepository(db, zaptest.NewLogger(t))
+		model := NewExampleModel("user-1", "Example User", "user@example.com")
+
+		db.On("WithContext", mock.Anything).Return(db).Once()
+		db.On("Model", model).Return(query).Once()
+		query.On("Update", mock.Anything).Return(errors.New("update-failed")).Once()
+
+		assert.Error(t, repo.SoftDelete(ctx, model, "admin"))
+		db.AssertExpectations(t)
+		query.AssertExpectations(t)
+	})
+
+	t.Run("Restore rejects nil model", func(t *testing.T) {
+		repo := NewSoftDeleteRepository(new(mocks.MockDB), zaptest.NewLogger(t))
+		assert.Error(t, repo.Restore(ctx, nil))
+	})
+
+	t.Run("Restore rejects not-deleted model", func(t *testing.T) {
+		repo := NewSoftDeleteRepository(new(mocks.MockDB), zaptest.NewLogger(t))
+		model := NewExampleModel("user-1", "Example User", "user@example.com")
+		assert.Error(t, repo.Restore(ctx, model))
+	})
+
+	t.Run("Restore propagates update error", func(t *testing.T) {
+		db := new(mocks.MockDB)
+		query := new(mocks.MockQuery)
+		repo := NewSoftDeleteRepository(db, zaptest.NewLogger(t))
+		model := NewExampleModel("user-1", "Example User", "user@example.com")
+		model.SoftDeleteBy("admin")
+
+		db.On("WithContext", mock.Anything).Return(db).Once()
+		db.On("Model", model).Return(query).Once()
+		query.On("Update", mock.Anything).Return(errors.New("update-failed")).Once()
+
+		assert.Error(t, repo.Restore(ctx, model))
+		db.AssertExpectations(t)
+		query.AssertExpectations(t)
+	})
+
+	t.Run("HardDelete rejects nil model", func(t *testing.T) {
+		repo := NewSoftDeleteRepository(new(mocks.MockDB), zaptest.NewLogger(t))
+		assert.Error(t, repo.HardDelete(ctx, nil))
+	})
+
+	t.Run("Get filters deleted items when includeDeleted=false", func(t *testing.T) {
+		db := new(mocks.MockDB)
+		query := new(mocks.MockQuery)
+		repo := NewSoftDeleteRepository(db, zaptest.NewLogger(t))
+
+		model := NewExampleModel("user-1", "Example User", "user@example.com")
+		model.SoftDeleteBy("admin")
+
+		db.On("WithContext", mock.Anything).Return(db).Once()
+		db.On("Model", model).Return(query).Once()
+		query.On("Where", "PK", "=", "pk").Return(query).Once()
+		query.On("Where", "SK", "=", "sk").Return(query).Once()
+		query.On("First", model).Return(nil).Once()
+
+		assert.Error(t, repo.Get(ctx, model, "pk", "sk"))
+
+		withDeleted := repo.WithDeleted()
+		db.On("WithContext", mock.Anything).Return(db).Once()
+		db.On("Model", model).Return(query).Once()
+		query.On("Where", "PK", "=", "pk").Return(query).Once()
+		query.On("Where", "SK", "=", "sk").Return(query).Once()
+		query.On("First", model).Return(nil).Once()
+
+		assert.NoError(t, withDeleted.Get(ctx, model, "pk", "sk"))
+	})
+
+	t.Run("allocateSlice rejects nil model type", func(t *testing.T) {
+		_, _, err := allocateSlice(nil)
+		assert.Error(t, err)
+	})
 }

@@ -25,4 +25,3 @@ func TestDecodeActivityPubActorFromDynamoValue_mergesEmbeddedBaseObject(t *testi
 	assert.Equal(t, "alice", actor.PreferredUsername)
 	assert.Equal(t, "Alice", actor.Name)
 }
-

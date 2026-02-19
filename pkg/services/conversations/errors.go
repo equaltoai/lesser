@@ -44,6 +44,12 @@ var (
 	// ErrRecipientsRequired is returned when recipients list is required but empty
 	ErrRecipientsRequired = apperrors.NewValidationError("recipients", "required")
 
+	// ErrDirectMessageRequiresSingleRecipient is returned when the DM command contains multiple recipients (group chats not supported in v1).
+	ErrDirectMessageRequiresSingleRecipient = apperrors.NewValidationError("recipients", "must contain exactly 1 recipient")
+
+	// ErrConversationMustBeOneToOne is returned when a conversation has an unexpected participant count.
+	ErrConversationMustBeOneToOne = apperrors.NewValidationError("conversation", "must be 1:1")
+
 	// ErrContentTooLongConversation is returned when conversation content is too long
 	ErrContentTooLongConversation = apperrors.NewValidationError("content", "too long (max 5000 characters)")
 
@@ -61,4 +67,19 @@ var (
 
 	// ErrDeleteConversation is returned when conversation deletion fails
 	ErrDeleteConversation = apperrors.FailedToDelete("conversation", errors.New("failed to delete conversation"))
+
+	// ErrDeleteMessage is returned when message deletion (delete-for-me tombstone) fails.
+	ErrDeleteMessage = apperrors.FailedToDelete("direct message", errors.New("failed to delete message"))
+
+	// ErrDirectMessageBlocked is returned when a DM cannot be sent due to a block.
+	//
+	// Note: intentionally generic to avoid leaking block direction.
+	ErrDirectMessageBlocked = apperrors.AccessDeniedForResource("direct message", "blocked")
+
+	// ErrMessageRequestPending is returned when a sender attempts to send additional messages
+	// before a message request has been accepted.
+	ErrMessageRequestPending = apperrors.NewAppError(apperrors.CodeForbidden, apperrors.CategoryBusiness, "Message request pending")
+
+	// ErrMessageRequestMediaNotAllowed is returned when a DM request includes attachments.
+	ErrMessageRequestMediaNotAllowed = apperrors.NewValidationError("media", "not allowed in message requests")
 )

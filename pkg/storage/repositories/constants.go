@@ -75,6 +75,7 @@ const (
 	PrefKeyLanguage                  = "language"
 	PrefKeyDefaultPostingVisibility  = "default_posting_visibility"
 	PrefKeyDefaultMediaSensitive     = "default_media_sensitive"
+	PrefKeyDirectMessagesFrom        = "direct_messages_from"
 	PrefKeyExpandSpoilers            = "expand_spoilers"
 	PrefKeyExpandMedia               = "expand_media"
 	PrefKeyAutoplayGifs              = "autoplay_gifs"

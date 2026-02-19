@@ -30,6 +30,10 @@ type ConversationRepository interface {
 	// GetUserConversations retrieves conversations for a user with pagination
 	GetUserConversations(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
 
+	// GetUserConversationsByRequestState retrieves conversations for a user filtered by the participant
+	// request state (e.g., inbox vs requests).
+	GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
+
 	// GetConversationByParticipants finds a conversation with exact participants
 	GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error)
 
@@ -80,6 +84,13 @@ type ConversationRepository interface {
 
 	// GetConversationParticipants retrieves the list of participants in a conversation
 	GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error)
+
+	// GetConversationParticipantRecord retrieves the most recent participant record for a given
+	// (conversationID, participantID) pair.
+	GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error)
+
+	// UpdateConversationParticipantRecord persists an updated participant record.
+	UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error
 
 	// LeaveConversation removes a participant from a conversation
 	LeaveConversation(ctx context.Context, conversationID, username string) error

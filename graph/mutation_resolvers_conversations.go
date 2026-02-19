@@ -59,3 +59,27 @@ func (r *mutationResolver) DeleteConversation(ctx context.Context, id string) (b
 	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
+
+// DeleteMessage is the resolver for the deleteMessage field.
+func (r *mutationResolver) DeleteMessage(ctx context.Context, messageID string) (bool, error) {
+	username, err := r.requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	ok, err := r.Registry.Conversations().DeleteMessage(ctx, &conversations.DeleteMessageCommand{
+		MessageID: messageID,
+		UserID:    username,
+	})
+	if err != nil {
+		r.Logger.Error("Failed to delete message",
+			zap.String("user", username),
+			zap.String("message", messageID),
+			zap.Error(err))
+		return false, errors.Join(errors.New("failed to delete message"), err)
+	}
+
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
+	return ok, nil
+}

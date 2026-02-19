@@ -175,7 +175,7 @@ func setDummyAWSEnv(t *testing.T) {
 
 func TestRegisterConnection_PersistsAndStoresState(t *testing.T) {
 	repo := &fakeConnRepo{updateErr: errors.New("update failed")}
-	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
 
 	err := s.registerConnection(context.Background(), "c1", "user", &auth.Claims{Username: "user", Scopes: []string{"read"}})
 	require.Error(t, err)
@@ -193,7 +193,7 @@ func TestRegisterConnection_PersistsAndStoresState(t *testing.T) {
 
 func TestRemoveConnection_CancelsSubscriptionsAndCleansRepo(t *testing.T) {
 	repo := &fakeConnRepo{deleteSubsErr: errors.New("nope")}
-	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
 
 	calls := 0
 	s.connections["c1"] = &connectionState{
@@ -214,7 +214,7 @@ func TestRemoveConnection_CancelsSubscriptionsAndCleansRepo(t *testing.T) {
 
 func TestGetConnection_FallsBackToRepoAndCaches(t *testing.T) {
 	repo := &fakeConnRepo{}
-	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
 
 	state, err := s.getConnection(context.Background(), "c1")
 	require.NoError(t, err)
@@ -230,7 +230,7 @@ func TestGetConnection_FallsBackToRepoAndCaches(t *testing.T) {
 
 func TestSubscriptionStreamNameAndRemoveSubscriptionRecord(t *testing.T) {
 	repo := &fakeConnRepo{}
-	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
 
 	require.Equal(t, "graphql:subscription:s1", subscriptionStreamName("s1"))
 
@@ -244,7 +244,7 @@ func TestSubscriptionStreamNameAndRemoveSubscriptionRecord(t *testing.T) {
 }
 
 func TestEnsureSubscriptionManagerStarted_StartOnce(t *testing.T) {
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	s.ensureSubscriptionManagerStarted()
 
 	manager := &fakeSubManager{}
@@ -255,7 +255,7 @@ func TestEnsureSubscriptionManagerStarted_StartOnce(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&manager.startCalls))
 
 	alreadyRunning := &fakeSubManager{running: true}
-	s2 := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s2 := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	s2.subscriptionManager = alreadyRunning
 	s2.ensureSubscriptionManagerStarted()
 	require.Equal(t, int32(0), atomic.LoadInt32(&alreadyRunning.startCalls))
@@ -264,7 +264,7 @@ func TestEnsureSubscriptionManagerStarted_StartOnce(t *testing.T) {
 func TestHandleConnect_AuthContract_ConnectionInitOnly(t *testing.T) {
 	setDummyAWSEnv(t)
 
-	server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil)
+	server := newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil, nil)
 	app := newWebSocketApp(server)
 
 	// Missing token => accepted, unauthenticated (auth happens via connection_init).
@@ -287,7 +287,7 @@ func TestHandleDisconnect_CleansUpAndPersists(t *testing.T) {
 	setDummyAWSEnv(t)
 
 	repo := &fakeConnRepo{}
-	server := newServer(nil, nil, nil, zap.NewNop(), repo, nil)
+	server := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
 	server.connections["c1"] = &connectionState{username: "user", subscriptions: map[string]*subscriptionState{}}
 	server.wsContexts["c1"] = &apptheory.WebSocketContext{ConnectionID: "c1"}
 
@@ -306,7 +306,7 @@ func TestHandleSubscribe_ErrorBranches(t *testing.T) {
 	msgs := make(chan []byte, 10)
 	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
-	server := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	server := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	server.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
@@ -412,7 +412,7 @@ func TestHandleSubscribe_SuccessPath(t *testing.T) {
 	}
 
 	repo := &fakeConnRepo{}
-	server := newServer(nil, nil, exec, zap.NewNop(), repo, &fakeInstanceRepo{state: &models.InstanceState{Locked: false}})
+	server := newServer(nil, nil, exec, zap.NewNop(), repo, nil, &fakeInstanceRepo{state: &models.InstanceState{Locked: false}})
 	server.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
@@ -440,7 +440,7 @@ func TestSendGraphQLResponse_FormatsPayload(t *testing.T) {
 	msgs := make(chan []byte, 10)
 	wsCtx := &apptheory.WebSocketContext{ConnectionID: "c1"}
 
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
@@ -485,7 +485,7 @@ func TestExecuteSubscription_SendsNextAndComplete(t *testing.T) {
 	}
 
 	repo := &fakeConnRepo{}
-	s := newServer(nil, nil, exec, zap.NewNop(), repo, nil)
+	s := newServer(nil, nil, exec, zap.NewNop(), repo, nil, nil)
 	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
@@ -517,7 +517,7 @@ func TestExecuteSubscription_RecoversPanic(t *testing.T) {
 		},
 	}
 
-	s := newServer(nil, nil, exec, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, exec, zap.NewNop(), nil, nil, nil)
 	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
@@ -760,7 +760,7 @@ func TestMain_InvokesLambdaStart(t *testing.T) {
 	}
 
 	logger = zap.NewNop()
-	server = newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil)
+	server = newServer(&fakeTokenValidator{}, nil, nil, zap.NewNop(), nil, nil, nil)
 
 	main()
 	require.Equal(t, 1, calls)
@@ -785,7 +785,7 @@ func TestExecuteSubscription_ReturnsOnSendError(t *testing.T) {
 		},
 	}
 
-	s := newServer(nil, nil, exec, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, exec, zap.NewNop(), nil, nil, nil)
 	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
 		b, mErr := json.Marshal(payload)
 		require.NoError(t, mErr)
@@ -799,19 +799,19 @@ func TestExecuteSubscription_ReturnsOnSendError(t *testing.T) {
 }
 
 func TestAddSubscription_UnknownConnection(t *testing.T) {
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	require.False(t, s.addSubscription("missing", "sub", func() {}))
 }
 
 func TestRemoveSubscriptionRecord_DeleteError(t *testing.T) {
 	repo := &fakeConnRepo{deleteSubErr: errors.New("nope")}
-	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), repo, nil, nil)
 	s.removeSubscriptionRecord(context.Background(), "c1", "s1")
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.deleteSubCalls))
 }
 
 func TestNewServer_DefaultsLogger(t *testing.T) {
-	s := newServer(nil, nil, nil, nil, nil, nil)
+	s := newServer(nil, nil, nil, nil, nil, nil, nil)
 	require.NotNil(t, s)
 	require.NotNil(t, s.logger)
 }

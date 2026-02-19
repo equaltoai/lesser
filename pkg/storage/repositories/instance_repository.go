@@ -22,23 +22,23 @@ import (
 // InstanceRepository implements instance operations using enhanced DynamORM patterns
 type InstanceRepository struct {
 	*EnhancedBaseRepository[*models.InstanceConfig]
-	historyRepo  *BaseRepository[*models.InstanceHistory]
-	metricsRepo  *BaseRepository[*models.InstanceMetrics]
-	activityRepo *BaseRepository[*models.WeeklyActivity]
-	stateRepo    *BaseRepository[*models.InstanceState]
-	agentRepo    *BaseRepository[*models.AgentInstanceConfig]
-	trustRepo    *BaseRepository[*models.InstanceTrustConfig]
+	historyRepo     *BaseRepository[*models.InstanceHistory]
+	metricsRepo     *BaseRepository[*models.InstanceMetrics]
+	activityRepo    *BaseRepository[*models.WeeklyActivity]
+	stateRepo       *BaseRepository[*models.InstanceState]
+	agentRepo       *BaseRepository[*models.AgentInstanceConfig]
+	trustRepo       *BaseRepository[*models.InstanceTrustConfig]
 	translationRepo *BaseRepository[*models.InstanceTranslationConfig]
-	tipsRepo     *BaseRepository[*models.InstanceTipsConfig]
-	aiConfigRepo *BaseRepository[*models.AIInstanceConfig]
-	logger       *zap.Logger
+	tipsRepo        *BaseRepository[*models.InstanceTipsConfig]
+	aiConfigRepo    *BaseRepository[*models.AIInstanceConfig]
+	logger          *zap.Logger
 
-	stateCache instanceStateCache
-	agentCache agentInstanceConfigCache
-	trustCache instanceTrustConfigCache
+	stateCache       instanceStateCache
+	agentCache       agentInstanceConfigCache
+	trustCache       instanceTrustConfigCache
 	translationCache instanceTranslationConfigCache
-	tipsCache instanceTipsConfigCache
-	aiConfigCache aiInstanceConfigCache
+	tipsCache        instanceTipsConfigCache
+	aiConfigCache    aiInstanceConfigCache
 }
 
 type instanceStateCache struct {

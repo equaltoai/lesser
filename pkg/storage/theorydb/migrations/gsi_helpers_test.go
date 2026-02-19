@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -193,4 +194,150 @@ func TestGSIHelper_ListGSIMigrations_ReturnsRecords(t *testing.T) {
 
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
+}
+
+func TestNewGSIHelper_Validation(t *testing.T) {
+	_, err := NewGSIHelper(nil, "test-table", zaptest.NewLogger(t))
+	require.Error(t, err)
+
+	_, err = NewGSIHelper(new(mocks.MockDB), "", zaptest.NewLogger(t))
+	require.Error(t, err)
+
+	helper, err := NewGSIHelper(new(mocks.MockDB), "test-table", nil)
+	require.NoError(t, err)
+	require.NotNil(t, helper)
+	require.NotNil(t, helper.logger)
+}
+
+func TestGSIHelper_CreateGSI_DefaultsProjectionTypeWhenEmpty(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	helper, err := NewGSIHelper(mockDB, "test-table", zaptest.NewLogger(t))
+	require.NoError(t, err)
+
+	definition := GSIDefinition{
+		Name:        "GSI7",
+		HashKey:     "gsi7PK",
+		HashKeyType: "S",
+	}
+
+	var persistedRecord *GSIMigrationRecord
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+		rec, ok := model.(*GSIMigrationRecord)
+		if ok {
+			persistedRecord = rec
+		}
+		return ok
+	})).Return(mockQuery).Once()
+	mockQuery.On("Create").Return(nil).Once()
+
+	require.NoError(t, helper.CreateGSI(ctx, definition))
+	require.NotNil(t, persistedRecord)
+	require.Equal(t, projectionTypeAll, persistedRecord.ProjectionType)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestGSIHelper_CreateGSI_RejectsInvalidDefinition(t *testing.T) {
+	ctx := context.Background()
+	helper, err := NewGSIHelper(new(mocks.MockDB), "test-table", zaptest.NewLogger(t))
+	require.NoError(t, err)
+
+	err = helper.CreateGSI(ctx, GSIDefinition{
+		Name:        "GSI7",
+		HashKey:     "gsi7PK",
+		HashKeyType: "INVALID",
+	})
+	require.Error(t, err)
+
+	err = helper.CreateGSI(ctx, GSIDefinition{
+		Name:           "GSI7",
+		HashKey:        "gsi7PK",
+		HashKeyType:    "S",
+		ProjectionType: projectionTypeInclude,
+	})
+	require.Error(t, err)
+}
+
+func TestGSIHelper_DeleteGSI_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	helper, err := NewGSIHelper(mockDB, "test-table", zaptest.NewLogger(t))
+	require.NoError(t, err)
+
+	require.Error(t, helper.DeleteGSI(ctx, ""))
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", helper.partitionKey()).Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", helper.sortKey("GSI7")).Return(mockQuery).Once()
+	mockQuery.On("First", mock.Anything).Return(errors.New("load-failed")).Once()
+	require.Error(t, helper.DeleteGSI(ctx, "GSI7"))
+}
+
+func TestGSIHelper_DeleteGSI_UpdateErrorAndTableNameFill(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	helper, err := NewGSIHelper(mockDB, "test-table", zaptest.NewLogger(t))
+	require.NoError(t, err)
+
+	var recordUnderTest *GSIMigrationRecord
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+		rec, ok := model.(*GSIMigrationRecord)
+		if ok {
+			recordUnderTest = rec
+		}
+		return ok
+	})).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", helper.partitionKey()).Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", helper.sortKey("GSI7")).Return(mockQuery).Once()
+	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*GSIMigrationRecord)
+		dest.GSIName = "GSI7"
+		dest.Status = gsiStatusCreated
+	}).Return(nil).Once()
+	mockQuery.On("Update", mock.Anything).Return(errors.New("update-failed")).Once()
+
+	err = helper.DeleteGSI(ctx, "GSI7")
+	require.Error(t, err)
+	require.NotNil(t, recordUnderTest)
+	require.Equal(t, helper.tableName, recordUnderTest.TableName)
+}
+
+func TestGSIHelper_GetGSIStatus_And_ListGSIMigrations_ErrorBranches(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	helper, err := NewGSIHelper(mockDB, "test-table", zaptest.NewLogger(t))
+	require.NoError(t, err)
+
+	_, err = helper.GetGSIStatus(ctx, "")
+	require.Error(t, err)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", helper.partitionKey()).Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", helper.sortKey("GSI7")).Return(mockQuery).Once()
+	mockQuery.On("First", mock.Anything).Return(errors.New("load-failed")).Once()
+	_, err = helper.GetGSIStatus(ctx, "GSI7")
+	require.Error(t, err)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", helper.partitionKey()).Return(mockQuery).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("list-failed")).Once()
+	_, err = helper.ListGSIMigrations(ctx)
+	require.Error(t, err)
 }

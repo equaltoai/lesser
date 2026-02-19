@@ -11,12 +11,12 @@ import (
 )
 
 func TestSendJSON_NilWebSocketContext_ReturnsError(t *testing.T) {
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	require.Error(t, s.sendJSON(nil, responseEnvelope{Type: "ping"}))
 }
 
 func TestRememberWebSocketContext_IgnoresEmptyInputs(t *testing.T) {
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 
 	s.rememberWebSocketContext("", &apptheory.WebSocketContext{ConnectionID: "c1"})
 	s.rememberWebSocketContext("c1", nil)
@@ -25,7 +25,7 @@ func TestRememberWebSocketContext_IgnoresEmptyInputs(t *testing.T) {
 }
 
 func TestWebSocketContextFromEvent_NilContext_ReturnsError(t *testing.T) {
-	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil)
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 
 	wsCtx, connectionID, err := s.webSocketContextFromEvent(nil)
 	require.Error(t, err)
@@ -39,7 +39,7 @@ func TestConfigureGraphQLExecutor_ExercisesConfigBranches(t *testing.T) {
 		GraphQLParserTokenLimit: 123,
 		GraphQLMaxDepth:         5,
 		GraphQLMaxComplexity:    10,
-		DebugMode:              true,
+		DebugMode:               true,
 	}
 
 	require.NotPanics(t, func() {

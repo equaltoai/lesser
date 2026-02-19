@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,13 +85,14 @@ func TestService_DeleteConversation_AllowsActorIDParticipant(t *testing.T) {
 	accountRepo.On("GetAccount", ctx, "user-1").Return(&storage.Account{
 		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "ap://example.com/actors/alice"}},
 	}, nil).Once()
-	conversationRepo.On("DeleteConversation", ctx, "conv-1").Return(nil).Once()
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-1", "ap://example.com/actors/alice").Return(&models.ConversationParticipantRecord{}, nil).Once()
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Once()
 
 	result, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-1", UserID: "user-1"})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Len(t, result.Events, 2)
-	require.Len(t, publisher.GetEvents(), 2)
+	require.Len(t, result.Events, 1)
+	require.Len(t, publisher.GetEvents(), 1)
 	require.Equal(t, "conversation.deleted", result.Events[0].Type)
 }
 
@@ -111,12 +113,13 @@ func TestService_DeleteConversation_StillReturnsEventsWhenPublishFails(t *testin
 	}
 
 	conversationRepo.On("GetConversation", ctx, "conv-2").Return(conversation, nil).Once()
-	conversationRepo.On("DeleteConversation", ctx, "conv-2").Return(nil).Once()
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-2", "user-1").Return(&models.ConversationParticipantRecord{}, nil).Once()
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Once()
 
 	result, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-2", UserID: "user-1"})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Len(t, result.Events, 2)
+	require.Len(t, result.Events, 1)
 	require.Equal(t, "conversation.deleted", result.Events[0].Type)
 }
 
@@ -158,7 +161,8 @@ func TestService_DeleteConversation_PermissionAndDeleteFailures(t *testing.T) {
 			Participants: []string{"user-1"},
 		}
 		conversationRepo.On("GetConversation", ctx, "conv-5").Return(conversation, nil).Once()
-		conversationRepo.On("DeleteConversation", ctx, "conv-5").Return(errors.New("boom")).Once()
+		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-5", "user-1").Return(&models.ConversationParticipantRecord{}, nil).Once()
+		conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(errors.New("boom")).Once()
 
 		_, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-5", UserID: "user-1"})
 		require.Error(t, err)

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -245,11 +246,11 @@ func generateVAPIDKeys(appCtx *appContext) error {
 
 // generateECDSAKey generates a P-256 ECDSA key pair
 func generateECDSAKey() (*ecdsa.PrivateKey, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
+	var entropyProbe [1]byte
+	if _, err := io.ReadFull(rand.Reader, entropyProbe[:]); err != nil {
 		return nil, err
 	}
-	return privateKey, nil
+	return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 }
 
 // encodeKeys encodes the public and private keys to base64
@@ -262,12 +263,9 @@ func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string, error) {
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
 
-	// Encode private key (32 bytes)
-	privateKeyBytes := privateKey.D.Bytes()
-	// Pad to 32 bytes if necessary
-	if len(privateKeyBytes) < 32 {
-		padding := make([]byte, 32-len(privateKeyBytes))
-		privateKeyBytes = append(padding, privateKeyBytes...)
+	privateKeyBytes, err := privateKey.Bytes()
+	if err != nil {
+		return "", "", err
 	}
 	privateKeyBase64 := base64.RawURLEncoding.EncodeToString(privateKeyBytes)
 

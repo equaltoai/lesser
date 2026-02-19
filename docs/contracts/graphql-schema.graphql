@@ -683,11 +683,35 @@ type UpdateQuotePermissionsPayload {
 }
 
 # Conversation type
+enum ConversationFolder {
+  INBOX
+  REQUESTS
+}
+
+enum DmRequestState {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+type ConversationViewerMetadata {
+  requestState: DmRequestState!
+  requestedAt: Time
+  acceptedAt: Time
+  declinedAt: Time
+}
+
+type SendMessagePayload {
+  conversation: Conversation!
+  message: Object!
+}
+
 type Conversation {
   id: ID!
   lastStatus: Object
   unread: Boolean!
   accounts: [Actor!]!
+  viewerMetadata: ConversationViewerMetadata!
   createdAt: Time!
   updatedAt: Time!
 }
@@ -1134,8 +1158,9 @@ type Query {
   communityNotesByAuthor(username: String!, first: Int = 20, after: Cursor): CommunityNoteConnection!
   
   # Conversations
-  conversations(first: Int = 20, after: Cursor): [Conversation!]!
+  conversations(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): [Conversation!]!
   conversation(id: ID!): Conversation
+  conversationMessages(conversationId: ID!, first: Int = 50, after: Cursor): ObjectConnection!
   
   # Lists
   lists: [List!]!
@@ -1279,8 +1304,14 @@ type Mutation {
   removeAccountsFromList(id: ID!, accountIds: [ID!]!): List!
   
   # Conversation operations
+  createConversation(participantId: ID!): Conversation!
+  sendDirectMessage(to: ID!, content: String!, mediaIds: [ID!]): SendMessagePayload!
+  sendMessage(conversationId: ID!, content: String!, mediaIds: [ID!]): SendMessagePayload!
+  acceptMessageRequest(conversationId: ID!): Conversation!
+  declineMessageRequest(conversationId: ID!): Boolean!
   markConversationAsRead(id: ID!): Conversation!
-  deleteConversation(id: ID!): Boolean!
+  deleteConversation(conversationId: ID!): Boolean!
+  deleteMessage(messageId: ID!): Boolean!
   
   # Media operations
   uploadMedia(input: UploadMediaInput!): UploadMediaPayload!
@@ -3400,6 +3431,7 @@ input ReblogFilterInput {
 input UpdateUserPreferencesInput {
   language: String
   defaultPostingVisibility: Visibility
+  directMessagesFrom: DirectMessagesFrom
   defaultMediaSensitive: Boolean
   expandSpoilers: Boolean
   expandMedia: ExpandMediaPreference
@@ -3702,6 +3734,12 @@ type PrivacyPreferences {
   defaultVisibility: Visibility!
   indexable: Boolean!
   showOnlineStatus: Boolean!
+  directMessagesFrom: DirectMessagesFrom!
+}
+
+enum DirectMessagesFrom {
+  FOLLOWING_ONLY
+  ANYONE
 }
 
 type ReblogFilter {

@@ -55,6 +55,14 @@ func (m *mockConversationRepository) GetUserConversations(ctx context.Context, u
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
 }
 
+func (m *mockConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	args := m.Called(ctx, userID, requestState, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
+}
+
 func (m *mockConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	args := m.Called(ctx, participants)
 	if args.Get(0) == nil {
@@ -79,6 +87,19 @@ func (m *mockConversationRepository) GetConversationParticipants(ctx context.Con
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *mockConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
+	args := m.Called(ctx, conversationID, participantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.ConversationParticipantRecord), args.Error(1)
+}
+
+func (m *mockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
+	args := m.Called(ctx, record)
+	return args.Error(0)
 }
 
 func (m *mockConversationRepository) MarkConversationRead(ctx context.Context, conversationID, userID string) error {
@@ -177,6 +198,23 @@ type mockNoteRepository struct {
 	mock.Mock
 }
 
+type mockDirectMessageTombstoneRepository struct {
+	mock.Mock
+}
+
+func (m *mockDirectMessageTombstoneRepository) CreateTombstone(ctx context.Context, viewerUsername, statusID string) error {
+	args := m.Called(ctx, viewerUsername, statusID)
+	return args.Error(0)
+}
+
+func (m *mockDirectMessageTombstoneRepository) TombstonesByStatusID(ctx context.Context, viewerUsername string, statusIDs []string) (map[string]bool, error) {
+	args := m.Called(ctx, viewerUsername, statusIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]bool), args.Error(1)
+}
+
 func (m *mockNoteRepository) CreateStatus(ctx context.Context, status *models.Status) error {
 	args := m.Called(ctx, status)
 	return args.Error(0)
@@ -238,6 +276,14 @@ func (m *mockNoteRepository) GetUserTimeline(ctx context.Context, userID string,
 }
 
 func (m *mockNoteRepository) GetConversationThread(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	args := m.Called(ctx, conversationID, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
+}
+
+func (m *mockNoteRepository) GetConversationThreadReverse(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	args := m.Called(ctx, conversationID, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -643,7 +689,12 @@ func createTestService() (*Service, *mockConversationRepository, *mockNoteReposi
 	service := NewService(
 		conversationRepo,
 		noteRepo,
+		nil,
 		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
 		publisher,
 		federation,
 		logger,
@@ -719,6 +770,13 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
 
+	// DM request lifecycle + unread tracking
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
+	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "sender123").Return(nil)
+	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "recipient456").Return(nil)
+
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
 
@@ -782,6 +840,13 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
 
+	// DM request lifecycle + unread tracking
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "bob@remote.com").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
+	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "sender123").Return(nil)
+	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "bob@remote.com").Return(nil)
+
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
 
@@ -826,6 +891,13 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
+
+	// DM request lifecycle + unread tracking
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
+	conversationRepo.On("MarkConversationRead", ctx, "conv123", "sender123").Return(nil)
+	conversationRepo.On("MarkConversationUnread", ctx, "conv123", "recipient456").Return(nil)
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
@@ -1022,10 +1094,12 @@ func TestService_GetConversation_Success(t *testing.T) {
 
 	// Create messages with proper recipients so they pass visibility checks
 	msg1 := createTestMessage("msg1", "user123", "conv123", "Hello")
-	msg1.ToRecipients = []string{"user456"} // Make user456 a recipient
+	msg1.AuthorUsername = "user123"
+	msg1.ToRecipients = []string{"https://example.com/users/user456"} // Make user456 a recipient
 
 	msg2 := createTestMessage("msg2", "user456", "conv123", "Hi there!")
-	msg2.ToRecipients = []string{"user123"} // Make user123 a recipient
+	msg2.AuthorUsername = "user456"
+	msg2.ToRecipients = []string{"https://example.com/users/user123"} // Make user123 a recipient
 
 	messages := []*models.Status{msg1, msg2}
 
@@ -1045,6 +1119,7 @@ func TestService_GetConversation_Success(t *testing.T) {
 
 	// Mock expectations
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "user123").Return(&models.ConversationParticipantRecord{Unread: false}, nil)
 	noteRepo.On("GetConversationThread", ctx, "conv123", query.Pagination).Return(paginatedMessages, nil)
 
 	// Execute
@@ -1178,11 +1253,311 @@ func TestService_NewService(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Test with all dependencies
-	service := NewService(conversationRepo, noteRepo, accountRepo, publisher, federation, logger, "example.com")
+	service := NewService(conversationRepo, noteRepo, nil, accountRepo, nil, nil, nil, nil, publisher, federation, logger, "example.com")
 	assert.NotNil(t, service)
 	assert.Equal(t, "example.com", service.domainName)
 
 	// Test with nil logger (should default to nop logger)
-	service2 := NewService(conversationRepo, noteRepo, accountRepo, publisher, federation, nil, "example.com")
+	service2 := NewService(conversationRepo, noteRepo, nil, accountRepo, nil, nil, nil, nil, publisher, federation, nil, "example.com")
 	assert.NotNil(t, service2)
+}
+
+func TestService_DeleteConversation_DeleteForMe(t *testing.T) {
+	service, conversationRepo, _, _, _, _ := createTestService()
+
+	now := time.Now().UTC()
+	conversation := &models.Conversation{
+		ID:           "conv123",
+		Participants: []string{"sender123", "recipient456"},
+		CreatedAt:    now.Add(-time.Hour),
+		UpdatedAt:    now.Add(-time.Minute),
+	}
+
+	participantRecord := &models.ConversationParticipantRecord{
+		Conversation: conversation,
+		Unread:       false,
+		DeletedAt:    nil,
+	}
+
+	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
+	conversationRepo.
+		On("GetConversationParticipantRecord", mock.Anything, "conv123", "sender123").
+		Return(participantRecord, nil)
+	conversationRepo.
+		On("UpdateConversationParticipantRecord", mock.Anything, mock.MatchedBy(func(r *models.ConversationParticipantRecord) bool {
+			return r != nil && r.DeletedAt != nil && !r.DeletedAt.IsZero()
+		})).
+		Return(nil)
+
+	result, err := service.DeleteConversation(context.Background(), &DeleteConversationCommand{
+		ConversationID: "conv123",
+		UserID:         "sender123",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	conversationRepo.AssertExpectations(t)
+}
+
+func TestService_GetConversation_HidesDeletedConversation(t *testing.T) {
+	service, conversationRepo, noteRepo, _, _, _ := createTestService()
+
+	now := time.Now().UTC()
+	conversation := &models.Conversation{
+		ID:           "conv123",
+		Participants: []string{"sender123", "recipient456"},
+		CreatedAt:    now.Add(-time.Hour),
+		UpdatedAt:    now.Add(-time.Minute),
+	}
+	deletedAt := now.Add(-time.Second)
+	participantRecord := &models.ConversationParticipantRecord{
+		Conversation: conversation,
+		Unread:       false,
+		DeletedAt:    &deletedAt,
+	}
+
+	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
+	conversationRepo.
+		On("GetConversationParticipantRecord", mock.Anything, "conv123", "sender123").
+		Return(participantRecord, nil)
+
+	_, err := service.GetConversation(context.Background(), &GetConversationQuery{
+		ConversationID: "conv123",
+		ViewerID:       "sender123",
+		Pagination:     interfaces.PaginationOptions{Limit: 10},
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrConversationNotFound)
+
+	conversationRepo.AssertExpectations(t)
+	noteRepo.AssertNotCalled(t, "GetConversationThread")
+}
+
+func TestService_DeleteMessage_CreatesViewerTombstone(t *testing.T) {
+	conversationRepo := &mockConversationRepository{}
+	noteRepo := &mockNoteRepository{}
+	dmTombstoneRepo := &mockDirectMessageTombstoneRepository{}
+	accountRepo := &mockAccountRepository{}
+
+	service := NewService(
+		conversationRepo,
+		noteRepo,
+		dmTombstoneRepo,
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		&mockPublisher{},
+		&mockFederationService{},
+		zaptest.NewLogger(t),
+		"example.com",
+	)
+
+	status := &models.Status{
+		StatusID:       "m1",
+		Visibility:     models.VisibilityDirect,
+		AuthorUsername: "recipient456",
+		ConversationID: "conv123",
+		ToRecipients:   []string{"https://example.com/users/sender123"},
+	}
+	conversation := &models.Conversation{
+		ID:           "conv123",
+		Participants: []string{"sender123", "recipient456"},
+	}
+
+	noteRepo.On("GetStatus", mock.Anything, "m1").Return(status, nil)
+	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
+	dmTombstoneRepo.On("CreateTombstone", mock.Anything, "sender123", "m1").Return(nil)
+
+	ok, err := service.DeleteMessage(context.Background(), &DeleteMessageCommand{
+		MessageID: "m1",
+		UserID:    "sender123",
+	})
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	noteRepo.AssertExpectations(t)
+	conversationRepo.AssertExpectations(t)
+	dmTombstoneRepo.AssertExpectations(t)
+}
+
+func TestService_GetConversation_FiltersTombstonedMessages(t *testing.T) {
+	conversationRepo := &mockConversationRepository{}
+	noteRepo := &mockNoteRepository{}
+	dmTombstoneRepo := &mockDirectMessageTombstoneRepository{}
+	accountRepo := &mockAccountRepository{}
+
+	service := NewService(
+		conversationRepo,
+		noteRepo,
+		dmTombstoneRepo,
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		&mockPublisher{},
+		&mockFederationService{},
+		zaptest.NewLogger(t),
+		"example.com",
+	)
+
+	now := time.Now()
+	conversation := &models.Conversation{
+		ID:           "conv123",
+		Participants: []string{"sender123", "recipient456"},
+		CreatedAt:    now.Add(-time.Hour),
+		UpdatedAt:    now.Add(-time.Minute),
+	}
+	participantRecord := &models.ConversationParticipantRecord{
+		Conversation: conversation,
+		Unread:       false,
+		DeletedAt:    nil,
+	}
+
+	m1 := &models.Status{
+		StatusID:       "m1",
+		Visibility:     models.VisibilityDirect,
+		AuthorUsername: "recipient456",
+		ConversationID: "conv123",
+		ToRecipients:   []string{"https://example.com/users/sender123"},
+		PublishedAt:    now.Add(-2 * time.Minute),
+	}
+	m2 := &models.Status{
+		StatusID:       "m2",
+		Visibility:     models.VisibilityDirect,
+		AuthorUsername: "recipient456",
+		ConversationID: "conv123",
+		ToRecipients:   []string{"https://example.com/users/sender123"},
+		PublishedAt:    now.Add(-time.Minute),
+	}
+
+	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
+	conversationRepo.
+		On("GetConversationParticipantRecord", mock.Anything, "conv123", "sender123").
+		Return(participantRecord, nil)
+	noteRepo.
+		On("GetConversationThread", mock.Anything, "conv123", mock.Anything).
+		Return(&interfaces.PaginatedResult[*models.Status]{Items: []*models.Status{m1, m2}, HasMore: false}, nil)
+	dmTombstoneRepo.
+		On("TombstonesByStatusID", mock.Anything, "sender123", mock.Anything).
+		Return(map[string]bool{"m2": true}, nil)
+
+	result, err := service.GetConversation(context.Background(), &GetConversationQuery{
+		ConversationID: "conv123",
+		ViewerID:       "sender123",
+		Pagination:     interfaces.PaginationOptions{Limit: 50},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Messages)
+	require.Len(t, result.Messages.Items, 1)
+	assert.Equal(t, "m1", result.Messages.Items[0].StatusID)
+
+	conversationRepo.AssertExpectations(t)
+	noteRepo.AssertExpectations(t)
+	dmTombstoneRepo.AssertExpectations(t)
+}
+
+func TestService_GetConversationLastStatus_SkipsTombstoned(t *testing.T) {
+	conversationRepo := &mockConversationRepository{}
+	noteRepo := &mockNoteRepository{}
+	dmTombstoneRepo := &mockDirectMessageTombstoneRepository{}
+	accountRepo := &mockAccountRepository{}
+
+	service := NewService(
+		conversationRepo,
+		noteRepo,
+		dmTombstoneRepo,
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		&mockPublisher{},
+		&mockFederationService{},
+		zaptest.NewLogger(t),
+		"example.com",
+	)
+
+	now := time.Now()
+	latest := &models.Status{
+		StatusID:       "m2",
+		Visibility:     models.VisibilityDirect,
+		AuthorUsername: "recipient456",
+		ConversationID: "conv123",
+		ToRecipients:   []string{"https://example.com/users/sender123"},
+		PublishedAt:    now,
+	}
+	previous := &models.Status{
+		StatusID:       "m1",
+		Visibility:     models.VisibilityDirect,
+		AuthorUsername: "recipient456",
+		ConversationID: "conv123",
+		ToRecipients:   []string{"https://example.com/users/sender123"},
+		PublishedAt:    now.Add(-time.Minute),
+	}
+
+	noteRepo.
+		On("GetConversationThreadReverse", mock.Anything, "conv123", mock.Anything).
+		Return(&interfaces.PaginatedResult[*models.Status]{Items: []*models.Status{latest, previous}, HasMore: false}, nil)
+	dmTombstoneRepo.
+		On("TombstonesByStatusID", mock.Anything, "sender123", mock.Anything).
+		Return(map[string]bool{"m2": true}, nil)
+
+	status, err := service.GetConversationLastStatus(context.Background(), "conv123", "sender123")
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	assert.Equal(t, "m1", status.StatusID)
+
+	noteRepo.AssertExpectations(t)
+	dmTombstoneRepo.AssertExpectations(t)
+}
+
+func TestService_DeleteMessage_RequiresParticipant(t *testing.T) {
+	conversationRepo := &mockConversationRepository{}
+	noteRepo := &mockNoteRepository{}
+	dmTombstoneRepo := &mockDirectMessageTombstoneRepository{}
+	accountRepo := &mockAccountRepository{}
+
+	service := NewService(
+		conversationRepo,
+		noteRepo,
+		dmTombstoneRepo,
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		&mockPublisher{},
+		&mockFederationService{},
+		zaptest.NewLogger(t),
+		"example.com",
+	)
+
+	status := &models.Status{
+		StatusID:       "m1",
+		Visibility:     models.VisibilityDirect,
+		AuthorUsername: "recipient456",
+		ConversationID: "conv123",
+		ToRecipients:   []string{"https://example.com/users/sender123"},
+	}
+	conversation := &models.Conversation{
+		ID:           "conv123",
+		Participants: []string{"recipient456", "charlie789"},
+	}
+
+	noteRepo.On("GetStatus", mock.Anything, "m1").Return(status, nil)
+	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
+	accountRepo.
+		On("GetAccount", mock.Anything, "sender123").
+		Return(&storage.Account{Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "https://example.com/users/sender123"}}}, nil)
+
+	_, err := service.DeleteMessage(context.Background(), &DeleteMessageCommand{
+		MessageID: "m1",
+		UserID:    "sender123",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNotConversationParticipant)
 }

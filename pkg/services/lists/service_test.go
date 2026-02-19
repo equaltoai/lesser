@@ -224,6 +224,11 @@ func (m *MockNoteRepository) GetConversationThread(ctx context.Context, conversa
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
 }
 
+func (m *MockNoteRepository) GetConversationThreadReverse(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	args := m.Called(ctx, conversationID, opts)
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
+}
+
 func (m *MockNoteRepository) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	args := m.Called(ctx, parentStatusID, opts)
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)

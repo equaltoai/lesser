@@ -342,6 +342,7 @@ func TestRound07_ConversationRepository_GetUnreadMessageCount_WarnsAndContinues(
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 
 	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {

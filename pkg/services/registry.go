@@ -1326,6 +1326,11 @@ func (r *Registry) Conversations() *conversations.Service {
 
 		// Check if required repositories are available
 		if conversationRepo != nil && noteRepo != nil && accountRepo != nil {
+			relationshipRepo := r.storage.Relationship()
+			userRepo := r.storage.User()
+			rateLimitRepo := r.storage.RateLimit()
+			auditRepo := r.storage.Audit()
+
 			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
@@ -1342,7 +1347,12 @@ func (r *Registry) Conversations() *conversations.Service {
 			r.conversationsService = conversations.NewService(
 				conversationRepo,
 				noteRepo,
+				repositories.NewDirectMessageTombstoneRepository(r.storage.GetDB(), r.storage.GetTableName(), r.logger),
 				accountRepo,
+				relationshipRepo,
+				userRepo,
+				rateLimitRepo,
+				auditRepo,
 				r.publisherOrNoop(),
 				federationService,
 				r.logger,

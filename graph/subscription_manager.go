@@ -20,6 +20,8 @@ import (
 // Stream name constants
 const (
 	StreamNamePublic = "public"
+
+	subscriptionTypeConversation = "conversation"
 )
 
 // Context key for WebSocket connection ID
@@ -326,7 +328,7 @@ func (sm *GraphQLSubscriptionManager) createGenericSubscription(
 		ch = make(chan *model.MetricsUpdate, channelBuffer)
 	case TimelineTypeList:
 		ch = make(chan *model.ListUpdate, channelBuffer)
-	case "conversation":
+	case subscriptionTypeConversation:
 		ch = make(chan *model.Conversation, channelBuffer)
 	case "federation":
 		ch = make(chan *model.FederationHealthUpdate, channelBuffer)
@@ -629,7 +631,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToConversation(ctx context.Contex
 	}
 
 	streams := []string{fmt.Sprintf("conversation:%s", username)}
-	ch, _, err := sm.createGenericSubscription(ctx, "conversation", username, streams, 100, nil)
+	ch, _, err := sm.createGenericSubscription(ctx, subscriptionTypeConversation, username, streams, 100, nil)
 	if err != nil {
 		return nil, err
 	}

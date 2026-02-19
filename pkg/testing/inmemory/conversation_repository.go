@@ -139,6 +139,19 @@ func (r *ConversationRepository) GetUserConversations(_ context.Context, userID 
 	}, nil
 }
 
+// GetUserConversationsByRequestState retrieves conversations for a user filtered by request state.
+// The in-memory repository does not model DM request lifecycle; it treats all conversations as accepted.
+func (r *ConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	if requestState != models.DmRequestStateAccepted {
+		return &interfaces.PaginatedResult[*models.Conversation]{
+			Items:   []*models.Conversation{},
+			Total:   0,
+			HasMore: false,
+		}, nil
+	}
+	return r.GetUserConversations(ctx, userID, opts)
+}
+
 // GetConversationByParticipants finds a conversation with exact participants
 func (r *ConversationRepository) GetConversationByParticipants(_ context.Context, participants []string) (*models.Conversation, error) {
 	r.mu.RLock()
@@ -163,6 +176,18 @@ func (r *ConversationRepository) GetConversationByParticipants(_ context.Context
 		}
 	}
 	return nil, storage.ErrNotFound
+}
+
+// GetConversationParticipantRecord retrieves the participant record for a conversation.
+// The in-memory repository does not persist participant records; return not found.
+func (r *ConversationRepository) GetConversationParticipantRecord(_ context.Context, _, _ string) (*models.ConversationParticipantRecord, error) {
+	return nil, storage.ErrNotFound
+}
+
+// UpdateConversationParticipantRecord persists an updated participant record.
+// The in-memory repository does not persist participant records; return not found.
+func (r *ConversationRepository) UpdateConversationParticipantRecord(_ context.Context, _ *models.ConversationParticipantRecord) error {
+	return storage.ErrNotFound
 }
 
 // GetUnreadConversations retrieves unread conversations for a user

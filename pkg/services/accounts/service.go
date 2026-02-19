@@ -340,6 +340,7 @@ type UpdatePreferencesCommand struct {
 	Language                  string          `json:"language"`
 	DefaultPostingVisibility  string          `json:"default_posting_visibility" validate:"oneof=public unlisted private direct"`
 	DefaultMediaSensitive     bool            `json:"default_media_sensitive"`
+	DirectMessagesFrom        string          `json:"direct_messages_from" validate:"oneof=FOLLOWING_ONLY ANYONE"`
 	ExpandSpoilers            bool            `json:"expand_spoilers"`
 	ExpandMedia               string          `json:"expand_media" validate:"oneof=default show_all hide_all"`
 	AutoplayGifs              bool            `json:"autoplay_gifs"`
@@ -619,6 +620,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, cmd *UpdatePreferencesC
 		"language":                    cmd.Language,
 		"default_posting_visibility":  cmd.DefaultPostingVisibility,
 		"default_media_sensitive":     cmd.DefaultMediaSensitive,
+		"direct_messages_from":        cmd.DirectMessagesFrom,
 		"expand_spoilers":             cmd.ExpandSpoilers,
 		"expand_media":                cmd.ExpandMedia,
 		"autoplay_gifs":               cmd.AutoplayGifs,
@@ -775,6 +777,15 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 
 	if cmd.DefaultPostingVisibility != "" && !isValidPostingVisibility(cmd.DefaultPostingVisibility) {
 		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility %q is not valid", cmd.DefaultPostingVisibility)).InternalError
+	}
+
+	if cmd.DirectMessagesFrom != "" {
+		switch strings.ToUpper(strings.TrimSpace(cmd.DirectMessagesFrom)) {
+		case "FOLLOWING_ONLY", "ANYONE":
+			// ok
+		default:
+			return common.ErrValidation("direct_messages_from", fmt.Sprintf("direct_messages_from %q is not valid", cmd.DirectMessagesFrom)).InternalError
+		}
 	}
 
 	validExpandMedia := map[string]bool{
