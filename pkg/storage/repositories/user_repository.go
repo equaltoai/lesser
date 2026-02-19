@@ -1916,6 +1916,7 @@ func (r *UserRepository) GetUserPreferences(ctx context.Context, username string
 				Language:                  defaultModelStorage.Language,
 				DefaultPostingVisibility:  defaultModelStorage.DefaultPostingVisibility,
 				DefaultMediaSensitive:     defaultModelStorage.DefaultMediaSensitive,
+				DirectMessagesFrom:        defaultModelStorage.DirectMessagesFrom,
 				ExpandSpoilers:            defaultModelStorage.ExpandSpoilers,
 				ExpandMedia:               defaultModelStorage.ExpandMedia,
 				AutoplayGifs:              defaultModelStorage.AutoplayGifs,
@@ -1942,6 +1943,7 @@ func (r *UserRepository) GetUserPreferences(ctx context.Context, username string
 		Language:                  modelStorage.Language,
 		DefaultPostingVisibility:  modelStorage.DefaultPostingVisibility,
 		DefaultMediaSensitive:     modelStorage.DefaultMediaSensitive,
+		DirectMessagesFrom:        modelStorage.DirectMessagesFrom,
 		ExpandSpoilers:            modelStorage.ExpandSpoilers,
 		ExpandMedia:               modelStorage.ExpandMedia,
 		AutoplayGifs:              modelStorage.AutoplayGifs,
@@ -1964,6 +1966,7 @@ func (r *UserRepository) UpdateUserPreferences(ctx context.Context, username str
 		Language:                  preferences.Language,
 		DefaultPostingVisibility:  preferences.DefaultPostingVisibility,
 		DefaultMediaSensitive:     preferences.DefaultMediaSensitive,
+		DirectMessagesFrom:        preferences.DirectMessagesFrom,
 		ExpandSpoilers:            preferences.ExpandSpoilers,
 		ExpandMedia:               preferences.ExpandMedia,
 		AutoplayGifs:              preferences.AutoplayGifs,
@@ -2024,6 +2027,8 @@ func (r *UserRepository) updatePreferenceField(prefs *storage.UserPreferences, k
 		return r.setStringPreference(&prefs.DefaultPostingVisibility, value, key)
 	case PrefKeyDefaultMediaSensitive:
 		return r.setBoolPreference(&prefs.DefaultMediaSensitive, value, key)
+	case PrefKeyDirectMessagesFrom:
+		return r.setStringPreference(&prefs.DirectMessagesFrom, value, key)
 	case PrefKeyExpandSpoilers:
 		return r.setBoolPreference(&prefs.ExpandSpoilers, value, key)
 	case PrefKeyExpandMedia:
@@ -2072,6 +2077,8 @@ func (r *UserRepository) GetPreference(ctx context.Context, username, key string
 		return prefs.DefaultPostingVisibility, nil
 	case PrefKeyDefaultMediaSensitive:
 		return prefs.DefaultMediaSensitive, nil
+	case PrefKeyDirectMessagesFrom:
+		return prefs.DirectMessagesFrom, nil
 	case PrefKeyExpandSpoilers:
 		return prefs.ExpandSpoilers, nil
 	case PrefKeyExpandMedia:
@@ -2104,6 +2111,7 @@ func (r *UserRepository) GetAllPreferences(ctx context.Context, username string)
 		"language":                    prefs.Language,
 		"default_posting_visibility":  prefs.DefaultPostingVisibility,
 		"default_media_sensitive":     prefs.DefaultMediaSensitive,
+		"direct_messages_from":        prefs.DirectMessagesFrom,
 		"expand_spoilers":             prefs.ExpandSpoilers,
 		"expand_media":                prefs.ExpandMedia,
 		"autoplay_gifs":               prefs.AutoplayGifs,
@@ -2147,6 +2155,8 @@ func (r *UserRepository) updateSinglePreference(prefs *storage.UserPreferences, 
 		return r.setStringPreference(&prefs.DefaultPostingVisibility, value, key)
 	case PrefKeyDefaultMediaSensitive:
 		return r.setBoolPreference(&prefs.DefaultMediaSensitive, value, key)
+	case PrefKeyDirectMessagesFrom:
+		return r.setStringPreference(&prefs.DirectMessagesFrom, value, key)
 	case PrefKeyExpandSpoilers:
 		return r.setBoolPreference(&prefs.ExpandSpoilers, value, key)
 	case PrefKeyExpandMedia:

@@ -36,6 +36,7 @@ func (r *mutationResolver) UpdateUserPreferences(ctx context.Context, input mode
 		Language:                  state.Language,
 		DefaultPostingVisibility:  state.DefaultVisibility,
 		DefaultMediaSensitive:     state.DefaultSensitive,
+		DirectMessagesFrom:        state.DirectMessagesFrom,
 		ExpandSpoilers:            state.ExpandSpoilers,
 		ExpandMedia:               state.ExpandMedia,
 		AutoplayGifs:              state.AutoplayGifs,
@@ -110,6 +111,9 @@ func applyUserPreferencesInput(state *preferenceState, input *model.UpdateUserPr
 	if input.DefaultPostingVisibility != nil {
 		state.DefaultVisibility = fromVisibilityEnum(input.DefaultPostingVisibility, state.DefaultVisibility)
 	}
+	if input.DirectMessagesFrom != nil {
+		state.DirectMessagesFrom = input.DirectMessagesFrom.String()
+	}
 	if input.DefaultMediaSensitive != nil {
 		state.DefaultSensitive = *input.DefaultMediaSensitive
 	}
@@ -170,6 +174,7 @@ func preferenceStateToMap(state *preferenceState) map[string]any {
 		repositories.PrefKeyLanguage:                  state.Language,
 		repositories.PrefKeyDefaultPostingVisibility:  state.DefaultVisibility,
 		repositories.PrefKeyDefaultMediaSensitive:     state.DefaultSensitive,
+		repositories.PrefKeyDirectMessagesFrom:        state.DirectMessagesFrom,
 		repositories.PrefKeyExpandSpoilers:            state.ExpandSpoilers,
 		repositories.PrefKeyExpandMedia:               state.ExpandMedia,
 		repositories.PrefKeyAutoplayGifs:              state.AutoplayGifs,

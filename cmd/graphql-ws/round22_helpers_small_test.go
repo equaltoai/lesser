@@ -39,7 +39,7 @@ func TestConfigureGraphQLExecutor_ExercisesConfigBranches(t *testing.T) {
 		GraphQLParserTokenLimit: 123,
 		GraphQLMaxDepth:         5,
 		GraphQLMaxComplexity:    10,
-		DebugMode:              true,
+		DebugMode:               true,
 	}
 
 	require.NotPanics(t, func() {

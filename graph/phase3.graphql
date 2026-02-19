@@ -411,6 +411,7 @@ input ReblogFilterInput {
 input UpdateUserPreferencesInput {
   language: String
   defaultPostingVisibility: Visibility
+  directMessagesFrom: DirectMessagesFrom
   defaultMediaSensitive: Boolean
   expandSpoilers: Boolean
   expandMedia: ExpandMediaPreference
@@ -713,6 +714,12 @@ type PrivacyPreferences {
   defaultVisibility: Visibility!
   indexable: Boolean!
   showOnlineStatus: Boolean!
+  directMessagesFrom: DirectMessagesFrom!
+}
+
+enum DirectMessagesFrom {
+  FOLLOWING_ONLY
+  ANYONE
 }
 
 type ReblogFilter {

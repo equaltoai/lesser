@@ -568,7 +568,7 @@ func TestService_shouldIncludeStatus(t *testing.T) {
 
 	status = &models.Status{StatusID: "2", Visibility: models.VisibilityDirect, AuthorID: "author"}
 	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer"}, false))
-	assert.True(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer"}, true))
+	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer"}, true))
 
 	status = &models.Status{StatusID: "3", Visibility: models.VisibilityPublic, MediaCount: 0}
 	assert.False(t, service.shouldIncludeStatus(context.Background(), status, &ListNotesQuery{ViewerID: "viewer", OnlyMedia: true}, true))

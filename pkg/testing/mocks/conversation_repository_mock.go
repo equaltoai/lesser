@@ -61,6 +61,15 @@ func (m *MockConversationRepository) GetUserConversations(ctx context.Context, u
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
 }
 
+// GetUserConversationsByRequestState mocks the GetUserConversationsByRequestState method
+func (m *MockConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	args := m.Called(ctx, userID, requestState, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
+}
+
 // GetConversationByParticipants mocks the GetConversationByParticipants method
 func (m *MockConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	args := m.Called(ctx, participants)
@@ -170,6 +179,21 @@ func (m *MockConversationRepository) GetConversationParticipants(ctx context.Con
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]string), args.Error(1)
+}
+
+// GetConversationParticipantRecord mocks the GetConversationParticipantRecord method
+func (m *MockConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
+	args := m.Called(ctx, conversationID, participantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.ConversationParticipantRecord), args.Error(1)
+}
+
+// UpdateConversationParticipantRecord mocks the UpdateConversationParticipantRecord method
+func (m *MockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
+	args := m.Called(ctx, record)
+	return args.Error(0)
 }
 
 // LeaveConversation mocks the LeaveConversation method

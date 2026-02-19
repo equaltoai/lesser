@@ -7,6 +7,16 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
+// DmRequestState represents the per-user request lifecycle state for a DM thread.
+// It is stored on ConversationParticipantRecord (not on the shared Conversation).
+type DmRequestState string
+
+const (
+	DmRequestStatePending  DmRequestState = "PENDING"
+	DmRequestStateAccepted DmRequestState = "ACCEPTED"
+	DmRequestStateDeclined DmRequestState = "DECLINED"
+)
+
 // Conversation represents a direct message conversation between users
 type Conversation struct {
 	_ struct{} `theorydb:"naming:camelCase"`
@@ -102,6 +112,15 @@ type ConversationParticipantRecord struct {
 	// GSI1 for reverse lookup (find participants by conversation)
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // CONVERSATION#conversationID
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // PARTICIPANT#username
+
+	// Per-participant DM metadata (folder/request lifecycle, deletion, unread).
+	RequestState DmRequestState `theorydb:"attr:requestState" json:"request_state,omitempty"`
+	RequestedAt  *time.Time     `theorydb:"attr:requestedAt" json:"requested_at,omitempty"`
+	AcceptedAt   *time.Time     `theorydb:"attr:acceptedAt" json:"accepted_at,omitempty"`
+	DeclinedAt   *time.Time     `theorydb:"attr:declinedAt" json:"declined_at,omitempty"`
+	DeletedAt    *time.Time     `theorydb:"attr:deletedAt" json:"deleted_at,omitempty"`
+	Unread       bool           `theorydb:"attr:unread" json:"unread"`
+	LastReadAt   *time.Time     `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
 
 	// Embed the full conversation data
 	*Conversation `theorydb:"attr:conversation" json:",inline"`

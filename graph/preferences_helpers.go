@@ -18,6 +18,7 @@ type preferenceState struct {
 	DefaultVisibility         string
 	DefaultSensitive          bool
 	DefaultLanguage           string
+	DirectMessagesFrom        string
 	ExpandSpoilers            bool
 	ExpandMedia               string
 	AutoplayGifs              bool
@@ -39,6 +40,7 @@ func (r *Resolver) loadPreferenceState(ctx context.Context, username string) *pr
 		DefaultVisibility:         "public",
 		DefaultSensitive:          false,
 		DefaultLanguage:           "en",
+		DirectMessagesFrom:        "FOLLOWING_ONLY",
 		ExpandSpoilers:            false,
 		ExpandMedia:               "default",
 		AutoplayGifs:              false,
@@ -65,6 +67,7 @@ func (r *Resolver) loadPreferenceState(ctx context.Context, username string) *pr
 			state.Language = getStringPref(prefs, repositories.PrefKeyLanguage, state.Language)
 			state.DefaultVisibility = getStringPref(prefs, repositories.PrefKeyDefaultPostingVisibility, state.DefaultVisibility)
 			state.DefaultSensitive = getBoolPref(prefs, repositories.PrefKeyDefaultMediaSensitive, state.DefaultSensitive)
+			state.DirectMessagesFrom = getStringPref(prefs, repositories.PrefKeyDirectMessagesFrom, state.DirectMessagesFrom)
 			state.DefaultLanguage = state.Language
 			state.ExpandSpoilers = getBoolPref(prefs, repositories.PrefKeyExpandSpoilers, state.ExpandSpoilers)
 			state.ExpandMedia = getStringPref(prefs, repositories.PrefKeyExpandMedia, state.ExpandMedia)
@@ -114,6 +117,7 @@ func (r *Resolver) loadPreferenceState(ctx context.Context, username string) *pr
 			state.StreamingAutoQuality = stored.StreamingAutoQuality
 			state.StreamingPreloadNext = stored.StreamingPreloadNext
 			state.StreamingDataSaver = stored.StreamingDataSaver
+			state.DirectMessagesFrom = stored.DirectMessagesFrom
 		} else if err != nil {
 			r.Logger.Warn("failed to load user repository preferences", zap.String("username", username), zap.Error(err))
 		}
@@ -173,6 +177,14 @@ func (r *Resolver) convertPreferenceStateToModel(state *preferenceState, usernam
 			DefaultVisibility: toVisibilityEnum(state.DefaultVisibility),
 			Indexable:         true,
 			ShowOnlineStatus:  true,
+			DirectMessagesFrom: func() model.DirectMessagesFrom {
+				switch strings.ToUpper(strings.TrimSpace(state.DirectMessagesFrom)) {
+				case "ANYONE":
+					return model.DirectMessagesFromAnyone
+				default:
+					return model.DirectMessagesFromFollowingOnly
+				}
+			}(),
 		},
 		ReblogFilters: reblogFilters,
 	}

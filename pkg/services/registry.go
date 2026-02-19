@@ -1326,6 +1326,9 @@ func (r *Registry) Conversations() *conversations.Service {
 
 		// Check if required repositories are available
 		if conversationRepo != nil && noteRepo != nil && accountRepo != nil {
+			relationshipRepo := r.storage.Relationship()
+			userRepo := r.storage.User()
+
 			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
@@ -1343,6 +1346,8 @@ func (r *Registry) Conversations() *conversations.Service {
 				conversationRepo,
 				noteRepo,
 				accountRepo,
+				relationshipRepo,
+				userRepo,
 				r.publisherOrNoop(),
 				federationService,
 				r.logger,

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -730,28 +731,43 @@ func (s *Service) checkViewPermissions(ctx context.Context, status *models.Statu
 
 	// Handle direct messages
 	if status.Visibility == models.VisibilityDirect {
-		// Check if viewer is explicitly mentioned
+		viewerUsername, viewerActorID := s.resolveViewerActorID(viewerID)
+		if viewerUsername == "" || viewerActorID == "" {
+			return false, nil
+		}
+
+		// Check if viewer is explicitly mentioned (username-level).
 		for _, mention := range status.Mentions {
-			if mention == viewerID {
+			if mention == viewerUsername {
 				return true, nil
 			}
 		}
 
-		// Check explicit recipients (simplified - in full implementation would check actor IDs)
-		viewerUsername := viewerID
+		// Check explicit recipients (actor ID URL-level).
 		for _, recipient := range status.ToRecipients {
-			if strings.Contains(recipient, viewerUsername) {
+			if recipient == viewerActorID {
 				return true, nil
 			}
 		}
 
 		for _, recipient := range status.CcRecipients {
-			if strings.Contains(recipient, viewerUsername) {
+			if recipient == viewerActorID {
 				return true, nil
 			}
 		}
 
-		// Not a recipient of direct message
+		for _, recipient := range status.BtoRecipients {
+			if recipient == viewerActorID {
+				return true, nil
+			}
+		}
+
+		for _, recipient := range status.BccRecipients {
+			if recipient == viewerActorID {
+				return true, nil
+			}
+		}
+
 		return false, nil
 	}
 
@@ -760,6 +776,35 @@ func (s *Service) checkViewPermissions(ctx context.Context, status *models.Statu
 		zap.String("status_id", status.StatusID),
 		zap.String("visibility", status.Visibility))
 	return false, nil
+}
+
+func (s *Service) resolveViewerActorID(viewerID string) (viewerUsername string, viewerActorID string) {
+	cleaned := strings.TrimSpace(viewerID)
+	if cleaned == "" {
+		return "", ""
+	}
+
+	if strings.Contains(cleaned, "://") {
+		actorID := strings.TrimRight(cleaned, "/")
+		username := ""
+		if parsed, err := url.Parse(actorID); err == nil {
+			path := strings.Trim(parsed.Path, "/")
+			if path != "" {
+				segments := strings.Split(path, "/")
+				username = segments[len(segments)-1]
+			}
+		}
+		if username == "" {
+			username = cleaned
+		}
+		return username, actorID
+	}
+
+	username := cleaned
+	if strings.TrimSpace(s.domainName) == "" {
+		return username, username
+	}
+	return username, fmt.Sprintf("https://%s/users/%s", s.domainName, username)
 }
 
 // ListNotes retrieves notes based on various timeline types and filters
@@ -970,6 +1015,11 @@ func (s *Service) shouldIncludeStatus(ctx context.Context, status *models.Status
 	if status.Deleted {
 		s.logger.Debug("skipping deleted status",
 			zap.String("status_id", status.StatusID))
+		return false
+	}
+
+	// Direct messages must never appear outside DM-specific timelines.
+	if status.Visibility == models.VisibilityDirect && query.TimelineType != "direct" && query.TimelineType != "conversations" {
 		return false
 	}
 

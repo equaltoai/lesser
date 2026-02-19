@@ -524,6 +524,37 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 		return nil
 	}
 
+	viewerMetadata := &model.ConversationViewerMetadata{
+		RequestState: model.DmRequestStateAccepted,
+	}
+
+	viewerUsername := getUsernameFromContext(ctx)
+	if viewerUsername != "" {
+		storage := r.Registry.GetStorage()
+		if storage != nil && storage.Conversation() != nil {
+			if record, err := storage.Conversation().GetConversationParticipantRecord(ctx, conv.ID, viewerUsername); err == nil && record != nil {
+				requestState := model.DmRequestStateAccepted
+				if record.RequestState != "" {
+					requestState = model.DmRequestState(record.RequestState)
+				}
+				viewerMetadata.RequestState = requestState
+
+				if record.RequestedAt != nil {
+					t := model.Time(*record.RequestedAt)
+					viewerMetadata.RequestedAt = &t
+				}
+				if record.AcceptedAt != nil {
+					t := model.Time(*record.AcceptedAt)
+					viewerMetadata.AcceptedAt = &t
+				}
+				if record.DeclinedAt != nil {
+					t := model.Time(*record.DeclinedAt)
+					viewerMetadata.DeclinedAt = &t
+				}
+			}
+		}
+	}
+
 	// Convert participant IDs to actors
 	accounts := make([]*activitypub.Actor, 0, len(conv.Participants))
 	for _, participantID := range conv.Participants {
@@ -535,7 +566,6 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 
 	var lastStatus *model.Object
 	if conv.LastStatusID != "" {
-		viewerUsername := getUsernameFromContext(ctx)
 		result, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
 			StatusID: conv.LastStatusID,
 			ViewerID: viewerUsername,
@@ -546,12 +576,13 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 	}
 
 	return &model.Conversation{
-		ID:         conv.ID,
-		LastStatus: lastStatus,
-		Unread:     conv.Unread,
-		Accounts:   accounts,
-		CreatedAt:  model.Time(conv.CreatedAt),
-		UpdatedAt:  model.Time(conv.UpdatedAt),
+		ID:             conv.ID,
+		LastStatus:     lastStatus,
+		Unread:         conv.Unread,
+		Accounts:       accounts,
+		ViewerMetadata: viewerMetadata,
+		CreatedAt:      model.Time(conv.CreatedAt),
+		UpdatedAt:      model.Time(conv.UpdatedAt),
 	}
 }
 

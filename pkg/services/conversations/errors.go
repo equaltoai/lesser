@@ -44,6 +44,12 @@ var (
 	// ErrRecipientsRequired is returned when recipients list is required but empty
 	ErrRecipientsRequired = apperrors.NewValidationError("recipients", "required")
 
+	// ErrDirectMessageRequiresSingleRecipient is returned when the DM command contains multiple recipients (group chats not supported in v1).
+	ErrDirectMessageRequiresSingleRecipient = apperrors.NewValidationError("recipients", "must contain exactly 1 recipient")
+
+	// ErrConversationMustBeOneToOne is returned when a conversation has an unexpected participant count.
+	ErrConversationMustBeOneToOne = apperrors.NewValidationError("conversation", "must be 1:1")
+
 	// ErrContentTooLongConversation is returned when conversation content is too long
 	ErrContentTooLongConversation = apperrors.NewValidationError("content", "too long (max 5000 characters)")
 

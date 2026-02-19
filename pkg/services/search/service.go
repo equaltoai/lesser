@@ -390,6 +390,11 @@ func (s *Service) searchStatuses(ctx context.Context, query *Query) ([]StatusRes
 
 	var statusResults []StatusResult
 	for _, searchResult := range searchResults {
+		// Direct messages must never surface in search.
+		if isDirectSearchResult(searchResult) {
+			continue
+		}
+
 		// Get real engagement metrics from storage
 		var reblogsCount, likesCount, repliesCount int
 
@@ -551,6 +556,20 @@ func getStatusIDFromResult(result interface{}) string {
 		// For now, return empty string if we can't extract the ID
 	}
 	return ""
+}
+
+func isDirectSearchResult(result interface{}) bool {
+	switch r := result.(type) {
+	case *storage.StatusSearchResult:
+		return strings.EqualFold(r.Visibility, "direct")
+	case storage.StatusSearchResult:
+		return strings.EqualFold(r.Visibility, "direct")
+	case map[string]interface{}:
+		if vis, ok := r["visibility"].(string); ok {
+			return strings.EqualFold(vis, "direct")
+		}
+	}
+	return false
 }
 
 // Event emission methods

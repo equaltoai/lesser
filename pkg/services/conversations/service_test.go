@@ -55,6 +55,14 @@ func (m *mockConversationRepository) GetUserConversations(ctx context.Context, u
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
 }
 
+func (m *mockConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	args := m.Called(ctx, userID, requestState, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
+}
+
 func (m *mockConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	args := m.Called(ctx, participants)
 	if args.Get(0) == nil {
@@ -79,6 +87,19 @@ func (m *mockConversationRepository) GetConversationParticipants(ctx context.Con
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *mockConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
+	args := m.Called(ctx, conversationID, participantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.ConversationParticipantRecord), args.Error(1)
+}
+
+func (m *mockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
+	args := m.Called(ctx, record)
+	return args.Error(0)
 }
 
 func (m *mockConversationRepository) MarkConversationRead(ctx context.Context, conversationID, userID string) error {
@@ -644,6 +665,8 @@ func createTestService() (*Service, *mockConversationRepository, *mockNoteReposi
 		conversationRepo,
 		noteRepo,
 		accountRepo,
+		nil,
+		nil,
 		publisher,
 		federation,
 		logger,
@@ -719,6 +742,13 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
 
+	// DM request lifecycle + unread tracking
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
+	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "sender123").Return(nil)
+	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "recipient456").Return(nil)
+
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
 
@@ -782,6 +812,13 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
 
+	// DM request lifecycle + unread tracking
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "bob@remote.com").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
+	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "sender123").Return(nil)
+	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "bob@remote.com").Return(nil)
+
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
 
@@ -826,6 +863,13 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
+
+	// DM request lifecycle + unread tracking
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil)
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
+	conversationRepo.On("MarkConversationRead", ctx, "conv123", "sender123").Return(nil)
+	conversationRepo.On("MarkConversationUnread", ctx, "conv123", "recipient456").Return(nil)
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
@@ -1022,10 +1066,12 @@ func TestService_GetConversation_Success(t *testing.T) {
 
 	// Create messages with proper recipients so they pass visibility checks
 	msg1 := createTestMessage("msg1", "user123", "conv123", "Hello")
-	msg1.ToRecipients = []string{"user456"} // Make user456 a recipient
+	msg1.AuthorUsername = "user123"
+	msg1.ToRecipients = []string{"https://example.com/users/user456"} // Make user456 a recipient
 
 	msg2 := createTestMessage("msg2", "user456", "conv123", "Hi there!")
-	msg2.ToRecipients = []string{"user123"} // Make user123 a recipient
+	msg2.AuthorUsername = "user456"
+	msg2.ToRecipients = []string{"https://example.com/users/user123"} // Make user123 a recipient
 
 	messages := []*models.Status{msg1, msg2}
 
@@ -1045,6 +1091,7 @@ func TestService_GetConversation_Success(t *testing.T) {
 
 	// Mock expectations
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "user123").Return(&models.ConversationParticipantRecord{Unread: false}, nil)
 	noteRepo.On("GetConversationThread", ctx, "conv123", query.Pagination).Return(paginatedMessages, nil)
 
 	// Execute
@@ -1178,11 +1225,11 @@ func TestService_NewService(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Test with all dependencies
-	service := NewService(conversationRepo, noteRepo, accountRepo, publisher, federation, logger, "example.com")
+	service := NewService(conversationRepo, noteRepo, accountRepo, nil, nil, publisher, federation, logger, "example.com")
 	assert.NotNil(t, service)
 	assert.Equal(t, "example.com", service.domainName)
 
 	// Test with nil logger (should default to nop logger)
-	service2 := NewService(conversationRepo, noteRepo, accountRepo, publisher, federation, nil, "example.com")
+	service2 := NewService(conversationRepo, noteRepo, accountRepo, nil, nil, publisher, federation, nil, "example.com")
 	assert.NotNil(t, service2)
 }
