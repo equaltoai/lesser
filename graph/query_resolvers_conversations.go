@@ -140,9 +140,14 @@ func (r *queryResolver) ConversationMessages(ctx context.Context, conversationID
 		if obj == nil {
 			continue
 		}
+
+		cursor := strings.TrimSpace(status.GSI3SK)
+		if cursor == "" {
+			cursor = status.StatusID
+		}
 		edges = append(edges, &model.ObjectEdge{
 			Node:   obj,
-			Cursor: model.Cursor(status.StatusID),
+			Cursor: model.Cursor(cursor),
 		})
 	}
 

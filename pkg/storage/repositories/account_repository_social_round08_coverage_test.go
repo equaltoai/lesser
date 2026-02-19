@@ -54,6 +54,9 @@ func (s round08StatusRepo) GetUserTimeline(context.Context, string, interfaces.P
 func (s round08StatusRepo) GetConversationThread(context.Context, string, interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	panic("unexpected call")
 }
+func (s round08StatusRepo) GetConversationThreadReverse(context.Context, string, interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	panic("unexpected call")
+}
 func (s round08StatusRepo) GetReplies(context.Context, string, interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	panic("unexpected call")
 }

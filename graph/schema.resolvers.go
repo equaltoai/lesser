@@ -566,12 +566,35 @@ func (r *Resolver) convertConversationToGraphQL(ctx context.Context, conv *model
 
 	var lastStatus *model.Object
 	if conv.LastStatusID != "" {
-		result, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
-			StatusID: conv.LastStatusID,
-			ViewerID: viewerUsername,
-		})
-		if err == nil && result != nil {
-			lastStatus = r.convertStatusToObject(ctx, result)
+		tombstoned := false
+		if viewerUsername != "" {
+			storage := r.Registry.GetStorage()
+			if storage != nil {
+				repo := repositories.NewDirectMessageTombstoneRepository(storage.GetDB(), storage.GetTableName(), r.Logger)
+				if repo != nil {
+					if set, err := repo.TombstonesByStatusID(ctx, viewerUsername, []string{conv.LastStatusID}); err == nil && set[conv.LastStatusID] {
+						tombstoned = true
+					}
+				}
+			}
+		}
+
+		if !tombstoned {
+			result, err := r.Registry.Notes().GetNoteWithViewer(ctx, &notes.GetNoteQuery{
+				StatusID: conv.LastStatusID,
+				ViewerID: viewerUsername,
+			})
+			if err == nil && result != nil {
+				lastStatus = r.convertStatusToObject(ctx, result)
+			}
+		}
+
+		if lastStatus == nil && viewerUsername != "" {
+			if svc := r.Registry.Conversations(); svc != nil {
+				if status, err := svc.GetConversationLastStatus(ctx, conv.ID, viewerUsername); err == nil && status != nil {
+					lastStatus = r.convertStatusToObject(ctx, status)
+				}
+			}
 		}
 	}
 

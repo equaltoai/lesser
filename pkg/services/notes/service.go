@@ -591,17 +591,24 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		return nil // Idempotent operation
 	}
 
-	// Verify permission (author or admin)
-	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
-	if status.AuthorUsername != cmd.DeleterID {
-		// Check if deleter is an admin
-		isAdmin := false
+	// Direct messages (visibility=direct) must not be globally deleted by the author.
+	// DM v1 supports delete-for-me only (see conversations.DeleteMessage).
+	isAdmin := false
+	if status.Visibility == models.VisibilityDirect || status.AuthorUsername != cmd.DeleterID {
 		if s.userRepo != nil {
 			if deleter, err := s.userRepo.GetUser(ctx, cmd.DeleterID); err == nil && deleter != nil {
 				isAdmin = deleter.Role == "admin"
 			}
 		}
+	}
+	if status.Visibility == models.VisibilityDirect && !isAdmin {
+		return common.ErrForbidden(errors.New("direct messages cannot be deleted via deleteObject; use deleteMessage"))
+	}
 
+	// Verify permission (author or admin)
+	// Compare usernames, not full IDs (AuthorUsername is just the username, AuthorID is the full URL)
+	if status.AuthorUsername != cmd.DeleterID {
+		// Check if deleter is an admin
 		if !isAdmin {
 			s.logger.Warn("user cannot delete post owned by another user without admin privileges",
 				zap.String("deleter_id", cmd.DeleterID),

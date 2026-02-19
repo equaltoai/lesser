@@ -301,6 +301,28 @@ func (r *StatusRepository) GetConversationThread(_ context.Context, conversation
 	return r.paginateStatuses(thread, opts)
 }
 
+func (r *StatusRepository) GetConversationThreadReverse(_ context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	thread, exists := r.conversations[conversationID]
+	if !exists {
+		return &interfaces.PaginatedResult[*models.Status]{
+			Items:      []*models.Status{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}, nil
+	}
+
+	reversed := make([]string, 0, len(thread))
+	for i := len(thread) - 1; i >= 0; i-- {
+		reversed = append(reversed, thread[i])
+	}
+
+	return r.paginateStatuses(reversed, opts)
+}
+
 // GetReplies retrieves replies to a status
 func (r *StatusRepository) GetReplies(_ context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	r.mu.RLock()

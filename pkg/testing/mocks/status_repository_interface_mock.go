@@ -113,6 +113,15 @@ func (m *MockStatusRepositoryInterface) GetConversationThread(ctx context.Contex
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
 }
 
+// GetConversationThreadReverse mocks the GetConversationThreadReverse method
+func (m *MockStatusRepositoryInterface) GetConversationThreadReverse(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	args := m.Called(ctx, conversationID, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
+}
+
 // GetReplies mocks the GetReplies method
 func (m *MockStatusRepositoryInterface) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	args := m.Called(ctx, parentStatusID, opts)

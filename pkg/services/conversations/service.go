@@ -40,6 +40,7 @@ const (
 type Service struct {
 	conversationRepo interfaces.ConversationRepository
 	noteRepo         interfaces.StatusRepository
+	dmTombstoneRepo  directMessageTombstoneRepository
 	accountRepo      interfaces.AccountRepository
 	relationshipRepo interfaces.ConcreteRelationshipRepository
 	userRepo         interfaces.UserRepository
@@ -54,10 +55,16 @@ type FederationService interface {
 	QueueActivity(ctx context.Context, activity *activitypub.Activity) error
 }
 
+type directMessageTombstoneRepository interface {
+	CreateTombstone(ctx context.Context, viewerUsername, statusID string) error
+	TombstonesByStatusID(ctx context.Context, viewerUsername string, statusIDs []string) (map[string]bool, error)
+}
+
 // NewService creates a new Conversations Service with the required dependencies
 func NewService(
 	conversationRepo interfaces.ConversationRepository,
 	noteRepo interfaces.StatusRepository,
+	dmTombstoneRepo directMessageTombstoneRepository,
 	accountRepo interfaces.AccountRepository,
 	relationshipRepo interfaces.ConcreteRelationshipRepository,
 	userRepo interfaces.UserRepository,
@@ -73,6 +80,7 @@ func NewService(
 	return &Service{
 		conversationRepo: conversationRepo,
 		noteRepo:         noteRepo,
+		dmTombstoneRepo:  dmTombstoneRepo,
 		accountRepo:      accountRepo,
 		relationshipRepo: relationshipRepo,
 		userRepo:         userRepo,
@@ -106,6 +114,12 @@ type MarkConversationReadCommand struct {
 type DeleteConversationCommand struct {
 	ConversationID string `json:"conversation_id" validate:"required"`
 	UserID         string `json:"user_id" validate:"required"`
+}
+
+// DeleteMessageCommand contains data needed to delete a direct message for the viewer.
+type DeleteMessageCommand struct {
+	MessageID string `json:"message_id" validate:"required"`
+	UserID    string `json:"user_id" validate:"required"`
 }
 
 // CreateConversationCommand contains data needed to create a 1:1 conversation.
@@ -399,6 +413,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		if record == nil {
 			return
 		}
+		record.DeletedAt = nil
 		// Sending (or replying) always places the sender-side view in Inbox.
 		record.RequestState = models.DmRequestStateAccepted
 		if record.AcceptedAt == nil {
@@ -417,6 +432,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		if record == nil {
 			return
 		}
+		record.DeletedAt = nil
 		switch record.RequestState {
 		case models.DmRequestStateAccepted:
 			// No-op: already accepted.
@@ -834,6 +850,10 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 
 	// Populate per-viewer unread state if available.
 	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, query.ConversationID, query.ViewerID); err == nil && record != nil {
+		if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
+			return nil, ErrConversationNotFound
+		}
+
 		conversation.Unread = record.Unread
 	}
 
@@ -859,6 +879,37 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 			continue
 		}
 		filteredMessages = append(filteredMessages, message.SanitizeForActor(viewerActorID))
+	}
+
+	if s.dmTombstoneRepo != nil && viewerUsername != "" && len(filteredMessages) > 0 {
+		ids := make([]string, 0, len(filteredMessages))
+		for _, message := range filteredMessages {
+			if message == nil {
+				continue
+			}
+			if id := strings.TrimSpace(message.StatusID); id != "" {
+				ids = append(ids, id)
+			}
+		}
+
+		if len(ids) > 0 {
+			tombstoned, err := s.dmTombstoneRepo.TombstonesByStatusID(ctx, viewerUsername, ids)
+			if err != nil {
+				return nil, errors.Join(ErrGetConversationMessages, err)
+			}
+
+			kept := filteredMessages[:0]
+			for _, message := range filteredMessages {
+				if message == nil {
+					continue
+				}
+				if tombstoned[message.StatusID] {
+					continue
+				}
+				kept = append(kept, message)
+			}
+			filteredMessages = kept
+		}
 	}
 
 	// Update the messages result with filtered items
@@ -1136,57 +1187,220 @@ func (s *Service) updateParticipantRecord(ctx context.Context, conversationID, p
 	return s.conversationRepo.UpdateConversationParticipantRecord(ctx, record)
 }
 
-// DeleteConversation removes a conversation or removes a user from it
+// DeleteConversation implements delete-for-me semantics for a DM conversation.
+// It marks the viewer's participant record DeletedAt without deleting shared conversation data.
 func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversationCommand) (*ConversationResult, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
+	conversationID := strings.TrimSpace(cmd.ConversationID)
+	userID := strings.TrimSpace(cmd.UserID)
+	if conversationID == "" || userID == "" {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
 	s.logger.Info("deleting conversation",
-		zap.String("conversation_id", cmd.ConversationID),
-		zap.String("user_id", cmd.UserID))
+		zap.String("conversation_id", conversationID),
+		zap.String("user_id", userID))
 
 	// Get conversation to verify it exists and user is a participant
-	conversation, err := s.conversationRepo.GetConversation(ctx, cmd.ConversationID)
+	conversation, err := s.conversationRepo.GetConversation(ctx, conversationID)
 	if err != nil {
 		if isNotFoundError(err) {
-			s.logger.Warn("conversation not found", zap.String("conversation_id", cmd.ConversationID))
+			s.logger.Warn("conversation not found", zap.String("conversation_id", conversationID))
 			return nil, ErrConversationNotFound
 		}
-		s.logger.Error("failed to get conversation", zap.String("conversation_id", cmd.ConversationID), zap.Error(err))
+		s.logger.Error("failed to get conversation", zap.String("conversation_id", conversationID), zap.Error(err))
 		return nil, errors.Join(ErrGetConversation, err)
 	}
 
+	participantIDForRecord := userID
+
 	// Check if user is a participant
-	if !s.isParticipant(cmd.UserID, conversation.Participants) {
+	if !s.isParticipant(userID, conversation.Participants) {
 		// Get user's account to check actor ID
-		account, err := s.accountRepo.GetAccount(ctx, cmd.UserID)
+		account, err := s.accountRepo.GetAccount(ctx, userID)
 		if err != nil {
-			s.logger.Error("failed to get account", zap.String("user_id", cmd.UserID), zap.Error(err))
+			s.logger.Error("failed to get account", zap.String("user_id", userID), zap.Error(err))
 			return nil, errors.Join(ErrGetAccount, err)
 		}
 
 		// Check with actor ID as well
 		if account.Actor == nil || !s.isParticipant(account.Actor.ID, conversation.Participants) {
-			s.logger.Warn("user is not a conversation participant (checked actor ID)", zap.String("user_id", cmd.UserID), zap.String("conversation_id", cmd.ConversationID))
+			s.logger.Warn("user is not a conversation participant (checked actor ID)", zap.String("user_id", userID), zap.String("conversation_id", conversationID))
 			return nil, ErrNotConversationParticipant
 		}
+
+		participantIDForRecord = account.Actor.ID
 	}
 
-	// Delete the conversation (or remove user from it)
-	// The exact behavior depends on the storage implementation
-	// Some systems remove the user from participants, others delete the entire conversation
-	if err := s.conversationRepo.DeleteConversation(ctx, cmd.ConversationID); err != nil {
-		s.logger.Error("failed to delete conversation", zap.String("conversation_id", cmd.ConversationID), zap.String("user_id", cmd.UserID), zap.Error(err))
+	now := time.Now().UTC()
+	if err := s.updateParticipantRecord(ctx, conversationID, participantIDForRecord, func(record *models.ConversationParticipantRecord) {
+		if record == nil {
+			return
+		}
+		t := now
+		record.DeletedAt = &t
+	}); err != nil {
+		if errors.Is(err, storage.ErrNotFound) || isNotFoundError(err) {
+			// If the participant record doesn't exist, the conversation is already effectively hidden
+			// for this user. Treat as an idempotent delete-for-me.
+			events := s.emitConversationDeletedEvents(ctx, conversation, userID)
+			return &ConversationResult{Conversation: conversation, Events: events}, nil
+		}
+
+		s.logger.Error("failed to mark conversation deleted for viewer",
+			zap.String("conversation_id", conversationID),
+			zap.String("user_id", userID),
+			zap.Error(err))
 		return nil, errors.Join(ErrDeleteConversation, err)
 	}
 
-	// Emit conversation deleted event
-	events := s.emitConversationDeletedEvents(ctx, conversation, cmd.UserID)
+	events := s.emitConversationDeletedEvents(ctx, conversation, userID)
 
 	return &ConversationResult{
-		Conversation: nil, // Conversation is deleted
+		Conversation: conversation,
 		Events:       events,
 	}, nil
 }
 
-// emitConversationDeletedEvents creates events for conversation deletion
+// DeleteMessage implements delete-for-me semantics for a direct message (Status).
+// It creates a per-viewer tombstone keyed by (viewerUsername, statusID).
+func (s *Service) DeleteMessage(ctx context.Context, cmd *DeleteMessageCommand) (bool, error) {
+	if cmd == nil {
+		return false, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
+	viewerUsername := strings.TrimSpace(cmd.UserID)
+	messageID := strings.TrimSpace(cmd.MessageID)
+	if viewerUsername == "" || messageID == "" {
+		return false, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
+	if s.dmTombstoneRepo == nil {
+		return false, errors.Join(ErrDeleteMessage, errors.New("direct message tombstone repository is not configured"))
+	}
+
+	status, err := s.noteRepo.GetStatus(ctx, messageID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || isNotFoundError(err) {
+			// Idempotent delete semantics; do not reveal whether the message exists.
+			return true, nil
+		}
+		return false, err
+	}
+	if status == nil {
+		return true, nil
+	}
+	if status.Visibility != models.VisibilityDirect {
+		return false, errors.Join(ErrConversationValidationFailed, errors.New("only direct messages can be deleted via deleteMessage"))
+	}
+	if strings.TrimSpace(status.ConversationID) == "" {
+		return false, errors.Join(ErrConversationValidationFailed, errors.New("direct message is missing conversation id"))
+	}
+
+	conversation, err := s.conversationRepo.GetConversation(ctx, status.ConversationID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) || isNotFoundError(err) {
+			return true, nil
+		}
+		return false, errors.Join(ErrGetConversation, err)
+	}
+	if conversation == nil {
+		return true, nil
+	}
+
+	isParticipant := s.isParticipant(viewerUsername, conversation.Participants)
+	if !isParticipant {
+		account, err := s.accountRepo.GetAccount(ctx, viewerUsername)
+		if err != nil {
+			return false, errors.Join(ErrGetAccount, err)
+		}
+		if account.Actor == nil || !s.isParticipant(account.Actor.ID, conversation.Participants) {
+			return false, ErrNotConversationParticipant
+		}
+	}
+
+	if err := s.dmTombstoneRepo.CreateTombstone(ctx, viewerUsername, status.StatusID); err != nil {
+		return false, errors.Join(ErrDeleteMessage, err)
+	}
+
+	return true, nil
+}
+
+// GetConversationLastStatus returns the latest direct message in the conversation that is visible
+// to the viewer and is not deleted-for-viewer.
+func (s *Service) GetConversationLastStatus(ctx context.Context, conversationID, viewerID string) (*models.Status, error) {
+	viewerUsername := strings.TrimSpace(viewerID)
+	conversationID = strings.TrimSpace(conversationID)
+	if viewerUsername == "" || conversationID == "" {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
+	viewerActorID := s.actorURLForUsername(viewerUsername)
+	if viewerActorID == "" {
+		return nil, nil
+	}
+
+	cursor := ""
+	const maxIterations = 10
+	for iter := 0; iter < maxIterations; iter++ {
+		page, err := s.noteRepo.GetConversationThreadReverse(ctx, conversationID, interfaces.PaginationOptions{
+			Limit:  50,
+			Cursor: cursor,
+		})
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) || isNotFoundError(err) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		if page == nil || len(page.Items) == 0 {
+			return nil, nil
+		}
+
+		candidates := make([]*models.Status, 0, len(page.Items))
+		ids := make([]string, 0, len(page.Items))
+		for _, message := range page.Items {
+			if message == nil {
+				continue
+			}
+			if message.Visibility != models.VisibilityDirect {
+				continue
+			}
+			if message.AuthorUsername != viewerUsername && !message.IsRecipient(viewerActorID) {
+				continue
+			}
+			candidates = append(candidates, message)
+			ids = append(ids, message.StatusID)
+		}
+
+		tombstoned := map[string]bool{}
+		if s.dmTombstoneRepo != nil && len(ids) > 0 {
+			tombstoned, err = s.dmTombstoneRepo.TombstonesByStatusID(ctx, viewerUsername, ids)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		for _, message := range candidates {
+			if tombstoned[message.StatusID] {
+				continue
+			}
+			return message.SanitizeForActor(viewerActorID), nil
+		}
+
+		if !page.HasMore || strings.TrimSpace(page.NextCursor) == "" {
+			return nil, nil
+		}
+		cursor = page.NextCursor
+	}
+
+	return nil, nil
+}
+
+// emitConversationDeletedEvents creates events for viewer-only conversation deletion.
 func (s *Service) emitConversationDeletedEvents(ctx context.Context, conversation *models.Conversation, userID string) []*streaming.Event {
 	var events []*streaming.Event
 
@@ -1209,16 +1423,6 @@ func (s *Service) emitConversationDeletedEvents(ctx context.Context, conversatio
 			zap.Error(err))
 	}
 	events = append(events, &userEvent)
-
-	// Emit to conversation stream (for other participants to know)
-	conversationEvent := *event
-	conversationEvent.Stream = fmt.Sprintf("conversation:%s", conversation.ID)
-	if err := s.publisher.PublishToConversation(ctx, conversation.ID, &conversationEvent); err != nil {
-		s.logger.Warn("failed to publish conversation deleted event to conversation stream",
-			zap.String("conversation_id", conversation.ID),
-			zap.Error(err))
-	}
-	events = append(events, &conversationEvent)
 
 	return events
 }

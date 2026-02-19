@@ -268,6 +268,9 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 
 	conversations := make([]*models.Conversation, 0, len(records))
 	for _, record := range records {
+		if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
+			continue
+		}
 		if record.Conversation != nil {
 			// Ensure per-user unread status is populated on the returned Conversation model.
 			record.Conversation.Unread = record.Unread

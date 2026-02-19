@@ -61,6 +61,7 @@ type StatusRepository interface {
 	GetHomeTimeline(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
 	GetUserTimeline(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
 	GetConversationThread(ctx context.Context, conversationID string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
+	GetConversationThreadReverse(ctx context.Context, conversationID string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
 	GetReplies(ctx context.Context, parentStatusID string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
 
 	// Search and discovery

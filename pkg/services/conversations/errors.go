@@ -67,4 +67,7 @@ var (
 
 	// ErrDeleteConversation is returned when conversation deletion fails
 	ErrDeleteConversation = apperrors.FailedToDelete("conversation", errors.New("failed to delete conversation"))
+
+	// ErrDeleteMessage is returned when message deletion (delete-for-me tombstone) fails.
+	ErrDeleteMessage = apperrors.FailedToDelete("direct message", errors.New("failed to delete message"))
 )

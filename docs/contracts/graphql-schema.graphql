@@ -1310,7 +1310,8 @@ type Mutation {
   acceptMessageRequest(conversationId: ID!): Conversation!
   declineMessageRequest(conversationId: ID!): Boolean!
   markConversationAsRead(id: ID!): Conversation!
-  deleteConversation(id: ID!): Boolean!
+  deleteConversation(conversationId: ID!): Boolean!
+  deleteMessage(messageId: ID!): Boolean!
   
   # Media operations
   uploadMedia(input: UploadMediaInput!): UploadMediaPayload!

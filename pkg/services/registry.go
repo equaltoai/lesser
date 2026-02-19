@@ -1345,6 +1345,7 @@ func (r *Registry) Conversations() *conversations.Service {
 			r.conversationsService = conversations.NewService(
 				conversationRepo,
 				noteRepo,
+				repositories.NewDirectMessageTombstoneRepository(r.storage.GetDB(), r.storage.GetTableName(), r.logger),
 				accountRepo,
 				relationshipRepo,
 				userRepo,
