@@ -22,8 +22,14 @@ This diff doc enumerates the schema extensions needed to deliver those requireme
 
 ### 1. Inbox + requests queries
 
-- `dmInbox(first: Int = 20, after: Cursor): ConversationConnection!` – filters participant metadata to `ACCEPTED` requests and hides conversations the viewer deleted. Reuse the existing `Conversation` fields plus a new `ConversationConnection` for pagination if needed.
-- `dmRequests(first: Int = 20, after: Cursor): DirectMessageRequestConnection!` – returns pending request metadata (`from`, `conversation`, timestamps) so the client can present them separately from the inbox.
+- Add a folder argument to the existing `conversations` query so clients can request Inbox vs Requests without inventing parallel query shapes:
+  - `enum ConversationFolder { INBOX, REQUESTS }`
+  - `conversations(folder: ConversationFolder = INBOX, first: Int = 20, after: Cursor): [Conversation!]!`
+- Add a dedicated messages query for thread views:
+  - `conversationMessages(conversationId: ID!, first: Int = 50, after: Cursor): ObjectConnection!` (or a dedicated `MessageConnection!`)
+- Optional but useful:
+  - `messageRequestsCount: Int!`
+  - `searchParticipants(query: String!, first: Int = 20, after: Cursor): ActorListPage!` (or a dedicated connection)
 
 ### 2. Per-viewer metadata
 
@@ -33,13 +39,15 @@ This diff doc enumerates the schema extensions needed to deliver those requireme
 
 ### 3. Privacy defaults
 
-- Extend `PrivacyPreferences` with `dmPolicy: DmPolicy!`, where `DmPolicy` is `FOLLOWING_ONLY | ANYONE`.
-- Update `UpdateUserPreferencesInput` to allow setting `dmPolicy`. The default value for new users should be `FOLLOWING_ONLY`, aligning with the DM policy in ADR 0001.
+- Extend `PrivacyPreferences` with `directMessagesFrom: DirectMessagesFrom!`, where `DirectMessagesFrom` is `FOLLOWING_ONLY | ANYONE`.
+- Update `UpdateUserPreferencesInput` to allow setting `directMessagesFrom`. The default value for new users should be `FOLLOWING_ONLY`, aligning with ADR 0001.
 
 ### 4. Mutations for request lifecycle and delete-for-me
 
-- `acceptDirectMessageRequest(requestId: ID!): Conversation!` – flips the recipient’s metadata to `ACCEPTED`, publishes the conversation to the inbox, and triggers delivery for any queued messages.
-- `declineDirectMessageRequest(requestId: ID!): Boolean!` – marks the request `DECLINED`.
+- `createConversation(participantId: ID!): Conversation!` (v1: exactly one participant)
+- `sendMessage(conversationId: ID!, content: String!, mediaIds: [ID!]): Object!` (or a dedicated `DirectMessage!`)
+- `acceptMessageRequest(conversationId: ID!): Conversation!` – flips the recipient’s metadata to `ACCEPTED` and moves the thread to Inbox.
+- `declineMessageRequest(conversationId: ID!): Boolean!` – marks the request `DECLINED` (and/or hides it for the viewer, per ADR 0002 and the chosen decline semantics).
 - `deleteConversationForMe(conversationId: ID!): Boolean!` – sets `viewerMetadata.deletedAt` so the client can hide the conversation without affecting other participants (see ADR 0002).
 
 ## Impact and rollout notes
