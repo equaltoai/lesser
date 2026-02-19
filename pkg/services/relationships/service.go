@@ -952,6 +952,7 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 	// Create block
 	err = repo.BlockUser(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
+		s.auditRelationshipEvent(ctx, "relationship.block", cmd.BlockerID, cmd.BlockedID, false, "block_failed", nil)
 		return nil, err
 	}
 
@@ -968,6 +969,8 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 	s.logger.Info("block processed",
 		zap.String("blocker_id", cmd.BlockerID),
 		zap.String("blocked_id", cmd.BlockedID))
+
+	s.auditRelationshipEvent(ctx, "relationship.block", cmd.BlockerID, cmd.BlockedID, true, "", nil)
 
 	return &RelationshipResult{
 		Relationship: relationship,
@@ -991,7 +994,7 @@ func (s *Service) Unblock(ctx context.Context, cmd *UnblockCommand) (*Relationsh
 		return nil, RepositoryNotAvailable("relationship")
 	}
 
-	return s.removeRelationshipGeneric(ctx, removeRelationshipParams{
+	result, err := s.removeRelationshipGeneric(ctx, removeRelationshipParams{
 		actorID:        cmd.BlockerID,
 		targetID:       cmd.BlockedID,
 		relationType:   "unblock",
@@ -1002,6 +1005,13 @@ func (s *Service) Unblock(ctx context.Context, cmd *UnblockCommand) (*Relationsh
 		emitEventsFn:   s.emitUnblockEvents,
 		federationType: "Block",
 	})
+	if err != nil {
+		s.auditRelationshipEvent(ctx, "relationship.unblock", cmd.BlockerID, cmd.BlockedID, false, "unblock_failed", nil)
+		return nil, err
+	}
+
+	s.auditRelationshipEvent(ctx, "relationship.unblock", cmd.BlockerID, cmd.BlockedID, true, "", nil)
+	return result, nil
 }
 
 // Mute mutes a user (hides from timelines) and emits events
@@ -2867,6 +2877,29 @@ func isNilFederationService(f FederationService) bool {
 		return value.IsNil()
 	default:
 		return false
+	}
+}
+
+func (s *Service) auditRelationshipEvent(ctx context.Context, eventType, actorID, targetID string, success bool, failureReason string, metadata map[string]any) {
+	if s == nil || s.storage == nil || s.storage.Audit() == nil {
+		return
+	}
+
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["actor_id"] = actorID
+	metadata["target_id"] = targetID
+
+	severity := "MEDIUM"
+	if !success {
+		severity = "HIGH"
+	}
+
+	if err := s.storage.Audit().StoreAuditEvent(ctx, eventType, severity, actorID, actorID, "", "", "", "", "", success, failureReason, metadata); err != nil {
+		s.logger.Debug("failed to store audit event",
+			zap.String("event_type", eventType),
+			zap.Error(err))
 	}
 }
 

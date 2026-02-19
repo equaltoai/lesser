@@ -693,6 +693,8 @@ func createTestService() (*Service, *mockConversationRepository, *mockNoteReposi
 		accountRepo,
 		nil,
 		nil,
+		nil,
+		nil,
 		publisher,
 		federation,
 		logger,
@@ -1251,12 +1253,12 @@ func TestService_NewService(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Test with all dependencies
-	service := NewService(conversationRepo, noteRepo, nil, accountRepo, nil, nil, publisher, federation, logger, "example.com")
+	service := NewService(conversationRepo, noteRepo, nil, accountRepo, nil, nil, nil, nil, publisher, federation, logger, "example.com")
 	assert.NotNil(t, service)
 	assert.Equal(t, "example.com", service.domainName)
 
 	// Test with nil logger (should default to nop logger)
-	service2 := NewService(conversationRepo, noteRepo, nil, accountRepo, nil, nil, publisher, federation, nil, "example.com")
+	service2 := NewService(conversationRepo, noteRepo, nil, accountRepo, nil, nil, nil, nil, publisher, federation, nil, "example.com")
 	assert.NotNil(t, service2)
 }
 
@@ -1344,6 +1346,8 @@ func TestService_DeleteMessage_CreatesViewerTombstone(t *testing.T) {
 		accountRepo,
 		nil,
 		nil,
+		nil,
+		nil,
 		&mockPublisher{},
 		&mockFederationService{},
 		zaptest.NewLogger(t),
@@ -1389,6 +1393,8 @@ func TestService_GetConversation_FiltersTombstonedMessages(t *testing.T) {
 		noteRepo,
 		dmTombstoneRepo,
 		accountRepo,
+		nil,
+		nil,
 		nil,
 		nil,
 		&mockPublisher{},
@@ -1467,6 +1473,8 @@ func TestService_GetConversationLastStatus_SkipsTombstoned(t *testing.T) {
 		accountRepo,
 		nil,
 		nil,
+		nil,
+		nil,
 		&mockPublisher{},
 		&mockFederationService{},
 		zaptest.NewLogger(t),
@@ -1518,6 +1526,8 @@ func TestService_DeleteMessage_RequiresParticipant(t *testing.T) {
 		noteRepo,
 		dmTombstoneRepo,
 		accountRepo,
+		nil,
+		nil,
 		nil,
 		nil,
 		&mockPublisher{},

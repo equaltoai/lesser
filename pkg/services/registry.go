@@ -1328,6 +1328,8 @@ func (r *Registry) Conversations() *conversations.Service {
 		if conversationRepo != nil && noteRepo != nil && accountRepo != nil {
 			relationshipRepo := r.storage.Relationship()
 			userRepo := r.storage.User()
+			rateLimitRepo := r.storage.RateLimit()
+			auditRepo := r.storage.Audit()
 
 			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
@@ -1349,6 +1351,8 @@ func (r *Registry) Conversations() *conversations.Service {
 				accountRepo,
 				relationshipRepo,
 				userRepo,
+				rateLimitRepo,
+				auditRepo,
 				r.publisherOrNoop(),
 				federationService,
 				r.logger,

@@ -14,6 +14,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -44,6 +45,8 @@ type Service struct {
 	accountRepo      interfaces.AccountRepository
 	relationshipRepo interfaces.ConcreteRelationshipRepository
 	userRepo         interfaces.UserRepository
+	rateLimitRepo    interfaces.RateLimitRepository
+	auditRepo        interfaces.AuditRepository
 	publisher        streaming.Publisher
 	federation       FederationService
 	logger           *zap.Logger
@@ -68,6 +71,8 @@ func NewService(
 	accountRepo interfaces.AccountRepository,
 	relationshipRepo interfaces.ConcreteRelationshipRepository,
 	userRepo interfaces.UserRepository,
+	rateLimitRepo interfaces.RateLimitRepository,
+	auditRepo interfaces.AuditRepository,
 	publisher streaming.Publisher,
 	federation FederationService,
 	logger *zap.Logger,
@@ -84,6 +89,8 @@ func NewService(
 		accountRepo:      accountRepo,
 		relationshipRepo: relationshipRepo,
 		userRepo:         userRepo,
+		rateLimitRepo:    rateLimitRepo,
+		auditRepo:        auditRepo,
 		publisher:        publisher,
 		federation:       federation,
 		logger:           logger,
@@ -92,6 +99,15 @@ func NewService(
 }
 
 // Command structs for operations
+
+const (
+	dmSendTotalLimit            = 60
+	dmSendTotalWindow           = time.Minute
+	dmRequestTotalLimit         = 20
+	dmRequestTotalWindow        = time.Hour
+	dmRequestPerRecipientLimit  = 1
+	dmRequestPerRecipientWindow = 24 * time.Hour
+)
 
 // SendDirectMessageCommand contains all data needed to send a direct message
 type SendDirectMessageCommand struct {
@@ -221,6 +237,17 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 		return nil, errors.Join(ErrInvalidRecipient, err)
 	}
 
+	// Block enforcement: do not allow creating DM threads between blocked users.
+	if s.relationshipRepo != nil {
+		blocked, err := s.relationshipRepo.IsBlockedBidirectional(ctx, creatorID, participantID)
+		if err != nil {
+			return nil, errors.Join(ErrConversationValidationFailed, err)
+		}
+		if blocked {
+			return nil, ErrDirectMessageBlocked
+		}
+	}
+
 	participants := []string{creatorID, participantID}
 	sort.Strings(participants)
 
@@ -274,11 +301,10 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 			return
 		}
 
-		record.RequestState = models.DmRequestStateDeclined
+		record.RequestState = ""
 		record.RequestedAt = nil
 		record.AcceptedAt = nil
-		t := now
-		record.DeclinedAt = &t
+		record.DeclinedAt = nil
 	}); err != nil {
 		s.logger.Warn("failed to update participant record for conversation create",
 			zap.String("conversation_id", conversation.ID),
@@ -307,21 +333,62 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	// Validate the command (basic validation only - accounts validated below)
 	if err := s.validateSendMessageCommandBasic(ctx, cmd); err != nil {
 		s.logger.Error("validation failed", zap.Error(err))
+		s.auditDMEvent(ctx, cmd, "", false, "validation_failed", map[string]any{
+			"content_length": len(cmd.Content),
+		})
 		return nil, errors.Join(ErrConversationValidationFailed, err)
 	}
 
 	if len(cmd.Recipients) != 1 {
+		s.auditDMEvent(ctx, cmd, "", false, "invalid_recipient_count", nil)
 		return nil, errors.Join(ErrConversationValidationFailed, ErrDirectMessageRequiresSingleRecipient)
 	}
 	recipientID := cmd.Recipients[0]
 	if strings.TrimSpace(recipientID) == "" || recipientID == cmd.SenderID {
+		s.auditDMEvent(ctx, cmd, "", false, "invalid_recipient", map[string]any{
+			"recipient_id": recipientID,
+		})
 		return nil, errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
+	}
+
+	// Block enforcement: blocked users cannot send requests or messages.
+	if s.relationshipRepo != nil {
+		blocked, err := s.relationshipRepo.IsBlockedBidirectional(ctx, cmd.SenderID, recipientID)
+		if err != nil {
+			s.logger.Warn("failed to check block status for DM send",
+				zap.String("sender_id", cmd.SenderID),
+				zap.String("recipient_id", recipientID),
+				zap.Error(err))
+			s.auditDMEvent(ctx, cmd, "", false, "block_check_failed", map[string]any{
+				"recipient_id": recipientID,
+			})
+			return nil, errors.Join(ErrConversationValidationFailed, err)
+		}
+		if blocked {
+			s.auditDMEvent(ctx, cmd, "", false, "blocked", map[string]any{
+				"recipient_id": recipientID,
+			})
+			return nil, ErrDirectMessageBlocked
+		}
+	}
+
+	// Global DM throughput throttling (per-sender).
+	if s.rateLimitRepo != nil && !config.Get().DisableRateLimiting {
+		if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), "dm_send_total", dmSendTotalLimit, dmSendTotalWindow); err != nil {
+			s.auditDMEvent(ctx, cmd, "", false, "rate_limited_send_total", map[string]any{
+				"recipient_id": recipientID,
+			})
+			return nil, err
+		}
 	}
 
 	// Get sender account - also validates it exists
 	sender, err := s.accountRepo.GetAccount(ctx, cmd.SenderID)
 	if err != nil {
 		s.logger.Error("failed to get sender account", zap.String("sender_id", cmd.SenderID), zap.Error(err))
+		s.auditDMEvent(ctx, cmd, "", false, "get_sender_account_failed", map[string]any{
+			"recipient_id": recipientID,
+		})
 		return nil, errors.Join(ErrGetSenderAccount, err)
 	}
 
@@ -330,6 +397,9 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	recipient, err := s.accountRepo.GetAccount(ctx, recipientID)
 	if err != nil {
 		s.logger.Error("invalid recipient", zap.String("recipient_id", recipientID), zap.Error(err))
+		s.auditDMEvent(ctx, cmd, "", false, "get_recipient_account_failed", map[string]any{
+			"recipient_id": recipientID,
+		})
 		return nil, errors.Join(ErrInvalidRecipient, err)
 	}
 	recipientAccounts[recipientID] = recipient
@@ -342,6 +412,9 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, allParticipants)
 	if err != nil && !isNotFoundError(err) {
 		s.logger.Error("failed to lookup existing conversation", zap.Strings("participants", allParticipants), zap.Error(err))
+		s.auditDMEvent(ctx, cmd, "", false, "lookup_conversation_failed", map[string]any{
+			"recipient_id": recipientID,
+		})
 		return nil, errors.Join(ErrLookupExistingConversation, err)
 	}
 
@@ -357,12 +430,67 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 
 		if err := s.conversationRepo.CreateConversation(ctx, conversation, allParticipants); err != nil {
 			s.logger.Error("failed to create conversation", zap.String("conversation_id", conversationID), zap.Error(err))
+			s.auditDMEvent(ctx, cmd, conversationID, false, "create_conversation_failed", map[string]any{
+				"recipient_id": recipientID,
+			})
 			return nil, errors.Join(ErrCreateConversation, err)
 		}
 
 		s.logger.Info("created new conversation",
 			zap.String("conversation_id", conversationID),
 			zap.Strings("participants", allParticipants))
+	}
+
+	// Determine whether this message should be treated as a request (Requests folder) for the recipient.
+	deliversToInbox := s.shouldDeliverToInbox(ctx, recipientID, cmd.SenderID)
+	var recipientRequestState models.DmRequestState
+	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, recipientID); err == nil && record != nil {
+		recipientRequestState = record.RequestState
+	}
+
+	willBeRequest := false
+	switch recipientRequestState {
+	case models.DmRequestStateAccepted:
+		willBeRequest = false
+	case models.DmRequestStateDeclined:
+		willBeRequest = true
+	default:
+		// Pending or unset -> apply inbox policy.
+		willBeRequest = !deliversToInbox
+	}
+
+	// Prevent request spam: if a request is already pending and the inbox policy does not allow delivery,
+	// do not allow additional messages until the recipient accepts.
+	if recipientRequestState == models.DmRequestStatePending && !deliversToInbox {
+		s.auditDMEvent(ctx, cmd, conversation.ID, false, "request_pending", map[string]any{
+			"recipient_id": recipientID,
+		})
+		return nil, ErrMessageRequestPending
+	}
+
+	// Content safety: disallow media in message requests until accepted.
+	if willBeRequest && len(cmd.MediaIDs) > 0 {
+		s.auditDMEvent(ctx, cmd, conversation.ID, false, "media_not_allowed_in_request", map[string]any{
+			"recipient_id": recipientID,
+			"media_count":  len(cmd.MediaIDs),
+		})
+		return nil, ErrMessageRequestMediaNotAllowed
+	}
+
+	// Rate limit DM request creation attempts (per-sender overall + per recipient).
+	if willBeRequest && s.rateLimitRepo != nil && !config.Get().DisableRateLimiting {
+		if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow); err != nil {
+			s.auditDMEvent(ctx, cmd, conversation.ID, false, "rate_limited_request_total", map[string]any{
+				"recipient_id": recipientID,
+			})
+			return nil, err
+		}
+		if err := s.rateLimitRepo.CheckAPIRateLimit(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), fmt.Sprintf("dm_request_to:%s", recipientID), dmRequestPerRecipientLimit, dmRequestPerRecipientWindow); err != nil {
+			s.auditDMEvent(ctx, cmd, conversation.ID, false, "rate_limited_request_to_recipient", map[string]any{
+				"recipient_id": recipientID,
+			})
+			return nil, err
+		}
 	}
 
 	// Generate unique message ID
@@ -396,6 +524,11 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	// Store the message
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
 		s.logger.Error("failed to create direct message", zap.String("message_id", messageID), zap.Error(err))
+		s.auditDMEvent(ctx, cmd, conversation.ID, false, "create_status_failed", map[string]any{
+			"recipient_id":   recipientID,
+			"message_id":     messageID,
+			"content_length": len(cmd.Content),
+		})
 		return nil, errors.Join(ErrCreateDirectMessage, err)
 	}
 
@@ -493,6 +626,14 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	// Emit events and queue federation
 	events := s.emitMessageSentEvents(ctx, status, conversation)
 	s.queueFederationDelivery(ctx, status)
+
+	s.auditDMEvent(ctx, cmd, conversation.ID, true, "", map[string]any{
+		"recipient_id":    recipientID,
+		"message_id":      messageID,
+		"content_length":  len(cmd.Content),
+		"request_message": willBeRequest,
+		"media_count":     len(cmd.MediaIDs),
+	})
 
 	return &MessageResult{
 		Message:      status,
@@ -713,6 +854,10 @@ func (s *Service) AcceptMessageRequest(ctx context.Context, cmd *AcceptMessageRe
 		conversation.Unread = record.Unread
 	}
 
+	s.auditDMRequestEvent(ctx, "dm.request.accept", cmd.UserID, conversation.ID, true, "", map[string]any{
+		"conversation_id": conversation.ID,
+	})
+
 	return &ConversationResult{
 		Conversation: conversation,
 		Events:       []*streaming.Event{},
@@ -751,6 +896,10 @@ func (s *Service) DeclineMessageRequest(ctx context.Context, cmd *DeclineMessage
 	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, cmd.UserID); err == nil && record != nil {
 		conversation.Unread = record.Unread
 	}
+
+	s.auditDMRequestEvent(ctx, "dm.request.decline", cmd.UserID, conversation.ID, true, "", map[string]any{
+		"conversation_id": conversation.ID,
+	})
 
 	return &ConversationResult{
 		Conversation: conversation,
@@ -928,6 +1077,66 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 }
 
 // Private helper methods
+
+func (s *Service) auditEvent(ctx context.Context, eventType, severity, username, userID string, success bool, failureReason string, metadata map[string]any) {
+	if s == nil || s.auditRepo == nil {
+		return
+	}
+
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+
+	if err := s.auditRepo.StoreAuditEvent(ctx, eventType, severity, username, userID, "", "", "", "", "", success, failureReason, metadata); err != nil {
+		s.logger.Debug("failed to store audit event",
+			zap.String("event_type", eventType),
+			zap.Error(err))
+	}
+}
+
+func (s *Service) auditDMEvent(ctx context.Context, cmd *SendDirectMessageCommand, conversationID string, success bool, failureReason string, metadata map[string]any) {
+	if s == nil || s.auditRepo == nil || cmd == nil {
+		return
+	}
+
+	severity := "LOW"
+	if !success {
+		severity = "MEDIUM"
+		if strings.Contains(failureReason, "rate_limited") || strings.Contains(failureReason, "blocked") {
+			severity = "HIGH"
+		}
+	}
+
+	merged := map[string]any{
+		"conversation_id": strings.TrimSpace(conversationID),
+		"sender_id":       strings.TrimSpace(cmd.SenderID),
+	}
+	for k, v := range metadata {
+		merged[k] = v
+	}
+
+	s.auditEvent(ctx, "dm.send", severity, cmd.SenderID, cmd.SenderID, success, failureReason, merged)
+}
+
+func (s *Service) auditDMRequestEvent(ctx context.Context, eventType, username, conversationID string, success bool, failureReason string, metadata map[string]any) {
+	if s == nil || s.auditRepo == nil {
+		return
+	}
+
+	severity := "LOW"
+	if !success {
+		severity = "MEDIUM"
+	}
+
+	merged := map[string]any{
+		"conversation_id": strings.TrimSpace(conversationID),
+	}
+	for k, v := range metadata {
+		merged[k] = v
+	}
+
+	s.auditEvent(ctx, eventType, severity, username, username, success, failureReason, merged)
+}
 
 func (s *Service) actorURLForUsername(username string) string {
 	username = strings.TrimSpace(username)

@@ -70,4 +70,16 @@ var (
 
 	// ErrDeleteMessage is returned when message deletion (delete-for-me tombstone) fails.
 	ErrDeleteMessage = apperrors.FailedToDelete("direct message", errors.New("failed to delete message"))
+
+	// ErrDirectMessageBlocked is returned when a DM cannot be sent due to a block.
+	//
+	// Note: intentionally generic to avoid leaking block direction.
+	ErrDirectMessageBlocked = apperrors.AccessDeniedForResource("direct message", "blocked")
+
+	// ErrMessageRequestPending is returned when a sender attempts to send additional messages
+	// before a message request has been accepted.
+	ErrMessageRequestPending = apperrors.NewAppError(apperrors.CodeForbidden, apperrors.CategoryBusiness, "Message request pending")
+
+	// ErrMessageRequestMediaNotAllowed is returned when a DM request includes attachments.
+	ErrMessageRequestMediaNotAllowed = apperrors.NewValidationError("media", "not allowed in message requests")
 )
