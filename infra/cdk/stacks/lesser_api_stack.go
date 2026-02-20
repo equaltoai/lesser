@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
@@ -319,8 +320,64 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	overridePathRoutedFrontendRewriteFunction(frontend)
 
 	s.FrontendDistribution = frontend.Distribution()
+	if s.soulEnabled() {
+		addSoulOrchestratorRouting(s.Stack, s.FrontendDistribution, domain)
+	}
 	s.ClientBucket = clientAssetsBucket
 	s.AuthUIBucket = authAssetsBucket
+}
+
+func (s *LesserApiStack) soulEnabled() bool {
+	if s.Configuration != nil {
+		if v, ok := s.Configuration["soulEnabled"]; ok && isTruthyConfigValue(v) {
+			return true
+		}
+	}
+	return isTruthyConfigValue(s.Node().TryGetContext(jsii.String("soulEnabled")))
+}
+
+func isTruthyConfigValue(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		clean := strings.TrimSpace(strings.ToLower(v))
+		switch clean {
+		case "true", "1", "yes", "y":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func addSoulOrchestratorRouting(stack awscdk.Stack, distribution awscloudfront.Distribution, stageDomain string) {
+	if stack == nil || distribution == nil || strings.TrimSpace(stageDomain) == "" {
+		return
+	}
+
+	param := awsssm.StringParameter_FromStringParameterName(
+		stack,
+		jsii.String("SoulOrchestratorOriginDomainParam"),
+		jsii.String(fmt.Sprintf("/soul/%s/exports/v1/orchestrator_origin_domain", stageDomain)),
+	)
+
+	origin := awscloudfrontorigins.NewHttpOrigin(param.StringValue(), &awscloudfrontorigins.HttpOriginProps{
+		ProtocolPolicy: awscloudfront.OriginProtocolPolicy_HTTPS_ONLY,
+	})
+
+	options := &awscloudfront.AddBehaviorOptions{
+		AllowedMethods: awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachePolicy:    awscloudfront.CachePolicy_CACHING_DISABLED(),
+		// Forward Authorization + all query strings for orchestrator requests; exclude Host to prevent origin mismatch issues.
+		OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
+		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+	}
+
+	distribution.AddBehavior(jsii.String("/soul"), origin, options)
+	distribution.AddBehavior(jsii.String("/soul/*"), origin, options)
 }
 
 func overridePathRoutedFrontendRewriteFunction(frontend apptheorycdk.AppTheoryPathRoutedFrontend) {
