@@ -106,6 +106,17 @@ func TestGoPathBin_UsesGoEnvWhenGOPATHUnset(t *testing.T) {
 	require.True(t, strings.HasSuffix(bin, string(os.PathSeparator)+"bin"))
 }
 
+func TestGoPathBin_ReturnsEmptyWhenGOPATHStartsWithSeparator(t *testing.T) {
+	t.Setenv("GOPATH", string(os.PathListSeparator)+t.TempDir())
+	require.Empty(t, goPathBin())
+}
+
+func TestGoPathBin_ReturnsEmptyWhenGoMissingAndGOPATHUnset(t *testing.T) {
+	t.Setenv("GOPATH", "")
+	t.Setenv("PATH", t.TempDir())
+	require.Empty(t, goPathBin())
+}
+
 func TestCacheDirVersionKey_FallsBackWhenGoMissing(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
@@ -177,6 +188,22 @@ func TestCacheDirHelpers(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, xdgCacheOverride, xdgCache)
 		require.DirExists(t, xdgCache)
+	})
+
+	t.Run("override files error", func(t *testing.T) {
+		goCacheFile := filepath.Join(repoRoot, "go-cache-file")
+		xdgCacheFile := filepath.Join(repoRoot, "xdg-cache-file")
+		require.NoError(t, os.WriteFile(goCacheFile, []byte("x"), 0o600))
+		require.NoError(t, os.WriteFile(xdgCacheFile, []byte("x"), 0o600))
+
+		t.Setenv("GOCACHE", goCacheFile)
+		t.Setenv("XDG_CACHE_HOME", xdgCacheFile)
+
+		_, err := ensureGoCacheDir(repoRoot)
+		require.Error(t, err)
+
+		_, err = ensureXDGCacheDir(repoRoot)
+		require.Error(t, err)
 	})
 }
 
