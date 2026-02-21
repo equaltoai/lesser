@@ -2,7 +2,6 @@ package streaming
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -22,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cloudwatchTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 )
@@ -445,66 +445,41 @@ type cloudWatchRecorder struct {
 	putShouldError bool
 }
 
-func newTestCloudWatchServer(t testing.TB, rec *cloudWatchRecorder) *httptest.Server {
-	t.Helper()
-
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// CloudWatch uses AWS Query protocol, and the AWS SDK may gzip the body.
-		body, _ := io.ReadAll(r.Body)
-		_ = r.Body.Close()
-		if strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
-			reader, err := gzip.NewReader(bytes.NewReader(body))
-			if err == nil {
-				decoded, decodeErr := io.ReadAll(reader)
-				_ = reader.Close()
-				if decodeErr == nil {
-					body = decoded
-				}
-			}
-		}
-
-		values, _ := url.ParseQuery(string(body))
-		action := values.Get("Action")
-		switch action {
-		case "PutMetricData":
-			rec.mu.Lock()
-			rec.putCalls++
-			shouldError := rec.putShouldError
-			rec.mu.Unlock()
-
-			if shouldError {
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = io.WriteString(w, `<ErrorResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><Error><Type>Sender</Type><Code>InternalError</Code><Message>boom</Message></Error></ErrorResponse>`)
-				return
-			}
-
-			w.Header().Set("Content-Type", "text/xml")
-			w.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(w, `<PutMetricDataResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><ResponseMetadata><RequestId>1</RequestId></ResponseMetadata></PutMetricDataResponse>`)
-		case "GetMetricStatistics":
-			rec.mu.Lock()
-			rec.getCalls++
-			rec.mu.Unlock()
-
-			w.Header().Set("Content-Type", "text/xml")
-			w.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(w, `<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2026-01-02T00:00:00Z</Timestamp><Sum>60000</Sum></member></Datapoints><Label>BytesTransferred</Label></GetMetricStatisticsResult><ResponseMetadata><RequestId>1</RequestId></ResponseMetadata></GetMetricStatisticsResponse>`)
-		default:
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, "unknown action")
-		}
-	}))
+type stubCloudWatchClient struct {
+	rec *cloudWatchRecorder
 }
 
-func newTestCloudWatchClient(serverURL string) *cloudwatch.Client {
-	cfg := aws.Config{
-		Region:      "us-east-1",
-		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")),
+func (c *stubCloudWatchClient) PutMetricData(_ context.Context, _ *cloudwatch.PutMetricDataInput, _ ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricDataOutput, error) {
+	c.rec.mu.Lock()
+	c.rec.putCalls++
+	shouldError := c.rec.putShouldError
+	c.rec.mu.Unlock()
+
+	if shouldError {
+		return nil, errors.New("boom")
 	}
 
-	return cloudwatch.NewFromConfig(cfg, func(o *cloudwatch.Options) {
-		o.EndpointResolver = cloudwatch.EndpointResolverFromURL(serverURL)
-	})
+	return &cloudwatch.PutMetricDataOutput{}, nil
+}
+
+func (c *stubCloudWatchClient) GetMetricStatistics(_ context.Context, _ *cloudwatch.GetMetricStatisticsInput, _ ...func(*cloudwatch.Options)) (*cloudwatch.GetMetricStatisticsOutput, error) {
+	c.rec.mu.Lock()
+	c.rec.getCalls++
+	c.rec.mu.Unlock()
+
+	ts := time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC)
+	return &cloudwatch.GetMetricStatisticsOutput{
+		Datapoints: []cloudwatchTypes.Datapoint{
+			{
+				Timestamp: aws.Time(ts),
+				Sum:       aws.Float64(60000),
+			},
+		},
+	}, nil
+}
+
+func newTestCloudWatchClient(rec *cloudWatchRecorder) cloudWatchAPI {
+	return &stubCloudWatchClient{rec: rec}
 }
 
 func urlParseQueryCompat(body string) (urlValues, error) {

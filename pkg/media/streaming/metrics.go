@@ -14,7 +14,7 @@ import (
 
 // MetricsTracker implements comprehensive streaming metrics tracking with CloudWatch integration
 type MetricsTracker struct {
-	cloudWatch *cloudwatch.Client
+	cloudWatch cloudWatchAPI
 	logger     *zap.Logger
 	namespace  string
 
@@ -35,8 +35,13 @@ func NewMetricsTracker(cloudWatch *cloudwatch.Client, logger *zap.Logger) *Metri
 		logger = zap.NewNop()
 	}
 
+	var cloudWatchAPIClient cloudWatchAPI
+	if cloudWatch != nil {
+		cloudWatchAPIClient = cloudWatch
+	}
+
 	tracker := &MetricsTracker{
-		cloudWatch:    cloudWatch,
+		cloudWatch:    cloudWatchAPIClient,
 		logger:        logger,
 		namespace:     "Lesser/Streaming",
 		batchSize:     20,               // CloudWatch allows max 20 metrics per request

@@ -73,11 +73,9 @@ func TestMetricsTracker_Cleanup(t *testing.T) {
 
 func TestMetricsTracker_publishBatch_SuccessAndError(t *testing.T) {
 	rec := &cloudWatchRecorder{}
-	srv := newTestCloudWatchServer(t, rec)
-	t.Cleanup(srv.Close)
 
 	tracker := &MetricsTracker{
-		cloudWatch:    newTestCloudWatchClient(srv.URL),
+		cloudWatch:    newTestCloudWatchClient(rec),
 		logger:        zap.NewNop(),
 		namespace:     "Lesser/Streaming",
 		batchSize:     20,

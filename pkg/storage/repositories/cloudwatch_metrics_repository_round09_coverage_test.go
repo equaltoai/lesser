@@ -1,43 +1,34 @@
 package repositories
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
-	"net/http"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cloudwatchTypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
-type stubRoundTripper struct {
-	fn func(*http.Request) (*http.Response, error)
+type stubCloudWatchClient struct {
+	getMetricStatisticsFn func(context.Context, *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error)
 }
 
-func (s stubRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return s.fn(r) }
-
-func cloudWatchClientForTest(t *testing.T, responder func(req *http.Request) (*http.Response, error)) *cloudwatch.Client {
-	t.Helper()
-	cfg := aws.Config{
-		Region:      "us-east-1",
-		Credentials: credentials.NewStaticCredentialsProvider("AKIA...", "secret", ""),
-		HTTPClient: &http.Client{
-			Transport: stubRoundTripper{fn: responder},
-		},
-		EndpointResolverWithOptions: aws.EndpointResolverWithOptionsFunc(func(service, region string, _ ...any) (aws.Endpoint, error) {
-			return aws.Endpoint{URL: "http://example.com", SigningRegion: "us-east-1"}, nil
-		}),
+func (c *stubCloudWatchClient) GetMetricStatistics(ctx context.Context, input *cloudwatch.GetMetricStatisticsInput, _ ...func(*cloudwatch.Options)) (*cloudwatch.GetMetricStatisticsOutput, error) {
+	if c.getMetricStatisticsFn != nil {
+		return c.getMetricStatisticsFn(ctx, input)
 	}
-	return cloudwatch.NewFromConfig(cfg)
+	return &cloudwatch.GetMetricStatisticsOutput{}, nil
+}
+
+func cloudWatchClientForTest(t *testing.T, responder func(context.Context, *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error)) cloudWatchAPI {
+	t.Helper()
+	return &stubCloudWatchClient{getMetricStatisticsFn: responder}
 }
 
 func TestCloudWatchMetricsRepository_NewRepository_ErrorPath(t *testing.T) {
@@ -50,44 +41,38 @@ func TestCloudWatchMetricsRepository_NewRepository_ErrorPath(t *testing.T) {
 }
 
 func TestCloudWatchMetricsRepository_GetServiceMetrics_UsesStubbedHTTP(t *testing.T) {
-	// Return a generic successful GetMetricStatisticsResponse with Sum=5 and p50=123.
-	client := cloudWatchClientForTest(t, func(req *http.Request) (*http.Response, error) {
-		bodyBytes, _ := io.ReadAll(req.Body)
-		body := string(bodyBytes)
+	client := cloudWatchClientForTest(t, func(_ context.Context, input *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error) {
+		baseTS := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-		sum := "5"
-		if strings.Contains(body, "ExtendedStatistics.member.1=p50") {
-			return &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewBufferString(
-					`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><ExtendedStatistics><entry><key>p50</key><value>123</value></entry></ExtendedStatistics></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-				Header: make(http.Header),
+		if len(input.ExtendedStatistics) > 0 {
+			ext := input.ExtendedStatistics[0]
+			dp := cloudwatchTypes.Datapoint{
+				Timestamp: aws.Time(baseTS),
+			}
+			switch ext {
+			case "p50":
+				dp.ExtendedStatistics = map[string]float64{"p50": 123}
+			case "p90":
+				dp.Timestamp = aws.Time(baseTS.Add(24 * time.Hour))
+				dp.ExtendedStatistics = map[string]float64{"p90": 250}
+			case "p99":
+				dp.Timestamp = aws.Time(baseTS.Add(48 * time.Hour))
+				dp.ExtendedStatistics = map[string]float64{"p99": 500}
+			default:
+				dp.ExtendedStatistics = map[string]float64{}
+			}
+			return &cloudwatch.GetMetricStatisticsOutput{
+				Datapoints: []cloudwatchTypes.Datapoint{dp},
 			}, nil
 		}
 
-		if strings.Contains(body, "ExtendedStatistics.member.1=p90") {
-			return &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewBufferString(
-					`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-02T00:00:00Z</Timestamp><ExtendedStatistics><entry><key>p90</key><value>250</value></entry></ExtendedStatistics></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-				Header: make(http.Header),
-			}, nil
-		}
-
-		if strings.Contains(body, "ExtendedStatistics.member.1=p99") {
-			return &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewBufferString(
-					`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-03T00:00:00Z</Timestamp><ExtendedStatistics><entry><key>p99</key><value>500</value></entry></ExtendedStatistics></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-				Header: make(http.Header),
-			}, nil
-		}
-
-		return &http.Response{
-			StatusCode: 200,
-			Body: io.NopCloser(bytes.NewBufferString(
-				`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Sum>` + sum + `</Sum></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-			Header: make(http.Header),
+		return &cloudwatch.GetMetricStatisticsOutput{
+			Datapoints: []cloudwatchTypes.Datapoint{
+				{
+					Timestamp: aws.Time(baseTS),
+					Sum:       aws.Float64(5),
+				},
+			},
 		}, nil
 	})
 
@@ -106,14 +91,8 @@ func TestCloudWatchMetricsRepository_GetServiceMetrics_UsesStubbedHTTP(t *testin
 }
 
 func TestCloudWatchMetricsRepository_StatisticHelpers_EmptyAndAverage(t *testing.T) {
-	client := cloudWatchClientForTest(t, func(_ *http.Request) (*http.Response, error) {
-		// Return no datapoints
-		return &http.Response{
-			StatusCode: 200,
-			Body: io.NopCloser(bytes.NewBufferString(
-				`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-			Header: make(http.Header),
-		}, nil
+	client := cloudWatchClientForTest(t, func(_ context.Context, _ *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error) {
+		return &cloudwatch.GetMetricStatisticsOutput{}, nil
 	})
 
 	repo := &CloudWatchMetricsRepository{client: client, environment: "prod"}
@@ -185,13 +164,15 @@ func TestCloudWatchMetricsRepository_CachingPaths(t *testing.T) {
 }
 
 func TestCloudWatchMetricsRepository_GetCostBreakdown(t *testing.T) {
-	client := cloudWatchClientForTest(t, func(_ *http.Request) (*http.Response, error) {
-		// Always return Sum=100 and datapoint.
-		return &http.Response{
-			StatusCode: 200,
-			Body: io.NopCloser(bytes.NewBufferString(
-				`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Sum>100</Sum></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-			Header: make(http.Header),
+	client := cloudWatchClientForTest(t, func(_ context.Context, _ *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error) {
+		ts := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+		return &cloudwatch.GetMetricStatisticsOutput{
+			Datapoints: []cloudwatchTypes.Datapoint{
+				{
+					Timestamp: aws.Time(ts),
+					Sum:       aws.Float64(100),
+				},
+			},
 		}, nil
 	})
 
@@ -209,42 +190,42 @@ func TestCloudWatchMetricsRepository_GetCostBreakdown(t *testing.T) {
 }
 
 func TestCloudWatchMetricsRepository_MetricStatisticCasesAndErrors(t *testing.T) {
-	client := cloudWatchClientForTest(t, func(req *http.Request) (*http.Response, error) {
-		bodyBytes, _ := io.ReadAll(req.Body)
-		body := string(bodyBytes)
-		if strings.Contains(body, "Statistics.member.1=Average") {
-			return &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewBufferString(
-					`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Average>10</Average></member><member><Timestamp>2020-01-01T00:05:00Z</Timestamp><Average>20</Average></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-				Header: make(http.Header),
-			}, nil
+	client := cloudWatchClientForTest(t, func(_ context.Context, input *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error) {
+		if aws.ToString(input.MetricName) == "FailMe" {
+			return nil, errors.New("boom")
 		}
-		if strings.Contains(body, "Statistics.member.1=Maximum") {
-			return &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewBufferString(
-					`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Maximum>5</Maximum></member><member><Timestamp>2020-01-01T00:05:00Z</Timestamp><Maximum>7</Maximum></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-				Header: make(http.Header),
-			}, nil
+
+		ts := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+		if len(input.Statistics) > 0 {
+			switch input.Statistics[0] {
+			case cloudwatchTypes.StatisticAverage:
+				return &cloudwatch.GetMetricStatisticsOutput{
+					Datapoints: []cloudwatchTypes.Datapoint{
+						{Timestamp: aws.Time(ts), Average: aws.Float64(10)},
+						{Timestamp: aws.Time(ts.Add(5 * time.Minute)), Average: aws.Float64(20)},
+					},
+				}, nil
+			case cloudwatchTypes.StatisticMaximum:
+				return &cloudwatch.GetMetricStatisticsOutput{
+					Datapoints: []cloudwatchTypes.Datapoint{
+						{Timestamp: aws.Time(ts), Maximum: aws.Float64(5)},
+						{Timestamp: aws.Time(ts.Add(5 * time.Minute)), Maximum: aws.Float64(7)},
+					},
+				}, nil
+			case cloudwatchTypes.StatisticMinimum:
+				return &cloudwatch.GetMetricStatisticsOutput{
+					Datapoints: []cloudwatchTypes.Datapoint{
+						{Timestamp: aws.Time(ts), Minimum: aws.Float64(2)},
+						{Timestamp: aws.Time(ts.Add(5 * time.Minute)), Minimum: aws.Float64(1)},
+					},
+				}, nil
+			}
 		}
-		if strings.Contains(body, "Statistics.member.1=Minimum") {
-			return &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewBufferString(
-					`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Minimum>2</Minimum></member><member><Timestamp>2020-01-01T00:05:00Z</Timestamp><Minimum>1</Minimum></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-				Header: make(http.Header),
-			}, nil
-		}
-		if strings.Contains(body, "MetricName=FailMe") {
-			return &http.Response{StatusCode: 500, Body: io.NopCloser(bytes.NewBufferString("boom")), Header: make(http.Header)}, nil
-		}
-		// Sum default
-		return &http.Response{
-			StatusCode: 200,
-			Body: io.NopCloser(bytes.NewBufferString(
-				`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><Sum>3</Sum></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-			Header: make(http.Header),
+
+		return &cloudwatch.GetMetricStatisticsOutput{
+			Datapoints: []cloudwatchTypes.Datapoint{
+				{Timestamp: aws.Time(ts), Sum: aws.Float64(3)},
+			},
 		}, nil
 	})
 
@@ -281,40 +262,28 @@ func TestCloudWatchMetricsRepository_CacheMetrics_WritesWhenEnabled(t *testing.T
 }
 
 func TestCloudWatchMetricsRepository_WithCachingConstructorAndPercentileEdgeCases(t *testing.T) {
-	responder := func(req *http.Request) (*http.Response, error) {
-		bodyBytes, _ := io.ReadAll(req.Body)
-		body := string(bodyBytes)
-		// Empty datapoints branch
-		if strings.Contains(body, "ExtendedStatistics.member.1=p90") {
-			return &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewBufferString(
-					`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-				Header: make(http.Header),
-			}, nil
-		}
-		// Missing key branch (extended stats present but no requested key)
-		return &http.Response{
-			StatusCode: 200,
-			Body: io.NopCloser(bytes.NewBufferString(
-				`<GetMetricStatisticsResponse xmlns="http://monitoring.amazonaws.com/doc/2010-08-01/"><GetMetricStatisticsResult><Datapoints><member><Timestamp>2020-01-01T00:00:00Z</Timestamp><ExtendedStatistics><entry><key>p50</key><value>111</value></entry></ExtendedStatistics></member></Datapoints></GetMetricStatisticsResult></GetMetricStatisticsResponse>`)),
-			Header: make(http.Header),
-		}, nil
-	}
-
-	awsCfg := aws.Config{
-		Region:      "us-east-1",
-		Credentials: credentials.NewStaticCredentialsProvider("AKIA...", "secret", ""),
-		HTTPClient:  &http.Client{Transport: stubRoundTripper{fn: responder}},
-		EndpointResolverWithOptions: aws.EndpointResolverWithOptionsFunc(func(service, region string, _ ...any) (aws.Endpoint, error) {
-			return aws.Endpoint{URL: "http://example.com", SigningRegion: "us-east-1"}, nil
-		}),
-	}
-	repo := NewCloudWatchMetricsRepositoryWithCaching(awsCfg, "ns", "prod", "", zap.NewNop(), nil, nil)
+	repo := NewCloudWatchMetricsRepositoryWithCaching(aws.Config{Region: "us-east-1"}, "ns", "prod", "", zap.NewNop(), nil, nil)
 	require.NotNil(t, repo)
 	require.NotNil(t, repo.client)
 
-	repo.client = cloudwatch.NewFromConfig(awsCfg)
+	repo.client = cloudWatchClientForTest(t, func(_ context.Context, input *cloudwatch.GetMetricStatisticsInput) (*cloudwatch.GetMetricStatisticsOutput, error) {
+		// Empty datapoints branch.
+		if len(input.ExtendedStatistics) > 0 && input.ExtendedStatistics[0] == "p90" {
+			return &cloudwatch.GetMetricStatisticsOutput{}, nil
+		}
+
+		// Missing key branch (extended stats present but not the requested key).
+		ts := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+		return &cloudwatch.GetMetricStatisticsOutput{
+			Datapoints: []cloudwatchTypes.Datapoint{
+				{
+					Timestamp:          aws.Time(ts),
+					ExtendedStatistics: map[string]float64{"p50": 111},
+				},
+			},
+		}, nil
+	})
+
 	v, err := repo.getMetricPercentile(context.Background(), "AWS/ApiGateway", "Latency", 99, time.Now().Add(-time.Hour), time.Now(), map[string]string{"Stage": "prod"})
 	require.NoError(t, err)
 	require.Equal(t, 0.0, v)

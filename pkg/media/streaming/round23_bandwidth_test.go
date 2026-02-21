@@ -105,10 +105,7 @@ func TestBandwidthTracker_GetBandwidthHistory_SuccessAndNilCloudWatch(t *testing
 	assert.Empty(t, history)
 
 	rec := &cloudWatchRecorder{}
-	srv := newTestCloudWatchServer(t, rec)
-	t.Cleanup(srv.Close)
-
-	bt.cloudWatch = newTestCloudWatchClient(srv.URL)
+	bt.cloudWatch = newTestCloudWatchClient(rec)
 	history, err = bt.GetBandwidthHistory(context.Background(), "u1", time.Minute)
 	require.NoError(t, err)
 	require.Len(t, history, 1)
@@ -119,12 +116,10 @@ func TestBandwidthTracker_GetBandwidthHistory_SuccessAndNilCloudWatch(t *testing
 
 func TestBandwidthTracker_publishBandwidthMetric_Async(t *testing.T) {
 	rec := &cloudWatchRecorder{}
-	srv := newTestCloudWatchServer(t, rec)
-	t.Cleanup(srv.Close)
 
 	bt := &BandwidthTracker{
 		logger:     zap.NewNop(),
-		cloudWatch: newTestCloudWatchClient(srv.URL),
+		cloudWatch: newTestCloudWatchClient(rec),
 		namespace:  "Lesser/Streaming/Bandwidth",
 		cacheTTL:   time.Minute,
 	}

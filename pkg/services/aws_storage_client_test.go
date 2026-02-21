@@ -11,7 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/stretchr/testify/assert"
@@ -83,6 +83,18 @@ func (*fakeUploadAPIClient) AbortMultipartUpload(context.Context, *s3.AbortMulti
 	return nil, errors.New("unexpected multipart AbortMultipartUpload call")
 }
 
+func (*fakeUploadAPIClient) GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	return nil, errors.New("unexpected GetObject call")
+}
+
+func (*fakeUploadAPIClient) HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+	return nil, errors.New("unexpected HeadObject call")
+}
+
+func (*fakeUploadAPIClient) ListObjectsV2(context.Context, *s3.ListObjectsV2Input, ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	return nil, errors.New("unexpected ListObjectsV2 call")
+}
+
 type fakeDownloadAPIClient struct {
 	getObjectFn func(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
@@ -92,6 +104,34 @@ func (c *fakeDownloadAPIClient) GetObject(ctx context.Context, input *s3.GetObje
 		return c.getObjectFn(ctx, input, options...)
 	}
 	return &s3.GetObjectOutput{}, nil
+}
+
+func (*fakeDownloadAPIClient) PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	return nil, errors.New("unexpected PutObject call")
+}
+
+func (*fakeDownloadAPIClient) UploadPart(context.Context, *s3.UploadPartInput, ...func(*s3.Options)) (*s3.UploadPartOutput, error) {
+	return nil, errors.New("unexpected multipart UploadPart call")
+}
+
+func (*fakeDownloadAPIClient) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput, ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error) {
+	return nil, errors.New("unexpected multipart CreateMultipartUpload call")
+}
+
+func (*fakeDownloadAPIClient) CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput, ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error) {
+	return nil, errors.New("unexpected multipart CompleteMultipartUpload call")
+}
+
+func (*fakeDownloadAPIClient) AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput, ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error) {
+	return nil, errors.New("unexpected multipart AbortMultipartUpload call")
+}
+
+func (*fakeDownloadAPIClient) HeadObject(context.Context, *s3.HeadObjectInput, ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+	return nil, errors.New("unexpected HeadObject call")
+}
+
+func (*fakeDownloadAPIClient) ListObjectsV2(context.Context, *s3.ListObjectsV2Input, ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	return nil, errors.New("unexpected ListObjectsV2 call")
 }
 
 func TestAWSS3StorageClient_GeneratePresignedURL_Success(t *testing.T) {
@@ -160,15 +200,16 @@ func TestAWSS3StorageClient_UploadFile_Success(t *testing.T) {
 		},
 	}
 
-	uploader := manager.NewUploader(fakeClient, func(u *manager.Uploader) {
-		u.PartSize = 10 * 1024 * 1024
-		u.Concurrency = 1
+	transferClient := transfermanager.New(fakeClient, func(o *transfermanager.Options) {
+		o.PartSizeBytes = 10 * 1024 * 1024
+		o.Concurrency = 1
+		o.MultipartUploadThreshold = 1024 * 1024 * 1024
 	})
 
 	client := &AWSS3StorageClient{
-		uploader:   uploader,
-		bucketName: "bucket",
-		logger:     zap.NewNop(),
+		transferClient: transferClient,
+		bucketName:     "bucket",
+		logger:         zap.NewNop(),
 	}
 
 	require.NoError(t, client.UploadFile(context.Background(), "export.json", []byte("hello")))
@@ -183,15 +224,16 @@ func TestAWSS3StorageClient_UploadFile_UploaderError(t *testing.T) {
 		},
 	}
 
-	uploader := manager.NewUploader(fakeClient, func(u *manager.Uploader) {
-		u.PartSize = 10 * 1024 * 1024
-		u.Concurrency = 1
+	transferClient := transfermanager.New(fakeClient, func(o *transfermanager.Options) {
+		o.PartSizeBytes = 10 * 1024 * 1024
+		o.Concurrency = 1
+		o.MultipartUploadThreshold = 1024 * 1024 * 1024
 	})
 
 	client := &AWSS3StorageClient{
-		uploader:   uploader,
-		bucketName: "bucket",
-		logger:     zap.NewNop(),
+		transferClient: transferClient,
+		bucketName:     "bucket",
+		logger:         zap.NewNop(),
 	}
 
 	err := client.UploadFile(context.Background(), "export.json", []byte("hello"))
@@ -213,16 +255,16 @@ func TestAWSS3StorageClient_GetFile_Success(t *testing.T) {
 		},
 	}
 
-	downloader := manager.NewDownloader(fakeClient, func(d *manager.Downloader) {
-		d.PartSize = 10 * 1024 * 1024
-		d.Concurrency = 1
-		d.DisableValidateParts = true
+	transferClient := transfermanager.New(fakeClient, func(o *transfermanager.Options) {
+		o.PartSizeBytes = 10 * 1024 * 1024
+		o.Concurrency = 1
+		o.DisableChecksumValidation = true
 	})
 
 	client := &AWSS3StorageClient{
-		downloader: downloader,
-		bucketName: "bucket",
-		logger:     zap.NewNop(),
+		transferClient: transferClient,
+		bucketName:     "bucket",
+		logger:         zap.NewNop(),
 	}
 
 	got, err := client.GetFile(context.Background(), "export.json")
@@ -238,16 +280,16 @@ func TestAWSS3StorageClient_GetFile_DownloaderError(t *testing.T) {
 		},
 	}
 
-	downloader := manager.NewDownloader(fakeClient, func(d *manager.Downloader) {
-		d.PartSize = 10 * 1024 * 1024
-		d.Concurrency = 1
-		d.DisableValidateParts = true
+	transferClient := transfermanager.New(fakeClient, func(o *transfermanager.Options) {
+		o.PartSizeBytes = 10 * 1024 * 1024
+		o.Concurrency = 1
+		o.DisableChecksumValidation = true
 	})
 
 	client := &AWSS3StorageClient{
-		downloader: downloader,
-		bucketName: "bucket",
-		logger:     zap.NewNop(),
+		transferClient: transferClient,
+		bucketName:     "bucket",
+		logger:         zap.NewNop(),
 	}
 
 	_, err := client.GetFile(context.Background(), "export.json")

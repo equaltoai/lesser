@@ -29,7 +29,7 @@ type BandwidthTracker struct {
 	costTracker    CostTracker
 	unifiedTracker *cost.UnifiedTracker
 	tableName      string
-	cloudWatch     *cloudwatch.Client
+	cloudWatch     cloudWatchAPI
 
 	// In-memory cache for active sessions
 	sessionCache sync.Map
@@ -48,13 +48,18 @@ func NewBandwidthTracker(storage core.RepositoryStorage, logger *zap.Logger, cos
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(cloudWatch, logger, "BandwidthTracker", "", "")
 
+	var cloudWatchAPIClient cloudWatchAPI
+	if cloudWatch != nil {
+		cloudWatchAPIClient = cloudWatch
+	}
+
 	return &BandwidthTracker{
 		storage:        storage,
 		logger:         logger,
 		costTracker:    costTracker,
 		unifiedTracker: unifiedTracker,
 		tableName:      tableName,
-		cloudWatch:     cloudWatch,
+		cloudWatch:     cloudWatchAPIClient,
 		cacheTTL:       5 * time.Minute,
 		namespace:      "Lesser/Streaming/Bandwidth",
 	}
