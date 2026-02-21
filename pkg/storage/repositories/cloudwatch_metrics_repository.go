@@ -22,10 +22,14 @@ import (
 // NOTE: This repository primarily uses CloudWatch AWS SDK for metrics collection.
 // BaseRepository integration demonstrates how DynamoDB caching could be added for performance optimization.
 type CloudWatchMetricsRepository struct {
-	*EnhancedBaseRepository[*models.CloudWatchMetrics]                    // Optional caching layer
-	client                                             *cloudwatch.Client // PRESERVE: CloudWatch AWS SDK for metrics collection
-	namespace                                          string             // PRESERVE: CloudWatch namespace
-	environment                                        string             // PRESERVE: Environment for metrics filtering
+	*EnhancedBaseRepository[*models.CloudWatchMetrics]               // Optional caching layer
+	client                                             cloudWatchAPI // PRESERVE: CloudWatch AWS SDK for metrics collection
+	namespace                                          string        // PRESERVE: CloudWatch namespace
+	environment                                        string        // PRESERVE: Environment for metrics filtering
+}
+
+type cloudWatchAPI interface {
+	GetMetricStatistics(context.Context, *cloudwatch.GetMetricStatisticsInput, ...func(*cloudwatch.Options)) (*cloudwatch.GetMetricStatisticsOutput, error)
 }
 
 // CloudWatchMetrics represents metrics data from CloudWatch (PRESERVED - AWS monitoring integration)
@@ -223,12 +227,19 @@ func (r *CloudWatchMetricsRepository) getDataTransferMetrics(ctx context.Context
 // getMetricSum retrieves the sum of a metric over a time period
 // PRESERVE: CloudWatch AWS SDK integration - essential for metrics collection
 func (r *CloudWatchMetricsRepository) getMetricSum(ctx context.Context, namespace, metricName string, startTime, endTime time.Time, dimensions map[string]string) (float64, error) {
+	if r.client == nil {
+		return 0, nil
+	}
 	return r.getMetricStatistic(ctx, namespace, metricName, types.StatisticSum, startTime, endTime, dimensions)
 }
 
 // getMetricPercentile retrieves a specific percentile of a metric
 // PRESERVE: CloudWatch AWS SDK integration - essential for latency monitoring
 func (r *CloudWatchMetricsRepository) getMetricPercentile(ctx context.Context, namespace, metricName string, percentile float64, startTime, endTime time.Time, dimensions map[string]string) (float64, error) {
+	if r.client == nil {
+		return 0, nil
+	}
+
 	extendedStatistic := fmt.Sprintf("p%g", percentile)
 
 	cwDimensions := make([]types.Dimension, 0, len(dimensions))

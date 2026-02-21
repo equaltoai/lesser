@@ -16,7 +16,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	rekognitionTypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -115,7 +115,7 @@ func (t *stubAWSTransport) roundTripS3(req *http.Request) (*http.Response, error
 		data := t.s3Objects[objectKey]
 		t.mu.Unlock()
 
-		// Return a small payload so manager.Downloader uses a single request.
+		// Return a small payload so transfermanager.DownloadObject uses a single request.
 		if data == nil {
 			data = []byte("stub")
 		}
@@ -518,13 +518,17 @@ func TestVideoAnalyzer_FrameIOHelpers(t *testing.T) {
 	awsCfg := awsConfigForStub(transport)
 
 	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) { o.UsePathStyle = true })
-	uploader := manager.NewUploader(s3Client)
+	transferClient := transfermanager.New(s3Client, func(o *transfermanager.Options) {
+		o.PartSizeBytes = 10 * 1024 * 1024
+		o.Concurrency = 1
+		o.MultipartUploadThreshold = 1024 * 1024 * 1024
+	})
 
 	va := &VideoAnalyzer{
 		logger:     logger,
 		config:     &ModerationConfig{S3Bucket: "test-bucket", ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8},
 		s3Client:   s3Client,
-		s3Uploader: uploader,
+		s3Transfer: transferClient,
 		bucketName: "test-bucket",
 		cacheTTL:   time.Minute,
 		imageAnalyzer: NewImageAnalyzer(rekognition.NewFromConfig(awsCfg), logger, &ModerationConfig{
@@ -663,7 +667,7 @@ func TestVideoAnalyzer_AnalyzeVideo_CacheAndNonS3(t *testing.T) {
 		config:        &ModerationConfig{S3Bucket: "test-bucket", EnableTextAnalysis: false, ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8},
 		costTracker:   &fakeCostTracker{},
 		s3Client:      s3Client,
-		s3Uploader:    manager.NewUploader(s3Client),
+		s3Transfer:    transfermanager.New(s3Client),
 		bucketName:    "test-bucket",
 		cacheTTL:      time.Minute,
 		imageAnalyzer: NewImageAnalyzer(recClient, logger, &ModerationConfig{S3Bucket: "test-bucket", EnableImageAnalysis: false, ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8}, nil),
@@ -1117,7 +1121,7 @@ func TestVideoAnalyzer_analyzeKeyFrames_ExtractFrameSuccess(t *testing.T) {
 		logger:        logger,
 		config:        &ModerationConfig{S3Bucket: "test-bucket", EnableTextAnalysis: false, ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8},
 		s3Client:      s3Client,
-		s3Uploader:    manager.NewUploader(s3Client),
+		s3Transfer:    transfermanager.New(s3Client),
 		bucketName:    "test-bucket",
 		cacheTTL:      time.Minute,
 		imageAnalyzer: NewImageAnalyzer(recClient, logger, &ModerationConfig{S3Bucket: "test-bucket", EnableImageAnalysis: false, ConfidenceThreshold: 0.6, ViolenceThreshold: 0.8}, nil),
@@ -1404,7 +1408,7 @@ func TestVideoAnalyzer_S3AndFFmpeg_ErrorBranches(t *testing.T) {
 		awsCfg := awsConfigForStub(transport)
 		s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) { o.UsePathStyle = true })
 
-		va := &VideoAnalyzer{logger: logger, s3Client: s3Client}
+		va := &VideoAnalyzer{logger: logger, s3Client: s3Client, s3Transfer: transfermanager.New(s3Client)}
 		_, err := va.downloadVideoFromS3(ctx, "test-bucket", "video.mp4")
 		assert.Error(t, err)
 	})
@@ -1421,7 +1425,7 @@ func TestVideoAnalyzer_S3AndFFmpeg_ErrorBranches(t *testing.T) {
 		va := &VideoAnalyzer{
 			logger:     logger,
 			s3Client:   s3Client,
-			s3Uploader: manager.NewUploader(s3Client),
+			s3Transfer: transfermanager.New(s3Client),
 			bucketName: "test-bucket",
 		}
 

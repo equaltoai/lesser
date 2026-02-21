@@ -14,7 +14,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
+	tmtypes "github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager/types"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	rekognitionTypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
@@ -883,7 +884,7 @@ type VideoAnalyzer struct {
 
 	// S3 client for frame uploads
 	s3Client   *s3.Client
-	s3Uploader *manager.Uploader
+	s3Transfer *transfermanager.Client
 	bucketName string
 
 	// Cache for results
@@ -895,7 +896,7 @@ type VideoAnalyzer struct {
 func NewVideoAnalyzer(client *rekognition.Client, logger *zap.Logger, config *ModerationConfig, costTracker CostTracker) *VideoAnalyzer {
 	// Initialize S3 client for frame uploads
 	s3Client := s3.NewFromConfig(aws.Config{})
-	uploader := manager.NewUploader(s3Client)
+	transferClient := transfermanager.New(s3Client)
 
 	// Get bucket name from centralized config
 	globalCfg := appconfig.Get()
@@ -914,7 +915,7 @@ func NewVideoAnalyzer(client *rekognition.Client, logger *zap.Logger, config *Mo
 		costTracker:   costTracker,
 		imageAnalyzer: NewImageAnalyzer(client, logger, config, costTracker),
 		s3Client:      s3Client,
-		s3Uploader:    uploader,
+		s3Transfer:    transferClient,
 		bucketName:    bucketName,
 		cacheTTL:      30 * time.Minute, // Longer cache for videos due to processing cost
 	}
@@ -975,10 +976,11 @@ func (va *VideoAnalyzer) downloadVideoFromS3(ctx context.Context, bucket, key st
 	}()
 
 	// Download from S3
-	downloader := manager.NewDownloader(va.s3Client)
-	_, err = downloader.Download(ctx, tempFile, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
+	_, err = va.s3Transfer.DownloadObject(ctx, &transfermanager.DownloadObjectInput{
+		Bucket:       aws.String(bucket),
+		Key:          aws.String(key),
+		WriterAt:     tempFile,
+		ChecksumMode: tmtypes.ChecksumModeEnabled,
 	})
 	if err != nil {
 		va.cleanupLocalFile(tempFile.Name())
@@ -1058,7 +1060,7 @@ func (va *VideoAnalyzer) uploadFrameToS3(ctx context.Context, framePath string) 
 	}
 
 	// Upload to S3
-	_, err = va.s3Uploader.Upload(ctx, &s3.PutObjectInput{
+	_, err = va.s3Transfer.UploadObject(ctx, &transfermanager.UploadObjectInput{
 		Bucket:      aws.String(va.bucketName),
 		Key:         aws.String(frameKey),
 		Body:        frameFile,
