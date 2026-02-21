@@ -4,16 +4,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/jsii-runtime-go"
 )
 
-func TestSoulRoutingAddsCloudFrontBehaviorsWhenEnabled(t *testing.T) {
+func TestStageExportsPublishedToSSM(t *testing.T) {
 	outdir := t.TempDir()
 	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
 	stack := awscdk.NewStack(app, jsii.String("TestStack"), &awscdk.StackProps{
@@ -23,15 +22,23 @@ func TestSoulRoutingAddsCloudFrontBehaviorsWhenEnabled(t *testing.T) {
 		},
 	})
 
-	dist := awscloudfront.NewDistribution(stack, jsii.String("ClientDistribution"), &awscloudfront.DistributionProps{
-		DefaultBehavior: &awscloudfront.BehaviorOptions{
-			Origin: awscloudfrontorigins.NewHttpOrigin(jsii.String("api.dev.example.com"), &awscloudfrontorigins.HttpOriginProps{
-				ProtocolPolicy: awscloudfront.OriginProtocolPolicy_HTTPS_ONLY,
-			}),
-		},
+	mainTable := awsdynamodb.NewTable(stack, jsii.String("MainTable"), &awsdynamodb.TableProps{
+		PartitionKey: &awsdynamodb.Attribute{Name: jsii.String("pk"), Type: awsdynamodb.AttributeType_STRING},
+		SortKey:      &awsdynamodb.Attribute{Name: jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
+		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
 	})
 
-	addSoulOrchestratorRouting(stack, dist, "dev.example.com")
+	mediaBucket := awss3.NewBucket(stack, jsii.String("MediaBucket"), nil)
+
+	apiStack := &LesserApiStack{
+		Stack:       stack,
+		MainTable:   mainTable,
+		MediaBucket: mediaBucket,
+		AppName:     "lesser",
+		Environment: "development",
+		Domain:      "dev.example.com",
+	}
+	apiStack.publishStageExportsToSSM()
 
 	app.Synth(nil)
 
@@ -46,55 +53,49 @@ func TestSoulRoutingAddsCloudFrontBehaviorsWhenEnabled(t *testing.T) {
 		t.Fatalf("unmarshal template: %v", err)
 	}
 
-	resources := mustResources(t, tpl)
-	distRes := findSingleCloudFrontDistribution(t, resources)
-
-	cacheBehaviors := extractCacheBehaviors(t, distRes)
-	wildcard := findCacheBehavior(t, cacheBehaviors, "/soul/*")
-	exact := findCacheBehavior(t, cacheBehaviors, "/soul")
-
-	wantCachePolicyID := awscloudfront.CachePolicy_CACHING_DISABLED().CachePolicyId()
-	if wantCachePolicyID == nil || strings.TrimSpace(*wantCachePolicyID) == "" {
-		t.Fatalf("managed caching-disabled CachePolicyId missing")
-	}
-	wantOriginRequestPolicyID := awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER().OriginRequestPolicyId()
-	if wantOriginRequestPolicyID == nil || strings.TrimSpace(*wantOriginRequestPolicyID) == "" {
-		t.Fatalf("managed ALL_VIEWER_EXCEPT_HOST_HEADER OriginRequestPolicyId missing")
+	gotNames := extractSSMParameterNames(t, tpl)
+	wantNames := []string{
+		"/lesser/dev/lesser/exports/v1/table_name",
+		"/lesser/dev/lesser/exports/v1/media_bucket_name",
+		"/lesser/dev/lesser/exports/v1/domain",
 	}
 
-	requireBehaviorPolicyIDs(t, wildcard, *wantCachePolicyID, *wantOriginRequestPolicyID)
-	requireBehaviorPolicyIDs(t, exact, *wantCachePolicyID, *wantOriginRequestPolicyID)
-}
-
-func findCacheBehavior(t *testing.T, behaviors []map[string]any, pathPattern string) map[string]any {
-	t.Helper()
-
-	for _, behavior := range behaviors {
-		got, _ := behavior["PathPattern"].(string)
-		if got == pathPattern {
-			return behavior
+	for _, want := range wantNames {
+		var found bool
+		for _, got := range gotNames {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing SSM parameter %q (got %v)", want, gotNames)
 		}
 	}
-	t.Fatalf("expected cache behavior for %q", pathPattern)
-	return nil
 }
 
-func requireBehaviorPolicyIDs(t *testing.T, behavior map[string]any, wantCachePolicyID string, wantOriginRequestPolicyID string) {
+func extractSSMParameterNames(t *testing.T, tpl map[string]any) []string {
 	t.Helper()
 
-	gotCachePolicyID, ok := behavior["CachePolicyId"].(string)
-	if !ok || strings.TrimSpace(gotCachePolicyID) == "" {
-		t.Fatalf("behavior %q missing CachePolicyId", behavior["PathPattern"])
+	resources := mustResources(t, tpl)
+	out := make([]string, 0)
+	for _, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::SSM::Parameter" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		name, ok := props["Name"].(string)
+		if !ok || name == "" {
+			continue
+		}
+		out = append(out, name)
 	}
-	if gotCachePolicyID != wantCachePolicyID {
-		t.Fatalf("behavior %q unexpected CachePolicyId: got %q want %q", behavior["PathPattern"], gotCachePolicyID, wantCachePolicyID)
-	}
-
-	gotOriginRequestPolicyID, ok := behavior["OriginRequestPolicyId"].(string)
-	if !ok || strings.TrimSpace(gotOriginRequestPolicyID) == "" {
-		t.Fatalf("behavior %q missing OriginRequestPolicyId", behavior["PathPattern"])
-	}
-	if gotOriginRequestPolicyID != wantOriginRequestPolicyID {
-		t.Fatalf("behavior %q unexpected OriginRequestPolicyId: got %q want %q", behavior["PathPattern"], gotOriginRequestPolicyID, wantOriginRequestPolicyID)
-	}
+	return out
 }

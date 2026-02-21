@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
@@ -320,9 +319,6 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 	overridePathRoutedFrontendRewriteFunction(frontend)
 
 	s.FrontendDistribution = frontend.Distribution()
-	if s.soulEnabled() {
-		addSoulOrchestratorRouting(s.Stack, s.FrontendDistribution, domain)
-	}
 	s.ClientBucket = clientAssetsBucket
 	s.AuthUIBucket = authAssetsBucket
 }
@@ -351,33 +347,6 @@ func isTruthyConfigValue(value interface{}) bool {
 	default:
 		return false
 	}
-}
-
-func addSoulOrchestratorRouting(stack awscdk.Stack, distribution awscloudfront.Distribution, stageDomain string) {
-	if stack == nil || distribution == nil || strings.TrimSpace(stageDomain) == "" {
-		return
-	}
-
-	param := awsssm.StringParameter_FromStringParameterName(
-		stack,
-		jsii.String("SoulOrchestratorOriginDomainParam"),
-		jsii.String(fmt.Sprintf("/soul/%s/exports/v1/orchestrator_origin_domain", stageDomain)),
-	)
-
-	origin := awscloudfrontorigins.NewHttpOrigin(param.StringValue(), &awscloudfrontorigins.HttpOriginProps{
-		ProtocolPolicy: awscloudfront.OriginProtocolPolicy_HTTPS_ONLY,
-	})
-
-	options := &awscloudfront.AddBehaviorOptions{
-		AllowedMethods: awscloudfront.AllowedMethods_ALLOW_ALL(),
-		CachePolicy:    awscloudfront.CachePolicy_CACHING_DISABLED(),
-		// Forward Authorization + all query strings for orchestrator requests; exclude Host to prevent origin mismatch issues.
-		OriginRequestPolicy:  awscloudfront.OriginRequestPolicy_ALL_VIEWER_EXCEPT_HOST_HEADER(),
-		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-	}
-
-	distribution.AddBehavior(jsii.String("/soul"), origin, options)
-	distribution.AddBehavior(jsii.String("/soul/*"), origin, options)
 }
 
 func overridePathRoutedFrontendRewriteFunction(frontend apptheorycdk.AppTheoryPathRoutedFrontend) {
@@ -894,6 +863,7 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		WebSocketCertificate: s.WebSocketCertificate,
 		Functions:            s.Functions,
 		HostedZone:           s.HostedZone,
+		SoulEnabled:          s.soulEnabled(),
 	})
 
 	apis := []awsapigatewayv2.WebSocketApi{s.API.WebSocketApi}
@@ -1023,6 +993,46 @@ func (s *LesserApiStack) createOutputs() {
 			Description: jsii.String("S3 bucket for the auth UI (served under /auth/*)"),
 		})
 	}
+
+	s.publishStageExportsToSSM()
+}
+
+func (s *LesserApiStack) publishStageExportsToSSM() {
+	if s.Stack == nil {
+		return
+	}
+
+	appName := strings.TrimSpace(s.AppName)
+	if appName == "" {
+		appName = naming.DefaultAppName
+	}
+	stage := naming.StageForEnvironment(s.Environment)
+	paramPrefix := fmt.Sprintf("/%s/%s/lesser/exports/v1", appName, stage)
+
+	if s.MainTable != nil {
+		awsssm.NewStringParameter(s.Stack, jsii.String("LesserStageTableNameParam"), &awsssm.StringParameterProps{
+			ParameterName: jsii.String(fmt.Sprintf("%s/table_name", paramPrefix)),
+			StringValue:   s.MainTable.TableName(),
+			Description:   jsii.String("Lesser stage DynamoDB table name"),
+			Tier:          awsssm.ParameterTier_STANDARD,
+		})
+	}
+
+	if s.MediaBucket != nil {
+		awsssm.NewStringParameter(s.Stack, jsii.String("LesserStageMediaBucketNameParam"), &awsssm.StringParameterProps{
+			ParameterName: jsii.String(fmt.Sprintf("%s/media_bucket_name", paramPrefix)),
+			StringValue:   s.MediaBucket.BucketName(),
+			Description:   jsii.String("Lesser stage media bucket name"),
+			Tier:          awsssm.ParameterTier_STANDARD,
+		})
+	}
+
+	awsssm.NewStringParameter(s.Stack, jsii.String("LesserStageDomainParam"), &awsssm.StringParameterProps{
+		ParameterName: jsii.String(fmt.Sprintf("%s/domain", paramPrefix)),
+		StringValue:   jsii.String(s.Domain),
+		Description:   jsii.String("Lesser stage domain"),
+		Tier:          awsssm.ParameterTier_STANDARD,
+	})
 }
 
 func loadEnvironmentConfig(environment string) map[string]interface{} {

@@ -3,11 +3,11 @@ module cdk
 go 1.26.0
 
 require (
-	github.com/aws/aws-cdk-go/awscdk/v2 v2.236.0
+	github.com/aws/aws-cdk-go/awscdk/v2 v2.238.0
 	github.com/aws/constructs-go/constructs/v10 v10.4.5
-	github.com/aws/jsii-runtime-go v1.125.0
+	github.com/aws/jsii-runtime-go v1.126.0
 	github.com/equaltoai/lesser v0.0.0
-	github.com/theory-cloud/apptheory v0.8.0
+	github.com/theory-cloud/apptheory v0.10.0
 )
 
 require (

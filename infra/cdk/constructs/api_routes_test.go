@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	_jsii "github.com/aws/jsii-runtime-go"
@@ -152,6 +153,120 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 	}
 }
 
+func TestSoulEnabledAddsMcpRoute(t *testing.T) {
+	outdir := t.TempDir()
+	app := awscdk.NewApp(&awscdk.AppProps{Outdir: _jsii.String(outdir)})
+	stack := awscdk.NewStack(app, _jsii.String("TestStack"), nil)
+
+	dummy := awslambda.NewFunction(stack, _jsii.String("DummyFn"), &awslambda.FunctionProps{
+		Runtime: awslambda.Runtime_NODEJS_20_X(),
+		Handler: _jsii.String("index.handler"),
+		Code:    awslambda.Code_FromInline(_jsii.String("exports.handler = async () => ({ statusCode: 200, body: 'ok' });")),
+	})
+
+	functions := &LambdaFunctions{
+		Functions: map[string]awslambda.Function{
+			"api":         dummy,
+			"graphql":     dummy,
+			"sse":         dummy,
+			"streaming":   dummy,
+			"graphql-ws":  dummy,
+			"actor":       dummy,
+			"collections": dummy,
+			"inbox":       dummy,
+			"objects":     dummy,
+			"outbox":      dummy,
+			"webfinger":   dummy,
+		},
+	}
+
+	_ = CreateAPIGateway(stack, &APIGatewayProps{
+		Environment: "development",
+		Functions:   functions,
+		SoulEnabled: true,
+	})
+
+	app.Synth(nil)
+
+	templatePath := filepath.Join(outdir, "TestStack.template.json")
+	b, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template %s: %v", templatePath, err)
+	}
+
+	var tpl map[string]any
+	if err := json.Unmarshal(b, &tpl); err != nil {
+		t.Fatalf("unmarshal template: %v", err)
+	}
+
+	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
+	uri, ok := gotRoutes["POST /mcp"]
+	if !ok {
+		t.Fatalf("expected POST /mcp route to exist when soulEnabled=true")
+	}
+
+	wantParamName := "/lesser/dev/lesser-body/exports/v1/mcp_lambda_arn"
+	if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
+		uriJSON, err := json.Marshal(uri)
+		if err != nil {
+			t.Fatalf("marshal integration uri: %v", err)
+		}
+		t.Fatalf("expected POST /mcp integration to reference SSM param %q (got %s)", wantParamName, string(uriJSON))
+	}
+}
+
+func TestSoulDisabledDoesNotAddMcpRoute(t *testing.T) {
+	outdir := t.TempDir()
+	app := awscdk.NewApp(&awscdk.AppProps{Outdir: _jsii.String(outdir)})
+	stack := awscdk.NewStack(app, _jsii.String("TestStack"), nil)
+
+	dummy := awslambda.NewFunction(stack, _jsii.String("DummyFn"), &awslambda.FunctionProps{
+		Runtime: awslambda.Runtime_NODEJS_20_X(),
+		Handler: _jsii.String("index.handler"),
+		Code:    awslambda.Code_FromInline(_jsii.String("exports.handler = async () => ({ statusCode: 200, body: 'ok' });")),
+	})
+
+	functions := &LambdaFunctions{
+		Functions: map[string]awslambda.Function{
+			"api":         dummy,
+			"graphql":     dummy,
+			"sse":         dummy,
+			"streaming":   dummy,
+			"graphql-ws":  dummy,
+			"actor":       dummy,
+			"collections": dummy,
+			"inbox":       dummy,
+			"objects":     dummy,
+			"outbox":      dummy,
+			"webfinger":   dummy,
+		},
+	}
+
+	_ = CreateAPIGateway(stack, &APIGatewayProps{
+		Environment: "development",
+		Functions:   functions,
+		SoulEnabled: false,
+	})
+
+	app.Synth(nil)
+
+	templatePath := filepath.Join(outdir, "TestStack.template.json")
+	b, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("read template %s: %v", templatePath, err)
+	}
+
+	var tpl map[string]any
+	if err := json.Unmarshal(b, &tpl); err != nil {
+		t.Fatalf("unmarshal template: %v", err)
+	}
+
+	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
+	if _, ok := gotRoutes["POST /mcp"]; ok {
+		t.Fatalf("unexpected POST /mcp route present when soulEnabled=false")
+	}
+}
+
 func expectedFederationHttpRoutes(t *testing.T, environment string) map[string]string {
 	t.Helper()
 
@@ -175,6 +290,186 @@ func expectedFederationHttpRoutes(t *testing.T, environment string) map[string]s
 		}
 	}
 	return want
+}
+
+func extractHttpRouteToIntegrationURI(t *testing.T, tpl map[string]any) map[string]any {
+	t.Helper()
+
+	resources, ok := tpl["Resources"].(map[string]any)
+	if !ok {
+		t.Fatalf("template Resources missing or wrong type")
+	}
+
+	restApiLogicalID := ""
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] == "AWS::ApiGateway::RestApi" {
+			restApiLogicalID = logicalID
+			break
+		}
+	}
+
+	resourceToPathPart := make(map[string]string)
+	resourceToParent := make(map[string]string)
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::ApiGateway::Resource" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		part, ok := props["PathPart"].(string)
+		if !ok || part == "" {
+			continue
+		}
+		resourceToPathPart[logicalID] = part
+
+		parentID := props["ParentId"]
+		if restApiLogicalID != "" && isRestApiRootResourceRef(parentID, restApiLogicalID) {
+			resourceToParent[logicalID] = ""
+			continue
+		}
+		if parentLogicalID, ok := findFirstRefLogicalID(parentID); ok {
+			resourceToParent[logicalID] = parentLogicalID
+		}
+	}
+
+	resourceLogicalIDToFullPath := make(map[string]string)
+	var buildPath func(logicalID string) string
+	buildPath = func(logicalID string) string {
+		if logicalID == "" {
+			return ""
+		}
+		if existing, ok := resourceLogicalIDToFullPath[logicalID]; ok {
+			return existing
+		}
+		part := resourceToPathPart[logicalID]
+		parent := resourceToParent[logicalID]
+		full := ""
+		if parent == "" {
+			full = "/" + part
+		} else {
+			full = buildPath(parent) + "/" + part
+		}
+		resourceLogicalIDToFullPath[logicalID] = full
+		return full
+	}
+
+	routeKeyToURI := make(map[string]any)
+	for _, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::ApiGateway::Method" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		httpMethod, ok := props["HttpMethod"].(string)
+		if !ok || httpMethod == "" {
+			continue
+		}
+
+		fullPath := ""
+		if resourceLogicalID, ok := findFirstRefLogicalID(props["ResourceId"]); ok {
+			fullPath = buildPath(resourceLogicalID)
+		} else if restApiLogicalID != "" && isRestApiRootResourceRef(props["ResourceId"], restApiLogicalID) {
+			fullPath = "/"
+		}
+		if fullPath == "" {
+			continue
+		}
+
+		integration, ok := props["Integration"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		routeKeyToURI[fmt.Sprintf("%s %s", httpMethod, fullPath)] = integration["Uri"]
+	}
+
+	return routeKeyToURI
+}
+
+func integrationURIReferencesSSMParameterDefault(t *testing.T, tpl map[string]any, uri any, wantDefault string) bool {
+	t.Helper()
+
+	rawParameters, ok := tpl["Parameters"].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	type paramInfo struct {
+		Type    string
+		Default string
+	}
+	params := make(map[string]paramInfo, len(rawParameters))
+	for logicalID, raw := range rawParameters {
+		typed, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		paramType, _ := typed["Type"].(string)
+		paramDefault, _ := typed["Default"].(string)
+		params[logicalID] = paramInfo{Type: paramType, Default: paramDefault}
+	}
+
+	refs := findAllRefLogicalIDs(uri)
+	seen := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+
+		p, ok := params[ref]
+		if !ok {
+			continue
+		}
+		if !strings.HasPrefix(p.Type, "AWS::SSM::Parameter::Value") {
+			continue
+		}
+		if p.Default == wantDefault {
+			return true
+		}
+	}
+
+	return false
+}
+
+func findAllRefLogicalIDs(v any) []string {
+	switch typed := v.(type) {
+	case map[string]any:
+		out := make([]string, 0)
+		if ref, ok := typed["Ref"]; ok {
+			if s, ok := ref.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		for _, child := range typed {
+			out = append(out, findAllRefLogicalIDs(child)...)
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, child := range typed {
+			out = append(out, findAllRefLogicalIDs(child)...)
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func extractHttpRouteToFunctionName(t *testing.T, tpl map[string]any) map[string]string {
