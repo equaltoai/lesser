@@ -1,11 +1,11 @@
 github.com/Masterminds/semver/v3 v3.4.0 h1:Zog+i5UMtVoCU8oKka5P7i9q9HgrJeGzI9SA1Xbatp0=
 github.com/Masterminds/semver/v3 v3.4.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
-github.com/aws/aws-cdk-go/awscdk/v2 v2.236.0 h1:QauWNI/IAGi00KIAUcDZEXWTHuITvIr3R2lJ9zllbVo=
-github.com/aws/aws-cdk-go/awscdk/v2 v2.236.0/go.mod h1:xiTNGHJfRdjNZ+vkLx+NELBM2QP3fqkRVpHp9S09BpE=
+github.com/aws/aws-cdk-go/awscdk/v2 v2.238.0 h1:N/lbEdzRSyG1D32Q1CrYidON5lkwZXwlmLqSbOFmNp4=
+github.com/aws/aws-cdk-go/awscdk/v2 v2.238.0/go.mod h1:pY8b8Nk6V8pX2H/4kb9s3Lv0OyCqEut+vVdAn1g3nC0=
 github.com/aws/constructs-go/constructs/v10 v10.4.5 h1:sI7BEPucBQmbotxUF78qpCh4wP0ABvyinDLG7SOZIGE=
 github.com/aws/constructs-go/constructs/v10 v10.4.5/go.mod h1:L0tXWpvmTRneeFNX4efyD1haL1wQudQGHVXZWuLw74k=
-github.com/aws/jsii-runtime-go v1.125.0 h1:s5gM2ATWcCPQS61G5WHZZiqjUqejZFjed702OBrr4yo=
-github.com/aws/jsii-runtime-go v1.125.0/go.mod h1:67f+oydH0cMr//tkmNNj9QpKk02hNEEVu4CByxkpGB0=
+github.com/aws/jsii-runtime-go v1.126.0 h1:cT+yo8OMyWjgzXm7Pvy5Hq36irSIZ7bL/ds33YVDrEk=
+github.com/aws/jsii-runtime-go v1.126.0/go.mod h1:67f+oydH0cMr//tkmNNj9QpKk02hNEEVu4CByxkpGB0=
 github.com/cdklabs/awscdk-asset-awscli-go/awscliv1/v2 v2.2.263 h1:lklcDiqF0Pn1gmmv3+1nK/k40U/mAjlvcfWHYLGtFFQ=
 github.com/cdklabs/awscdk-asset-awscli-go/awscliv1/v2 v2.2.263/go.mod h1:pQx6AJJlqdc7mbkWASwwlYobLIu3TiiLV24MPDl2q4w=
 github.com/cdklabs/awscdk-asset-node-proxy-agent-go/nodeproxyagentv6/v2 v2.1.0 h1:kElXjprC8wkpJu58vp+WFH6z0AJw4zitg5iSKJPKe3c=
@@ -26,8 +26,8 @@ github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRI
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/theory-cloud/apptheory v0.8.0 h1:RaliALwKrWTQO3VOsSjDSBlf/2DmYyPgZh7AoYtqhAU=
-github.com/theory-cloud/apptheory v0.8.0/go.mod h1:4/Xa8E8SfIBOgm82BeJxcN2naWTVySsAaGDMJJJnPWU=
+github.com/theory-cloud/apptheory v0.10.0 h1:3EbKQwPJKwRTgStj9WRmL0Wgo9+Qq/Uy7fOG+LDF4mQ=
+github.com/theory-cloud/apptheory v0.10.0/go.mod h1:AA5tPLQBhSxX2+NnwDy6lOCvUk8nxYtzikI0L0Qe/Zk=
 github.com/yuin/goldmark v1.7.13 h1:GPddIs617DnBLFFVJFgpo1aBfe/4xcvMc3SB5t/D0pA=
 github.com/yuin/goldmark v1.7.13/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=

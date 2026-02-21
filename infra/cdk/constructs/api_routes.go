@@ -10,9 +10,11 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsapigatewayv2integrations"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscertificatemanager"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslogs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53targets"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsssm"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
@@ -27,6 +29,7 @@ type APIGatewayProps struct {
 	WebSocketCertificate awscertificatemanager.ICertificate
 	Functions            *LambdaFunctions
 	HostedZone           awsroute53.IHostedZone
+	SoulEnabled          bool
 }
 
 type APIGateway struct {
@@ -85,6 +88,9 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 
 	// Add routes
 	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds)
+	if props.SoulEnabled {
+		addMcpRoute(scope, gateway.RestApi, appName, apiStage)
+	}
 
 	// Shared custom domain for all WebSocket APIs.
 	var wsDomainName awsapigatewayv2.DomainName
@@ -118,6 +124,25 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	gateway.GraphQLWebSocketApi = createGraphQLWebSocketApi(scope, props, wsDomainName)
 
 	return gateway
+}
+
+func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRouter, appName string, stage naming.Stage) {
+	if scope == nil || api == nil || strings.TrimSpace(appName) == "" || strings.TrimSpace(string(stage)) == "" {
+		return
+	}
+
+	paramName := fmt.Sprintf("/%s/%s/lesser-body/exports/v1/mcp_lambda_arn", appName, stage)
+	lambdaArnParam := awsssm.StringParameter_FromStringParameterName(
+		scope,
+		jsii.String("LesserBodyMcpLambdaArnParamLookup"),
+		jsii.String(paramName),
+	)
+
+	mcpLambda := awslambda.Function_FromFunctionArn(scope, jsii.String("ImportedLesserBodyMcpLambda"), lambdaArnParam.StringValue())
+	options := &apptheorycdk.AppTheoryRestApiRouterIntegrationOptions{
+		Streaming: jsii.Bool(true),
+	}
+	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("POST")}, mcpLambda, options)
 }
 
 func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.RestApi) {
