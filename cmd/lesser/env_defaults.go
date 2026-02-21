@@ -10,7 +10,7 @@ import (
 
 const (
 	defaultCLIStage        = "dev"
-	defaultCLIMaxToolJobs  = 8
+	defaultCLIMaxToolJobs  = 4
 	lesserToolJobsEnvVar   = "LESSER_JOBS"
 	goMaxProcsEnvVar       = "GOMAXPROCS"
 	goFlagsEnvVar          = "GOFLAGS"
@@ -59,6 +59,9 @@ func resolveToolJobs() int {
 
 	if v := strings.TrimSpace(os.Getenv(goMaxProcsEnvVar)); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > defaultCLIMaxToolJobs {
+				return defaultCLIMaxToolJobs
+			}
 			return n
 		}
 	}

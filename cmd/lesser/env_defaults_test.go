@@ -26,7 +26,7 @@ func TestResolveToolJobs_PrefersLesserJobsThenGOMAXPROCS(t *testing.T) {
 
 	t.Setenv(lesserToolJobsEnvVar, "nope")
 	t.Setenv(goMaxProcsEnvVar, "5")
-	require.Equal(t, 5, resolveToolJobs())
+	require.Equal(t, defaultCLIMaxToolJobs, resolveToolJobs())
 }
 
 func TestApplyToolParallelismDefaults_SetsGOMAXPROCSAndGOFLAGSWhenUnset(t *testing.T) {
