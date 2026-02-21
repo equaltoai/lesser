@@ -143,6 +143,7 @@ func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRo
 		Streaming: jsii.Bool(true),
 	}
 	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("POST")}, mcpLambda, options)
+	api.AddLambdaIntegration(jsii.String("/.well-known/mcp.json"), &[]*string{jsii.String("GET")}, mcpLambda, nil)
 }
 
 func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.RestApi) {
