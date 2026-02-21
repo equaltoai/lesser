@@ -27,6 +27,7 @@ Legend:
 
 - **Public** `GET /.well-known/webfinger` (service: `cmd/webfinger`)
 - **Public** `GET /.well-known/nodeinfo` (service: `cmd/api`)
+- **Public** `GET /.well-known/mcp.json` (service: `lesser-body` MCP Lambda)
 - **Public** `GET /nodeinfo/2.0` (service: `cmd/api`)
 - **Public** `GET /users/:username` (service: `cmd/actor`)
   - Content negotiation:

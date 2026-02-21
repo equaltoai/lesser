@@ -200,6 +200,7 @@ func TestSoulEnabledAddsMcpRoute(t *testing.T) {
 	}
 
 	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
+
 	uri, ok := gotRoutes["POST /mcp"]
 	if !ok {
 		t.Fatalf("expected POST /mcp route to exist when soulEnabled=true")
@@ -212,6 +213,18 @@ func TestSoulEnabledAddsMcpRoute(t *testing.T) {
 			t.Fatalf("marshal integration uri: %v", err)
 		}
 		t.Fatalf("expected POST /mcp integration to reference SSM param %q (got %s)", wantParamName, string(uriJSON))
+	}
+
+	uri, ok = gotRoutes["GET /.well-known/mcp.json"]
+	if !ok {
+		t.Fatalf("expected GET /.well-known/mcp.json route to exist when soulEnabled=true")
+	}
+	if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
+		uriJSON, err := json.Marshal(uri)
+		if err != nil {
+			t.Fatalf("marshal integration uri: %v", err)
+		}
+		t.Fatalf("expected GET /.well-known/mcp.json integration to reference SSM param %q (got %s)", wantParamName, string(uriJSON))
 	}
 }
 
@@ -264,6 +277,9 @@ func TestSoulDisabledDoesNotAddMcpRoute(t *testing.T) {
 	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
 	if _, ok := gotRoutes["POST /mcp"]; ok {
 		t.Fatalf("unexpected POST /mcp route present when soulEnabled=false")
+	}
+	if _, ok := gotRoutes["GET /.well-known/mcp.json"]; ok {
+		t.Fatalf("unexpected GET /.well-known/mcp.json route present when soulEnabled=false")
 	}
 }
 
