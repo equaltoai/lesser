@@ -14,15 +14,15 @@
     "clean": "rm -rf dist .astro node_modules"
   },
   "dependencies": {
-    "@apollo/client": "^4.0.11",
-    "@apollo/client-react-streaming": "^0.14.3",
-    "@astrojs/svelte": "^7.2.1",
+    "@apollo/client": "^4.1.6",
+    "@apollo/client-react-streaming": "^0.14.4",
+    "@astrojs/svelte": "^7.2.5",
     "@graphql-typed-document-node/core": "^3.2.0",
-    "acorn": "^6.3.0",
-    "astro": "5.16.3",
-    "focus-trap": "^7.7.0",
-    "graphql": "^16.12.0",
-    "graphql-ws": "^6.0.6",
+    "acorn": "^8.16.0",
+    "astro": "5.18.0",
+    "focus-trap": "^8.0.0",
+    "graphql": "^16.13.0",
+    "graphql-ws": "^6.0.7",
     "hast": "^1.0.0",
     "hast-util-sanitize": "^5.0.2",
     "hast-util-to-mdast": "^10.1.2",
@@ -36,15 +36,15 @@
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
-    "shiki": "^3.20.0",
-    "svelte": "^5.53.1",
-    "tabbable": "^6.3.0",
+    "shiki": "^4.0.0",
+    "svelte": "^5.53.6",
+    "tabbable": "^6.4.0",
     "unified": "^11.0.5",
-    "vite": "^6.0.6",
-    "zod": "^3.25.76"
+    "vite": "^6.4.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^25.3.2",
     "typescript": "latest"
   },
   "pnpm": {
