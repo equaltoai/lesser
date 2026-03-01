@@ -139,6 +139,12 @@ func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRo
 	)
 
 	mcpLambda := awslambda.Function_FromFunctionArn(scope, jsii.String("ImportedLesserBodyMcpLambda"), lambdaArnParam.StringValue())
+	awslambda.NewCfnPermission(scope, jsii.String("McpLambdaInvokeFromApiGateway"), &awslambda.CfnPermissionProps{
+		Action:       jsii.String("lambda:InvokeFunction"),
+		FunctionName: mcpLambda.FunctionArn(),
+		Principal:    jsii.String("apigateway.amazonaws.com"),
+		SourceArn:    api.Api().ArnForExecuteApi(jsii.String("*"), jsii.String("/*"), jsii.String(string(stage))),
+	})
 	options := &apptheorycdk.AppTheoryRestApiRouterIntegrationOptions{
 		Streaming: jsii.Bool(true),
 	}

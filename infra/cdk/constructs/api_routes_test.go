@@ -226,6 +226,10 @@ func TestSoulEnabledAddsMcpRoute(t *testing.T) {
 		}
 		t.Fatalf("expected GET /.well-known/mcp.json integration to reference SSM param %q (got %s)", wantParamName, string(uriJSON))
 	}
+
+	if !templateHasMcpInvokePermission(t, tpl, wantParamName) {
+		t.Fatalf("expected API Gateway invoke permission for the MCP Lambda (param %q)", wantParamName)
+	}
 }
 
 func TestSoulDisabledDoesNotAddMcpRoute(t *testing.T) {
@@ -461,6 +465,84 @@ func integrationURIReferencesSSMParameterDefault(t *testing.T, tpl map[string]an
 		}
 	}
 
+	return false
+}
+
+func templateHasMcpInvokePermission(t *testing.T, tpl map[string]any, wantParamName string) bool {
+	t.Helper()
+
+	resources, ok := tpl["Resources"].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	restApiLogicalID := ""
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] == "AWS::ApiGateway::RestApi" {
+			restApiLogicalID = logicalID
+			break
+		}
+	}
+
+	for _, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::Lambda::Permission" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		principal, _ := props["Principal"].(string)
+		if principal != "apigateway.amazonaws.com" {
+			continue
+		}
+		if !valueReferencesSSMParameterDefault(t, tpl, props["FunctionName"], wantParamName) {
+			continue
+		}
+
+		sourceArn := props["SourceArn"]
+		if sourceArn == nil {
+			continue
+		}
+		if restApiLogicalID != "" && !valueReferencesLogicalID(sourceArn, restApiLogicalID) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func valueReferencesSSMParameterDefault(t *testing.T, tpl map[string]any, v any, wantDefault string) bool {
+	t.Helper()
+
+	if integrationURIReferencesSSMParameterDefault(t, tpl, v, wantDefault) {
+		return true
+	}
+
+	b, err := json.Marshal(v)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(string(b), wantDefault)
+}
+
+func valueReferencesLogicalID(v any, want string) bool {
+	for _, ref := range findAllRefLogicalIDs(v) {
+		if ref == want {
+			return true
+		}
+	}
 	return false
 }
 
