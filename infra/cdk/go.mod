@@ -3,19 +3,20 @@ module cdk
 go 1.26.0
 
 require (
-	github.com/aws/aws-cdk-go/awscdk/v2 v2.239.0
+	github.com/aws/aws-cdk-go/awscdk/v2 v2.240.0
 	github.com/aws/constructs-go/constructs/v10 v10.5.1
-	github.com/aws/jsii-runtime-go v1.126.0
-	github.com/equaltoai/lesser v1.1.14
-	github.com/theory-cloud/apptheory v0.11.0
+	github.com/aws/jsii-runtime-go v1.127.0
+	github.com/equaltoai/lesser v1.1.17
+	github.com/theory-cloud/apptheory v0.14.0
 )
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
-	github.com/cdklabs/awscdk-asset-awscli-go/awscliv1/v2 v2.2.266 // indirect
-	github.com/cdklabs/awscdk-asset-node-proxy-agent-go/nodeproxyagentv6/v2 v2.1.0 // indirect
+	github.com/cdklabs/awscdk-asset-awscli-go/awscliv1/v2 v2.2.267 // indirect
+	github.com/cdklabs/awscdk-asset-node-proxy-agent-go/nodeproxyagentv6/v2 v2.1.1 // indirect
 	github.com/cdklabs/cloud-assembly-schema-go/awscdkcloudassemblyschema/v50 v50.4.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/yuin/goldmark v1.7.16 // indirect

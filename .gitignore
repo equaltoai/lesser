@@ -92,6 +92,7 @@ reference/
 
 
 # Exclude example binaries that end with _example
+.theory/
 *_example
 
 # But explicitly allow Go source files
