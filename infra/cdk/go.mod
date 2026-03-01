@@ -7,7 +7,7 @@ require (
 	github.com/aws/constructs-go/constructs/v10 v10.5.1
 	github.com/aws/jsii-runtime-go v1.127.0
 	github.com/equaltoai/lesser v1.1.17
-	github.com/theory-cloud/apptheory v0.13.0
+	github.com/theory-cloud/apptheory v0.14.0
 )
 
 require (
@@ -16,6 +16,7 @@ require (
 	github.com/cdklabs/awscdk-asset-node-proxy-agent-go/nodeproxyagentv6/v2 v2.1.1 // indirect
 	github.com/cdklabs/cloud-assembly-schema-go/awscdkcloudassemblyschema/v50 v50.4.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/yuin/goldmark v1.7.16 // indirect

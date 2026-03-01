@@ -22,7 +22,7 @@ importers:
         version: 0.14.4(@apollo/client@4.1.6(graphql-ws@6.0.7(crossws@0.3.5)(graphql@16.13.0))(graphql@16.13.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(rxjs@7.8.2))(@types/react@19.2.7)(graphql@16.13.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(rxjs@7.8.2)
       '@astrojs/svelte':
         specifier: ^7.2.5
-        version: 7.2.5(@types/node@25.3.2)(astro@5.18.0(@types/node@25.3.2)(rollup@4.59.0)(typescript@5.9.3))(svelte@5.53.6)(typescript@5.9.3)
+        version: 7.2.5(@types/node@25.3.3)(astro@5.18.0(@types/node@25.3.3)(rollup@4.59.0)(typescript@5.9.3))(svelte@5.53.6)(typescript@5.9.3)
       '@graphql-typed-document-node/core':
         specifier: ^3.2.0
         version: 3.2.0(graphql@16.13.0)
@@ -31,7 +31,7 @@ importers:
         version: 8.16.0
       astro:
         specifier: 5.18.0
-        version: 5.18.0(@types/node@25.3.2)(rollup@4.59.0)(typescript@5.9.3)
+        version: 5.18.0(@types/node@25.3.3)(rollup@4.59.0)(typescript@5.9.3)
       focus-trap:
         specifier: ^8.0.0
         version: 8.0.0
@@ -41,18 +41,12 @@ importers:
       graphql-ws:
         specifier: ^6.0.7
         version: 6.0.7(crossws@0.3.5)(graphql@16.13.0)
-      hast:
-        specifier: ^1.0.0
-        version: 1.0.0
       hast-util-sanitize:
         specifier: ^5.0.2
         version: 5.0.2
       hast-util-to-mdast:
         specifier: ^10.1.2
         version: 10.1.2
-      mdast:
-        specifier: ^3.0.0
-        version: 3.0.0
       mdast-util-gfm:
         specifier: ^3.1.0
         version: 3.1.0
@@ -94,14 +88,20 @@ importers:
         version: 11.0.5
       vite:
         specifier: ^6.4.1
-        version: 6.4.1(@types/node@25.3.2)
+        version: 6.4.1(@types/node@25.3.3)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@types/hast':
+        specifier: ^3.0.4
+        version: 3.0.4
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
       '@types/node':
-        specifier: ^25.3.2
-        version: 25.3.2
+        specifier: ^25.3.3
+        version: 25.3.3
       typescript:
         specifier: latest
         version: 5.9.3
@@ -879,8 +879,8 @@ packages:
   '@types/nlcst@2.0.3':
     resolution: {integrity: sha512-vSYNSDe6Ix3q+6Z7ri9lyWqgGhJTmzRjZRqyq15N0Z/1/UnVsno9G/N40NBijoYx2seFDIl0+B2mgAb9mezUCA==}
 
-  '@types/node@25.3.2':
-    resolution: {integrity: sha512-RpV6r/ij22zRRdyBPcxDeKAzH43phWVKEjL2iksqo1Vz3CuBUrgmPpPhALKiRfU7OMCmeeO9vECBMsV0hMTG8Q==}
+  '@types/node@25.3.3':
+    resolution: {integrity: sha512-DpzbrH7wIcBaJibpKo9nnSQL0MTRdnWttGyE5haGwK86xgMOkFLp7vEyfQPGLOJh5wNYiJ3V9PmUMDhV9u8kkQ==}
 
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
@@ -1286,10 +1286,6 @@ packages:
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
 
-  hast@1.0.0:
-    resolution: {integrity: sha512-vFUqlRV5C+xqP76Wwq2SrM0kipnmpxJm7OfvVXpB35Fp+Fn4MV+ozr+JZr5qFvyR1q/U+Foim2x+3P+x9S1PLA==}
-    deprecated: Renamed to rehype
-
   hastscript@9.0.1:
     resolution: {integrity: sha512-g7df9rMFX/SPi34tyGCyUBREQoKkapwdY/T04Qn9TDWfHhAYt4/I0gMVirzK5wEzeUqIjEB+LXC/ypb7Aqno5w==}
 
@@ -1402,10 +1398,6 @@ packages:
 
   mdast-util-to-string@4.0.0:
     resolution: {integrity: sha512-0H44vDimn51F0YwvxSJSm0eCDOJTRlmN0R1yBh4HLj9wiV1Dn0QoXGbvFAWj2hSItVTlCmBF1hqKlIyUBVFLPg==}
-
-  mdast@3.0.0:
-    resolution: {integrity: sha512-xySmf8g4fPKMeC07jXGz971EkLbWAJ83s4US2Tj9lEdnZ142UP5grN73H1Xd3HzrdbU5o9GYYP/y8F9ZSwLE9g==}
-    deprecated: '`mdast` was renamed to `remark`'
 
   mdn-data@2.0.28:
     resolution: {integrity: sha512-aylIc7Z9y4yzHYAJNuESG3hfhC+0Ibp/MAMiaOZgNv4pmEdFyfZhhhny4MNiAfWdBQ1RQ2mfDWmM1x8SvGyp8g==}
@@ -2077,14 +2069,14 @@ snapshots:
     dependencies:
       prismjs: 1.30.0
 
-  '@astrojs/svelte@7.2.5(@types/node@25.3.2)(astro@5.18.0(@types/node@25.3.2)(rollup@4.59.0)(typescript@5.9.3))(svelte@5.53.6)(typescript@5.9.3)':
+  '@astrojs/svelte@7.2.5(@types/node@25.3.3)(astro@5.18.0(@types/node@25.3.3)(rollup@4.59.0)(typescript@5.9.3))(svelte@5.53.6)(typescript@5.9.3)':
     dependencies:
-      '@sveltejs/vite-plugin-svelte': 5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.2))
-      astro: 5.18.0(@types/node@25.3.2)(rollup@4.59.0)(typescript@5.9.3)
+      '@sveltejs/vite-plugin-svelte': 5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.3))
+      astro: 5.18.0(@types/node@25.3.3)(rollup@4.59.0)(typescript@5.9.3)
       svelte: 5.53.6
       svelte2tsx: 0.7.51(svelte@5.53.6)(typescript@5.9.3)
       typescript: 5.9.3
-      vite: 6.4.1(@types/node@25.3.2)
+      vite: 6.4.1(@types/node@25.3.3)
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -2569,25 +2561,25 @@ snapshots:
     dependencies:
       acorn: 8.16.0
 
-  '@sveltejs/vite-plugin-svelte-inspector@4.0.1(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.2)))(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.2))':
+  '@sveltejs/vite-plugin-svelte-inspector@4.0.1(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.3)))(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.3))':
     dependencies:
-      '@sveltejs/vite-plugin-svelte': 5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.2))
+      '@sveltejs/vite-plugin-svelte': 5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.3))
       debug: 4.4.3
       svelte: 5.53.6
-      vite: 6.4.1(@types/node@25.3.2)
+      vite: 6.4.1(@types/node@25.3.3)
     transitivePeerDependencies:
       - supports-color
 
-  '@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.2))':
+  '@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.3))':
     dependencies:
-      '@sveltejs/vite-plugin-svelte-inspector': 4.0.1(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.2)))(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.2))
+      '@sveltejs/vite-plugin-svelte-inspector': 4.0.1(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.3)))(svelte@5.53.6)(vite@6.4.1(@types/node@25.3.3))
       debug: 4.4.3
       deepmerge: 4.3.1
       kleur: 4.1.5
       magic-string: 0.30.21
       svelte: 5.53.6
-      vite: 6.4.1(@types/node@25.3.2)
-      vitefu: 1.1.2(vite@6.4.1(@types/node@25.3.2))
+      vite: 6.4.1(@types/node@25.3.3)
+      vitefu: 1.1.2(vite@6.4.1(@types/node@25.3.3))
     transitivePeerDependencies:
       - supports-color
 
@@ -2611,7 +2603,7 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
 
-  '@types/node@25.3.2':
+  '@types/node@25.3.3':
     dependencies:
       undici-types: 7.18.2
 
@@ -2670,7 +2662,7 @@ snapshots:
 
   array-iterate@2.0.1: {}
 
-  astro@5.18.0(@types/node@25.3.2)(rollup@4.59.0)(typescript@5.9.3):
+  astro@5.18.0(@types/node@25.3.3)(rollup@4.59.0)(typescript@5.9.3):
     dependencies:
       '@astrojs/compiler': 2.13.1
       '@astrojs/internal-helpers': 0.7.5
@@ -2727,8 +2719,8 @@ snapshots:
       unist-util-visit: 5.1.0
       unstorage: 1.17.4
       vfile: 6.0.3
-      vite: 6.4.1(@types/node@25.3.2)
-      vitefu: 1.1.2(vite@6.4.1(@types/node@25.3.2))
+      vite: 6.4.1(@types/node@25.3.3)
+      vitefu: 1.1.2(vite@6.4.1(@types/node@25.3.3))
       xxhash-wasm: 1.1.0
       yargs-parser: 21.1.1
       yocto-spinner: 0.2.3
@@ -3177,8 +3169,6 @@ snapshots:
     dependencies:
       '@types/hast': 3.0.4
 
-  hast@1.0.0: {}
-
   hastscript@9.0.1:
     dependencies:
       '@types/hast': 3.0.4
@@ -3360,8 +3350,6 @@ snapshots:
   mdast-util-to-string@4.0.0:
     dependencies:
       '@types/mdast': 4.0.4
-
-  mdast@3.0.0: {}
 
   mdn-data@2.0.28: {}
 
@@ -4059,7 +4047,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@6.4.1(@types/node@25.3.2):
+  vite@6.4.1(@types/node@25.3.3):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.3)
@@ -4068,12 +4056,12 @@ snapshots:
       rollup: 4.59.0
       tinyglobby: 0.2.15
     optionalDependencies:
-      '@types/node': 25.3.2
+      '@types/node': 25.3.3
       fsevents: 2.3.3
 
-  vitefu@1.1.2(vite@6.4.1(@types/node@25.3.2)):
+  vitefu@1.1.2(vite@6.4.1(@types/node@25.3.3)):
     optionalDependencies:
-      vite: 6.4.1(@types/node@25.3.2)
+      vite: 6.4.1(@types/node@25.3.3)
 
   web-namespaces@2.0.1: {}
 
