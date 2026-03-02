@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 
@@ -87,34 +86,27 @@ func TestTrustRepository_CRUDAndQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	// GetTrustRelationships pagination
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		dst := args.Get(0)
-		v := reflect.ValueOf(dst)
-		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
-			return
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		if rels, ok := args.Get(0).(*[]*models.TrustRelationship); ok {
+			*rels = []*models.TrustRelationship{
+				{ID: "rel-a", TrusterID: "alice", TrusteeID: "x", SK: "SK#1"},
+				{ID: "rel-b", TrusterID: "alice", TrusteeID: "y", SK: "SK#2"},
+			}
 		}
-		s := reflect.MakeSlice(v.Elem().Type(), 0, 2)
-		s = reflect.Append(s, reflect.ValueOf(&models.TrustRelationship{ID: "rel-a", TrusterID: "alice", TrusteeID: "x", SK: "SK#1"}))
-		s = reflect.Append(s, reflect.ValueOf(&models.TrustRelationship{ID: "rel-b", TrusterID: "alice", TrusteeID: "y", SK: "SK#2"}))
-		v.Elem().Set(s)
 	}).Return(nil).Once()
 	relationships, next, err := repo.GetTrustRelationships(context.Background(), "alice", 1, "")
 	require.NoError(t, err)
 	require.Len(t, relationships, 1)
 	require.NotEmpty(t, next)
 
-	// GetTrustedByRelationships fallback path on "index" error
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("index does not exist")).Once()
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		dst := args.Get(0)
-		v := reflect.ValueOf(dst)
-		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Slice {
-			return
+	// GetTrustedByRelationships pagination
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		if rels, ok := args.Get(0).(*[]*models.TrustRelationship); ok {
+			*rels = []*models.TrustRelationship{
+				{TrusterID: "t1", TrusteeID: "bob", Category: trust.TrustCategoryGeneral, GSI1SK: "s1"},
+				{TrusterID: "t2", TrusteeID: "bob", Category: trust.TrustCategoryGeneral, GSI1SK: "s2"},
+			}
 		}
-		s := reflect.MakeSlice(v.Elem().Type(), 0, 2)
-		s = reflect.Append(s, reflect.ValueOf(&models.TrustRelationship{TrusterID: "t1", TrusteeID: "bob", Category: trust.TrustCategoryGeneral, GSI1SK: "s1"}))
-		s = reflect.Append(s, reflect.ValueOf(&models.TrustRelationship{TrusterID: "t2", TrusteeID: "bob", Category: trust.TrustCategoryGeneral, GSI1SK: "s2"}))
-		v.Elem().Set(s)
 	}).Return(nil).Once()
 	relationships, next, err = repo.GetTrustedByRelationships(context.Background(), "bob", 1, "")
 	require.NoError(t, err)
@@ -197,14 +189,35 @@ func TestTrustRepository_GetTrustScore_RecalculateAndCache(t *testing.T) {
 	// 1) scoreRepo.Get cache miss
 	mockQuery.On("First", mock.Anything).Return(errors.New("miss")).Once()
 
-	// 2) GetTrustedByRelationships for direct relationships (Scan)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		if rels, ok := args.Get(0).(*[]*models.TrustRelationship); ok {
+	allCall := 0
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		allCall++
+		rels, ok := args.Get(0).(*[]*models.TrustRelationship)
+		if !ok {
+			return
+		}
+
+		switch allCall {
+		case 1, 2, 3:
+			// GetTrustedByRelationships (direct): content/behavior/technical have no rows.
+			*rels = nil
+		case 4:
+			// GetTrustedByRelationships (direct): general returns direct relationships.
 			*rels = []*models.TrustRelationship{
 				{TrusterID: "t1", TrusteeID: "actor", Category: trust.TrustCategoryGeneral, Score: 0.8, Confidence: 1.0, GSI1SK: "x"},
 			}
+		case 5, 6, 7:
+			// GetTrustedByRelationships (propagation expansion): content/behavior/technical have no rows.
+			*rels = nil
+		case 8:
+			// GetTrustedByRelationships (propagation expansion): general returns additional relationships.
+			*rels = []*models.TrustRelationship{
+				{TrusterID: "t2", TrusteeID: "actor", Category: trust.TrustCategoryGeneral, Score: 0.6, Confidence: 1.0, GSI1SK: "y"},
+			}
+		default:
+			*rels = nil
 		}
-	}).Return(nil).Once()
+	}).Return(nil)
 
 	// 3) getCachedTrustScore (scoreRepo.Get) returns a valid cached node score to allow propagation
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
@@ -213,15 +226,6 @@ func TestTrustRepository_GetTrustScore_RecalculateAndCache(t *testing.T) {
 			s.Category = trust.TrustCategoryGeneral
 			s.Score = 0.9
 			s.CacheTTL = time.Now().Add(time.Hour)
-		}
-	}).Return(nil).Once()
-
-	// 4) GetTrustedByRelationships for propagation expansion (Scan)
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		if rels, ok := args.Get(0).(*[]*models.TrustRelationship); ok {
-			*rels = []*models.TrustRelationship{
-				{TrusterID: "t2", TrusteeID: "actor", Category: trust.TrustCategoryGeneral, Score: 0.6, Confidence: 1.0, GSI1SK: "y"},
-			}
 		}
 	}).Return(nil).Once()
 
@@ -354,8 +358,9 @@ func TestTrustRepository_MoreErrorBranches(t *testing.T) {
 	require.Error(t, err)
 
 	// GetTrustRelationships cursor branch + scan error
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("boom")).Once()
-	_, _, err = repo.GetTrustRelationships(context.Background(), "a", 10, "CURSOR")
+	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
+	cursor := encodeTrustRelationshipCursor(trustRelationshipCursor{Category: "general", LastSK: "RELATIONSHIP#sk"})
+	_, _, err = repo.GetTrustRelationships(context.Background(), "a", 10, cursor)
 	require.Error(t, err)
 
 	// getCachedTrustScore error path
@@ -394,7 +399,7 @@ func TestTrustRepository_GetUserTrustScore_ErrorPath(t *testing.T) {
 
 	// cache miss then calculateTrustScore fails due to GetTrustedByRelationships scan error
 	mockQuery.On("First", mock.Anything).Return(errors.New("miss")).Once()
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("boom")).Once()
+	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
 
 	_, err := repo.GetUserTrustScore(context.Background(), "u")
 	require.Error(t, err)

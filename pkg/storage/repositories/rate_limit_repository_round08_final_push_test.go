@@ -68,7 +68,7 @@ func TestRound08_RateLimitRepository_FinalPush(t *testing.T) {
 	t.Run("IsDomainBlocked query error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.APIRateLimit")).Return(errors.New("all failed")).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.RateLimitLockout")).Return(errors.New("get failed")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewRateLimitRepository(mockDB, "test-table", zaptest.NewLogger(t), nil)

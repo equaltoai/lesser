@@ -49,7 +49,7 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 			dest := args.Get(0).(*models.QueryCacheEntry)
 			*dest = models.QueryCacheEntry{
 				PK:        "CACHE#expired",
-				SK:        "ENTRY",
+				SK:        "KEY#expired",
 				CacheKey:  "expired",
 				Value:     `{"ok":true}`,
 				Size:      1,
@@ -82,7 +82,7 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 			dest := args.Get(0).(*models.QueryCacheEntry)
 			*dest = models.QueryCacheEntry{
 				PK:        "CACHE#badjson",
-				SK:        "ENTRY",
+				SK:        "KEY#badjson",
 				CacheKey:  "badjson",
 				Value:     "not-json",
 				Size:      1,
@@ -109,7 +109,7 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 			dest := args.Get(0).(*models.QueryCacheEntry)
 			*dest = models.QueryCacheEntry{
 				PK:        "CACHE#ok",
-				SK:        "ENTRY",
+				SK:        "KEY#ok",
 				CacheKey:  "ok",
 				Value:     `{"a":1}`,
 				Size:      1,
@@ -162,11 +162,13 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 			// Prefix scan.
 			mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Twice()
+			mockQueryScan.On("OrderBy", mock.Anything, mock.Anything).Return(mockQueryScan).Once()
+			mockQueryScan.On("Limit", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*[]models.QueryCacheEntry)
 				*dest = []models.QueryCacheEntry{
-					{PK: "CACHE#pre:1", SK: "ENTRY"},
-					{PK: "CACHE#pre:2", SK: "ENTRY"},
+					{PK: "CACHE#pre", SK: "KEY#pre:1"},
+					{PK: "CACHE#pre", SK: "KEY#pre:2"},
 				}
 			}).Once()
 
@@ -195,6 +197,8 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 			mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 			mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQueryScan).Twice()
+			mockQueryScan.On("OrderBy", mock.Anything, mock.Anything).Return(mockQueryScan).Once()
+			mockQueryScan.On("Limit", mock.Anything).Return(mockQueryScan).Once()
 			mockQueryScan.On("All", mock.Anything).Return(assert.AnError).Once()
 
 			repo := NewQueryCacheRepository(mockDB, "table", zap.NewNop(), nil, nil, nil)
@@ -248,8 +252,8 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 			mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*models.QueryCacheEntry)
 				*dest = models.QueryCacheEntry{
-					PK:        "CACHE#instance:i1",
-					SK:        "ENTRY",
+					PK:        "CACHE#instance",
+					SK:        "KEY#instance:i1",
 					CacheKey:  "instance:i1",
 					Value:     `{"id":"i1","domain":"example.com","status":"active","tier_level":"standard"}`,
 					Size:      1,
@@ -277,8 +281,8 @@ func TestQueryCacheRepository_Round08_CacheCRUD(t *testing.T) {
 			mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 				dest := args.Get(0).(*models.QueryCacheEntry)
 				*dest = models.QueryCacheEntry{
-					PK:        "CACHE#instance:i1",
-					SK:        "ENTRY",
+					PK:        "CACHE#instance",
+					SK:        "KEY#instance:i1",
 					CacheKey:  "instance:i1",
 					Value:     `"not-a-map"`,
 					Size:      1,
@@ -309,8 +313,8 @@ func TestQueryCacheRepository_Round08_CacheFallbacksAndBatch(t *testing.T) {
 		mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*models.QueryCacheEntry)
 			*dest = models.QueryCacheEntry{
-				PK:        "CACHE#status:active",
-				SK:        "ENTRY",
+				PK:        "CACHE#status",
+				SK:        "KEY#status:active",
 				CacheKey:  "status:active",
 				Value:     `[{"id":"i1","domain":"one.example","status":"active","tier_level":"standard"},"skip-me"]`,
 				Size:      2,
@@ -394,8 +398,8 @@ func TestQueryCacheRepository_Round08_CacheFallbacksAndBatch(t *testing.T) {
 		cacheQueryGet1.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*models.QueryCacheEntry)
 			*dest = models.QueryCacheEntry{
-				PK:        "CACHE#instance:i1",
-				SK:        "ENTRY",
+				PK:        "CACHE#instance",
+				SK:        "KEY#instance:i1",
 				CacheKey:  "instance:i1",
 				Value:     `{"id":"i1","domain":"one.example","status":"active","tier_level":"standard"}`,
 				ExpiresAt: time.Now().Add(time.Minute),

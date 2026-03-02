@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	stdErrors "errors"
 	"fmt"
 	"strings"
@@ -17,6 +19,55 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
 )
+
+type trustRelationshipCursor struct {
+	Category string `json:"category"`
+	LastSK   string `json:"last_sk"`
+}
+
+func encodeTrustRelationshipCursor(cursor trustRelationshipCursor) string {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeTrustRelationshipCursor(encoded string) (trustRelationshipCursor, error) {
+	if strings.TrimSpace(encoded) == "" {
+		return trustRelationshipCursor{}, nil
+	}
+
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return trustRelationshipCursor{}, err
+	}
+
+	var cursor trustRelationshipCursor
+	if err := json.Unmarshal(raw, &cursor); err != nil {
+		return trustRelationshipCursor{}, err
+	}
+
+	cursor.Category = strings.TrimSpace(cursor.Category)
+	cursor.LastSK = strings.TrimSpace(cursor.LastSK)
+	return cursor, nil
+}
+
+var trustRelationshipCategoryOrder = []models.TrustCategory{
+	models.TrustCategoryContent,
+	models.TrustCategoryBehavior,
+	models.TrustCategoryTechnical,
+	models.TrustCategoryGeneral,
+}
+
+func trustCategoryIndex(category string) int {
+	for i, candidate := range trustRelationshipCategoryOrder {
+		if category == string(candidate) {
+			return i
+		}
+	}
+	return -1
+}
 
 // TrustRepository handles trust-related operations using enhanced repository patterns
 type TrustRepository struct {
@@ -238,84 +289,157 @@ func (r *TrustRepository) DeleteTrustRelationship(ctx context.Context, trusterID
 
 // GetTrustRelationships retrieves all trust relationships for a truster
 func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	// Use BaseRepository to get underlying DB for complex queries
-	var trustModels []*models.TrustRelationship
-	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
-		Where("PK", "begins_with", fmt.Sprintf("TRUST#%s#", trusterID))
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	err := query.Limit(limit + 1).Scan(&trustModels)
-
-	// Generate next cursor
-	var nextCursor string
-	if len(trustModels) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = trustModels[limit-1].SK
-		trustModels = trustModels[:limit] // Trim to requested limit
-	}
-
+	decodedCursor, err := decodeTrustRelationshipCursor(cursor)
 	if err != nil {
-		return nil, "", err
+		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "cursor decode")
 	}
 
-	relationships := make([]*storage.TrustRelationship, 0)
-	for _, model := range trustModels {
-		relationships = append(relationships, r.modelToTrustRelationship(model))
+	startCategoryIndex := 0
+	categoryCursorSK := decodedCursor.LastSK
+	if decodedCursor.Category != "" {
+		startCategoryIndex = trustCategoryIndex(decodedCursor.Category)
+		if startCategoryIndex < 0 {
+			return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, "trust relationship", "invalid cursor category")
+		}
 	}
 
-	return relationships, nextCursor, nil
+	relationships := make([]*storage.TrustRelationship, 0, limit)
+	for i := startCategoryIndex; i < len(trustRelationshipCategoryOrder) && len(relationships) < limit; i++ {
+		category := trustRelationshipCategoryOrder[i]
+		pk := fmt.Sprintf("TRUST#%s#%s", trusterID, category)
+
+		remaining := limit - len(relationships)
+		query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "ASC").
+			Limit(remaining + 1)
+
+		if categoryCursorSK != "" {
+			query = query.Where("SK", ">", categoryCursorSK)
+		}
+
+		var page []*models.TrustRelationship
+		if err := query.All(&page); err != nil {
+			return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "list")
+		}
+
+		if len(page) == 0 {
+			categoryCursorSK = ""
+			continue
+		}
+
+		hasMore := len(page) > remaining
+		if hasMore {
+			page = page[:remaining]
+		}
+
+		for _, model := range page {
+			relationships = append(relationships, r.modelToTrustRelationship(model))
+		}
+
+		if hasMore {
+			nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+				Category: string(category),
+				LastSK:   page[len(page)-1].SK,
+			})
+			return relationships, nextCursor, nil
+		}
+
+		// If we hit the requested limit exactly at a category boundary, advance the cursor
+		// to the next category so callers can continue pagination.
+		if len(relationships) >= limit {
+			if i+1 < len(trustRelationshipCategoryOrder) {
+				nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+					Category: string(trustRelationshipCategoryOrder[i+1]),
+					LastSK:   "",
+				})
+				return relationships, nextCursor, nil
+			}
+			return relationships, "", nil
+		}
+
+		categoryCursorSK = ""
+	}
+
+	return relationships, "", nil
 }
 
 // GetTrustedByRelationships retrieves all relationships where the actor is trusted
 func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	// Query using GSI1 for reverse lookup
-	// Note: DynamORM uses case-sensitive index names, check actual index name in CDK
-	var trustModels []*models.TrustRelationship
-	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
-		Index("gsi1"). // Try gsi1 first (common DynamORM pattern)
-		Where("gsi1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	err := query.Limit(limit + 1).Scan(&trustModels)
-
-	// If GSI1 fails, try gsi1-index (lowercase)
-	if err != nil && strings.Contains(err.Error(), "index") {
-		r.logger.Debug("GSI1 query failed, trying gsi1-index", zap.Error(err))
-		query = r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
-			Index("gsi1").
-			Where("gsi1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
-		if cursor != "" {
-			query = query.Cursor(cursor)
-		}
-		err = query.Limit(limit + 1).Scan(&trustModels)
-	}
-
-	// Generate next cursor
-	var nextCursor string
+	decodedCursor, err := decodeTrustRelationshipCursor(cursor)
 	if err != nil {
-		return nil, "", err
+		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "cursor decode")
 	}
 
-	if len(trustModels) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = trustModels[limit-1].GSI1SK
-		trustModels = trustModels[:limit] // Trim to requested limit
+	startCategoryIndex := 0
+	categoryCursorSK := decodedCursor.LastSK
+	if decodedCursor.Category != "" {
+		startCategoryIndex = trustCategoryIndex(decodedCursor.Category)
+		if startCategoryIndex < 0 {
+			return nil, "", ErrorHandler.HandleQueryError(storage.ErrInvalidInput, "trust relationship", "invalid cursor category")
+		}
 	}
 
-	relationships := make([]*storage.TrustRelationship, 0)
-	for _, model := range trustModels {
-		relationships = append(relationships, r.modelToTrustRelationship(model))
+	relationships := make([]*storage.TrustRelationship, 0, limit)
+	for i := startCategoryIndex; i < len(trustRelationshipCategoryOrder) && len(relationships) < limit; i++ {
+		category := trustRelationshipCategoryOrder[i]
+		gsi1PK := fmt.Sprintf("TRUSTED#%s#%s", trusteeID, category)
+
+		remaining := limit - len(relationships)
+		query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", gsi1PK).
+			OrderBy("gsi1SK", "ASC").
+			Limit(remaining + 1)
+
+		if categoryCursorSK != "" {
+			query = query.Where("gsi1SK", ">", categoryCursorSK)
+		}
+
+		var page []*models.TrustRelationship
+		if err := query.All(&page); err != nil {
+			return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "list trusted-by")
+		}
+
+		if len(page) == 0 {
+			categoryCursorSK = ""
+			continue
+		}
+
+		hasMore := len(page) > remaining
+		if hasMore {
+			page = page[:remaining]
+		}
+
+		for _, model := range page {
+			relationships = append(relationships, r.modelToTrustRelationship(model))
+		}
+
+		if hasMore {
+			nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+				Category: string(category),
+				LastSK:   page[len(page)-1].GSI1SK,
+			})
+			return relationships, nextCursor, nil
+		}
+
+		// If we hit the requested limit exactly at a category boundary, advance the cursor
+		// to the next category so callers can continue pagination.
+		if len(relationships) >= limit {
+			if i+1 < len(trustRelationshipCategoryOrder) {
+				nextCursor := encodeTrustRelationshipCursor(trustRelationshipCursor{
+					Category: string(trustRelationshipCategoryOrder[i+1]),
+					LastSK:   "",
+				})
+				return relationships, nextCursor, nil
+			}
+			return relationships, "", nil
+		}
+
+		categoryCursorSK = ""
 	}
 
-	return relationships, nextCursor, nil
+	return relationships, "", nil
 }
 
 // GetTrustScore retrieves a cached trust score or calculates it

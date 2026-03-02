@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -208,6 +209,8 @@ type FederationEdge struct {
 	SK     string `theorydb:"sk,attr:SK"`
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"`
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"`
 
 	SourceDomain   string    `theorydb:"attr:sourceDomain" json:"source_domain"`
 	TargetDomain   string    `theorydb:"attr:targetDomain" json:"target_domain"`
@@ -234,6 +237,25 @@ func (f *FederationEdge) UpdateKeys() {
 	// GSI2 for connection queries
 	f.GSI2PK = fmt.Sprintf("INSTANCE#%s#CONNECTIONS#%s", f.SourceDomain, f.ConnectionType)
 	f.GSI2SK = fmt.Sprintf("%d#%s", f.LastActivity.Unix(), f.TargetDomain)
+
+	// GSI8 for global strongest-by-type queries (no index scans).
+	// Sort order: strength desc, last activity desc (via Query OrderBy DESC).
+	strengthScaled := int64(math.Round(f.Strength * 1000000))
+	if strengthScaled < 0 {
+		strengthScaled = 0
+	}
+	if strengthScaled > 1000000 {
+		strengthScaled = 1000000
+	}
+
+	f.GSI8PK = fmt.Sprintf("FED_EDGES#TYPE#%s", f.ConnectionType)
+	f.GSI8SK = fmt.Sprintf(
+		"STRENGTH#%07d#LAST#%013d#SRC#%s#TGT#%s",
+		strengthScaled,
+		f.LastActivity.Unix(),
+		f.SourceDomain,
+		f.TargetDomain,
+	)
 }
 
 // InstanceMetadata contains detailed metadata about a federated instance

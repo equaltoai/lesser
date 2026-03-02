@@ -1871,9 +1871,11 @@ func (r *FederationRepository) CreateSeveredRelationship(ctx context.Context, re
 
 // GetSeveredRelationships retrieves severed relationships for a local instance
 func (r *FederationRepository) GetSeveredRelationships(ctx context.Context, localInstance string, limit int, cursor string) ([]*models.SeveredRelationship, string, error) {
+	pk := fmt.Sprintf("SEVERED#%s", localInstance)
 	query := r.db.WithContext(ctx).Model(&models.SeveredRelationship{}).
-		Filter("PK", "BEGINS_WITH", fmt.Sprintf("SEVERED#%s#", localInstance)).
-		Limit(limit)
+		Where("PK", "=", pk).
+		OrderBy("SK", "ASC").
+		Limit(limit + 1)
 
 	// If cursor provided, set the starting point
 	if cursor != "" {
@@ -1881,7 +1883,7 @@ func (r *FederationRepository) GetSeveredRelationships(ctx context.Context, loca
 	}
 
 	var relationships []models.SeveredRelationship
-	err := query.Scan(&relationships)
+	err := query.All(&relationships)
 	if err != nil {
 		r.logger.Error("Failed to query severed relationships",
 			zap.String("local_instance", localInstance),
@@ -1891,6 +1893,11 @@ func (r *FederationRepository) GetSeveredRelationships(ctx context.Context, loca
 	}
 
 	// Convert to pointer slice
+	hasMore := len(relationships) > limit
+	if hasMore {
+		relationships = relationships[:limit]
+	}
+
 	result := make([]*models.SeveredRelationship, len(relationships))
 	for i := range relationships {
 		result[i] = &relationships[i]
@@ -1898,7 +1905,7 @@ func (r *FederationRepository) GetSeveredRelationships(ctx context.Context, loca
 
 	// Prepare next cursor
 	nextCursor := ""
-	if len(relationships) > 0 && len(relationships) == limit {
+	if hasMore && len(relationships) > 0 {
 		nextCursor = relationships[len(relationships)-1].SK
 	}
 
@@ -1910,10 +1917,15 @@ func (r *FederationRepository) GetSeveredRelationship(ctx context.Context, local
 	// Query for the most recent severance between these instances
 	var relationships []models.SeveredRelationship
 
+	pk := fmt.Sprintf("SEVERED#%s", localInstance)
+	skPrefix := fmt.Sprintf("INSTANCE#%s#", remoteInstance)
+
 	err := r.db.WithContext(ctx).Model(&models.SeveredRelationship{}).
-		Where("PK", "=", fmt.Sprintf("SEVERED#%s#%s", localInstance, remoteInstance)).
+		Where("PK", "=", pk).
+		Where("SK", "begins_with", skPrefix).
+		OrderBy("SK", "DESC").
 		Limit(1).
-		All(&relationships) // Most recent first
+		All(&relationships)
 
 	if err != nil {
 		r.logger.Error("Failed to query severed relationship",
@@ -2475,51 +2487,28 @@ func (r *FederationRepository) GetStrongestConnectionsByType(ctx context.Context
 		limit = 10
 	}
 
-	// Query edges using GSI2 for connection type queries
-	var edges []models.FederationEdge
-
-	query := r.db.WithContext(ctx).Model(&models.FederationEdge{}).
-		Index("gsi2").
-		Limit(limit)
-
-	// Filter by connection type if specified and not "all"
-	if connectionType != "" && connectionType != ConnectionTypeAll {
-		query = query.Where("gsi2PK", "begins_with", "INSTANCE#")
+	connectionType = strings.TrimSpace(connectionType)
+	if connectionType == "" {
+		connectionType = ConnectionTypeAll
 	}
 
-	err := query.Scan(&edges)
-	if err != nil {
-		r.logger.Error("failed to get strongest connections by type",
+	gsi8PK := fmt.Sprintf("FED_EDGES#TYPE#%s", connectionType)
+	var edges []models.FederationEdge
+	query := r.db.WithContext(ctx).Model(&models.FederationEdge{}).
+		Index("gsi8").
+		Where("gsi8PK", "=", gsi8PK).
+		OrderBy("gsi8SK", "DESC").
+		Limit(limit)
+	if err := query.All(&edges); err != nil {
+		r.logger.Error("failed to query strongest connections by type",
 			zap.String("connection_type", connectionType),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "strongest connections", "connection analysis")
 	}
 
-	// Filter and sort by strength after retrieval (since sorting by non-indexed field is expensive in DynamoDB)
-	var filteredEdges []models.FederationEdge
-	for _, edge := range edges {
-		if connectionType == ConnectionTypeAll || edge.ConnectionType == connectionType {
-			filteredEdges = append(filteredEdges, edge)
-		}
-	}
-
-	// Sort by strength descending (strongest first)
-	for i := 0; i < len(filteredEdges)-1; i++ {
-		for j := i + 1; j < len(filteredEdges); j++ {
-			if filteredEdges[j].Strength > filteredEdges[i].Strength {
-				filteredEdges[i], filteredEdges[j] = filteredEdges[j], filteredEdges[i]
-			}
-		}
-	}
-
-	// Limit results after sorting
-	if len(filteredEdges) > limit {
-		filteredEdges = filteredEdges[:limit]
-	}
-
 	// Convert to storage.FederationEdge
-	result := make([]*storage.FederationEdge, len(filteredEdges))
-	for i, edge := range filteredEdges {
+	result := make([]*storage.FederationEdge, len(edges))
+	for i, edge := range edges {
 		result[i] = &storage.FederationEdge{
 			SourceDomain:   edge.SourceDomain,
 			TargetDomain:   edge.TargetDomain,

@@ -114,13 +114,14 @@ This leverages the existing schema and eliminates the entire class of “wrong m
    - **Scan-free redesign:** TTL-only (media analytics records already set `ttl`). If you need “keep some BI, drop others”, split record types into different TTLs and avoid deletion scans.
 
 9) `pkg/storage/repositories/metrics_repository.go:475` – `MetricsRepository.cleanupRawMetrics`
-   - **Current:** `Where("PK","begins_with","metrics#").All(&oldMetrics)` then delete
-   - **Scan-free redesign:** TTL-only (raw metrics already store `ttl`). If you must, delete by known PK buckets (metric type + date).
+   - **Current (fixed):** TTL-only (raw metrics already store `ttl`); manual cleanup is a no-op (no scans).
 
 10) `pkg/storage/repositories/metrics_repository.go:438` – `MetricsRepository.cleanupAggregatedMetricsByPeriod`
-   - **Current:** `Index("gsi2").Where("gsi2PK","begins_with",...).All(&oldMetrics)` then delete
-   - **Why bad:** begins_with on **partition key** ⇒ index scan
-   - **Scan-free redesign:** change aggregated-metric keying so the “period” is an **exact** partition key (or bucket by period+type and use sort key for time).
+   - **Current (fixed):** Aggregated metrics write **GSI2** keys:
+     - `gsi2PK = METRICS_AGG#<period>` (exact)
+     - `gsi2SK = WINDOW#<windowStart>#TYPE#<type>#SERVICE#<service>`
+     - cleanup queries `Index("gsi2")` with `gsi2PK = ...` and `gsi2SK < WINDOW#<cutoff>` (no scans).
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m4` sets `gsi2PK/gsi2SK` for existing `metrics_agg#...` rows.
 
 ### P0 – Table/index scans that can break auth/login flows
 
@@ -184,40 +185,38 @@ This leverages the existing schema and eliminates the entire class of “wrong m
 
 23) `pkg/storage/repositories/trust_repository.go:240` – `TrustRepository.GetTrustRelationships`
 24) `pkg/storage/repositories/trust_repository.go:274` – `TrustRepository.GetTrustedByRelationships`
-   - **Current:** `begins_with` on partition keys (`PK` and `gsi1PK`)
-   - **Scan-free redesign:** TrustRelationship partitions are already “by category”:
-     - enumerate the small set of categories and query each exact PK:
-       - `TRUST#<truster>#content`, `...#behavior`, `...#technical`, `...#general`
-       - reverse: `TRUSTED#<trustee>#<category>`
+   - **Current (fixed):** enumerate the small, fixed category set and query each exact partition:
+     - outgoing: `PK = TRUST#<truster>#<category>`
+     - incoming: `Index("gsi1")` + `gsi1PK = TRUSTED#<trustee>#<category>`
+   - Cursor is a base64url-encoded JSON blob `{category,last_sk}` (no TableTheory scan cursors, no partition-key prefixes).
 
 25) `pkg/storage/repositories/bookmark_repository.go:414` – `BookmarkRepository.CascadeDeleteObjectBookmarks`
-   - **Current:** scan by `PK begins_with BOOKMARK#` + `SK contains objectID`
-   - **Scan-free redesign:** add an object->bookmark index:
-     - use an unused GSI on the OBJECT record only (to avoid double-indexing):
-       - `gsi8PK = BOOKMARK_OBJECT#<objectID>`
-       - `gsi8SK = USER#<username>#<createdAt>#<device>`
-     - cascade delete by querying that partition and deleting both TIME + OBJECT records.
+   - **Current (fixed):** query the OBJECT record index on **GSI8**:
+     - OBJECT records write `gsi8PK = BOOKMARK_OBJECT#<objectID>` and `gsi8SK = USER#<username>#TIME#<createdAt>`
+     - cascade delete queries `Index("gsi8")` by that partition and deletes both OBJECT + TIME rows using `TimeRecordSK` (no scans).
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m4` sets bookmark `gsi8PK/gsi8SK` for existing OBJECT rows.
 
 26) `pkg/storage/repositories/query_cache_repository.go:117` – `QueryCacheRepository.invalidateCachePrefix`
-   - **Current:** scan by `PK begins_with CACHE#<prefix>`
-   - **Scan-free redesign:** change cache keying so the “namespace/prefix” is the PK:
-     - example: `PK=CACHE#instance`, `SK=KEY#<id>` (TTL on the item)
-     - then invalidation is `Query PK=CACHE#instance` + `SK BEGINS_WITH KEY#...`
+   - **Current (fixed):** cache items are keyed:
+     - `PK=CACHE#<namespace>` where `namespace` is the substring before `:` in the cache key
+     - `SK=KEY#<cacheKey>`
+     - prefix invalidation is `Query PK=CACHE#<namespace>` + `SK begins_with KEY#<prefix>` (no scans).
 
 27) `pkg/storage/repositories/rate_limit_repository.go:669` – `RateLimitRepository.IsDomainBlocked` (via `checkBlockedStatus`)
-   - **Current:** scan by `PK begins_with RATELIMIT#DOMAIN#<domain>`
-   - **Scan-free redesign:** store a domain-level block record:
-     - `PK=RATELIMIT#DOMAIN#<domain>`, `SK=BLOCK` (or `LOCKOUT`)
+   - **Current (fixed):** store a domain-wide lockout record:
+     - `PK=RATELIMIT#DOMAIN#<domain>`, `SK=LOCKOUT` (RateLimitLockout; TTL matches unlock time)
+     - `IsDomainBlocked` calls `IsRateLimited("DOMAIN#<domain>")` (no scans)
+     - `CheckFederationRateLimit` writes/extends the lockout whenever a domain is blocked.
 
 28) `pkg/storage/repositories/federation_repository.go:1873` – `FederationRepository.GetSeveredRelationships`
-   - **Current:** `Filter PK BEGINS_WITH SEVERED#<local>#...` scan
-   - **Scan-free redesign:** the model already uses `PK=SEVERED#<localInstance>` → query by exact PK and paginate by SK.
+   - **Current (fixed):** query by exact `PK=SEVERED#<localInstance>` and paginate by `SK` (no scans).
 
 29) `pkg/storage/repositories/federation_repository.go:2473` – `FederationRepository.GetStrongestConnectionsByType`
-   - **Current:** `Index("gsi2").Where("gsi2PK","begins_with","INSTANCE#")` ⇒ index scan
-   - **Scan-free redesign:** create a global listing key for edges by type (use unused GSI):
-     - e.g. `gsi8PK = FED_EDGES#TYPE#<connectionType>`
+   - **Current (fixed):** FederationEdge writes a strongest-by-type listing key on **GSI8**:
+     - `gsi8PK = FED_EDGES#TYPE#<connectionType>`
      - `gsi8SK = STRENGTH#<padded>#LAST#<unix>#SRC#<src>#TGT#<tgt>`
+     - query `Index("gsi8")` by exact `gsi8PK` and order by `gsi8SK DESC` (no scans).
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m4` sets `gsi8PK/gsi8SK` for existing edge rows.
 
 30) `pkg/storage/repositories/instance_repository.go:606` – `InstanceRepository.countLocalComments`
    - **Current (fixed):** returns `PK=INSTANCE#METRICS`, `SK=LOCAL_COMMENTS` only (no fallback scan).
@@ -453,7 +452,7 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
    - `pkg/storage/repositories/metrics_repository.go`:
      - redesign `AggregatedMetrics` keying so the partition key is **exact** for the period:
        - example: `gsi2PK = METRICS_AGG#<period>` (exact)
-       - `gsi2SK = TIME#<windowStart>#TYPE#<metricType>#...`
+       - `gsi2SK = WINDOW#<windowStart>#TYPE#<metricType>#SERVICE#<service>`
      - cleanup becomes: query `gsi2PK = METRICS_AGG#<period>` and range on `gsi2SK < cutoff`
 
 2) **Trust relationships**
@@ -462,14 +461,14 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
      - reverse: `gsi1PK=TRUSTED#<trustee>#<category>` (exact)
 
 3) **Bookmarks cascade delete**
-   - Add an object→bookmark index (reverse index item or a GSI partition) so you can query “all bookmarks for object X” without scanning.
+   - Add an object→bookmark index (GSI partition on the OBJECT record) so you can query “all bookmarks for object X” without scanning.
 
 4) **Query cache invalidation**
    - Change cache schema so invalidation is `Query PK = CACHE#<namespace>` plus an `SK` prefix/range, not `PK begins_with`.
 
 5) **Rate limit domain blocking**
    - Store an explicit domain block record at an exact key:
-     - `PK=RATELIMIT#DOMAIN#<domain>`, `SK=BLOCK`
+     - `PK=RATELIMIT#DOMAIN#<domain>`, `SK=LOCKOUT` (RateLimitLockout; TTL matches unlock time)
 
 6) **Federation severed relationships**
    - Ensure the query is by exact `PK=SEVERED#<localInstance>` with `SK` pagination; remove `PK begins_with` filters.
@@ -478,6 +477,9 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
    - Add a type-partitioned listing key (GSI):
      - `gsi8PK = FED_EDGES#TYPE#<connectionType>`
      - `gsi8SK = STRENGTH#<padded>#LAST#<unix>#SRC#...#TGT#...`
+
+8) **Backfill (one-time)**
+   - Tool: `cmd/tools/dynamodb-backfill-m4` backfills the new aggregated-metrics and federation-edge index keys (and bookmark object index keys) for existing rows.
 
 **Acceptance criteria**
 

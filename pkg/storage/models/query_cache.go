@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -9,7 +10,9 @@ import (
 type QueryCacheEntry struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
-	// Primary keys - using pattern: PK=CACHE#{cacheKey}, SK=ENTRY
+	// Primary keys
+	// - PK=CACHE#{namespace}
+	// - SK=KEY#{cacheKey}
 	PK string `theorydb:"pk,attr:PK" json:"pk"`
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
@@ -25,10 +28,22 @@ type QueryCacheEntry struct {
 	TTL int64 `theorydb:"ttl,attr:ttl" json:"ttl"`
 }
 
+func queryCacheNamespace(cacheKey string) string {
+	cacheKey = strings.TrimSpace(cacheKey)
+	if cacheKey == "" {
+		return ""
+	}
+	if colon := strings.Index(cacheKey, ":"); colon > 0 {
+		return cacheKey[:colon]
+	}
+	return cacheKey
+}
+
 // UpdateKeys ensures keys are properly set before saving
 func (q *QueryCacheEntry) UpdateKeys() error {
-	q.PK = fmt.Sprintf("CACHE#%s", q.CacheKey)
-	q.SK = SKEntry
+	namespace := queryCacheNamespace(q.CacheKey)
+	q.PK = fmt.Sprintf("CACHE#%s", namespace)
+	q.SK = fmt.Sprintf("KEY#%s", q.CacheKey)
 
 	// Set TTL based on ExpiresAt
 	q.TTL = q.ExpiresAt.Unix()

@@ -41,11 +41,26 @@ func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, c
 	}
 }
 
+func queryCacheNamespace(cacheKey string) string {
+	cacheKey = strings.TrimSpace(cacheKey)
+	if cacheKey == "" {
+		return ""
+	}
+	if colon := strings.Index(cacheKey, ":"); colon > 0 {
+		return cacheKey[:colon]
+	}
+	return cacheKey
+}
+
+func queryCacheKeys(cacheKey string) (pk, sk string) {
+	namespace := queryCacheNamespace(cacheKey)
+	return fmt.Sprintf("CACHE#%s", namespace), fmt.Sprintf("KEY#%s", cacheKey)
+}
+
 // GetCachedValue retrieves a cached value by key
 func (r *QueryCacheRepository) GetCachedValue(ctx context.Context, cacheKey string) (interface{}, error) {
 	var entry models.QueryCacheEntry
-	pk := fmt.Sprintf("CACHE#%s", cacheKey)
-	sk := "ENTRY"
+	pk, sk := queryCacheKeys(cacheKey)
 
 	err := r.Get(ctx, pk, sk, &entry)
 	if err != nil {
@@ -102,8 +117,7 @@ func (r *QueryCacheRepository) InvalidateCachePattern(ctx context.Context, patte
 	}
 
 	// For exact match, delete specific key
-	pk := fmt.Sprintf("CACHE#%s", pattern)
-	sk := "ENTRY"
+	pk, sk := queryCacheKeys(pattern)
 	err := r.Delete(ctx, pk, sk)
 
 	if err != nil && !strings.Contains(err.Error(), "not found") {
@@ -115,22 +129,58 @@ func (r *QueryCacheRepository) InvalidateCachePattern(ctx context.Context, patte
 
 // invalidateCachePrefix removes all cache entries with keys starting with prefix
 func (r *QueryCacheRepository) invalidateCachePrefix(ctx context.Context, prefix string) error {
-	var entries []models.QueryCacheEntry
-	pk := fmt.Sprintf("CACHE#%s", prefix)
-
-	// Get entries with keys starting with prefix
-	err := r.GetDB().WithContext(ctx).Model(&models.QueryCacheEntry{}).
-		Where("PK", "begins_with", pk).
-		Where("SK", "=", "ENTRY").
-		All(&entries)
-
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntityQueryCache, "prefix scan")
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return nil
 	}
 
-	// Delete each entry
-	for _, entry := range entries {
-		_ = r.Delete(ctx, entry.GetPK(), entry.GetSK()) // Ignore errors for cleanup
+	namespace := queryCacheNamespace(prefix)
+	pk := fmt.Sprintf("CACHE#%s", namespace)
+	skPrefix := fmt.Sprintf("KEY#%s", prefix)
+
+	cursor := ""
+	const pageLimit = 200
+
+	for {
+		var entries []models.QueryCacheEntry
+		query := r.GetDB().WithContext(ctx).Model(&models.QueryCacheEntry{}).
+			Where("PK", "=", pk).
+			Where("SK", "begins_with", skPrefix).
+			OrderBy("SK", "ASC").
+			Limit(pageLimit + 1)
+
+		if cursor != "" {
+			query = query.Where("SK", ">", cursor)
+		}
+
+		err := query.All(&entries)
+		if err != nil {
+			return ErrorHandler.HandleQueryError(err, EntityQueryCache, "prefix query")
+		}
+
+		if len(entries) == 0 {
+			break
+		}
+
+		hasMore := len(entries) > pageLimit
+		if hasMore {
+			entries = entries[:pageLimit]
+		}
+
+		keys := make([]struct{ PK, SK string }, len(entries))
+		for i := range entries {
+			keys[i] = struct{ PK, SK string }{PK: entries[i].PK, SK: entries[i].SK}
+		}
+
+		// Ignore individual deletion failures so invalidation doesn't fail the caller path.
+		for _, key := range keys {
+			_ = r.Delete(ctx, key.PK, key.SK)
+		}
+
+		if !hasMore {
+			break
+		}
+		cursor = entries[len(entries)-1].SK
 	}
 
 	return nil

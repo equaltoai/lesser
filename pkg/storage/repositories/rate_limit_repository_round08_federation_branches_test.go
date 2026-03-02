@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
@@ -47,6 +48,7 @@ func TestRound08_RateLimitRepository_FederationAndLoginAttemptBranches(t *testin
 	t.Run("CheckFederationRateLimit ignores get errors", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("First", mock.AnythingOfType("*models.RateLimitLockout")).Return(dynamormerrors.ErrItemNotFound).Once()
 		mockQuery.On("First", mock.AnythingOfType("*models.APIRateLimit")).Return(errors.New("boom")).Once()
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 

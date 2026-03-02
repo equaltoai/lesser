@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -73,6 +75,9 @@ type memQuery struct {
 	index string
 	where map[string]memCondition
 	limit int
+
+	orderByField     string
+	orderByDirection string
 }
 
 func newMemQuery(db *memDB, model any) *memQuery {
@@ -88,22 +93,25 @@ func (q *memQuery) Where(field string, op string, value any) dynamormcore.Query 
 	q.where[field] = memCondition{op: op, value: value}
 	return q
 }
-func (q *memQuery) Index(indexName string) dynamormcore.Query                           { q.index = indexName; return q }
-func (q *memQuery) Filter(string, string, any) dynamormcore.Query                       { return q }
-func (q *memQuery) OrFilter(string, string, any) dynamormcore.Query                     { return q }
-func (q *memQuery) FilterGroup(func(dynamormcore.Query)) dynamormcore.Query             { return q }
-func (q *memQuery) OrFilterGroup(func(dynamormcore.Query)) dynamormcore.Query           { return q }
-func (q *memQuery) IfNotExists() dynamormcore.Query                                     { return q }
-func (q *memQuery) IfExists() dynamormcore.Query                                        { return q }
-func (q *memQuery) WithCondition(string, string, any) dynamormcore.Query                { return q }
-func (q *memQuery) WithConditionExpression(string, map[string]any) dynamormcore.Query   { return q }
-func (q *memQuery) OrderBy(string, string) dynamormcore.Query                           { return q }
+func (q *memQuery) Index(indexName string) dynamormcore.Query                         { q.index = indexName; return q }
+func (q *memQuery) Filter(string, string, any) dynamormcore.Query                     { return q }
+func (q *memQuery) OrFilter(string, string, any) dynamormcore.Query                   { return q }
+func (q *memQuery) FilterGroup(func(dynamormcore.Query)) dynamormcore.Query           { return q }
+func (q *memQuery) OrFilterGroup(func(dynamormcore.Query)) dynamormcore.Query         { return q }
+func (q *memQuery) IfNotExists() dynamormcore.Query                                   { return q }
+func (q *memQuery) IfExists() dynamormcore.Query                                      { return q }
+func (q *memQuery) WithCondition(string, string, any) dynamormcore.Query              { return q }
+func (q *memQuery) WithConditionExpression(string, map[string]any) dynamormcore.Query { return q }
+func (q *memQuery) OrderBy(field string, direction string) dynamormcore.Query {
+	q.orderByField, q.orderByDirection = field, direction
+	return q
+}
 func (q *memQuery) Limit(limit int) dynamormcore.Query                                  { q.limit = limit; return q }
 func (q *memQuery) Offset(int) dynamormcore.Query                                       { return q }
 func (q *memQuery) Select(...string) dynamormcore.Query                                 { return q }
 func (q *memQuery) ConsistentRead() dynamormcore.Query                                  { return q }
 func (q *memQuery) WithRetry(int, time.Duration) dynamormcore.Query                     { return q }
-func (q *memQuery) All(any) error                                                       { return nil }
+func (q *memQuery) All(dest any) error                                                  { return q.Scan(dest) }
 func (q *memQuery) AllPaginated(any) (*dynamormcore.PaginatedResult, error)             { return nil, nil }
 func (q *memQuery) Count() (int64, error)                                               { return 0, nil }
 func (q *memQuery) CreateOrUpdate() error                                               { return q.Create() }
@@ -258,10 +266,21 @@ func (q *memQuery) Scan(dest any) error {
 				continue
 			}
 			out = append(out, edge)
-			if q.limit > 0 && len(out) >= q.limit {
-				break
-			}
 		}
+
+		if q.orderByField == "gsi8SK" {
+			sort.Slice(out, func(i, j int) bool {
+				if strings.EqualFold(q.orderByDirection, "DESC") {
+					return out[i].GSI8SK > out[j].GSI8SK
+				}
+				return out[i].GSI8SK < out[j].GSI8SK
+			})
+		}
+
+		if q.limit > 0 && len(out) > q.limit {
+			out = out[:q.limit]
+		}
+
 		*typedDest = out
 		return nil
 	case *[]models.InstanceConnection:
@@ -354,6 +373,14 @@ func (q *memQuery) matchesFederationEdge(edge models.FederationEdge) bool {
 		if cond, ok := q.where["gsi2PK"]; ok && cond.op == "begins_with" {
 			prefix, _ := cond.value.(string)
 			if prefix != "" && len(edge.GSI2PK) >= len(prefix) && edge.GSI2PK[:len(prefix)] != prefix {
+				return false
+			}
+		}
+	}
+	if q.index == "gsi8" {
+		if cond, ok := q.where["gsi8PK"]; ok && cond.op == "=" {
+			want, _ := cond.value.(string)
+			if edge.GSI8PK != want {
 				return false
 			}
 		}

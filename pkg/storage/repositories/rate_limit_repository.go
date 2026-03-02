@@ -510,6 +510,13 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 	windowStart := now.Truncate(window)
 	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
 
+	// Fast-path: if the domain is currently under an imposed lockout, block all endpoints.
+	if blocked, unlockTime, err := r.IsRateLimited(ctx, fmt.Sprintf("DOMAIN#%s", domain)); err == nil {
+		if blocked && now.Before(unlockTime) {
+			return ErrorHandler.HandleCreateError(storage.ErrRateLimited, EntityRateLimit, domain)
+		}
+	}
+
 	// Get current rate limit data using BaseRepository
 	pk := fmt.Sprintf("RATELIMIT#%s", key)
 	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
@@ -587,6 +594,13 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 				zap.Error(err))
 		}
 
+		// Also impose a domain-wide lockout record so future checks do not need table/index scans.
+		if imposeErr := r.imposeLockoutUntil(ctx, fmt.Sprintf("DOMAIN#%s", domain), current.BlockedUntil); imposeErr != nil {
+			r.logger.Warn("failed to impose domain lockout record",
+				zap.String("domain", domain),
+				zap.Error(imposeErr))
+		}
+
 		return ErrorHandler.HandleCreateError(storage.ErrRateLimited, EntityRateLimit, domain)
 	}
 
@@ -599,6 +613,39 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 		// Don't fail the request if we can't update the counter
 	}
 
+	return nil
+}
+
+func (r *RateLimitRepository) imposeLockoutUntil(ctx context.Context, identifier string, unlockTime time.Time) error {
+	if r == nil || r.rateLimitLockouts == nil {
+		return storage.ErrDatabaseConnectionFailed
+	}
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return storage.ErrInvalidInput
+	}
+	if unlockTime.IsZero() {
+		return storage.ErrInvalidInput
+	}
+
+	pk := fmt.Sprintf("RATELIMIT#%s", identifier)
+	sk := "LOCKOUT"
+
+	// Never shorten an existing lockout.
+	existing := &models.RateLimitLockout{}
+	if err := r.rateLimitLockouts.Get(ctx, pk, sk, existing); err == nil {
+		if existing.UnlockTime.After(unlockTime) {
+			unlockTime = existing.UnlockTime
+		}
+	}
+
+	lockout := models.NewRateLimitLockout(identifier, unlockTime)
+	if err := r.rateLimitLockouts.Create(ctx, lockout); err != nil {
+		// Fall back to Update (some backends treat Create as conditional).
+		if updateErr := r.rateLimitLockouts.Update(ctx, lockout); updateErr != nil {
+			return updateErr
+		}
+	}
 	return nil
 }
 
@@ -666,22 +713,15 @@ func (r *RateLimitRepository) calculatePenaltyDuration(violationCount int) time.
 }
 
 // checkBlockedStatus is a helper function that consolidates the common pattern for checking if something is blocked
-func (r *RateLimitRepository) checkBlockedStatus(ctx context.Context, pkQuery string, usePrefix bool) (bool, time.Time, error) {
+func (r *RateLimitRepository) checkBlockedStatus(ctx context.Context, pk string) (bool, time.Time, error) {
 	now := time.Now()
 
 	// Check recent rate limit records for any blocks using BaseRepository
 	var rateLimits []*models.APIRateLimit
 	var err error
 
-	if usePrefix {
-		// Use BaseRepository to query with PK prefix - need manual query since BaseRepository doesn't have prefix query
-		err = r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-			Where("PK", "begins_with", pkQuery).
-			All(&rateLimits)
-	} else {
-		// Use BaseRepository to query exact PK
-		rateLimits, err = r.apiRateLimits.FindByPK(ctx, pkQuery)
-	}
+	// Use BaseRepository to query exact PK
+	rateLimits, err = r.apiRateLimits.FindByPK(ctx, pk)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -709,11 +749,10 @@ func (r *RateLimitRepository) checkBlockedStatus(ctx context.Context, pkQuery st
 // IsUserBlocked checks if a user is currently blocked due to rate limiting
 func (r *RateLimitRepository) IsUserBlocked(ctx context.Context, userID string) (bool, time.Time, error) {
 	pk := fmt.Sprintf("RATELIMIT#%s", userID)
-	return r.checkBlockedStatus(ctx, pk, false)
+	return r.checkBlockedStatus(ctx, pk)
 }
 
 // IsDomainBlocked checks if a federation domain is currently blocked
 func (r *RateLimitRepository) IsDomainBlocked(ctx context.Context, domain string) (bool, time.Time, error) {
-	pkPrefix := fmt.Sprintf("RATELIMIT#DOMAIN#%s", domain)
-	return r.checkBlockedStatus(ctx, pkPrefix, true)
+	return r.IsRateLimited(ctx, fmt.Sprintf("DOMAIN#%s", strings.TrimSpace(domain)))
 }

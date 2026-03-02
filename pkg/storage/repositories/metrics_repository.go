@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -438,15 +439,15 @@ func (r *MetricsRepository) CleanupOldMetrics(ctx context.Context, granularity s
 func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context, period string, cutoffTime time.Time) (int, error) {
 	deletedCount := 0
 
-	// Query for old aggregated metrics using aggregate-index
+	// Query for old aggregated metrics via GSI2, which is keyed by period (exact) and window start (rangeable).
 	var oldMetrics []models.AggregatedMetrics
 
-	// We need to query by period prefix since we can't easily do time-based filtering in DynamoDB
-	// This is a limitation but necessary to avoid expensive scans
+	normalizedPeriod := strings.TrimSpace(period)
+	cutoffKey := fmt.Sprintf("WINDOW#%s", cutoffTime.UTC().Format(time.RFC3339))
 	err := r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
 		Index("gsi2").
-		Where("gsi2PK", "begins_with", fmt.Sprintf("METRICS_AGG#%s#", period)).
-		Where("gsi2SK", "<", cutoffTime.Format("2006-01-02T15:04:05Z")).
+		Where("gsi2PK", "=", fmt.Sprintf("METRICS_AGG#%s", normalizedPeriod)).
+		Where("gsi2SK", "<", cutoffKey).
 		All(&oldMetrics)
 
 	if err != nil {
@@ -455,6 +456,14 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 
 	// Delete old metrics in batches
 	for _, metric := range oldMetrics {
+		if !strings.HasPrefix(metric.PK, fmt.Sprintf("metrics_agg#%s#", normalizedPeriod)) {
+			r.logger.Warn("skipping unexpected aggregated metric during cleanup",
+				zap.String("pk", metric.PK),
+				zap.String("sk", metric.SK),
+				zap.String("period", normalizedPeriod))
+			continue
+		}
+
 		if metric.WindowStart.Before(cutoffTime) {
 			err := r.aggregatedRepo.Delete(ctx, metric.PK, metric.SK)
 			if err != nil {
