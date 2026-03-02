@@ -887,42 +887,18 @@ type TrendDeletable interface {
 
 // deleteOldTrendsGeneric is a generic function to delete old trend records
 func (r *TrendingRepository) deleteOldTrendsGeneric(ctx context.Context, before time.Time, trendType string, modelInstance interface{}, getIdentifier func(interface{}) string) error {
-	// Use reflection to create a slice of the appropriate type
-	modelType := reflect.TypeOf(modelInstance)
-	sliceType := reflect.SliceOf(modelType)
-	trendsValue := reflect.New(sliceType).Elem()
-
-	// DynamORM doesn't support direct batch delete, so we need to query and delete
-	err := r.db.WithContext(ctx).Model(modelInstance).
-		Filter("UpdatedAt", "<", before).
-		Limit(100). // Process in batches
-		Scan(trendsValue.Addr().Interface())
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil // No old trends to delete
-		}
-		r.logger.Error(fmt.Sprintf("failed to query old %s trends", trendType), zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, "trend", fmt.Sprintf("old %s trends", trendType))
-	}
-
-	// Delete each trend
-	count := trendsValue.Len()
-	for i := 0; i < count; i++ {
-		trend := trendsValue.Index(i).Interface()
-		err := r.db.WithContext(ctx).Model(trend).Delete()
-		if err != nil {
-			r.logger.Warn(fmt.Sprintf("failed to delete %s trend", trendType),
-				zap.String("identifier", getIdentifier(trend)),
-				zap.Error(err))
-			// Continue with other deletions
-		}
-	}
-
-	r.logger.Info(fmt.Sprintf("deleted old %s trends", trendType),
-		zap.Int("count", count),
-		zap.Time("before", before))
-
+	// IMPORTANT:
+	// TableTheory's `.Scan(...)` issues a DynamoDB Scan, and using a non-key filter like
+	// `UpdatedAt < before` can match and deserialize *any* item that has an `updatedAt` attribute
+	// (user, actor, etc.). The previous implementation deleted those items by PK/SK, which is a
+	// catastrophic data-loss risk.
+	//
+	// Trend models already write TTLs (`ttl = updatedAt + 7d`) in `pkg/storage/models/trends.go`,
+	// so we rely on DynamoDB TTL for expiration and do not perform manual deletion here.
+	r.logger.Info("skipping manual trend cleanup (ttl handles expiration)",
+		zap.String("trend_type", trendType),
+		zap.Time("before", before),
+	)
 	return nil
 }
 

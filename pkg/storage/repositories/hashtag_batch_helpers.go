@@ -6,9 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/theory-cloud/tabletheory/pkg/core"
-	dynamoerrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -66,24 +64,17 @@ func deleteOldHashtagTrendRecordsBatch(
 	before time.Time,
 	config BatchDeleteConfig,
 ) (int, error) {
-	var trends []*models.HashtagTrend
+	// IMPORTANT:
+	// TableTheory's `.Scan(...)` issues a DynamoDB Scan, and the previous implementation used a
+	// non-key attribute filter (`UpdatedAt < before`) which is a table-wide scan. Trend records
+	// already write TTLs, so expiration is handled by DynamoDB TTL.
+	//
+	// This helper remains for compatibility but is now a no-op to prevent scan-based deletion.
+	logger.Info("skipping manual hashtag trend cleanup (ttl handles expiration)",
+		zap.Time("before", before),
+	)
+	return 0, nil
 
-	// Query old trend records using Filter and Scan
-	err := db.WithContext(ctx).Model(&models.HashtagTrend{}).
-		Filter(config.FilterField, "<", before.Format(time.RFC3339)).
-		Limit(config.QueryLimit).
-		Scan(&trends)
-
-	if err != nil {
-		if dynamoerrors.IsNotFound(err) {
-			return 0, nil
-		}
-		return 0, ErrorHandler.HandleQueryError(err, EntityHashtag, "old hashtag trends scan")
-	}
-
-	// Use batch delete for efficiency
-	deletedCount := processModelBatchDelete(ctx, db, logger, trends, config.BatchSize, "hashtag trend")
-	return deletedCount, nil
 }
 
 // deleteOldTrendingHashtagRecordsBatch deletes TrendingHashtag model records
@@ -94,24 +85,16 @@ func deleteOldTrendingHashtagRecordsBatch(
 	before time.Time,
 	config BatchDeleteConfig,
 ) (int, error) {
-	var trends []*models.TrendingHashtag
+	// IMPORTANT:
+	// This was previously implemented as a scan (`Filter(...).Scan(...)`) which is a table-wide scan.
+	// Trending hashtag records are TTL-driven; expiration is handled by DynamoDB TTL.
+	//
+	// This helper remains for compatibility but is now a no-op to prevent scan-based deletion.
+	logger.Info("skipping manual trending hashtag cleanup (ttl handles expiration)",
+		zap.Time("before", before),
+	)
+	return 0, nil
 
-	// Query old trending hashtag records
-	err := db.WithContext(ctx).Model(&models.TrendingHashtag{}).
-		Filter(config.FilterField, "<", before.Format(time.RFC3339)).
-		Limit(config.QueryLimit).
-		Scan(&trends)
-
-	if err != nil {
-		if dynamoerrors.IsNotFound(err) {
-			return 0, nil
-		}
-		return 0, ErrorHandler.HandleQueryError(err, EntityHashtag, "old trending hashtags scan")
-	}
-
-	// Batch delete trending hashtags
-	deletedCount := processModelBatchDelete(ctx, db, logger, trends, config.BatchSize, "trending hashtag")
-	return deletedCount, nil
 }
 
 // deleteOldHashtagUsageRecordsBatch removes expired hashtag usage records
@@ -122,24 +105,16 @@ func deleteOldHashtagUsageRecordsBatch(
 	before time.Time,
 	config BatchDeleteConfig,
 ) (int, error) {
-	var usageRecords []*models.HashtagUsage
+	// IMPORTANT:
+	// This was previously implemented as a scan (`Filter(...).Scan(...)`) which is a table-wide scan.
+	// Hashtag usage records are TTL-driven; expiration is handled by DynamoDB TTL.
+	//
+	// This helper remains for compatibility but is now a no-op to prevent scan-based deletion.
+	logger.Info("skipping manual hashtag usage cleanup (ttl handles expiration)",
+		zap.Time("before", before),
+	)
+	return 0, nil
 
-	// Query old usage records that haven't been cleaned up by TTL
-	err := db.WithContext(ctx).Model(&models.HashtagUsage{}).
-		Filter(config.FilterField, "<", before.Format(time.RFC3339)).
-		Limit(config.QueryLimit).
-		Scan(&usageRecords)
-
-	if err != nil {
-		if dynamoerrors.IsNotFound(err) {
-			return 0, nil
-		}
-		return 0, ErrorHandler.HandleQueryError(err, EntityHashtag, "old hashtag usage scan")
-	}
-
-	// Batch delete usage records
-	deletedCount := processModelBatchDelete(ctx, db, logger, usageRecords, config.BatchSize, "hashtag usage")
-	return deletedCount, nil
 }
 
 // processBatchDelete performs batch delete processing

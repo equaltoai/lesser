@@ -371,28 +371,13 @@ func (h *TrendAggregatorHandler) cleanupOldTrends(ctx context.Context) {
 		zap.Time("cutoff", cutoff),
 	)
 
-	// Clean up hashtag trends
-	if err := h.trendingRepo.DeleteOldHashtagTrends(ctx, cutoff); err != nil {
-		h.logger.Error("failed to clean up old hashtag trends", zap.Error(err))
-	} else {
-		h.logger.Debug("cleaned up old hashtag trends")
-	}
-
-	// Clean up status trends
-	if err := h.trendingRepo.DeleteOldStatusTrends(ctx, cutoff); err != nil {
-		h.logger.Error("failed to clean up old status trends", zap.Error(err))
-	} else {
-		h.logger.Debug("cleaned up old status trends")
-	}
-
-	// Clean up link trends
-	if err := h.trendingRepo.DeleteOldLinkTrends(ctx, cutoff); err != nil {
-		h.logger.Error("failed to clean up old link trends", zap.Error(err))
-	} else {
-		h.logger.Debug("cleaned up old link trends")
-	}
-
-	h.logger.Info("completed cleanup of old trend data")
+	// IMPORTANT:
+	// Manual cleanup previously issued DynamoDB Scans and caused catastrophic data loss by deleting
+	// non-trend items. Trend models write TTLs (`ttl = updatedAt + 7d`) so expiration is handled by
+	// DynamoDB TTL. We keep this scheduled step for observability, but do not delete anything here.
+	h.logger.Info("skipping manual trend cleanup (ttl handles expiration)",
+		zap.Int("retention_days", 7),
+	)
 }
 
 // HashtagTrendData holds hashtag trending information
