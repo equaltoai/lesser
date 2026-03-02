@@ -13,6 +13,10 @@ type Filter struct {
 	PK string `theorydb:"pk,attr:PK"` // USER#username
 	SK string `theorydb:"sk,attr:SK"` // FILTER#filterID
 
+	// GSI for lookup by filter ID without knowing username
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // FILTER#{filterID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // USER#{username}
+
 	// Filter fields
 	ID            string     `theorydb:"attr:id" json:"id"`                        // Unique filter ID
 	Username      string     `theorydb:"attr:username" json:"username"`            // Owner of the filter
@@ -36,6 +40,8 @@ func (Filter) TableName() string {
 func (f *Filter) UpdateKeys() error {
 	f.PK = fmt.Sprintf(KeyPatternUser, f.Username)
 	f.SK = fmt.Sprintf("FILTER#%s", f.ID)
+	f.GSI1PK = fmt.Sprintf("FILTER#%s", f.ID)
+	f.GSI1SK = fmt.Sprintf(KeyPatternUser, f.Username)
 	return nil
 }
 

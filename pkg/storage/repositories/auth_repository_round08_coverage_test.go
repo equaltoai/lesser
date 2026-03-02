@@ -60,10 +60,10 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 	})
 
 	t.Run("GetWebAuthnCredential scan error / empty / success", func(t *testing.T) {
-		t.Run("scan error", func(t *testing.T) {
+		t.Run("query error", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+			mockQuery.On("All", mock.Anything).Return(errors.New("query failed")).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
@@ -74,7 +74,10 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 		t.Run("empty results", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("Scan", mock.Anything).Return(nil).Once()
+			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+				out := args.Get(0).(*[]models.WebAuthnCredential)
+				*out = nil
+			}).Return(nil).Once()
 			setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 			repo := NewAuthRepositoryWithCostTracking(mockDB, "test-table", zaptest.NewLogger(t), costSvc)
@@ -86,7 +89,7 @@ func TestRound08_AuthRepository_WebAuthnCredentialOps(t *testing.T) {
 		t.Run("success", func(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
-			mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+			mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]models.WebAuthnCredential)
 				*out = append(*out, models.WebAuthnCredential{
 					ID:         "cred-1",

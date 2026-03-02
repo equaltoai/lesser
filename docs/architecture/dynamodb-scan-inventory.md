@@ -125,28 +125,33 @@ This leverages the existing schema and eliminates the entire class of “wrong m
 ### P0 – Table/index scans that can break auth/login flows
 
 11) `pkg/storage/repositories/auth_repository.go:101` – `AuthRepository.GetWebAuthnCredential`
-   - **Current:** scan by `Where("id","=",credentialID)` + `Where("Type","=",...)`
-   - **Scan-free redesign:** use existing `WebAuthnCredential` GSI1:
-     - `Index("gsi1").Where("gsi1PK","=","WEBAUTHN_CREDENTIAL#<id>").First(...)`
+   - **Current (fixed):** query `WebAuthnCredential` via GSI1 (`gsi1PK = WEBAUTHN_CREDENTIAL#<id>`)
+   - **Scan-free redesign:** use the existing `WebAuthnCredential` GSI1:
+     - `Index("gsi1").Where("gsi1PK","=","WEBAUTHN_CREDENTIAL#<id>").Limit(1).All(...)`
 
 12) `pkg/storage/repositories/account_repository_auth.go:697` – `AccountRepository.GetSessionByRefreshToken`
-   - **Current:** scan sessions by `RefreshToken`
-   - **Scan-free redesign:** use `models.RefreshToken` (`PK=REFRESHTOKEN#token, SK=TOKEN`) to fetch `SessionID`, then fetch session by PK/SK.
+   - **Current (fixed):** query `Session` via GSI2 (`gsi2PK = TOKEN#hash(refreshToken)`), no scan
+   - **Scan-free redesign:** treat the session “refresh token” as the indexed token:
+     - store refresh token in `Session.AccessToken` (migration convenience; short-lived access tokens are JWTs)
+     - `Index("gsi2").Where("gsi2PK","=","TOKEN#<sha256(refreshToken)[:16]>").Limit(1).All(...)`
 
 13) `pkg/storage/repositories/account_repository_auth.go:816` – `AccountRepository.GetDevice`
-   - **Current:** scan devices by `DeviceID`
-   - **Scan-free redesign:** add a reverse index item (or GSI) for deviceID:
-     - example index item: `PK=DEVICE#<deviceID>`, `SK=USER#<username>` (plus optional TTL)
+   - **Current (fixed):** query `Device` via GSI3 (`gsi3PK = DEVICEID#<deviceID>`), no scan
+   - **Scan-free redesign:** add a deviceID lookup key on the `Device` item:
+     - `gsi3PK = DEVICEID#<deviceID>`
+     - `gsi3SK = USER#<username>`
 
 14) `pkg/storage/repositories/filter_repository.go:109` – `FilterRepository.GetFilter`
-   - **Current:** scan by `SK=FILTER#<id>` without knowing username
-   - **Scan-free redesign:** add a reverse index item (or GSI):
-     - `PK=FILTER#<filterID>`, `SK=USER#<username>`
+   - **Current (fixed):** query `Filter` via GSI1 (`gsi1PK = FILTER#<filterID>`), no scan
+   - **Scan-free redesign:** add a filterID lookup key on the `Filter` item:
+     - `gsi1PK = FILTER#<filterID>`
+     - `gsi1SK = USER#<username>`
 
 15) `pkg/storage/repositories/activity_repository.go:84` – `ActivityRepository.GetActivity`
-   - **Current:** scan with `Where("SK","CONTAINS",id)`
-   - **Scan-free redesign:** add an ID lookup GSI (use existing unused index for this model):
-     - `gsi2PK = ACTIVITYID#<id>`, `gsi2SK = ACTOR#<username>#<timestamp>`
+   - **Current (fixed):** query `Activity` via GSI2 (`gsi2PK = ACTIVITYID#<id>`), no scan
+   - **Scan-free redesign:** add an ID lookup key on the `Activity` item:
+     - `gsi2PK = ACTIVITYID#<id>`
+     - `gsi2SK = SK` (e.g. `ACTIVITY#<timestamp>#<id>`)
 
 ### P1 – “List all” / “count all” scans
 
@@ -356,43 +361,43 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
 1) **WebAuthn credential lookup**
    - `pkg/storage/repositories/auth_repository.go` (`GetWebAuthnCredential`):
      - replace scan-by-attribute with a GSI query using `WebAuthnCredential.GSI1PK = WEBAUTHN_CREDENTIAL#<id>`
-     - use `.Index("gsi1").Where("gsi1PK","=",...).First(...)`
+     - use `.Index("gsi1").Where("gsi1PK","=",...).Limit(1).All(...)`
 
 2) **Session lookup by refresh token**
    - `pkg/storage/repositories/account_repository_auth.go` (`GetSessionByRefreshToken`):
      - stop scanning `Session` records
-     - fetch `models.RefreshToken` by `PK=REFRESHTOKEN#<token>, SK=TOKEN`
-     - use the `SessionID` on that model to fetch the `models.Session` record by primary key
-   - Ensure refresh token issuance/rotation always writes the `RefreshToken.SessionID` field.
+     - treat the session refresh token as the indexed token (stored in `Session.AccessToken`)
+     - query `Index("gsi2")` with `gsi2PK = TOKEN#<sha256(refreshToken)[:16]>`
+   - Ensure refresh token rotation updates the indexed token field and recomputes GSI keys.
 
 3) **Device lookup by deviceID**
-   - Implement a reverse index item:
-     - on device create/update: write `PK=DEVICE#<deviceID>`, `SK=USER#<username>` (plus any metadata needed)
-     - on device delete: delete the index item
-   - `GetDevice(deviceID)` becomes:
-     1) `Get` index row by `PK=DEVICE#<deviceID>`
-     2) `Get` canonical device row by `PK=USER#<username>, SK=DEVICE#<deviceID>`
+   - Add a deviceID lookup key on the `Device` item:
+     - `gsi3PK = DEVICEID#<deviceID>`
+     - `gsi3SK = USER#<username>`
+   - `GetDevice(deviceID)` becomes a `gsi3` query (`gsi3PK = DEVICEID#...`) with `Limit(1)`.
 
 4) **Filter lookup by filterID**
-   - Same reverse index strategy:
-     - `PK=FILTER#<filterID>`, `SK=USER#<username>`
-   - Or (longer-term) duplicate canonical filter metadata into the `PK=FILTER#<filterID>` partition to align with `FilterKeyword/FilterStatus` patterns.
+   - Add a filterID lookup key on the `Filter` item:
+     - `gsi1PK = FILTER#<filterID>`
+     - `gsi1SK = USER#<username>`
+   - `GetFilter(filterID)` becomes a `gsi1` query (`gsi1PK = FILTER#...`) with `Limit(1)`.
 
 5) **Activity lookup by activity ID**
-   - Add an ID-index:
-     - either a reverse index item (`PK=ACTIVITYID#<id>`) pointing to canonical `PK/SK`
-     - or a GSI key on the Activity model (preferred if it’s already using an unused GSI)
-   - Update `CreateActivity` to write the index atomically with the activity record.
+   - Add an ID lookup key on the `Activity` item:
+     - `gsi2PK = ACTIVITYID#<id>`
+     - `gsi2SK = SK` (for stable uniqueness and optional ordering)
+   - Update `CreateActivity` to write these keys with the activity record.
 
 6) **Backfill (one-time)**
-   - For any new reverse-index items, run a one-time backfill job that scans existing rows *outside* production request paths.
-   - For this prototype, a controlled parallel scan tool is acceptable as a one-time migration step, but it must not remain in runtime paths.
+   - For any new GSI keys, run a one-time backfill job that scans existing rows *outside* production request paths.
+   - Tool: `cmd/tools/dynamodb-backfill-m2`
+     - Example: `go run ./cmd/tools/dynamodb-backfill-m2 --table <your-table-name> --region us-east-1 --dry-run=false`
 
 **Acceptance criteria**
 
 - Items 11–15 execute **zero** DynamoDB Scan operations.
 - Login flows succeed with only `GetItem` / `Query` operations (verify via logs + DynamoDB metrics by operation).
-- A backfill procedure exists (documented command/tool) for reverse index items.
+- A backfill procedure exists (documented command/tool) for the newly-added index keys.
 
 ### Milestone M3 (P1): “list all / count all” must be index-backed (no scans)
 

@@ -61,6 +61,10 @@ func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activ
 		CreatedAt: now,
 	}
 
+	// Direct lookup by activity ID (no scans).
+	record.GSI2PK = "ACTIVITYID#" + activity.ID
+	record.GSI2SK = record.SK
+
 	// If this is an inbox activity (someone else's activity delivered to us), set GSI keys
 	if isInboxActivity(activity, username) {
 		record.GSI1PK = "INBOX#" + username
@@ -82,38 +86,30 @@ func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activ
 
 // GetActivity retrieves an activity by ID - matches legacy implementation
 func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activitypub.Activity, error) {
-	// We need to scan for the activity since we don't know the username
-	// In a production system, you might want to extract username from the ID
-	// or maintain a separate GSI for activity lookups
-
-	// We need to scan across all partitions since we don't know the username
-	// This is inefficient but matches the legacy behavior
-	// In a real implementation, we'd want a GSI on activity ID
 	var activities []*models.Activity
 
-	// Unfortunately, BaseRepository doesn't have a scan method, so we'll use a custom approach
-	// We'll need to implement this as a scan operation
 	err := r.db.WithContext(ctx).Model(&models.Activity{}).
-		Where("SK", "CONTAINS", id).
-		Limit(50). // Limit results to avoid scanning too much
+		Index("gsi2").
+		Where("gsi2PK", "=", "ACTIVITYID#"+id).
+		Limit(1).
 		All(&activities)
 
 	if err != nil {
-		r.logger.Error("failed to search for activity",
+		r.logger.Error("failed to get activity",
 			zap.String("activity_id", id),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleGetError(err, "activity", id)
 	}
 
-	// Filter activities to find exact match
-	for _, activity := range activities {
-		if activity.Activity != nil && activity.Activity.ID == id {
-			return activity.Activity, nil
-		}
+	if err := common.ValidateSliceNotEmpty("activities", activities); err != nil {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActivity, id)
 	}
 
-	// Activity not found
-	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActivity, id)
+	if activities[0].Activity == nil {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActivity, id)
+	}
+
+	return activities[0].Activity, nil
 }
 
 // GetInboxActivities retrieves inbox activities for a user - matches legacy implementation

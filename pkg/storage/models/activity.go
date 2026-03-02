@@ -20,6 +20,10 @@ type Activity struct {
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // Format: "INBOX#{username}" (only for inbox activities)
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // Format: timestamp (only for inbox activities)
 
+	// GSI for direct activity lookup by Activity.ID
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2PK,omitempty"` // Format: "ACTIVITYID#{activity_id}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2SK,omitempty"` // Format: "ACTIVITY#{timestamp}#{activity_id}"
+
 	// Activity data
 	Activity  *activitypub.Activity `theorydb:"attr:activity" json:"Activity"`
 	CreatedAt time.Time             `theorydb:"attr:createdAt" json:"CreatedAt"`

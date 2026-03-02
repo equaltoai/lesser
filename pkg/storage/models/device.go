@@ -21,6 +21,10 @@ type Device struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // TRUST_LEVEL#{trustLevel}
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // {lastSeenAt}#{deviceID}
 
+	// GSI for direct deviceID lookup (login/session flows)
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // DEVICEID#{deviceID}
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // USER#{username}
+
 	// Device data
 	DeviceID      string    `theorydb:"attr:deviceID" json:"device_id"`
 	Username      string    `theorydb:"attr:username" json:"username"`
@@ -53,6 +57,10 @@ func (d *Device) UpdateKeys() {
 	// GSI2 for monitoring devices by trust level
 	d.GSI2PK = fmt.Sprintf("TRUST_LEVEL#%s", d.TrustLevel)
 	d.GSI2SK = fmt.Sprintf("%d#%s", d.LastSeenAt.Unix(), d.DeviceID)
+
+	// GSI3 for direct deviceID lookup
+	d.GSI3PK = fmt.Sprintf("DEVICEID#%s", d.DeviceID)
+	d.GSI3SK = fmt.Sprintf(KeyPatternUser, d.Username)
 
 	// Set TTL for inactive devices (90 days after last seen)
 	d.TTL = d.LastSeenAt.Add(90 * 24 * time.Hour).Unix()

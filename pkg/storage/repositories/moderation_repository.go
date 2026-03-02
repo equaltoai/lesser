@@ -1407,35 +1407,34 @@ func (r *ModerationRepository) CreateFilter(ctx context.Context, filter *storage
 
 // GetFilter retrieves a filter by ID
 func (r *ModerationRepository) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
-	// We need to scan for the filter since we don't know the username
 	var models []models.Filter
 
 	err := r.db.WithContext(ctx).Model(&models).
-		Where("SK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Limit(10). // Reasonable limit
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Limit(1).
 		All(&models)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "by name")
 	}
 
-	// Find the matching filter
-	for _, model := range models {
-		if model.ID == filterID {
-			return &storage.Filter{
-				ID:           model.ID,
-				Username:     model.Username,
-				Title:        model.Title,
-				Context:      model.Context,
-				FilterAction: model.FilterAction,
-				ExpiresAt:    model.ExpiresAt,
-				CreatedAt:    model.CreatedAt,
-				UpdatedAt:    model.UpdatedAt,
-			}, nil
-		}
+	if err := common.ValidateSliceNotEmpty("filters", models); err != nil {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilter, "not found")
 	}
 
-	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilter, "not found")
+	model := models[0]
+	return &storage.Filter{
+		ID:           model.ID,
+		Username:     model.Username,
+		Title:        model.Title,
+		Context:      model.Context,
+		FilterAction: model.FilterAction,
+		ExpiresAt:    model.ExpiresAt,
+		CreatedAt:    model.CreatedAt,
+		UpdatedAt:    model.UpdatedAt,
+	}, nil
+
 }
 
 // GetFiltersForUser retrieves all filters for a user
