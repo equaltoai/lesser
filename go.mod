@@ -48,7 +48,7 @@ require (
 	github.com/shopspring/decimal v1.4.0
 	github.com/spruceid/siwe-go v0.2.1
 	github.com/stretchr/testify v1.11.1
-	github.com/theory-cloud/apptheory v0.14.0
+	github.com/theory-cloud/apptheory v0.15.1
 	github.com/theory-cloud/tabletheory v1.4.1
 	github.com/tyler-smith/go-bip32 v1.0.0
 	github.com/tyler-smith/go-bip39 v1.1.0
