@@ -32,7 +32,7 @@ func TestFederationCostTracking_UpdateKeys(t *testing.T) {
 			timestamp:      time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 			expectedPKPfx:  "FED_COST#remote.example.com#",
 			expectedSKPfx:  "ACTIVITY#Create#activity-123",
-			expectedGSI1PK: "FED_COSTS#20240115",
+			expectedGSI1PK: "FED_COSTS#DOMAIN#remote.example.com#2024-01",
 			expectedGSI2PK: "FED_TYPE#Create",
 		},
 		{
@@ -43,7 +43,7 @@ func TestFederationCostTracking_UpdateKeys(t *testing.T) {
 			timestamp:      time.Date(2024, 6, 20, 14, 45, 0, 0, time.UTC),
 			expectedPKPfx:  "FED_COST#mastodon.social#",
 			expectedSKPfx:  "ACTIVITY#Follow#follow-456",
-			expectedGSI1PK: "FED_COSTS#20240620",
+			expectedGSI1PK: "FED_COSTS#DOMAIN#mastodon.social#2024-06",
 			expectedGSI2PK: "FED_TYPE#Follow",
 		},
 	}

@@ -1372,41 +1372,65 @@ func (r *TrendingRepository) GetEngagementMetricsData(ctx context.Context, metri
 
 // GetEngagementByDateRange retrieves engagement metrics within a date range
 func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metricType string, startDate, endDate string, limit int) ([]*storage.EngagementMetricsSummary, error) {
-	// Query using GSI8 for date range
-	startPK := fmt.Sprintf("METRICS#%s#%s", metricType, startDate)
-	endPK := fmt.Sprintf("METRICS#%s#%s", metricType, endDate)
-
-	var metricsRecords []models.EngagementMetrics
-	err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
-		Where("gsi8PK", ">=", startPK).
-		Where("gsi8PK", "<=", endPK).
-		OrderBy("gsi8PK", "ASC").
-		Limit(limit).
-		All(&metricsRecords)
-
+	start, err := time.Parse(common.DateFormat, startDate)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return []*storage.EngagementMetricsSummary{}, nil
-		}
-		r.logger.Error("failed to get engagement by date range",
-			zap.String("metricType", metricType),
-			zap.String("startDate", startDate),
-			zap.String("endDate", endDate),
-			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrFailedGetEngagementByDate, err)
+		return nil, fmt.Errorf("%w: invalid startDate %q", ErrFailedGetEngagementByDate, startDate)
+	}
+	end, err := time.Parse(common.DateFormat, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid endDate %q", ErrFailedGetEngagementByDate, endDate)
+	}
+	if end.Before(start) {
+		return nil, fmt.Errorf("%w: endDate must be on/after startDate", ErrFailedGetEngagementByDate)
 	}
 
-	// Convert to summary format
-	summaries := make([]*storage.EngagementMetricsSummary, len(metricsRecords))
-	for i, record := range metricsRecords {
-		summaries[i] = &storage.EngagementMetricsSummary{
-			Date:        record.Date,
-			MetricType:  record.MetricType,
-			TargetID:    record.TargetID,
-			TotalViews:  record.Views,
-			TotalLikes:  record.Likes,
-			TotalShares: record.Shares,
-			UniqueUsers: record.UniqueUsers,
+	summaries := make([]*storage.EngagementMetricsSummary, 0)
+	for current := start; !current.After(end); current = current.AddDate(0, 0, 1) {
+		pk := fmt.Sprintf("METRICS#%s#%s", metricType, current.Format(common.DateFormat))
+
+		var records []models.EngagementMetrics
+		query := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "ASC")
+
+		if limit > 0 {
+			remaining := limit - len(summaries)
+			if remaining <= 0 {
+				break
+			}
+			query = query.Limit(remaining)
+		}
+
+		if err := query.All(&records); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
+			r.logger.Error("failed to get engagement by date range",
+				zap.String("metricType", metricType),
+				zap.String("startDate", startDate),
+				zap.String("endDate", endDate),
+				zap.Error(err))
+			return nil, fmt.Errorf("%w: %w", ErrFailedGetEngagementByDate, err)
+		}
+
+		for _, record := range records {
+			summaries = append(summaries, &storage.EngagementMetricsSummary{
+				Date:        record.Date,
+				MetricType:  record.MetricType,
+				TargetID:    record.TargetID,
+				TotalViews:  record.Views,
+				TotalLikes:  record.Likes,
+				TotalShares: record.Shares,
+				UniqueUsers: record.UniqueUsers,
+			})
+
+			if limit > 0 && len(summaries) >= limit {
+				break
+			}
+		}
+
+		if limit > 0 && len(summaries) >= limit {
+			break
 		}
 	}
 

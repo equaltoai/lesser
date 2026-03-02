@@ -91,7 +91,7 @@ func TestFederationCostRepository_GetFederationCosts_SuccessAndError(t *testing.
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).
 		Run(func(args mock.Arguments) {
@@ -116,7 +116,7 @@ func TestFederationCostRepository_GetFederationCosts_SuccessAndError(t *testing.
 	mockDB2.On("Model", mock.Anything).Return(mockQuery2)
 	mockQuery2.On("Index", "gsi1").Return(mockQuery2)
 	mockQuery2.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery2)
-	mockQuery2.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery2)
+	mockQuery2.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery2)
 	mockQuery2.On("Limit", mock.Anything).Return(mockQuery2)
 	mockQuery2.On("All", mock.Anything).Return(errors.New("scan failed")).Once()
 
@@ -177,7 +177,7 @@ func TestFederationCostRepository_GetDailyCostSummary_ComputesBreakdowns(t *test
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
 	mockQuery.On("Index", "gsi1").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 	mockQuery.On("All", mock.AnythingOfType("*[]*models.FederationCostTracking")).
 		Run(func(args mock.Arguments) {

@@ -86,39 +86,72 @@ func (r *AICostRepository) GetAICost(ctx context.Context, operationID string) (*
 
 // GetAICostsByTimeRange retrieves AI cost records within a time range
 func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime, endTime time.Time, operationType string, limit int) ([]*models.AICost, error) {
-	startDate := startTime.Format(common.CompactDateFormat)
-	endDate := endTime.Format(common.CompactDateFormat)
-
-	query := r.db.WithContext(ctx).Model(&models.AICost{}).
-		Index("gsi1").
-		Where("gsi1PK", ">=", fmt.Sprintf("AI_COSTS#%s", startDate)).
-		Where("gsi1PK", "<=", fmt.Sprintf("AI_COSTS#%s", endDate))
-
-	if limit > 0 {
-		query = query.Limit(limit)
+	if startTime.IsZero() || endTime.IsZero() {
+		return nil, ErrorHandler.HandleQueryError(common.ValidationError{Field: "time_range", Message: "start and end time are required"}, "ai cost", "time range")
+	}
+	if endTime.Before(startTime) {
+		return nil, ErrorHandler.HandleQueryError(common.ValidationError{Field: "time_range", Message: "end time must be after start time"}, "ai cost", "time range")
 	}
 
-	var aiCosts []models.AICost
-	err := query.Scan(&aiCosts)
-	if err != nil {
-		r.logger.Error("Failed to query AI costs by time range",
-			zap.Time("start", startTime),
-			zap.Time("end", endTime),
-			zap.String("operation_type", operationType),
-			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "ai cost", "time range")
-	}
+	startUTC := startTime.UTC()
+	endUTC := endTime.UTC()
 
-	// Filter by operation type if specified and within time range
-	var filteredCosts []*models.AICost
-	for i, cost := range aiCosts {
-		if cost.Timestamp.Before(startTime) || cost.Timestamp.After(endTime) {
-			continue
+	startMonth := time.Date(startUTC.Year(), startUTC.Month(), 1, 0, 0, 0, 0, time.UTC)
+	endMonth := time.Date(endUTC.Year(), endUTC.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	filteredCosts := make([]*models.AICost, 0)
+	for month := startMonth; !month.After(endMonth); month = month.AddDate(0, 1, 0) {
+		bucketStart := startUTC
+		if bucketStart.Before(month) {
+			bucketStart = month
 		}
-		if operationType != "" && cost.OperationType != operationType {
-			continue
+
+		monthEnd := month.AddDate(0, 1, 0).Add(-time.Millisecond)
+		bucketEnd := endUTC
+		if bucketEnd.After(monthEnd) {
+			bucketEnd = monthEnd
 		}
-		filteredCosts = append(filteredCosts, &aiCosts[i])
+
+		bucketPK := fmt.Sprintf("AI_COSTS#%s", month.Format(common.MonthFormat))
+		startSK := fmt.Sprintf("TS#%013d", bucketStart.UnixMilli())
+		endSK := fmt.Sprintf("TS#%013d~", bucketEnd.UnixMilli())
+
+		var bucketCosts []*models.AICost
+		query := r.db.WithContext(ctx).Model(&models.AICost{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", bucketPK).
+			Where("gsi1SK", ">=", startSK).
+			Where("gsi1SK", "<=", endSK).
+			OrderBy("gsi1SK", "ASC")
+
+		if err := query.All(&bucketCosts); err != nil {
+			r.logger.Error("Failed to query AI costs by time range",
+				zap.Time("start", startTime),
+				zap.Time("end", endTime),
+				zap.String("operation_type", operationType),
+				zap.Error(err))
+			return nil, ErrorHandler.HandleQueryError(err, "ai cost", "time range")
+		}
+
+		for _, cost := range bucketCosts {
+			if cost == nil {
+				continue
+			}
+			if cost.Timestamp.Before(startTime) || cost.Timestamp.After(endTime) {
+				continue
+			}
+			if operationType != "" && cost.OperationType != operationType {
+				continue
+			}
+			filteredCosts = append(filteredCosts, cost)
+			if limit > 0 && len(filteredCosts) >= limit {
+				break
+			}
+		}
+
+		if limit > 0 && len(filteredCosts) >= limit {
+			break
+		}
 	}
 
 	r.logger.Debug("Retrieved AI costs by time range",

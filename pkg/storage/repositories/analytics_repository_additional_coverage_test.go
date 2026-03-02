@@ -1032,7 +1032,7 @@ func TestTrendingRepository_GetEngagementByDateRange_NotFoundAndError(t *testing
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Twice()
 
 		results, err := repo.GetEngagementByDateRange(ctx, "status", "2025-01-01", "2025-01-02", 10)
 		require.NoError(t, err)

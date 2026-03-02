@@ -225,16 +225,23 @@ This leverages the existing schema and eliminates the entire class of “wrong m
 ### P2 – Time-range scans due to key design (fixable with bucketing)
 
 31) `pkg/storage/repositories/ai_cost_repository.go:88` – `AICostRepository.GetAICostsByTimeRange`
-   - **Current:** range on `gsi1PK` (partition key) ⇒ index scan
-   - **Scan-free redesign:** bucket by month/day in PK and put timestamp in sort key; query per bucket.
+   - **Current (fixed):** bucketed month partitions on GSI1 (no scans):
+     - `gsi1PK = AI_COSTS#YYYY-MM`
+     - `gsi1SK = TS#<unix_millis>#TYPE#<operationType>#OP#<operationID>`
+     - query is `Index("gsi1")` + `gsi1PK = ...` + `gsi1SK BETWEEN TS#start..TS#end~` per month bucket.
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m5` sets the new `gsi1PK/gsi1SK` keys for existing AI cost rows.
 
 32) `pkg/storage/repositories/federation_cost_repository.go:80` – `FederationCostRepository.GetFederationCosts`
-   - **Current:** range on `gsi1PK` + `CONTAINS` filter ⇒ index scan
-   - **Scan-free redesign:** add a domain/time GSI (reuse existing unused `gsi3` on this model) or bucket by month and query per bucket.
+   - **Current (fixed):** domain + month buckets on GSI1 (no scans):
+     - `gsi1PK = FED_COSTS#DOMAIN#<domain>#YYYY-MM`
+     - `gsi1SK = TS#<unix_millis>#TYPE#<activityType>#ID#<activityID>`
+     - query is `Index("gsi1")` + exact `gsi1PK` + `gsi1SK` range per month bucket.
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m5` sets the new `gsi1PK/gsi1SK` keys for existing federation cost rows.
 
 33) `pkg/storage/repositories/analytics_repository.go:1396` – `TrendingRepository.GetEngagementByDateRange`
-   - **Current:** range on `gsi8PK` (partition key) and not using `Index("gsi8")` ⇒ scan
-   - **Scan-free redesign:** engagement metrics are already bucketed by date in PK (`METRICS#type#date`); iterate dates and query each exact PK.
+   - **Current (fixed):** engagement metrics are queried by existing day-bucketed PKs (no scans):
+     - for each `date` in `[startDate,endDate]`, `Query PK = METRICS#<type>#<date>`
+     - merge results and apply the caller’s `limit`.
 
 34) `pkg/storage/repositories/analytics_repository.go:1659` – `TrendingRepository.PruneStaleTrends`
    - **Current:** `Where("Date","<",...)` scan
@@ -501,13 +508,17 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
    - Query each month bucket in `[start,end]` using `gsi1SK BETWEEN ...` and merge results.
 
 2) **Federation cost time-range + domain filtering**
-   - Either:
-     - bucket by month and put `DOMAIN#<domain>#TS#...` in the sort key, or
-     - use an unused GSI dedicated to `DOMAIN#<domain>#YYYY-MM` buckets.
+   - Bucket by domain + month on GSI1:
+     - `gsi1PK = FED_COSTS#DOMAIN#<domain>#YYYY-MM`
+     - `gsi1SK = TS#<unix_millis>#TYPE#<activityType>#ID#<activityID>`
+   - Query each month bucket in `[start,end]` using `gsi1SK BETWEEN ...` and merge results.
 
 3) **Engagement by date range**
    - Prefer iterating known date buckets and querying exact PKs (existing `METRICS#type#date` pattern).
    - If using a GSI, ensure the query is `Index("...")` + exact `gsiNPK`, then range on `gsiNSK`.
+
+4) **Backfill (one-time)**
+   - Tool: `cmd/tools/dynamodb-backfill-m5` backfills the new AI-cost and federation-cost GSI1 keys for existing rows.
 
 **Acceptance criteria**
 
