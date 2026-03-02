@@ -73,45 +73,28 @@ This leverages the existing schema and eliminates the entire class of “wrong m
 ### P0 – Scan + Delete (data-loss risk)
 
 1) `pkg/storage/repositories/analytics_repository.go:889` – `TrendingRepository.deleteOldTrendsGeneric`
-   - **Current:** `Filter("UpdatedAt","<",before).Scan(...)` then `Delete()`
-   - **Why bad:** table scan + deletes arbitrary PK/SK if the struct happens to unmarshal `PK/SK/UpdatedAt`
-   - **Scan-free redesign (preferred):**
-     - **Option A (best):** remove manual cleanup entirely and rely on DynamoDB **TTL** (trend models already set `ttl` to `updatedAt + 7d` in `pkg/storage/models/trends.go`).
-     - **Option B:** delete by **known trend partitions**:
-       - trend PKs are already date-bucketed: `TREND_TYPE#<TYPE>#YYYY-MM-DD`
-       - compute the cutoff date(s) and `Query PK = ...` per day, then batch delete those items
-     - Add a hard guard before deleting: `if !strings.HasPrefix(trend.PK, "TREND_TYPE#HASHTAG#") { skip + log }`
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op to prevent scan-based deletion.
 
 2) `pkg/storage/repositories/hashtag_batch_helpers.go:61` – `deleteOldHashtagTrendRecordsBatch` (and related)
-   - **Current:** `Filter(field,"<",before).Scan(&trends)` then delete
-   - **Why bad:** same pattern as the trend incident (scan + delete)
-   - **Scan-free redesign:**
-     - Prefer **TTL-only** (HashtagTrend / TrendingHashtag / HashtagUsage already use `ttl`)
-     - If manual pruning is still required: delete by **known PK buckets** (these models already partition by hashtag or date); do not scan by `UpdatedAt`.
+   - **Current (fixed):** TTL-only. Helpers are no-ops to prevent scan-based deletion.
 
 3) `pkg/storage/repositories/object_repository.go:2288` – `ObjectRepository.CleanupExpiredTombstones`
-   - **Current:** `Where("TTL","<",now).Scan(&tombstones)` then delete
-   - **Scan-free redesign:** remove manual cleanup; rely on TTL. If strict deletion is required, add an expiry index (see “Expiry index pattern” below).
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
 
 4) `pkg/storage/repositories/user_repository.go:2735` – `UserRepository.DeleteExpiredTimelineEntries`
-   - **Current:** `Filter("ExpiresAt","<",before).All(&expiredEntries)` then batch delete
-   - **Scan-free redesign:** TTL-only (timeline entries are already TTL-driven). If strict, add expiry index.
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
 
 5) `pkg/storage/repositories/media_repository.go:1276` – `MediaRepository.DeleteExpiredMedia`
-   - **Current:** `Filter("ExpiresAt","<",...).All(&mediaList)` then delete
-   - **Scan-free redesign:** TTL-only (expired media is correctness-safe to treat as expired even if the row lingers).
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
 
 6) `pkg/storage/repositories/notification_repository.go:797` – `NotificationRepository.DeleteExpiredNotifications`
-   - **Current:** `Filter("ExpiresAt","<",...).All(&expiredNotifications)` then `BatchDelete`
-   - **Scan-free redesign:** TTL-only (notifications already store TTL in `ExpiresAt` mapped to `ttl`).
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
 
 7) `pkg/storage/repositories/dlq_repository.go:618` – `DLQRepository.CleanupExpiredMessages`
-   - **Current:** `Filter("ExpiresAt","<",...).All(&expiredMessages)` then delete
-   - **Scan-free redesign:** TTL-only.
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
 
 8) `pkg/storage/repositories/media_analytics_repository.go:519` – `MediaAnalyticsRepository.CleanupOldAnalytics`
-   - **Current:** `Where("Date","<",cutoffDate).Scan(&oldRecords)` then delete
-   - **Scan-free redesign:** TTL-only (media analytics records already set `ttl`). If you need “keep some BI, drop others”, split record types into different TTLs and avoid deletion scans.
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
 
 9) `pkg/storage/repositories/metrics_repository.go:475` – `MetricsRepository.cleanupRawMetrics`
    - **Current (fixed):** TTL-only (raw metrics already store `ttl`); manual cleanup is a no-op (no scans).
@@ -244,8 +227,7 @@ This leverages the existing schema and eliminates the entire class of “wrong m
      - merge results and apply the caller’s `limit`.
 
 34) `pkg/storage/repositories/analytics_repository.go:1659` – `TrendingRepository.PruneStaleTrends`
-   - **Current:** `Where("Date","<",...)` scan
-   - **Scan-free redesign:** TTL-only or bucket by date PK and delete via query.
+   - **Current (fixed):** TTL-only. Manual cleanup is a no-op (no scans).
 
 ---
 
