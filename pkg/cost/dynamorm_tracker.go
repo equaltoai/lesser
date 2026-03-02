@@ -969,6 +969,10 @@ func (ctq *TrackingQuery) WithContext(ctx context.Context) core.Query {
 
 // Scan wraps the Scan method with cost tracking
 func (ctq *TrackingQuery) Scan(dest any) error {
+	if ctq.operationMetadata != nil {
+		ctq.operationMetadata.OperationType = OperationTypeScan
+	}
+
 	err := ctq.query.Scan(dest)
 	if err == nil && ctq.tracker != nil {
 		// Scans are expensive - estimate high RCU usage
@@ -976,10 +980,30 @@ func (ctq *TrackingQuery) Scan(dest any) error {
 	}
 
 	if ctq.logger != nil {
-		ctq.logger.Debug("dynamodb_scan_tracked",
+		logFields := []zap.Field{
 			zap.Int("read_units", 100),
 			zap.Error(err),
-		)
+		}
+
+		if ctq.tracker != nil {
+			logFields = append(logFields,
+				zap.String("request_id", ctq.tracker.RequestID()),
+				zap.String("tracked_operation_type", ctq.tracker.OperationType()),
+			)
+		}
+
+		if ctq.operationMetadata != nil {
+			logFields = append(logFields,
+				zap.String("operation_type", ctq.operationMetadata.OperationType),
+				zap.String("table_name", ctq.operationMetadata.TableName),
+				zap.String("index_name", ctq.operationMetadata.IndexName),
+				zap.Int("condition_count", len(ctq.operationMetadata.Conditions)),
+				zap.Int("filter_count", len(ctq.operationMetadata.FilterExpressions)),
+				zap.Int("projection_count", len(ctq.operationMetadata.ProjectionFields)),
+			)
+		}
+
+		ctq.logger.Debug("dynamodb_scan_tracked", logFields...)
 	}
 
 	return err
@@ -993,6 +1017,10 @@ func (ctq *TrackingQuery) ParallelScan(segment int32, totalSegments int32) core.
 
 // ScanAllSegments wraps the ScanAllSegments method with cost tracking
 func (ctq *TrackingQuery) ScanAllSegments(dest any, totalSegments int32) error {
+	if ctq.operationMetadata != nil {
+		ctq.operationMetadata.OperationType = OperationTypeScan
+	}
+
 	err := ctq.query.ScanAllSegments(dest, totalSegments)
 	if err == nil && ctq.tracker != nil {
 		// Parallel scan across segments - estimate high usage
@@ -1002,11 +1030,31 @@ func (ctq *TrackingQuery) ScanAllSegments(dest any, totalSegments int32) error {
 
 	if ctq.logger != nil {
 		estimatedReads := int(totalSegments) * 100
-		ctq.logger.Debug("dynamodb_scan_all_segments_tracked",
+		logFields := []zap.Field{
 			zap.Int("read_units", estimatedReads),
 			zap.Int32("total_segments", totalSegments),
 			zap.Error(err),
-		)
+		}
+
+		if ctq.tracker != nil {
+			logFields = append(logFields,
+				zap.String("request_id", ctq.tracker.RequestID()),
+				zap.String("tracked_operation_type", ctq.tracker.OperationType()),
+			)
+		}
+
+		if ctq.operationMetadata != nil {
+			logFields = append(logFields,
+				zap.String("operation_type", ctq.operationMetadata.OperationType),
+				zap.String("table_name", ctq.operationMetadata.TableName),
+				zap.String("index_name", ctq.operationMetadata.IndexName),
+				zap.Int("condition_count", len(ctq.operationMetadata.Conditions)),
+				zap.Int("filter_count", len(ctq.operationMetadata.FilterExpressions)),
+				zap.Int("projection_count", len(ctq.operationMetadata.ProjectionFields)),
+			)
+		}
+
+		ctq.logger.Debug("dynamodb_scan_all_segments_tracked", logFields...)
 	}
 
 	return err

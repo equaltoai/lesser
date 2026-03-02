@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,8 @@ type baseline struct {
 
 	GoReadAllRespBody    map[string]int `yaml:"goReadAllRespBody"`
 	GoInsecureSkipVerify map[string]int `yaml:"goInsecureSkipVerify"`
+	GoDynamoDBQueryScan  map[string]int `yaml:"goDynamoDBQueryScan"`
+	GoDynamoDBBadPKWhere map[string]int `yaml:"goDynamoDBBadPKWhere"`
 
 	InfraCdkCspUnsafeInline map[string]int `yaml:"infraCdkCspUnsafeInline"`
 	InfraCdkCspUnsafeEval   map[string]int `yaml:"infraCdkCspUnsafeEval"`
@@ -34,16 +37,26 @@ type baseline struct {
 type options struct {
 	Check        bool
 	BaselinePath string
+	DumpDynamoDB bool
 }
 
 func main() {
 	var opts options
 	flag.BoolVar(&opts.Check, "check", false, "run audit gates in check mode (exit non-zero on failures)")
 	flag.StringVar(&opts.BaselinePath, "baseline", "tools/audit_gates/baseline.yml", "baseline file path (repo-relative)")
+	flag.BoolVar(&opts.DumpDynamoDB, "dump-dynamodb-baseline", false, "print current DynamoDB scan/pk-misuse baseline YAML to stdout")
 	flag.Parse()
 
+	if opts.DumpDynamoDB {
+		if err := dumpDynamoDBBaseline(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+
 	if !opts.Check {
-		fmt.Fprintln(os.Stderr, "error: --check is required")
+		fmt.Fprintln(os.Stderr, "error: --check is required (or use --dump-dynamodb-baseline)")
 		os.Exit(2)
 	}
 
@@ -77,6 +90,14 @@ func run(opts options) error {
 		problems = append(problems, err.Error())
 	}
 
+	if err := checkGoDynamoDBQueryScan(b); err != nil {
+		problems = append(problems, err.Error())
+	}
+
+	if err := checkGoDynamoDBBadPKWhere(b); err != nil {
+		problems = append(problems, err.Error())
+	}
+
 	if err := checkInfraCdkCspUnsafe(b); err != nil {
 		problems = append(problems, err.Error())
 	}
@@ -103,6 +124,51 @@ func run(opts options) error {
 
 	fmt.Println("✓ audit gates passed")
 	return nil
+}
+
+func dumpDynamoDBBaseline() error {
+	skips := defaultSkips()
+	skips["tools"] = struct{}{} // allowlist cmd/tools one-time backfills
+
+	scanCounts, err := countGoSelectorCallsWithMinArgs([]string{"cmd", "pkg", "graph"}, "Scan", 1, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
+	badPKCounts, err := countGoWhereMisusedPartitionKey([]string{"cmd", "pkg", "graph"}, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("goDynamoDBQueryScan:")
+	printYAMLCountMap(scanCounts)
+	fmt.Println()
+	fmt.Println("goDynamoDBBadPKWhere:")
+	printYAMLCountMap(badPKCounts)
+	return nil
+}
+
+func printYAMLCountMap(counts map[string]int) {
+	keys := make([]string, 0, len(counts))
+	for path := range counts {
+		keys = append(keys, path)
+	}
+	sort.Strings(keys)
+
+	if len(keys) == 0 {
+		fmt.Println("  {}")
+		return
+	}
+
+	for _, path := range keys {
+		fmt.Printf("  %s: %d\n", path, counts[path])
+	}
 }
 
 func loadBaseline(path string) (baseline, error) {
@@ -256,6 +322,36 @@ func checkGoInsecureSkipVerify(b baseline) error {
 	}
 
 	return compareCounts("InsecureSkipVerify: true occurrences", actual, b.GoInsecureSkipVerify)
+}
+
+func checkGoDynamoDBQueryScan(b baseline) error {
+	skips := defaultSkips()
+	skips["tools"] = struct{}{} // allowlist cmd/tools one-time backfills
+
+	actual, err := countGoSelectorCallsWithMinArgs([]string{"cmd", "pkg", "graph"}, "Scan", 1, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
+	return compareCounts("DynamoDB Query.Scan(...) occurrences", actual, b.GoDynamoDBQueryScan)
+}
+
+func checkGoDynamoDBBadPKWhere(b baseline) error {
+	skips := defaultSkips()
+	skips["tools"] = struct{}{} // allowlist cmd/tools one-time backfills
+
+	actual, err := countGoWhereMisusedPartitionKey([]string{"cmd", "pkg", "graph"}, scanOptions{
+		IncludeTests: false,
+		Skips:        skips,
+	})
+	if err != nil {
+		return err
+	}
+
+	return compareCounts("DynamoDB partition-key misuse in Where(...)", actual, b.GoDynamoDBBadPKWhere)
 }
 
 func checkInfraCdkCspUnsafe(b baseline) error {
@@ -586,6 +682,163 @@ func countRegexpOccurrences(roots []string, needle *regexp.Regexp, opts scanOpti
 	}
 
 	return counts, nil
+}
+
+func countGoSelectorCallsWithMinArgs(roots []string, selector string, minArgs int, opts scanOptions) (map[string]int, error) {
+	counts := make(map[string]int)
+	if strings.TrimSpace(selector) == "" {
+		return counts, fmt.Errorf("internal error: empty selector")
+	}
+	if minArgs < 0 {
+		return counts, fmt.Errorf("internal error: minArgs must be >= 0")
+	}
+
+	for _, root := range roots {
+		if err := walkGoFiles(root, opts, func(path string) error {
+			content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+			if err != nil {
+				return err
+			}
+
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, path, content, 0)
+			if err != nil {
+				return fmt.Errorf("failed to parse %q: %w", path, err)
+			}
+
+			n := 0
+			ast.Inspect(f, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel == nil {
+					return true
+				}
+				if sel.Sel.Name != selector {
+					return true
+				}
+				if len(call.Args) < minArgs {
+					return true
+				}
+				n++
+				return true
+			})
+
+			if n > 0 {
+				counts[normalizePath(path)] = n
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	return counts, nil
+}
+
+func countGoWhereMisusedPartitionKey(roots []string, opts scanOptions) (map[string]int, error) {
+	counts := make(map[string]int)
+
+	badOps := map[string]struct{}{
+		"begins_with": {},
+		"BEGINS_WITH": {},
+		">":           {},
+		">=":          {},
+		"<":           {},
+		"<=":          {},
+	}
+
+	for _, root := range roots {
+		if err := walkGoFiles(root, opts, func(path string) error {
+			content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+			if err != nil {
+				return err
+			}
+
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, path, content, 0)
+			if err != nil {
+				return fmt.Errorf("failed to parse %q: %w", path, err)
+			}
+
+			n := 0
+			ast.Inspect(f, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel == nil || sel.Sel.Name != "Where" {
+					return true
+				}
+				if len(call.Args) < 2 {
+					return true
+				}
+
+				field, ok := goStringLiteral(call.Args[0])
+				if !ok || !isPartitionKeyField(field) {
+					return true
+				}
+
+				op, ok := goStringLiteral(call.Args[1])
+				if !ok {
+					return true
+				}
+				if _, bad := badOps[op]; !bad {
+					return true
+				}
+
+				n++
+				return true
+			})
+
+			if n > 0 {
+				counts[normalizePath(path)] = n
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	return counts, nil
+}
+
+func goStringLiteral(expr ast.Expr) (string, bool) {
+	lit, ok := expr.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	decoded, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return "", false
+	}
+	return decoded, true
+}
+
+func isPartitionKeyField(field string) bool {
+	if field == "PK" {
+		return true
+	}
+
+	if !strings.HasPrefix(field, "gsi") || !strings.HasSuffix(field, "PK") {
+		return false
+	}
+
+	middle := strings.TrimSuffix(strings.TrimPrefix(field, "gsi"), "PK")
+	if middle == "" {
+		return false
+	}
+
+	for _, ch := range middle {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+
+	return true
 }
 
 func walkGoFiles(root string, opts scanOptions, fn func(path string) error) error {

@@ -76,6 +76,14 @@ type Tracker struct {
 	circuitBreaker *CostCircuitBreaker
 }
 
+func (t *Tracker) RequestID() string {
+	return t.requestID
+}
+
+func (t *Tracker) OperationType() string {
+	return t.operationType
+}
+
 // New creates a new cost tracker
 func New() *Tracker {
 	return &Tracker{

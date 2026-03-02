@@ -22,6 +22,45 @@ goInsecureSkipVerify:
   pkg/httpclient/federation_client.go: 1
   pkg/observability/webhook_delivery.go: 1
 
+# Exact occurrences of TableTheory `Query.Scan(...)` in non-test Go code (tracked by count per file).
+# This gate exists to prevent adding new DynamoDB scans to production code paths.
+goDynamoDBQueryScan:
+  pkg/cost/dynamorm_tracker.go: 1
+  pkg/federation/relationship_tracker.go: 4
+  pkg/moderation/advanced/reputation.go: 1
+  pkg/storage/repositories/account_repository.go: 5
+  pkg/storage/repositories/account_repository_auth.go: 2
+  pkg/storage/repositories/account_repository_oauth.go: 1
+  pkg/storage/repositories/ai_cost_repository.go: 3
+  pkg/storage/repositories/analytics_repository.go: 2
+  pkg/storage/repositories/auth_repository.go: 1
+  pkg/storage/repositories/conversation_repository.go: 9
+  pkg/storage/repositories/federation_repository.go: 22
+  pkg/storage/repositories/hashtag_repository.go: 1
+  pkg/storage/repositories/hashtag_trending_calculator.go: 1
+  pkg/storage/repositories/import_export_simple_helpers.go: 2
+  pkg/storage/repositories/list_repository.go: 6
+  pkg/storage/repositories/media_analytics_repository.go: 5
+  pkg/storage/repositories/media_metadata_repository.go: 2
+  pkg/storage/repositories/media_popularity_repository.go: 1
+  pkg/storage/repositories/media_repository.go: 11
+  pkg/storage/repositories/moderation_ml_repository.go: 4
+  pkg/storage/repositories/moderation_ml_repository_ext.go: 2
+  pkg/storage/repositories/moderation_repository.go: 2
+  pkg/storage/repositories/object_repository.go: 1
+  pkg/storage/repositories/query_utils.go: 1
+  pkg/storage/repositories/severance_repository.go: 2
+  pkg/storage/repositories/social_repository.go: 3
+  pkg/storage/repositories/status_repository.go: 2
+  pkg/storage/repositories/thread_repository.go: 2
+  pkg/storage/repositories/trust_repository.go: 1
+  pkg/storage/repositories/user_repository.go: 6
+
+# Exact occurrences of partition-key prefix/range predicates in `.Where(...)` (tracked by count per file).
+# Partition keys must be queried by equality; prefix/range predicates force scans.
+goDynamoDBBadPKWhere:
+  pkg/storage/repositories/analytics_repository.go: 1
+
 # Exact occurrences of unsafe CSP directives in CloudFront/CDK code (tracked by count per file).
 infraCdkCspUnsafeInline:
   {}

@@ -532,10 +532,11 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
 **Implementation guide**
 
 1) **Codebase guardrails**
-   - Add a lightweight audit script (or `./lesser` subcommand) that fails CI if:
-     - any `.Scan(` exists under `pkg/` or production `cmd/` lambdas, or
-     - any query uses `begins_with` on `PK` / `gsiNPK`
-   - Allowlist only explicit one-time backfill tools (e.g. `cmd/tools/`).
+   - Enforce via `./lesser verify audit` (runs `go run ./tools/audit_gates --check`) with two baselined gates:
+     - `goDynamoDBQueryScan`: counts TableTheory `Query.Scan(...)` in non-test Go code (prevents adding new scan callsites)
+     - `goDynamoDBBadPKWhere`: counts `Where("PK"/"gsiNPK", "begins_with|>=|...")` misuse (prevents partition-key prefix/range regressions)
+   - Allowlist only explicit one-time backfill tools by skipping `cmd/tools/` in these audits.
+   - To regenerate the baseline snippet for these gates: `go run ./tools/audit_gates --dump-dynamodb-baseline`.
 
 2) **Runtime observability**
    - Instrument the TableTheory executor/wrapper to log and/or emit metrics on Scan usage:
