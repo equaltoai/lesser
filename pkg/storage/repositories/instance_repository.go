@@ -602,14 +602,6 @@ func (r *InstanceRepository) GetLocalCommentCount(ctx context.Context) (int64, e
 	return metric.Value, nil
 }
 
-// countLocalComments counts local comments by using the replies GSI for efficient counting
-func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, error) {
-	// Deprecated: this previously performed an index-wide scan (begins_with on a partition key),
-	// which is a DynamoDB anti-pattern. Local comment counts should be maintained via counters.
-	r.logger.Warn("countLocalComments is deprecated; returning 0 (use LOCAL_COMMENTS metric)")
-	return 0, nil
-}
-
 // GetWeeklyActivity retrieves weekly activity data for a specific week
 func (r *InstanceRepository) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
 	activity := &models.WeeklyActivity{}

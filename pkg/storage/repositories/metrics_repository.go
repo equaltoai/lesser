@@ -481,7 +481,7 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 }
 
 // cleanupRawMetrics removes old raw metrics
-func (r *MetricsRepository) cleanupRawMetrics(ctx context.Context, cutoffTime time.Time) (int, error) {
+func (r *MetricsRepository) cleanupRawMetrics(_ context.Context, cutoffTime time.Time) (int, error) {
 	// Raw metrics are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
 	// required scanning across all metric partitions, which is expensive and unnecessary.
 	if r.logger != nil {

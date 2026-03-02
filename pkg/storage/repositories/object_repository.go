@@ -2296,7 +2296,7 @@ func (r *ObjectRepository) GetTombstonesByType(ctx context.Context, formerType s
 }
 
 // CleanupExpiredTombstones removes tombstones that have exceeded their TTL
-func (r *ObjectRepository) CleanupExpiredTombstones(ctx context.Context, batchSize int) (int, error) {
+func (r *ObjectRepository) CleanupExpiredTombstones(_ context.Context, batchSize int) (int, error) {
 	// Tombstones are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
 	// used to perform a DynamoDB Scan which is both expensive and unnecessary.
 	r.logger.Info("skipping manual tombstone cleanup (ttl handles expiration)",

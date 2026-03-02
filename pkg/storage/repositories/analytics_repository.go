@@ -886,7 +886,7 @@ type TrendDeletable interface {
 }
 
 // deleteOldTrendsGeneric is a generic function to delete old trend records
-func (r *TrendingRepository) deleteOldTrendsGeneric(ctx context.Context, before time.Time, trendType string, modelInstance interface{}, getIdentifier func(interface{}) string) error {
+func (r *TrendingRepository) deleteOldTrendsGeneric(_ context.Context, before time.Time, trendType string, _ interface{}, _ func(interface{}) string) error {
 	// IMPORTANT:
 	// TableTheory's `.Scan(...)` issues a DynamoDB Scan, and using a non-key filter like
 	// `UpdatedAt < before` can match and deserialize *any* item that has an `updatedAt` attribute
@@ -1658,7 +1658,7 @@ func (r *TrendingRepository) GetHashtagTrend(ctx context.Context, hashtag string
 }
 
 // PruneStaleTrends removes old trending entries
-func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.Time) error {
+func (r *TrendingRepository) PruneStaleTrends(_ context.Context, before time.Time) error {
 	// Trending entries are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual
 	// cleanup required a scan on a non-key attribute (`Date < ...`), which is expensive and
 	// unnecessary.

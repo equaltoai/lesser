@@ -1,6 +1,6 @@
 SHELL := bash
 
-.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-ai-training verify-schema verify-graphql-coverage verify-openapi verify-openapi-strict verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify schema export-schema gqlgen
+.PHONY: help build clean test deploy status destroy ensure-cdn-credentials ensure-vapid-credentials owner-bootstrap seed-and-validate clear-data generate-inventory generate-graphql-coverage generate-openapi verify-inventory verify-lambda-set verify-docs verify-ai-training verify-schema verify-graphql-coverage verify-openapi verify-openapi-strict verify-unit verify-smoke verify-cdk smoke-core smoke-federation verify rubric schema export-schema gqlgen
 
 # =============================================================================
 # CONFIGURATION
@@ -259,6 +259,10 @@ verify: verify-lambda-set verify-inventory verify-docs verify-ai-training verify
 	@if [ "$${VERIFY_SMOKE:-0}" = "1" ]; then $(MAKE) verify-smoke; fi
 	@if [ "$${VERIFY_CDK:-0}" = "1" ]; then $(MAKE) verify-cdk; fi
 	@echo "✓ verify complete (lambda set, inventory, docs, ai-training docs, graphql coverage, unit tests)"
+
+## Run the 10/10 rubric checks (lint, audit, security, supply-chain, strict contracts, coverage gates)
+rubric:
+	@go run ./cmd/lesser verify ci
 
 # =============================================================================
 # CDK DEPLOYMENT TARGETS

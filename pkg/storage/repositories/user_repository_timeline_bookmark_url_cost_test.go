@@ -353,19 +353,7 @@ func TestUserRepository_extractAccountFromReplyAndURLPathFallback(t *testing.T) 
 	assert.Equal(t, "last", repo.extractUsernameFromURLPath("https://example.com/something/last"))
 }
 
-func TestUserRepository_CostTrackersAndUtilityMethods(t *testing.T) {
-	central := &centralizedCostTracker{logger: zap.NewNop()}
-	central.TrackDynamoWrite(2)
-	central.TrackDynamoRead(3)
-	assert.Equal(t, int64(2), central.CalculateCost().DynamoDBWrites)
-	assert.Equal(t, int64(3), central.CalculateCost().DynamoDBReads)
-
-	legacy := &timelineCostTracker{logger: zap.NewNop()}
-	legacy.TrackDynamoWrite(4)
-	legacy.TrackDynamoRead(5)
-	assert.Equal(t, int64(4), legacy.CalculateCost().DynamoDBWrites)
-	assert.Equal(t, int64(5), legacy.CalculateCost().DynamoDBReads)
-
+func TestUserRepository_CostTrackingUtilityMethods(t *testing.T) {
 	repo := NewUserRepository(nil, "test-table", zap.NewNop())
 	repo.SetCostService(nil)
 	assert.NoError(t, repo.TrackRead(context.Background(), "GetItem", 1))

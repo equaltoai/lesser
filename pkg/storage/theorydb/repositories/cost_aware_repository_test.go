@@ -10,6 +10,7 @@ import (
 	repoTesting "github.com/equaltoai/lesser/pkg/storage/theorydb/repositories/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -329,6 +330,127 @@ func TestCostAwareRepository_GetWithCostTracking_MockLimitations(t *testing.T) {
 	assert.Contains(t, stats, "get")
 	assert.Equal(t, int64(1), stats["get"].TotalOperations)
 	assert.Equal(t, int64(0), stats["get"].ErrorCount)
+}
+
+func TestCostAwareRepository_UpdateAndDeleteAndQueryWithCostTracking(t *testing.T) {
+	ctx := context.Background()
+	mockDB := &repoTesting.MockDB{}
+	mockQuery := &repoTesting.MockQuery{}
+	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
+
+	model := map[string]any{"id": "test"}
+
+	t.Run("update tracks stats", func(t *testing.T) {
+		mockDB.On("Model", model).Return(mockQuery).Once()
+		mockQuery.On("Update", mock.Anything).Return(nil).Once()
+
+		require.NoError(t, repo.UpdateWithCostTracking(ctx, model, "field1", "field2"))
+		stats := repo.GetOperationStats()
+		require.Contains(t, stats, "update")
+		assert.Equal(t, int64(1), stats["update"].TotalOperations)
+		assert.Equal(t, int64(0), stats["update"].ErrorCount)
+	})
+
+	t.Run("delete tracks stats", func(t *testing.T) {
+		mockDB.On("Model", model).Return(mockQuery).Once()
+		mockQuery.On("Delete").Return(nil).Once()
+
+		require.NoError(t, repo.DeleteWithCostTracking(ctx, model))
+		stats := repo.GetOperationStats()
+		require.Contains(t, stats, "delete")
+		assert.Equal(t, int64(1), stats["delete"].TotalOperations)
+		assert.Equal(t, int64(0), stats["delete"].ErrorCount)
+	})
+
+	t.Run("query tracks stats", func(t *testing.T) {
+		var out []map[string]any
+		dest := &out
+
+		mockQuery.On("All", dest).Return(nil).Once()
+		require.NoError(t, repo.QueryWithCostTracking(ctx, mockQuery, dest))
+
+		stats := repo.GetOperationStats()
+		require.Contains(t, stats, "query")
+		assert.Equal(t, int64(1), stats["query"].TotalOperations)
+		assert.Equal(t, int64(0), stats["query"].ErrorCount)
+	})
+}
+
+func TestCostAwareRepository_BatchWriteWithCostTracking(t *testing.T) {
+	ctx := context.Background()
+	mockDB := &repoTesting.MockDB{}
+	mockQuery := &repoTesting.MockQuery{}
+	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
+
+	model := map[string]any{"id": "test"}
+
+	t.Run("empty slice noops", func(t *testing.T) {
+		require.NoError(t, repo.BatchWriteWithCostTracking(ctx, []any{}))
+
+		stats := repo.GetOperationStats()
+		require.Contains(t, stats, "batch_write_0")
+		assert.Equal(t, int64(1), stats["batch_write_0"].TotalOperations)
+		assert.Equal(t, int64(0), stats["batch_write_0"].ErrorCount)
+	})
+
+	t.Run("non-empty delegates and tracks", func(t *testing.T) {
+		items := []any{model}
+		mockDB.On("Model", model).Return(mockQuery).Once()
+		mockQuery.On("BatchCreate", items).Return(nil).Once()
+
+		require.NoError(t, repo.BatchWriteWithCostTracking(ctx, items))
+
+		stats := repo.GetOperationStats()
+		require.Contains(t, stats, "batch_write_1")
+		assert.Equal(t, int64(1), stats["batch_write_1"].TotalOperations)
+		assert.Equal(t, int64(0), stats["batch_write_1"].ErrorCount)
+	})
+}
+
+func TestCostAwareQuery_FirstAllCount_TracksStats(t *testing.T) {
+	ctx := context.Background()
+	mockDB := &repoTesting.MockDB{}
+	mockQuery := &repoTesting.MockQuery{}
+	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
+
+	model := map[string]any{"id": "test"}
+	mockDB.On("Model", model).Return(mockQuery).Maybe()
+
+	cq := repo.NewCostAwareQuery(ctx, model)
+
+	t.Run("first tracks stats", func(t *testing.T) {
+		mockQuery.On("First", model).Return(nil).Once()
+		require.NoError(t, cq.First(model))
+	})
+
+	t.Run("all tracks stats (slice pointer branch)", func(t *testing.T) {
+		var out []map[string]any
+		dest := &out
+		mockQuery.On("All", dest).Return(nil).Once()
+		require.NoError(t, cq.All(dest))
+	})
+
+	t.Run("count tracks stats", func(t *testing.T) {
+		mockQuery.On("Count").Return(int64(3), nil).Once()
+		got, err := cq.Count()
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), got)
+	})
+
+	stats := repo.GetOperationStats()
+	require.Contains(t, stats, "query_first")
+	require.Contains(t, stats, "query_all")
+	require.Contains(t, stats, "query_count")
+
+	assert.Equal(t, int64(1), stats["query_first"].TotalOperations)
+	assert.Equal(t, int64(1), stats["query_all"].TotalOperations)
+	assert.Equal(t, int64(1), stats["query_count"].TotalOperations)
+}
+
+func TestCostAwareRepository_GetCostTracker(t *testing.T) {
+	mockDB := &repoTesting.MockDB{}
+	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
+	require.NotNil(t, repo.GetCostTracker())
 }
 
 // Benchmark tests

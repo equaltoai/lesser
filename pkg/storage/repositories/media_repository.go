@@ -1273,7 +1273,7 @@ func (r *MediaRepository) GetMediaByIDs(ctx context.Context, mediaIDs []string) 
 }
 
 // DeleteExpiredMedia deletes media items that have expired
-func (r *MediaRepository) DeleteExpiredMedia(ctx context.Context, expiredBefore time.Time) (int64, error) {
+func (r *MediaRepository) DeleteExpiredMedia(_ context.Context, expiredBefore time.Time) (int64, error) {
 	r.logger.Debug("deleting expired media", zap.Time("expired_before", expiredBefore))
 
 	// Media records are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup

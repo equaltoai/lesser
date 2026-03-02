@@ -686,7 +686,9 @@ func countRegexpOccurrences(roots []string, needle *regexp.Regexp, opts scanOpti
 
 func countGoSelectorCallsWithMinArgs(roots []string, selector string, minArgs int, opts scanOptions) (map[string]int, error) {
 	counts := make(map[string]int)
-	if strings.TrimSpace(selector) == "" {
+
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
 		return counts, fmt.Errorf("internal error: empty selector")
 	}
 	if minArgs < 0 {
@@ -695,37 +697,10 @@ func countGoSelectorCallsWithMinArgs(roots []string, selector string, minArgs in
 
 	for _, root := range roots {
 		if err := walkGoFiles(root, opts, func(path string) error {
-			content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+			n, err := countGoSelectorCallsWithMinArgsInFile(path, selector, minArgs)
 			if err != nil {
 				return err
 			}
-
-			fset := token.NewFileSet()
-			f, err := parser.ParseFile(fset, path, content, 0)
-			if err != nil {
-				return fmt.Errorf("failed to parse %q: %w", path, err)
-			}
-
-			n := 0
-			ast.Inspect(f, func(node ast.Node) bool {
-				call, ok := node.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel == nil {
-					return true
-				}
-				if sel.Sel.Name != selector {
-					return true
-				}
-				if len(call.Args) < minArgs {
-					return true
-				}
-				n++
-				return true
-			})
-
 			if n > 0 {
 				counts[normalizePath(path)] = n
 			}
@@ -738,62 +713,54 @@ func countGoSelectorCallsWithMinArgs(roots []string, selector string, minArgs in
 	return counts, nil
 }
 
+func countGoSelectorCallsWithMinArgsInFile(path string, selector string, minArgs int) (int, error) {
+	content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+	if err != nil {
+		return 0, err
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, path, content, 0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %q: %w", path, err)
+	}
+
+	n := 0
+	ast.Inspect(f, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if isSelectorCallWithMinArgs(call, selector, minArgs) {
+			n++
+		}
+		return true
+	})
+
+	return n, nil
+}
+
+func isSelectorCallWithMinArgs(call *ast.CallExpr, selector string, minArgs int) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return false
+	}
+	if sel.Sel.Name != selector {
+		return false
+	}
+	return len(call.Args) >= minArgs
+}
+
 func countGoWhereMisusedPartitionKey(roots []string, opts scanOptions) (map[string]int, error) {
 	counts := make(map[string]int)
-
-	badOps := map[string]struct{}{
-		"begins_with": {},
-		"BEGINS_WITH": {},
-		">":           {},
-		">=":          {},
-		"<":           {},
-		"<=":          {},
-	}
+	badOps := badPartitionKeyWhereOps()
 
 	for _, root := range roots {
 		if err := walkGoFiles(root, opts, func(path string) error {
-			content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+			n, err := countGoWhereMisusedPartitionKeyInFile(path, badOps)
 			if err != nil {
 				return err
 			}
-
-			fset := token.NewFileSet()
-			f, err := parser.ParseFile(fset, path, content, 0)
-			if err != nil {
-				return fmt.Errorf("failed to parse %q: %w", path, err)
-			}
-
-			n := 0
-			ast.Inspect(f, func(node ast.Node) bool {
-				call, ok := node.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel == nil || sel.Sel.Name != "Where" {
-					return true
-				}
-				if len(call.Args) < 2 {
-					return true
-				}
-
-				field, ok := goStringLiteral(call.Args[0])
-				if !ok || !isPartitionKeyField(field) {
-					return true
-				}
-
-				op, ok := goStringLiteral(call.Args[1])
-				if !ok {
-					return true
-				}
-				if _, bad := badOps[op]; !bad {
-					return true
-				}
-
-				n++
-				return true
-			})
-
 			if n > 0 {
 				counts[normalizePath(path)] = n
 			}
@@ -804,6 +771,66 @@ func countGoWhereMisusedPartitionKey(roots []string, opts scanOptions) (map[stri
 	}
 
 	return counts, nil
+}
+
+func badPartitionKeyWhereOps() map[string]struct{} {
+	return map[string]struct{}{
+		"begins_with": {},
+		"BEGINS_WITH": {},
+		">":           {},
+		">=":          {},
+		"<":           {},
+		"<=":          {},
+	}
+}
+
+func countGoWhereMisusedPartitionKeyInFile(path string, badOps map[string]struct{}) (int, error) {
+	content, err := os.ReadFile(path) // #nosec G304 -- repo-local file path (audit scan)
+	if err != nil {
+		return 0, err
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, path, content, 0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %q: %w", path, err)
+	}
+
+	n := 0
+	ast.Inspect(f, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if isMisusedPartitionKeyWhere(call, badOps) {
+			n++
+		}
+		return true
+	})
+
+	return n, nil
+}
+
+func isMisusedPartitionKeyWhere(call *ast.CallExpr, badOps map[string]struct{}) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil || sel.Sel.Name != "Where" {
+		return false
+	}
+	if len(call.Args) < 2 {
+		return false
+	}
+
+	field, ok := goStringLiteral(call.Args[0])
+	if !ok || !isPartitionKeyField(field) {
+		return false
+	}
+
+	op, ok := goStringLiteral(call.Args[1])
+	if !ok {
+		return false
+	}
+	_, bad := badOps[op]
+	return bad
 }
 
 func goStringLiteral(expr ast.Expr) (string, bool) {

@@ -363,7 +363,7 @@ func (h *TrendAggregatorHandler) aggregateLinkTrends(ctx context.Context, since 
 }
 
 // cleanupOldTrends removes outdated trend data
-func (h *TrendAggregatorHandler) cleanupOldTrends(ctx context.Context) {
+func (h *TrendAggregatorHandler) cleanupOldTrends(_ context.Context) {
 	// Remove trend data older than 7 days
 	cutoff := time.Now().AddDate(0, 0, -7)
 

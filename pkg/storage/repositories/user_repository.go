@@ -15,7 +15,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/storage/theorydb/batch"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/errors"
@@ -2732,7 +2731,7 @@ func (r *UserRepository) DeleteFromTimeline(ctx context.Context, timelineType, t
 }
 
 // DeleteExpiredTimelineEntries deletes timeline entries that have expired
-func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, before time.Time) error {
+func (r *UserRepository) DeleteExpiredTimelineEntries(_ context.Context, before time.Time) error {
 	r.logger.Debug("deleting expired timeline entries",
 		zap.Time("before", before))
 
@@ -3619,109 +3618,6 @@ func getStringFromMap(m map[string]interface{}, key string) string {
 		return v
 	}
 	return ""
-}
-
-// centralizedCostTracker implements the CostTracker interface using the centralized cost tracking framework
-type centralizedCostTracker struct {
-	costService *cost.TrackingService
-	tableName   string
-	logger      *zap.Logger
-	reads       int64
-	writes      int64
-}
-
-// CalculateCost returns the current cost metrics
-func (c *centralizedCostTracker) CalculateCost() batch.CostMetrics {
-	return batch.CostMetrics{
-		DynamoDBReads:  c.reads,
-		DynamoDBWrites: c.writes,
-	}
-}
-
-// TrackDynamoWrite tracks DynamoDB write operations through centralized service
-func (c *centralizedCostTracker) TrackDynamoWrite(items int) {
-	c.writes += int64(items)
-
-	if c.costService != nil {
-		operation := cost.DynamoOperation{
-			Type:               "BatchWriteItem",
-			TableName:          c.tableName,
-			ConsumedReadUnits:  0,
-			ConsumedWriteUnits: int64(items),
-			ItemCount:          int64(items),
-			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("user_batch_delete_%d", time.Now().UnixNano()),
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
-			c.logger.Warn("failed to track batch delete cost through centralized service",
-				zap.Int("items", items),
-				zap.Error(err))
-		}
-		cancel()
-	}
-
-	if c.logger != nil {
-		c.logger.Debug("tracked timeline delete operations via centralized framework",
-			zap.Int("deleted_items", items),
-			zap.Int64("total_writes", c.writes))
-	}
-}
-
-// TrackDynamoRead tracks DynamoDB read operations through centralized service
-func (c *centralizedCostTracker) TrackDynamoRead(items int) {
-	c.reads += int64(items)
-
-	if c.costService != nil {
-		operation := cost.DynamoOperation{
-			Type:               "BatchGetItem",
-			TableName:          c.tableName,
-			ConsumedReadUnits:  int64(items),
-			ConsumedWriteUnits: 0,
-			ItemCount:          int64(items),
-			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("user_batch_read_%d", time.Now().UnixNano()),
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
-			c.logger.Warn("failed to track batch read cost through centralized service",
-				zap.Int("items", items),
-				zap.Error(err))
-		}
-		cancel()
-	}
-}
-
-// timelineCostTracker implements the CostTracker interface for timeline deletion operations (LEGACY)
-type timelineCostTracker struct {
-	logger *zap.Logger
-	reads  int64
-	writes int64
-}
-
-// CalculateCost returns the current cost metrics
-func (t *timelineCostTracker) CalculateCost() batch.CostMetrics {
-	return batch.CostMetrics{
-		DynamoDBReads:  t.reads,
-		DynamoDBWrites: t.writes,
-	}
-}
-
-// TrackDynamoWrite tracks DynamoDB write operations (deletes)
-func (t *timelineCostTracker) TrackDynamoWrite(items int) {
-	t.writes += int64(items)
-	if t.logger != nil {
-		t.logger.Debug("tracked timeline delete operations",
-			zap.Int("deleted_items", items),
-			zap.Int64("total_writes", t.writes))
-	}
-}
-
-// TrackDynamoRead tracks DynamoDB read operations
-func (t *timelineCostTracker) TrackDynamoRead(items int) {
-	t.reads += int64(items)
 }
 
 // === COST TRACKING UTILITY METHODS ===

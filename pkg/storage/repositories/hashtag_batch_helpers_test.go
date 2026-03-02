@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
@@ -28,14 +27,6 @@ func TestDeleteOldRecordsBatch_UnknownModelType(t *testing.T) {
 	assert.ErrorIs(t, err, ErrHashtagBatchUnknownModelType)
 }
 
-func TestProcessModelBatchDelete_EmptyInputNoops(t *testing.T) {
-	ctx := context.Background()
-	mockDB := new(dynamormmocks.MockDB)
-
-	deleted := processModelBatchDelete[*models.HashtagTrend](ctx, mockDB, zap.NewNop(), nil, 25, "hashtag trend")
-	assert.Equal(t, 0, deleted)
-}
-
 func TestDeleteOldRecordsBatch_TTLNoops(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(dynamormmocks.MockDB)
@@ -50,12 +41,4 @@ func TestDeleteOldRecordsBatch_TTLNoops(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 0, deleted)
 	}
-}
-
-func TestDeleteBatch_EmptySliceReturnsNil(t *testing.T) {
-	ctx := context.Background()
-	mockDB := new(dynamormmocks.MockDB)
-
-	assert.NoError(t, deleteBatch(ctx, mockDB, nil))
-	assert.NoError(t, deleteBatch(ctx, mockDB, []any{}))
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
@@ -39,30 +38,13 @@ func deleteOldRecordsBatch(
 	}
 }
 
-// processModelBatchDelete handles batch deletion with validation and logging for any model slice
-func processModelBatchDelete[T any](ctx context.Context, db core.DB, logger *zap.Logger, models []*T, batchSize int, modelName string) int {
-	if err := common.ValidateSliceNotEmpty("models", models); err != nil {
-		return 0
-	}
-
-	// Convert to []any for batch operations
-	items := make([]any, len(models))
-	for i, model := range models {
-		items[i] = model
-	}
-
-	deletedCount := processBatchDelete(ctx, db, logger, items, batchSize)
-	logger.Debug(fmt.Sprintf("deleted %s records", modelName), zap.Int("count", deletedCount))
-	return deletedCount
-}
-
 // deleteOldHashtagTrendRecordsBatch deletes HashtagTrend model records
 func deleteOldHashtagTrendRecordsBatch(
-	ctx context.Context,
-	db core.DB,
+	_ context.Context,
+	_ core.DB,
 	logger *zap.Logger,
 	before time.Time,
-	config BatchDeleteConfig,
+	_ BatchDeleteConfig,
 ) (int, error) {
 	// IMPORTANT:
 	// TableTheory's `.Scan(...)` issues a DynamoDB Scan, and the previous implementation used a
@@ -74,16 +56,15 @@ func deleteOldHashtagTrendRecordsBatch(
 		zap.Time("before", before),
 	)
 	return 0, nil
-
 }
 
 // deleteOldTrendingHashtagRecordsBatch deletes TrendingHashtag model records
 func deleteOldTrendingHashtagRecordsBatch(
-	ctx context.Context,
-	db core.DB,
+	_ context.Context,
+	_ core.DB,
 	logger *zap.Logger,
 	before time.Time,
-	config BatchDeleteConfig,
+	_ BatchDeleteConfig,
 ) (int, error) {
 	// IMPORTANT:
 	// This was previously implemented as a scan (`Filter(...).Scan(...)`) which is a table-wide scan.
@@ -94,16 +75,15 @@ func deleteOldTrendingHashtagRecordsBatch(
 		zap.Time("before", before),
 	)
 	return 0, nil
-
 }
 
 // deleteOldHashtagUsageRecordsBatch removes expired hashtag usage records
 func deleteOldHashtagUsageRecordsBatch(
-	ctx context.Context,
-	db core.DB,
+	_ context.Context,
+	_ core.DB,
 	logger *zap.Logger,
 	before time.Time,
-	config BatchDeleteConfig,
+	_ BatchDeleteConfig,
 ) (int, error) {
 	// IMPORTANT:
 	// This was previously implemented as a scan (`Filter(...).Scan(...)`) which is a table-wide scan.
@@ -114,48 +94,4 @@ func deleteOldHashtagUsageRecordsBatch(
 		zap.Time("before", before),
 	)
 	return 0, nil
-
-}
-
-// processBatchDelete performs batch delete processing
-func processBatchDelete(ctx context.Context, db core.DB, logger *zap.Logger, items []any, batchSize int) int {
-	var deletedCount int
-
-	for i := 0; i < len(items); i += batchSize {
-		end := i + batchSize
-		if end > len(items) {
-			end = len(items)
-		}
-
-		batchItems := items[i:end]
-		err := deleteBatch(ctx, db, batchItems)
-		if err != nil {
-			logger.Warn("failed to delete batch",
-				zap.Int("batch_start", i),
-				zap.Int("batch_size", len(batchItems)),
-				zap.Error(err))
-		} else {
-			deletedCount += len(batchItems)
-		}
-	}
-
-	return deletedCount
-}
-
-// deleteBatch performs batch delete using DynamORM
-func deleteBatch(ctx context.Context, db core.DB, items []any) error {
-	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
-		return nil
-	}
-
-	// Use DynamORM batch delete - delete items individually
-	for _, item := range items {
-		if err := db.WithContext(ctx).Model(item).Delete(); err != nil {
-			// Continue with other items rather than failing the whole batch
-			// Note: Individual delete failures don't stop the batch process
-			continue
-		}
-	}
-
-	return nil
 }

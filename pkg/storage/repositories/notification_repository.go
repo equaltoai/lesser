@@ -794,7 +794,7 @@ func (r *NotificationRepository) DeleteNotificationsByObject(ctx context.Context
 }
 
 // DeleteExpiredNotifications deletes notifications that have expired
-func (r *NotificationRepository) DeleteExpiredNotifications(ctx context.Context, expiredBefore time.Time) (int64, error) {
+func (r *NotificationRepository) DeleteExpiredNotifications(_ context.Context, expiredBefore time.Time) (int64, error) {
 	// Notifications are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
 	// required a table scan, which is both expensive and unnecessary.
 	if r.logger != nil {

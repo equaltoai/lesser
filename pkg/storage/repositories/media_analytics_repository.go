@@ -516,7 +516,7 @@ func findMostFrequent(counts map[string]int) string {
 }
 
 // CleanupOldAnalytics removes analytics records older than the specified duration preserving business intelligence data
-func (r *MediaAnalyticsRepository) CleanupOldAnalytics(ctx context.Context, olderThan time.Duration) error {
+func (r *MediaAnalyticsRepository) CleanupOldAnalytics(_ context.Context, olderThan time.Duration) error {
 	cutoffDate := time.Now().Add(-olderThan).Format(common.DateFormat)
 
 	// Media analytics records are TTL-driven (`ttl` on the item, `ttl` configured on the table).

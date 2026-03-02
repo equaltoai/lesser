@@ -615,7 +615,7 @@ func (r *DLQRepository) messageMatchesText(message *models.DLQMessage, searchTex
 }
 
 // CleanupExpiredMessages deletes expired DLQ messages (DLQ-specific cleanup logic)
-func (r *DLQRepository) CleanupExpiredMessages(ctx context.Context, before time.Time) (int, error) {
+func (r *DLQRepository) CleanupExpiredMessages(_ context.Context, before time.Time) (int, error) {
 	// DLQ messages are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
 	// required a table scan, which is both expensive and unnecessary.
 	if r.logger != nil {
