@@ -156,36 +156,29 @@ This leverages the existing schema and eliminates the entire class of “wrong m
 ### P1 – “List all” / “count all” scans
 
 16) `pkg/storage/repositories/relay_repository.go:164` – `RelayRepository.GetAllRelays`
-   - **Current:** `Filter("PK","BEGINS_WITH","RELAY#")` scan
-   - **Scan-free redesign:** write a listing index key on relays (use unused GSI for Relay):
-     - e.g. `gsi8PK = RELAYS`, `gsi8SK = URL#<url>` for all relays
+   - **Current (fixed):** query relays via GSI8 (`gsi8PK = RELAYS`) and paginate by `gsi8SK`.
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m3` sets relay GSI8 keys for existing rows.
 
 17) `pkg/storage/repositories/status_repository.go:450` – `StatusRepository.GetTotalStatusCount`
-   - **Current:** `Filter("PK","BEGINS_WITH","status#").Count()` scan
-   - **Scan-free redesign:** maintain a counter item (e.g. `PK=INSTANCE#METRICS`, `SK=TOTAL_STATUS_COUNT`) updated on create/delete.
+   - **Current (fixed):** reads the instance counter item `PK=INSTANCE#METRICS`, `SK=TOTAL_STATUSES` (no scan).
+   - **Scan-free redesign:** maintain this counter on create/delete (and seed via a one-time backfill tool).
 
 18) `pkg/storage/repositories/status_repository.go:469` – `StatusRepository.ListStatusesForAdmin` (+ related count/search)
-   - **Current:** table scan with many Filters (domain, visibility, media, etc.)
-   - **Scan-free redesign:** introduce an “admin timeline” index for statuses:
-     - Status doesn’t currently use `gsi8` → add `gsi8PK = ADMIN_TIMELINE` and `gsi8SK = TIME#<publishedAt>#<statusID>`
-     - build additional partitions if needed (`ADMIN_TIMELINE#local`, `ADMIN_TIMELINE#remote`) rather than filtering by `AuthorID CONTAINS`.
+   - **Current (fixed):** query statuses via the admin timeline on GSI8 (`gsi8PK = ADMIN_TIMELINE`) and apply filters as Query filter expressions; remote-only is handled via post-filtering (no scans).
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m3` sets status GSI8 keys and seeds the counters used for totals.
 
 19) `pkg/storage/repositories/moderation_repository.go:1100` – `ModerationRepository.scanAllModerationEvents`
-   - **Current:** `Model(&slice).All(&slice)` with in-memory filtering ⇒ scan
-   - **Scan-free redesign:** add a global listing GSI key for `ModerationEvent`:
-     - ModerationEvent currently uses gsi1..gsi3 only → add `gsi4PK = MODERATION_EVENTS`, `gsi4SK = TIME#<created>#<id>` and query that.
+   - **Current (fixed):** query all moderation events via GSI4 (`gsi4PK = MODERATION_EVENTS`) and paginate by `gsi4SK` (no scans).
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m3` sets moderation-event GSI4 keys for existing rows.
 
 20) `pkg/storage/repositories/circuit_breaker_repository.go:200` – `CircuitBreakerRepository.GetAllCircuitStates`
-   - **Current:** scan with `Where("PK","begins_with","CIRCUIT#")`
-   - **Scan-free redesign:** add a listing index key for states:
-     - e.g. `gsi8PK = CIRCUIT_STATES`, `gsi8SK = INSTANCE#<instanceID>`
+   - **Current (fixed):** query circuit states via GSI8 (`gsi8PK = CIRCUIT_STATES`) (no scans).
+   - **Backfill:** `cmd/tools/dynamodb-backfill-m3` sets circuit-state GSI8 keys for existing rows.
 
 21) `pkg/storage/repositories/streaming_connection_repository.go:326` – `StreamingConnectionRepository.GetIdleConnections`
 22) `pkg/storage/repositories/streaming_connection_repository.go:590` – `StreamingConnectionRepository.GetStaleConnections`
-   - **Current:** `Scan(&allConnections)` then in-memory filter
-   - **Scan-free redesign:** use the existing `WebSocketConnection` GSI2 (state-based):
-     - query `Index("gsi2").Where("gsi2PK","=","STATE#connected")` (and/or `STATE#idle`) then filter by `LastActivity`
-     - if needed, add a time-bucketed index using an unused GSI (e.g. `gsi8PK=WS_CONN#STATE#<state>#<YYYY-MM-DD>`, `gsi8SK=LAST#<ts>#CONN#...`)
+   - **Current (fixed):** query the existing `WebSocketConnection` GSI2 state partitions (`gsi2PK = STATE#<state>`) and filter by `LastActivity` / `ttl` in memory (no scans).
+   - **Future enhancement:** if ordering by `LastActivity` becomes necessary at scale, add a time-bucketed listing key (unused GSI) rather than scanning.
 
 ### P1 – Partition-key prefix/range misuse (guaranteed scans)
 
@@ -227,8 +220,8 @@ This leverages the existing schema and eliminates the entire class of “wrong m
      - `gsi8SK = STRENGTH#<padded>#LAST#<unix>#SRC#<src>#TGT#<tgt>`
 
 30) `pkg/storage/repositories/instance_repository.go:606` – `InstanceRepository.countLocalComments`
-   - **Current:** scans `gsi4` by `gsi4PK begins_with REPLIES#`
-   - **Scan-free redesign:** maintain `LOCAL_COMMENTS` as a real-time counter (no fallback scan). If you need historical recounts, do an offline backfill job in a separate tool, not production code.
+   - **Current (fixed):** returns `PK=INSTANCE#METRICS`, `SK=LOCAL_COMMENTS` only (no fallback scan).
+   - **Scan-free redesign:** maintain `LOCAL_COMMENTS` as a real-time counter (no scan fallback). Historical recounts should be done offline via `cmd/tools/dynamodb-backfill-m3`.
 
 ### P2 – Time-range scans due to key design (fixable with bucketing)
 
@@ -410,22 +403,23 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
 1) **Global listing indexes (Relays, Moderation events, Circuit states)**
    - For each entity needing “list all”:
      - pick an unused GSI field on that model (commonly `gsi8`)
-     - write:
-       - `gsi8PK = LIST#<ENTITY>`
-       - `gsi8SK = TIME#<ts>#<id>` (or `URL#...` for relays)
-     - query that partition for pagination
+     - write a **single partition** suitable for global listing:
+       - Relays: `gsi8PK = RELAYS`, `gsi8SK = URL#<url>`
+       - Moderation events: `gsi4PK = MODERATION_EVENTS`, `gsi4SK = TIME#<rfc3339>#<id>`
+       - Circuit states: `gsi8PK = CIRCUIT_STATES`, `gsi8SK = INSTANCE#<instanceID>`
+     - query that partition for pagination (no scans)
 
 2) **Total counts (Statuses, Local comments)**
    - Replace scan-based counts with counter items:
-     - `PK=INSTANCE#METRICS`, `SK=TOTAL_STATUS_COUNT`
-     - `PK=INSTANCE#METRICS`, `SK=LOCAL_COMMENT_COUNT`
-   - Update counters transactionally on create/delete paths.
-   - For this prototype, provide a one-time “recount” admin tool (offline) if counters ever drift.
+     - `PK=INSTANCE#METRICS`, `SK=TOTAL_STATUSES` (fields: `totalStatuses` + `value`)
+     - `PK=INSTANCE#METRICS`, `SK=LOCAL_COMMENTS` (field: `value`)
+   - Update counters atomically on create/delete paths.
+   - For this prototype, provide a one-time “recount” tool (offline) if counters ever drift.
 
 3) **Admin status listing**
    - Replace scan-with-filters with an “admin timeline” index:
      - `gsi8PK = ADMIN_TIMELINE` (and optionally `ADMIN_TIMELINE#local` / `ADMIN_TIMELINE#remote`)
-     - `gsi8SK = TIME#<publishedAt>#STATUS#<id>`
+     - `gsi8SK = <publishedAt_unix>#<statusID>`
    - If you need extra filters (visibility/media/flagged), encode them in:
      - separate partitions (preferred) or
      - sort-key prefixes that can be ranged/prefixed (limited).
@@ -434,6 +428,12 @@ This roadmap is scoped to the specific call sites listed above (items 1–34). T
    - Replace full scans with queries on the existing connection state index:
      - `Index("gsi2").Where("gsi2PK","=","STATE#connected")` etc.
    - If “idle/stale by last activity” needs ordering, add a time-bucketed listing key (e.g. per day) rather than scanning.
+
+5) **Backfill (one-time)**
+   - For any new GSI keys or newly-introduced counters, run a one-time backfill outside production request paths:
+     - Tool: `cmd/tools/dynamodb-backfill-m3`
+     - Example:
+       - `go run ./cmd/tools/dynamodb-backfill-m3 --table <your-table-name> --region us-east-1 --dry-run=false --local-domain <your-domain>`
 
 **Acceptance criteria**
 

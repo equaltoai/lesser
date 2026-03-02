@@ -72,6 +72,8 @@ func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Stat
 		return err
 	}
 
+	r.updateInstanceMetricsForStatusCreate(ctx, status)
+
 	if err := r.canonicalizeStatusIndexes(ctx, status); err != nil {
 		r.logger.Warn("failed to canonicalize status index attributes",
 			zap.String("status_id", status.StatusID),
@@ -103,6 +105,80 @@ func (r *StatusRepository) CreateBoostStatus(ctx context.Context, status *models
 	}
 
 	return r.CreateStatus(ctx, status)
+}
+
+func (r *StatusRepository) updateInstanceMetricsForStatusCreate(ctx context.Context, status *models.Status) {
+	r.bumpInstanceTotalStatuses(ctx, 1)
+
+	if r.isLocalCommentStatus(status) {
+		r.bumpInstanceLocalComments(ctx, 1)
+	}
+}
+
+func (r *StatusRepository) updateInstanceMetricsForStatusDelete(ctx context.Context, status *models.Status) {
+	r.bumpInstanceTotalStatuses(ctx, -1)
+
+	if r.isLocalCommentStatus(status) {
+		r.bumpInstanceLocalComments(ctx, -1)
+	}
+}
+
+func (r *StatusRepository) isLocalCommentStatus(status *models.Status) bool {
+	if status == nil || status.InReplyToID == "" {
+		return false
+	}
+
+	localDomain := config.Get().Domain
+	if localDomain == "" {
+		return true
+	}
+
+	return strings.Contains(status.AuthorID, localDomain)
+}
+
+func (r *StatusRepository) bumpInstanceTotalStatuses(ctx context.Context, delta int) {
+	now := time.Now()
+
+	builder := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", "INSTANCE#METRICS").
+		Where("SK", "=", "TOTAL_STATUSES").
+		UpdateBuilder().
+		Add("TotalStatuses", delta).
+		Add("Value", delta).
+		Set("UpdatedAt", now)
+
+	if delta < 0 {
+		builder = builder.Condition("TotalStatuses", ">=", -delta)
+	}
+
+	if err := builder.Execute(); err != nil {
+		r.logger.Warn("failed to update instance TOTAL_STATUSES metric",
+			zap.Int("delta", delta),
+			zap.Error(err),
+		)
+	}
+}
+
+func (r *StatusRepository) bumpInstanceLocalComments(ctx context.Context, delta int) {
+	now := time.Now()
+
+	builder := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", "INSTANCE#METRICS").
+		Where("SK", "=", "LOCAL_COMMENTS").
+		UpdateBuilder().
+		Add("Value", delta).
+		Set("UpdatedAt", now)
+
+	if delta < 0 {
+		builder = builder.Condition("Value", ">=", -delta)
+	}
+
+	if err := builder.Execute(); err != nil {
+		r.logger.Warn("failed to update instance LOCAL_COMMENTS metric",
+			zap.Int("delta", delta),
+			zap.Error(err),
+		)
+	}
 }
 
 // createHashtagTimelineIndexes persists supplemental hashtag index records so hashtag timelines can query efficiently.
@@ -333,6 +409,10 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 		return err
 	}
 
+	if status.Deleted {
+		return nil
+	}
+
 	// Mark as deleted using UpdateBuilder to avoid corrupting Note field
 	now := time.Now()
 	err = r.db.WithContext(ctx).Model(&models.Status{}).
@@ -345,6 +425,8 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityStatus, statusID)
 	}
+
+	r.updateInstanceMetricsForStatusDelete(ctx, status)
 
 	return nil
 }
@@ -450,20 +532,26 @@ func (r *StatusRepository) UpdateEngagementMetrics(ctx context.Context, statusID
 func (r *StatusRepository) GetTotalStatusCount(ctx context.Context) (int64, error) {
 	r.logger.Debug("getting total status count")
 
-	// For total status count, we need to scan the table with a filter for all statuses
-	// Since statuses use PK = "status#{status_id}", we can filter by PK prefix
-	// Note: This is less efficient than a GSI but necessary for total count across all statuses
-	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Filter("PK", "BEGINS_WITH", "status#").
-		Count()
+	// Scan-free count: read the instance metrics counter maintained on create/delete.
+	var metric models.InstanceMetrics
+	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", "INSTANCE#METRICS").
+		Where("SK", "=", "TOTAL_STATUSES").
+		First(&metric)
 
 	if err != nil {
-		r.logger.Error("failed to count total statuses", zap.Error(err))
-		return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count total")
+		if errors.IsNotFound(err) {
+			return 0, nil
+		}
+		r.logger.Error("failed to read total statuses metric", zap.Error(err))
+		return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "read total status metric")
 	}
 
-	r.logger.Debug("retrieved total status count", zap.Int64("count", count))
-	return count, nil
+	// Legacy readers may store the counter in TotalStatuses; keep Value as a fallback.
+	if metric.TotalStatuses != 0 {
+		return metric.TotalStatuses, nil
+	}
+	return metric.Value, nil
 }
 
 // ListStatusesForAdmin retrieves statuses with comprehensive admin filtering
@@ -473,93 +561,85 @@ func (r *StatusRepository) ListStatusesForAdmin(ctx context.Context, filter *int
 		zap.Int("limit", limit),
 		zap.String("cursor", cursor))
 
-	var statuses []models.Status
-	query := r.db.WithContext(ctx).Model(&models.Status{})
-
-	// Base filter to exclude deleted statuses unless specifically requested
-	query = query.Filter("Deleted", "=", false)
-
-	statuses, err := r.applyDomainFiltering(ctx, query, filter, limit)
-	if err != nil {
-		return nil, "", err
+	sanitizedLimit := limit
+	switch {
+	case sanitizedLimit <= 0:
+		sanitizedLimit = 20
+	case sanitizedLimit > 100:
+		sanitizedLimit = 100
 	}
 
-	// Convert to pointer slice and generate pagination cursor
-	result := r.convertToPointerSlice(statuses)
-	nextCursor := r.generateNextCursor(result, limit)
+	remoteOnly := filter != nil && filter.Remote != nil && *filter.Remote
+	localDomain := r.extractDomainFromEnv()
+
+	pageSize := sanitizedLimit * 3
+	if pageSize < 50 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+
+	collected := make([]models.Status, 0, sanitizedLimit)
+	nextCursor := ""
+	scanCursor := cursor
+
+	for tries := 0; tries < 25 && len(collected) < sanitizedLimit; tries++ {
+		query := r.buildAdminStatusTimelineQuery(ctx, filter, localDomain).
+			OrderBy("gsi8SK", "DESC")
+
+		if scanCursor != "" {
+			query = query.Where("gsi8SK", "<", scanCursor)
+		}
+
+		var page []models.Status
+		err := query.Limit(pageSize + 1).All(&page)
+		if err != nil {
+			return nil, "", ErrorHandler.HandleQueryError(err, EntityStatus, "admin timeline query")
+		}
+
+		hasMore := len(page) > pageSize
+		if hasMore {
+			page = page[:pageSize]
+		}
+
+		for _, status := range page {
+			if remoteOnly && localDomain != "" && strings.Contains(status.AuthorID, localDomain) {
+				continue
+			}
+
+			collected = append(collected, status)
+			if len(collected) == sanitizedLimit {
+				nextCursor = status.GSI8SK
+				break
+			}
+		}
+
+		if len(collected) == sanitizedLimit {
+			break
+		}
+
+		if !hasMore || len(page) == 0 {
+			break
+		}
+
+		scanCursor = page[len(page)-1].GSI8SK
+	}
+
+	result := make([]*models.Status, len(collected))
+	for i := range collected {
+		result[i] = &collected[i]
+	}
+
+	if len(result) == 0 || nextCursor == "" {
+		return result, "", nil
+	}
 
 	r.logger.Debug("retrieved filtered statuses for admin",
 		zap.Int("count", len(result)),
 		zap.String("nextCursor", nextCursor))
 
 	return result, nextCursor, nil
-}
-
-// applyDomainFiltering applies domain-based filtering logic to admin status queries
-func (r *StatusRepository) applyDomainFiltering(ctx context.Context, query core.Query, filter *interfaces.StatusFilter, limit int) ([]models.Status, error) {
-	if filter.Local != nil && *filter.Local {
-		return r.applyLocalFiltering(query, filter, limit)
-	}
-
-	if filter.Remote != nil && *filter.Remote {
-		return r.applyRemoteFiltering(ctx, query, filter, limit)
-	}
-
-	return r.applyStandardFiltering(query, filter, limit)
-}
-
-// applyLocalFiltering filters for local statuses only
-func (r *StatusRepository) applyLocalFiltering(query core.Query, filter *interfaces.StatusFilter, limit int) ([]models.Status, error) {
-	var statuses []models.Status
-	domain := r.extractDomainFromEnv()
-	if domain != "" {
-		query = query.Filter("AuthorID", "CONTAINS", domain)
-	}
-
-	query = r.applyContentFilters(query, filter)
-	query = r.applyDateFilters(query, filter)
-	query = query.Limit(limit)
-
-	err := query.Scan(&statuses)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "scan local")
-	}
-
-	return statuses, nil
-}
-
-// applyRemoteFiltering filters for remote statuses only (requires post-processing)
-func (r *StatusRepository) applyRemoteFiltering(_ context.Context, query core.Query, _ *interfaces.StatusFilter, limit int) ([]models.Status, error) {
-	var statuses []models.Status
-	domain := r.extractDomainFromEnv()
-	if err := common.ValidateRequiredParam("domain", domain); err != nil {
-		query = query.Limit(limit)
-		err := query.Scan(&statuses)
-		if err != nil {
-			return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "scan paginated")
-		}
-		return statuses, nil
-	}
-
-	// Note: DynamoDB doesn't have a direct "NOT CONTAINS" operation
-	// We'll need to use scan and post-process filtering
-	err := query.Scan(&statuses)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "scan remote filtering")
-	}
-
-	// Post-process to filter remote only
-	filteredStatuses := []models.Status{}
-	for _, status := range statuses {
-		if !strings.Contains(status.AuthorID, domain) {
-			filteredStatuses = append(filteredStatuses, status)
-			if len(filteredStatuses) >= limit {
-				break
-			}
-		}
-	}
-
-	return filteredStatuses, nil
 }
 
 // GetStatusesByURL searches for statuses that contain a specific URL in their URLs field
@@ -612,46 +692,93 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 	return results, nil
 }
 
-// applyStandardFiltering applies standard non-domain specific filters
-func (r *StatusRepository) applyStandardFiltering(query core.Query, filter *interfaces.StatusFilter, limit int) ([]models.Status, error) {
-	var statuses []models.Status
+// CountStatusesForAdmin counts statuses matching admin filter criteria
+func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter) (int64, error) {
+	r.logger.Debug("counting statuses for admin with filter", zap.Any("filter", filter))
 
-	// Apply specific domain filter
+	localDomain := r.extractDomainFromEnv()
+	remoteOnly := filter != nil && filter.Remote != nil && *filter.Remote
+
+	baseQuery := r.buildAdminStatusTimelineQuery(ctx, filter, localDomain)
+
+	if !remoteOnly || localDomain == "" {
+		count, err := baseQuery.Count()
+		if err != nil {
+			return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count filtered admin statuses")
+		}
+		return count, nil
+	}
+
+	// Remote-only counts require post-processing (DynamoDB lacks NOT CONTAINS).
+	const pageSize = 200
+	var (
+		total      int64
+		scanCursor string
+	)
+
+	for tries := 0; tries < 250; tries++ {
+		query := baseQuery.OrderBy("gsi8SK", "DESC")
+		if scanCursor != "" {
+			query = query.Where("gsi8SK", "<", scanCursor)
+		}
+
+		var page []models.Status
+		err := query.Limit(pageSize + 1).All(&page)
+		if err != nil {
+			return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count remote admin statuses")
+		}
+
+		hasMore := len(page) > pageSize
+		if hasMore {
+			page = page[:pageSize]
+		}
+
+		for _, status := range page {
+			if strings.Contains(status.AuthorID, localDomain) {
+				continue
+			}
+			total++
+		}
+
+		if !hasMore || len(page) == 0 {
+			break
+		}
+		scanCursor = page[len(page)-1].GSI8SK
+	}
+
+	return total, nil
+}
+
+func (r *StatusRepository) buildAdminStatusTimelineQuery(ctx context.Context, filter *interfaces.StatusFilter, localDomain string) core.Query {
+	query := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("gsi8").
+		Where("gsi8PK", "=", "ADMIN_TIMELINE").
+		Filter("Deleted", "=", false)
+
+	if filter == nil {
+		return query
+	}
+
 	if filter.ByDomain != "" {
 		query = query.Filter("AuthorID", "CONTAINS", filter.ByDomain)
 	}
 
-	query = r.applyContentFilters(query, filter)
-	query = r.applyDateFilters(query, filter)
-	query = query.Limit(limit)
-
-	// Execute query with limit
-	err := query.Scan(&statuses)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "get filtered")
+	if filter.Local != nil && *filter.Local && localDomain != "" {
+		query = query.Filter("AuthorID", "CONTAINS", localDomain)
 	}
 
-	return statuses, nil
-}
-
-// applyContentFilters applies content-related filters (visibility, flagged, sensitive, media)
-func (r *StatusRepository) applyContentFilters(query core.Query, filter *interfaces.StatusFilter) core.Query {
-	// Apply visibility filter
 	if filter.Visibility != "" {
 		query = query.Filter("Visibility", "=", filter.Visibility)
 	}
 
-	// Apply flagged filter
 	if filter.Flagged != nil {
 		query = query.Filter("Flagged", "=", *filter.Flagged)
 	}
 
-	// Apply sensitive filter
 	if filter.Sensitive != nil {
 		query = query.Filter("Sensitive", "=", *filter.Sensitive)
 	}
 
-	// Apply media filter
 	if filter.WithMedia != nil {
 		if *filter.WithMedia {
 			query = query.Filter("MediaCount", ">", 0)
@@ -660,12 +787,6 @@ func (r *StatusRepository) applyContentFilters(query core.Query, filter *interfa
 		}
 	}
 
-	return query
-}
-
-// applyDateFilters applies date-related filters (MinDate, MaxDate)
-func (r *StatusRepository) applyDateFilters(query core.Query, filter *interfaces.StatusFilter) core.Query {
-	// Apply date filters
 	if filter.MinDate != nil {
 		query = query.Filter("PublishedAt", ">=", *filter.MinDate)
 	}
@@ -675,109 +796,6 @@ func (r *StatusRepository) applyDateFilters(query core.Query, filter *interfaces
 	}
 
 	return query
-}
-
-// convertToPointerSlice converts slice of Status to slice of Status pointers
-func (r *StatusRepository) convertToPointerSlice(statuses []models.Status) []*models.Status {
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-	return result
-}
-
-// generateNextCursor generates pagination cursor for the next page
-func (r *StatusRepository) generateNextCursor(result []*models.Status, limit int) string {
-	nextCursor := ""
-	if len(result) == limit && len(result) > 0 {
-		lastStatus := result[len(result)-1]
-		nextCursor = fmt.Sprintf("%d_%s", lastStatus.PublishedAt.Unix(), lastStatus.StatusID)
-	}
-	return nextCursor
-}
-
-// CountStatusesForAdmin counts statuses matching admin filter criteria
-func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter) (int64, error) {
-	r.logger.Debug("counting statuses for admin with filter", zap.Any("filter", filter))
-
-	var count int64
-	query := r.db.WithContext(ctx).Model(&models.Status{})
-
-	// Base filter to exclude deleted statuses unless specifically requested
-	query = query.Filter("Deleted", "=", false)
-
-	// Apply domain filters
-	if filter.Local != nil && *filter.Local {
-		domain := r.extractDomainFromEnv()
-		if domain != "" {
-			query = query.Filter("AuthorID", "CONTAINS", domain)
-		}
-	}
-
-	if filter.Remote != nil && *filter.Remote {
-		// For remote filtering, we need to scan first then count (not efficient but necessary)
-		var statuses []models.Status
-		domain := r.extractDomainFromEnv()
-		if domain != "" {
-			err := query.Scan(&statuses)
-			if err != nil {
-				return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "scan for count")
-			}
-
-			// Count only remote statuses
-			remoteCount := 0
-			for _, status := range statuses {
-				if !strings.Contains(status.AuthorID, domain) {
-					remoteCount++
-				}
-			}
-			return int64(remoteCount), nil
-		}
-	} else {
-		// Apply other filters for counting
-		if filter.ByDomain != "" {
-			query = query.Filter("AuthorID", "CONTAINS", filter.ByDomain)
-		}
-
-		if filter.Visibility != "" {
-			query = query.Filter("Visibility", "=", filter.Visibility)
-		}
-
-		if filter.Flagged != nil {
-			query = query.Filter("Flagged", "=", *filter.Flagged)
-		}
-
-		if filter.Sensitive != nil {
-			query = query.Filter("Sensitive", "=", *filter.Sensitive)
-		}
-
-		if filter.WithMedia != nil {
-			if *filter.WithMedia {
-				query = query.Filter("MediaCount", ">", 0)
-			} else {
-				query = query.Filter("MediaCount", "=", 0)
-			}
-		}
-
-		if filter.MinDate != nil {
-			query = query.Filter("PublishedAt", ">=", *filter.MinDate)
-		}
-
-		if filter.MaxDate != nil {
-			query = query.Filter("PublishedAt", "<=", *filter.MaxDate)
-		}
-
-		// Use Count method for efficient counting
-		count, err := query.Count()
-		if err != nil {
-			return 0, ErrorHandler.HandleQueryError(err, EntityStatus, "count filtered")
-		}
-
-		r.logger.Debug("counted filtered statuses for admin", zap.Int64("count", count))
-		return count, nil
-	}
-
-	return count, nil
 }
 
 // extractDomainFromEnv extracts the local domain from environment

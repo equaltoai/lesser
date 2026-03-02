@@ -97,6 +97,10 @@ type ModerationEvent struct {
 	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "EVENTID#{event_id}"
 	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "EVENTID#{event_id}"
 
+	// GSI4 - Global event listing (admin/debug)
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk,omitempty"` // Format: "MODERATION_EVENTS"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk,omitempty"` // Format: "TIME#{RFC3339}#{event_id}"
+
 	// Type marker
 	Type string `theorydb:"attr:type" json:"type"` // "EVENT"
 
@@ -151,6 +155,10 @@ func (m *ModerationEvent) UpdateKeys() error {
 	// GSI3 - Event ID lookup
 	m.GSI3PK = fmt.Sprintf("EVENTID#%s", m.ID)
 	m.GSI3SK = fmt.Sprintf("EVENTID#%s", m.ID)
+
+	// GSI4 - Global event listing
+	m.GSI4PK = "MODERATION_EVENTS"
+	m.GSI4SK = m.SK
 
 	// Set type marker
 	m.Type = "EVENT"

@@ -164,24 +164,19 @@ func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.Relay
 func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor string) ([]*storage.RelayInfo, string, error) {
 	logger := r.logger.With(zap.String("operation", "GetAllRelays"))
 
-	// Build the query - we need to scan for items where PK starts with "RELAY#"
-	// Since we can't use BEGINS_WITH on PK in main table, we'll use a Filter approach
+	// Scan-free listing: query the relay listing partition on GSI8.
 	query := r.GetDB().WithContext(ctx).Model(&models.Relay{}).
-		Filter("PK", "BEGINS_WITH", "RELAY#").
-		OrderBy("PK", "ASC")
+		Index("gsi8").
+		Where("gsi8PK", "=", "RELAYS").
+		OrderBy("gsi8SK", "ASC")
 
-	// Resume scanning after the last key when a cursor is provided
+	// Resume after the last seen gsi8SK when a cursor is provided
 	if cursor != "" {
-		// Decode cursor to get the last key
 		lastKey, err := decodeCursor(cursor)
 		if err != nil {
 			logger.Warn("invalid cursor provided", zap.String("cursor", cursor), zap.Error(err))
-		} else {
-			// Extract PK from cursor
-			if pk, ok := lastKey["PK"].(string); ok {
-				// Continue from where we left off - use simple PK comparison
-				query = query.Where("PK", ">", pk)
-			}
+		} else if gsi8sk, ok := lastKey["gsi8SK"].(string); ok && gsi8sk != "" {
+			query = query.Where("gsi8SK", ">", gsi8sk)
 		}
 	}
 
@@ -201,8 +196,10 @@ func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor st
 		// We got more results than requested, so there are more pages
 		lastRelay := relays[limit-1]
 		lastKey := map[string]interface{}{
-			"PK": lastRelay.PK,
-			"SK": lastRelay.SK,
+			"gsi8PK": lastRelay.GSI8PK,
+			"gsi8SK": lastRelay.GSI8SK,
+			"PK":     lastRelay.PK,
+			"SK":     lastRelay.SK,
 		}
 		nextCursor = encodeCursor(lastKey)
 		relays = relays[:limit] // Trim to requested limit

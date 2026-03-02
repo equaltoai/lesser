@@ -962,8 +962,33 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *apptheory.Context) (*a
 	}
 
 	if nextCursor != "" {
-		nextURL := fmt.Sprintf("/api/v1/admin/moderation/events?limit=%d&cursor=%s", limit, nextCursor)
-		setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL))
+		params := url.Values{
+			"limit":  []string{strconv.Itoa(limit)},
+			"cursor": []string{nextCursor},
+		}
+
+		// Preserve filter state across pagination.
+		if filter.EventType != "" {
+			params.Add("event_type", filter.EventType)
+		}
+		if filter.Category != "" {
+			params.Add("category", filter.Category)
+		}
+		if filter.MinSeverity != nil {
+			params.Add("min_severity", strconv.Itoa(*filter.MinSeverity))
+		}
+		if filter.ActorID != "" {
+			params.Add("actor_id", filter.ActorID)
+		}
+		if filter.ObjectID != "" {
+			params.Add("object_id", filter.ObjectID)
+		}
+
+		nextURL := url.URL{
+			Path:     "/api/v1/admin/moderation/events",
+			RawQuery: params.Encode(),
+		}
+		setHeader(resp, "Link", fmt.Sprintf(`<%s>; rel="next"`, nextURL.String()))
 	}
 
 	return resp, nil

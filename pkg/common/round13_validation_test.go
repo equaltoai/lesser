@@ -128,6 +128,9 @@ func TestValidationHelpers_AccountIDsAndCursorAndSearchParsing(t *testing.T) {
 	validCursor := base64.StdEncoding.EncodeToString([]byte("cursor"))
 	assert.NoError(t, ValidateRepositoryCursor(validCursor))
 
+	validURLCursor := base64.URLEncoding.EncodeToString([]byte{0xff, 0xff, 0xff})
+	assert.NoError(t, ValidateRepositoryCursor(validURLCursor))
+
 	got, err := ParseSearchOffset("")
 	assert.NoError(t, err)
 	assert.Equal(t, 0, got)

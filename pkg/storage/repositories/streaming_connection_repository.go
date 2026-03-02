@@ -324,39 +324,36 @@ func (r *StreamingConnectionRepository) GetSubscriptionsForStream(ctx context.Co
 
 // GetIdleConnections gets WebSocket connections that have been idle past the threshold
 func (r *StreamingConnectionRepository) GetIdleConnections(ctx context.Context, idleThreshold time.Time) ([]models.WebSocketConnection, error) {
-	r.logger.Info("scanning for idle WebSocket connections",
+	r.logger.Info("querying for idle WebSocket connections",
 		zap.Time("idle_threshold", idleThreshold))
 
-	// Strategy: Scan all connections and filter by LastActivity
-	// Note: In production, you might want to implement pagination for large datasets
-	var allConnections []models.WebSocketConnection
-	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Scan(&allConnections)
-	if err != nil {
-		r.logger.Error("failed to scan WebSocket connections",
-			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "streaming connection", "idle connections scan")
-	}
-
-	// Filter connections that are idle (LastActivity before threshold)
 	var idleConnections []models.WebSocketConnection
 	now := time.Now()
 
-	for _, conn := range allConnections {
-		if conn.LastActivity.Before(idleThreshold) {
-			idleConnections = append(idleConnections, conn)
+	totalConnections := 0
+	for _, state := range []models.ConnectionState{models.ConnectionStateConnected, models.ConnectionStateIdle} {
+		connections, err := r.listAllConnectionsByState(ctx, state)
+		if err != nil {
+			return nil, err
+		}
 
-			r.logger.Debug("found idle connection",
-				zap.String("connection_id", conn.ConnectionID),
-				zap.String("user_id", conn.UserID),
-				zap.String("username", conn.Username),
-				zap.Time("last_activity", conn.LastActivity),
-				zap.Duration("idle_duration", now.Sub(conn.LastActivity)))
+		totalConnections += len(connections)
+		for _, conn := range connections {
+			if conn.LastActivity.Before(idleThreshold) {
+				idleConnections = append(idleConnections, conn)
+
+				r.logger.Debug("found idle connection",
+					zap.String("connection_id", conn.ConnectionID),
+					zap.String("user_id", conn.UserID),
+					zap.String("username", conn.Username),
+					zap.Time("last_activity", conn.LastActivity),
+					zap.Duration("idle_duration", now.Sub(conn.LastActivity)))
+			}
 		}
 	}
 
-	r.logger.Info("idle connection scan completed",
-		zap.Int("total_connections", len(allConnections)),
+	r.logger.Info("idle connection query completed",
+		zap.Int("total_connections", totalConnections),
 		zap.Int("idle_connections", len(idleConnections)))
 
 	return idleConnections, nil
@@ -588,38 +585,34 @@ func (r *StreamingConnectionRepository) ReclaimIdleConnections(ctx context.Conte
 
 // GetStaleConnections gets WebSocket connections that are considered stale (very old with no recent activity)
 func (r *StreamingConnectionRepository) GetStaleConnections(ctx context.Context, staleThreshold time.Time) ([]models.WebSocketConnection, error) {
-	r.logger.Info("scanning for stale WebSocket connections",
+	r.logger.Info("querying for stale WebSocket connections",
 		zap.Time("stale_threshold", staleThreshold))
 
-	// Strategy: Scan all connections and filter by LastActivity and TTL expiration
-	var allConnections []models.WebSocketConnection
-	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Scan(&allConnections)
-	if err != nil {
-		r.logger.Error("failed to scan WebSocket connections for stale detection",
-			zap.Error(err))
-		return nil, ErrorHandler.HandleQueryError(err, "streaming connection", "stale connections scan")
-	}
-
-	// Filter connections that are stale (very old LastActivity, expired TTL, or both)
 	var staleConnections []models.WebSocketConnection
 	now := time.Now()
 	currentUnixTime := now.Unix()
 
-	for _, conn := range allConnections {
-		isStale := false
-
-		// Connection is stale if LastActivity is before the stale threshold
-		if conn.LastActivity.Before(staleThreshold) {
-			isStale = true
+	totalConnections := 0
+	for _, state := range []models.ConnectionState{
+		models.ConnectionStateConnecting,
+		models.ConnectionStateConnected,
+		models.ConnectionStateIdle,
+		models.ConnectionStateClosing,
+		models.ConnectionStateClosed,
+		models.ConnectionStateError,
+	} {
+		connections, err := r.listAllConnectionsByState(ctx, state)
+		if err != nil {
+			return nil, err
 		}
 
-		// Connection is also stale if TTL has expired
-		if conn.TTL > 0 && currentUnixTime > conn.TTL {
-			isStale = true
-		}
+		totalConnections += len(connections)
+		for _, conn := range connections {
+			isStale := conn.LastActivity.Before(staleThreshold) || (conn.TTL > 0 && currentUnixTime > conn.TTL)
+			if !isStale {
+				continue
+			}
 
-		if isStale {
 			staleConnections = append(staleConnections, conn)
 
 			r.logger.Debug("found stale connection",
@@ -633,8 +626,8 @@ func (r *StreamingConnectionRepository) GetStaleConnections(ctx context.Context,
 		}
 	}
 
-	r.logger.Info("stale connection scan completed",
-		zap.Int("total_connections", len(allConnections)),
+	r.logger.Info("stale connection query completed",
+		zap.Int("total_connections", totalConnections),
 		zap.Int("stale_connections", len(staleConnections)))
 
 	return staleConnections, nil
@@ -812,6 +805,60 @@ func (r *StreamingConnectionRepository) GetConnectionsByState(ctx context.Contex
 	}
 
 	return connections, nil
+}
+
+func (r *StreamingConnectionRepository) listAllConnectionsByState(ctx context.Context, state models.ConnectionState) ([]models.WebSocketConnection, error) {
+	const pageSize = 500
+
+	var (
+		all    []models.WebSocketConnection
+		cursor string
+	)
+
+	for {
+		var page []models.WebSocketConnection
+
+		query := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
+			Index("gsi2").
+			Where("gsi2PK", "=", fmt.Sprintf("STATE#%s", state)).
+			OrderBy("gsi2SK", SortOrderAsc).
+			Limit(pageSize + 1)
+
+		if cursor != "" {
+			query = query.Where("gsi2SK", ">", cursor)
+		}
+
+		err := query.All(&page)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return all, nil
+			}
+			if isResourceNotFound(err) {
+				if r.logger != nil {
+					r.logger.Warn("streaming connections state index missing; returning empty set",
+						zap.String("index", "gsi2"),
+						zap.Error(err))
+				}
+				return []models.WebSocketConnection{}, nil
+			}
+			return nil, ErrorHandler.HandleQueryError(err, "streaming connection", "connections by state (all)")
+		}
+
+		hasMore := len(page) > pageSize
+		if hasMore {
+			page = page[:pageSize]
+		}
+
+		all = append(all, page...)
+
+		if !hasMore || len(page) == 0 {
+			break
+		}
+
+		cursor = page[len(page)-1].GSI2SK
+	}
+
+	return all, nil
 }
 
 func isResourceNotFound(err error) bool {

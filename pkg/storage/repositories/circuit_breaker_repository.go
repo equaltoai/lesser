@@ -198,14 +198,15 @@ func (r *CircuitBreakerRepository) DeleteCircuitState(ctx context.Context, insta
 
 // GetAllCircuitStates retrieves all circuit states (for monitoring/debugging)
 func (r *CircuitBreakerRepository) GetAllCircuitStates(ctx context.Context) ([]*models.CircuitBreakerState, error) {
-	// This requires a scan operation since we need all circuit states across different PKs
-	// Using the underlying DB connection for this specialized query
+	// Scan-free listing: query the global listing partition on GSI8.
 	var states []*models.CircuitBreakerState
 
 	err := r.GetDB().WithContext(ctx).Model(&models.CircuitBreakerState{}).
-		Where("PK", "begins_with", "CIRCUIT#").
-		Where("SK", "=", models.SKState).
-		Scan(&states)
+		Index("gsi8").
+		Where("gsi8PK", "=", "CIRCUIT_STATES").
+		OrderBy("gsi8SK", "ASC").
+		Limit(1000).
+		All(&states)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityCircuitBreaker, "monitoring")

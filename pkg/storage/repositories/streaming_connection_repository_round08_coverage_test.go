@@ -227,15 +227,30 @@ func TestStreamingConnectionRepository_Round08_ScansAndResourceLimits(t *testing
 
 		threshold := baseTime.Add(10 * time.Minute)
 
-		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
-		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]models.WebSocketConnection)
-			*dest = []models.WebSocketConnection{
-				{ConnectionID: "c1", LastActivity: baseTime.Add(-time.Hour)},
-				{ConnectionID: "c2", LastActivity: baseTime.Add(20 * time.Minute)},
+		var currentStatePK string
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("Index", "gsi2").Return(mockQuery).Maybe()
+		mockQuery.On("Where", "gsi2PK", "=", mock.Anything).Return(mockQuery).Run(func(args mock.Arguments) {
+			if v, ok := args.Get(2).(string); ok {
+				currentStatePK = v
 			}
-		}).Once()
+		}).Maybe()
+		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.WebSocketConnection)
+			switch currentStatePK {
+			case "STATE#connected":
+				*dest = []models.WebSocketConnection{
+					{ConnectionID: "c1", State: models.ConnectionStateConnected, LastActivity: baseTime.Add(-time.Hour)},
+					{ConnectionID: "c2", State: models.ConnectionStateConnected, LastActivity: baseTime.Add(20 * time.Minute)},
+				}
+			default:
+				*dest = []models.WebSocketConnection{}
+			}
+		}).Maybe()
 
 		repo := NewStreamingConnectionRepository(mockDB, "table", mockSubDB, "subs", zap.NewNop(), nil)
 		idle, err := repo.GetIdleConnections(ctx, threshold)
@@ -252,18 +267,34 @@ func TestStreamingConnectionRepository_Round08_ScansAndResourceLimits(t *testing
 
 		setupPermissiveRound08Mocks(mockSubDB, mockSubQuery, nil, baseTime)
 
-		staleThreshold := baseTime.Add(-time.Minute)
+		now := time.Now().UTC()
+		staleThreshold := now.Add(-time.Minute)
 
-		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
-		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]models.WebSocketConnection)
-			*dest = []models.WebSocketConnection{
-				{ConnectionID: "c1", LastActivity: baseTime.Add(-time.Hour), TTL: 0},
-				{ConnectionID: "c2", LastActivity: baseTime.Add(time.Hour), TTL: baseTime.Add(-time.Second).Unix()},
-				{ConnectionID: "c3", LastActivity: baseTime.Add(time.Hour), TTL: baseTime.Add(time.Hour).Unix()},
+		var currentStatePK string
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("Index", "gsi2").Return(mockQuery).Maybe()
+		mockQuery.On("Where", "gsi2PK", "=", mock.Anything).Return(mockQuery).Run(func(args mock.Arguments) {
+			if v, ok := args.Get(2).(string); ok {
+				currentStatePK = v
 			}
-		}).Once()
+		}).Maybe()
+		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]models.WebSocketConnection)
+			switch currentStatePK {
+			case "STATE#connected":
+				*dest = []models.WebSocketConnection{
+					{ConnectionID: "c1", State: models.ConnectionStateConnected, LastActivity: now.Add(-time.Hour), TTL: 0},
+					{ConnectionID: "c2", State: models.ConnectionStateConnected, LastActivity: now.Add(-30 * time.Second), TTL: now.Add(-time.Second).Unix()},
+					{ConnectionID: "c3", State: models.ConnectionStateConnected, LastActivity: now.Add(-30 * time.Second), TTL: now.Add(time.Hour).Unix()},
+				}
+			default:
+				*dest = []models.WebSocketConnection{}
+			}
+		}).Maybe()
 
 		repo := NewStreamingConnectionRepository(mockDB, "table", mockSubDB, "subs", zap.NewNop(), nil)
 		stale, err := repo.GetStaleConnections(ctx, staleThreshold)
@@ -959,7 +990,11 @@ func TestStreamingConnectionRepository_Round08_MoreErrorBranches(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Twice()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Twice()
-		mockQuery.On("Scan", mock.Anything).Return(assert.AnError).Twice()
+		mockQuery.On("Index", "gsi2").Return(mockQuery).Twice()
+		mockQuery.On("Where", "gsi2PK", "=", mock.Anything).Return(mockQuery).Twice()
+		mockQuery.On("OrderBy", "gsi2SK", SortOrderAsc).Return(mockQuery).Twice()
+		mockQuery.On("Limit", 501).Return(mockQuery).Twice()
+		mockQuery.On("All", mock.Anything).Return(assert.AnError).Twice()
 
 		_, err := repo.GetIdleConnections(ctx, time.Now())
 		require.Error(t, err)

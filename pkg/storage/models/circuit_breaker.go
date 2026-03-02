@@ -13,6 +13,10 @@ type CircuitBreakerState struct {
 	PK string `theorydb:"pk,attr:PK" json:"pk"` // CIRCUIT#<instance_id>
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // STATE
 
+	// GSI8 - Global state listing (monitoring/debug)
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK" json:"gsi8pk,omitempty"` // CIRCUIT_STATES
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK" json:"gsi8sk,omitempty"` // INSTANCE#<instance_id>
+
 	// Core circuit breaker state
 	InstanceID       string    `theorydb:"attr:instanceID" json:"instance_id"`
 	Status           string    `theorydb:"attr:status" json:"status"` // closed, open, half_open
@@ -41,6 +45,9 @@ type CircuitBreakerState struct {
 func (c *CircuitBreakerState) UpdateKeys() error {
 	c.PK = fmt.Sprintf("CIRCUIT#%s", c.InstanceID)
 	c.SK = SKState
+
+	c.GSI8PK = "CIRCUIT_STATES"
+	c.GSI8SK = fmt.Sprintf("INSTANCE#%s", c.InstanceID)
 
 	// Set TTL to 30 days after last state change
 	if !c.LastStateChange.IsZero() {

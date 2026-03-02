@@ -428,24 +428,22 @@ func TestStatusRepository_filters_and_counts(t *testing.T) {
 	origDomain := config.Get().Domain
 	defer func() { config.Get().Domain = origDomain }()
 
-	t.Run("remote_filtering_with_empty_domain_scans", func(t *testing.T) {
+	t.Run("remote_filtering_with_empty_domain_noops", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
 		config.Get().Domain = ""
 
-		mockQuery.On("Limit", 2).Return(mockQuery).Once()
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
-			*dest = []models.Status{{StatusID: "s1"}}
+			*dest = []models.Status{{StatusID: "s1"}, {StatusID: "s2"}}
 		}).Return(nil).Once()
-
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
 
-		out, err := repo.applyRemoteFiltering(ctx, mockQuery, &interfaces.StatusFilter{Remote: boolPtr(true)}, 2)
+		out, _, err := repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{Remote: boolPtr(true)}, 2, "")
 		assert.NoError(t, err)
-		assert.Len(t, out, 1)
+		assert.Len(t, out, 2)
 	})
 
 	t.Run("remote_filtering_with_domain_postprocesses", func(t *testing.T) {
@@ -454,18 +452,18 @@ func TestStatusRepository_filters_and_counts(t *testing.T) {
 
 		config.Get().Domain = DefaultDomain
 
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
-				{StatusID: "local", AuthorID: "https://localhost/users/a"},
-				{StatusID: "remote", AuthorID: "https://remote.example/users/b"},
+				{StatusID: "local", AuthorID: "https://localhost/users/a", GSI8SK: "2#local"},
+				{StatusID: "remote", AuthorID: "https://remote.example/users/b", GSI8SK: "1#remote"},
 			}
 		}).Return(nil).Once()
 
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)
 
-		out, err := repo.applyRemoteFiltering(ctx, mockQuery, &interfaces.StatusFilter{Remote: boolPtr(true)}, 1)
+		out, _, err := repo.ListStatusesForAdmin(ctx, &interfaces.StatusFilter{Remote: boolPtr(true)}, 1, "")
 		assert.NoError(t, err)
 		assert.Len(t, out, 1)
 		assert.Equal(t, "remote", out[0].StatusID)
@@ -478,7 +476,7 @@ func TestStatusRepository_filters_and_counts(t *testing.T) {
 		config.Get().Domain = DefaultDomain
 
 		filter := &interfaces.StatusFilter{Remote: boolPtr(true)}
-		mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Status)
 			*dest = []models.Status{
 				{AuthorID: "https://localhost/users/a"},
@@ -1048,7 +1046,7 @@ func TestStatusRepository_more_error_paths(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		mockQuery.On("Count").Return(int64(0), assert.AnError).Once()
+		mockQuery.On("First", mock.AnythingOfType("*models.InstanceMetrics")).Return(assert.AnError).Once()
 		setupPermissiveStatusRepoMocks(mockDB, mockQuery, nil)
 
 		repo := NewStatusRepository(mockDB, "test-table", zap.NewNop(), nil)

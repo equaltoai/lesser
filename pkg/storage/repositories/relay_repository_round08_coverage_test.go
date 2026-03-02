@@ -213,12 +213,13 @@ func TestRelayRepository_Round08_QueriesAndHelpers(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Filter", "PK", "BEGINS_WITH", "RELAY#").Return(mockQuery).Once()
-		mockQuery.On("OrderBy", "PK", "ASC").Return(mockQuery).Once()
+		mockQuery.On("Index", "gsi8").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi8PK", "=", "RELAYS").Return(mockQuery).Once()
+		mockQuery.On("OrderBy", "gsi8SK", "ASC").Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Relay)
-			*dest = []models.Relay{{PK: "RELAY#a", SK: "INFO"}}
+			*dest = []models.Relay{{PK: "RELAY#a", SK: "INFO", URL: "https://example.com/relay"}}
 		}).Once()
 
 		repo := NewRelayRepository(mockDB, "table", zap.NewNop(), nil)
@@ -235,20 +236,20 @@ func TestRelayRepository_Round08_QueriesAndHelpers(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
-		cursorData := []byte(`{"PK":"RELAY#abc","SK":"INFO"}`)
-		cursor := base64.StdEncoding.EncodeToString(cursorData)
+		cursor := encodeCursor(map[string]interface{}{"gsi8SK": "URL#https://example.com/relay#abc"})
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Filter", "PK", "BEGINS_WITH", "RELAY#").Return(mockQuery).Once()
-		mockQuery.On("OrderBy", "PK", "ASC").Return(mockQuery).Once()
-		mockQuery.On("Where", "PK", ">", "RELAY#abc").Return(mockQuery).Once()
+		mockQuery.On("Index", "gsi8").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi8PK", "=", "RELAYS").Return(mockQuery).Once()
+		mockQuery.On("OrderBy", "gsi8SK", "ASC").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi8SK", ">", "URL#https://example.com/relay#abc").Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
 		mockQuery.On("All", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 			dest := args.Get(0).(*[]models.Relay)
 			*dest = []models.Relay{
-				{PK: "RELAY#1", SK: "INFO", URL: "u1"},
-				{PK: "RELAY#2", SK: "INFO", URL: "u2"},
+				{PK: "RELAY#1", SK: "INFO", URL: "u1", GSI8PK: "RELAYS", GSI8SK: "URL#u1"},
+				{PK: "RELAY#2", SK: "INFO", URL: "u2", GSI8PK: "RELAYS", GSI8SK: "URL#u2"},
 			}
 		}).Once()
 
@@ -268,8 +269,9 @@ func TestRelayRepository_Round08_QueriesAndHelpers(t *testing.T) {
 
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.Anything).Return(mockQuery).Once()
-		mockQuery.On("Filter", "PK", "BEGINS_WITH", "RELAY#").Return(mockQuery).Once()
-		mockQuery.On("OrderBy", "PK", "ASC").Return(mockQuery).Once()
+		mockQuery.On("Index", "gsi8").Return(mockQuery).Once()
+		mockQuery.On("Where", "gsi8PK", "=", "RELAYS").Return(mockQuery).Once()
+		mockQuery.On("OrderBy", "gsi8SK", "ASC").Return(mockQuery).Once()
 		mockQuery.On("Limit", 2).Return(mockQuery).Once()
 		mockQuery.On("All", mock.Anything).Return(assert.AnError).Once()
 
@@ -447,11 +449,12 @@ func TestRelayRepository_Round08_UpdateAndAliases(t *testing.T) {
 		mockQueryScan := new(mocks.MockQuery)
 		mockQueryDelete := new(mocks.MockQuery)
 
-		// ListRelays -> GetAllRelays -> scan-like Filter + OrderBy + Limit + All.
+		// ListRelays -> GetAllRelays -> GSI8 query.
 		mockDB.On("WithContext", mock.Anything).Return(mockDB).Twice()
 		mockDB.On("Model", mock.Anything).Return(mockQueryScan).Once()
-		mockQueryScan.On("Filter", "PK", "BEGINS_WITH", "RELAY#").Return(mockQueryScan).Once()
-		mockQueryScan.On("OrderBy", "PK", "ASC").Return(mockQueryScan).Once()
+		mockQueryScan.On("Index", "gsi8").Return(mockQueryScan).Once()
+		mockQueryScan.On("Where", "gsi8PK", "=", "RELAYS").Return(mockQueryScan).Once()
+		mockQueryScan.On("OrderBy", "gsi8SK", "ASC").Return(mockQueryScan).Once()
 		mockQueryScan.On("Limit", 1001).Return(mockQueryScan).Once()
 		mockQueryScan.On("All", mock.Anything).Return(nil).Once()
 

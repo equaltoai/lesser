@@ -210,7 +210,7 @@ func TestInstanceRepository_MetricsAndHistory_Sweep(t *testing.T) {
 
 	comments, err := repo.countLocalComments(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), comments)
+	assert.Equal(t, int64(0), comments)
 
 	weekly, err := repo.GetWeeklyActivity(ctx, time.Now().Unix())
 	require.NoError(t, err)
