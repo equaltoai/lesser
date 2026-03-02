@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -70,20 +69,6 @@ func TestDLQRepository_Round08_CleanupExpiredMessages_DeletesAndCounts(t *testin
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
-	expired := []*models.DLQMessage{
-		{ID: "1", Service: "svc"},
-		{ID: "2", Service: "svc"},
-	}
-
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.DLQMessage)
-		*dest = expired
-	}).Return(nil).Once()
-
-	// DeleteDLQMessage uses BaseRepository.Delete -> query.Delete.
-	mockQuery.On("Delete").Return(nil).Once()
-	mockQuery.On("Delete").Return(errors.New("delete failed")).Once()
-
 	setupPermissiveRound08Mocks(mockDB, mockQuery, nil, time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC))
 
 	repo := NewDLQRepository(mockDB, "test-table", zap.NewNop(), nil)
@@ -94,7 +79,7 @@ func TestDLQRepository_Round08_CleanupExpiredMessages_DeletesAndCounts(t *testin
 
 	count, err := repo.CleanupExpiredMessages(ctx, time.Now())
 	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	require.Equal(t, 0, count)
 }
 
 func TestDLQRepository_Round08_RetryFailedMessage_AbandonsAndUpdates(t *testing.T) {

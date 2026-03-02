@@ -372,14 +372,6 @@ func TestRound07_NotificationRepository_CreateNotifications_DeleteByType_Object_
 	deleted, err := repo.DeleteExpiredNotifications(context.Background(), time.Unix(1, 0).UTC())
 	require.NoError(t, err)
 	require.Equal(t, int64(0), deleted)
-
-	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		ptr := args.Get(0).(*[]models.Notification)
-		*ptr = []models.Notification{{PK: "USER#user-1", SK: "notif#1"}}
-	}).Return(nil).Once()
-	mockQuery.On("BatchDelete", mock.Anything).Return(errors.New("batch-delete-failed")).Once()
-	_, err = repo.DeleteExpiredNotifications(context.Background(), time.Unix(1, 0).UTC())
-	require.Error(t, err)
 }
 
 func TestRound07_NotificationRepository_UnreadCountAndMarkRead_ErrorBranches(t *testing.T) {

@@ -795,44 +795,14 @@ func (r *NotificationRepository) DeleteNotificationsByObject(ctx context.Context
 
 // DeleteExpiredNotifications deletes notifications that have expired
 func (r *NotificationRepository) DeleteExpiredNotifications(ctx context.Context, expiredBefore time.Time) (int64, error) {
-	// Use DynamoDB TTL for automatic expiration
-	// This method is for manual cleanup if needed
-
-	var expiredNotifications []models.Notification
-	err := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Filter("ExpiresAt", "<", expiredBefore.Unix()).
-		Limit(1000).
-		All(&expiredNotifications)
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, EntityNotification, "expired scan")
+	// Notifications are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
+	// required a table scan, which is both expensive and unnecessary.
+	if r.logger != nil {
+		r.logger.Info("skipping manual notification expiry cleanup (ttl handles expiration)",
+			zap.Time("expired_before", expiredBefore),
+		)
 	}
-
-	if err := common.ValidateSliceNotEmpty("expiredNotifications", expiredNotifications); err != nil {
-		return 0, nil // Nothing to delete
-	}
-
-	// Use batch delete for efficient bulk deletion
-	keys := make([]any, len(expiredNotifications))
-	for i := range expiredNotifications {
-		// Create key structs with PK and SK for deletion
-		keys[i] = &models.Notification{
-			PK: expiredNotifications[i].PK,
-			SK: expiredNotifications[i].SK,
-		}
-	}
-
-	// Use DynamORM's batch delete functionality
-	err = r.db.WithContext(ctx).Model(&models.Notification{}).BatchDelete(keys)
-	if err != nil {
-		return 0, ErrorHandler.HandleDeleteError(err, EntityNotification, "batch delete expired")
-	}
-
-	r.logger.Info("batch deleted expired notifications",
-		zap.Time("expired_before", expiredBefore),
-		zap.Int("deleted_count", len(expiredNotifications)),
-	)
-
-	return int64(len(expiredNotifications)), nil
+	return 0, nil
 }
 
 // GetNotificationsFiltered gets notifications with a filter

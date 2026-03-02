@@ -895,10 +895,12 @@ func (r *TrendingRepository) deleteOldTrendsGeneric(ctx context.Context, before 
 	//
 	// Trend models already write TTLs (`ttl = updatedAt + 7d`) in `pkg/storage/models/trends.go`,
 	// so we rely on DynamoDB TTL for expiration and do not perform manual deletion here.
-	r.logger.Info("skipping manual trend cleanup (ttl handles expiration)",
-		zap.String("trend_type", trendType),
-		zap.Time("before", before),
-	)
+	if r.logger != nil {
+		r.logger.Info("skipping manual trend cleanup (ttl handles expiration)",
+			zap.String("trend_type", trendType),
+			zap.Time("before", before),
+		)
+	}
 	return nil
 }
 
@@ -1633,39 +1635,14 @@ func (r *TrendingRepository) GetHashtagTrend(ctx context.Context, hashtag string
 
 // PruneStaleTrends removes old trending entries
 func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.Time) error {
-	// TTL should handle this automatically, but we can also manually prune
-	beforeDate := before.Format(common.DateFormat)
-
-	// Query for old trends
-	var oldTrends []models.TrendingHashtag
-	err := r.db.WithContext(ctx).Model(&models.TrendingHashtag{}).
-		Where("Date", "<", beforeDate).
-		Limit(100). // Process in batches
-		All(&oldTrends)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-		r.logger.Error("failed to query stale trends", zap.Error(err))
-		return fmt.Errorf("%w: %w", ErrFailedQueryStaleTrends, err)
+	// Trending entries are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual
+	// cleanup required a scan on a non-key attribute (`Date < ...`), which is expensive and
+	// unnecessary.
+	if r.logger != nil {
+		r.logger.Info("skipping manual stale trend cleanup (ttl handles expiration)",
+			zap.Time("before", before),
+		)
 	}
-
-	// Delete each trend using BaseRepository
-	for _, trend := range oldTrends {
-		err := r.Delete(ctx, trend.PK, trend.SK)
-		if err != nil {
-			r.logger.Warn("failed to delete stale trend",
-				zap.String("hashtag", trend.Hashtag),
-				zap.String("date", trend.Date),
-				zap.Error(err))
-		}
-	}
-
-	r.logger.Info("pruned stale trends",
-		zap.Int("count", len(oldTrends)),
-		zap.Time("before", before))
-
 	return nil
 }
 

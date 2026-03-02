@@ -473,38 +473,14 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 
 // cleanupRawMetrics removes old raw metrics
 func (r *MetricsRepository) cleanupRawMetrics(ctx context.Context, cutoffTime time.Time) (int, error) {
-	deletedCount := 0
-
-	// Query for old raw metrics - this is more challenging with single table design
-	// We'll need to scan through metric types and clean based on timestamp
-	var oldMetrics []models.Metrics
-
-	// Use a broad query and filter in application code
-	// This is not ideal but necessary with DynamoDB's query limitations
-	err := r.db.WithContext(ctx).Model(&models.Metrics{}).
-		Where("PK", "begins_with", "metrics#").
-		All(&oldMetrics)
-
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, "metrics", "cleanup")
+	// Raw metrics are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
+	// required scanning across all metric partitions, which is expensive and unnecessary.
+	if r.logger != nil {
+		r.logger.Info("skipping manual raw metrics cleanup (ttl handles expiration)",
+			zap.Time("cutoff_time", cutoffTime),
+		)
 	}
-
-	// Filter and delete old metrics
-	for _, metric := range oldMetrics {
-		if metric.Timestamp.Before(cutoffTime) {
-			err := r.Delete(ctx, metric.PK, metric.SK)
-			if err != nil {
-				r.logger.Warn("failed to delete raw metric",
-					zap.String("pk", metric.PK),
-					zap.String("sk", metric.SK),
-					zap.Error(err))
-				continue
-			}
-			deletedCount++
-		}
-	}
-
-	return deletedCount, nil
+	return 0, nil
 }
 
 // calculateMetricPercentiles calculates percentiles for a slice of metric values

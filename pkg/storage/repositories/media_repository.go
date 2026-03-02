@@ -1276,33 +1276,12 @@ func (r *MediaRepository) GetMediaByIDs(ctx context.Context, mediaIDs []string) 
 func (r *MediaRepository) DeleteExpiredMedia(ctx context.Context, expiredBefore time.Time) (int64, error) {
 	r.logger.Debug("deleting expired media", zap.Time("expired_before", expiredBefore))
 
-	// Query all media with TTL that has expired
-	var mediaList []*models.Media
-	query := r.db.WithContext(ctx).Model(&models.Media{}).
-		Filter("ExpiresAt", "<", expiredBefore.Unix())
-
-	err := query.All(&mediaList)
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, EntityMedia, "expired media")
-	}
-
-	deletedCount := int64(0)
-	for _, media := range mediaList {
-		if err := r.DeleteMedia(ctx, media.MediaID); err != nil {
-			r.logger.Error("failed to delete expired media",
-				zap.String("media_id", media.MediaID),
-				zap.Error(err))
-			// Continue with other deletions
-		} else {
-			deletedCount++
-		}
-	}
-
-	r.logger.Info("deleted expired media",
-		zap.Int64("deleted_count", deletedCount),
-		zap.Int("total_expired", len(mediaList)))
-
-	return deletedCount, nil
+	// Media records are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
+	// required a table scan, which is both expensive and unnecessary.
+	r.logger.Info("skipping manual media expiry cleanup (ttl handles expiration)",
+		zap.Time("expired_before", expiredBefore),
+	)
+	return 0, nil
 }
 
 // GetMediaStorageUsage returns the total storage used by a user's media

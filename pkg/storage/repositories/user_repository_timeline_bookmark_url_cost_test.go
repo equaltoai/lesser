@@ -509,61 +509,10 @@ func TestUserRepository_ListUsersByRole_SuccessConvertsUsers(t *testing.T) {
 	assert.Equal(t, "bob", users[1].Username)
 }
 
-func TestUserRepository_DeleteExpiredTimelineEntries_NoEntriesAndErrors(t *testing.T) {
+func TestUserRepository_DeleteExpiredTimelineEntries_TTLNoops(t *testing.T) {
 	ctx := context.Background()
 
-	// No entries -> no-op.
-	{
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.Timeline)
-			*dest = nil
-		}).Return(nil)
-
-		err := repo.DeleteExpiredTimelineEntries(ctx, time.Now().Add(-time.Hour))
-		assert.NoError(t, err)
-	}
-
-	// Scan error -> propagated error.
-	{
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
-
-		err := repo.DeleteExpiredTimelineEntries(ctx, time.Now().Add(-time.Hour))
-		assert.Error(t, err)
-	}
-
-	// Batch delete failure -> no error, but result indicates failures.
-	{
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo := NewUserRepository(mockDB, "test-table", zap.NewNop())
-
-		mockDB.On("WithContext", mock.Anything).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.Timeline)
-			*dest = []*models.Timeline{
-				{PK: "timeline#DIRECT#alice", SK: "sk1"},
-				{PK: "timeline#DIRECT#alice", SK: "sk2"},
-			}
-		}).Return(nil)
-		mockQuery.On("BatchDelete", mock.Anything).Return(ErrTestMockError)
-
-		err := repo.DeleteExpiredTimelineEntries(ctx, time.Now().Add(-time.Hour))
-		assert.NoError(t, err)
-	}
+	repo := NewUserRepository(new(mocks.MockDB), "test-table", zap.NewNop())
+	err := repo.DeleteExpiredTimelineEntries(ctx, time.Now().Add(-time.Hour))
+	assert.NoError(t, err)
 }

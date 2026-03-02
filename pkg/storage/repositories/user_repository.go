@@ -2736,73 +2736,11 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 	r.logger.Debug("deleting expired timeline entries",
 		zap.Time("before", before))
 
-	// Use TTL-based approach for efficiency. This method handles cleanup
-	// of entries that didn't get auto-deleted due to DynamoDB TTL delays
-
-	// Note: DynamoDB TTL typically deletes within 48 hours, but we may need
-	// manual cleanup for immediate consistency requirements
-
-	var expiredEntries []*models.Timeline
-
-	// Scan for expired entries (this is expensive - consider using TTL instead)
-	err := r.GetDB().WithContext(ctx).Model(&models.Timeline{}).
-		Filter("ExpiresAt", "<", before).
-		All(&expiredEntries)
-	if err != nil {
-		r.logger.Error("failed to scan for expired timeline entries",
-			zap.Time("before", before),
-			zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "scan expired")
-	}
-
-	if err := common.ValidateSliceNotEmpty("expired_entries", expiredEntries); err != nil {
-		r.logger.Debug("no expired timeline entries found",
-			zap.Time("before", before))
-		return nil // Nothing to delete
-	}
-
-	// Use batch deletion for efficient processing
-	// Convert timeline entries to keys for batch deletion
-	keys := make([]any, len(expiredEntries))
-	for i, entry := range expiredEntries {
-		// DynamORM expects the actual model as the key for batch delete
-		keys[i] = entry
-	}
-
-	// Perform batch deletion using DynamORM batch operations
-	// Use centralized cost tracker if available, fallback to legacy tracker
-	var costTracker batch.CostTracker
-	if r.GetCostService() != nil {
-		costTracker = &centralizedCostTracker{
-			costService: r.GetCostService(),
-			tableName:   r.tableName,
-			logger:      r.logger,
-		}
-	} else {
-		costTracker = &timelineCostTracker{logger: r.logger}
-	}
-
-	result, err := batch.BatchDeleteWithCostTracking(ctx, r.GetDB(), keys, costTracker, r.logger)
-	if err != nil {
-		r.logger.Error("failed to batch delete expired timeline entries",
-			zap.Time("before", before),
-			zap.Int("total_entries", len(expiredEntries)),
-			zap.Error(err))
-		return ErrorHandler.HandleDeleteError(err, EntityTimelineEntry, "batch")
-	}
-
-	deletedCount := result.ProcessedItems
-	if result.FailedItems > 0 {
-		r.logger.Warn("some timeline entries failed to delete in batch operation",
-			zap.Int("total_entries", len(expiredEntries)),
-			zap.Int("deleted_count", deletedCount),
-			zap.Int("failed_count", result.FailedItems))
-	}
-
-	r.logger.Info("deleted expired timeline entries",
+	// Timeline entries are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual
+	// cleanup required a table scan, which is both expensive and an anti-pattern in DynamoDB.
+	r.logger.Info("skipping manual timeline expiry cleanup (ttl handles expiration)",
 		zap.Time("before", before),
-		zap.Int("deleted_count", deletedCount))
-
+	)
 	return nil
 }
 
