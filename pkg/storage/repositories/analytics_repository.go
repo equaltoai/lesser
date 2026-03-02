@@ -886,43 +886,21 @@ type TrendDeletable interface {
 }
 
 // deleteOldTrendsGeneric is a generic function to delete old trend records
-func (r *TrendingRepository) deleteOldTrendsGeneric(ctx context.Context, before time.Time, trendType string, modelInstance interface{}, getIdentifier func(interface{}) string) error {
-	// Use reflection to create a slice of the appropriate type
-	modelType := reflect.TypeOf(modelInstance)
-	sliceType := reflect.SliceOf(modelType)
-	trendsValue := reflect.New(sliceType).Elem()
-
-	// DynamORM doesn't support direct batch delete, so we need to query and delete
-	err := r.db.WithContext(ctx).Model(modelInstance).
-		Filter("UpdatedAt", "<", before).
-		Limit(100). // Process in batches
-		Scan(trendsValue.Addr().Interface())
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil // No old trends to delete
-		}
-		r.logger.Error(fmt.Sprintf("failed to query old %s trends", trendType), zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, "trend", fmt.Sprintf("old %s trends", trendType))
+func (r *TrendingRepository) deleteOldTrendsGeneric(_ context.Context, before time.Time, trendType string, _ interface{}, _ func(interface{}) string) error {
+	// IMPORTANT:
+	// TableTheory's `.Scan(...)` issues a DynamoDB Scan, and using a non-key filter like
+	// `UpdatedAt < before` can match and deserialize *any* item that has an `updatedAt` attribute
+	// (user, actor, etc.). The previous implementation deleted those items by PK/SK, which is a
+	// catastrophic data-loss risk.
+	//
+	// Trend models already write TTLs (`ttl = updatedAt + 7d`) in `pkg/storage/models/trends.go`,
+	// so we rely on DynamoDB TTL for expiration and do not perform manual deletion here.
+	if r.logger != nil {
+		r.logger.Info("skipping manual trend cleanup (ttl handles expiration)",
+			zap.String("trend_type", trendType),
+			zap.Time("before", before),
+		)
 	}
-
-	// Delete each trend
-	count := trendsValue.Len()
-	for i := 0; i < count; i++ {
-		trend := trendsValue.Index(i).Interface()
-		err := r.db.WithContext(ctx).Model(trend).Delete()
-		if err != nil {
-			r.logger.Warn(fmt.Sprintf("failed to delete %s trend", trendType),
-				zap.String("identifier", getIdentifier(trend)),
-				zap.Error(err))
-			// Continue with other deletions
-		}
-	}
-
-	r.logger.Info(fmt.Sprintf("deleted old %s trends", trendType),
-		zap.Int("count", count),
-		zap.Time("before", before))
-
 	return nil
 }
 
@@ -1394,41 +1372,65 @@ func (r *TrendingRepository) GetEngagementMetricsData(ctx context.Context, metri
 
 // GetEngagementByDateRange retrieves engagement metrics within a date range
 func (r *TrendingRepository) GetEngagementByDateRange(ctx context.Context, metricType string, startDate, endDate string, limit int) ([]*storage.EngagementMetricsSummary, error) {
-	// Query using GSI8 for date range
-	startPK := fmt.Sprintf("METRICS#%s#%s", metricType, startDate)
-	endPK := fmt.Sprintf("METRICS#%s#%s", metricType, endDate)
-
-	var metricsRecords []models.EngagementMetrics
-	err := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
-		Where("gsi8PK", ">=", startPK).
-		Where("gsi8PK", "<=", endPK).
-		OrderBy("gsi8PK", "ASC").
-		Limit(limit).
-		All(&metricsRecords)
-
+	start, err := time.Parse(common.DateFormat, startDate)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return []*storage.EngagementMetricsSummary{}, nil
-		}
-		r.logger.Error("failed to get engagement by date range",
-			zap.String("metricType", metricType),
-			zap.String("startDate", startDate),
-			zap.String("endDate", endDate),
-			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrFailedGetEngagementByDate, err)
+		return nil, fmt.Errorf("%w: invalid startDate %q", ErrFailedGetEngagementByDate, startDate)
+	}
+	end, err := time.Parse(common.DateFormat, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid endDate %q", ErrFailedGetEngagementByDate, endDate)
+	}
+	if end.Before(start) {
+		return nil, fmt.Errorf("%w: endDate must be on/after startDate", ErrFailedGetEngagementByDate)
 	}
 
-	// Convert to summary format
-	summaries := make([]*storage.EngagementMetricsSummary, len(metricsRecords))
-	for i, record := range metricsRecords {
-		summaries[i] = &storage.EngagementMetricsSummary{
-			Date:        record.Date,
-			MetricType:  record.MetricType,
-			TargetID:    record.TargetID,
-			TotalViews:  record.Views,
-			TotalLikes:  record.Likes,
-			TotalShares: record.Shares,
-			UniqueUsers: record.UniqueUsers,
+	summaries := make([]*storage.EngagementMetricsSummary, 0)
+	for current := start; !current.After(end); current = current.AddDate(0, 0, 1) {
+		pk := fmt.Sprintf("METRICS#%s#%s", metricType, current.Format(common.DateFormat))
+
+		var records []models.EngagementMetrics
+		query := r.db.WithContext(ctx).Model(&models.EngagementMetrics{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "ASC")
+
+		if limit > 0 {
+			remaining := limit - len(summaries)
+			if remaining <= 0 {
+				break
+			}
+			query = query.Limit(remaining)
+		}
+
+		if err := query.All(&records); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
+			r.logger.Error("failed to get engagement by date range",
+				zap.String("metricType", metricType),
+				zap.String("startDate", startDate),
+				zap.String("endDate", endDate),
+				zap.Error(err))
+			return nil, fmt.Errorf("%w: %w", ErrFailedGetEngagementByDate, err)
+		}
+
+		for _, record := range records {
+			summaries = append(summaries, &storage.EngagementMetricsSummary{
+				Date:        record.Date,
+				MetricType:  record.MetricType,
+				TargetID:    record.TargetID,
+				TotalViews:  record.Views,
+				TotalLikes:  record.Likes,
+				TotalShares: record.Shares,
+				UniqueUsers: record.UniqueUsers,
+			})
+
+			if limit > 0 && len(summaries) >= limit {
+				break
+			}
+		}
+
+		if limit > 0 && len(summaries) >= limit {
+			break
 		}
 	}
 
@@ -1656,40 +1658,15 @@ func (r *TrendingRepository) GetHashtagTrend(ctx context.Context, hashtag string
 }
 
 // PruneStaleTrends removes old trending entries
-func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.Time) error {
-	// TTL should handle this automatically, but we can also manually prune
-	beforeDate := before.Format(common.DateFormat)
-
-	// Query for old trends
-	var oldTrends []models.TrendingHashtag
-	err := r.db.WithContext(ctx).Model(&models.TrendingHashtag{}).
-		Where("Date", "<", beforeDate).
-		Limit(100). // Process in batches
-		All(&oldTrends)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-		r.logger.Error("failed to query stale trends", zap.Error(err))
-		return fmt.Errorf("%w: %w", ErrFailedQueryStaleTrends, err)
+func (r *TrendingRepository) PruneStaleTrends(_ context.Context, before time.Time) error {
+	// Trending entries are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual
+	// cleanup required a scan on a non-key attribute (`Date < ...`), which is expensive and
+	// unnecessary.
+	if r.logger != nil {
+		r.logger.Info("skipping manual stale trend cleanup (ttl handles expiration)",
+			zap.Time("before", before),
+		)
 	}
-
-	// Delete each trend using BaseRepository
-	for _, trend := range oldTrends {
-		err := r.Delete(ctx, trend.PK, trend.SK)
-		if err != nil {
-			r.logger.Warn("failed to delete stale trend",
-				zap.String("hashtag", trend.Hashtag),
-				zap.String("date", trend.Date),
-				zap.Error(err))
-		}
-	}
-
-	r.logger.Info("pruned stale trends",
-		zap.Int("count", len(oldTrends)),
-		zap.Time("before", before))
-
 	return nil
 }
 

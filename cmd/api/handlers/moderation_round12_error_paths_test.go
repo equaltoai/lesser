@@ -407,7 +407,7 @@ func TestModerationHandlers_Round12_ErrorPaths(t *testing.T) {
 
 		t.Run("repo error returns 500", func(t *testing.T) {
 			state := baseState()
-			state.scanErrorOnce = stdErrors.Internal("boom")
+			state.allErrorOnce = stdErrors.Internal("boom")
 			h, _, _ := round11NewHandler(t, cfg, state)
 			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/moderation/trust", map[string]string{"Authorization": "Bearer " + makeToken("alice")}, map[string]string{"direction": "outgoing"}, nil)
 			require.NoError(t, err)

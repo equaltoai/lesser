@@ -388,7 +388,7 @@ func TestAICost_UpdateKeys(t *testing.T) {
 		err := a.UpdateKeys()
 		require.NoError(t, err)
 
-		assert.Equal(t, "AI_COSTS#20240615", a.GSI1PK)
+		assert.Equal(t, "AI_COSTS#2024-06", a.GSI1PK)
 		assert.Contains(t, a.GSI1SK, "TS#")
 		assert.Contains(t, a.GSI1SK, "op-123")
 	})

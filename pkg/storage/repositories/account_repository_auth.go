@@ -272,16 +272,17 @@ func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddre
 	expiresAt := now.Add(30 * 24 * time.Hour) // 30 days
 
 	session := &models.Session{
-		SessionID:   sessionID,
-		UserID:      fmt.Sprintf("USER#%s", username),
-		AccessToken: token,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		LastUsedAt:  now,
-		ExpiresAt:   expiresAt.Unix(),
-		IPAddress:   ipAddress,
-		UserAgent:   userAgent,
-		IsRevoked:   false,
+		SessionID:    sessionID,
+		UserID:       fmt.Sprintf("USER#%s", username),
+		AccessToken:  token,
+		RefreshToken: token,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		LastUsedAt:   now,
+		ExpiresAt:    expiresAt.Unix(),
+		IPAddress:    ipAddress,
+		UserAgent:    userAgent,
+		IsRevoked:    false,
 	}
 
 	// BeforeCreate will set keys
@@ -611,7 +612,7 @@ func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*
 		Username:     extractUsernameFromUserID(session.UserID),
 		CreatedAt:    session.CreatedAt,
 		ExpiresAt:    expiresAt,
-		RefreshToken: session.RefreshToken,
+		RefreshToken: session.AccessToken,
 		LastActivity: session.LastUsedAt,
 		UserAgent:    session.UserAgent,
 		IPAddress:    session.IPAddress,
@@ -645,16 +646,19 @@ func (r *AccountRepository) UpdateSession(ctx context.Context, sessionID, refres
 	}
 
 	// Update the session fields
+	session.AccessToken = refreshToken
 	session.RefreshToken = refreshToken
 	session.IPAddress = ipAddress
 	session.LastUsedAt = lastActivity
-	session.UpdatedAt = time.Now()
 	session.ExpiresAt = expiresAt.Unix()
 
-	// Update GSI keys since refresh token changed
-	session.GSI2PK = "TOKEN#" + hashTokenForGSI(session.AccessToken) // Keep access token GSI the same
-	// Note: Legacy used REFRESHTOKEN# prefix in GSI1, but our model uses TOKEN# for access tokens
-	// We may need to adapt this if refresh token lookup is needed via GSI
+	// Recompute index keys based on the updated token.
+	if err := session.BeforeUpdate(); err != nil {
+		r.logger.Error("failed to prepare session for update",
+			zap.String("sessionID", sessionID),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
+	}
 
 	err = r.db.WithContext(ctx).Model(&session).Update()
 	if err != nil {
@@ -695,13 +699,12 @@ func (r *AccountRepository) DeleteSession(ctx context.Context, sessionID string)
 
 // GetSessionByRefreshToken finds a session by refresh token
 func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refreshToken string) (*storage.Session, error) {
-	// The current model doesn't have a GSI for refresh tokens like the legacy did
-	// We need to scan for sessions with matching refresh token
-	// In production, you might want to add a GSI for refresh token lookup
+	// Scan-free lookup via the Session GSI2 (hashed token).
 	var sessions []models.Session
-
+	tokenHash := hashTokenForGSI(refreshToken)
 	err := r.db.WithContext(ctx).Model(&models.Session{}).
-		Where("RefreshToken", "=", refreshToken).
+		Index("gsi2").
+		Where("gsi2PK", "=", "TOKEN#"+tokenHash).
 		Limit(1).
 		All(&sessions)
 
@@ -713,9 +716,6 @@ func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refres
 	}
 
 	if err := common.ValidateSliceNotEmpty("sessions", sessions); err != nil {
-		// Check if this might be a previous refresh token (for grace period)
-		// This would require scanning all sessions, which is expensive
-		// For now, just return not found
 		return nil, common.SessionNotFoundError{SessionID: "refresh:" + refreshToken[:minInt(len(refreshToken), 10)]}
 	}
 
@@ -729,7 +729,7 @@ func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refres
 		Username:             extractUsernameFromUserID(session.UserID),
 		CreatedAt:            session.CreatedAt,
 		ExpiresAt:            expiresAt,
-		RefreshToken:         session.RefreshToken,
+		RefreshToken:         session.AccessToken,
 		LastActivity:         session.LastUsedAt,
 		UserAgent:            session.UserAgent,
 		IPAddress:            session.IPAddress,
@@ -814,19 +814,16 @@ func (r *AccountRepository) CreateDevice(ctx context.Context, device *storage.De
 
 // GetDevice retrieves a device by ID
 func (r *AccountRepository) GetDevice(ctx context.Context, deviceID string) (*storage.Device, error) {
-	// Legacy implementation used inefficient scan, but we need to find by deviceID
-	// Since we don't have the username, we need to scan or use a GSI
-	// Using scan to match legacy behavior exactly
 	var devices []models.Device
 
 	err := r.db.WithContext(ctx).Model(&models.Device{}).
-		Where("DeviceID", "=", deviceID).
-		Where("SK", "BEGINS_WITH", "DEVICE#").
+		Index("gsi3").
+		Where("gsi3PK", "=", fmt.Sprintf("DEVICEID#%s", deviceID)).
 		Limit(1).
 		All(&devices)
 
 	if err != nil {
-		r.logger.Error("failed to scan for device",
+		r.logger.Error("failed to query for device",
 			zap.String("deviceID", deviceID),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, "device", deviceID)

@@ -516,34 +516,14 @@ func findMostFrequent(counts map[string]int) string {
 }
 
 // CleanupOldAnalytics removes analytics records older than the specified duration preserving business intelligence data
-func (r *MediaAnalyticsRepository) CleanupOldAnalytics(ctx context.Context, olderThan time.Duration) error {
+func (r *MediaAnalyticsRepository) CleanupOldAnalytics(_ context.Context, olderThan time.Duration) error {
 	cutoffDate := time.Now().Add(-olderThan).Format(common.DateFormat)
 
-	// Query old records using BaseRepository database access
-	var oldRecords []*models.MediaAnalytics
-	err := r.GetDB().WithContext(ctx).Model(&models.MediaAnalytics{}).Where("Date", "<", cutoffDate).Scan(&oldRecords)
-
-	if err != nil {
-		r.logger.Error("Failed to query old analytics records", zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, EntityMedia, "old analytics cleanup")
-	}
-
-	// Delete old records using BaseRepository.Delete for cost tracking
-	deletedCount := 0
-	for _, record := range oldRecords {
-		if err := r.ValidateAndDelete(ctx, record.PK, record.SK); err != nil {
-			r.logger.Warn("Failed to delete old analytics record",
-				zap.String("media_id", record.MediaID),
-				zap.Error(err))
-		} else {
-			deletedCount++
-		}
-	}
-
-	r.logger.Info("Cleaned up old media analytics",
-		zap.Int("deleted_count", deletedCount),
-		zap.String("cutoff_date", cutoffDate))
-
+	// Media analytics records are TTL-driven (`ttl` on the item, `ttl` configured on the table).
+	// Manual cleanup required a DynamoDB Scan, which is both expensive and unnecessary.
+	r.logger.Info("skipping manual media analytics cleanup (ttl handles expiration)",
+		zap.String("cutoff_date", cutoffDate),
+	)
 	return nil
 }
 

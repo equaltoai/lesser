@@ -184,7 +184,7 @@ func TestQueryCacheEntry_AndBatchGetKeys(t *testing.T) {
 		after := time.Now()
 
 		assert.Equal(t, "CACHE#k1", q.PK)
-		assert.Equal(t, SKEntry, q.SK)
+		assert.Equal(t, "KEY#k1", q.SK)
 		assert.Equal(t, expires.Unix(), q.TTL)
 		assert.WithinDuration(t, before, q.UpdatedAt, 2*time.Second)
 		assert.WithinDuration(t, before, q.CreatedAt, 2*time.Second)

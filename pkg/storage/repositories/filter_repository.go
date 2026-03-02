@@ -107,26 +107,23 @@ func (r *FilterRepository) CreateFilter(ctx context.Context, filter *models.Filt
 
 // GetFilter retrieves a filter by ID
 func (r *FilterRepository) GetFilter(ctx context.Context, filterID string) (*models.Filter, error) {
-	// We need to scan for the filter since we don't know the username
 	var filters []*models.Filter
 
 	err := r.db.WithContext(ctx).Model(&models.Filter{}).
-		Where("SK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Limit(10). // Reasonable limit
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Limit(1).
 		All(&filters)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "query")
 	}
 
-	// Find the matching filter
-	for _, filter := range filters {
-		if filter.ID == filterID {
-			return filter, nil
-		}
+	if len(filters) == 0 {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilter, filterID)
 	}
 
-	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilter, filterID)
+	return filters[0], nil
 }
 
 // UpdateFilter updates a filter

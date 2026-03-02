@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -15,7 +16,7 @@ type FederationCostTracking struct {
 	PK string `theorydb:"pk,attr:PK" json:"pk"`
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
-	// GSI1 for time-based queries - FED_COSTS#{date}, TS#{timestamp}
+	// GSI1 for time-based domain queries - FED_COSTS#DOMAIN#{domain}#{YYYY-MM}, TS#{unix_millis}#{activity_type}#{activity_id}
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
@@ -127,11 +128,17 @@ type FederationCostTracking struct {
 
 // UpdateKeys sets the primary keys for the FederationCostTracking model
 func (f *FederationCostTracking) UpdateKeys() error {
-	timestampStr := f.Timestamp.Format(common.CompactTimeFormat)
-	f.PK = fmt.Sprintf("FED_COST#%s#%s", f.Domain, timestampStr)
+	ts := f.Timestamp.UTC()
+	timestampStr := ts.Format(common.CompactTimeFormat)
+	monthStr := ts.Format(common.MonthFormat)
+	domain := strings.ToLower(strings.TrimSpace(f.Domain))
+
+	f.PK = fmt.Sprintf("FED_COST#%s#%s", domain, timestampStr)
 	f.SK = fmt.Sprintf("ACTIVITY#%s#%s", f.ActivityType, f.ActivityID)
-	f.GSI1PK = fmt.Sprintf("FED_COSTS#%s", f.Timestamp.Format(common.CompactDateFormat))
-	f.GSI1SK = fmt.Sprintf("TS#%s#%s", timestampStr, f.Domain)
+
+	f.GSI1PK = fmt.Sprintf("FED_COSTS#DOMAIN#%s#%s", domain, monthStr)
+	f.GSI1SK = fmt.Sprintf("TS#%013d#TYPE#%s#ID#%s", ts.UnixMilli(), strings.ToLower(f.ActivityType), f.ActivityID)
+
 	f.GSI2PK = fmt.Sprintf("FED_TYPE#%s", f.ActivityType)
 	f.GSI2SK = fmt.Sprintf("DOMAIN#%s#%s", f.Domain, timestampStr)
 	return nil

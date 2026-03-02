@@ -322,10 +322,10 @@ func (r *ModerationRepository) GetModerationEventsByObject(ctx context.Context, 
 
 	query := r.db.WithContext(ctx).Model(&models).
 		Where("PK", "=", fmt.Sprintf("EVENT#%s", objectID)).
-		Limit(limit)
+		OrderBy("SK", "DESC")
 
 	if cursor != "" {
-		query = query.Cursor(cursor)
+		query = query.Where("SK", "<", cursor)
 	}
 
 	// Get one more item than requested to check if more pages exist
@@ -375,10 +375,10 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("gsi1").
 		Where("gsi1PK", "=", fmt.Sprintf("ACTOR#%s", actorID)).
-		Limit(limit)
+		OrderBy("gsi1SK", "DESC")
 
 	if cursor != "" {
-		query = query.Cursor(cursor)
+		query = query.Where("gsi1SK", "<", cursor)
 	}
 
 	// Get one more item than requested to check if more pages exist
@@ -1034,11 +1034,13 @@ func (r *ModerationRepository) executeGSI2Query(ctx context.Context, gsi2pk stri
 	query := r.db.WithContext(ctx).Model(&models).
 		Index("gsi2").
 		Where("gsi2PK", "=", gsi2pk).
-		Limit(limit + 1) // Get one more to check for pagination
+		OrderBy("gsi2SK", "DESC")
 
 	if cursor != "" {
-		query = query.Cursor(cursor)
+		query = query.Where("gsi2SK", "<", cursor)
 	}
+
+	query = query.Limit(limit + 1) // Get one more to check for pagination
 
 	if err := query.All(&models); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityModerationEvent, "escalation query")
@@ -1098,56 +1100,72 @@ func (r *ModerationRepository) determineNextCursor(models []models.ModerationEve
 
 // scanAllModerationEvents performs a scan operation to get all events
 func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filter *storage.ModerationEventFilter, limit int, cursor string) ([]*storage.ModerationEvent, string, error) {
-	var models []models.ModerationEvent
-
-	// DynamORM doesn't have a direct scan with filter, so we'll query and filter in memory
-	// This is less efficient but matches the legacy behavior
-	query := r.db.WithContext(ctx).Model(&models).
-		Limit(limit * 2) // Get extra to account for filtering
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
+	sanitizedLimit := limit
+	switch {
+	case sanitizedLimit <= 0:
+		sanitizedLimit = 50
+	case sanitizedLimit > 200:
+		sanitizedLimit = 200
 	}
 
-	// Get one more item than requested to check if more pages exist
-	query = query.Limit((limit * 2) + 1)
-
-	if err := query.All(&models); err != nil {
-		return nil, "", ErrorHandler.HandleQueryError(err, EntityModerationEvent, "escalation scan")
+	pageSize := sanitizedLimit * 3
+	if pageSize < 50 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
 	}
 
-	events := make([]*storage.ModerationEvent, 0, limit)
-	for _, model := range models {
-		if model.Type == ModerationTypeEvent {
-			event := &storage.ModerationEvent{
-				ID:              model.ID,
-				EventType:       model.EventType,
-				ObjectID:        model.ObjectID,
-				ObjectType:      model.ObjectType,
-				ActorID:         model.ActorID,
-				Category:        model.Category,
-				Severity:        model.Severity,
-				ConfidenceScore: model.ConfidenceScore,
-				Evidence:        model.Evidence,
-				Reason:          model.Reason,
-				Created:         model.Created,
-				Updated:         model.Updated,
-				TTL:             model.TTL,
+	events := make([]*storage.ModerationEvent, 0, sanitizedLimit)
+	nextCursor := ""
+	scanCursor := cursor
+
+	for tries := 0; tries < 25 && len(events) < sanitizedLimit; tries++ {
+		var pageModels []models.ModerationEvent
+
+		query := r.db.WithContext(ctx).Model(&pageModels).
+			Index("gsi4").
+			Where("gsi4PK", "=", "MODERATION_EVENTS").
+			OrderBy("gsi4SK", "DESC")
+
+		if scanCursor != "" {
+			query = query.Where("gsi4SK", "<", scanCursor)
+		}
+
+		if err := query.Limit(pageSize + 1).All(&pageModels); err != nil {
+			return nil, "", ErrorHandler.HandleQueryError(err, EntityModerationEvent, "escalation query")
+		}
+
+		hasMore := len(pageModels) > pageSize
+		if hasMore {
+			pageModels = pageModels[:pageSize]
+		}
+
+		for _, model := range pageModels {
+			if model.Type != ModerationTypeEvent {
+				continue
 			}
-			if r.matchesEventFilter(event, filter) {
-				events = append(events, event)
-				if len(events) >= limit {
-					break
-				}
+
+			event := r.modelToEvent(&model)
+			if !r.matchesEventFilter(event, filter) {
+				continue
+			}
+
+			events = append(events, event)
+			if len(events) == sanitizedLimit {
+				nextCursor = model.GSI4SK
+				break
 			}
 		}
-	}
 
-	// Generate next cursor - since we filtered, we need to check original models
-	var nextCursor string
-	if len(models) > (limit * 2) {
-		// We got more results than requested, so there are more pages
-		nextCursor = models[(limit*2)-1].SK
+		if len(events) == sanitizedLimit {
+			break
+		}
+
+		if !hasMore || len(pageModels) == 0 {
+			break
+		}
+		scanCursor = pageModels[len(pageModels)-1].GSI4SK
 	}
 
 	return events, nextCursor, nil
@@ -1407,35 +1425,34 @@ func (r *ModerationRepository) CreateFilter(ctx context.Context, filter *storage
 
 // GetFilter retrieves a filter by ID
 func (r *ModerationRepository) GetFilter(ctx context.Context, filterID string) (*storage.Filter, error) {
-	// We need to scan for the filter since we don't know the username
 	var models []models.Filter
 
 	err := r.db.WithContext(ctx).Model(&models).
-		Where("SK", "=", fmt.Sprintf("FILTER#%s", filterID)).
-		Limit(10). // Reasonable limit
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Limit(1).
 		All(&models)
 
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "by name")
 	}
 
-	// Find the matching filter
-	for _, model := range models {
-		if model.ID == filterID {
-			return &storage.Filter{
-				ID:           model.ID,
-				Username:     model.Username,
-				Title:        model.Title,
-				Context:      model.Context,
-				FilterAction: model.FilterAction,
-				ExpiresAt:    model.ExpiresAt,
-				CreatedAt:    model.CreatedAt,
-				UpdatedAt:    model.UpdatedAt,
-			}, nil
-		}
+	if err := common.ValidateSliceNotEmpty("filters", models); err != nil {
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilter, "not found")
 	}
 
-	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilter, "not found")
+	model := models[0]
+	return &storage.Filter{
+		ID:           model.ID,
+		Username:     model.Username,
+		Title:        model.Title,
+		Context:      model.Context,
+		FilterAction: model.FilterAction,
+		ExpiresAt:    model.ExpiresAt,
+		CreatedAt:    model.CreatedAt,
+		UpdatedAt:    model.UpdatedAt,
+	}, nil
+
 }
 
 // GetFiltersForUser retrieves all filters for a user

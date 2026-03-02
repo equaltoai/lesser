@@ -37,8 +37,9 @@ func TestProcessUndoRejectRecreatesFollowRelationship(t *testing.T) {
 		_, ok := model.(*models.Activity)
 		return ok
 	})).Return(mockQueryFetch)
-	mockQueryFetch.On("Where", "SK", "CONTAINS", followActivityID).Return(mockQueryFetch)
-	mockQueryFetch.On("Limit", 50).Return(mockQueryFetch)
+	mockQueryFetch.On("Index", "gsi2").Return(mockQueryFetch)
+	mockQueryFetch.On("Where", "gsi2PK", "=", "ACTIVITYID#"+followActivityID).Return(mockQueryFetch)
+	mockQueryFetch.On("Limit", 1).Return(mockQueryFetch)
 	mockQueryFetch.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.Activity)
 		followActivity := &activitypub.Activity{

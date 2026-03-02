@@ -978,7 +978,10 @@ func ValidateRepositoryCursor(cursor string) error {
 
 	// Cursor should be base64-encoded
 	if _, err := base64.StdEncoding.DecodeString(cursor); err != nil {
-		return ValidationError{Field: "cursor", Message: "must be a valid base64-encoded cursor"}
+		// Many repository cursors are URL-safe base64 (uses '-' and '_' instead of '+' and '/').
+		if _, urlErr := base64.URLEncoding.DecodeString(cursor); urlErr != nil {
+			return ValidationError{Field: "cursor", Message: "must be a valid base64-encoded cursor"}
+		}
 	}
 
 	return nil

@@ -69,6 +69,10 @@ type AggregatedMetrics struct {
 	PK string `theorydb:"pk,attr:PK" json:"pk"` // Format: "metrics_agg#{period}#{type}"
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
+	// GSI2 - global queries by period (used for cleanup without table/index scans)
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "METRICS_AGG#{period}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "WINDOW#{windowStart}#TYPE#{type}#SERVICE#{service}"
+
 	// Aggregation details
 	Period      string    `theorydb:"attr:period" json:"period"`            // minute, hour, day, week, month
 	Type        string    `theorydb:"attr:type" json:"type"`                // Same as Metrics.Type
@@ -249,6 +253,19 @@ func (am *AggregatedMetrics) UpdateKeys() error {
 	// Set up primary key
 	am.PK = fmt.Sprintf("metrics_agg#%s#%s", am.Period, am.Type)
 	am.SK = fmt.Sprintf("window#%s", am.WindowStart.Format(time.RFC3339))
+
+	period := strings.TrimSpace(am.Period)
+	metricType := strings.TrimSpace(am.Type)
+	service := strings.TrimSpace(am.Service)
+
+	// Set up GSI2 keying to enable safe, scan-free cleanup by period.
+	am.GSI2PK = fmt.Sprintf("METRICS_AGG#%s", period)
+	am.GSI2SK = fmt.Sprintf(
+		"WINDOW#%s#TYPE#%s#SERVICE#%s",
+		am.WindowStart.UTC().Format(time.RFC3339),
+		strings.ToLower(metricType),
+		strings.ToLower(service),
+	)
 
 	return nil
 }

@@ -1032,7 +1032,7 @@ func TestTrendingRepository_GetEngagementByDateRange_NotFoundAndError(t *testing
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
 		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("All", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Twice()
 
 		results, err := repo.GetEngagementByDateRange(ctx, "status", "2025-01-01", "2025-01-02", 10)
 		require.NoError(t, err)
@@ -1110,41 +1110,15 @@ func TestTrendingRepository_PruneStaleTrends_NotFoundAndDeleteError(t *testing.T
 	})
 }
 
-func TestTrendingRepository_deleteOldTrendsGeneric_ScanNotFoundAndScanError(t *testing.T) {
+func TestTrendingRepository_deleteOldTrendsGeneric_TTLNoops(t *testing.T) {
 	ctx := context.Background()
 	repo := &TrendingRepository{logger: zap.NewNop()}
 
-	t.Run("scan not found returns nil", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo.db = mockDB
+	repo.db = nil
 
-		mockDB.On("WithContext", ctx).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-		mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
-
-		require.NoError(t, repo.deleteOldTrendsGeneric(ctx, time.Now(), "hashtag", &models.HashtagTrend{}, func(trend interface{}) string {
-			return trend.(*models.HashtagTrend).Name
-		}))
-	})
-
-	t.Run("scan error returns error", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		repo.db = mockDB
-
-		mockDB.On("WithContext", ctx).Return(mockDB)
-		mockDB.On("Model", mock.Anything).Return(mockQuery)
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
-		mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
-
-		require.Error(t, repo.deleteOldTrendsGeneric(ctx, time.Now(), "hashtag", &models.HashtagTrend{}, func(trend interface{}) string {
-			return trend.(*models.HashtagTrend).Name
-		}))
-	})
+	require.NoError(t, repo.deleteOldTrendsGeneric(ctx, time.Now(), "hashtag", &models.HashtagTrend{}, func(trend interface{}) string {
+		return trend.(*models.HashtagTrend).Name
+	}))
 }
 
 func TestTrendingRepository_GetStatusesByLink_WrongTypeAndSearchError(t *testing.T) {

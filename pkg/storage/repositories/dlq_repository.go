@@ -615,41 +615,15 @@ func (r *DLQRepository) messageMatchesText(message *models.DLQMessage, searchTex
 }
 
 // CleanupExpiredMessages deletes expired DLQ messages (DLQ-specific cleanup logic)
-func (r *DLQRepository) CleanupExpiredMessages(ctx context.Context, before time.Time) (int, error) {
-	// DynamoDB TTL should handle most cleanup, but this provides manual cleanup
-	var expiredMessages []*models.DLQMessage
-	err := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
-		Filter("ExpiresAt", "<", before.Unix()).
-		Limit(100). // Process in batches
-		All(&expiredMessages)
-
-	if err != nil {
-		return 0, ErrorHandler.HandleQueryError(err, "dlq", "expired messages")
+func (r *DLQRepository) CleanupExpiredMessages(_ context.Context, before time.Time) (int, error) {
+	// DLQ messages are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
+	// required a table scan, which is both expensive and unnecessary.
+	if r.logger != nil {
+		r.logger.Info("skipping manual dlq expiry cleanup (ttl handles expiration)",
+			zap.Time("before", before),
+		)
 	}
-
-	if err := common.ValidateSliceNotEmpty("expiredMessages", expiredMessages); err != nil {
-		return 0, nil
-	}
-
-	// Delete expired messages using BaseRepository
-	deletedCount := 0
-	for _, message := range expiredMessages {
-		if err := r.DeleteDLQMessage(ctx, message); err != nil {
-			r.logger.Warn("failed to delete expired DLQ message",
-				zap.String("id", message.ID),
-				zap.Error(err),
-			)
-		} else {
-			deletedCount++
-		}
-	}
-
-	r.logger.Info("cleaned up expired DLQ messages",
-		zap.Int("deleted_count", deletedCount),
-		zap.Int("total_found", len(expiredMessages)),
-	)
-
-	return deletedCount, nil
+	return 0, nil
 }
 
 // GetSimilarMessages finds messages with the same similarity hash (DLQ-specific similarity analysis)

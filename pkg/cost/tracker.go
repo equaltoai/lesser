@@ -76,6 +76,16 @@ type Tracker struct {
 	circuitBreaker *CostCircuitBreaker
 }
 
+// RequestID returns the request identifier associated with this tracker, if set.
+func (t *Tracker) RequestID() string {
+	return t.requestID
+}
+
+// OperationType returns the operation type associated with this tracker, if set.
+func (t *Tracker) OperationType() string {
+	return t.operationType
+}
+
 // New creates a new cost tracker
 func New() *Tracker {
 	return &Tracker{

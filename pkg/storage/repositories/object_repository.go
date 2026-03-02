@@ -2296,37 +2296,13 @@ func (r *ObjectRepository) GetTombstonesByType(ctx context.Context, formerType s
 }
 
 // CleanupExpiredTombstones removes tombstones that have exceeded their TTL
-func (r *ObjectRepository) CleanupExpiredTombstones(ctx context.Context, batchSize int) (int, error) {
-	var tombstones []*models.Tombstone
-	now := time.Now().Unix()
-
-	// Query for expired tombstones
-	err := r.db.WithContext(ctx).Model(&models.Tombstone{}).
-		Where("TTL", "<", now).
-		Limit(batchSize).
-		Scan(&tombstones)
-
-	if err != nil {
-		r.logger.Error("failed to query expired tombstones", zap.Error(err))
-		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "expired_tombstones")
-	}
-
-	cleaned := 0
-	for _, tombstone := range tombstones {
-		if err := r.db.WithContext(ctx).Model(tombstone).
-			Where("PK", "=", tombstone.PK).
-			Where("SK", "=", tombstone.SK).
-			Delete(); err != nil {
-			r.logger.Warn("failed to delete expired tombstone",
-				zap.String("object_id", tombstone.ID),
-				zap.Error(err))
-			continue
-		}
-		cleaned++
-	}
-
-	r.logger.Info("cleaned up expired tombstones", zap.Int("count", cleaned))
-	return cleaned, nil
+func (r *ObjectRepository) CleanupExpiredTombstones(_ context.Context, batchSize int) (int, error) {
+	// Tombstones are TTL-driven (`ttl` on the item, `ttl` configured on the table). Manual cleanup
+	// used to perform a DynamoDB Scan which is both expensive and unnecessary.
+	r.logger.Info("skipping manual tombstone cleanup (ttl handles expiration)",
+		zap.Int("batch_size", batchSize),
+	)
+	return 0, nil
 }
 
 // GetObjectHistory retrieves the version history of an object

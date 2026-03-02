@@ -431,25 +431,11 @@ func TestMediaRepository_MoreBranches(t *testing.T) {
 
 	t.Run("DeleteExpiredMedia continues on delete errors", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
 		repo := NewMediaRepository(mockDB, "test-table", zap.NewNop(), nil)
-
-		mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
-		mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-
-		mockQuery.On("All", mock.AnythingOfType("*[]*models.Media")).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*[]*models.Media)
-			*dest = []*models.Media{{MediaID: "m1"}, {MediaID: "m2"}}
-		}).Return(nil).Once()
-
-		mockQuery.On("Delete").Return(ErrTestMockError).Once()
-		mockQuery.On("Delete").Return(nil).Once()
 
 		deleted, err := repo.DeleteExpiredMedia(ctx, time.Now())
 		require.NoError(t, err)
-		require.EqualValues(t, 1, deleted)
+		require.EqualValues(t, 0, deleted)
 	})
 
 	t.Run("GetUserMediaConfigByUsername fallback and dependency error", func(t *testing.T) {

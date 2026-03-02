@@ -208,9 +208,9 @@ func TestInstanceRepository_MetricsAndHistory_Sweep(t *testing.T) {
 	_, _ = repo.GetDailyActiveUserCount(ctx)
 	_, _ = repo.GetLocalPostCount(ctx)
 
-	comments, err := repo.countLocalComments(ctx)
+	comments, err := repo.GetLocalCommentCount(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), comments)
+	assert.Equal(t, int64(123), comments)
 
 	weekly, err := repo.GetWeeklyActivity(ctx, time.Now().Unix())
 	require.NoError(t, err)
@@ -550,19 +550,18 @@ func TestInstanceRepository_MetricsSummary_AllQueryErrorsStillReturnsSummary(t *
 	assert.Equal(t, "week", summary["time_range"])
 }
 
-func TestInstanceRepository_CountLocalComments_AllErrorReturnsZero(t *testing.T) {
+func TestInstanceRepository_GetLocalCommentCount_MissingMetricReturnsZero(t *testing.T) {
 	ctx := context.Background()
 	db := new(dynamormmocks.MockDB)
 	q := new(dynamormmocks.MockQuery)
 
 	db.On("WithContext", mock.Anything).Return(db).Maybe()
 	db.On("Model", mock.Anything).Return(q).Maybe()
-	q.On("Index", mock.Anything).Return(q).Maybe()
 	q.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(q).Maybe()
-	q.On("All", mock.Anything).Return(fmt.Errorf("boom")).Once()
+	q.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
 
 	repo := NewInstanceRepository(db, "test-table", zap.NewNop())
-	count, err := repo.countLocalComments(ctx)
+	count, err := repo.GetLocalCommentCount(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 }

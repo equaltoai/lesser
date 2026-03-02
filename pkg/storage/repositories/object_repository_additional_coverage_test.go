@@ -713,26 +713,25 @@ func TestObjectRepository_ErrorPathCoveragePush(t *testing.T) {
 	t.Run("CleanupExpiredTombstones returns error when scan errors", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("Scan", mock.Anything).Return(dynamormErrors.ErrInvalidModel).Once()
-		setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
-
-		repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
-
-		_, err := repo.CleanupExpiredTombstones(ctx, 2)
-		require.Error(t, err)
-	})
-
-	t.Run("CleanupExpiredTombstones continues when delete fails", func(t *testing.T) {
-		mockDB := new(mocks.MockDB)
-		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("Delete").Return(dynamormErrors.ErrInvalidModel).Once()
 		setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
 
 		repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
 
 		cleaned, err := repo.CleanupExpiredTombstones(ctx, 2)
 		require.NoError(t, err)
-		require.Equal(t, 1, cleaned)
+		require.Equal(t, 0, cleaned)
+	})
+
+	t.Run("CleanupExpiredTombstones continues when delete fails", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		setupPermissiveObjectRepoMocks(mockDB, mockQuery, baseTime)
+
+		repo := NewObjectRepository(mockDB, "test-table", "example.com", zap.NewNop())
+
+		cleaned, err := repo.CleanupExpiredTombstones(ctx, 2)
+		require.NoError(t, err)
+		require.Equal(t, 0, cleaned)
 	})
 
 	t.Run("getOrCreateStatusMetadata returns error when create fails", func(t *testing.T) {

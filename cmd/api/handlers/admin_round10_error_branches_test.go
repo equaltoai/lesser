@@ -66,12 +66,12 @@ func TestAdminLift_Round10Coverage_ErrorBranches(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminGetReportsLift(ctx))
 	})
 
-	t.Run("statuses list returns 500 on scan error", func(t *testing.T) {
+	t.Run("statuses list returns 500 on query error", func(t *testing.T) {
 		state := &round10QueryState{
 			usersByUsername: map[string]storagemodels.User{
 				"admin": {PK: "USER#admin", SK: storagemodels.SKMetadata, Username: "admin", Role: "admin", Approved: true, Version: 1},
 			},
-			scanErrorOnce: auth.ErrInvalidToken,
+			allErrorOnce: auth.ErrInvalidToken,
 		}
 		harness := round10NewDynamoHarness(t, state)
 

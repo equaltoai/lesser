@@ -35,6 +35,10 @@ type Bookmark struct {
 	PK string `theorydb:"pk,attr:PK" json:"-"` // BOOKMARK#username
 	SK string `theorydb:"sk,attr:SK" json:"-"` // TIME#timestamp#objectID or OBJECT#objectID
 
+	// GSI8 (OBJECT records only) – reverse index to delete all bookmarks for an object without scans.
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK" json:"-"`
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK" json:"-"`
+
 	// Core fields
 	Username  string    `theorydb:"attr:username" json:"username"`
 	ObjectID  string    `theorydb:"attr:objectID" json:"object_id"`
@@ -129,6 +133,14 @@ func (b *Bookmark) UpdateKeys() error {
 		b.SK = fmt.Sprintf("%s#%s", bookmarkKeyPrefixObject, b.ObjectID)
 	default:
 		return fmt.Errorf("unsupported bookmark record type %q", recordType)
+	}
+
+	// Only OBJECT rows participate in the object->bookmark index.
+	b.GSI8PK = ""
+	b.GSI8SK = ""
+	if recordType == BookmarkRecordTypeObject {
+		b.GSI8PK = fmt.Sprintf("BOOKMARK_OBJECT#%s", b.ObjectID)
+		b.GSI8SK = fmt.Sprintf("USER#%s#TIME#%s", b.Username, b.CreatedAt.Format(time.RFC3339Nano))
 	}
 
 	b.RecordType = recordType

@@ -73,7 +73,7 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 		require.Error(t, repoErr.CreateActivity(ctx, okAct))
 	})
 
-	t.Run("GetActivity scans and filters", func(t *testing.T) {
+	t.Run("GetActivity queries by activity ID", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
@@ -81,10 +81,7 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 			On("All", mock.Anything).
 			Run(func(args mock.Arguments) {
 				out := args.Get(0).(*[]*models.Activity)
-				*out = append(*out,
-					&models.Activity{Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "a1"}}},
-					&models.Activity{Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "a2"}}},
-				)
+				*out = append(*out, &models.Activity{Activity: &activitypub.Activity{BaseObject: activitypub.BaseObject{ID: "a2"}}})
 			}).
 			Return(nil).
 			Once()
@@ -99,7 +96,10 @@ func TestActivityRepository_Round09_Coverage(t *testing.T) {
 
 		mockDBNF := new(mocks.MockDB)
 		mockQueryNF := new(mocks.MockQuery)
-		mockQueryNF.On("All", mock.Anything).Return(nil).Once()
+		mockQueryNF.On("All", mock.Anything).Run(func(args mock.Arguments) {
+			out := args.Get(0).(*[]*models.Activity)
+			*out = nil
+		}).Return(nil).Once()
 		setupPermissiveRound08Mocks(mockDBNF, mockQueryNF, nil, baseTime)
 		repoNF := NewActivityRepository(mockDBNF, "test-table", zap.NewNop(), nil)
 		missing, err := repoNF.GetActivity(ctx, "missing")

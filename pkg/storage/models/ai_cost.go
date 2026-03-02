@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -15,7 +16,7 @@ type AICost struct {
 	PK string `theorydb:"pk,attr:PK" json:"pk"`
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
-	// GSI1 for time-based queries - AI_COSTS#{date}, TS#{timestamp}#{operation_id}
+	// GSI1 for time-based queries - AI_COSTS#{YYYY-MM}, TS#{unix_millis}#{operation_id}
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
 
@@ -119,23 +120,27 @@ type AICost struct {
 
 // UpdateKeys sets the primary keys for the AICost model
 func (a *AICost) UpdateKeys() error {
-	timestampStr := a.Timestamp.Format(common.CompactTimeFormat)
-	dateStr := a.Timestamp.Format(common.CompactDateFormat)
+	ts := a.Timestamp.UTC()
+	timestampMs := ts.UnixMilli()
+	billingPeriod := strings.TrimSpace(a.BillingPeriod)
+	if billingPeriod == "" {
+		billingPeriod = ts.Format(common.MonthFormat)
+	}
 
 	a.PK = fmt.Sprintf("AI_COST#%s", a.OperationID)
 	a.SK = SKMetadata
 
 	// GSI1 for time-based queries
-	a.GSI1PK = fmt.Sprintf("AI_COSTS#%s", dateStr)
-	a.GSI1SK = fmt.Sprintf("TS#%s#%s", timestampStr, a.OperationID)
+	a.GSI1PK = fmt.Sprintf("AI_COSTS#%s", billingPeriod)
+	a.GSI1SK = fmt.Sprintf("TS#%013d#TYPE#%s#OP#%s", timestampMs, strings.ToLower(a.OperationType), a.OperationID)
 
 	// GSI2 for operation type queries
 	a.GSI2PK = fmt.Sprintf("AI_TYPE#%s", a.OperationType)
-	a.GSI2SK = fmt.Sprintf("MODEL#%s#%s", a.ModelName, timestampStr)
+	a.GSI2SK = fmt.Sprintf("MODEL#%s#%s", a.ModelName, ts.Format(common.CompactTimeFormat))
 
 	// GSI3 for cost analysis - tier based on cost
 	a.GSI3PK = fmt.Sprintf("AI_COST_RANGE#%s", a.CostTier)
-	a.GSI3SK = fmt.Sprintf("COST#%012d#%s", a.TotalCostMicroCents, timestampStr)
+	a.GSI3SK = fmt.Sprintf("COST#%012d#%s", a.TotalCostMicroCents, ts.Format(common.CompactTimeFormat))
 
 	return nil
 }

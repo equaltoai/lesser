@@ -99,12 +99,13 @@ func (r *AuthRepository) CreateWebAuthnCredential(ctx context.Context, credentia
 
 // GetWebAuthnCredential retrieves a WebAuthn credential by ID
 func (r *AuthRepository) GetWebAuthnCredential(ctx context.Context, credentialID string) (*storage.WebAuthnCredential, error) {
-	// Need to scan for the credential since we don't know the user
+	// Query by credential ID via the existing GSI1 (no table scan required).
 	var modelList []models.WebAuthnCredential
 	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Where("id", "=", credentialID).
-		Where("Type", "=", "WebAuthnCredential").
-		Scan(&modelList)
+		Index("gsi1").
+		Where("gsi1PK", "=", "WEBAUTHN_CREDENTIAL#"+credentialID).
+		Limit(1).
+		All(&modelList)
 
 	if err != nil {
 		r.logger.Error("failed to get WebAuthn credential", zap.Error(err))
@@ -112,10 +113,9 @@ func (r *AuthRepository) GetWebAuthnCredential(ctx context.Context, credentialID
 	}
 
 	if err := common.ValidateSliceNotEmpty("modelList", modelList); err != nil {
-		return nil, ErrorHandler.HandleGetError(nil, EntityWebAuthnCredential, credentialID)
+		return nil, nil
 	}
 
-	// Convert to storage model
 	model := modelList[0]
 	result := &storage.WebAuthnCredential{
 		ID:              model.ID,

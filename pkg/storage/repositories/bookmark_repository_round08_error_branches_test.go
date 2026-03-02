@@ -120,15 +120,18 @@ func TestBookmarkRepository_Round08_BatchGetBookmarks_ExecuteError(t *testing.T)
 	require.Error(t, err)
 }
 
-func TestBookmarkRepository_Round08_CascadeDeleteObjectBookmarks_ScanError(t *testing.T) {
+func TestBookmarkRepository_Round08_CascadeDeleteObjectBookmarks_QueryError(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.Anything).Return(mockQuery)
+	mockQuery.On("Index", "gsi8").Return(mockQuery)
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("scan failed")).Once()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery)
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+	mockQuery.On("All", mock.Anything).Return(errors.New("all failed")).Once()
 
 	repo := NewBookmarkRepository(mockDB, "test-table", zap.NewNop())
 	require.Error(t, repo.CascadeDeleteObjectBookmarks(ctx, "obj-1"))

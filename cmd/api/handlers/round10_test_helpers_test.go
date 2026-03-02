@@ -1254,8 +1254,17 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		dest := args.Get(0)
 		switch d := dest.(type) {
 		case *[]*storagemodels.Activity:
-			activityID, _ := state.whereString("SK")
-			if activityID != "" {
+			// New access pattern: ActivityRepository.GetActivity queries GSI2 by activity ID.
+			if gsi2pk, ok := state.whereString("gsi2PK"); ok && strings.HasPrefix(gsi2pk, "ACTIVITYID#") {
+				activityID := strings.TrimPrefix(gsi2pk, "ACTIVITYID#")
+				if activity, ok := state.activitiesByID[activityID]; ok && activity != nil {
+					*d = []*storagemodels.Activity{activity}
+					return
+				}
+			}
+
+			// Legacy fallback: tests that still look up by SK.
+			if activityID, ok := state.whereString("SK"); ok && activityID != "" {
 				if activity, ok := state.activitiesByID[activityID]; ok && activity != nil {
 					*d = []*storagemodels.Activity{activity}
 					return
@@ -1384,6 +1393,17 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			*d = []storagemodels.ModerationDecision{}
 		case *[]storagemodels.Filter:
+			// New access pattern: FilterRepository.GetFilter queries GSI1 by filter ID.
+			if gsi1PK, ok := state.whereString("gsi1PK"); ok && strings.HasPrefix(gsi1PK, "FILTER#") {
+				filterID := strings.TrimPrefix(gsi1PK, "FILTER#")
+				if filter, ok := state.filtersByID[filterID]; ok {
+					*d = []storagemodels.Filter{filter}
+					return
+				}
+				*d = []storagemodels.Filter{}
+				return
+			}
+
 			if len(state.filtersByID) == 0 {
 				*d = []storagemodels.Filter{
 					{
@@ -1405,6 +1425,20 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				items = append(items, filter)
 			}
 			*d = items
+		case *[]*storagemodels.Filter:
+			// Pointer-slice variant used by some repositories (e.g. FilterRepository.GetFilter).
+			if gsi1PK, ok := state.whereString("gsi1PK"); ok && strings.HasPrefix(gsi1PK, "FILTER#") {
+				filterID := strings.TrimPrefix(gsi1PK, "FILTER#")
+				if filter, ok := state.filtersByID[filterID]; ok {
+					filterCopy := filter
+					*d = []*storagemodels.Filter{&filterCopy}
+					return
+				}
+				*d = []*storagemodels.Filter{}
+				return
+			}
+
+			*d = []*storagemodels.Filter{}
 		case *[]storagemodels.FilterKeyword:
 			if len(state.filterKeywords) == 0 {
 				keywordID := "kw-1"
@@ -1922,7 +1956,10 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			*d = []storagemodels.RecoveryCode{}
 		case *[]storagemodels.Device:
 			deviceID := ""
-			if id, ok := state.whereString("DeviceID"); ok {
+			// New access pattern: AccountRepository.GetDevice queries gsi3PK = DEVICEID#<id>.
+			if gsi3pk, ok := state.whereString("gsi3PK"); ok && strings.HasPrefix(gsi3pk, "DEVICEID#") {
+				deviceID = strings.TrimPrefix(gsi3pk, "DEVICEID#")
+			} else if id, ok := state.whereString("DeviceID"); ok {
 				deviceID = id
 			}
 			if deviceID != "" {

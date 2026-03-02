@@ -191,8 +191,8 @@ func TestCircuitBreakerRepository_Branches(t *testing.T) {
 	err = repo.DeleteCircuitState(context.Background(), "inst-8")
 	require.NoError(t, err)
 
-	// GetAllCircuitStates scan error
-	mockQuery.On("Scan", mock.Anything).Return(errors.New("boom")).Once()
+	// GetAllCircuitStates query error
+	mockQuery.On("All", mock.Anything).Return(errors.New("boom")).Once()
 	_, err = repo.GetAllCircuitStates(context.Background())
 	require.Error(t, err)
 
@@ -295,7 +295,7 @@ func TestCircuitBreakerRepository_MoreCoverage(t *testing.T) {
 	require.Error(t, err)
 
 	// GetAllCircuitStates success
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		if states, ok := args.Get(0).(*[]*models.CircuitBreakerState); ok {
 			*states = []*models.CircuitBreakerState{{InstanceID: "inst-ok"}}
 		}

@@ -35,12 +35,11 @@ func TestFilterRepository_CreateUpdateGetDeleteAndMatching(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, filter.ID)
 
-	// GetFilter query returns a list; only one matches
+	// GetFilter query returns a single match via the GSI
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		if slice, ok := dst.(*[]*models.Filter); ok {
 			*slice = []*models.Filter{
-				{ID: "x", Username: "alice"},
 				{ID: filter.ID, Username: "alice"},
 			}
 		}
@@ -53,7 +52,7 @@ func TestFilterRepository_CreateUpdateGetDeleteAndMatching(t *testing.T) {
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		dst := args.Get(0)
 		if slice, ok := dst.(*[]*models.Filter); ok {
-			*slice = []*models.Filter{{ID: "x"}}
+			*slice = []*models.Filter{}
 		}
 	}).Return(nil).Once()
 	_, err = repo.GetFilter(context.Background(), "missing")

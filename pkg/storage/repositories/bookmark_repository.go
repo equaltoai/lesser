@@ -412,81 +412,59 @@ func (r *BookmarkRepository) CascadeDeleteUserBookmarks(ctx context.Context, use
 
 // CascadeDeleteObjectBookmarks deletes all bookmarks for an object (when object is deleted)
 func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(ctx context.Context, objectID string) error {
-	// Since bookmark keys are BOOKMARK#{username} / timestamp#{objectID},
-	// we need to scan for bookmarks containing the objectID
-	// This is less efficient than a GSI but works with current schema
-
 	r.logger.Info("starting cascade delete for object bookmarks",
 		zap.String("object_id", objectID))
 
+	gsi8PK := fmt.Sprintf("BOOKMARK_OBJECT#%s", objectID)
+	cursor := ""
 	deletedCount := 0
 
-	// Use scan operation to find all bookmarks with the specified objectID
-	// We need to scan through all bookmark records and filter by SK containing objectID
-	var bookmarks []models.Bookmark
-
-	// Perform scan with filter on PK prefix to limit to bookmark records only
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
-		Where("PK", "BEGINS_WITH", "BOOKMARK#").
-		Where("SK", "CONTAINS", fmt.Sprintf("#%s", objectID)).
-		Scan(&bookmarks)
-
-	if err != nil {
-		r.logger.Error("failed to scan bookmarks for object deletion",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return ErrorHandler.HandleQueryError(err, EntityBookmark, "cascade scan")
-	}
-
-	// Filter results to ensure exact objectID match (since CONTAINS might match partial IDs)
-	var exactMatches []models.Bookmark
-	for _, bookmark := range bookmarks {
-		if bookmark.ObjectID == objectID {
-			exactMatches = append(exactMatches, bookmark)
-		}
-	}
-
-	if len(exactMatches) == 0 {
-		r.logger.Debug("no bookmarks found for object",
-			zap.String("object_id", objectID))
-		return nil
-	}
-
-	// Delete matching bookmarks in batches
-	const batchSize = 25 // DynamoDB batch write limit
-	for i := 0; i < len(exactMatches); i += batchSize {
-		end := i + batchSize
-		if end > len(exactMatches) {
-			end = len(exactMatches)
-		}
-
-		batch := exactMatches[i:end]
-		keys := make([]struct{ PK, SK string }, len(batch))
-		for j, bookmark := range batch {
-			keys[j] = struct{ PK, SK string }{PK: bookmark.PK, SK: bookmark.SK}
-		}
-
-		// Use batch delete
-		if err := r.BatchDelete(ctx, keys); err != nil {
-			r.logger.Warn("failed to batch delete bookmarks during object cascade",
+	for {
+		page, err := r.QueryGSIPaginated(ctx, "gsi8", gsi8PK, BasePaginationOptions{
+			Limit:  250,
+			Cursor: cursor,
+			Order:  SortOrderAsc,
+		})
+		if err != nil {
+			r.logger.Error("failed to query bookmark object index for cascade delete",
 				zap.String("object_id", objectID),
-				zap.Int("batch_size", len(keys)),
 				zap.Error(err))
-			// Continue with individual deletes as fallback
-			for _, key := range keys {
-				if delErr := r.Delete(ctx, key.PK, key.SK); delErr != nil {
-					r.logger.Warn("failed to delete individual bookmark during cascade",
-						zap.String("object_id", objectID),
-						zap.String("pk", key.PK),
-						zap.String("sk", key.SK),
-						zap.Error(delErr))
-				} else {
-					deletedCount++
-				}
-			}
-		} else {
-			deletedCount += len(keys)
+			return ErrorHandler.HandleQueryError(err, EntityBookmark, "cascade query")
 		}
+
+		if len(page.Items) == 0 {
+			break
+		}
+
+		keys := make([]struct{ PK, SK string }, 0, len(page.Items)*2)
+		for _, bookmark := range page.Items {
+			if bookmark == nil {
+				continue
+			}
+			if bookmark.RecordType != models.BookmarkRecordTypeObject {
+				r.logger.Warn("skipping unexpected bookmark record in object index",
+					zap.String("pk", bookmark.PK),
+					zap.String("sk", bookmark.SK),
+					zap.String("object_id", objectID),
+					zap.String("record_type", bookmark.RecordType))
+				continue
+			}
+
+			keys = append(keys, struct{ PK, SK string }{PK: bookmark.PK, SK: bookmark.SK})
+			if bookmark.TimeRecordSK != "" {
+				keys = append(keys, struct{ PK, SK string }{PK: bookmark.PK, SK: bookmark.TimeRecordSK})
+			}
+		}
+
+		if err := r.BatchDelete(ctx, keys); err != nil {
+			return ErrorHandler.HandleDeleteError(err, EntityBookmark, "cascade delete")
+		}
+		deletedCount += len(keys)
+
+		if !page.HasMore || page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
 	}
 
 	r.logger.Info("cascade deleted object bookmarks",

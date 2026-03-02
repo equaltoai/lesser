@@ -30,14 +30,17 @@ func TestListStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "AuthorID", "CONTAINS", mock.Anything).Return(mockQuery)
-				mockQuery.On("Limit", 10).Return(mockQuery)
-				mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+				mockQuery.On("OrderBy", "gsi8SK", "DESC").Return(mockQuery)
+				mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+				mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 					statuses := args.Get(0).(*[]models.Status)
 					*statuses = []models.Status{
-						{StatusID: "1", AuthorID: "user@test.local"},
-						{StatusID: "2", AuthorID: "admin@test.local"},
+						{StatusID: "1", AuthorID: "user@localhost"},
+						{StatusID: "2", AuthorID: "admin@localhost"},
 					}
 				}).Return(nil)
 			},
@@ -51,10 +54,13 @@ func TestListStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "Flagged", "=", true).Return(mockQuery)
-				mockQuery.On("Limit", 10).Return(mockQuery)
-				mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+				mockQuery.On("OrderBy", "gsi8SK", "DESC").Return(mockQuery)
+				mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+				mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 					statuses := args.Get(0).(*[]models.Status)
 					*statuses = []models.Status{
 						{StatusID: "3", Flagged: true},
@@ -71,10 +77,13 @@ func TestListStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "Visibility", "=", "public").Return(mockQuery)
-				mockQuery.On("Limit", 10).Return(mockQuery)
-				mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+				mockQuery.On("OrderBy", "gsi8SK", "DESC").Return(mockQuery)
+				mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+				mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 					statuses := args.Get(0).(*[]models.Status)
 					*statuses = []models.Status{
 						{StatusID: "4", Visibility: "public"},
@@ -94,11 +103,14 @@ func TestListStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "PublishedAt", ">=", mock.Anything).Return(mockQuery)
 				mockQuery.On("Filter", "PublishedAt", "<=", mock.Anything).Return(mockQuery)
-				mockQuery.On("Limit", 10).Return(mockQuery)
-				mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+				mockQuery.On("OrderBy", "gsi8SK", "DESC").Return(mockQuery)
+				mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+				mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 					statuses := args.Get(0).(*[]models.Status)
 					now := time.Now()
 					*statuses = []models.Status{
@@ -117,10 +129,13 @@ func TestListStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "MediaCount", ">", 0).Return(mockQuery)
-				mockQuery.On("Limit", 10).Return(mockQuery)
-				mockQuery.On("Scan", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+				mockQuery.On("OrderBy", "gsi8SK", "DESC").Return(mockQuery)
+				mockQuery.On("Limit", mock.Anything).Return(mockQuery)
+				mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
 					statuses := args.Get(0).(*[]models.Status)
 					*statuses = []models.Status{
 						{StatusID: "9", MediaCount: 2},
@@ -175,6 +190,8 @@ func TestCountStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Count").Return(int64(100), nil)
 			},
@@ -188,6 +205,8 @@ func TestCountStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "Flagged", "=", true).Return(mockQuery)
 				mockQuery.On("Count").Return(int64(15), nil)
@@ -203,6 +222,8 @@ func TestCountStatusesForAdmin(t *testing.T) {
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)
 				mockDB.On("Model", &models.Status{}).Return(mockQuery)
+				mockQuery.On("Index", "gsi8").Return(mockQuery)
+				mockQuery.On("Where", "gsi8PK", "=", "ADMIN_TIMELINE").Return(mockQuery)
 				mockQuery.On("Filter", "Deleted", "=", false).Return(mockQuery)
 				mockQuery.On("Filter", "Visibility", "=", "public").Return(mockQuery)
 				mockQuery.On("Filter", "MediaCount", ">", 0).Return(mockQuery)

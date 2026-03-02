@@ -566,13 +566,13 @@ func TestModerationRepository_CreateAdminReview_ErrorBranches(t *testing.T) {
 func TestModerationRepository_GetFilter_And_GetFlag_NotFoundBranches(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("GetFilter returns not found when no matching ID in scan", func(t *testing.T) {
+	t.Run("GetFilter returns not found when query is empty", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
 
 		mockQuery.On("All", mock.AnythingOfType("*[]models.Filter")).Run(func(args mock.Arguments) {
 			target := args.Get(0).(*[]models.Filter)
-			*target = []models.Filter{{ID: "other", Username: "user-1"}}
+			*target = nil
 		}).Return(nil).Once()
 		setupPermissiveDynamormMocks(mockDB, mockQuery)
 

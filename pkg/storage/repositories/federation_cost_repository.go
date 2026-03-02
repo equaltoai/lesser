@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -78,27 +79,71 @@ func (r *FederationCostRepository) RecordFederationCost(ctx context.Context, cos
 // GetFederationCosts retrieves federation costs for a domain within a time range
 // PRESERVED: Critical cost tracking business logic - time-based GSI queries with domain filtering
 func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domain string, startTime, endTime time.Time, limit int) ([]*models.FederationCostTracking, error) {
-	var costs []*models.FederationCostTracking
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return nil, fmt.Errorf("%w: domain is required", ErrFederationCostQueryFailed)
+	}
+	if startTime.IsZero() || endTime.IsZero() {
+		return nil, fmt.Errorf("%w: start and end time are required", ErrFederationCostQueryFailed)
+	}
+	if endTime.Before(startTime) {
+		return nil, fmt.Errorf("%w: end time must be after start time", ErrFederationCostQueryFailed)
+	}
 
-	// Use GSI1 for time-based queries
-	startDate := startTime.Format(common.CompactDateFormat)
-	endDate := endTime.Format(common.CompactDateFormat)
+	startUTC := startTime.UTC()
+	endUTC := endTime.UTC()
 
-	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
-		Index("gsi1").
-		Where("gsi1PK", ">=", fmt.Sprintf("FED_COSTS#%s", startDate)).
-		Where("gsi1PK", "<=", fmt.Sprintf("FED_COSTS#%s", endDate)).
-		Filter("gsi1SK", "CONTAINS", domain). // Filter for specific domain
-		Limit(limit)
+	startMonth := time.Date(startUTC.Year(), startUTC.Month(), 1, 0, 0, 0, 0, time.UTC)
+	endMonth := time.Date(endUTC.Year(), endUTC.Month(), 1, 0, 0, 0, 0, time.UTC)
 
-	err := query.All(&costs)
-	if err != nil {
-		r.logger.Error("Failed to get federation costs",
-			zap.String("domain", domain),
-			zap.Time("start_time", startTime),
-			zap.Time("end_time", endTime),
-			zap.Error(err))
-		return nil, fmt.Errorf("%w: %w", ErrFederationCostQueryFailed, err)
+	costs := make([]*models.FederationCostTracking, 0)
+	for month := startMonth; !month.After(endMonth); month = month.AddDate(0, 1, 0) {
+		bucketStart := startUTC
+		if bucketStart.Before(month) {
+			bucketStart = month
+		}
+
+		monthEnd := month.AddDate(0, 1, 0).Add(-time.Millisecond)
+		bucketEnd := endUTC
+		if bucketEnd.After(monthEnd) {
+			bucketEnd = monthEnd
+		}
+
+		pk := fmt.Sprintf("FED_COSTS#DOMAIN#%s#%s", domain, month.Format(common.MonthFormat))
+		startSK := fmt.Sprintf("TS#%013d", bucketStart.UnixMilli())
+		endSK := fmt.Sprintf("TS#%013d~", bucketEnd.UnixMilli())
+
+		var page []*models.FederationCostTracking
+		query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", pk).
+			Where("gsi1SK", ">=", startSK).
+			Where("gsi1SK", "<=", endSK).
+			OrderBy("gsi1SK", "ASC")
+
+		if limit > 0 {
+			remaining := limit - len(costs)
+			if remaining <= 0 {
+				break
+			}
+			query = query.Limit(remaining)
+		}
+
+		err := query.All(&page)
+		if err != nil {
+			r.logger.Error("Failed to get federation costs",
+				zap.String("domain", domain),
+				zap.Time("start_time", startTime),
+				zap.Time("end_time", endTime),
+				zap.Error(err))
+			return nil, fmt.Errorf("%w: %w", ErrFederationCostQueryFailed, err)
+		}
+
+		costs = append(costs, page...)
+		if limit > 0 && len(costs) >= limit {
+			costs = costs[:limit]
+			break
+		}
 	}
 
 	return costs, nil

@@ -136,9 +136,14 @@ func newInboxTestEnv(t *testing.T) *inboxTestEnv {
 			field, _ := args.Get(0).(string)
 			op, _ := args.Get(1).(string)
 			value := args.Get(2)
-			if field == "SK" && op == "CONTAINS" {
-				if id, ok := value.(string); ok {
+			if id, ok := value.(string); ok {
+				switch {
+				case field == "SK" && op == "CONTAINS":
+					// Legacy access pattern for ActivityRepository.GetActivity.
 					lastActivitySearchID = id
+				case field == "gsi2PK" && op == "=" && strings.HasPrefix(id, "ACTIVITYID#"):
+					// Current access pattern: ActivityRepository.GetActivity queries gsi2PK.
+					lastActivitySearchID = strings.TrimPrefix(id, "ACTIVITYID#")
 				}
 			}
 		}).

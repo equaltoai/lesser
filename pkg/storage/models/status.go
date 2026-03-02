@@ -54,6 +54,10 @@ type Status struct {
 	GSI7PK string `theorydb:"index:gsi7,pk,attr:gsi7PK,omitempty" json:"-"` // Format: "URL#{normalized_url}"
 	GSI7SK string `theorydb:"index:gsi7,sk,attr:gsi7SK,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
 
+	// GSI8 - Admin timeline (all statuses, newest-first)
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty" json:"-"` // Format: "ADMIN_TIMELINE"
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty" json:"-"` // Format: "{published_timestamp}#{status_id}"
+
 	// Core status data
 	StatusID            string            `theorydb:"attr:statusID" json:"status_id"`
 	Note                *activitypub.Note `theorydb:"attr:note" json:"note"`                                            // The actual ActivityPub Note
@@ -336,6 +340,10 @@ func (s *Status) setupGSIKeys() {
 		s.GSI7PK = ""
 		s.GSI7SK = ""
 	}
+
+	// GSI8 - Admin timeline (all statuses)
+	s.GSI8PK = "ADMIN_TIMELINE"
+	s.GSI8SK = fmt.Sprintf("%s#%s", timestampStr, statusID)
 }
 
 // Helper functions

@@ -21,6 +21,10 @@ type Relay struct {
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
 	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
 
+	// GSI8 fields for listing all relays
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK" json:"gsi8pk,omitempty"`
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK" json:"gsi8sk,omitempty"`
+
 	// Business fields matching storage.RelayInfo
 	URL        string    `theorydb:"attr:url" json:"url"`
 	InboxURL   string    `theorydb:"attr:inboxURL" json:"inbox_url"`
@@ -58,7 +62,14 @@ func (r *Relay) UpdateKeys() error {
 	if r.Domain != "" {
 		r.GSI2PK = fmt.Sprintf("RELAY_DOMAIN#%s", r.Domain)
 		r.GSI2SK = r.URL
+	} else {
+		r.GSI2PK = ""
+		r.GSI2SK = ""
 	}
+
+	// GSI8: For listing all relays (admin/debug)
+	r.GSI8PK = "RELAYS"
+	r.GSI8SK = fmt.Sprintf("URL#%s", r.URL)
 
 	return nil
 }
