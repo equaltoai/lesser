@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -8,8 +10,7 @@ import (
 )
 
 func communicationNotificationFromData(notifType string, createdAt time.Time, data map[string]interface{}) *apiModels.CommunicationNotification {
-	typ := strings.ToLower(strings.TrimSpace(notifType))
-	if !strings.HasPrefix(typ, "communication:") {
+	if !isCommunicationNotificationType(notifType) {
 		return nil
 	}
 
@@ -19,51 +20,131 @@ func communicationNotificationFromData(notifType string, createdAt time.Time, da
 	}
 
 	channel := extractStringFromNotificationData(data, "channel")
-
 	subject := extractStringFromNotificationData(data, "subject", "title")
 	body := extractStringFromNotificationData(data, "body")
-
-	receivedAt := createdAt.UTC()
-	if raw := extractStringFromNotificationData(data, "receivedAt", "received_at"); raw != "" {
-		if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-			receivedAt = parsed.UTC()
-		} else if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-			receivedAt = parsed.UTC()
-		}
-	}
-
+	receivedAt := communicationReceivedAtFromData(createdAt, data)
 	inReplyTo := extractStringFromNotificationData(data, "inReplyTo", "in_reply_to")
 
-	threadID := messageID
+	return &apiModels.CommunicationNotification{
+		Channel:     channel,
+		From:        communicationFromFromData(data),
+		To:          communicationToFromData(data),
+		Attachments: communicationAttachmentsFromData(data),
+		Subject:     subject,
+		Body:        body,
+		ReceivedAt:  receivedAt,
+		MessageID:   messageID,
+		InReplyTo:   inReplyTo,
+		ThreadID:    communicationThreadID(messageID, inReplyTo),
+	}
+}
+
+func isCommunicationNotificationType(notifType string) bool {
+	typ := strings.ToLower(strings.TrimSpace(notifType))
+	return strings.HasPrefix(typ, "communication:")
+}
+
+func communicationReceivedAtFromData(createdAt time.Time, data map[string]interface{}) time.Time {
+	receivedAt := createdAt.UTC()
+	raw := extractStringFromNotificationData(data, "receivedAt", "received_at")
+	if raw == "" {
+		return receivedAt
+	}
+
+	if parsed, ok := parseNotificationTime(raw); ok {
+		return parsed
+	}
+
+	return receivedAt
+}
+
+func parseNotificationTime(raw string) (time.Time, bool) {
+	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return parsed.UTC(), true
+	}
+
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed.UTC(), true
+	}
+
+	return time.Time{}, false
+}
+
+func communicationThreadID(messageID, inReplyTo string) string {
 	if inReplyTo != "" {
-		threadID = inReplyTo
+		return inReplyTo
 	}
 
-	from := apiModels.CommunicationFrom{
-		Address:     "",
-		DisplayName: "",
-		SoulAgentID: "",
+	return messageID
+}
+
+func communicationFromFromData(data map[string]interface{}) apiModels.CommunicationFrom {
+	from := apiModels.CommunicationFrom{}
+	raw, ok := data["from"].(map[string]interface{})
+	if !ok {
+		return from
 	}
 
-	if data != nil {
-		switch raw := data["from"].(type) {
-		case map[string]interface{}:
-			from.Address = extractStringFromNotificationData(raw, "address")
-			from.DisplayName = extractStringFromNotificationData(raw, "displayName", "display_name")
-			from.SoulAgentID = extractStringFromNotificationData(raw, "soulAgentId", "soul_agent_id")
+	from.Address = extractStringFromNotificationData(raw, "address")
+	from.DisplayName = extractStringFromNotificationData(raw, "displayName", "display_name")
+	from.SoulAgentID = extractStringFromNotificationData(raw, "soulAgentId", "soul_agent_id")
+	return from
+}
+
+func communicationToFromData(data map[string]interface{}) *apiModels.CommunicationTo {
+	raw, ok := data["to"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	address := extractStringFromNotificationData(raw, "address")
+	if address == "" {
+		return nil
+	}
+
+	return &apiModels.CommunicationTo{Address: address}
+}
+
+func communicationAttachmentsFromData(data map[string]interface{}) []apiModels.CommunicationAttachment {
+	if data == nil {
+		return nil
+	}
+
+	switch raw := data["attachments"].(type) {
+	case []interface{}:
+		return communicationAttachmentsFromInterfaceSlice(raw)
+	case []map[string]interface{}:
+		return communicationAttachmentsFromMapSlice(raw)
+	default:
+		return nil
+	}
+}
+
+func communicationAttachmentsFromInterfaceSlice(raw []interface{}) []apiModels.CommunicationAttachment {
+	attachments := make([]apiModels.CommunicationAttachment, 0, len(raw))
+	for _, item := range raw {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if attachment := communicationAttachmentFromData(itemMap); attachment != nil {
+			attachments = append(attachments, *attachment)
 		}
 	}
 
-	return &apiModels.CommunicationNotification{
-		Channel:    channel,
-		From:       from,
-		Subject:    subject,
-		Body:       body,
-		ReceivedAt: receivedAt,
-		MessageID:  messageID,
-		InReplyTo:  inReplyTo,
-		ThreadID:   threadID,
+	return attachments
+}
+
+func communicationAttachmentsFromMapSlice(raw []map[string]interface{}) []apiModels.CommunicationAttachment {
+	attachments := make([]apiModels.CommunicationAttachment, 0, len(raw))
+	for _, itemMap := range raw {
+		if attachment := communicationAttachmentFromData(itemMap); attachment != nil {
+			attachments = append(attachments, *attachment)
+		}
 	}
+
+	return attachments
 }
 
 func extractStringFromNotificationData(data map[string]interface{}, keys ...string) string {
@@ -89,4 +170,54 @@ func extractStringFromNotificationData(data map[string]interface{}, keys ...stri
 	}
 
 	return ""
+}
+
+func extractInt64FromNotificationData(data map[string]interface{}, keys ...string) int64 {
+	if data == nil {
+		return 0
+	}
+
+	for _, key := range keys {
+		raw, ok := data[key]
+		if !ok {
+			continue
+		}
+		switch value := raw.(type) {
+		case int64:
+			return value
+		case int:
+			return int64(value)
+		case float64:
+			return int64(value)
+		case json.Number:
+			if parsed, err := value.Int64(); err == nil {
+				return parsed
+			}
+		case string:
+			if parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+				return parsed
+			}
+		case []byte:
+			if parsed, err := strconv.ParseInt(strings.TrimSpace(string(value)), 10, 64); err == nil {
+				return parsed
+			}
+		}
+	}
+
+	return 0
+}
+
+func communicationAttachmentFromData(data map[string]interface{}) *apiModels.CommunicationAttachment {
+	id := extractStringFromNotificationData(data, "id")
+	if id == "" {
+		return nil
+	}
+
+	return &apiModels.CommunicationAttachment{
+		ID:          id,
+		Filename:    extractStringFromNotificationData(data, "filename"),
+		ContentType: extractStringFromNotificationData(data, "contentType", "content_type"),
+		SizeBytes:   extractInt64FromNotificationData(data, "sizeBytes", "size_bytes"),
+		SHA256:      extractStringFromNotificationData(data, "sha256"),
+	}
 }

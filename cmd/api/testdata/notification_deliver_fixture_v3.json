@@ -6,10 +6,21 @@
     "soulAgentId": null,
     "displayName": "Alice"
   },
+  "to": {
+    "address": "agent-bob@lessersoul.ai"
+  },
   "subject": "Re: Project collaboration",
-  "body": "...",
+  "body": "Hello Bob,\n\nAre you available to collaborate on the project?\n",
   "receivedAt": "2026-03-04T12:00:00Z",
   "messageId": "comm-msg-001",
-  "inReplyTo": null
+  "inReplyTo": null,
+  "attachments": [
+    {
+      "id": "att-1",
+      "filename": "proposal.pdf",
+      "contentType": "application/pdf",
+      "sizeBytes": 123456,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
 }
-

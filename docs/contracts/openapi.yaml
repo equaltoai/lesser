@@ -1398,6 +1398,26 @@ components:
             additionalProperties: false
             properties: {}
             type: object
+        CommunicationAttachment:
+            additionalProperties: false
+            properties:
+                content_type:
+                    type: string
+                filename:
+                    type: string
+                id:
+                    type: string
+                sha256:
+                    type: string
+                size_bytes:
+                    type: integer
+            required:
+                - content_type
+                - filename
+                - id
+                - sha256
+                - size_bytes
+            type: object
         CommunicationFrom:
             additionalProperties: false
             properties:
@@ -1413,6 +1433,10 @@ components:
         CommunicationNotification:
             additionalProperties: false
             properties:
+                attachments:
+                    items:
+                        $ref: '#/components/schemas/CommunicationAttachment'
+                    type: array
                 body:
                     type: string
                 channel:
@@ -1429,12 +1453,24 @@ components:
                     type: string
                 thread_id:
                     type: string
+                to:
+                    anyOf:
+                        - $ref: '#/components/schemas/CommunicationTo'
+                        - type: "null"
             required:
                 - channel
                 - from
                 - message_id
                 - received_at
                 - thread_id
+            type: object
+        CommunicationTo:
+            additionalProperties: false
+            properties:
+                address:
+                    type: string
+            required:
+                - address
             type: object
         CommunityNoteRateLimit:
             additionalProperties: false
@@ -3253,6 +3289,26 @@ components:
                 - read
                 - type
             type: object
+        NotificationDeliveryAttachment:
+            additionalProperties: false
+            properties:
+                contentType:
+                    type: string
+                filename:
+                    type: string
+                id:
+                    type: string
+                sha256:
+                    type: string
+                sizeBytes:
+                    type: integer
+            required:
+                - contentType
+                - filename
+                - id
+                - sha256
+                - sizeBytes
+            type: object
         NotificationDeliveryFrom:
             additionalProperties: false
             properties:
@@ -3271,6 +3327,10 @@ components:
         NotificationDeliveryRequest:
             additionalProperties: false
             properties:
+                attachments:
+                    items:
+                        $ref: '#/components/schemas/NotificationDeliveryAttachment'
+                    type: array
                 body:
                     type: string
                 channel:
@@ -3287,6 +3347,10 @@ components:
                     type: string
                 subject:
                     type: string
+                to:
+                    anyOf:
+                        - $ref: '#/components/schemas/NotificationDeliveryTo'
+                        - type: "null"
                 type:
                     type: string
             required:
@@ -3297,6 +3361,14 @@ components:
                 - receivedAt
                 - subject
                 - type
+            type: object
+        NotificationDeliveryTo:
+            additionalProperties: false
+            properties:
+                address:
+                    type: string
+            required:
+                - address
             type: object
         NotificationFilter:
             additionalProperties: false

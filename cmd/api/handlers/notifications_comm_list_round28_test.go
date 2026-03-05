@@ -49,6 +49,18 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 									"displayName": "Alice",
 									"soulAgentId": "0xabc",
 								},
+								"to": map[string]interface{}{
+									"address": "agent-bob@lessersoul.ai",
+								},
+								"attachments": []interface{}{
+									map[string]interface{}{
+										"id":          "att-1",
+										"filename":    "proposal.pdf",
+										"contentType": "application/pdf",
+										"sizeBytes":   float64(123456),
+										"sha256":      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+									},
+								},
 								"receivedAt": "2026-03-04T12:00:00Z",
 								"messageId":  "comm-msg-001",
 								"inReplyTo":  "comm-msg-000",
@@ -86,6 +98,14 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 	require.Equal(t, "alice@example.com", out[0].Communication.From.Address)
 	require.Equal(t, "Alice", out[0].Communication.From.DisplayName)
 	require.Equal(t, "0xabc", out[0].Communication.From.SoulAgentID)
+	require.NotNil(t, out[0].Communication.To)
+	require.Equal(t, "agent-bob@lessersoul.ai", out[0].Communication.To.Address)
+	require.Len(t, out[0].Communication.Attachments, 1)
+	require.Equal(t, "att-1", out[0].Communication.Attachments[0].ID)
+	require.Equal(t, "proposal.pdf", out[0].Communication.Attachments[0].Filename)
+	require.Equal(t, "application/pdf", out[0].Communication.Attachments[0].ContentType)
+	require.Equal(t, int64(123456), out[0].Communication.Attachments[0].SizeBytes)
+	require.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", out[0].Communication.Attachments[0].SHA256)
 	require.Equal(t, "Re: Hello", out[0].Communication.Subject)
 	require.Equal(t, "hello from <b>alice</b>", out[0].Communication.Body)
 	require.Equal(t, time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC), out[0].Communication.ReceivedAt)
