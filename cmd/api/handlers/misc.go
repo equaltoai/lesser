@@ -505,11 +505,15 @@ func (h *Handler) convertSingleNotification(ctx *apptheory.Context, notif *stora
 	// Get the account that triggered the notification
 	actor, err := h.repos.Actor().GetActor(ctx.Context(), notif.AccountID)
 	if err != nil {
-		h.logger.Warn("failed to get actor for notification",
+		h.logger.Warn("failed to get actor for notification; using fallback actor",
 			zap.String("notification_id", notif.ID),
 			zap.String("account_id", notif.AccountID),
-			zap.Error(err))
-		return nil
+			zap.Error(err),
+		)
+		actor = h.fallbackNotificationActor(notif.AccountID)
+		if actor == nil {
+			return nil
+		}
 	}
 
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
@@ -752,11 +756,14 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 	// Get the account that triggered the notification
 	actor, err := h.repos.Actor().GetActor(ctx.Context(), notification.ActorID)
 	if err != nil {
-		h.logger.Error("failed to get actor for notification",
+		h.logger.Warn("failed to get actor for notification; using fallback actor",
 			zap.String("notification_id", notification.ID),
 			zap.String("actor_id", notification.ActorID),
 			zap.Error(err))
-		return common.RespondFailedToGet(ctx, "notification details")
+		actor = h.fallbackNotificationActor(notification.ActorID)
+		if actor == nil {
+			return common.RespondFailedToGet(ctx, "notification details")
+		}
 	}
 
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
