@@ -64,6 +64,11 @@ type Config struct {
 	AdminUsername        string // Admin username for privileged operations
 	SystemActorPublicKey string // System actor public key for recovery federation
 
+	// Instance API key used to authenticate internal, machine-to-machine calls into
+	// the instance (e.g., lesser-host delivering communication notifications).
+	InstanceAPIKey    string // Optional value or Secrets Manager resolved secret
+	InstanceAPIKeyARN string // ARN pointing to stored secret (optional)
+
 	// lesser.host trust services (optional; managed instances)
 	LesserHostURL             string // Base URL for lesser.host trust API
 	LesserHostInstanceKey     string // Instance key for machine-to-machine trust API calls (server-side only)
@@ -328,7 +333,12 @@ func loadConfig() *Config {
 		VAPIDSubject:         getEnvOrDefault("VAPID_SUBJECT", ""),
 		AdminUsername:        getEnvOrDefault("ADMIN_USERNAME", ""),
 		SystemActorPublicKey: getEnvOrDefault("SYSTEM_ACTOR_PUBLIC_KEY", ""),
-		LesserHostURL:        strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "")), "/"),
+		InstanceAPIKey: getOptionalSecretFromEnvOrARN(
+			"INSTANCE_API_KEY",
+			"INSTANCE_API_KEY_ARN",
+		),
+		InstanceAPIKeyARN: strings.TrimSpace(getEnvOrDefault("INSTANCE_API_KEY_ARN", "")),
+		LesserHostURL:     strings.TrimRight(strings.TrimSpace(getEnvOrDefault("LESSER_HOST_URL", "")), "/"),
 		LesserHostInstanceKey: getOptionalSecretFromEnvOrARN(
 			"LESSER_HOST_INSTANCE_KEY",
 			"LESSER_HOST_INSTANCE_KEY_ARN",

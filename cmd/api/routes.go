@@ -304,6 +304,7 @@ func configureRoutes(app *apptheory.App) {
 	// Notifications
 	app.Get("/api/v1/notifications", apiHandler.HandleGetNotificationsLift)
 	app.Get("/api/v1/notifications/{id}", apiHandler.HandleGetNotificationLift)
+	app.Post("/api/v1/notifications/deliver", apiHandler.HandleDeliverNotificationLift)
 	app.Post("/api/v1/notifications/clear", apiHandler.HandleClearNotificationsLift)
 	app.Post("/api/v1/notifications/{id}/dismiss", apiHandler.HandleDismissNotificationLift)
 

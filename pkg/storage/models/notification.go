@@ -91,8 +91,14 @@ func (Notification) TableName() string {
 // BeforeCreate sets up the model before creation
 func (n *Notification) BeforeCreate() error {
 	now := time.Now()
-	n.CreatedAt = now
-	n.UpdatedAt = now
+	if n.CreatedAt.IsZero() {
+		n.CreatedAt = now
+	}
+	if n.UpdatedAt.IsZero() {
+		// On create, keep updated_at consistent with created_at even when the
+		// caller supplies a deterministic CreatedAt (e.g., comm-worker deliveries).
+		n.UpdatedAt = n.CreatedAt
+	}
 
 	// Generate ID if not provided
 	if err := common.ValidateRequiredParam("ID", n.ID); err != nil {
@@ -105,7 +111,7 @@ func (n *Notification) BeforeCreate() error {
 	n.GroupCount = 1
 
 	// Set expiry to 30 days
-	n.ExpiresAt = now.Add(30 * 24 * time.Hour).Unix()
+	n.ExpiresAt = n.CreatedAt.Add(30 * 24 * time.Hour).Unix()
 
 	// Generate group key for similar notifications
 	if err := common.ValidateRequiredParam("GroupKey", n.GroupKey); err != nil {
@@ -242,16 +248,18 @@ func (n *Notification) IncrementGroupCount() {
 // isValidNotificationType checks if the notification type is valid
 func isValidNotificationType(notifType string) bool {
 	validTypes := map[string]bool{
-		"mention":        true,
-		"reblog":         true,
-		"favourite":      true,
-		"follow":         true,
-		"follow_request": true,
-		"poll":           true,
-		"status":         true,
-		"update":         true,
-		"admin.sign_up":  true,
-		"admin.report":   true,
+		"mention":                true,
+		"reblog":                 true,
+		"favourite":              true,
+		"follow":                 true,
+		"follow_request":         true,
+		"poll":                   true,
+		"status":                 true,
+		"update":                 true,
+		"admin.sign_up":          true,
+		"admin.report":           true,
+		"communication:inbound":  true,
+		"communication:outbound": true,
 	}
 	return validTypes[strings.ToLower(notifType)]
 }
