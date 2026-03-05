@@ -1398,26 +1398,6 @@ components:
             additionalProperties: false
             properties: {}
             type: object
-        CommunicationFrom:
-            additionalProperties: false
-            properties:
-                address:
-                    type: string
-                display_name:
-                    type: string
-                soul_agent_id:
-                    type: string
-            required:
-                - address
-            type: object
-        CommunicationTo:
-            additionalProperties: false
-            properties:
-                address:
-                    type: string
-            required:
-                - address
-            type: object
         CommunicationAttachment:
             additionalProperties: false
             properties:
@@ -1430,7 +1410,6 @@ components:
                 sha256:
                     type: string
                 size_bytes:
-                    format: int64
                     type: integer
             required:
                 - content_type
@@ -1438,6 +1417,18 @@ components:
                 - id
                 - sha256
                 - size_bytes
+            type: object
+        CommunicationFrom:
+            additionalProperties: false
+            properties:
+                address:
+                    type: string
+                display_name:
+                    type: string
+                soul_agent_id:
+                    type: string
+            required:
+                - address
             type: object
         CommunicationNotification:
             additionalProperties: false
@@ -1460,16 +1451,26 @@ components:
                     $ref: '#/components/schemas/RFC3339DateTime'
                 subject:
                     type: string
-                to:
-                    $ref: '#/components/schemas/CommunicationTo'
                 thread_id:
                     type: string
+                to:
+                    anyOf:
+                        - $ref: '#/components/schemas/CommunicationTo'
+                        - type: "null"
             required:
                 - channel
                 - from
                 - message_id
                 - received_at
                 - thread_id
+            type: object
+        CommunicationTo:
+            additionalProperties: false
+            properties:
+                address:
+                    type: string
+            required:
+                - address
             type: object
         CommunityNoteRateLimit:
             additionalProperties: false
@@ -3288,6 +3289,26 @@ components:
                 - read
                 - type
             type: object
+        NotificationDeliveryAttachment:
+            additionalProperties: false
+            properties:
+                contentType:
+                    type: string
+                filename:
+                    type: string
+                id:
+                    type: string
+                sha256:
+                    type: string
+                sizeBytes:
+                    type: integer
+            required:
+                - contentType
+                - filename
+                - id
+                - sha256
+                - sizeBytes
+            type: object
         NotificationDeliveryFrom:
             additionalProperties: false
             properties:
@@ -3302,35 +3323,6 @@ components:
             required:
                 - address
                 - displayName
-            type: object
-        NotificationDeliveryTo:
-            additionalProperties: false
-            properties:
-                address:
-                    type: string
-            required:
-                - address
-            type: object
-        NotificationDeliveryAttachment:
-            additionalProperties: false
-            properties:
-                contentType:
-                    type: string
-                filename:
-                    type: string
-                id:
-                    type: string
-                sha256:
-                    type: string
-                sizeBytes:
-                    format: int64
-                    type: integer
-            required:
-                - contentType
-                - filename
-                - id
-                - sha256
-                - sizeBytes
             type: object
         NotificationDeliveryRequest:
             additionalProperties: false
@@ -3356,7 +3348,9 @@ components:
                 subject:
                     type: string
                 to:
-                    $ref: '#/components/schemas/NotificationDeliveryTo'
+                    anyOf:
+                        - $ref: '#/components/schemas/NotificationDeliveryTo'
+                        - type: "null"
                 type:
                     type: string
             required:
@@ -3367,6 +3361,14 @@ components:
                 - receivedAt
                 - subject
                 - type
+            type: object
+        NotificationDeliveryTo:
+            additionalProperties: false
+            properties:
+                address:
+                    type: string
+            required:
+                - address
             type: object
         NotificationFilter:
             additionalProperties: false
@@ -18052,3 +18054,4 @@ paths:
             x-lesser-lambda: outbox
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:outbox
+
