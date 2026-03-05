@@ -408,6 +408,20 @@ func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory
 	// Convert notifications to storage format for API converter
 	storageNotifications := make([]*storage.Notification, 0, len(notificationsList))
 	for _, notification := range notificationsList {
+		var data map[string]interface{}
+		if len(notification.Data) > 0 || notification.Title != "" || notification.Body != "" {
+			data = make(map[string]interface{}, len(notification.Data)+2)
+			for key, value := range notification.Data {
+				data[key] = value
+			}
+			if notification.Title != "" {
+				data["subject"] = notification.Title
+			}
+			if notification.Body != "" {
+				data["body"] = notification.Body
+			}
+		}
+
 		storageNotif := &storage.Notification{
 			ID:        notification.ID,
 			Type:      notification.Type,
@@ -416,6 +430,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory
 			Read:      notification.IsRead,
 			CreatedAt: notification.CreatedAt,
 			Username:  notification.UserID,
+			Data:      data,
 		}
 		storageNotifications = append(storageNotifications, storageNotif)
 	}
@@ -522,7 +537,9 @@ func (h *Handler) convertSingleNotification(ctx *apptheory.Context, notif *stora
 		Type:      notif.Type,
 		CreatedAt: notif.CreatedAt,
 		Account:   account,
+		Read:      notif.Read,
 	}
+	apiNotif.Communication = communicationNotificationFromData(notif.Type, notif.CreatedAt, notif.Data)
 
 	// Add status if applicable
 	if h.shouldIncludeStatus(notif) {
@@ -772,6 +789,23 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 		Type:      notification.Type,
 		CreatedAt: notification.CreatedAt,
 		Account:   account,
+		Read:      notification.IsRead,
+	}
+	{
+		var data map[string]interface{}
+		if len(notification.Data) > 0 || notification.Title != "" || notification.Body != "" {
+			data = make(map[string]interface{}, len(notification.Data)+2)
+			for key, value := range notification.Data {
+				data[key] = value
+			}
+			if notification.Title != "" {
+				data["subject"] = notification.Title
+			}
+			if notification.Body != "" {
+				data["body"] = notification.Body
+			}
+		}
+		apiNotif.Communication = communicationNotificationFromData(notification.Type, notification.CreatedAt, data)
 	}
 
 	// Add status if applicable

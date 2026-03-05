@@ -35,11 +35,24 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 				return &notifications.NotificationListResult{
 					Notifications: []*storageModels.Notification{
 						{
-							ID:        "notif-comm-1",
-							Type:      commNotificationTypeInbound,
-							ActorID:   "alice@example.com",
-							UserID:    "admin",
-							IsRead:    false,
+							ID:      "notif-comm-1",
+							Type:    commNotificationTypeInbound,
+							ActorID: "alice@example.com",
+							UserID:  "admin",
+							IsRead:  false,
+							Title:   "Re: Hello",
+							Body:    "hello from <b>alice</b>",
+							Data: map[string]interface{}{
+								"channel": "email",
+								"from": map[string]interface{}{
+									"address":     "alice@example.com",
+									"displayName": "Alice",
+									"soulAgentId": "0xabc",
+								},
+								"receivedAt": "2026-03-04T12:00:00Z",
+								"messageId":  "comm-msg-001",
+								"inReplyTo":  "comm-msg-000",
+							},
 							CreatedAt: time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC),
 						},
 					},
@@ -67,4 +80,16 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 	require.Equal(t, commNotificationTypeInbound, out[0].Type)
 	require.Equal(t, "notif-comm-1", out[0].ID)
 	require.Equal(t, "alice", out[0].Account.Username)
+	require.False(t, out[0].Read)
+	require.NotNil(t, out[0].Communication)
+	require.Equal(t, "email", out[0].Communication.Channel)
+	require.Equal(t, "alice@example.com", out[0].Communication.From.Address)
+	require.Equal(t, "Alice", out[0].Communication.From.DisplayName)
+	require.Equal(t, "0xabc", out[0].Communication.From.SoulAgentID)
+	require.Equal(t, "Re: Hello", out[0].Communication.Subject)
+	require.Equal(t, "hello from <b>alice</b>", out[0].Communication.Body)
+	require.Equal(t, time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC), out[0].Communication.ReceivedAt)
+	require.Equal(t, "comm-msg-001", out[0].Communication.MessageID)
+	require.Equal(t, "comm-msg-000", out[0].Communication.InReplyTo)
+	require.Equal(t, "comm-msg-000", out[0].Communication.ThreadID)
 }

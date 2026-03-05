@@ -9,6 +9,10 @@ type Notification struct {
 	CreatedAt time.Time `json:"created_at"`
 	Account   Account   `json:"account"`
 	Status    *Status   `json:"status,omitempty"`
+	Read      bool      `json:"read"`
+
+	// Lesser-soul extension: populate for communication:* notifications.
+	Communication *CommunicationNotification `json:"communication,omitempty"`
 }
 
 // Notification type constants
