@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -23,12 +24,21 @@ const (
 	commNotificationMaxTypeLen        = 64
 	commNotificationMaxChannelLen     = 16
 	commNotificationMaxFromAddressLen = 320
+	commNotificationMaxToAddressLen   = 320
 	commNotificationMaxDisplayNameLen = 200
 	commNotificationMaxSubjectLen     = 500
 	commNotificationMaxBodyLen        = 25_000
 	commNotificationMaxMessageIDLen   = 200
 	commNotificationMaxInReplyToLen   = 200
 	commNotificationMaxSoulAgentIDLen = 128
+	commNotificationMaxAttachments    = 20
+
+	commNotificationMaxAttachmentIDLen          = 128
+	commNotificationMaxAttachmentFilenameLen    = 255
+	commNotificationMaxAttachmentContentTypeLen = 128
+	commNotificationMaxAttachmentSizeBytes      = int64(1024 * 1024 * 1024) // 1GB
+	commNotificationAttachmentSHA256Len         = 64
+	commNotificationMaxAttachmentsMetadataBytes = 8 * 1024
 )
 
 type commNotificationDelivery struct {
@@ -38,6 +48,7 @@ type commNotificationDelivery struct {
 	FromAddress     string
 	FromSoulAgentID string
 	FromDisplayName string
+	ToAddress       string
 
 	Subject string
 	Body    string
@@ -45,6 +56,16 @@ type commNotificationDelivery struct {
 	ReceivedAt time.Time
 	MessageID  string
 	InReplyTo  string
+
+	Attachments []commNotificationAttachment
+}
+
+type commNotificationAttachment struct {
+	ID          string
+	Filename    string
+	ContentType string
+	SizeBytes   int64
+	SHA256      string
 }
 
 func normalizeCommNotificationDeliveryRequest(req *apiModels.NotificationDeliveryRequest) (*commNotificationDelivery, error) {
@@ -75,6 +96,17 @@ func normalizeCommNotificationDeliveryRequest(req *apiModels.NotificationDeliver
 	fromAddress, err := common.ValidateAndSanitizeString("from.address", req.From.Address, 1, commNotificationMaxFromAddressLen)
 	if err != nil {
 		return nil, apperrors.ValidationFailed("from.address", err.Error())
+	}
+
+	toAddress := ""
+	if req.To != nil {
+		normalized, err := common.ValidateAndSanitizeString("to.address", req.To.Address, 1, commNotificationMaxToAddressLen)
+		if err != nil {
+			return nil, apperrors.ValidationFailed("to.address", err.Error())
+		}
+		toAddress = normalized
+	} else if channel == commNotificationChannelEmail {
+		return nil, apperrors.ValidationFailed("to.address", "email recipient is required")
 	}
 
 	displayName, err := common.ValidateAndSanitizeString("from.displayName", req.From.DisplayName, 0, commNotificationMaxDisplayNameLen)
@@ -133,17 +165,71 @@ func normalizeCommNotificationDeliveryRequest(req *apiModels.NotificationDeliver
 		inReplyTo = normalized
 	}
 
+	attachments := make([]commNotificationAttachment, 0, len(req.Attachments))
+	metadataBytes := 0
+	if len(req.Attachments) > commNotificationMaxAttachments {
+		return nil, apperrors.ValidationFailed("attachments", "too many attachments")
+	}
+	for idx, attachment := range req.Attachments {
+		id, err := common.ValidateAndSanitizeString(fmt.Sprintf("attachments[%d].id", idx), attachment.ID, 1, commNotificationMaxAttachmentIDLen)
+		if err != nil {
+			return nil, apperrors.ValidationFailed(fmt.Sprintf("attachments[%d].id", idx), err.Error())
+		}
+
+		filename, err := common.ValidateAndSanitizeString(fmt.Sprintf("attachments[%d].filename", idx), attachment.Filename, 1, commNotificationMaxAttachmentFilenameLen)
+		if err != nil {
+			return nil, apperrors.ValidationFailed(fmt.Sprintf("attachments[%d].filename", idx), err.Error())
+		}
+		filename = common.EscapeHTML(filename)
+
+		contentType, err := common.ValidateAndSanitizeString(fmt.Sprintf("attachments[%d].contentType", idx), attachment.ContentType, 1, commNotificationMaxAttachmentContentTypeLen)
+		if err != nil {
+			return nil, apperrors.ValidationFailed(fmt.Sprintf("attachments[%d].contentType", idx), err.Error())
+		}
+
+		if attachment.SizeBytes < 0 {
+			return nil, apperrors.ValidationFailed(fmt.Sprintf("attachments[%d].sizeBytes", idx), "sizeBytes cannot be negative")
+		}
+		if attachment.SizeBytes > commNotificationMaxAttachmentSizeBytes {
+			return nil, apperrors.ValidationFailed(fmt.Sprintf("attachments[%d].sizeBytes", idx), "sizeBytes is too large")
+		}
+
+		sha256sum, err := common.ValidateAndSanitizeString(fmt.Sprintf("attachments[%d].sha256", idx), attachment.SHA256, commNotificationAttachmentSHA256Len, commNotificationAttachmentSHA256Len)
+		if err != nil {
+			return nil, apperrors.ValidationFailed(fmt.Sprintf("attachments[%d].sha256", idx), err.Error())
+		}
+		if _, err := hex.DecodeString(sha256sum); err != nil {
+			return nil, apperrors.ValidationFailed(fmt.Sprintf("attachments[%d].sha256", idx), "sha256 must be hex-encoded")
+		}
+		sha256sum = strings.ToLower(sha256sum)
+
+		metadataBytes += len(id) + len(filename) + len(contentType) + len(sha256sum)
+		if metadataBytes > commNotificationMaxAttachmentsMetadataBytes {
+			return nil, apperrors.ValidationFailed("attachments", "attachments metadata is too large")
+		}
+
+		attachments = append(attachments, commNotificationAttachment{
+			ID:          id,
+			Filename:    filename,
+			ContentType: contentType,
+			SizeBytes:   attachment.SizeBytes,
+			SHA256:      sha256sum,
+		})
+	}
+
 	return &commNotificationDelivery{
 		NotificationType: typ,
 		Channel:          channel,
 		FromAddress:      fromAddress,
 		FromSoulAgentID:  soulAgentID,
 		FromDisplayName:  displayName,
+		ToAddress:        toAddress,
 		Subject:          subject,
 		Body:             body,
 		ReceivedAt:       receivedAt.UTC(),
 		MessageID:        messageID,
 		InReplyTo:        inReplyTo,
+		Attachments:      attachments,
 	}, nil
 }
 

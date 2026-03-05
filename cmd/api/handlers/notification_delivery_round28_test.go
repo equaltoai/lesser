@@ -79,5 +79,32 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		require.NotNil(t, cmd.Data)
 		require.Equal(t, "email", cmd.Data["channel"])
 		require.Equal(t, "comm-msg-001", cmd.Data["messageId"])
+
+		toMap, ok := cmd.Data["to"].(map[string]interface{})
+		require.True(t, ok)
+		require.Equal(t, "agent-bob@lessersoul.ai", toMap["address"])
+
+		rawAttachments, ok := cmd.Data["attachments"]
+		require.True(t, ok)
+		switch attachments := rawAttachments.(type) {
+		case []map[string]interface{}:
+			require.Len(t, attachments, 1)
+			require.Equal(t, "att-1", attachments[0]["id"])
+			require.Equal(t, "proposal.pdf", attachments[0]["filename"])
+			require.Equal(t, "application/pdf", attachments[0]["contentType"])
+			require.Equal(t, int64(123456), attachments[0]["sizeBytes"])
+			require.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", attachments[0]["sha256"])
+		case []interface{}:
+			require.Len(t, attachments, 1)
+			attachmentMap, ok := attachments[0].(map[string]interface{})
+			require.True(t, ok)
+			require.Equal(t, "att-1", attachmentMap["id"])
+			require.Equal(t, "proposal.pdf", attachmentMap["filename"])
+			require.Equal(t, "application/pdf", attachmentMap["contentType"])
+			require.Equal(t, int64(123456), attachmentMap["sizeBytes"])
+			require.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", attachmentMap["sha256"])
+		default:
+			require.FailNow(t, "unexpected attachments type")
+		}
 	})
 }

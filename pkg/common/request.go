@@ -1,10 +1,13 @@
 package common // nolint:revive // "common" package name is acceptable for shared utilities
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
@@ -79,9 +82,47 @@ func ParseRequestWithFallback(ctx *apptheory.Context, target interface{}) error 
 	return nil
 }
 
+// ParseRequestStrict parses a request body and rejects unknown fields. Use this for endpoints where the JSON
+// contract is considered frozen (e.g. internal protocol deliveries).
+func ParseRequestStrict(ctx *apptheory.Context, target interface{}) error {
+	if ctx == nil {
+		return apperrors.ValidationFailed("body", "missing request body")
+	}
+	if len(ctx.Request.Body) == 0 {
+		return apperrors.ValidationFailed("body", "missing request body")
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(ctx.Request.Body))
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(target); err != nil {
+		switch {
+		case strings.HasPrefix(err.Error(), "json: unknown field "):
+			return apperrors.ValidationFailed("body", err.Error())
+		default:
+			return apperrors.ValidationFailed("body", "invalid request body")
+		}
+	}
+
+	// Reject trailing data (multiple JSON values).
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return apperrors.ValidationFailed("body", "invalid request body")
+	}
+
+	return nil
+}
+
 // ParseRequestWithValidation combines parsing with common validation responses
 func ParseRequestWithValidation(ctx *apptheory.Context, target interface{}) (*apptheory.Response, error) {
 	if err := ParseRequestWithFallback(ctx, target); err != nil {
+		return RespondValidationError(ctx, err)
+	}
+	return nil, nil
+}
+
+// ParseRequestStrictWithValidation combines strict parsing (unknown fields rejected) with common validation responses.
+func ParseRequestStrictWithValidation(ctx *apptheory.Context, target interface{}) (*apptheory.Response, error) {
+	if err := ParseRequestStrict(ctx, target); err != nil {
 		return RespondValidationError(ctx, err)
 	}
 	return nil, nil

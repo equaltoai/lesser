@@ -48,7 +48,7 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 	}
 
 	var req apiModels.NotificationDeliveryRequest
-	if resp, err := common.ParseRequestWithValidation(ctx, &req); resp != nil || err != nil {
+	if resp, err := common.ParseRequestStrictWithValidation(ctx, &req); resp != nil || err != nil {
 		return resp, err
 	}
 
@@ -82,8 +82,26 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		"receivedAt": delivery.ReceivedAt.Format(time.RFC3339Nano),
 		"messageId":  delivery.MessageID,
 	}
+	if delivery.ToAddress != "" {
+		data["to"] = map[string]interface{}{
+			"address": delivery.ToAddress,
+		}
+	}
 	if delivery.InReplyTo != "" {
 		data["inReplyTo"] = delivery.InReplyTo
+	}
+	if len(delivery.Attachments) > 0 {
+		attachments := make([]map[string]interface{}, 0, len(delivery.Attachments))
+		for _, attachment := range delivery.Attachments {
+			attachments = append(attachments, map[string]interface{}{
+				"id":          attachment.ID,
+				"filename":    attachment.Filename,
+				"contentType": attachment.ContentType,
+				"sizeBytes":   attachment.SizeBytes,
+				"sha256":      attachment.SHA256,
+			})
+		}
+		data["attachments"] = attachments
 	}
 
 	cmd := &notifications.CreateNotificationCommand{
