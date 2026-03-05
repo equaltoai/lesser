@@ -34,9 +34,7 @@ func (h *Handler) HandleWellKnownLesserSoulAgentLift(ctx *apptheory.Context) (*a
 	}
 
 	token := strings.TrimSpace(cfg.ProofValue)
-	if strings.HasPrefix(token, soulWellKnownProofPrefix) {
-		token = strings.TrimPrefix(token, soulWellKnownProofPrefix)
-	}
+	token = strings.TrimPrefix(token, soulWellKnownProofPrefix)
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return common.RespondNotFound(ctx, "proof")
@@ -80,9 +78,7 @@ func (h *Handler) HandleAdminSetSoulWellKnownProofLift(ctx *apptheory.Context) (
 	proofValue := strings.TrimSpace(req.ProofValue)
 	if proofValue != "" {
 		token := proofValue
-		if strings.HasPrefix(token, soulWellKnownProofPrefix) {
-			token = strings.TrimPrefix(token, soulWellKnownProofPrefix)
-		}
+		token = strings.TrimPrefix(token, soulWellKnownProofPrefix)
 		token = strings.TrimSpace(token)
 		if token == "" {
 			return common.RespondValidationError(ctx, common.ValidationError{Field: "proof_value", Message: "must not be empty"})

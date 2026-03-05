@@ -52,6 +52,12 @@ exemptions:
       match:
         prefixes:
             - /api/v1/trust
+    - id: lesser_soul
+      reason: lesser-soul comm delivery + proof endpoints are REST-only internal surfaces.
+      match:
+        exact:
+            - /api/v1/admin/soul/well-known
+            - /api/v1/notifications/deliver
 routes:
     - method: GET
       path: /
@@ -59,6 +65,10 @@ routes:
       exemptedBy: ui_routing
     - method: GET
       path: /.well-known/nodeinfo
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
+      path: /.well-known/lesser-soul-agent
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
@@ -441,6 +451,10 @@ routes:
       status: covered
       graphql:
         - Mutation.adminReportAction
+    - method: PUT
+      path: /api/v1/admin/soul/well-known
+      policy: rest_only
+      exemptedBy: lesser_soul
     - method: GET
       path: /api/v1/admin/statuses
       policy: graphql_required
@@ -931,6 +945,10 @@ routes:
       status: covered
       graphql:
         - Mutation.clearNotifications
+    - method: POST
+      path: /api/v1/notifications/deliver
+      policy: rest_only
+      exemptedBy: lesser_soul
     - method: GET
       path: /api/v1/notifications/{id}
       policy: graphql_required

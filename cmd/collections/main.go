@@ -72,16 +72,12 @@ func initializeCollections() {
 
 	storage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
 	if !ok || storage == nil {
-		logger.Warn("lambda context repository missing after initialization, attempting manual storage initialization",
-			zap.Any("repos_type", fmt.Sprintf("%T", lambdaCtx.Repos)),
-		)
+		logger.Warn("lambda context repository missing after initialization, attempting manual storage initialization")
 		initializeManualStorage()
 		storage, ok = lambdaCtx.Repos.(core.RepositoryStorage)
 	}
 	if !ok || storage == nil {
-		logger.Fatal("lambda context repository is not core.RepositoryStorage",
-			zap.Any("repos_type", fmt.Sprintf("%T", lambdaCtx.Repos)),
-		)
+		logger.Fatal("lambda context repository is not core.RepositoryStorage")
 	}
 	repos = storage
 }

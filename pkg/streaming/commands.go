@@ -83,8 +83,7 @@ func (cr *CommandRouter) RegisterHandler(handler CommandHandler) {
 	for _, cmdType := range supportedCommands {
 		cr.handlers[cmdType] = handler
 		cr.logger.Debug("registered command handler",
-			zap.String("command_type", cmdType),
-			zap.String("handler", fmt.Sprintf("%T", handler)))
+			zap.String("command_type", cmdType))
 	}
 }
 
