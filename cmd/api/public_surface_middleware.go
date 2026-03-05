@@ -53,6 +53,7 @@ func apiRequestIsPublic(method, path string) bool {
 		case "/",
 			"/robots.txt",
 			"/.well-known/nodeinfo",
+			"/.well-known/lesser-soul-agent",
 			"/nodeinfo/2.0",
 			"/.well-known/reputation-keys",
 			"/api/oembed",
@@ -63,7 +64,9 @@ func apiRequestIsPublic(method, path string) bool {
 			"/api/v2/search",
 			"/api/v2/suggestions",
 			"/setup/status",
-			"/oauth/authorize":
+			"/oauth/authorize",
+			"/api/v1/trust/jwks.json",
+			"/api/v1/trust/attestations":
 			return true
 		}
 
@@ -80,6 +83,11 @@ func apiRequestIsPublic(method, path string) bool {
 		}
 
 		if strings.HasPrefix(path, "/api/v1/timelines/tag/") {
+			return true
+		}
+
+		// lesser.host trust proxy endpoints (public reads).
+		if strings.HasPrefix(path, "/api/v1/trust/attestations/") {
 			return true
 		}
 

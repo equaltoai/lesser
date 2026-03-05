@@ -153,7 +153,7 @@ func TestFederationHttpRoutesGeneratedFromInventory(t *testing.T) {
 	}
 }
 
-func TestSoulEnabledAddsMcpRoute(t *testing.T) {
+func TestBodyEnabledAddsMcpRoute(t *testing.T) {
 	outdir := t.TempDir()
 	app := awscdk.NewApp(&awscdk.AppProps{Outdir: _jsii.String(outdir)})
 	stack := awscdk.NewStack(app, _jsii.String("TestStack"), nil)
@@ -183,7 +183,7 @@ func TestSoulEnabledAddsMcpRoute(t *testing.T) {
 	_ = CreateAPIGateway(stack, &APIGatewayProps{
 		Environment: "development",
 		Functions:   functions,
-		SoulEnabled: true,
+		BodyEnabled: true,
 	})
 
 	app.Synth(nil)
@@ -203,7 +203,7 @@ func TestSoulEnabledAddsMcpRoute(t *testing.T) {
 
 	uri, ok := gotRoutes["POST /mcp"]
 	if !ok {
-		t.Fatalf("expected POST /mcp route to exist when soulEnabled=true")
+		t.Fatalf("expected POST /mcp route to exist when bodyEnabled=true")
 	}
 
 	wantParamName := "/lesser/dev/lesser-body/exports/v1/mcp_lambda_arn"
@@ -217,7 +217,7 @@ func TestSoulEnabledAddsMcpRoute(t *testing.T) {
 
 	uri, ok = gotRoutes["GET /.well-known/mcp.json"]
 	if !ok {
-		t.Fatalf("expected GET /.well-known/mcp.json route to exist when soulEnabled=true")
+		t.Fatalf("expected GET /.well-known/mcp.json route to exist when bodyEnabled=true")
 	}
 	if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
 		uriJSON, err := json.Marshal(uri)
@@ -232,7 +232,7 @@ func TestSoulEnabledAddsMcpRoute(t *testing.T) {
 	}
 }
 
-func TestSoulDisabledDoesNotAddMcpRoute(t *testing.T) {
+func TestBodyDisabledDoesNotAddMcpRoute(t *testing.T) {
 	outdir := t.TempDir()
 	app := awscdk.NewApp(&awscdk.AppProps{Outdir: _jsii.String(outdir)})
 	stack := awscdk.NewStack(app, _jsii.String("TestStack"), nil)
@@ -262,7 +262,7 @@ func TestSoulDisabledDoesNotAddMcpRoute(t *testing.T) {
 	_ = CreateAPIGateway(stack, &APIGatewayProps{
 		Environment: "development",
 		Functions:   functions,
-		SoulEnabled: false,
+		BodyEnabled: false,
 	})
 
 	app.Synth(nil)
@@ -280,10 +280,10 @@ func TestSoulDisabledDoesNotAddMcpRoute(t *testing.T) {
 
 	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
 	if _, ok := gotRoutes["POST /mcp"]; ok {
-		t.Fatalf("unexpected POST /mcp route present when soulEnabled=false")
+		t.Fatalf("unexpected POST /mcp route present when bodyEnabled=false")
 	}
 	if _, ok := gotRoutes["GET /.well-known/mcp.json"]; ok {
-		t.Fatalf("unexpected GET /.well-known/mcp.json route present when soulEnabled=false")
+		t.Fatalf("unexpected GET /.well-known/mcp.json route present when bodyEnabled=false")
 	}
 }
 

@@ -22,6 +22,7 @@ DELETE /api/v2/filters/{filter_id}/statuses/{status_id}
 DELETE /api/v2/filters/{id}
 DELETE /auth/wallet/unlink/{address}
 GET /
+GET /.well-known/lesser-soul-agent
 GET /.well-known/nodeinfo
 GET /.well-known/reputation-keys
 GET /api/oembed
@@ -309,6 +310,7 @@ PUT /api/v1/admin/agents/policy
 PUT /api/v1/admin/custom_emojis/{shortcode}
 PUT /api/v1/admin/domain_blocks/{id}
 PUT /api/v1/admin/moderation/trust/{from}/{to}
+PUT /api/v1/admin/soul/well-known
 PUT /api/v1/announcements/{id}/reactions/{name}
 PUT /api/v1/auth/webauthn/credentials/{credentialId}
 PUT /api/v1/lists/{id}

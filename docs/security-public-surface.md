@@ -27,6 +27,7 @@ Legend:
 
 - **Public** `GET /.well-known/webfinger` (service: `cmd/webfinger`)
 - **Public** `GET /.well-known/nodeinfo` (service: `cmd/api`)
+- **Public** `GET /.well-known/lesser-soul-agent` (service: `cmd/api`)
 - **Public** `GET /.well-known/mcp.json` (service: `lesser-body` MCP Lambda)
 - **Public** `GET /nodeinfo/2.0` (service: `cmd/api`)
 - **Public** `GET /users/:username` (service: `cmd/actor`)
@@ -77,6 +78,10 @@ Notes:
   - `GET /api/v1/statuses/{id}/history`
   - `GET /api/v1/statuses/{id}/quotes`
   - `GET /api/v1/accounts/{id}/statuses`
+- **Public** lesser.host trust proxy (no auth required):
+  - `GET /api/v1/trust/jwks.json`
+  - `GET /api/v1/trust/attestations`
+  - `GET /api/v1/trust/attestations/{id}`
 - **Public** Community notes reads (must not leak private objects):
   - `GET /api/v1/notes/{object_id}`
   - `GET /api/v1/accounts/{id}/notes`

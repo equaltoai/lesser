@@ -14,4 +14,7 @@ const (
 
 	// SKAIConfig is the sort key for the AI configuration record (PK="INSTANCE#CONFIG").
 	SKAIConfig = "AI_CONFIG"
+
+	// SKWellKnownLesserSoulAgent is the sort key for the soul HTTPS proof record (PK="INSTANCE#CONFIG").
+	SKWellKnownLesserSoulAgent = "WELL_KNOWN_LESSER_SOUL_AGENT"
 )

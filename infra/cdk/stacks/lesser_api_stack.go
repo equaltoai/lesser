@@ -318,16 +318,25 @@ func (s *LesserApiStack) createClientInfrastructure(domain string) {
 
 	overridePathRoutedFrontendRewriteFunction(frontend)
 
-	s.FrontendDistribution = frontend.Distribution()
+	dist := frontend.Distribution()
+
+	s.FrontendDistribution = dist
 	s.ClientBucket = clientAssetsBucket
 	s.AuthUIBucket = authAssetsBucket
 }
 
-func (s *LesserApiStack) soulEnabled() bool {
+func (s *LesserApiStack) bodyEnabled() bool {
 	if s.Configuration != nil {
+		if v, ok := s.Configuration["bodyEnabled"]; ok && isTruthyConfigValue(v) {
+			return true
+		}
+		// Backwards compatibility: "soulEnabled" historically controlled MCP wiring.
 		if v, ok := s.Configuration["soulEnabled"]; ok && isTruthyConfigValue(v) {
 			return true
 		}
+	}
+	if isTruthyConfigValue(s.Node().TryGetContext(jsii.String("bodyEnabled"))) {
+		return true
 	}
 	return isTruthyConfigValue(s.Node().TryGetContext(jsii.String("soulEnabled")))
 }
@@ -863,7 +872,7 @@ func (s *LesserApiStack) createAPIGateway(domain string) {
 		WebSocketCertificate: s.WebSocketCertificate,
 		Functions:            s.Functions,
 		HostedZone:           s.HostedZone,
-		SoulEnabled:          s.soulEnabled(),
+		BodyEnabled:          s.bodyEnabled(),
 	})
 
 	apis := []awsapigatewayv2.WebSocketApi{s.API.WebSocketApi}

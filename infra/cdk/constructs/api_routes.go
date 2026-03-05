@@ -29,7 +29,7 @@ type APIGatewayProps struct {
 	WebSocketCertificate awscertificatemanager.ICertificate
 	Functions            *LambdaFunctions
 	HostedZone           awsroute53.IHostedZone
-	SoulEnabled          bool
+	BodyEnabled          bool
 }
 
 type APIGateway struct {
@@ -88,7 +88,7 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 
 	// Add routes
 	addRestRoutes(gateway.RestApi, props.Functions, streamTimeoutSeconds)
-	if props.SoulEnabled {
+	if props.BodyEnabled {
 		addMcpRoute(scope, gateway.RestApi, appName, apiStage)
 	}
 
