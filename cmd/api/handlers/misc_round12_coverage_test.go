@@ -199,7 +199,7 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 		require.NotNil(t, apiNotif.Status)
 	})
 
-	t.Run("actor lookup failure returns nil notification", func(t *testing.T) {
+	t.Run("actor lookup failure falls back to synthetic actor", func(t *testing.T) {
 		errState := &round10QueryState{firstErrorOnce: errors.New("boom")}
 		errHandler, _, _ := round11NewHandler(t, cfg, errState)
 
@@ -210,7 +210,8 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 			StatusID:  "status-1",
 			CreatedAt: now,
 		})
-		require.Nil(t, apiNotif)
+		require.NotNil(t, apiNotif)
+		require.Equal(t, "alice", apiNotif.Account.Username)
 	})
 
 	t.Run("invalid status id is excluded", func(t *testing.T) {
@@ -754,7 +755,7 @@ func TestMisc_GetNotification_ErrorBranches_Round12(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["id"] = "n1"
 
-		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetNotificationLift(ctx))
+		requireStatus(t, http.StatusOK)(handler.HandleGetNotificationLift(ctx))
 	})
 
 	t.Run("dismiss missing id and insufficient scope", func(t *testing.T) {

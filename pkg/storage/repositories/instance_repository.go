@@ -21,23 +21,25 @@ import (
 // InstanceRepository implements instance operations using enhanced DynamORM patterns
 type InstanceRepository struct {
 	*EnhancedBaseRepository[*models.InstanceConfig]
-	historyRepo     *BaseRepository[*models.InstanceHistory]
-	metricsRepo     *BaseRepository[*models.InstanceMetrics]
-	activityRepo    *BaseRepository[*models.WeeklyActivity]
-	stateRepo       *BaseRepository[*models.InstanceState]
-	agentRepo       *BaseRepository[*models.AgentInstanceConfig]
-	trustRepo       *BaseRepository[*models.InstanceTrustConfig]
-	translationRepo *BaseRepository[*models.InstanceTranslationConfig]
-	tipsRepo        *BaseRepository[*models.InstanceTipsConfig]
-	aiConfigRepo    *BaseRepository[*models.AIInstanceConfig]
-	logger          *zap.Logger
+	historyRepo                  *BaseRepository[*models.InstanceHistory]
+	metricsRepo                  *BaseRepository[*models.InstanceMetrics]
+	activityRepo                 *BaseRepository[*models.WeeklyActivity]
+	stateRepo                    *BaseRepository[*models.InstanceState]
+	agentRepo                    *BaseRepository[*models.AgentInstanceConfig]
+	trustRepo                    *BaseRepository[*models.InstanceTrustConfig]
+	translationRepo              *BaseRepository[*models.InstanceTranslationConfig]
+	tipsRepo                     *BaseRepository[*models.InstanceTipsConfig]
+	aiConfigRepo                 *BaseRepository[*models.AIInstanceConfig]
+	wellKnownLesserSoulAgentRepo *BaseRepository[*models.InstanceWellKnownLesserSoulAgent]
+	logger                       *zap.Logger
 
-	stateCache       instanceStateCache
-	agentCache       agentInstanceConfigCache
-	trustCache       instanceTrustConfigCache
-	translationCache instanceTranslationConfigCache
-	tipsCache        instanceTipsConfigCache
-	aiConfigCache    aiInstanceConfigCache
+	stateCache                    instanceStateCache
+	agentCache                    agentInstanceConfigCache
+	trustCache                    instanceTrustConfigCache
+	translationCache              instanceTranslationConfigCache
+	tipsCache                     instanceTipsConfigCache
+	aiConfigCache                 aiInstanceConfigCache
+	wellKnownLesserSoulAgentCache wellKnownLesserSoulAgentCache
 }
 
 type instanceStateCache struct {
@@ -82,6 +84,14 @@ type aiInstanceConfigCache struct {
 
 const instanceFeatureConfigCacheTTL = 5 * time.Second
 
+type wellKnownLesserSoulAgentCache struct {
+	mu        sync.RWMutex
+	cfg       *models.InstanceWellKnownLesserSoulAgent
+	expiresAt time.Time
+}
+
+const wellKnownLesserSoulAgentCacheTTL = 5 * time.Second
+
 // NewInstanceRepository creates a new instance repository with enhanced functionality
 func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceRepository {
 	// Create enhanced repository optimized for instance operations
@@ -94,17 +104,18 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for instance change events
 
 	return &InstanceRepository{
-		EnhancedBaseRepository: enhancedRepo,
-		historyRepo:            NewBaseRepository[*models.InstanceHistory](db, tableName, logger),
-		metricsRepo:            NewBaseRepository[*models.InstanceMetrics](db, tableName, logger),
-		activityRepo:           NewBaseRepository[*models.WeeklyActivity](db, tableName, logger),
-		stateRepo:              NewBaseRepository[*models.InstanceState](db, tableName, logger),
-		agentRepo:              NewBaseRepository[*models.AgentInstanceConfig](db, tableName, logger),
-		trustRepo:              NewBaseRepository[*models.InstanceTrustConfig](db, tableName, logger),
-		translationRepo:        NewBaseRepository[*models.InstanceTranslationConfig](db, tableName, logger),
-		tipsRepo:               NewBaseRepository[*models.InstanceTipsConfig](db, tableName, logger),
-		aiConfigRepo:           NewBaseRepository[*models.AIInstanceConfig](db, tableName, logger),
-		logger:                 logger,
+		EnhancedBaseRepository:       enhancedRepo,
+		historyRepo:                  NewBaseRepository[*models.InstanceHistory](db, tableName, logger),
+		metricsRepo:                  NewBaseRepository[*models.InstanceMetrics](db, tableName, logger),
+		activityRepo:                 NewBaseRepository[*models.WeeklyActivity](db, tableName, logger),
+		stateRepo:                    NewBaseRepository[*models.InstanceState](db, tableName, logger),
+		agentRepo:                    NewBaseRepository[*models.AgentInstanceConfig](db, tableName, logger),
+		trustRepo:                    NewBaseRepository[*models.InstanceTrustConfig](db, tableName, logger),
+		translationRepo:              NewBaseRepository[*models.InstanceTranslationConfig](db, tableName, logger),
+		tipsRepo:                     NewBaseRepository[*models.InstanceTipsConfig](db, tableName, logger),
+		aiConfigRepo:                 NewBaseRepository[*models.AIInstanceConfig](db, tableName, logger),
+		wellKnownLesserSoulAgentRepo: NewBaseRepository[*models.InstanceWellKnownLesserSoulAgent](db, tableName, logger),
+		logger:                       logger,
 	}
 }
 
@@ -120,17 +131,18 @@ func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger 
 	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for instance change events
 
 	return &InstanceRepository{
-		EnhancedBaseRepository: enhancedRepo,
-		historyRepo:            NewBaseRepositoryWithCostTracking[*models.InstanceHistory](db, tableName, logger, costService, "instance_history"),
-		metricsRepo:            NewBaseRepositoryWithCostTracking[*models.InstanceMetrics](db, tableName, logger, costService, "instance_metrics"),
-		activityRepo:           NewBaseRepositoryWithCostTracking[*models.WeeklyActivity](db, tableName, logger, costService, "instance_activity"),
-		stateRepo:              NewBaseRepositoryWithCostTracking[*models.InstanceState](db, tableName, logger, costService, "instance_state"),
-		agentRepo:              NewBaseRepositoryWithCostTracking[*models.AgentInstanceConfig](db, tableName, logger, costService, "agent_instance_config"),
-		trustRepo:              NewBaseRepositoryWithCostTracking[*models.InstanceTrustConfig](db, tableName, logger, costService, "instance_trust_config"),
-		translationRepo:        NewBaseRepositoryWithCostTracking[*models.InstanceTranslationConfig](db, tableName, logger, costService, "instance_translation_config"),
-		tipsRepo:               NewBaseRepositoryWithCostTracking[*models.InstanceTipsConfig](db, tableName, logger, costService, "instance_tips_config"),
-		aiConfigRepo:           NewBaseRepositoryWithCostTracking[*models.AIInstanceConfig](db, tableName, logger, costService, "instance_ai_config"),
-		logger:                 logger,
+		EnhancedBaseRepository:       enhancedRepo,
+		historyRepo:                  NewBaseRepositoryWithCostTracking[*models.InstanceHistory](db, tableName, logger, costService, "instance_history"),
+		metricsRepo:                  NewBaseRepositoryWithCostTracking[*models.InstanceMetrics](db, tableName, logger, costService, "instance_metrics"),
+		activityRepo:                 NewBaseRepositoryWithCostTracking[*models.WeeklyActivity](db, tableName, logger, costService, "instance_activity"),
+		stateRepo:                    NewBaseRepositoryWithCostTracking[*models.InstanceState](db, tableName, logger, costService, "instance_state"),
+		agentRepo:                    NewBaseRepositoryWithCostTracking[*models.AgentInstanceConfig](db, tableName, logger, costService, "agent_instance_config"),
+		trustRepo:                    NewBaseRepositoryWithCostTracking[*models.InstanceTrustConfig](db, tableName, logger, costService, "instance_trust_config"),
+		translationRepo:              NewBaseRepositoryWithCostTracking[*models.InstanceTranslationConfig](db, tableName, logger, costService, "instance_translation_config"),
+		tipsRepo:                     NewBaseRepositoryWithCostTracking[*models.InstanceTipsConfig](db, tableName, logger, costService, "instance_tips_config"),
+		aiConfigRepo:                 NewBaseRepositoryWithCostTracking[*models.AIInstanceConfig](db, tableName, logger, costService, "instance_ai_config"),
+		wellKnownLesserSoulAgentRepo: NewBaseRepositoryWithCostTracking[*models.InstanceWellKnownLesserSoulAgent](db, tableName, logger, costService, "instance_well_known_lesser_soul_agent"),
+		logger:                       logger,
 	}
 }
 

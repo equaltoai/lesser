@@ -107,6 +107,8 @@ func configureRoutes(app *apptheory.App) {
 
 	// NodeInfo endpoints with native Lift implementation
 	app.Get("/.well-known/nodeinfo", apiHandler.HandleNodeInfoWellKnownLift)
+	// lesser-soul HTTPS proof
+	app.Get("/.well-known/lesser-soul-agent", apiHandler.HandleWellKnownLesserSoulAgentLift)
 	app.Get("/nodeinfo/2.0", apiHandler.HandleNodeInfoLift)
 
 	// Reputation keys (used by the portable reputation system)
@@ -302,6 +304,7 @@ func configureRoutes(app *apptheory.App) {
 	// Notifications
 	app.Get("/api/v1/notifications", apiHandler.HandleGetNotificationsLift)
 	app.Get("/api/v1/notifications/{id}", apiHandler.HandleGetNotificationLift)
+	app.Post("/api/v1/notifications/deliver", apiHandler.HandleDeliverNotificationLift)
 	app.Post("/api/v1/notifications/clear", apiHandler.HandleClearNotificationsLift)
 	app.Post("/api/v1/notifications/{id}/dismiss", apiHandler.HandleDismissNotificationLift)
 
@@ -452,6 +455,9 @@ func configureRoutes(app *apptheory.App) {
 	app.Put("/api/v1/admin/agents/policy", apiHandler.HandleAdminUpdateAgentPolicyLift)
 	app.Post("/api/v1/admin/agents/{username}/verify", apiHandler.HandleAdminVerifyAgentLift)
 	app.Post("/api/v1/admin/agents/{username}/unverify", apiHandler.HandleAdminUnverifyAgentLift)
+
+	// Soul governance (Admin only)
+	app.Put("/api/v1/admin/soul/well-known", apiHandler.HandleAdminSetSoulWellKnownProofLift)
 
 	// Domain blocks (Admin only)
 	app.Get("/api/v1/admin/domain_blocks", apiHandler.HandleGetAdminDomainBlocksLift)

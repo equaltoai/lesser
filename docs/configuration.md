@@ -29,6 +29,7 @@ Well-known config records:
 - `SK="TRANSLATION_CONFIG"`: replaces `TRANSLATION_ENABLED`
 - `SK="TIPS_CONFIG"`: replaces `TIP_ENABLED`, `TIP_CHAIN_ID`, `TIP_CONTRACT_ADDRESS`
 - `SK="AI_CONFIG"`: AI feature gating and defaults
+- `SK="WELL_KNOWN_LESSER_SOUL_AGENT"`: stores the current HTTPS proof value served at `GET /.well-known/lesser-soul-agent`
 
 ### Precedence model
 

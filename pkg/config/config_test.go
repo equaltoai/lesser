@@ -45,3 +45,27 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, "lesser-test-media", cfg.S3BucketName)
 	assert.Equal(t, "test_jwt_secret_for_testing", cfg.JWTSecret)
 }
+
+func TestConfig_InstanceAPIKey_LoadsValueAndARN(t *testing.T) {
+	SetupTestEnvironment(t)
+	t.Setenv("INSTANCE_API_KEY", "  instance-key  ")
+	t.Setenv("INSTANCE_API_KEY_ARN", "  arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key  ")
+
+	ResetForTests()
+	cfg := Get()
+
+	assert.Equal(t, "instance-key", cfg.InstanceAPIKey)
+	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key", cfg.InstanceAPIKeyARN)
+}
+
+func TestConfig_InstanceAPIKey_ArnCapturedWhenValueMissing(t *testing.T) {
+	SetupTestEnvironment(t)
+	t.Setenv("INSTANCE_API_KEY", "")
+	t.Setenv("INSTANCE_API_KEY_ARN", "  arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key  ")
+
+	ResetForTests()
+	cfg := Get()
+
+	assert.Equal(t, "", cfg.InstanceAPIKey)
+	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key", cfg.InstanceAPIKeyARN)
+}

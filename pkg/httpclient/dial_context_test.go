@@ -33,6 +33,82 @@ func TestSecureTransport_DialContext_DialsResolvedIP(t *testing.T) {
 	assert.Equal(t, "93.184.216.34:443", dialed)
 }
 
+func TestSecureTransport_DialContext_RejectsInvalidAddress(t *testing.T) {
+	t.Parallel()
+
+	client := NewSecureClient()
+	transport := client.client.Transport.(*secureTransport)
+
+	_, err := transport.dialContext(context.Background(), "tcp", "not-a-hostport")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid dial address")
+}
+
+func TestSecureTransport_DialContext_DialsPublicIPLiteral(t *testing.T) {
+	t.Parallel()
+
+	client := NewSecureClient()
+	transport := client.client.Transport.(*secureTransport)
+
+	var dialed string
+	transport.dial = func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialed = addr
+		return nil, errors.New("dial invoked")
+	}
+
+	_, err := transport.dialContext(context.Background(), "tcp", "93.184.216.34:443")
+	require.Error(t, err)
+	assert.Equal(t, "93.184.216.34:443", dialed)
+}
+
+func TestSecureTransport_DialContext_ReturnsLookupError(t *testing.T) {
+	t.Parallel()
+
+	client := NewSecureClient()
+	transport := client.client.Transport.(*secureTransport)
+
+	transport.lookupIP = func(host string) ([]net.IP, error) {
+		require.Equal(t, "example.com", host)
+		return nil, errors.New("boom")
+	}
+	transport.dial = func(_ context.Context, _, _ string) (net.Conn, error) {
+		t.Fatalf("dial should not be invoked on lookup errors")
+		return nil, nil
+	}
+
+	_, err := transport.dialContext(context.Background(), "tcp", "example.com:443")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DNS lookup failed")
+}
+
+func TestSecureTransport_DialContext_ReturnsConnOnSuccessfulDial(t *testing.T) {
+	t.Parallel()
+
+	client := NewSecureClient()
+	transport := client.client.Transport.(*secureTransport)
+
+	transport.lookupIP = func(host string) ([]net.IP, error) {
+		require.Equal(t, "example.com", host)
+		return []net.IP{net.IPv4(93, 184, 216, 34)}, nil
+	}
+
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = serverConn.Close() })
+	t.Cleanup(func() { _ = clientConn.Close() })
+
+	var dialed string
+	transport.dial = func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialed = addr
+		return clientConn, nil
+	}
+
+	conn, err := transport.dialContext(context.Background(), "tcp", "example.com:443")
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	assert.Same(t, clientConn, conn)
+	assert.Equal(t, "93.184.216.34:443", dialed)
+}
+
 func TestSecureTransport_DialContext_UsesDNSCache(t *testing.T) {
 	t.Parallel()
 
@@ -54,6 +130,49 @@ func TestSecureTransport_DialContext_UsesDNSCache(t *testing.T) {
 	_, err := transport.dialContext(context.Background(), "tcp", "cached.example:80")
 	require.Error(t, err)
 	assert.Equal(t, "93.184.216.34:80", dialed)
+}
+
+func TestSecureTransport_DialContext_ContextCancellationStopsDial(t *testing.T) {
+	t.Parallel()
+
+	client := NewSecureClient()
+	transport := client.client.Transport.(*secureTransport)
+
+	transport.lookupIP = func(host string) ([]net.IP, error) {
+		require.Equal(t, "example.com", host)
+		return []net.IP{net.IPv4(93, 184, 216, 34)}, nil
+	}
+	transport.dial = func(_ context.Context, _, _ string) (net.Conn, error) {
+		t.Fatalf("dial should not be invoked for canceled contexts")
+		return nil, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := transport.dialContext(ctx, "tcp", "example.com:443")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestSecureTransport_DialContext_NoResolvedIPs(t *testing.T) {
+	t.Parallel()
+
+	client := NewSecureClient()
+	transport := client.client.Transport.(*secureTransport)
+
+	transport.lookupIP = func(host string) ([]net.IP, error) {
+		require.Equal(t, "example.com", host)
+		return nil, nil
+	}
+	transport.dial = func(_ context.Context, _, _ string) (net.Conn, error) {
+		t.Fatalf("dial should not be invoked when there are no resolved IPs")
+		return nil, nil
+	}
+
+	_, err := transport.dialContext(context.Background(), "tcp", "example.com:443")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DNS lookup returned no IPs")
 }
 
 func TestSecureTransport_DialContext_BlocksPrivateIPLiteral(t *testing.T) {
@@ -89,6 +208,23 @@ func TestSecureTransport_DialContext_BlocksMixedAAndAAAA(t *testing.T) {
 	}
 
 	_, err := transport.dialContext(context.Background(), "tcp", "example.com:443")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrPrivateIPAddress)
+}
+
+func TestSecureTransport_DialContext_UsesDefaultLookupAndNilLogger(t *testing.T) {
+	t.Parallel()
+
+	client := NewSecureClient()
+	transport := client.client.Transport.(*secureTransport)
+	transport.lookupIP = nil
+	transport.logger = nil
+	transport.dial = func(_ context.Context, _, _ string) (net.Conn, error) {
+		t.Fatalf("dial should not be invoked for blocked addresses")
+		return nil, nil
+	}
+
+	_, err := transport.dialContext(context.Background(), "tcp", "localhost:80")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrPrivateIPAddress)
 }

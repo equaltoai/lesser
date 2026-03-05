@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -60,6 +61,8 @@ func NewService(
 
 // CreateNotificationCommand contains all data needed to create a new notification
 type CreateNotificationCommand struct {
+	ID         string                 `json:"id"`                           // Optional stable ID for idempotent creates
+	CreatedAt  *time.Time             `json:"created_at,omitempty"`         // Optional creation timestamp override
 	UserID     string                 `json:"user_id" validate:"required"`  // Recipient user ID
 	Type       string                 `json:"type" validate:"required"`     // Notification type
 	ActorID    string                 `json:"actor_id" validate:"required"` // Who triggered the notification
@@ -190,6 +193,14 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 
 	notification := builder.Build()
 
+	// Allow callers to provide deterministic IDs/timestamps (e.g., machine-to-machine deliveries).
+	if common.ValidateRequiredParam("id", cmd.ID) == nil {
+		notification.ID = cmd.ID
+	}
+	if cmd.CreatedAt != nil && !cmd.CreatedAt.IsZero() {
+		notification.CreatedAt = cmd.CreatedAt.UTC()
+	}
+
 	// Check for notification preferences and consolidation
 	if common.ValidateRequiredParam("notification_id", notification.ID) == nil {
 		if err := s.handleNotificationConsolidation(ctx, notification); err != nil {
@@ -201,7 +212,11 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 
 	// Store the notification
 	if err := s.notificationRepo.CreateNotification(ctx, notification); err != nil {
-		return nil, ErrNotificationCreateFailed
+		// Preserve canonical AppErrors (e.g., AlreadyExists, validation).
+		if apperrors.IsAppError(err) {
+			return nil, err
+		}
+		return nil, apperrors.FailedToCreate("notification", err)
 	}
 
 	s.queuePushNotification(ctx, recipientAccount, actorAccount, notification)
@@ -635,16 +650,18 @@ func (s *Service) validateCreateCommand(_ context.Context, cmd *CreateNotificati
 
 	// Validate notification type
 	validTypes := map[string]bool{
-		"mention":        true,
-		"reblog":         true,
-		"favourite":      true,
-		"follow":         true,
-		"follow_request": true,
-		"poll":           true,
-		"status":         true,
-		"update":         true,
-		"admin.sign_up":  true,
-		"admin.report":   true,
+		"mention":                true,
+		"reblog":                 true,
+		"favourite":              true,
+		"follow":                 true,
+		"follow_request":         true,
+		"poll":                   true,
+		"status":                 true,
+		"update":                 true,
+		"admin.sign_up":          true,
+		"admin.report":           true,
+		"communication:inbound":  true,
+		"communication:outbound": true,
 	}
 
 	if !validTypes[strings.ToLower(cmd.Type)] {

@@ -31,6 +31,11 @@ func TestAPIRequestIsPublic_Round21(t *testing.T) {
 		{"accounts search is public", http.MethodGet, "/api/v1/accounts/search", true},
 		{"search statuses is public", http.MethodGet, "/api/v1/search/statuses", true},
 		{"notes read is public", http.MethodGet, "/api/v1/notes/1", true},
+		{"soul well-known proof is public", http.MethodGet, "/.well-known/lesser-soul-agent", true},
+		{"trust jwks proxy is public", http.MethodGet, "/api/v1/trust/jwks.json", true},
+		{"trust attestations proxy is public", http.MethodGet, "/api/v1/trust/attestations", true},
+		{"trust attestation id proxy is public", http.MethodGet, "/api/v1/trust/attestations/abc", true},
+		{"trust previews are not public", http.MethodGet, "/api/v1/trust/previews/abc", false},
 
 		{"apps registration is public", http.MethodPost, "/api/v1/apps", true},
 		{"oauth token is public", http.MethodPost, "/oauth/token", true},

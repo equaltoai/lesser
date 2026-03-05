@@ -7,14 +7,15 @@ import (
 	"testing"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsroute53"
 	"github.com/aws/jsii-runtime-go"
 )
 
-func TestStageExportsPublishedToSSM(t *testing.T) {
+func TestSoulRuntimeEnabledDoesNotAddSoulRoutingBehaviors(t *testing.T) {
 	outdir := t.TempDir()
 	app := awscdk.NewApp(&awscdk.AppProps{Outdir: jsii.String(outdir)})
+	stageDomain := "dev.example.com"
+
 	stack := awscdk.NewStack(app, jsii.String("TestStack"), &awscdk.StackProps{
 		Env: &awscdk.Environment{
 			Account: jsii.String("123456789012"),
@@ -22,23 +23,23 @@ func TestStageExportsPublishedToSSM(t *testing.T) {
 		},
 	})
 
-	mainTable := awsdynamodb.NewTable(stack, jsii.String("MainTable"), &awsdynamodb.TableProps{
-		PartitionKey: &awsdynamodb.Attribute{Name: jsii.String("pk"), Type: awsdynamodb.AttributeType_STRING},
-		SortKey:      &awsdynamodb.Attribute{Name: jsii.String("sk"), Type: awsdynamodb.AttributeType_STRING},
-		BillingMode:  awsdynamodb.BillingMode_PAY_PER_REQUEST,
+	hostedZone := awsroute53.NewHostedZone(stack, jsii.String("HostedZone"), &awsroute53.HostedZoneProps{
+		ZoneName: jsii.String("example.com"),
 	})
 
-	mediaBucket := awss3.NewBucket(stack, jsii.String("MediaBucket"), nil)
-
 	apiStack := &LesserApiStack{
-		Stack:       stack,
-		MainTable:   mainTable,
-		MediaBucket: mediaBucket,
-		AppName:     "lesser",
-		Environment: "development",
-		Domain:      "dev.example.com",
+		Stack:         stack,
+		Environment:   "development",
+		Domain:        stageDomain,
+		Configuration: map[string]interface{}{"soulRuntimeEnabled": true},
+		HostedZone:    hostedZone,
+		AppName:       "test",
+		AccountID:     "123456789012",
+		Region:        "us-east-1",
 	}
-	apiStack.publishStageExportsToSSM()
+
+	apiStack.createStageCertificates(stageDomain)
+	apiStack.createClientInfrastructure(stageDomain)
 
 	app.Synth(nil)
 
@@ -53,49 +54,42 @@ func TestStageExportsPublishedToSSM(t *testing.T) {
 		t.Fatalf("unmarshal template: %v", err)
 	}
 
-	gotNames := extractSSMParameterNames(t, tpl)
-	wantNames := []string{
-		"/lesser/dev/lesser/exports/v1/table_name",
-		"/lesser/dev/lesser/exports/v1/media_bucket_name",
-		"/lesser/dev/lesser/exports/v1/domain",
-	}
+	resources := mustResources(t, tpl)
 
-	for _, want := range wantNames {
-		var found bool
-		for _, got := range gotNames {
-			if got == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("missing SSM parameter %q (got %v)", want, gotNames)
+	// /soul orchestrator routing is deprecated and should not exist anywhere in the stack template.
+	wantSSMDefault := "/soul/" + stageDomain + "/exports/v1/orchestrator_origin_domain"
+	requireNoSSMStringParameterValueDefault(t, tpl, wantSSMDefault)
+
+	frontendDist := findSingleCloudFrontDistribution(t, resources)
+	cacheBehaviors := extractCacheBehaviors(t, frontendDist)
+	for _, behavior := range cacheBehaviors {
+		path, _ := behavior["PathPattern"].(string)
+		switch path {
+		case "/soul", "/soul/*":
+			t.Fatalf("unexpected /soul routing CacheBehavior: %q", path)
 		}
 	}
 }
 
-func extractSSMParameterNames(t *testing.T, tpl map[string]any) []string {
+func requireNoSSMStringParameterValueDefault(t *testing.T, tpl map[string]any, wantDefault string) {
 	t.Helper()
 
-	resources := mustResources(t, tpl)
-	out := make([]string, 0)
-	for _, raw := range resources {
-		res, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if res["Type"] != "AWS::SSM::Parameter" {
-			continue
-		}
-		props, ok := res["Properties"].(map[string]any)
-		if !ok {
-			continue
-		}
-		name, ok := props["Name"].(string)
-		if !ok || name == "" {
-			continue
-		}
-		out = append(out, name)
+	raw, ok := tpl["Parameters"].(map[string]any)
+	if !ok {
+		return
 	}
-	return out
+
+	for _, entryAny := range raw {
+		entry, ok := entryAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ, _ := entry["Type"].(string); typ != "AWS::SSM::Parameter::Value<String>" {
+			continue
+		}
+		if def, _ := entry["Default"].(string); def != wantDefault {
+			continue
+		}
+		t.Fatalf("unexpected SSM Parameter::Value<String> with Default=%q", wantDefault)
+	}
 }

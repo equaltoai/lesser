@@ -1398,6 +1398,44 @@ components:
             additionalProperties: false
             properties: {}
             type: object
+        CommunicationFrom:
+            additionalProperties: false
+            properties:
+                address:
+                    type: string
+                display_name:
+                    type: string
+                soul_agent_id:
+                    type: string
+            required:
+                - address
+            type: object
+        CommunicationNotification:
+            additionalProperties: false
+            properties:
+                body:
+                    type: string
+                channel:
+                    type: string
+                from:
+                    $ref: '#/components/schemas/CommunicationFrom'
+                in_reply_to:
+                    type: string
+                message_id:
+                    type: string
+                received_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                subject:
+                    type: string
+                thread_id:
+                    type: string
+            required:
+                - channel
+                - from
+                - message_id
+                - received_at
+                - thread_id
+            type: object
         CommunityNoteRateLimit:
             additionalProperties: false
             properties:
@@ -3192,10 +3230,16 @@ components:
             properties:
                 account:
                     $ref: '#/components/schemas/Account'
+                communication:
+                    anyOf:
+                        - $ref: '#/components/schemas/CommunicationNotification'
+                        - type: "null"
                 created_at:
                     $ref: '#/components/schemas/RFC3339DateTime'
                 id:
                     type: string
+                read:
+                    type: boolean
                 status:
                     anyOf:
                         - $ref: '#/components/schemas/Status'
@@ -3206,6 +3250,52 @@ components:
                 - account
                 - created_at
                 - id
+                - read
+                - type
+            type: object
+        NotificationDeliveryFrom:
+            additionalProperties: false
+            properties:
+                address:
+                    type: string
+                displayName:
+                    type: string
+                soulAgentId:
+                    anyOf:
+                        - type: string
+                        - type: "null"
+            required:
+                - address
+                - displayName
+            type: object
+        NotificationDeliveryRequest:
+            additionalProperties: false
+            properties:
+                body:
+                    type: string
+                channel:
+                    type: string
+                from:
+                    $ref: '#/components/schemas/NotificationDeliveryFrom'
+                inReplyTo:
+                    anyOf:
+                        - type: string
+                        - type: "null"
+                messageId:
+                    type: string
+                receivedAt:
+                    type: string
+                subject:
+                    type: string
+                type:
+                    type: string
+            required:
+                - body
+                - channel
+                - from
+                - messageId
+                - receivedAt
+                - subject
                 - type
             type: object
         NotificationFilter:
@@ -7214,6 +7304,26 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /.well-known/lesser-soul-agent:
+        get:
+            operationId: get_well_known_lesser_soul_agent
+            tags:
+                - well-known
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Map7d31df2b'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleWellKnownLesserSoulAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /.well-known/nodeinfo:
         get:
             operationId: get_well_known_nodeinfo
@@ -9776,6 +9886,36 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
+    /api/v1/admin/soul/well-known:
+        put:
+            operationId: put_api_v1_admin_soul_well_known
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Map7d31df2b'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminSetSoulWellKnownProofLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
     /api/v1/admin/statuses:
         get:
             operationId: get_api_v1_admin_statuses
@@ -13012,6 +13152,29 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - write:notifications
+    /api/v1/notifications/deliver:
+        post:
+            operationId: post_api_v1_notifications_deliver
+            tags:
+                - notifications
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/NotificationDeliveryRequest'
+            responses:
+                "204":
+                    description: No Content
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleDeliverNotificationLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/preferences:
         get:
             operationId: get_api_v1_preferences
@@ -17819,3 +17982,4 @@ paths:
             x-lesser-lambda: outbox
             x-lesser-routeSources:
                 - infra/cdk/inventory/lambdas.go:outbox
+

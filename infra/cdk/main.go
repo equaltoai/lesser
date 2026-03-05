@@ -114,6 +114,7 @@ func main() {
 			"lesserHostUrl",
 			"lesserHostInstanceKeyArn",
 			"lesserHostAttestationsUrl",
+			"bodyEnabled",
 			"soulEnabled",
 			"translationEnabled",
 			"tipEnabled",
