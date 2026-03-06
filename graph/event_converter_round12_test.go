@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -487,6 +488,16 @@ func TestRound12EventConverter_ParseAndExtractHelpers(t *testing.T) {
 	f, err := parseFloatFromString("1.5")
 	require.NoError(t, err)
 	require.Equal(t, 1.5, f)
+
+	safeInt, ok := safeIntFromInt64(123)
+	require.True(t, ok)
+	require.Equal(t, 123, safeInt)
+
+	_, ok = safeIntFromInt64(math.MaxInt32 + 1)
+	require.False(t, ok)
+
+	_, ok = safeIntFromInt64(math.MinInt32 - 1)
+	require.False(t, ok)
 
 	require.Equal(t, "", extractStringFromData("not-a-map", "k"))
 	require.False(t, extractBoolFromData("not-a-map", "k"))
