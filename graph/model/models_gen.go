@@ -699,6 +699,37 @@ type Celebrity struct {
 	Urls       []string `json:"urls"`
 }
 
+type CommunicationAttachment struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"contentType"`
+	SizeBytes   int    `json:"sizeBytes"`
+	Sha256      string `json:"sha256"`
+}
+
+type CommunicationFrom struct {
+	Address     string  `json:"address"`
+	DisplayName *string `json:"displayName,omitempty"`
+	SoulAgentID *string `json:"soulAgentId,omitempty"`
+}
+
+type CommunicationNotification struct {
+	Channel     string                     `json:"channel"`
+	From        *CommunicationFrom         `json:"from"`
+	To          *CommunicationTo           `json:"to,omitempty"`
+	Attachments []*CommunicationAttachment `json:"attachments"`
+	Subject     *string                    `json:"subject,omitempty"`
+	Body        *string                    `json:"body,omitempty"`
+	ReceivedAt  Time                       `json:"receivedAt"`
+	MessageID   string                     `json:"messageId"`
+	InReplyTo   *string                    `json:"inReplyTo,omitempty"`
+	ThreadID    string                     `json:"threadId"`
+}
+
+type CommunicationTo struct {
+	Address string `json:"address"`
+}
+
 type CommunityNote struct {
 	ID         string             `json:"id"`
 	Author     *activitypub.Actor `json:"author"`
@@ -1762,12 +1793,13 @@ type MuteHashtagPayload struct {
 }
 
 type Notification struct {
-	ID        string             `json:"id"`
-	Type      string             `json:"type"`
-	Account   *activitypub.Actor `json:"account"`
-	Status    *Object            `json:"status,omitempty"`
-	Read      bool               `json:"read"`
-	CreatedAt Time               `json:"createdAt"`
+	ID            string                     `json:"id"`
+	Type          string                     `json:"type"`
+	Account       *activitypub.Actor         `json:"account"`
+	Status        *Object                    `json:"status,omitempty"`
+	Communication *CommunicationNotification `json:"communication,omitempty"`
+	Read          bool                       `json:"read"`
+	CreatedAt     Time                       `json:"createdAt"`
 }
 
 type NotificationConnection struct {

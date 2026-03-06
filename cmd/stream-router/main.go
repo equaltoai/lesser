@@ -66,13 +66,14 @@ type StreamMessage struct {
 
 // Notification represents a notification extracted from DynamoDB stream
 type Notification struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`                // follow, mention, favourite, reblog
-	Username  string    `json:"username"`            // Recipient of the notification
-	AccountID string    `json:"account_id"`          // Who triggered the notification
-	StatusID  string    `json:"status_id,omitempty"` // Related status (if any)
-	Read      bool      `json:"read"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string         `json:"id"`
+	Type      string         `json:"type"`                // follow, mention, favourite, reblog
+	Username  string         `json:"username"`            // Recipient of the notification
+	AccountID string         `json:"account_id"`          // Who triggered the notification
+	StatusID  string         `json:"status_id,omitempty"` // Related status (if any)
+	Data      map[string]any `json:"data,omitempty"`
+	Read      bool           `json:"read"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 // StreamRouterHandler handles DynamoDB stream events and routes them to WebSocket subscribers
@@ -1114,6 +1115,7 @@ func (h *StreamRouterHandler) publishNotificationEventToInternalBus(requestID st
 		RecipientID:    notification.Username,
 		ActorID:        notification.AccountID,
 		StatusID:       notification.StatusID,
+		Data:           notification.Data,
 		Read:           notification.Read,
 		CreatedAt:      notification.CreatedAt,
 	}

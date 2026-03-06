@@ -64,9 +64,11 @@ func (ec *EventConverter) ConvertToNotification(event *streaming.InternalEvent) 
 	}
 
 	return &model.Notification{
-		ID:        payload.NotificationID,
-		Type:      payload.Type,
-		CreatedAt: model.Time(payload.CreatedAt),
+		ID:            payload.NotificationID,
+		Type:          payload.Type,
+		Communication: communicationNotificationFromData(payload.Type, payload.CreatedAt, payload.Data),
+		Read:          payload.Read,
+		CreatedAt:     model.Time(payload.CreatedAt),
 		Account: &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
 				ID:   payload.ActorID,

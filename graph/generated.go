@@ -732,6 +732,37 @@ type ComplexityRoot struct {
 		Urls       func(childComplexity int) int
 	}
 
+	CommunicationAttachment struct {
+		ContentType func(childComplexity int) int
+		Filename    func(childComplexity int) int
+		ID          func(childComplexity int) int
+		Sha256      func(childComplexity int) int
+		SizeBytes   func(childComplexity int) int
+	}
+
+	CommunicationFrom struct {
+		Address     func(childComplexity int) int
+		DisplayName func(childComplexity int) int
+		SoulAgentID func(childComplexity int) int
+	}
+
+	CommunicationNotification struct {
+		Attachments func(childComplexity int) int
+		Body        func(childComplexity int) int
+		Channel     func(childComplexity int) int
+		From        func(childComplexity int) int
+		InReplyTo   func(childComplexity int) int
+		MessageID   func(childComplexity int) int
+		ReceivedAt  func(childComplexity int) int
+		Subject     func(childComplexity int) int
+		ThreadID    func(childComplexity int) int
+		To          func(childComplexity int) int
+	}
+
+	CommunicationTo struct {
+		Address func(childComplexity int) int
+	}
+
 	CommunityNote struct {
 		Author     func(childComplexity int) int
 		Content    func(childComplexity int) int
@@ -1862,12 +1893,13 @@ type ComplexityRoot struct {
 	}
 
 	Notification struct {
-		Account   func(childComplexity int) int
-		CreatedAt func(childComplexity int) int
-		ID        func(childComplexity int) int
-		Read      func(childComplexity int) int
-		Status    func(childComplexity int) int
-		Type      func(childComplexity int) int
+		Account       func(childComplexity int) int
+		Communication func(childComplexity int) int
+		CreatedAt     func(childComplexity int) int
+		ID            func(childComplexity int) int
+		Read          func(childComplexity int) int
+		Status        func(childComplexity int) int
+		Type          func(childComplexity int) int
 	}
 
 	NotificationConnection struct {
@@ -6349,6 +6381,139 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Celebrity.Urls(childComplexity), true
+
+	case "CommunicationAttachment.contentType":
+		if e.complexity.CommunicationAttachment.ContentType == nil {
+			break
+		}
+
+		return e.complexity.CommunicationAttachment.ContentType(childComplexity), true
+
+	case "CommunicationAttachment.filename":
+		if e.complexity.CommunicationAttachment.Filename == nil {
+			break
+		}
+
+		return e.complexity.CommunicationAttachment.Filename(childComplexity), true
+
+	case "CommunicationAttachment.id":
+		if e.complexity.CommunicationAttachment.ID == nil {
+			break
+		}
+
+		return e.complexity.CommunicationAttachment.ID(childComplexity), true
+
+	case "CommunicationAttachment.sha256":
+		if e.complexity.CommunicationAttachment.Sha256 == nil {
+			break
+		}
+
+		return e.complexity.CommunicationAttachment.Sha256(childComplexity), true
+
+	case "CommunicationAttachment.sizeBytes":
+		if e.complexity.CommunicationAttachment.SizeBytes == nil {
+			break
+		}
+
+		return e.complexity.CommunicationAttachment.SizeBytes(childComplexity), true
+
+	case "CommunicationFrom.address":
+		if e.complexity.CommunicationFrom.Address == nil {
+			break
+		}
+
+		return e.complexity.CommunicationFrom.Address(childComplexity), true
+
+	case "CommunicationFrom.displayName":
+		if e.complexity.CommunicationFrom.DisplayName == nil {
+			break
+		}
+
+		return e.complexity.CommunicationFrom.DisplayName(childComplexity), true
+
+	case "CommunicationFrom.soulAgentId":
+		if e.complexity.CommunicationFrom.SoulAgentID == nil {
+			break
+		}
+
+		return e.complexity.CommunicationFrom.SoulAgentID(childComplexity), true
+
+	case "CommunicationNotification.attachments":
+		if e.complexity.CommunicationNotification.Attachments == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.Attachments(childComplexity), true
+
+	case "CommunicationNotification.body":
+		if e.complexity.CommunicationNotification.Body == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.Body(childComplexity), true
+
+	case "CommunicationNotification.channel":
+		if e.complexity.CommunicationNotification.Channel == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.Channel(childComplexity), true
+
+	case "CommunicationNotification.from":
+		if e.complexity.CommunicationNotification.From == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.From(childComplexity), true
+
+	case "CommunicationNotification.inReplyTo":
+		if e.complexity.CommunicationNotification.InReplyTo == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.InReplyTo(childComplexity), true
+
+	case "CommunicationNotification.messageId":
+		if e.complexity.CommunicationNotification.MessageID == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.MessageID(childComplexity), true
+
+	case "CommunicationNotification.receivedAt":
+		if e.complexity.CommunicationNotification.ReceivedAt == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.ReceivedAt(childComplexity), true
+
+	case "CommunicationNotification.subject":
+		if e.complexity.CommunicationNotification.Subject == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.Subject(childComplexity), true
+
+	case "CommunicationNotification.threadId":
+		if e.complexity.CommunicationNotification.ThreadID == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.ThreadID(childComplexity), true
+
+	case "CommunicationNotification.to":
+		if e.complexity.CommunicationNotification.To == nil {
+			break
+		}
+
+		return e.complexity.CommunicationNotification.To(childComplexity), true
+
+	case "CommunicationTo.address":
+		if e.complexity.CommunicationTo.Address == nil {
+			break
+		}
+
+		return e.complexity.CommunicationTo.Address(childComplexity), true
 
 	case "CommunityNote.author":
 		if e.complexity.CommunityNote.Author == nil {
@@ -12686,6 +12851,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Notification.Account(childComplexity), true
+
+	case "Notification.communication":
+		if e.complexity.Notification.Communication == nil {
+			break
+		}
+
+		return e.complexity.Notification.Communication(childComplexity), true
 
 	case "Notification.createdAt":
 		if e.complexity.Notification.CreatedAt == nil {
@@ -43222,6 +43394,848 @@ func (ec *executionContext) _Celebrity_urls(ctx context.Context, field graphql.C
 func (ec *executionContext) fieldContext_Celebrity_urls(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Celebrity",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationAttachment_id(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationAttachment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationAttachment_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationAttachment_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationAttachment",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationAttachment_filename(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationAttachment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationAttachment_filename(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Filename, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationAttachment_filename(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationAttachment",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationAttachment_contentType(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationAttachment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationAttachment_contentType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ContentType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationAttachment_contentType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationAttachment",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationAttachment_sizeBytes(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationAttachment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationAttachment_sizeBytes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SizeBytes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationAttachment_sizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationAttachment",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationAttachment_sha256(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationAttachment) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationAttachment_sha256(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Sha256, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationAttachment_sha256(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationAttachment",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationFrom_address(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationFrom) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationFrom_address(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Address, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationFrom_address(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationFrom",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationFrom_displayName(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationFrom) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationFrom_displayName(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DisplayName, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationFrom_displayName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationFrom",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationFrom_soulAgentId(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationFrom) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationFrom_soulAgentId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SoulAgentID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationFrom_soulAgentId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationFrom",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_channel(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_channel(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Channel, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_channel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_from(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_from(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.From, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.CommunicationFrom)
+	fc.Result = res
+	return ec.marshalNCommunicationFrom2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationFrom(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_from(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "address":
+				return ec.fieldContext_CommunicationFrom_address(ctx, field)
+			case "displayName":
+				return ec.fieldContext_CommunicationFrom_displayName(ctx, field)
+			case "soulAgentId":
+				return ec.fieldContext_CommunicationFrom_soulAgentId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CommunicationFrom", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_to(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_to(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.To, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.CommunicationTo)
+	fc.Result = res
+	return ec.marshalOCommunicationTo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationTo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_to(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "address":
+				return ec.fieldContext_CommunicationTo_address(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CommunicationTo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_attachments(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_attachments(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Attachments, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.CommunicationAttachment)
+	fc.Result = res
+	return ec.marshalNCommunicationAttachment2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationAttachmentᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_attachments(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_CommunicationAttachment_id(ctx, field)
+			case "filename":
+				return ec.fieldContext_CommunicationAttachment_filename(ctx, field)
+			case "contentType":
+				return ec.fieldContext_CommunicationAttachment_contentType(ctx, field)
+			case "sizeBytes":
+				return ec.fieldContext_CommunicationAttachment_sizeBytes(ctx, field)
+			case "sha256":
+				return ec.fieldContext_CommunicationAttachment_sha256(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CommunicationAttachment", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_subject(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_subject(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Subject, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_subject(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_body(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_body(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Body, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_body(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_receivedAt(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_receivedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ReceivedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_receivedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_messageId(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_messageId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.MessageID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_messageId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_inReplyTo(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_inReplyTo(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.InReplyTo, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_inReplyTo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationNotification_threadId(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationNotification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationNotification_threadId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ThreadID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationNotification_threadId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationNotification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CommunicationTo_address(ctx context.Context, field graphql.CollectedField, obj *model.CommunicationTo) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CommunicationTo_address(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Address, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CommunicationTo_address(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CommunicationTo",
 		Field:      field,
 		IsMethod:   false,
 		IsResolver: false,
@@ -84749,6 +85763,69 @@ func (ec *executionContext) fieldContext_Notification_status(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _Notification_communication(ctx context.Context, field graphql.CollectedField, obj *model.Notification) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Notification_communication(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Communication, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.CommunicationNotification)
+	fc.Result = res
+	return ec.marshalOCommunicationNotification2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationNotification(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Notification_communication(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Notification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "channel":
+				return ec.fieldContext_CommunicationNotification_channel(ctx, field)
+			case "from":
+				return ec.fieldContext_CommunicationNotification_from(ctx, field)
+			case "to":
+				return ec.fieldContext_CommunicationNotification_to(ctx, field)
+			case "attachments":
+				return ec.fieldContext_CommunicationNotification_attachments(ctx, field)
+			case "subject":
+				return ec.fieldContext_CommunicationNotification_subject(ctx, field)
+			case "body":
+				return ec.fieldContext_CommunicationNotification_body(ctx, field)
+			case "receivedAt":
+				return ec.fieldContext_CommunicationNotification_receivedAt(ctx, field)
+			case "messageId":
+				return ec.fieldContext_CommunicationNotification_messageId(ctx, field)
+			case "inReplyTo":
+				return ec.fieldContext_CommunicationNotification_inReplyTo(ctx, field)
+			case "threadId":
+				return ec.fieldContext_CommunicationNotification_threadId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CommunicationNotification", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Notification_read(ctx context.Context, field graphql.CollectedField, obj *model.Notification) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Notification_read(ctx, field)
 	if err != nil {
@@ -85032,6 +86109,8 @@ func (ec *executionContext) fieldContext_NotificationEdge_node(_ context.Context
 				return ec.fieldContext_Notification_account(ctx, field)
 			case "status":
 				return ec.fieldContext_Notification_status(ctx, field)
+			case "communication":
+				return ec.fieldContext_Notification_communication(ctx, field)
 			case "read":
 				return ec.fieldContext_Notification_read(ctx, field)
 			case "createdAt":
@@ -93563,6 +94642,8 @@ func (ec *executionContext) fieldContext_Query_notification(ctx context.Context,
 				return ec.fieldContext_Notification_account(ctx, field)
 			case "status":
 				return ec.fieldContext_Notification_status(ctx, field)
+			case "communication":
+				return ec.fieldContext_Notification_communication(ctx, field)
 			case "read":
 				return ec.fieldContext_Notification_read(ctx, field)
 			case "createdAt":
@@ -114010,6 +115091,8 @@ func (ec *executionContext) fieldContext_Subscription_notificationStream(ctx con
 				return ec.fieldContext_Notification_account(ctx, field)
 			case "status":
 				return ec.fieldContext_Notification_status(ctx, field)
+			case "communication":
+				return ec.fieldContext_Notification_communication(ctx, field)
 			case "read":
 				return ec.fieldContext_Notification_read(ctx, field)
 			case "createdAt":
@@ -134387,6 +135470,219 @@ func (ec *executionContext) _Celebrity(ctx context.Context, sel ast.SelectionSet
 	return out
 }
 
+var communicationAttachmentImplementors = []string{"CommunicationAttachment"}
+
+func (ec *executionContext) _CommunicationAttachment(ctx context.Context, sel ast.SelectionSet, obj *model.CommunicationAttachment) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, communicationAttachmentImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CommunicationAttachment")
+		case "id":
+			out.Values[i] = ec._CommunicationAttachment_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "filename":
+			out.Values[i] = ec._CommunicationAttachment_filename(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "contentType":
+			out.Values[i] = ec._CommunicationAttachment_contentType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sizeBytes":
+			out.Values[i] = ec._CommunicationAttachment_sizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sha256":
+			out.Values[i] = ec._CommunicationAttachment_sha256(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var communicationFromImplementors = []string{"CommunicationFrom"}
+
+func (ec *executionContext) _CommunicationFrom(ctx context.Context, sel ast.SelectionSet, obj *model.CommunicationFrom) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, communicationFromImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CommunicationFrom")
+		case "address":
+			out.Values[i] = ec._CommunicationFrom_address(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "displayName":
+			out.Values[i] = ec._CommunicationFrom_displayName(ctx, field, obj)
+		case "soulAgentId":
+			out.Values[i] = ec._CommunicationFrom_soulAgentId(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var communicationNotificationImplementors = []string{"CommunicationNotification"}
+
+func (ec *executionContext) _CommunicationNotification(ctx context.Context, sel ast.SelectionSet, obj *model.CommunicationNotification) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, communicationNotificationImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CommunicationNotification")
+		case "channel":
+			out.Values[i] = ec._CommunicationNotification_channel(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "from":
+			out.Values[i] = ec._CommunicationNotification_from(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "to":
+			out.Values[i] = ec._CommunicationNotification_to(ctx, field, obj)
+		case "attachments":
+			out.Values[i] = ec._CommunicationNotification_attachments(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "subject":
+			out.Values[i] = ec._CommunicationNotification_subject(ctx, field, obj)
+		case "body":
+			out.Values[i] = ec._CommunicationNotification_body(ctx, field, obj)
+		case "receivedAt":
+			out.Values[i] = ec._CommunicationNotification_receivedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "messageId":
+			out.Values[i] = ec._CommunicationNotification_messageId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inReplyTo":
+			out.Values[i] = ec._CommunicationNotification_inReplyTo(ctx, field, obj)
+		case "threadId":
+			out.Values[i] = ec._CommunicationNotification_threadId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var communicationToImplementors = []string{"CommunicationTo"}
+
+func (ec *executionContext) _CommunicationTo(ctx context.Context, sel ast.SelectionSet, obj *model.CommunicationTo) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, communicationToImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CommunicationTo")
+		case "address":
+			out.Values[i] = ec._CommunicationTo_address(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var communityNoteImplementors = []string{"CommunityNote"}
 
 func (ec *executionContext) _CommunityNote(ctx context.Context, sel ast.SelectionSet, obj *model.CommunityNote) graphql.Marshaler {
@@ -143099,6 +144395,8 @@ func (ec *executionContext) _Notification(ctx context.Context, sel ast.Selection
 			}
 		case "status":
 			out.Values[i] = ec._Notification_status(ctx, field, obj)
+		case "communication":
+			out.Values[i] = ec._Notification_communication(ctx, field, obj)
 		case "read":
 			out.Values[i] = ec._Notification_read(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -155140,6 +156438,70 @@ func (ec *executionContext) marshalNChangeType2githubᚗcomᚋequaltoaiᚋlesser
 	return res
 }
 
+func (ec *executionContext) marshalNCommunicationAttachment2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationAttachmentᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.CommunicationAttachment) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNCommunicationAttachment2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationAttachment(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNCommunicationAttachment2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationAttachment(ctx context.Context, sel ast.SelectionSet, v *model.CommunicationAttachment) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CommunicationAttachment(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNCommunicationFrom2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationFrom(ctx context.Context, sel ast.SelectionSet, v *model.CommunicationFrom) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CommunicationFrom(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNCommunityNote2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunityNote(ctx context.Context, sel ast.SelectionSet, v model.CommunityNote) graphql.Marshaler {
 	return ec._CommunityNote(ctx, sel, &v)
 }
@@ -163053,6 +164415,20 @@ func (ec *executionContext) marshalOCategory2ᚖgithubᚗcomᚋequaltoaiᚋlesse
 		return graphql.Null
 	}
 	return ec._Category(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOCommunicationNotification2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationNotification(ctx context.Context, sel ast.SelectionSet, v *model.CommunicationNotification) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._CommunicationNotification(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOCommunicationTo2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCommunicationTo(ctx context.Context, sel ast.SelectionSet, v *model.CommunicationTo) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._CommunicationTo(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOContentFormat2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐContentFormat(ctx context.Context, v any) (*model.ContentFormat, error) {

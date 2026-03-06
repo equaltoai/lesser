@@ -66,6 +66,30 @@ func TestRound12EventConverter_BasicConversions(t *testing.T) {
 	require.NotNil(t, notification)
 	require.NotNil(t, notification.Status)
 
+	communication := ec.ConvertToNotification(&streaming.InternalEvent{
+		ID:        "evt-notif-comm",
+		Type:      streaming.EventTypeNotification,
+		Timestamp: now,
+		Data: &streaming.NotificationEventPayload{
+			NotificationID: "n1-comm",
+			Type:           "communication:inbound",
+			ActorID:        "https://localhost/users/bob",
+			Read:           true,
+			Data: map[string]interface{}{
+				"channel":   "email",
+				"messageId": "msg-1",
+				"from": map[string]interface{}{
+					"address": "bob@example.com",
+				},
+			},
+			CreatedAt: now,
+		},
+	})
+	require.NotNil(t, communication)
+	require.True(t, communication.Read)
+	require.NotNil(t, communication.Communication)
+	require.Equal(t, "msg-1", communication.Communication.MessageID)
+
 	noStatus := ec.ConvertToNotification(&streaming.InternalEvent{
 		ID:        "evt-notif-2",
 		Type:      streaming.EventTypeNotification,
