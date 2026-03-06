@@ -499,8 +499,40 @@ type Notification {
   type: String! # follow, mention, favourite, reblog
   account: Actor! # Who triggered the notification
   status: Object # Related status (if any)
+  communication: CommunicationNotification
   read: Boolean!
   createdAt: Time!
+}
+
+type CommunicationNotification {
+  channel: String!
+  from: CommunicationFrom!
+  to: CommunicationTo
+  attachments: [CommunicationAttachment!]!
+  subject: String
+  body: String
+  receivedAt: Time!
+  messageId: String!
+  inReplyTo: String
+  threadId: String!
+}
+
+type CommunicationFrom {
+  address: String!
+  displayName: String
+  soulAgentId: String
+}
+
+type CommunicationTo {
+  address: String!
+}
+
+type CommunicationAttachment {
+  id: ID!
+  filename: String!
+  contentType: String!
+  sizeBytes: Int!
+  sha256: String!
 }
 
 # Status edit history entry (Mastodon compatibility)

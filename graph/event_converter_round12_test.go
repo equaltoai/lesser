@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -65,6 +66,30 @@ func TestRound12EventConverter_BasicConversions(t *testing.T) {
 	})
 	require.NotNil(t, notification)
 	require.NotNil(t, notification.Status)
+
+	communication := ec.ConvertToNotification(&streaming.InternalEvent{
+		ID:        "evt-notif-comm",
+		Type:      streaming.EventTypeNotification,
+		Timestamp: now,
+		Data: &streaming.NotificationEventPayload{
+			NotificationID: "n1-comm",
+			Type:           "communication:inbound",
+			ActorID:        "https://localhost/users/bob",
+			Read:           true,
+			Data: map[string]interface{}{
+				"channel":   "email",
+				"messageId": "msg-1",
+				"from": map[string]interface{}{
+					"address": "bob@example.com",
+				},
+			},
+			CreatedAt: now,
+		},
+	})
+	require.NotNil(t, communication)
+	require.True(t, communication.Read)
+	require.NotNil(t, communication.Communication)
+	require.Equal(t, "msg-1", communication.Communication.MessageID)
 
 	noStatus := ec.ConvertToNotification(&streaming.InternalEvent{
 		ID:        "evt-notif-2",
@@ -463,6 +488,16 @@ func TestRound12EventConverter_ParseAndExtractHelpers(t *testing.T) {
 	f, err := parseFloatFromString("1.5")
 	require.NoError(t, err)
 	require.Equal(t, 1.5, f)
+
+	safeInt, ok := safeIntFromInt64(123)
+	require.True(t, ok)
+	require.Equal(t, 123, safeInt)
+
+	_, ok = safeIntFromInt64(math.MaxInt32 + 1)
+	require.False(t, ok)
+
+	_, ok = safeIntFromInt64(math.MinInt32 - 1)
+	require.False(t, ok)
 
 	require.Equal(t, "", extractStringFromData("not-a-map", "k"))
 	require.False(t, extractBoolFromData("not-a-map", "k"))

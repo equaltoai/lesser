@@ -366,12 +366,13 @@ func (r *Resolver) convertNotificationToGraphQL(ctx context.Context, notif *mode
 	status := r.loadNotificationStatus(ctx, notif)
 
 	return &model.Notification{
-		ID:        notif.ID,
-		Type:      notif.Type,
-		Account:   account,
-		Status:    status,
-		Read:      notif.IsRead,
-		CreatedAt: model.Time(notif.CreatedAt),
+		ID:            notif.ID,
+		Type:          notif.Type,
+		Account:       account,
+		Status:        status,
+		Communication: communicationNotificationFromData(notif.Type, notif.CreatedAt, notif.Data),
+		Read:          notif.IsRead,
+		CreatedAt:     model.Time(notif.CreatedAt),
 	}
 }
 

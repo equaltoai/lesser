@@ -4,17 +4,17 @@ import type { Snippet } from 'svelte';
  * Preset spacing values.
  * @public
  */
-type SpacingPreset = 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+export type SpacingPreset = 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
 /**
  * Background variant presets.
  * @public
  */
-type BackgroundVariant = 'default' | 'muted' | 'accent' | 'gradient';
+export type BackgroundPreset = 'default' | 'muted' | 'accent' | 'gradient';
 /**
  * Gradient direction options.
  * @public
  */
-type GradientDirection =
+export type GradientDirection =
 	| 'to-top'
 	| 'to-bottom'
 	| 'to-left'
@@ -80,7 +80,7 @@ interface Props extends HTMLAttributes<HTMLElement> {
 	 * @defaultValue 'default'
 	 * @public
 	 */
-	background?: BackgroundVariant | string;
+	background?: BackgroundPreset | string;
 	/**
 	 * Direction for gradient backgrounds.
 	 * Only applies when background="gradient".

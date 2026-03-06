@@ -18,7 +18,16 @@ export type {
 	CustomPalette,
 	ColorScale,
 	ColorShade,
+	FontPreset,
 } from 'src/lib/greater/tokens';
+export type { WidthPreset, HeightPreset } from './components/Skeleton.svelte';
+export type { ContainerSize, GutterPreset } from './components/Container.svelte';
+export type {
+	SpacingPreset,
+	BackgroundPreset,
+	GradientDirection,
+} from './components/Section.svelte';
+export type { Placement } from './components/Tooltip.svelte';
 import Button from './components/Button.svelte';
 import CopyButton from './components/CopyButton.svelte';
 import TextField from './components/TextField.svelte';

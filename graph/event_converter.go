@@ -64,9 +64,11 @@ func (ec *EventConverter) ConvertToNotification(event *streaming.InternalEvent) 
 	}
 
 	return &model.Notification{
-		ID:        payload.NotificationID,
-		Type:      payload.Type,
-		CreatedAt: model.Time(payload.CreatedAt),
+		ID:            payload.NotificationID,
+		Type:          payload.Type,
+		Communication: communicationNotificationFromData(payload.Type, payload.CreatedAt, payload.Data),
+		Read:          payload.Read,
+		CreatedAt:     model.Time(payload.CreatedAt),
 		Account: &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
 				ID:   payload.ActorID,
@@ -725,7 +727,7 @@ func parseFloatFromString(s string) (float64, error) {
 }
 
 func safeIntFromInt64(value int64) (int, bool) {
-	if strconv.IntSize == 32 && (value > math.MaxInt32 || value < math.MinInt32) {
+	if value > math.MaxInt32 || value < math.MinInt32 {
 		return 0, false
 	}
 	return int(value), true

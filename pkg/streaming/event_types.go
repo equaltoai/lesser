@@ -327,13 +327,14 @@ type AccountEventPayload struct {
 
 // NotificationEventPayload represents the payload for notification events
 type NotificationEventPayload struct {
-	NotificationID string    `json:"notification_id"`
-	Type           string    `json:"type"` // follow, mention, favourite, reblog, etc.
-	RecipientID    string    `json:"recipient_id"`
-	ActorID        string    `json:"actor_id"`
-	StatusID       string    `json:"status_id,omitempty"`
-	Read           bool      `json:"read"`
-	CreatedAt      time.Time `json:"created_at"`
+	NotificationID string                 `json:"notification_id"`
+	Type           string                 `json:"type"` // follow, mention, favourite, reblog, etc.
+	RecipientID    string                 `json:"recipient_id"`
+	ActorID        string                 `json:"actor_id"`
+	StatusID       string                 `json:"status_id,omitempty"`
+	Data           map[string]interface{} `json:"data,omitempty"`
+	Read           bool                   `json:"read"`
+	CreatedAt      time.Time              `json:"created_at"`
 }
 
 // ModerationEventPayload represents the payload for moderation events
