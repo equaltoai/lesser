@@ -4,6 +4,8 @@
  */
 /** Available preset palette names */
 export type PalettePreset = 'slate' | 'stone' | 'neutral' | 'zinc' | 'gray';
+/** Available font preset names */
+export type FontPreset = 'system' | 'sans' | 'serif' | 'mono';
 /** Color scale shade values (50-950) */
 export type ColorShade =
 	| '50'
