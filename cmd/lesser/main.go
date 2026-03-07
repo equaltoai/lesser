@@ -36,6 +36,7 @@ var (
 	runSmokeFn        = runSmoke
 	runAuthFn         = runAuth
 	runAPIFn          = runAPI
+	runSoulFn         = runSoul
 )
 
 func runCLI(args []string, stderr io.Writer) int {
@@ -94,6 +95,7 @@ func commandRunner(cmd string) (func([]string) error, bool) {
 		"smoke":         func(argv []string) error { return runSmokeFn(argv) },
 		"auth":          func(argv []string) error { return runAuthFn(argv) },
 		"api":           func(argv []string) error { return runAPIFn(argv) },
+		"soul":          func(argv []string) error { return runSoulFn(argv) },
 	}
 
 	runner, ok := runners[cmd]
@@ -148,6 +150,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser smoke core|federation [flags...]")
 	_, _ = fmt.Fprintln(w, "  lesser auth login|logout|status|whoami|device [flags...]")
 	_, _ = fmt.Fprintln(w, "  lesser api request --method GET --path /api/v1/accounts/verify_credentials [flags...]")
+	_, _ = fmt.Fprintln(w, "  lesser soul ens set|preview|publish [flags...]")
 }
 
 func exitCodeFromErr(err error, stderr io.Writer) int {

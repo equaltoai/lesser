@@ -134,6 +134,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevSmoke := runSmokeFn
 	prevAuth := runAuthFn
 	prevAPI := runAPIFn
+	prevSoul := runSoulFn
 	t.Cleanup(func() {
 		runUpFn = prevUp
 		runDownFn = prevDown
@@ -160,6 +161,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 		runSmokeFn = prevSmoke
 		runAuthFn = prevAuth
 		runAPIFn = prevAPI
+		runSoulFn = prevSoul
 	})
 
 	type call struct {
@@ -198,6 +200,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runSmokeFn = stub("smoke")
 	runAuthFn = stub("auth")
 	runAPIFn = stub("api")
+	runSoulFn = stub("soul")
 
 	var buf bytes.Buffer
 	require.Equal(t, 0, runCLI([]string{"lesser", helpFlagShort}, &buf))
@@ -284,6 +287,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "api", "request", "--method", "GET", "--path", "/api/v1/accounts/verify_credentials"}, &buf))
 	require.Equal(t, []string{"request", "--method", "GET", "--path", "/api/v1/accounts/verify_credentials"}, calls["api"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "soul", "ens", "preview", "--agent-id", "0xabc"}, &buf))
+	require.Equal(t, []string{"ens", "preview", "--agent-id", "0xabc"}, calls["soul"].argv)
 }
 
 func TestExitCodeFromErr(t *testing.T) {

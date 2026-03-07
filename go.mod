@@ -1,6 +1,6 @@
 module github.com/equaltoai/lesser
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/99designs/gqlgen v0.17.87
@@ -90,6 +90,7 @@ require (
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
 	github.com/consensys/gnark-crypto v0.19.2 // indirect
 	github.com/crate-crypto/go-eth-kzg v1.5.0 // indirect
+	github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dchest/uniuri v1.2.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect

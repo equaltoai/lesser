@@ -31,6 +31,7 @@ type InstanceRepository struct {
 	tipsRepo                     *BaseRepository[*models.InstanceTipsConfig]
 	aiConfigRepo                 *BaseRepository[*models.AIInstanceConfig]
 	wellKnownLesserSoulAgentRepo *BaseRepository[*models.InstanceWellKnownLesserSoulAgent]
+	soulENSChannelRepo           *BaseRepository[*models.InstanceSoulENSChannel]
 	logger                       *zap.Logger
 
 	stateCache                    instanceStateCache
@@ -115,6 +116,7 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 		tipsRepo:                     NewBaseRepository[*models.InstanceTipsConfig](db, tableName, logger),
 		aiConfigRepo:                 NewBaseRepository[*models.AIInstanceConfig](db, tableName, logger),
 		wellKnownLesserSoulAgentRepo: NewBaseRepository[*models.InstanceWellKnownLesserSoulAgent](db, tableName, logger),
+		soulENSChannelRepo:           NewBaseRepository[*models.InstanceSoulENSChannel](db, tableName, logger),
 		logger:                       logger,
 	}
 }
@@ -142,6 +144,7 @@ func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger 
 		tipsRepo:                     NewBaseRepositoryWithCostTracking[*models.InstanceTipsConfig](db, tableName, logger, costService, "instance_tips_config"),
 		aiConfigRepo:                 NewBaseRepositoryWithCostTracking[*models.AIInstanceConfig](db, tableName, logger, costService, "instance_ai_config"),
 		wellKnownLesserSoulAgentRepo: NewBaseRepositoryWithCostTracking[*models.InstanceWellKnownLesserSoulAgent](db, tableName, logger, costService, "instance_well_known_lesser_soul_agent"),
+		soulENSChannelRepo:           NewBaseRepositoryWithCostTracking[*models.InstanceSoulENSChannel](db, tableName, logger, costService, "instance_soul_ens_channel"),
 		logger:                       logger,
 	}
 }
