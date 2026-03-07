@@ -1,5 +1,7 @@
 package models
 
+import "strings"
+
 const (
 	instanceConfigPK = "INSTANCE#CONFIG"
 
@@ -17,4 +19,16 @@ const (
 
 	// SKWellKnownLesserSoulAgent is the sort key for the soul HTTPS proof record (PK="INSTANCE#CONFIG").
 	SKWellKnownLesserSoulAgent = "WELL_KNOWN_LESSER_SOUL_AGENT"
+
+	// SKSoulENSChannelPrefix is the sort-key prefix for per-agent soul ENS channel config records.
+	SKSoulENSChannelPrefix = "SOUL_ENS_CHANNEL#"
 )
+
+// SoulENSChannelSortKey returns the sort key for an instance-owned soul ENS channel config record.
+func SoulENSChannelSortKey(agentID string) string {
+	agentID = strings.ToLower(strings.TrimSpace(agentID))
+	if agentID == "" {
+		return ""
+	}
+	return SKSoulENSChannelPrefix + agentID
+}
