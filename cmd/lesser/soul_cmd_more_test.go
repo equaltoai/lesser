@@ -1112,10 +1112,32 @@ func TestSoulHTTPHelpers_TransportErrors(t *testing.T) {
 		}),
 	}
 
-	err := publishSoulRegistration(context.Background(), "https://trust.example.com", "instance-key", "agent-id", []byte(`{}`))
+	_, err := fetchSoulRegistration(context.Background(), "https://trust.example.com", "agent-id")
+	require.ErrorContains(t, err, "boom")
+
+	_, err = fetchLatestSoulVersion(context.Background(), "https://trust.example.com", "agent-id")
+	require.ErrorContains(t, err, "boom")
+
+	err = publishSoulRegistration(context.Background(), "https://trust.example.com", "instance-key", "agent-id", []byte(`{}`))
 	require.ErrorContains(t, err, "boom")
 
 	_, err = verifySoulENSResolution(context.Background(), "https://trust.example.com", "agent.example.eth")
+	require.ErrorContains(t, err, "boom")
+}
+
+func TestResolveSoulSigningMaterial_WalletSecretTransportError(t *testing.T) {
+	cfg := aws.Config{
+		Region:      "us-east-1",
+		Credentials: credentials.NewStaticCredentialsProvider("AKID", "SECRET", ""),
+	}
+	cfg.HTTPClient = staticHTTPClient(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("boom")
+	})
+
+	_, err := resolveSoulSigningMaterial(context.Background(), soulTarget{AWSConfig: cfg}, soulENSPublishFlags{
+		WalletSecretARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:test",
+	})
+	require.ErrorContains(t, err, "resolve wallet secret")
 	require.ErrorContains(t, err, "boom")
 }
 
