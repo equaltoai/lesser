@@ -148,3 +148,41 @@ func TestGenerateSubcommands_MoreErrorBranches(t *testing.T) {
 	ensureToolAvailableFn = func(string) error { return errSentinel }
 	require.ErrorIs(t, runGenerateInventory(nil), errSentinel)
 }
+
+func TestGenerateSubcommands_GoCacheErrors(t *testing.T) {
+	previousEnsureTool := ensureToolAvailableFn
+	previousRepoRoot := findRepoRootFn
+	t.Cleanup(func() {
+		ensureToolAvailableFn = previousEnsureTool
+		findRepoRootFn = previousRepoRoot
+	})
+
+	t.Setenv("GOCACHE", "")
+	ensureToolAvailableFn = func(string) error { return nil }
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "tmp"), []byte("x"), 0o644))
+
+	require.Error(t, runGenerateGraphQLCoverage(nil))
+	require.Error(t, runGenerateInventory(nil))
+}
+
+func TestGenerateSubcommands_CommandErrors(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousEnsureTool := ensureToolAvailableFn
+	previousRepoRoot := findRepoRootFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		ensureToolAvailableFn = previousEnsureTool
+		findRepoRootFn = previousRepoRoot
+	})
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	ensureToolAvailableFn = func(string) error { return nil }
+	runCommandFn = func(context.Context, string, []string, execOptions) error { return errSentinel }
+
+	require.ErrorIs(t, runGenerateOpenAPI(nil), errSentinel)
+	require.ErrorIs(t, runGenerateGraphQLCoverage(nil), errSentinel)
+}
