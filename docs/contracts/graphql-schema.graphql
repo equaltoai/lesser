@@ -4276,6 +4276,41 @@ input AdminVerifyAgentInput {
   exitQuarantine: Boolean
 }
 
+enum SoulBindingState {
+  UNBOUND
+  BOUND
+}
+
+type SoulAgentIdentity {
+  agentId: ID!
+  domain: String!
+  localId: String!
+  ensName: String
+  wallet: String!
+  principalAddress: String
+  status: String!
+  lifecycleStatus: String
+  selfDescriptionVersion: Int
+  capabilities: [String!]!
+  mintTxHash: String
+  mintedAt: Time
+  updatedAt: Time
+}
+
+type SoulBodyBinding {
+  username: String!
+  principalAddress: String
+  boundAt: Time!
+  updatedAt: Time!
+}
+
+type SoulInventoryItem {
+  agent: SoulAgentIdentity!
+  bindingState: SoulBindingState!
+  availableForIncorporation: Boolean!
+  binding: SoulBodyBinding
+}
+
 extend type Query {
   agent(username: String!): Agent
   agents(first: Int = 20, after: Cursor, type: AgentType, query: String, verified: Boolean, ownerUsername: String): AgentConnection!
@@ -4283,6 +4318,7 @@ extend type Query {
   agentActivity(username: String!, first: Int = 20, after: Cursor): AgentActivityConnection!
   adminAgentPolicy: AdminAgentPolicy!
   agentMemorySearch(query: String!, tags: [String!], dateRange: DateRangeInput, first: Int = 20, after: Cursor): ObjectConnection!
+  mySouls: [SoulInventoryItem!]!
 }
 
 extend type Mutation {
@@ -4297,6 +4333,7 @@ extend type Mutation {
   adminVerifyAgent(username: String!, input: AdminVerifyAgentInput): Agent!
   adminUnverifyAgent(username: String!, input: AdminVerifyAgentInput): Agent!
   adminSuspendAgent(username: String!): Agent!
+  incorporateSoul(agentId: ID!): SoulInventoryItem!
 }
 
 extend type Subscription {

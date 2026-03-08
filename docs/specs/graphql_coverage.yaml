@@ -53,13 +53,11 @@ exemptions:
         prefixes:
             - /api/v1/trust
     - id: lesser_soul
-      reason: lesser-soul proof, discovery, and incorporation endpoints are REST-only internal surfaces.
+      reason: lesser-soul proof publication and internal notification delivery remain REST-only.
       match:
         exact:
             - /api/v1/admin/soul/well-known
             - /api/v1/notifications/deliver
-        prefixes:
-            - /api/v1/souls
 routes:
     - method: GET
       path: /
@@ -1067,12 +1065,16 @@ routes:
         - Query.search
     - method: GET
       path: /api/v1/souls/mine
-      policy: rest_only
-      exemptedBy: lesser_soul
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.mySouls
     - method: POST
       path: /api/v1/souls/{agentId}/incorporate
-      policy: rest_only
-      exemptedBy: lesser_soul
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.incorporateSoul
     - method: POST
       path: /api/v1/statuses
       policy: graphql_required
