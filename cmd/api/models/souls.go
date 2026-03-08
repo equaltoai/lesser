@@ -7,6 +7,7 @@ type SoulAgentIdentity struct {
 	AgentID                string     `json:"agent_id"`
 	Domain                 string     `json:"domain"`
 	LocalID                string     `json:"local_id"`
+	ENSName                *string    `json:"ens_name"`
 	Wallet                 string     `json:"wallet"`
 	PrincipalAddress       string     `json:"principal_address,omitempty"`
 	Status                 string     `json:"status"`

@@ -53,6 +53,7 @@ type Soul struct {
 	AgentID                string
 	Domain                 string
 	LocalID                string
+	ENSName                *string
 	Wallet                 string
 	PrincipalAddress       string
 	Status                 string
@@ -391,6 +392,7 @@ func soulFromIdentity(identity *hostSoulIdentity, binding *storageModels.Instanc
 		AgentID:                identity.AgentID,
 		Domain:                 strings.TrimSpace(identity.Domain),
 		LocalID:                strings.TrimSpace(identity.LocalID),
+		ENSName:                normalizedOptionalString(identity.ENSName),
 		Wallet:                 strings.ToLower(strings.TrimSpace(identity.Wallet)),
 		PrincipalAddress:       strings.ToLower(strings.TrimSpace(identity.PrincipalAddress)),
 		Status:                 strings.TrimSpace(identity.Status),
@@ -411,6 +413,17 @@ func soulFromIdentity(identity *hostSoulIdentity, binding *storageModels.Instanc
 	return soul
 }
 
+func normalizedOptionalString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
 type hostSoulSearchResponse struct {
 	Results    []hostSoulSearchResult `json:"results"`
 	HasMore    bool                   `json:"has_more"`
@@ -429,6 +442,7 @@ type hostSoulIdentity struct {
 	AgentID                string     `json:"agent_id"`
 	Domain                 string     `json:"domain"`
 	LocalID                string     `json:"local_id"`
+	ENSName                *string    `json:"ens_name"`
 	Wallet                 string     `json:"wallet"`
 	PrincipalAddress       string     `json:"principal_address"`
 	Status                 string     `json:"status"`

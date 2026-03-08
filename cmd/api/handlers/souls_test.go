@@ -38,12 +38,14 @@ func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	alphaENS := "alpha.eth"
 	service := &stubSoulHandlerService{
 		listMineOut: []soulservice.Soul{
 			{
 				AgentID:          "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				Domain:           "example.com",
 				LocalID:          "alpha",
+				ENSName:          &alphaENS,
 				Wallet:           "0x1111111111111111111111111111111111111111",
 				PrincipalAddress: "0x1111111111111111111111111111111111111111",
 				Status:           "active",
@@ -87,18 +89,23 @@ func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {
 	require.NoError(t, err)
 
 	resp := requireStatus(t, http.StatusOK)(h.HandleGetMySoulsLift(ctx))
+	require.Contains(t, string(resp.Body), "\"ens_name\":\"alpha.eth\"")
+	require.Contains(t, string(resp.Body), "\"ens_name\":null")
 
 	var body apimodels.SoulsMineResponse
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	require.Equal(t, "alice", service.lastUsername)
 	require.Len(t, body.Souls, 3)
 	require.Equal(t, 3, body.Count)
+	require.NotNil(t, body.Souls[0].Agent.ENSName)
+	require.Equal(t, alphaENS, *body.Souls[0].Agent.ENSName)
 	require.Equal(t, "unbound", body.Souls[0].BindingState)
 	require.True(t, body.Souls[0].AvailableForIncorporation)
 	require.Equal(t, "bound", body.Souls[1].BindingState)
 	require.True(t, body.Souls[1].AvailableForIncorporation)
 	require.NotNil(t, body.Souls[1].Binding)
 	require.Equal(t, "alice", body.Souls[1].Binding.Username)
+	require.Nil(t, body.Souls[1].Agent.ENSName)
 	require.Equal(t, "bound", body.Souls[2].BindingState)
 	require.False(t, body.Souls[2].AvailableForIncorporation)
 	require.NotNil(t, body.Souls[2].Binding)
@@ -109,6 +116,7 @@ func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 	t.Parallel()
 
 	const agentID = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	successENS := "alpha.eth"
 
 	cfg := round10TestConfig()
 	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-2")
@@ -126,6 +134,7 @@ func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 					AgentID:               agentID,
 					Domain:                "example.com",
 					LocalID:               "alpha",
+					ENSName:               &successENS,
 					Wallet:                "0x1111111111111111111111111111111111111111",
 					PrincipalAddress:      "0x1111111111111111111111111111111111111111",
 					Status:                "active",
@@ -182,12 +191,15 @@ func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 			if tc.wantStatus != http.StatusOK {
 				return
 			}
+			require.Contains(t, string(resp.Body), "\"ens_name\":\"alpha.eth\"")
 
 			var body apimodels.SoulIncorporateResponse
 			require.NoError(t, json.Unmarshal(resp.Body, &body))
 			require.Equal(t, "alice", tc.service.lastUsername)
 			require.Equal(t, agentID, tc.service.lastIncorporate)
 			require.Equal(t, agentID, body.Soul.Agent.AgentID)
+			require.NotNil(t, body.Soul.Agent.ENSName)
+			require.Equal(t, successENS, *body.Soul.Agent.ENSName)
 			require.True(t, body.Soul.AvailableForIncorporation)
 			require.NotNil(t, body.Soul.Binding)
 			require.Equal(t, tc.wantAvailable, body.Soul.AvailableForIncorporation)

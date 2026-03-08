@@ -4736,6 +4736,10 @@ components:
                     type: array
                 domain:
                     type: string
+                ens_name:
+                    anyOf:
+                        - type: string
+                        - type: "null"
                 lifecycle_status:
                     type: string
                 local_id:

@@ -117,6 +117,8 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 		agentGamma  = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 		agentDelta  = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	)
+	alphaENS := "alpha.eth"
+	betaENS := "beta.eth"
 
 	var mu sync.Mutex
 	searchCalls := map[string][]string{}
@@ -186,6 +188,7 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 					"agent_id":          agentAlpha,
 					"domain":            "example.com",
 					"local_id":          "alpha",
+					"ens_name":          alphaENS,
 					"wallet":            walletAlice,
 					"principal_address": walletAlice,
 					"status":            "active",
@@ -197,6 +200,7 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 					"agent_id":          agentBeta,
 					"domain":            "example.com",
 					"local_id":          "beta",
+					"ens_name":          betaENS,
 					"wallet":            walletAlt,
 					"principal_address": walletAlt,
 					"status":            "active",
@@ -208,6 +212,7 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 					"agent_id":          agentGamma,
 					"domain":            "example.com",
 					"local_id":          "gamma",
+					"ens_name":          "   ",
 					"wallet":            walletAlt,
 					"principal_address": "",
 					"status":            "active",
@@ -275,15 +280,20 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 
 	require.Equal(t, agentAlpha, souls[0].AgentID)
 	require.False(t, souls[0].Bound)
+	require.NotNil(t, souls[0].ENSName)
+	require.Equal(t, alphaENS, *souls[0].ENSName)
 
 	require.Equal(t, agentBeta, souls[1].AgentID)
 	require.True(t, souls[1].Bound)
 	require.Equal(t, "alice", souls[1].BoundUsername)
+	require.NotNil(t, souls[1].ENSName)
+	require.Equal(t, betaENS, *souls[1].ENSName)
 
 	require.Equal(t, agentGamma, souls[2].AgentID)
 	require.True(t, souls[2].Bound)
 	require.Equal(t, "bob", souls[2].BoundUsername)
 	require.Equal(t, walletAlt, souls[2].BoundPrincipalAddress)
+	require.Nil(t, souls[2].ENSName)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -302,6 +312,7 @@ func TestService_Incorporate_Success(t *testing.T) {
 		walletAlice = "0x3333333333333333333333333333333333333333"
 		agentAlpha  = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	)
+	ensName := "alpha.eth"
 
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -311,6 +322,7 @@ func TestService_Incorporate_Success(t *testing.T) {
 				"agent_id":          agentAlpha,
 				"domain":            "example.com",
 				"local_id":          "alpha",
+				"ens_name":          ensName,
 				"wallet":            walletAlice,
 				"principal_address": walletAlice,
 				"status":            "active",
@@ -339,6 +351,8 @@ func TestService_Incorporate_Success(t *testing.T) {
 	require.True(t, soul.Bound)
 	require.Equal(t, "alice", soul.BoundUsername)
 	require.Equal(t, walletAlice, soul.BoundPrincipalAddress)
+	require.NotNil(t, soul.ENSName)
+	require.Equal(t, ensName, *soul.ENSName)
 }
 
 func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
@@ -698,6 +712,14 @@ func TestSoulHelpers(t *testing.T) {
 
 	require.True(t, domainMatches("Example.com", "example.com"))
 	require.False(t, domainMatches("example.org", "example.com"))
+
+	require.Nil(t, normalizedOptionalString(nil))
+	blank := "   "
+	require.Nil(t, normalizedOptionalString(&blank))
+	value := " alpha.eth "
+	normalizedValue := normalizedOptionalString(&value)
+	require.NotNil(t, normalizedValue)
+	require.Equal(t, "alpha.eth", *normalizedValue)
 
 	_, err = validateAgentID("0xzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
 	require.Error(t, err)
