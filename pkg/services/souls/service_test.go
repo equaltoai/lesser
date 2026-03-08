@@ -743,6 +743,21 @@ func TestService_ListMineAndSearchEdgePaths(t *testing.T) {
 		require.Empty(t, souls)
 	})
 
+	t.Run("discovery input error is propagated", func(t *testing.T) {
+		t.Parallel()
+
+		accountErr := errors.New("wallet lookup failed")
+		service := NewService(
+			&fakeAccountRepo{err: accountErr},
+			&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://trust.example"}},
+			&config.Config{Domain: "example.com"},
+			zap.NewNop(),
+		)
+
+		_, err := service.ListMine(context.Background(), "alice")
+		require.ErrorIs(t, err, accountErr)
+	})
+
 	t.Run("discovered agent removed when identity disappears", func(t *testing.T) {
 		t.Parallel()
 
@@ -868,6 +883,39 @@ func TestService_ListMineAndSearchEdgePaths(t *testing.T) {
 
 		_, err := service.ListMine(context.Background(), "alice")
 		require.ErrorIs(t, err, bindingErr)
+	})
+
+	t.Run("identity fetch error is propagated", func(t *testing.T) {
+		t.Parallel()
+
+		const agentAlpha = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+		host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/api/v1/soul/search":
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"version": "1",
+					"results": []map[string]any{{"agent_id": agentAlpha}},
+					"count":   1,
+				}))
+			case strings.HasPrefix(r.URL.Path, "/api/v1/soul/agents/"):
+				http.Error(w, "boom", http.StatusBadGateway)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer host.Close()
+
+		service := NewService(
+			&fakeAccountRepo{wallets: []*storage.WalletCredential{{Address: "0x1111111111111111111111111111111111111111"}}},
+			&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+			&config.Config{Domain: "example.com"},
+			zap.NewNop(),
+		).WithHTTPClient(host.Client())
+
+		_, err := service.ListMine(context.Background(), "alice")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "get soul agent failed")
 	})
 
 	t.Run("search stops after max pages", func(t *testing.T) {
