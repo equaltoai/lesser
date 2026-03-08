@@ -4725,6 +4725,103 @@ components:
             description: Mastodon-compatible snowflake identifier (stringified uint).
             pattern: ^[0-9]+$
             type: string
+        SoulAgentIdentity:
+            additionalProperties: false
+            properties:
+                agent_id:
+                    type: string
+                capabilities:
+                    items:
+                        type: string
+                    type: array
+                domain:
+                    type: string
+                lifecycle_status:
+                    type: string
+                local_id:
+                    type: string
+                mint_tx_hash:
+                    type: string
+                minted_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                principal_address:
+                    type: string
+                self_description_version:
+                    anyOf:
+                        - type: integer
+                        - type: "null"
+                status:
+                    type: string
+                updated_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                wallet:
+                    type: string
+            required:
+                - agent_id
+                - domain
+                - local_id
+                - status
+                - wallet
+            type: object
+        SoulBodyBinding:
+            additionalProperties: false
+            properties:
+                bound_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                principal_address:
+                    type: string
+                updated_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                username:
+                    type: string
+            required:
+                - bound_at
+                - updated_at
+                - username
+            type: object
+        SoulIncorporateResponse:
+            additionalProperties: false
+            properties:
+                soul:
+                    $ref: '#/components/schemas/SoulInventoryItem'
+            required:
+                - soul
+            type: object
+        SoulInventoryItem:
+            additionalProperties: false
+            properties:
+                agent:
+                    $ref: '#/components/schemas/SoulAgentIdentity'
+                available_for_incorporation:
+                    type: boolean
+                binding:
+                    anyOf:
+                        - $ref: '#/components/schemas/SoulBodyBinding'
+                        - type: "null"
+                binding_state:
+                    type: string
+            required:
+                - agent
+                - available_for_incorporation
+                - binding_state
+            type: object
+        SoulsMineResponse:
+            additionalProperties: false
+            properties:
+                count:
+                    type: integer
+                souls:
+                    items:
+                        $ref: '#/components/schemas/SoulInventoryItem'
+                    type: array
+            required:
+                - count
+                - souls
+            type: object
         Status:
             additionalProperties: false
             properties:
@@ -13908,6 +14005,64 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - read
+    /api/v1/souls/{agentId}/incorporate:
+        post:
+            operationId: post_api_v1_souls_by_agentId_incorporate
+            tags:
+                - souls
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: agentId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SoulIncorporateResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleIncorporateSoulLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - write
+    /api/v1/souls/mine:
+        get:
+            operationId: get_api_v1_souls_mine
+            tags:
+                - souls
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SoulsMineResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetMySoulsLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/statuses:
         post:
             operationId: post_api_v1_statuses

@@ -182,6 +182,9 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("OPTIONS", "/api/v1/agents/memory/search", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/agents/{username}/suspend", optionsHandler)
 
+	app.Handle("OPTIONS", "/api/v1/souls/mine", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/souls/{agentId}/incorporate", optionsHandler)
+
 	// Relationships endpoint with native Lift implementation
 	app.Get("/api/v1/accounts/relationships", apiHandler.HandleGetRelationshipsLift)
 
@@ -384,6 +387,10 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/api/v1/vouches", apiHandler.HandleCreateVouchLift)
 	app.Get("/api/v1/vouches/{actor_id}", apiHandler.HandleGetVouchesLift)
 	app.Delete("/api/v1/vouches/{vouch_id}", apiHandler.HandleRevokeVouchLift)
+
+	// Souls
+	app.Get("/api/v1/souls/mine", apiHandler.HandleGetMySoulsLift)
+	app.Post("/api/v1/souls/{agentId}/incorporate", apiHandler.HandleIncorporateSoulLift)
 
 	// lesser-host trust proxy (managed instances)
 	// Requires user auth for all JSON endpoints; public media endpoints do not require auth.

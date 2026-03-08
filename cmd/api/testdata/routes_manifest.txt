@@ -96,6 +96,7 @@ GET /api/v1/reputation/{actor_id}
 GET /api/v1/scheduled_statuses
 GET /api/v1/scheduled_statuses/{id}
 GET /api/v1/search/statuses
+GET /api/v1/souls/mine
 GET /api/v1/statuses/{id}
 GET /api/v1/statuses/{id}/context
 GET /api/v1/statuses/{id}/favourited_by
@@ -165,6 +166,8 @@ OPTIONS /api/v1/auth/webauthn/login/begin
 OPTIONS /api/v1/auth/webauthn/login/finish
 OPTIONS /api/v1/auth/webauthn/register/begin
 OPTIONS /api/v1/auth/webauthn/register/finish
+OPTIONS /api/v1/souls/mine
+OPTIONS /api/v1/souls/{agentId}/incorporate
 OPTIONS /api/v1/trust/ai/claims/verify
 OPTIONS /api/v1/trust/ai/jobs/{jobId}
 OPTIONS /api/v1/trust/attestations
@@ -269,6 +272,7 @@ POST /api/v1/reputation/export
 POST /api/v1/reputation/import
 POST /api/v1/reputation/verify
 POST /api/v1/search/statuses
+POST /api/v1/souls/{agentId}/incorporate
 POST /api/v1/statuses
 POST /api/v1/statuses/{id}/bookmark
 POST /api/v1/statuses/{id}/favourite

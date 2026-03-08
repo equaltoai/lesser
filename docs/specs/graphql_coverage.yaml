@@ -53,22 +53,24 @@ exemptions:
         prefixes:
             - /api/v1/trust
     - id: lesser_soul
-      reason: lesser-soul comm delivery + proof endpoints are REST-only internal surfaces.
+      reason: lesser-soul proof, discovery, and incorporation endpoints are REST-only internal surfaces.
       match:
         exact:
             - /api/v1/admin/soul/well-known
             - /api/v1/notifications/deliver
+        prefixes:
+            - /api/v1/souls
 routes:
     - method: GET
       path: /
       policy: rest_only
       exemptedBy: ui_routing
     - method: GET
-      path: /.well-known/nodeinfo
+      path: /.well-known/lesser-soul-agent
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
-      path: /.well-known/lesser-soul-agent
+      path: /.well-known/nodeinfo
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
@@ -1063,6 +1065,14 @@ routes:
       status: covered
       graphql:
         - Query.search
+    - method: GET
+      path: /api/v1/souls/mine
+      policy: rest_only
+      exemptedBy: lesser_soul
+    - method: POST
+      path: /api/v1/souls/{agentId}/incorporate
+      policy: rest_only
+      exemptedBy: lesser_soul
     - method: POST
       path: /api/v1/statuses
       policy: graphql_required
@@ -1526,6 +1536,10 @@ routes:
       policy: rest_only
       exemptedBy: oauth_oidc
     - method: POST
+      path: /oauth/consent
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
       path: /oauth/device/code
       policy: rest_only
       exemptedBy: oauth_oidc
@@ -1538,15 +1552,11 @@ routes:
       policy: rest_only
       exemptedBy: oauth_oidc
     - method: POST
-      path: /oauth/consent
+      path: /oauth/revoke
       policy: rest_only
       exemptedBy: oauth_oidc
     - method: POST
       path: /oauth/token
-      policy: rest_only
-      exemptedBy: oauth_oidc
-    - method: POST
-      path: /oauth/revoke
       policy: rest_only
       exemptedBy: oauth_oidc
     - method: GET
@@ -1573,3 +1583,4 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
+
