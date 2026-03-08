@@ -22,6 +22,12 @@ const (
 
 	// SKSoulENSChannelPrefix is the sort-key prefix for per-agent soul ENS channel config records.
 	SKSoulENSChannelPrefix = "SOUL_ENS_CHANNEL#"
+
+	// SKSoulBodyBindingPrefix is the sort-key prefix for per-agent soul/body binding records.
+	SKSoulBodyBindingPrefix = "SOUL_BODY_BINDING#"
+
+	// SKSoulBodyBindingUsername is the sort key for username reverse-index records.
+	SKSoulBodyBindingUsername = "SOUL_BODY_BINDING"
 )
 
 // SoulENSChannelSortKey returns the sort key for an instance-owned soul ENS channel config record.
@@ -31,4 +37,22 @@ func SoulENSChannelSortKey(agentID string) string {
 		return ""
 	}
 	return SKSoulENSChannelPrefix + agentID
+}
+
+// SoulBodyBindingSortKey returns the sort key for an instance-owned soul/body binding record.
+func SoulBodyBindingSortKey(agentID string) string {
+	agentID = strings.ToLower(strings.TrimSpace(agentID))
+	if agentID == "" {
+		return ""
+	}
+	return SKSoulBodyBindingPrefix + agentID
+}
+
+// SoulBodyBindingUsernamePartitionKey returns the partition key for username reverse-index records.
+func SoulBodyBindingUsernamePartitionKey(username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ""
+	}
+	return "SOUL_BODY_BINDING_USERNAME#" + username
 }

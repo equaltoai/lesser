@@ -32,6 +32,9 @@ type InstanceRepository struct {
 	aiConfigRepo                 *BaseRepository[*models.AIInstanceConfig]
 	wellKnownLesserSoulAgentRepo *BaseRepository[*models.InstanceWellKnownLesserSoulAgent]
 	soulENSChannelRepo           *BaseRepository[*models.InstanceSoulENSChannel]
+	soulBodyBindingRepo          *BaseRepository[*models.InstanceSoulBodyBinding]
+	soulBodyBindingUsernameRepo  *BaseRepository[*models.InstanceSoulBodyBindingUsername]
+	transactWriteFn              func(ctx context.Context, fn func(core.TransactionBuilder) error) error
 	logger                       *zap.Logger
 
 	stateCache                    instanceStateCache
@@ -117,6 +120,9 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 		aiConfigRepo:                 NewBaseRepository[*models.AIInstanceConfig](db, tableName, logger),
 		wellKnownLesserSoulAgentRepo: NewBaseRepository[*models.InstanceWellKnownLesserSoulAgent](db, tableName, logger),
 		soulENSChannelRepo:           NewBaseRepository[*models.InstanceSoulENSChannel](db, tableName, logger),
+		soulBodyBindingRepo:          NewBaseRepository[*models.InstanceSoulBodyBinding](db, tableName, logger),
+		soulBodyBindingUsernameRepo:  NewBaseRepository[*models.InstanceSoulBodyBindingUsername](db, tableName, logger),
+		transactWriteFn:              newInstanceTransactWriteFn(db),
 		logger:                       logger,
 	}
 }
@@ -145,7 +151,20 @@ func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger 
 		aiConfigRepo:                 NewBaseRepositoryWithCostTracking[*models.AIInstanceConfig](db, tableName, logger, costService, "instance_ai_config"),
 		wellKnownLesserSoulAgentRepo: NewBaseRepositoryWithCostTracking[*models.InstanceWellKnownLesserSoulAgent](db, tableName, logger, costService, "instance_well_known_lesser_soul_agent"),
 		soulENSChannelRepo:           NewBaseRepositoryWithCostTracking[*models.InstanceSoulENSChannel](db, tableName, logger, costService, "instance_soul_ens_channel"),
+		soulBodyBindingRepo:          NewBaseRepositoryWithCostTracking[*models.InstanceSoulBodyBinding](db, tableName, logger, costService, "instance_soul_body_binding"),
+		soulBodyBindingUsernameRepo:  NewBaseRepositoryWithCostTracking[*models.InstanceSoulBodyBindingUsername](db, tableName, logger, costService, "instance_soul_body_binding_username"),
+		transactWriteFn:              newInstanceTransactWriteFn(db),
 		logger:                       logger,
+	}
+}
+
+func newInstanceTransactWriteFn(db core.DB) func(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	return func(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+		txDB, ok := db.(transactionalDB)
+		if !ok || txDB == nil {
+			return fmt.Errorf("database does not support transact write operations")
+		}
+		return txDB.TransactWrite(ctx, fn)
 	}
 }
 
