@@ -127,6 +127,7 @@ func toAPISoulInventoryItem(currentUsername string, soul soulservice.Soul) apimo
 			AgentID:                soul.AgentID,
 			Domain:                 soul.Domain,
 			LocalID:                soul.LocalID,
+			ENSName:                soul.ENSName,
 			Wallet:                 soul.Wallet,
 			PrincipalAddress:       soul.PrincipalAddress,
 			Status:                 soul.Status,

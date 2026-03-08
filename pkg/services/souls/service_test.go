@@ -117,6 +117,8 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 		agentGamma  = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 		agentDelta  = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	)
+	alphaENS := "alpha.eth"
+	betaENS := "beta.eth"
 
 	var mu sync.Mutex
 	searchCalls := map[string][]string{}
@@ -186,6 +188,7 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 					"agent_id":          agentAlpha,
 					"domain":            "example.com",
 					"local_id":          "alpha",
+					"ens_name":          alphaENS,
 					"wallet":            walletAlice,
 					"principal_address": walletAlice,
 					"status":            "active",
@@ -197,6 +200,7 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 					"agent_id":          agentBeta,
 					"domain":            "example.com",
 					"local_id":          "beta",
+					"ens_name":          betaENS,
 					"wallet":            walletAlt,
 					"principal_address": walletAlt,
 					"status":            "active",
@@ -208,6 +212,7 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 					"agent_id":          agentGamma,
 					"domain":            "example.com",
 					"local_id":          "gamma",
+					"ens_name":          "   ",
 					"wallet":            walletAlt,
 					"principal_address": "",
 					"status":            "active",
@@ -275,15 +280,20 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 
 	require.Equal(t, agentAlpha, souls[0].AgentID)
 	require.False(t, souls[0].Bound)
+	require.NotNil(t, souls[0].ENSName)
+	require.Equal(t, alphaENS, *souls[0].ENSName)
 
 	require.Equal(t, agentBeta, souls[1].AgentID)
 	require.True(t, souls[1].Bound)
 	require.Equal(t, "alice", souls[1].BoundUsername)
+	require.NotNil(t, souls[1].ENSName)
+	require.Equal(t, betaENS, *souls[1].ENSName)
 
 	require.Equal(t, agentGamma, souls[2].AgentID)
 	require.True(t, souls[2].Bound)
 	require.Equal(t, "bob", souls[2].BoundUsername)
 	require.Equal(t, walletAlt, souls[2].BoundPrincipalAddress)
+	require.Nil(t, souls[2].ENSName)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -302,6 +312,7 @@ func TestService_Incorporate_Success(t *testing.T) {
 		walletAlice = "0x3333333333333333333333333333333333333333"
 		agentAlpha  = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	)
+	ensName := "alpha.eth"
 
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -311,6 +322,7 @@ func TestService_Incorporate_Success(t *testing.T) {
 				"agent_id":          agentAlpha,
 				"domain":            "example.com",
 				"local_id":          "alpha",
+				"ens_name":          ensName,
 				"wallet":            walletAlice,
 				"principal_address": walletAlice,
 				"status":            "active",
@@ -339,6 +351,8 @@ func TestService_Incorporate_Success(t *testing.T) {
 	require.True(t, soul.Bound)
 	require.Equal(t, "alice", soul.BoundUsername)
 	require.Equal(t, walletAlice, soul.BoundPrincipalAddress)
+	require.NotNil(t, soul.ENSName)
+	require.Equal(t, ensName, *soul.ENSName)
 }
 
 func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
@@ -699,6 +713,14 @@ func TestSoulHelpers(t *testing.T) {
 	require.True(t, domainMatches("Example.com", "example.com"))
 	require.False(t, domainMatches("example.org", "example.com"))
 
+	require.Nil(t, normalizedOptionalString(nil))
+	blank := "   "
+	require.Nil(t, normalizedOptionalString(&blank))
+	value := " alpha.eth "
+	normalizedValue := normalizedOptionalString(&value)
+	require.NotNil(t, normalizedValue)
+	require.Equal(t, "alpha.eth", *normalizedValue)
+
 	_, err = validateAgentID("0xzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
 	require.Error(t, err)
 }
@@ -719,6 +741,21 @@ func TestService_ListMineAndSearchEdgePaths(t *testing.T) {
 		souls, err := service.ListMine(context.Background(), "alice")
 		require.NoError(t, err)
 		require.Empty(t, souls)
+	})
+
+	t.Run("discovery input error is propagated", func(t *testing.T) {
+		t.Parallel()
+
+		accountErr := errors.New("wallet lookup failed")
+		service := NewService(
+			&fakeAccountRepo{err: accountErr},
+			&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://trust.example"}},
+			&config.Config{Domain: "example.com"},
+			zap.NewNop(),
+		)
+
+		_, err := service.ListMine(context.Background(), "alice")
+		require.ErrorIs(t, err, accountErr)
 	})
 
 	t.Run("discovered agent removed when identity disappears", func(t *testing.T) {
@@ -846,6 +883,39 @@ func TestService_ListMineAndSearchEdgePaths(t *testing.T) {
 
 		_, err := service.ListMine(context.Background(), "alice")
 		require.ErrorIs(t, err, bindingErr)
+	})
+
+	t.Run("identity fetch error is propagated", func(t *testing.T) {
+		t.Parallel()
+
+		const agentAlpha = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+		host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/api/v1/soul/search":
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"version": "1",
+					"results": []map[string]any{{"agent_id": agentAlpha}},
+					"count":   1,
+				}))
+			case strings.HasPrefix(r.URL.Path, "/api/v1/soul/agents/"):
+				http.Error(w, "boom", http.StatusBadGateway)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer host.Close()
+
+		service := NewService(
+			&fakeAccountRepo{wallets: []*storage.WalletCredential{{Address: "0x1111111111111111111111111111111111111111"}}},
+			&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
+			&config.Config{Domain: "example.com"},
+			zap.NewNop(),
+		).WithHTTPClient(host.Client())
+
+		_, err := service.ListMine(context.Background(), "alice")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "get soul agent failed")
 	})
 
 	t.Run("search stops after max pages", func(t *testing.T) {
