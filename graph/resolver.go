@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -22,6 +23,11 @@ type notesService interface {
 	HasReblogged(context.Context, string, string) (bool, error)
 }
 
+type soulInventoryService interface {
+	ListMine(context.Context, string) ([]soulservice.Soul, error)
+	Incorporate(context.Context, string, string) (*soulservice.Soul, error)
+}
+
 // This file will not be regenerated automatically.
 //
 // It serves as dependency injection for your app, add any dependencies you require here.
@@ -33,6 +39,8 @@ type Resolver struct {
 	Registry *services.Registry
 	// Optional override used in tests to bypass the service registry
 	notesClient notesService
+	// Optional override used in tests for the souls inventory/incorporation service
+	soulsClient soulInventoryService
 
 	// Legacy fields (to be phased out)
 	Config              *config.Config

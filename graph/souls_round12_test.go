@@ -1,0 +1,254 @@
+package graph
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+type stubSoulService struct {
+	listMineFunc    func(context.Context, string) ([]soulservice.Soul, error)
+	incorporateFunc func(context.Context, string, string) (*soulservice.Soul, error)
+}
+
+func (s *stubSoulService) ListMine(ctx context.Context, username string) ([]soulservice.Soul, error) {
+	if s.listMineFunc == nil {
+		return nil, nil
+	}
+	return s.listMineFunc(ctx, username)
+}
+
+func (s *stubSoulService) Incorporate(ctx context.Context, username string, agentID string) (*soulservice.Soul, error) {
+	if s.incorporateFunc == nil {
+		return nil, nil
+	}
+	return s.incorporateFunc(ctx, username, agentID)
+}
+
+func soulAuthContext(username string, scopes ...string) context.Context {
+	return context.WithValue(context.Background(), common.ContextKeyClaims, &auth.Claims{
+		Username: username,
+		Scopes:   scopes,
+	})
+}
+
+func TestRound12SoulServiceHelpers_GetSoulService(t *testing.T) {
+	var nilResolver *Resolver
+	_, err := nilResolver.getSoulService()
+	require.Error(t, err)
+
+	resolver := &Resolver{}
+	_, err = resolver.getSoulService()
+	require.Error(t, err)
+
+	withOverride := &Resolver{
+		soulsClient: &stubSoulService{},
+	}
+	svc, err := withOverride.getSoulService()
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+
+	fullResolver, _ := newRound12GraphResolver(t)
+	svc, err = fullResolver.getSoulService()
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+}
+
+func TestRound12SoulsGraphQLHelpers_ConvertInventoryItem(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	ensName := "alice.eth"
+	blankENS := "   "
+
+	bound := toGraphQLSoulInventoryItem("alice", soulservice.Soul{
+		AgentID:                "0x123",
+		Domain:                 "souls.example",
+		LocalID:                "alice-soul",
+		ENSName:                &ensName,
+		Wallet:                 "0xabc",
+		PrincipalAddress:       "0xabc",
+		Status:                 "active",
+		LifecycleStatus:        "active",
+		SelfDescriptionVersion: intPtr(7),
+		Capabilities:           nil,
+		MintTxHash:             "0xmint",
+		MintedAt:               &now,
+		UpdatedAt:              &now,
+		Bound:                  true,
+		BoundUsername:          "alice",
+		BoundPrincipalAddress:  "0xabc",
+		BoundAt:                now,
+		BoundUpdatedAt:         now,
+	})
+	require.NotNil(t, bound)
+	require.Equal(t, "alice.eth", *bound.Agent.EnsName)
+	require.Equal(t, "0xabc", *bound.Agent.PrincipalAddress)
+	require.NotNil(t, bound.Agent.MintedAt)
+	require.NotNil(t, bound.Agent.UpdatedAt)
+	require.NotNil(t, bound.Binding)
+	require.Equal(t, "alice", bound.Binding.Username)
+	require.Equal(t, "0xabc", *bound.Binding.PrincipalAddress)
+	require.True(t, bound.AvailableForIncorporation)
+	require.Equal(t, "BOUND", bound.BindingState.String())
+	require.NotNil(t, bound.Agent.Capabilities)
+	require.Empty(t, bound.Agent.Capabilities)
+
+	unbound := toGraphQLSoulInventoryItem("alice", soulservice.Soul{
+		AgentID:         "0x456",
+		Domain:          "souls.example",
+		LocalID:         "blank-ens",
+		ENSName:         &blankENS,
+		Wallet:          "0xdef",
+		Status:          "active",
+		LifecycleStatus: "   ",
+		MintTxHash:      "   ",
+		Capabilities:    []string{"chat"},
+	})
+	require.NotNil(t, unbound)
+	require.Nil(t, unbound.Agent.EnsName)
+	require.Nil(t, unbound.Agent.PrincipalAddress)
+	require.Nil(t, unbound.Agent.LifecycleStatus)
+	require.Nil(t, unbound.Agent.MintTxHash)
+	require.Nil(t, unbound.Binding)
+	require.True(t, unbound.AvailableForIncorporation)
+	require.Equal(t, "UNBOUND", unbound.BindingState.String())
+	require.Equal(t, []string{"chat"}, unbound.Agent.Capabilities)
+}
+
+func TestRound12SoulsQuery_MySouls(t *testing.T) {
+	resolver := &Resolver{
+		Logger: zap.NewNop(),
+		soulsClient: &stubSoulService{
+			listMineFunc: func(_ context.Context, username string) ([]soulservice.Soul, error) {
+				require.Equal(t, "alice", username)
+				ensName := "alice.eth"
+				return []soulservice.Soul{
+					{
+						AgentID:       "0x1",
+						Domain:        "souls.example",
+						LocalID:       "bound-to-viewer",
+						ENSName:       &ensName,
+						Wallet:        "0xabc",
+						Status:        "active",
+						Bound:         true,
+						BoundUsername: "alice",
+					},
+					{
+						AgentID:       "0x2",
+						Domain:        "souls.example",
+						LocalID:       "bound-away",
+						Wallet:        "0xdef",
+						Status:        "active",
+						Bound:         true,
+						BoundUsername: "bob",
+					},
+				}, nil
+			},
+		},
+	}
+
+	items, err := (&queryResolver{resolver}).MySouls(soulAuthContext("alice", auth.ScopeRead))
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	require.True(t, items[0].AvailableForIncorporation)
+	require.False(t, items[1].AvailableForIncorporation)
+	require.Equal(t, "alice.eth", *items[0].Agent.EnsName)
+}
+
+func TestRound12SoulsQuery_MySouls_AuthAndErrors(t *testing.T) {
+	resolver := &Resolver{
+		Logger: zap.NewNop(),
+		soulsClient: &stubSoulService{
+			listMineFunc: func(context.Context, string) ([]soulservice.Soul, error) {
+				return nil, soulservice.ErrTrustNotConfigured
+			},
+		},
+	}
+	query := &queryResolver{resolver}
+
+	_, err := query.MySouls(context.Background())
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeUnauthorized))
+
+	_, err = query.MySouls(soulAuthContext("alice"))
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeInsufficientScope))
+
+	_, err = query.MySouls(soulAuthContext("alice", auth.ScopeWrite))
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeUnprocessableEntity))
+}
+
+func TestRound12SoulsMutation_IncorporateSoul(t *testing.T) {
+	resolver := &Resolver{
+		Logger: zap.NewNop(),
+		soulsClient: &stubSoulService{
+			incorporateFunc: func(_ context.Context, username string, agentID string) (*soulservice.Soul, error) {
+				require.Equal(t, "alice", username)
+				require.Equal(t, "0xabc", agentID)
+				now := time.Now().UTC().Truncate(time.Second)
+				return &soulservice.Soul{
+					AgentID:        agentID,
+					Domain:         "souls.example",
+					LocalID:        "alice-soul",
+					Wallet:         "0xwallet",
+					Status:         "active",
+					Bound:          true,
+					BoundUsername:  username,
+					BoundAt:        now,
+					BoundUpdatedAt: now,
+				}, nil
+			},
+		},
+	}
+	mut := &mutationResolver{resolver}
+
+	item, err := mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc")
+	require.NoError(t, err)
+	require.NotNil(t, item)
+	require.Equal(t, "alice-soul", item.Agent.LocalID)
+	require.Equal(t, "BOUND", item.BindingState.String())
+	require.True(t, item.AvailableForIncorporation)
+
+	_, err = mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeRead), "0xabc")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeInsufficientScope))
+
+	_, err = mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "   ")
+	require.Error(t, err)
+}
+
+func TestRound12SoulsMutation_IncorporateSoul_ErrorMapping(t *testing.T) {
+	resolver := &Resolver{
+		Logger: zap.NewNop(),
+		soulsClient: &stubSoulService{
+			incorporateFunc: func(context.Context, string, string) (*soulservice.Soul, error) {
+				return nil, soulservice.ErrSoulAlreadyBound
+			},
+		},
+	}
+
+	_, err := (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeConflict))
+
+	resolver.soulsClient = &stubSoulService{
+		incorporateFunc: func(context.Context, string, string) (*soulservice.Soul, error) {
+			return nil, soulservice.ErrSoulNotAvailable
+		},
+	}
+
+	_, err = (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeNotFound))
+}
+
+func intPtr(value int) *int {
+	return &value
+}

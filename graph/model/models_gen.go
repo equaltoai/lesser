@@ -2329,6 +2329,36 @@ type SeveredRelationshipEdge struct {
 	Cursor Cursor               `json:"cursor"`
 }
 
+type SoulAgentIdentity struct {
+	AgentID                string   `json:"agentId"`
+	Domain                 string   `json:"domain"`
+	LocalID                string   `json:"localId"`
+	EnsName                *string  `json:"ensName,omitempty"`
+	Wallet                 string   `json:"wallet"`
+	PrincipalAddress       *string  `json:"principalAddress,omitempty"`
+	Status                 string   `json:"status"`
+	LifecycleStatus        *string  `json:"lifecycleStatus,omitempty"`
+	SelfDescriptionVersion *int     `json:"selfDescriptionVersion,omitempty"`
+	Capabilities           []string `json:"capabilities"`
+	MintTxHash             *string  `json:"mintTxHash,omitempty"`
+	MintedAt               *Time    `json:"mintedAt,omitempty"`
+	UpdatedAt              *Time    `json:"updatedAt,omitempty"`
+}
+
+type SoulBodyBinding struct {
+	Username         string  `json:"username"`
+	PrincipalAddress *string `json:"principalAddress,omitempty"`
+	BoundAt          Time    `json:"boundAt"`
+	UpdatedAt        Time    `json:"updatedAt"`
+}
+
+type SoulInventoryItem struct {
+	Agent                     *SoulAgentIdentity `json:"agent"`
+	BindingState              SoulBindingState   `json:"bindingState"`
+	AvailableForIncorporation bool               `json:"availableForIncorporation"`
+	Binding                   *SoulBodyBinding   `json:"binding,omitempty"`
+}
+
 type SpamAnalysis struct {
 	SpamScore       float64          `json:"spamScore"`
 	SpamIndicators  []*SpamIndicator `json:"spamIndicators"`
@@ -5483,6 +5513,61 @@ func (e *SeveranceReason) UnmarshalJSON(b []byte) error {
 }
 
 func (e SeveranceReason) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SoulBindingState string
+
+const (
+	SoulBindingStateUnbound SoulBindingState = "UNBOUND"
+	SoulBindingStateBound   SoulBindingState = "BOUND"
+)
+
+var AllSoulBindingState = []SoulBindingState{
+	SoulBindingStateUnbound,
+	SoulBindingStateBound,
+}
+
+func (e SoulBindingState) IsValid() bool {
+	switch e {
+	case SoulBindingStateUnbound, SoulBindingStateBound:
+		return true
+	}
+	return false
+}
+
+func (e SoulBindingState) String() string {
+	return string(e)
+}
+
+func (e *SoulBindingState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoulBindingState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoulBindingState", str)
+	}
+	return nil
+}
+
+func (e SoulBindingState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoulBindingState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoulBindingState) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
