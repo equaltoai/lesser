@@ -112,6 +112,25 @@ func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {
 	require.Equal(t, "bob", body.Souls[2].Binding.Username)
 }
 
+func TestHandleGetMySoulsLift_MapsServiceErrors(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{
+		cfg:          cfg,
+		logger:       round10TestLogger(t),
+		soulsService: &stubSoulHandlerService{listMineErr: soulservice.ErrTrustNotConfigured},
+	}
+	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-get-error")
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/mine", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, nil)
+	require.NoError(t, err)
+
+	requireStatus(t, http.StatusUnprocessableEntity)(h.HandleGetMySoulsLift(ctx))
+}
+
 func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 	t.Parallel()
 
@@ -226,6 +245,9 @@ func TestSoulHandlerHelpers_ServiceResolutionAndErrorMapping(t *testing.T) {
 	t.Parallel()
 
 	cfg := round10TestConfig()
+	var nilHandler *Handler
+	require.Nil(t, nilHandler.getSoulService())
+
 	h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
 	require.Nil(t, h.getSoulService())
 
