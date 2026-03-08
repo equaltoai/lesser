@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -28,8 +29,16 @@ var (
 	ErrSoulNotAvailable = errors.New("soul not available")
 	// ErrSoulAlreadyBound indicates the target soul is already incorporated elsewhere.
 	ErrSoulAlreadyBound = errors.New("soul already bound")
-	// ErrBodyAlreadyHasSoul indicates the target local body already has a soul.
-	ErrBodyAlreadyHasSoul = errors.New("body already has soul")
+	// ErrTargetAgentRequired indicates the incorporation target agent identifier was omitted.
+	ErrTargetAgentRequired = errors.New("target agent is required")
+	// ErrTargetAgentNotFound indicates the requested local target agent does not exist.
+	ErrTargetAgentNotFound = errors.New("target agent not found")
+	// ErrTargetAgentMustBeAgent indicates the requested local target exists but is not an agent account.
+	ErrTargetAgentMustBeAgent = errors.New("target account must be an agent")
+	// ErrTargetAgentNotOwned indicates the requested local target agent is not owned by the authenticated principal.
+	ErrTargetAgentNotOwned = errors.New("target agent not owned by authenticated principal")
+	// ErrTargetAgentAlreadyHasSoul indicates the target local agent is already bound to another soul.
+	ErrTargetAgentAlreadyHasSoul = errors.New("target agent already has soul")
 )
 
 const defaultSoulHTTPTimeout = 10 * time.Second
@@ -64,7 +73,7 @@ type Soul struct {
 	MintedAt               *time.Time
 	UpdatedAt              *time.Time
 	Bound                  bool
-	BoundUsername          string
+	BoundAgentUsername     string
 	BoundPrincipalAddress  string
 	BoundAt                time.Time
 	BoundUpdatedAt         time.Time
@@ -139,9 +148,14 @@ func (s *Service) ListMine(ctx context.Context, username string) ([]Soul, error)
 	return results, nil
 }
 
-// Incorporate explicitly binds a soul to the authenticated local body.
-func (s *Service) Incorporate(ctx context.Context, username string, agentID string) (*Soul, error) {
-	trustBaseURL, instanceDomain, ownerWallets, err := s.discoveryInputs(ctx, username)
+// Incorporate explicitly binds a soul to a local agent chosen by the authenticated principal.
+func (s *Service) Incorporate(ctx context.Context, principalUsername string, targetAgentUsername string, agentID string) (*Soul, error) {
+	trustBaseURL, instanceDomain, ownerWallets, err := s.discoveryInputs(ctx, principalUsername)
+	if err != nil {
+		return nil, err
+	}
+
+	targetAgent, err := s.resolveTargetAgent(ctx, principalUsername, targetAgentUsername)
 	if err != nil {
 		return nil, err
 	}
@@ -159,13 +173,13 @@ func (s *Service) Incorporate(ctx context.Context, username string, agentID stri
 		return nil, ErrSoulNotAvailable
 	}
 
-	binding, err := s.instanceRepo.BindSoulBody(ctx, identity.AgentID, username, canonicalOwnerAddress(identity))
+	binding, err := s.instanceRepo.BindSoulBody(ctx, identity.AgentID, targetAgent.Username, canonicalOwnerAddress(identity))
 	if err != nil {
 		switch {
 		case errors.Is(err, storageRepos.ErrSoulBodyBindingAlreadyExists):
 			return nil, ErrSoulAlreadyBound
 		case errors.Is(err, storageRepos.ErrSoulBodyAlreadyHasBinding):
-			return nil, ErrBodyAlreadyHasSoul
+			return nil, ErrTargetAgentAlreadyHasSoul
 		default:
 			return nil, err
 		}
@@ -204,6 +218,58 @@ func (s *Service) discoveryInputs(ctx context.Context, username string) (string,
 	}
 
 	return trustBaseURL, instanceDomain, canonicalOwnerWallets(wallets), nil
+}
+
+func (s *Service) resolveTargetAgent(ctx context.Context, principalUsername string, targetAgentUsername string) (*storage.User, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, fmt.Errorf("soul service misconfigured")
+	}
+
+	targetAgentUsername = strings.TrimSpace(targetAgentUsername)
+	if targetAgentUsername == "" {
+		return nil, ErrTargetAgentRequired
+	}
+
+	targetAgent, err := s.accountRepo.GetUser(ctx, targetAgentUsername)
+	if err != nil {
+		if apperrors.HasCode(err, apperrors.CodeNotFound) {
+			return nil, ErrTargetAgentNotFound
+		}
+		return nil, err
+	}
+	if targetAgent == nil {
+		return nil, ErrTargetAgentNotFound
+	}
+	if !targetAgent.IsAgent {
+		return nil, ErrTargetAgentMustBeAgent
+	}
+	if !agentOwnedByPrincipal(targetAgent, principalUsername) {
+		return nil, ErrTargetAgentNotOwned
+	}
+
+	return targetAgent, nil
+}
+
+func agentOwnedByPrincipal(agentUser *storage.User, principalUsername string) bool {
+	if agentUser == nil {
+		return false
+	}
+
+	principalUsername = strings.TrimSpace(principalUsername)
+	if principalUsername == "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(agentUser.Username), principalUsername) {
+		return true
+	}
+
+	owner := strings.TrimSpace(agentUser.AgentOwner)
+	if owner == "" {
+		return false
+	}
+
+	owner = strings.TrimPrefix(owner, "@")
+	return strings.EqualFold(owner, principalUsername)
 }
 
 func (s *Service) discoverOwnedSoulIDs(ctx context.Context, trustBaseURL string, instanceDomain string, ownerWallets map[string]struct{}) ([]string, error) {
@@ -405,7 +471,7 @@ func soulFromIdentity(identity *hostSoulIdentity, binding *storageModels.Instanc
 	}
 	if binding != nil {
 		soul.Bound = true
-		soul.BoundUsername = binding.Username
+		soul.BoundAgentUsername = binding.Username
 		soul.BoundPrincipalAddress = binding.PrincipalAddress
 		soul.BoundAt = binding.BoundAt
 		soul.BoundUpdatedAt = binding.UpdatedAt
@@ -456,6 +522,7 @@ type hostSoulIdentity struct {
 
 type accountRepository interface {
 	GetUserWalletCredentials(ctx context.Context, username string) ([]*storage.WalletCredential, error)
+	GetUser(ctx context.Context, username string) (*storage.User, error)
 }
 
 type instanceRepository interface {

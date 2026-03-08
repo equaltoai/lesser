@@ -20,15 +20,31 @@ import (
 )
 
 type fakeAccountRepo struct {
-	wallets []*storage.WalletCredential
-	err     error
+	wallets         []*storage.WalletCredential
+	walletsByUser   map[string][]*storage.WalletCredential
+	usersByUsername map[string]*storage.User
+	err             error
+	getUserErr      error
 }
 
-func (f *fakeAccountRepo) GetUserWalletCredentials(_ context.Context, _ string) ([]*storage.WalletCredential, error) {
+func (f *fakeAccountRepo) GetUserWalletCredentials(_ context.Context, username string) ([]*storage.WalletCredential, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
+	if f.walletsByUser != nil {
+		return f.walletsByUser[strings.TrimSpace(username)], nil
+	}
 	return f.wallets, nil
+}
+
+func (f *fakeAccountRepo) GetUser(_ context.Context, username string) (*storage.User, error) {
+	if f.getUserErr != nil {
+		return nil, f.getUserErr
+	}
+	if f.usersByUsername == nil {
+		return nil, nil
+	}
+	return f.usersByUsername[strings.TrimSpace(username)], nil
 }
 
 type fakeInstanceRepo struct {
@@ -285,13 +301,13 @@ func TestService_ListMine_FollowsPaginationAndAnnotatesBindings(t *testing.T) {
 
 	require.Equal(t, agentBeta, souls[1].AgentID)
 	require.True(t, souls[1].Bound)
-	require.Equal(t, "alice", souls[1].BoundUsername)
+	require.Equal(t, "alice", souls[1].BoundAgentUsername)
 	require.NotNil(t, souls[1].ENSName)
 	require.Equal(t, betaENS, *souls[1].ENSName)
 
 	require.Equal(t, agentGamma, souls[2].AgentID)
 	require.True(t, souls[2].Bound)
-	require.Equal(t, "bob", souls[2].BoundUsername)
+	require.Equal(t, "bob", souls[2].BoundAgentUsername)
 	require.Equal(t, walletAlt, souls[2].BoundPrincipalAddress)
 	require.Nil(t, souls[2].ENSName)
 
@@ -313,6 +329,7 @@ func TestService_Incorporate_Success(t *testing.T) {
 		agentAlpha  = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	)
 	ensName := "alpha.eth"
+	targetAgentUsername := "agent-alpha"
 
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -339,17 +356,26 @@ func TestService_Incorporate_Success(t *testing.T) {
 	}
 
 	service := NewService(
-		&fakeAccountRepo{wallets: []*storage.WalletCredential{{Address: walletAlice}}},
+		&fakeAccountRepo{
+			wallets: []*storage.WalletCredential{{Address: walletAlice}},
+			usersByUsername: map[string]*storage.User{
+				targetAgentUsername: {
+					Username:   targetAgentUsername,
+					IsAgent:    true,
+					AgentOwner: "@alice",
+				},
+			},
+		},
 		instanceRepo,
 		&config.Config{Domain: "example.com"},
 		zap.NewNop(),
 	).WithHTTPClient(host.Client())
 
-	soul, err := service.Incorporate(context.Background(), "alice", agentAlpha)
+	soul, err := service.Incorporate(context.Background(), "alice", targetAgentUsername, agentAlpha)
 	require.NoError(t, err)
 	require.NotNil(t, soul)
 	require.True(t, soul.Bound)
-	require.Equal(t, "alice", soul.BoundUsername)
+	require.Equal(t, targetAgentUsername, soul.BoundAgentUsername)
 	require.Equal(t, walletAlice, soul.BoundPrincipalAddress)
 	require.NotNil(t, soul.ENSName)
 	require.Equal(t, ensName, *soul.ENSName)
@@ -363,6 +389,7 @@ func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
 		walletOther = "0x5555555555555555555555555555555555555555"
 		agentAlpha  = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 	)
+	targetAgentUsername := "agent-alpha"
 
 	testCases := []struct {
 		name         string
@@ -417,7 +444,7 @@ func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
 			wantErr: ErrSoulAlreadyBound,
 		},
 		{
-			name:         "body already has soul",
+			name:         "target agent already has soul",
 			trustBaseURL: "",
 			identity: map[string]any{
 				"agent_id":          agentAlpha,
@@ -430,7 +457,7 @@ func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
 			},
 			bindErr: storageRepos.ErrSoulBodyAlreadyHasBinding,
 			agentID: agentAlpha,
-			wantErr: ErrBodyAlreadyHasSoul,
+			wantErr: ErrTargetAgentAlreadyHasSoul,
 		},
 	}
 
@@ -454,7 +481,16 @@ func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
 			}
 
 			service := NewService(
-				&fakeAccountRepo{wallets: []*storage.WalletCredential{{Address: walletAlice}}},
+				&fakeAccountRepo{
+					wallets: []*storage.WalletCredential{{Address: walletAlice}},
+					usersByUsername: map[string]*storage.User{
+						targetAgentUsername: {
+							Username:   targetAgentUsername,
+							IsAgent:    true,
+							AgentOwner: "@alice",
+						},
+					},
+				},
 				&fakeInstanceRepo{
 					trust:           &storageModels.EffectiveTrustConfig{TrustBaseURL: trustBaseURL},
 					bindErr:         tc.bindErr,
@@ -468,9 +504,69 @@ func TestService_Incorporate_MapsAvailabilityAndConflictErrors(t *testing.T) {
 				service = service.WithHTTPClient(host.Client())
 			}
 
-			_, err := service.Incorporate(context.Background(), "alice", tc.agentID)
+			_, err := service.Incorporate(context.Background(), "alice", targetAgentUsername, tc.agentID)
 			require.Error(t, err)
 			require.True(t, errors.Is(err, tc.wantErr), "expected %v, got %v", tc.wantErr, err)
+		})
+	}
+}
+
+func TestService_Incorporate_RejectsInvalidTargetAgents(t *testing.T) {
+	t.Parallel()
+
+	const validSoulAgentID = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	testCases := []struct {
+		name                string
+		targetAgentUsername string
+		usersByUsername     map[string]*storage.User
+		wantErr             error
+	}{
+		{
+			name:                "target agent required",
+			targetAgentUsername: " ",
+			wantErr:             ErrTargetAgentRequired,
+		},
+		{
+			name:                "target agent not found",
+			targetAgentUsername: "missing-agent",
+			wantErr:             ErrTargetAgentNotFound,
+		},
+		{
+			name:                "target account must be an agent",
+			targetAgentUsername: "owner",
+			usersByUsername: map[string]*storage.User{
+				"owner": {Username: "owner", IsAgent: false},
+			},
+			wantErr: ErrTargetAgentMustBeAgent,
+		},
+		{
+			name:                "target agent not owned by principal",
+			targetAgentUsername: "other-agent",
+			usersByUsername: map[string]*storage.User{
+				"other-agent": {Username: "other-agent", IsAgent: true, AgentOwner: "@bob"},
+			},
+			wantErr: ErrTargetAgentNotOwned,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := NewService(
+				&fakeAccountRepo{
+					wallets:         []*storage.WalletCredential{{Address: "0x1111111111111111111111111111111111111111"}},
+					usersByUsername: tc.usersByUsername,
+				},
+				&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://trust.example"}},
+				&config.Config{Domain: "example.com"},
+				zap.NewNop(),
+			)
+
+			_, err := service.Incorporate(context.Background(), "alice", tc.targetAgentUsername, validSoulAgentID)
+			require.ErrorIs(t, err, tc.wantErr)
 		})
 	}
 }
@@ -712,6 +808,10 @@ func TestSoulHelpers(t *testing.T) {
 
 	require.True(t, domainMatches("Example.com", "example.com"))
 	require.False(t, domainMatches("example.org", "example.com"))
+
+	require.True(t, agentOwnedByPrincipal(&storage.User{Username: "agent-alpha", IsAgent: true, AgentOwner: "@alice"}, "alice"))
+	require.True(t, agentOwnedByPrincipal(&storage.User{Username: "agent-alpha", IsAgent: true}, "agent-alpha"))
+	require.False(t, agentOwnedByPrincipal(&storage.User{Username: "agent-alpha", IsAgent: true, AgentOwner: "@bob"}, "alice"))
 
 	require.Nil(t, normalizedOptionalString(nil))
 	blank := "   "
@@ -1018,6 +1118,7 @@ func TestService_Incorporate_UnexpectedBindingError(t *testing.T) {
 		walletAlice = "0x6666666666666666666666666666666666666666"
 		agentAlpha  = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	)
+	targetAgentUsername := "agent-alpha"
 
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
@@ -1037,7 +1138,16 @@ func TestService_Incorporate_UnexpectedBindingError(t *testing.T) {
 
 	bindErr := errors.New("bind failed")
 	service := NewService(
-		&fakeAccountRepo{wallets: []*storage.WalletCredential{{Address: walletAlice}}},
+		&fakeAccountRepo{
+			wallets: []*storage.WalletCredential{{Address: walletAlice}},
+			usersByUsername: map[string]*storage.User{
+				targetAgentUsername: {
+					Username:   targetAgentUsername,
+					IsAgent:    true,
+					AgentOwner: "@alice",
+				},
+			},
+		},
 		&fakeInstanceRepo{
 			trust:           &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL},
 			bindErr:         bindErr,
@@ -1048,7 +1158,7 @@ func TestService_Incorporate_UnexpectedBindingError(t *testing.T) {
 		zap.NewNop(),
 	).WithHTTPClient(host.Client())
 
-	_, err := service.Incorporate(context.Background(), "alice", agentAlpha)
+	_, err := service.Incorporate(context.Background(), "alice", targetAgentUsername, agentAlpha)
 	require.ErrorIs(t, err, bindErr)
 }
 
@@ -1059,6 +1169,7 @@ func TestService_Incorporate_FetchIdentityError(t *testing.T) {
 		walletAlice = "0x7777777777777777777777777777777777777777"
 		agentAlpha  = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	)
+	targetAgentUsername := "agent-alpha"
 
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
@@ -1066,13 +1177,22 @@ func TestService_Incorporate_FetchIdentityError(t *testing.T) {
 	defer host.Close()
 
 	service := NewService(
-		&fakeAccountRepo{wallets: []*storage.WalletCredential{{Address: walletAlice}}},
+		&fakeAccountRepo{
+			wallets: []*storage.WalletCredential{{Address: walletAlice}},
+			usersByUsername: map[string]*storage.User{
+				targetAgentUsername: {
+					Username:   targetAgentUsername,
+					IsAgent:    true,
+					AgentOwner: "@alice",
+				},
+			},
+		},
 		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL}},
 		&config.Config{Domain: "example.com"},
 		zap.NewNop(),
 	).WithHTTPClient(host.Client())
 
-	_, err := service.Incorporate(context.Background(), "alice", agentAlpha)
+	_, err := service.Incorporate(context.Background(), "alice", targetAgentUsername, agentAlpha)
 	require.ErrorIs(t, err, ErrSoulNotAvailable)
 }
 

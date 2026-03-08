@@ -8,16 +8,15 @@ import (
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 )
 
-func toGraphQLSoulInventoryItem(currentUsername string, soul soulservice.Soul) *model.SoulInventoryItem {
+func toGraphQLSoulInventoryItem(soul soulservice.Soul) *model.SoulInventoryItem {
 	bindingState := model.SoulBindingStateUnbound
-	available := true
-	var binding *model.SoulBodyBinding
+	available := !soul.Bound
+	var binding *model.SoulAgentBinding
 
 	if soul.Bound {
 		bindingState = model.SoulBindingStateBound
-		available = strings.EqualFold(strings.TrimSpace(soul.BoundUsername), strings.TrimSpace(currentUsername))
-		binding = &model.SoulBodyBinding{
-			Username:         strings.TrimSpace(soul.BoundUsername),
+		binding = &model.SoulAgentBinding{
+			AgentUsername:    strings.TrimSpace(soul.BoundAgentUsername),
 			PrincipalAddress: optionalString(soul.BoundPrincipalAddress),
 			BoundAt:          model.Time(soul.BoundAt),
 			UpdatedAt:        model.Time(soul.BoundUpdatedAt),

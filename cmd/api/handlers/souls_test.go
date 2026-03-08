@@ -20,7 +20,8 @@ type stubSoulHandlerService struct {
 	incorporateOut  *soulservice.Soul
 	incorporateErr  error
 	lastUsername    string
-	lastIncorporate string
+	lastSoulAgentID string
+	lastTargetAgent string
 }
 
 func (s *stubSoulHandlerService) ListMine(_ context.Context, username string) ([]soulservice.Soul, error) {
@@ -28,9 +29,10 @@ func (s *stubSoulHandlerService) ListMine(_ context.Context, username string) ([
 	return s.listMineOut, s.listMineErr
 }
 
-func (s *stubSoulHandlerService) Incorporate(_ context.Context, username string, agentID string) (*soulservice.Soul, error) {
+func (s *stubSoulHandlerService) Incorporate(_ context.Context, username string, targetAgentUsername string, soulAgentID string) (*soulservice.Soul, error) {
 	s.lastUsername = username
-	s.lastIncorporate = agentID
+	s.lastTargetAgent = targetAgentUsername
+	s.lastSoulAgentID = soulAgentID
 	return s.incorporateOut, s.incorporateErr
 }
 
@@ -58,7 +60,7 @@ func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {
 				PrincipalAddress:      "0x2222222222222222222222222222222222222222",
 				Status:                "active",
 				Bound:                 true,
-				BoundUsername:         "alice",
+				BoundAgentUsername:    "agent-alpha",
 				BoundPrincipalAddress: "0x2222222222222222222222222222222222222222",
 				BoundAt:               now,
 				BoundUpdatedAt:        now,
@@ -71,7 +73,7 @@ func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {
 				PrincipalAddress:      "0x3333333333333333333333333333333333333333",
 				Status:                "active",
 				Bound:                 true,
-				BoundUsername:         "bob",
+				BoundAgentUsername:    "agent-beta",
 				BoundPrincipalAddress: "0x3333333333333333333333333333333333333333",
 				BoundAt:               now,
 				BoundUpdatedAt:        now,
@@ -102,14 +104,14 @@ func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {
 	require.Equal(t, "unbound", body.Souls[0].BindingState)
 	require.True(t, body.Souls[0].AvailableForIncorporation)
 	require.Equal(t, "bound", body.Souls[1].BindingState)
-	require.True(t, body.Souls[1].AvailableForIncorporation)
+	require.False(t, body.Souls[1].AvailableForIncorporation)
 	require.NotNil(t, body.Souls[1].Binding)
-	require.Equal(t, "alice", body.Souls[1].Binding.Username)
+	require.Equal(t, "agent-alpha", body.Souls[1].Binding.AgentUsername)
 	require.Nil(t, body.Souls[1].Agent.ENSName)
 	require.Equal(t, "bound", body.Souls[2].BindingState)
 	require.False(t, body.Souls[2].AvailableForIncorporation)
 	require.NotNil(t, body.Souls[2].Binding)
-	require.Equal(t, "bob", body.Souls[2].Binding.Username)
+	require.Equal(t, "agent-beta", body.Souls[2].Binding.AgentUsername)
 }
 
 func TestHandleGetMySoulsLift_MapsServiceErrors(t *testing.T) {
@@ -131,11 +133,91 @@ func TestHandleGetMySoulsLift_MapsServiceErrors(t *testing.T) {
 	requireStatus(t, http.StatusUnprocessableEntity)(h.HandleGetMySoulsLift(ctx))
 }
 
+func TestHandleGetMySoulsLift_AuthGuards(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	readToken := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-read")
+	adminToken := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeAdmin}, "sess-admin")
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{}}
+
+	testCases := []struct {
+		name       string
+		headers    map[string]string
+		wantStatus int
+	}{
+		{
+			name:       "missing token",
+			headers:    nil,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "insufficient scope",
+			headers: map[string]string{
+				"Authorization": "Bearer " + adminToken,
+			},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "read scope works",
+			headers: map[string]string{
+				"Authorization": "Bearer " + readToken,
+			},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/mine", tc.headers, nil, nil)
+			require.NoError(t, err)
+
+			requireStatus(t, tc.wantStatus)(h.HandleGetMySoulsLift(ctx))
+		})
+	}
+}
+
+func TestHandleGetMySoulsLift_AuthFailures(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{
+		cfg:          cfg,
+		logger:       round10TestLogger(t),
+		soulsService: &stubSoulHandlerService{},
+	}
+
+	t.Run("missing token returns unauthorized", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/mine", nil, nil, nil)
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusUnauthorized)(h.HandleGetMySoulsLift(ctx))
+	})
+
+	t.Run("token without read or write scope returns forbidden", func(t *testing.T) {
+		t.Parallel()
+
+		token := round11SignToken(t, cfg.JWTSecret, "alice", []string{"follow"}, "sess-get-forbidden")
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/mine", map[string]string{
+			"Authorization": "Bearer " + token,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusForbidden)(h.HandleGetMySoulsLift(ctx))
+	})
+}
+
 func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 	t.Parallel()
 
 	const agentID = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	successENS := "alpha.eth"
+	targetAgentUsername := "agent-alpha"
 
 	cfg := round10TestConfig()
 	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-2")
@@ -158,14 +240,14 @@ func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 					PrincipalAddress:      "0x1111111111111111111111111111111111111111",
 					Status:                "active",
 					Bound:                 true,
-					BoundUsername:         "alice",
+					BoundAgentUsername:    targetAgentUsername,
 					BoundPrincipalAddress: "0x1111111111111111111111111111111111111111",
 					BoundAt:               time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC),
 					BoundUpdatedAt:        time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC),
 				},
 			},
 			wantStatus:    http.StatusOK,
-			wantAvailable: true,
+			wantAvailable: false,
 		},
 		{
 			name:       "trust not configured",
@@ -183,8 +265,8 @@ func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 			wantStatus: http.StatusConflict,
 		},
 		{
-			name:       "body already has soul",
-			service:    &stubSoulHandlerService{incorporateErr: soulservice.ErrBodyAlreadyHasSoul},
+			name:       "target agent already has soul",
+			service:    &stubSoulHandlerService{incorporateErr: soulservice.ErrTargetAgentAlreadyHasSoul},
 			wantStatus: http.StatusConflict,
 		},
 		{
@@ -202,7 +284,7 @@ func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 			h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: tc.service}
 			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", map[string]string{
 				"Authorization": "Bearer " + token,
-			}, nil, nil)
+			}, nil, apimodels.SoulIncorporateRequest{TargetAgentUsername: targetAgentUsername})
 			require.NoError(t, err)
 			ctx.Params["agentId"] = agentID
 
@@ -215,12 +297,14 @@ func TestHandleIncorporateSoulLift_MapsServiceResponses(t *testing.T) {
 			var body apimodels.SoulIncorporateResponse
 			require.NoError(t, json.Unmarshal(resp.Body, &body))
 			require.Equal(t, "alice", tc.service.lastUsername)
-			require.Equal(t, agentID, tc.service.lastIncorporate)
+			require.Equal(t, targetAgentUsername, tc.service.lastTargetAgent)
+			require.Equal(t, agentID, tc.service.lastSoulAgentID)
 			require.Equal(t, agentID, body.Soul.Agent.AgentID)
 			require.NotNil(t, body.Soul.Agent.ENSName)
 			require.Equal(t, successENS, *body.Soul.Agent.ENSName)
-			require.True(t, body.Soul.AvailableForIncorporation)
+			require.False(t, body.Soul.AvailableForIncorporation)
 			require.NotNil(t, body.Soul.Binding)
+			require.Equal(t, targetAgentUsername, body.Soul.Binding.AgentUsername)
 			require.Equal(t, tc.wantAvailable, body.Soul.AvailableForIncorporation)
 		})
 	}
@@ -235,10 +319,170 @@ func TestHandleIncorporateSoulLift_RequiresAgentID(t *testing.T) {
 
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls//incorporate", map[string]string{
 		"Authorization": "Bearer " + token,
-	}, nil, nil)
+	}, nil, apimodels.SoulIncorporateRequest{TargetAgentUsername: "agent-alpha"})
 	require.NoError(t, err)
 
 	requireStatus(t, http.StatusBadRequest)(h.HandleIncorporateSoulLift(ctx))
+}
+
+func TestHandleIncorporateSoulLift_AuthAndServiceGuards(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	writeToken := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-write")
+	readToken := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-read-only")
+	agentID := "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	testCases := []struct {
+		name       string
+		headers    map[string]string
+		handler    *Handler
+		wantStatus int
+	}{
+		{
+			name:       "missing token",
+			headers:    nil,
+			handler:    &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{}},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "insufficient scope",
+			headers: map[string]string{
+				"Authorization": "Bearer " + readToken,
+			},
+			handler:    &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{}},
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "service unavailable",
+			headers: map[string]string{
+				"Authorization": "Bearer " + writeToken,
+			},
+			handler:    &Handler{cfg: cfg, logger: round10TestLogger(t)},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", tc.headers, nil, apimodels.SoulIncorporateRequest{
+				TargetAgentUsername: "agent-alpha",
+			})
+			require.NoError(t, err)
+			ctx.Params["agentId"] = agentID
+
+			requireStatus(t, tc.wantStatus)(tc.handler.HandleIncorporateSoulLift(ctx))
+		})
+	}
+}
+
+func TestHandleIncorporateSoulLift_AuthFailures(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{
+		cfg:          cfg,
+		logger:       round10TestLogger(t),
+		soulsService: &stubSoulHandlerService{},
+	}
+	agentID := "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	t.Run("missing token returns unauthorized", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", nil, nil, apimodels.SoulIncorporateRequest{
+			TargetAgentUsername: "agent-alpha",
+		})
+		require.NoError(t, err)
+		ctx.Params["agentId"] = agentID
+
+		requireStatus(t, http.StatusUnauthorized)(h.HandleIncorporateSoulLift(ctx))
+	})
+
+	t.Run("read-only token returns forbidden", func(t *testing.T) {
+		t.Parallel()
+
+		token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead}, "sess-incorporate-forbidden")
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", map[string]string{
+			"Authorization": "Bearer " + token,
+		}, nil, apimodels.SoulIncorporateRequest{
+			TargetAgentUsername: "agent-alpha",
+		})
+		require.NoError(t, err)
+		ctx.Params["agentId"] = agentID
+
+		requireStatus(t, http.StatusForbidden)(h.HandleIncorporateSoulLift(ctx))
+	})
+}
+
+func TestHandleIncorporateSoulLift_RequiresTargetAgentUsername(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{}}
+	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-target-agent")
+	agentID := "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, apimodels.SoulIncorporateRequest{})
+	require.NoError(t, err)
+	ctx.Params["agentId"] = agentID
+
+	requireStatus(t, http.StatusBadRequest)(h.HandleIncorporateSoulLift(ctx))
+}
+
+func TestHandleIncorporateSoulLift_RejectsInvalidRequestBody(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{}}
+	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-invalid-body")
+	agentID := "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, []byte("{"))
+	ctx.Params["agentId"] = agentID
+
+	requireStatus(t, http.StatusBadRequest)(h.HandleIncorporateSoulLift(ctx))
+}
+
+func TestHandleIncorporateSoulLift_RejectsInvalidTargetAgentUsername(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t), soulsService: &stubSoulHandlerService{}}
+	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-invalid-target-agent")
+	agentID := "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, apimodels.SoulIncorporateRequest{TargetAgentUsername: "not valid"})
+	require.NoError(t, err)
+	ctx.Params["agentId"] = agentID
+
+	requireStatus(t, http.StatusBadRequest)(h.HandleIncorporateSoulLift(ctx))
+}
+
+func TestHandleIncorporateSoulLift_ReturnsInternalWhenServiceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	cfg := round10TestConfig()
+	h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
+	token := round11SignToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite}, "sess-incorporate-no-service")
+	agentID := "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/souls/"+agentID+"/incorporate", map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil, apimodels.SoulIncorporateRequest{TargetAgentUsername: "agent-alpha"})
+	require.NoError(t, err)
+	ctx.Params["agentId"] = agentID
+
+	requireStatus(t, http.StatusInternalServerError)(h.HandleIncorporateSoulLift(ctx))
 }
 
 func TestSoulHandlerHelpers_ServiceResolutionAndErrorMapping(t *testing.T) {
@@ -251,13 +495,20 @@ func TestSoulHandlerHelpers_ServiceResolutionAndErrorMapping(t *testing.T) {
 	h := &Handler{cfg: cfg, logger: round10TestLogger(t)}
 	require.Nil(t, h.getSoulService())
 
+	builtHandler, _, _ := round11NewHandlerSliceC(t, nil)
+	require.NotNil(t, builtHandler.getSoulService())
+
 	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/souls/mine", nil, nil, nil)
 	require.NoError(t, err)
 
 	requireStatus(t, http.StatusUnprocessableEntity)(h.respondSoulServiceError(ctx, soulservice.ErrTrustNotConfigured))
 	requireStatus(t, http.StatusNotFound)(h.respondSoulServiceError(ctx, soulservice.ErrSoulNotAvailable))
+	requireStatus(t, http.StatusUnprocessableEntity)(h.respondSoulServiceError(ctx, soulservice.ErrTargetAgentRequired))
+	requireStatus(t, http.StatusNotFound)(h.respondSoulServiceError(ctx, soulservice.ErrTargetAgentNotFound))
+	requireStatus(t, http.StatusForbidden)(h.respondSoulServiceError(ctx, soulservice.ErrTargetAgentNotOwned))
+	requireStatus(t, http.StatusUnprocessableEntity)(h.respondSoulServiceError(ctx, soulservice.ErrTargetAgentMustBeAgent))
 	requireStatus(t, http.StatusConflict)(h.respondSoulServiceError(ctx, soulservice.ErrSoulAlreadyBound))
-	requireStatus(t, http.StatusConflict)(h.respondSoulServiceError(ctx, soulservice.ErrBodyAlreadyHasSoul))
+	requireStatus(t, http.StatusConflict)(h.respondSoulServiceError(ctx, soulservice.ErrTargetAgentAlreadyHasSoul))
 	requireStatus(t, http.StatusInternalServerError)(h.respondSoulServiceError(ctx, errors.New("boom")))
 }
 

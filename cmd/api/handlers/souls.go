@@ -14,7 +14,7 @@ import (
 
 type soulHandlerService interface {
 	ListMine(ctx context.Context, username string) ([]soulservice.Soul, error)
-	Incorporate(ctx context.Context, username string, agentID string) (*soulservice.Soul, error)
+	Incorporate(ctx context.Context, principalUsername string, targetAgentUsername string, soulAgentID string) (*soulservice.Soul, error)
 }
 
 // HandleGetMySoulsLift returns souls owned by the authenticated user's linked wallet(s) for this instance.
@@ -39,7 +39,7 @@ func (h *Handler) HandleGetMySoulsLift(ctx *apptheory.Context) (*apptheory.Respo
 
 	items := make([]apimodels.SoulInventoryItem, 0, len(souls))
 	for _, soul := range souls {
-		items = append(items, toAPISoulInventoryItem(claims.Username, soul))
+		items = append(items, toAPISoulInventoryItem(soul))
 	}
 
 	return okJSON(apimodels.SoulsMineResponse{
@@ -48,7 +48,7 @@ func (h *Handler) HandleGetMySoulsLift(ctx *apptheory.Context) (*apptheory.Respo
 	})
 }
 
-// HandleIncorporateSoulLift explicitly binds a soul to the authenticated local body.
+// HandleIncorporateSoulLift explicitly binds a soul to a local agent chosen by the authenticated principal.
 func (h *Handler) HandleIncorporateSoulLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
@@ -63,18 +63,27 @@ func (h *Handler) HandleIncorporateSoulLift(ctx *apptheory.Context) (*apptheory.
 		return common.RespondBadRequest(ctx, "agentId is required")
 	}
 
+	var req apimodels.SoulIncorporateRequest
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return h.respondBadRequest(ctx, "invalid request body")
+	}
+	targetAgentUsername := strings.TrimSpace(req.TargetAgentUsername)
+	if err := common.ValidateUsernameParamID(targetAgentUsername); err != nil {
+		return h.respondBadRequest(ctx, "target_agent_username is required and must be a valid username")
+	}
+
 	svc := h.getSoulService()
 	if svc == nil {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	soul, err := svc.Incorporate(ctx.Context(), claims.Username, agentID)
+	soul, err := svc.Incorporate(ctx.Context(), claims.Username, targetAgentUsername, agentID)
 	if err != nil {
 		return h.respondSoulServiceError(ctx, err)
 	}
 
 	return okJSON(apimodels.SoulIncorporateResponse{
-		Soul: toAPISoulInventoryItem(claims.Username, *soul),
+		Soul: toAPISoulInventoryItem(*soul),
 	})
 }
 
@@ -97,25 +106,32 @@ func (h *Handler) respondSoulServiceError(ctx *apptheory.Context, err error) (*a
 		return common.RespondUnprocessableEntity(ctx, "trust not configured")
 	case errors.Is(err, soulservice.ErrSoulNotAvailable):
 		return common.RespondNotFound(ctx, "soul")
+	case errors.Is(err, soulservice.ErrTargetAgentRequired):
+		return common.RespondUnprocessableEntity(ctx, "target agent is required")
+	case errors.Is(err, soulservice.ErrTargetAgentNotFound):
+		return common.RespondNotFound(ctx, "target agent")
+	case errors.Is(err, soulservice.ErrTargetAgentNotOwned):
+		return common.RespondForbidden(ctx, "target agent is not owned by authenticated principal")
+	case errors.Is(err, soulservice.ErrTargetAgentMustBeAgent):
+		return common.RespondUnprocessableEntity(ctx, "target account must be an agent")
 	case errors.Is(err, soulservice.ErrSoulAlreadyBound):
-		return common.RespondConflict(ctx, "soul already bound to another local body")
-	case errors.Is(err, soulservice.ErrBodyAlreadyHasSoul):
-		return common.RespondConflict(ctx, "local body already has a soul")
+		return common.RespondConflict(ctx, "soul already bound to another local agent")
+	case errors.Is(err, soulservice.ErrTargetAgentAlreadyHasSoul):
+		return common.RespondConflict(ctx, "target agent already has a soul")
 	default:
 		return common.RespondInternalServerError(ctx)
 	}
 }
 
-func toAPISoulInventoryItem(currentUsername string, soul soulservice.Soul) apimodels.SoulInventoryItem {
-	var binding *apimodels.SoulBodyBinding
+func toAPISoulInventoryItem(soul soulservice.Soul) apimodels.SoulInventoryItem {
+	var binding *apimodels.SoulAgentBinding
 	bindingState := "unbound"
-	available := true
+	available := !soul.Bound
 
 	if soul.Bound {
 		bindingState = "bound"
-		available = strings.EqualFold(strings.TrimSpace(soul.BoundUsername), strings.TrimSpace(currentUsername))
-		binding = &apimodels.SoulBodyBinding{
-			Username:         soul.BoundUsername,
+		binding = &apimodels.SoulAgentBinding{
+			AgentUsername:    soul.BoundAgentUsername,
 			PrincipalAddress: soul.BoundPrincipalAddress,
 			BoundAt:          soul.BoundAt,
 			UpdatedAt:        soul.BoundUpdatedAt,

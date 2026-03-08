@@ -19,9 +19,9 @@ type SoulAgentIdentity struct {
 	UpdatedAt              *time.Time `json:"updated_at,omitempty"`
 }
 
-// SoulBodyBinding represents a local soul incorporation binding.
-type SoulBodyBinding struct {
-	Username         string    `json:"username"`
+// SoulAgentBinding represents a local soul -> agent incorporation binding.
+type SoulAgentBinding struct {
+	AgentUsername    string    `json:"agent_username"`
 	PrincipalAddress string    `json:"principal_address,omitempty"`
 	BoundAt          time.Time `json:"bound_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -32,13 +32,18 @@ type SoulInventoryItem struct {
 	Agent                     SoulAgentIdentity `json:"agent"`
 	BindingState              string            `json:"binding_state"`
 	AvailableForIncorporation bool              `json:"available_for_incorporation"`
-	Binding                   *SoulBodyBinding  `json:"binding,omitempty"`
+	Binding                   *SoulAgentBinding `json:"binding,omitempty"`
 }
 
 // SoulsMineResponse represents GET /api/v1/souls/mine.
 type SoulsMineResponse struct {
 	Souls []SoulInventoryItem `json:"souls"`
 	Count int                 `json:"count"`
+}
+
+// SoulIncorporateRequest represents POST /api/v1/souls/{agentId}/incorporate.
+type SoulIncorporateRequest struct {
+	TargetAgentUsername string `json:"target_agent_username"`
 }
 
 // SoulIncorporateResponse represents POST /api/v1/souls/{agentId}/incorporate.
