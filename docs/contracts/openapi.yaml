@@ -4725,6 +4725,22 @@ components:
             description: Mastodon-compatible snowflake identifier (stringified uint).
             pattern: ^[0-9]+$
             type: string
+        SoulAgentBinding:
+            additionalProperties: false
+            properties:
+                agent_username:
+                    type: string
+                bound_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                principal_address:
+                    type: string
+                updated_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+            required:
+                - agent_username
+                - bound_at
+                - updated_at
+            type: object
         SoulAgentIdentity:
             additionalProperties: false
             properties:
@@ -4787,6 +4803,14 @@ components:
                 - updated_at
                 - username
             type: object
+        SoulIncorporateRequest:
+            additionalProperties: false
+            properties:
+                target_agent_username:
+                    type: string
+            required:
+                - target_agent_username
+            type: object
         SoulIncorporateResponse:
             additionalProperties: false
             properties:
@@ -4804,7 +4828,7 @@ components:
                     type: boolean
                 binding:
                     anyOf:
-                        - $ref: '#/components/schemas/SoulBodyBinding'
+                        - $ref: '#/components/schemas/SoulAgentBinding'
                         - type: "null"
                 binding_state:
                     type: string
@@ -14022,6 +14046,11 @@ paths:
                   required: true
                   schema:
                     type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SoulIncorporateRequest'
             responses:
                 "200":
                     description: OK

@@ -48,17 +48,33 @@ func mapSoulServiceError(err error) error {
 		)
 	case errors.Is(err, soulservice.ErrSoulNotAvailable):
 		return apperrors.NotFound("soul")
+	case errors.Is(err, soulservice.ErrTargetAgentRequired):
+		return apperrors.NewAppError(
+			apperrors.CodeUnprocessableEntity,
+			apperrors.CategoryBusiness,
+			"target agent is required",
+		)
+	case errors.Is(err, soulservice.ErrTargetAgentNotFound):
+		return apperrors.NotFound("target agent")
+	case errors.Is(err, soulservice.ErrTargetAgentNotOwned):
+		return apperrors.Forbidden("target agent is not owned by authenticated principal")
+	case errors.Is(err, soulservice.ErrTargetAgentMustBeAgent):
+		return apperrors.NewAppError(
+			apperrors.CodeUnprocessableEntity,
+			apperrors.CategoryBusiness,
+			"target account must be an agent",
+		)
 	case errors.Is(err, soulservice.ErrSoulAlreadyBound):
 		return apperrors.NewAppError(
 			apperrors.CodeConflict,
 			apperrors.CategoryBusiness,
-			"soul already bound to another local body",
+			"soul already bound to another local agent",
 		)
-	case errors.Is(err, soulservice.ErrBodyAlreadyHasSoul):
+	case errors.Is(err, soulservice.ErrTargetAgentAlreadyHasSoul):
 		return apperrors.NewAppError(
 			apperrors.CodeConflict,
 			apperrors.CategoryBusiness,
-			"local body already has a soul",
+			"target agent already has a soul",
 		)
 	default:
 		return err

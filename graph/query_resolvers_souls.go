@@ -37,7 +37,7 @@ func (r *queryResolver) MySouls(ctx context.Context) ([]*model.SoulInventoryItem
 
 	items := make([]*model.SoulInventoryItem, 0, len(souls))
 	for _, soul := range souls {
-		items = append(items, toGraphQLSoulInventoryItem(claims.Username, soul))
+		items = append(items, toGraphQLSoulInventoryItem(soul))
 	}
 
 	return items, nil

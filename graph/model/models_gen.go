@@ -2329,6 +2329,13 @@ type SeveredRelationshipEdge struct {
 	Cursor Cursor               `json:"cursor"`
 }
 
+type SoulAgentBinding struct {
+	AgentUsername    string  `json:"agentUsername"`
+	PrincipalAddress *string `json:"principalAddress,omitempty"`
+	BoundAt          Time    `json:"boundAt"`
+	UpdatedAt        Time    `json:"updatedAt"`
+}
+
 type SoulAgentIdentity struct {
 	AgentID                string   `json:"agentId"`
 	Domain                 string   `json:"domain"`
@@ -2345,18 +2352,11 @@ type SoulAgentIdentity struct {
 	UpdatedAt              *Time    `json:"updatedAt,omitempty"`
 }
 
-type SoulBodyBinding struct {
-	Username         string  `json:"username"`
-	PrincipalAddress *string `json:"principalAddress,omitempty"`
-	BoundAt          Time    `json:"boundAt"`
-	UpdatedAt        Time    `json:"updatedAt"`
-}
-
 type SoulInventoryItem struct {
 	Agent                     *SoulAgentIdentity `json:"agent"`
 	BindingState              SoulBindingState   `json:"bindingState"`
 	AvailableForIncorporation bool               `json:"availableForIncorporation"`
-	Binding                   *SoulBodyBinding   `json:"binding,omitempty"`
+	Binding                   *SoulAgentBinding  `json:"binding,omitempty"`
 }
 
 type SpamAnalysis struct {

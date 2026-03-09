@@ -67,3 +67,21 @@ func TestRunGoToolsCommands_ErrorBranches(t *testing.T) {
 	runCommandFn = func(context.Context, string, []string, execOptions) error { return errSentinel }
 	require.ErrorIs(t, runTidy(nil), errSentinel)
 }
+
+func TestRunGqlgen_PropagatesCommandError(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	previousRunCommand := runCommandFn
+	previousEnsureTool := ensureToolAvailableFn
+	t.Cleanup(func() {
+		findRepoRootFn = previousRepoRoot
+		runCommandFn = previousRunCommand
+		ensureToolAvailableFn = previousEnsureTool
+	})
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	ensureToolAvailableFn = func(string) error { return nil }
+	runCommandFn = func(context.Context, string, []string, execOptions) error { return errSentinel }
+
+	require.ErrorIs(t, runGqlgen(nil), errSentinel)
+}

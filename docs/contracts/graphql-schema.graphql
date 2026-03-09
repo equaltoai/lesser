@@ -4297,8 +4297,8 @@ type SoulAgentIdentity {
   updatedAt: Time
 }
 
-type SoulBodyBinding {
-  username: String!
+type SoulAgentBinding {
+  agentUsername: String!
   principalAddress: String
   boundAt: Time!
   updatedAt: Time!
@@ -4308,7 +4308,7 @@ type SoulInventoryItem {
   agent: SoulAgentIdentity!
   bindingState: SoulBindingState!
   availableForIncorporation: Boolean!
-  binding: SoulBodyBinding
+  binding: SoulAgentBinding
 }
 
 extend type Query {
@@ -4333,7 +4333,7 @@ extend type Mutation {
   adminVerifyAgent(username: String!, input: AdminVerifyAgentInput): Agent!
   adminUnverifyAgent(username: String!, input: AdminVerifyAgentInput): Agent!
   adminSuspendAgent(username: String!): Agent!
-  incorporateSoul(agentId: ID!): SoulInventoryItem!
+  incorporateSoul(agentId: ID!, targetAgentUsername: String!): SoulInventoryItem!
 }
 
 extend type Subscription {

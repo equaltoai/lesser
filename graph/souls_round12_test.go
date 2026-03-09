@@ -15,7 +15,7 @@ import (
 
 type stubSoulService struct {
 	listMineFunc    func(context.Context, string) ([]soulservice.Soul, error)
-	incorporateFunc func(context.Context, string, string) (*soulservice.Soul, error)
+	incorporateFunc func(context.Context, string, string, string) (*soulservice.Soul, error)
 }
 
 func (s *stubSoulService) ListMine(ctx context.Context, username string) ([]soulservice.Soul, error) {
@@ -25,11 +25,11 @@ func (s *stubSoulService) ListMine(ctx context.Context, username string) ([]soul
 	return s.listMineFunc(ctx, username)
 }
 
-func (s *stubSoulService) Incorporate(ctx context.Context, username string, agentID string) (*soulservice.Soul, error) {
+func (s *stubSoulService) Incorporate(ctx context.Context, username string, targetAgentUsername string, agentID string) (*soulservice.Soul, error) {
 	if s.incorporateFunc == nil {
 		return nil, nil
 	}
-	return s.incorporateFunc(ctx, username, agentID)
+	return s.incorporateFunc(ctx, username, targetAgentUsername, agentID)
 }
 
 func soulAuthContext(username string, scopes ...string) context.Context {
@@ -66,7 +66,7 @@ func TestRound12SoulsGraphQLHelpers_ConvertInventoryItem(t *testing.T) {
 	ensName := "alice.eth"
 	blankENS := "   "
 
-	bound := toGraphQLSoulInventoryItem("alice", soulservice.Soul{
+	bound := toGraphQLSoulInventoryItem(soulservice.Soul{
 		AgentID:                "0x123",
 		Domain:                 "souls.example",
 		LocalID:                "alice-soul",
@@ -81,7 +81,7 @@ func TestRound12SoulsGraphQLHelpers_ConvertInventoryItem(t *testing.T) {
 		MintedAt:               &now,
 		UpdatedAt:              &now,
 		Bound:                  true,
-		BoundUsername:          "alice",
+		BoundAgentUsername:     "agent-alpha",
 		BoundPrincipalAddress:  "0xabc",
 		BoundAt:                now,
 		BoundUpdatedAt:         now,
@@ -92,14 +92,14 @@ func TestRound12SoulsGraphQLHelpers_ConvertInventoryItem(t *testing.T) {
 	require.NotNil(t, bound.Agent.MintedAt)
 	require.NotNil(t, bound.Agent.UpdatedAt)
 	require.NotNil(t, bound.Binding)
-	require.Equal(t, "alice", bound.Binding.Username)
+	require.Equal(t, "agent-alpha", bound.Binding.AgentUsername)
 	require.Equal(t, "0xabc", *bound.Binding.PrincipalAddress)
-	require.True(t, bound.AvailableForIncorporation)
+	require.False(t, bound.AvailableForIncorporation)
 	require.Equal(t, "BOUND", bound.BindingState.String())
 	require.NotNil(t, bound.Agent.Capabilities)
 	require.Empty(t, bound.Agent.Capabilities)
 
-	unbound := toGraphQLSoulInventoryItem("alice", soulservice.Soul{
+	unbound := toGraphQLSoulInventoryItem(soulservice.Soul{
 		AgentID:         "0x456",
 		Domain:          "souls.example",
 		LocalID:         "blank-ens",
@@ -130,23 +130,23 @@ func TestRound12SoulsQuery_MySouls(t *testing.T) {
 				ensName := "alice.eth"
 				return []soulservice.Soul{
 					{
-						AgentID:       "0x1",
-						Domain:        "souls.example",
-						LocalID:       "bound-to-viewer",
-						ENSName:       &ensName,
-						Wallet:        "0xabc",
-						Status:        "active",
-						Bound:         true,
-						BoundUsername: "alice",
+						AgentID:            "0x1",
+						Domain:             "souls.example",
+						LocalID:            "bound-to-viewer",
+						ENSName:            &ensName,
+						Wallet:             "0xabc",
+						Status:             "active",
+						Bound:              true,
+						BoundAgentUsername: "agent-alpha",
 					},
 					{
-						AgentID:       "0x2",
-						Domain:        "souls.example",
-						LocalID:       "bound-away",
-						Wallet:        "0xdef",
-						Status:        "active",
-						Bound:         true,
-						BoundUsername: "bob",
+						AgentID:            "0x2",
+						Domain:             "souls.example",
+						LocalID:            "bound-away",
+						Wallet:             "0xdef",
+						Status:             "active",
+						Bound:              true,
+						BoundAgentUsername: "agent-beta",
 					},
 				}, nil
 			},
@@ -156,7 +156,7 @@ func TestRound12SoulsQuery_MySouls(t *testing.T) {
 	items, err := (&queryResolver{resolver}).MySouls(soulAuthContext("alice", auth.ScopeRead))
 	require.NoError(t, err)
 	require.Len(t, items, 2)
-	require.True(t, items[0].AvailableForIncorporation)
+	require.False(t, items[0].AvailableForIncorporation)
 	require.False(t, items[1].AvailableForIncorporation)
 	require.Equal(t, "alice.eth", *items[0].Agent.EnsName)
 }
@@ -189,38 +189,44 @@ func TestRound12SoulsMutation_IncorporateSoul(t *testing.T) {
 	resolver := &Resolver{
 		Logger: zap.NewNop(),
 		soulsClient: &stubSoulService{
-			incorporateFunc: func(_ context.Context, username string, agentID string) (*soulservice.Soul, error) {
+			incorporateFunc: func(_ context.Context, username string, targetAgentUsername string, agentID string) (*soulservice.Soul, error) {
 				require.Equal(t, "alice", username)
+				require.Equal(t, "agent-alpha", targetAgentUsername)
 				require.Equal(t, "0xabc", agentID)
 				now := time.Now().UTC().Truncate(time.Second)
 				return &soulservice.Soul{
-					AgentID:        agentID,
-					Domain:         "souls.example",
-					LocalID:        "alice-soul",
-					Wallet:         "0xwallet",
-					Status:         "active",
-					Bound:          true,
-					BoundUsername:  username,
-					BoundAt:        now,
-					BoundUpdatedAt: now,
+					AgentID:            agentID,
+					Domain:             "souls.example",
+					LocalID:            "alice-soul",
+					Wallet:             "0xwallet",
+					Status:             "active",
+					Bound:              true,
+					BoundAgentUsername: targetAgentUsername,
+					BoundAt:            now,
+					BoundUpdatedAt:     now,
 				}, nil
 			},
 		},
 	}
 	mut := &mutationResolver{resolver}
 
-	item, err := mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc")
+	item, err := mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc", "agent-alpha")
 	require.NoError(t, err)
 	require.NotNil(t, item)
 	require.Equal(t, "alice-soul", item.Agent.LocalID)
 	require.Equal(t, "BOUND", item.BindingState.String())
-	require.True(t, item.AvailableForIncorporation)
+	require.False(t, item.AvailableForIncorporation)
+	require.NotNil(t, item.Binding)
+	require.Equal(t, "agent-alpha", item.Binding.AgentUsername)
 
-	_, err = mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeRead), "0xabc")
+	_, err = mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeRead), "0xabc", "agent-alpha")
 	require.Error(t, err)
 	require.True(t, apperrors.HasCode(err, apperrors.CodeInsufficientScope))
 
-	_, err = mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "   ")
+	_, err = mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "   ", "agent-alpha")
+	require.Error(t, err)
+
+	_, err = mut.IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc", "   ")
 	require.Error(t, err)
 }
 
@@ -228,25 +234,55 @@ func TestRound12SoulsMutation_IncorporateSoul_ErrorMapping(t *testing.T) {
 	resolver := &Resolver{
 		Logger: zap.NewNop(),
 		soulsClient: &stubSoulService{
-			incorporateFunc: func(context.Context, string, string) (*soulservice.Soul, error) {
+			incorporateFunc: func(context.Context, string, string, string) (*soulservice.Soul, error) {
 				return nil, soulservice.ErrSoulAlreadyBound
 			},
 		},
 	}
 
-	_, err := (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc")
+	_, err := (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc", "agent-alpha")
 	require.Error(t, err)
 	require.True(t, apperrors.HasCode(err, apperrors.CodeConflict))
 
 	resolver.soulsClient = &stubSoulService{
-		incorporateFunc: func(context.Context, string, string) (*soulservice.Soul, error) {
+		incorporateFunc: func(context.Context, string, string, string) (*soulservice.Soul, error) {
 			return nil, soulservice.ErrSoulNotAvailable
 		},
 	}
 
-	_, err = (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc")
+	_, err = (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc", "agent-alpha")
 	require.Error(t, err)
 	require.True(t, apperrors.HasCode(err, apperrors.CodeNotFound))
+
+	resolver.soulsClient = &stubSoulService{
+		incorporateFunc: func(context.Context, string, string, string) (*soulservice.Soul, error) {
+			return nil, soulservice.ErrTargetAgentRequired
+		},
+	}
+
+	_, err = (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc", "agent-alpha")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeUnprocessableEntity))
+
+	resolver.soulsClient = &stubSoulService{
+		incorporateFunc: func(context.Context, string, string, string) (*soulservice.Soul, error) {
+			return nil, soulservice.ErrTargetAgentNotOwned
+		},
+	}
+
+	_, err = (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc", "agent-beta")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+
+	resolver.soulsClient = &stubSoulService{
+		incorporateFunc: func(context.Context, string, string, string) (*soulservice.Soul, error) {
+			return nil, soulservice.ErrTargetAgentMustBeAgent
+		},
+	}
+
+	_, err = (&mutationResolver{resolver}).IncorporateSoul(soulAuthContext("alice", auth.ScopeWrite), "0xabc", "alice")
+	require.Error(t, err)
+	require.True(t, apperrors.HasCode(err, apperrors.CodeUnprocessableEntity))
 }
 
 func intPtr(value int) *int {
