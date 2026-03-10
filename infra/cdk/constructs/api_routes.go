@@ -59,7 +59,7 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	restProps := &apptheorycdk.AppTheoryRestApiRouterProps{
 		ApiName:     jsii.String(apiName),
 		Description: jsii.String(fmt.Sprintf("Lesser %s REST API", props.Environment)),
-		Cors:        jsii.Bool(true),
+		Cors:        restAPICorsOptions(),
 		Stage: &apptheorycdk.AppTheoryRestApiRouterStageOptions{
 			StageName:          jsii.String(string(apiStage)),
 			AccessLogging:      logGroup,
@@ -126,6 +126,21 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 	return gateway
 }
 
+func restAPICorsOptions() *apptheorycdk.AppTheoryRestApiRouterCorsOptions {
+	return &apptheorycdk.AppTheoryRestApiRouterCorsOptions{
+		AllowHeaders: &[]*string{
+			jsii.String("Content-Type"),
+			jsii.String("Authorization"),
+			jsii.String("X-Amz-Date"),
+			jsii.String("X-Api-Key"),
+			jsii.String("X-Amz-Security-Token"),
+			jsii.String("mcp-protocol-version"),
+			jsii.String("mcp-session-id"),
+			jsii.String("last-event-id"),
+		},
+	}
+}
+
 func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRouter, appName string, stage naming.Stage) {
 	if scope == nil || api == nil || strings.TrimSpace(appName) == "" || strings.TrimSpace(string(stage)) == "" {
 		return
@@ -149,6 +164,8 @@ func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRo
 		Streaming: jsii.Bool(true),
 	}
 	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("POST")}, mcpLambda, options)
+	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("GET")}, mcpLambda, options)
+	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("DELETE")}, mcpLambda, nil)
 	api.AddLambdaIntegration(jsii.String("/.well-known/mcp.json"), &[]*string{jsii.String("GET")}, mcpLambda, nil)
 }
 
