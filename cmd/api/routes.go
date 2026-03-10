@@ -185,6 +185,9 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("OPTIONS", "/api/v1/souls/mine", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/souls/{agentId}/incorporate", optionsHandler)
 
+	app.Get("/api/v1/accounts/{id}/followers", apiHandler.HandleGetAccountFollowersLift)
+	app.Get("/api/v1/accounts/{id}/following", apiHandler.HandleGetAccountFollowingLift)
+
 	// Relationships endpoint with native Lift implementation
 	app.Get("/api/v1/accounts/relationships", apiHandler.HandleGetRelationshipsLift)
 

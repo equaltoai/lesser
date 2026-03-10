@@ -24,8 +24,8 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		return common.RespondServiceUnavailable(ctx, "notification delivery")
 	}
 
-	expectedKey := strings.TrimSpace(h.cfg.InstanceAPIKey)
-	if expectedKey == "" {
+	expectedKeys := h.notificationDeliveryKeys()
+	if len(expectedKeys) == 0 {
 		return common.RespondServiceUnavailable(ctx, "notification delivery")
 	}
 
@@ -38,7 +38,7 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 	if err != nil {
 		return common.RespondMissingAuth(ctx)
 	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(expectedKey)) != 1 {
+	if !matchesNotificationDeliveryKey(token, expectedKeys) {
 		return common.RespondForbidden(ctx, "invalid instance api key")
 	}
 
@@ -133,6 +133,40 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 	h.recordCommDeliveryAuditEvent(ctx, recipient, delivery, true, "", idempotent)
 
 	return noContent(), nil
+}
+
+func (h *Handler) notificationDeliveryKeys() []string {
+	if h == nil || h.cfg == nil {
+		return nil
+	}
+
+	keys := []string{}
+	keys = appendUniqueNotificationDeliveryKey(keys, h.cfg.InstanceAPIKey)
+	keys = appendUniqueNotificationDeliveryKey(keys, h.cfg.LesserHostInstanceKey)
+
+	return keys
+}
+
+func appendUniqueNotificationDeliveryKey(keys []string, raw string) []string {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return keys
+	}
+	for _, existing := range keys {
+		if subtle.ConstantTimeCompare([]byte(existing), []byte(key)) == 1 {
+			return keys
+		}
+	}
+	return append(keys, key)
+}
+
+func matchesNotificationDeliveryKey(token string, expectedKeys []string) bool {
+	for _, expectedKey := range expectedKeys {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(expectedKey)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) recordCommDeliveryAuditEvent(ctx *apptheory.Context, recipient string, delivery *commNotificationDelivery, success bool, failureReason string, idempotent bool) {
