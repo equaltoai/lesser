@@ -344,11 +344,11 @@ func TestKeyOperations(t *testing.T) {
 		// Parse keys back
 		parsedPublic, err := ParsePublicKeyPEM(publicPEM)
 		require.NoError(t, err)
-		assert.Equal(t, publicKey, parsedPublic)
+		assert.True(t, publicKey.Equal(parsedPublic))
 
 		parsedPrivate, err := ParsePrivateKeyPEM(privatePEM)
 		require.NoError(t, err)
-		assert.Equal(t, privateKey, parsedPrivate)
+		assert.True(t, privateKey.Equal(parsedPrivate))
 	})
 }
 
