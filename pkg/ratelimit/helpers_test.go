@@ -2,13 +2,16 @@ package ratelimit
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
+	tablecore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +23,20 @@ type stubLimiter struct {
 func (s stubLimiter) CheckAndIncrement(_ context.Context, _ apptheoryLimited.RateLimitKey) (*apptheoryLimited.LimitDecision, error) {
 	return s.decision, s.err
 }
+
+type noopDB struct{}
+
+func (noopDB) Model(any) tablecore.Query { return nil }
+
+func (noopDB) Transaction(func(*tablecore.Tx) error) error { return nil }
+
+func (noopDB) Migrate() error { return nil }
+
+func (noopDB) AutoMigrate(...any) error { return nil }
+
+func (noopDB) Close() error { return nil }
+
+func (noopDB) WithContext(context.Context) tablecore.DB { return noopDB{} }
 
 func TestApplyRateLimit_FailOpenOnLimiterCreationError(t *testing.T) {
 	orig := newLimiterFunc
@@ -279,4 +296,97 @@ func TestNewLimiterFunc_EmptyRegionReturnsSentinel(t *testing.T) {
 	limiter, err := newLimiterFunc("", 10, time.Minute, zap.NewNop())
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Nil(t, limiter)
+}
+
+func TestNewLimiterFunc_PropagatesDBInitializationError(t *testing.T) {
+	origNewDBFunc := newDBFunc
+	t.Cleanup(func() {
+		newDBFunc = origNewDBFunc
+		dbOnce = sync.Once{}
+		db = nil
+		dbErr = nil
+	})
+
+	dbOnce = sync.Once{}
+	db = nil
+	dbErr = nil
+
+	boom := errors.New("boom")
+	newDBFunc = func(region string) (tablecore.DB, error) {
+		require.Equal(t, "us-east-1", region)
+		return nil, boom
+	}
+
+	limiter, err := newLimiterFunc("us-east-1", 10, time.Minute, zap.NewNop())
+	require.ErrorIs(t, err, boom)
+	require.Nil(t, limiter)
+}
+
+func TestNewLimiterFunc_ReturnsSentinelWhenDBInitializationReturnsNil(t *testing.T) {
+	origNewDBFunc := newDBFunc
+	t.Cleanup(func() {
+		newDBFunc = origNewDBFunc
+		dbOnce = sync.Once{}
+		db = nil
+		dbErr = nil
+	})
+
+	dbOnce = sync.Once{}
+	db = nil
+	dbErr = nil
+
+	newDBFunc = func(region string) (tablecore.DB, error) {
+		require.Equal(t, "us-east-1", region)
+		return nil, nil
+	}
+
+	limiter, err := newLimiterFunc("us-east-1", 10, time.Minute, zap.NewNop())
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, limiter)
+}
+
+func TestNewLimiterFunc_AppliesDefaultLimitAndWindow(t *testing.T) {
+	origNewDBFunc := newDBFunc
+	t.Cleanup(func() {
+		newDBFunc = origNewDBFunc
+		dbOnce = sync.Once{}
+		db = nil
+		dbErr = nil
+	})
+
+	dbOnce = sync.Once{}
+	db = nil
+	dbErr = nil
+
+	newDBFunc = func(region string) (tablecore.DB, error) {
+		require.Equal(t, "us-east-1", region)
+		return noopDB{}, nil
+	}
+
+	limiter, err := newLimiterFunc("us-east-1", 0, 0, zap.NewNop())
+	require.NoError(t, err)
+	require.NotNil(t, limiter)
+}
+
+func TestNewLimiterFunc_FloorsGranularityAtOneSecond(t *testing.T) {
+	origNewDBFunc := newDBFunc
+	t.Cleanup(func() {
+		newDBFunc = origNewDBFunc
+		dbOnce = sync.Once{}
+		db = nil
+		dbErr = nil
+	})
+
+	dbOnce = sync.Once{}
+	db = nil
+	dbErr = nil
+
+	newDBFunc = func(region string) (tablecore.DB, error) {
+		require.Equal(t, "us-east-1", region)
+		return noopDB{}, nil
+	}
+
+	limiter, err := newLimiterFunc("us-east-1", 1, time.Nanosecond, zap.NewNop())
+	require.NoError(t, err)
+	require.NotNil(t, limiter)
 }
