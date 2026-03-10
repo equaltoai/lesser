@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -93,4 +94,68 @@ func TestGlobalScrubberConvenienceFunctions(t *testing.T) {
 
 	jsonOut := ScrubJSON(map[string]interface{}{"password": "secret123"})
 	assert.Equal(t, "[REDACTED]", jsonOut["password"])
+}
+
+func TestSensitiveKeyHelpers_HandleIdentifierSuffixesAndDelimiters(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, isSensitiveKey("client_secret_id"))
+	assert.False(t, isSensitiveKey("relaysecretname"))
+	assert.True(t, isSensitiveKey("mcp-session_id"))
+	assert.True(t, isSensitiveKey("relay-token"))
+
+	assert.True(t, containsDelimitedWord("relay-token", "token"))
+	assert.False(t, containsDelimitedWord("relaytoken", "token"))
+	assert.False(t, containsDelimitedWord("", "token"))
+}
+
+func TestScrubbingCore_ScrubField_CoversAdditionalTypes(t *testing.T) {
+	t.Parallel()
+
+	base, _ := observer.New(zapcore.DebugLevel)
+	core := NewScrubbingCore(base, NewSensitiveDataScrubber())
+
+	sensitiveBytes := core.scrubField(zapcore.Field{
+		Key:       "authorization",
+		Type:      zapcore.ByteStringType,
+		Interface: []byte("Bearer abcdefghijklmnopqrstuvwxyz0123456789"),
+	})
+	assert.Equal(t, []byte(redactedPlaceholder), sensitiveBytes.Interface)
+
+	sensitiveErr := core.scrubField(zapcore.Field{
+		Key:       "signature",
+		Type:      zapcore.ErrorType,
+		Interface: errors.New("token leak"),
+	})
+	assert.Equal(t, zapcore.StringType, sensitiveErr.Type)
+	assert.Nil(t, sensitiveErr.Interface)
+	assert.Equal(t, redactedPlaceholder, sensitiveErr.String)
+
+	scrubbedBytes := core.scrubField(zapcore.Field{
+		Key:       "payload",
+		Type:      zapcore.ByteStringType,
+		Interface: []byte("AKIA1234567890ABCDEF"),
+	})
+	assert.Equal(t, []byte("[AWS_ACCESS_KEY_REDACTED]"), scrubbedBytes.Interface)
+
+	scrubbedFallback := core.scrubField(zapcore.Field{
+		Key:    "payload",
+		Type:   zapcore.ByteStringType,
+		String: "contact alice@example.com",
+	})
+	assert.Equal(t, "contact ali***@example.com", scrubbedFallback.String)
+
+	scrubbedReflectString := core.scrubField(zapcore.Field{
+		Key:       "note",
+		Type:      zapcore.ReflectType,
+		Interface: "Bearer abcdefghijklmnopqrstuvwxyz0123456789",
+	})
+	assert.Equal(t, "Bearer [REDACTED]", scrubbedReflectString.Interface)
+
+	scrubbedReflectMap := core.scrubField(zapcore.Field{
+		Key:       "payload",
+		Type:      zapcore.ReflectType,
+		Interface: map[string]interface{}{"client_secret": "top-secret"},
+	})
+	assert.Equal(t, redactedPlaceholder, scrubbedReflectMap.Interface.(map[string]interface{})["client_secret"])
 }

@@ -201,21 +201,22 @@ func TestBodyEnabledAddsMcpRoute(t *testing.T) {
 
 	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
 
-	uri, ok := gotRoutes["POST /mcp"]
-	if !ok {
-		t.Fatalf("expected POST /mcp route to exist when bodyEnabled=true")
-	}
-
 	wantParamName := "/lesser/dev/lesser-body/exports/v1/mcp_lambda_arn"
-	if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
-		uriJSON, err := json.Marshal(uri)
-		if err != nil {
-			t.Fatalf("marshal integration uri: %v", err)
+	for _, routeKey := range []string{"POST /mcp", "GET /mcp", "DELETE /mcp"} {
+		uri, ok := gotRoutes[routeKey]
+		if !ok {
+			t.Fatalf("expected %s route to exist when bodyEnabled=true", routeKey)
 		}
-		t.Fatalf("expected POST /mcp integration to reference SSM param %q (got %s)", wantParamName, string(uriJSON))
+		if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
+			uriJSON, err := json.Marshal(uri)
+			if err != nil {
+				t.Fatalf("marshal integration uri: %v", err)
+			}
+			t.Fatalf("expected %s integration to reference SSM param %q (got %s)", routeKey, wantParamName, string(uriJSON))
+		}
 	}
 
-	uri, ok = gotRoutes["GET /.well-known/mcp.json"]
+	uri, ok := gotRoutes["GET /.well-known/mcp.json"]
 	if !ok {
 		t.Fatalf("expected GET /.well-known/mcp.json route to exist when bodyEnabled=true")
 	}
@@ -225,6 +226,22 @@ func TestBodyEnabledAddsMcpRoute(t *testing.T) {
 			t.Fatalf("marshal integration uri: %v", err)
 		}
 		t.Fatalf("expected GET /.well-known/mcp.json integration to reference SSM param %q (got %s)", wantParamName, string(uriJSON))
+	}
+
+	optionsProps, ok := findMethodPropertiesByRouteKey(t, tpl, "OPTIONS /mcp")
+	if !ok {
+		t.Fatalf("expected OPTIONS /mcp route to exist when bodyEnabled=true")
+	}
+
+	integration, ok := optionsProps["Integration"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected OPTIONS /mcp integration properties to exist")
+	}
+
+	gotAllowHeaders := firstIntegrationResponseParameterValue(integration, "method.response.header.Access-Control-Allow-Headers")
+	wantAllowHeaders := "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,mcp-protocol-version,mcp-session-id,last-event-id'"
+	if gotAllowHeaders != wantAllowHeaders {
+		t.Fatalf("unexpected OPTIONS /mcp allow-headers value: got %q want %q", gotAllowHeaders, wantAllowHeaders)
 	}
 
 	if !templateHasMcpInvokePermission(t, tpl, wantParamName) {
@@ -282,8 +299,17 @@ func TestBodyDisabledDoesNotAddMcpRoute(t *testing.T) {
 	if _, ok := gotRoutes["POST /mcp"]; ok {
 		t.Fatalf("unexpected POST /mcp route present when bodyEnabled=false")
 	}
+	if _, ok := gotRoutes["GET /mcp"]; ok {
+		t.Fatalf("unexpected GET /mcp route present when bodyEnabled=false")
+	}
+	if _, ok := gotRoutes["DELETE /mcp"]; ok {
+		t.Fatalf("unexpected DELETE /mcp route present when bodyEnabled=false")
+	}
 	if _, ok := gotRoutes["GET /.well-known/mcp.json"]; ok {
 		t.Fatalf("unexpected GET /.well-known/mcp.json route present when bodyEnabled=false")
+	}
+	if _, ok := gotRoutes["OPTIONS /mcp"]; ok {
+		t.Fatalf("unexpected OPTIONS /mcp route present when bodyEnabled=false")
 	}
 }
 
@@ -790,4 +816,131 @@ func findFirstGetAttLogicalID(v any) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func findMethodPropertiesByRouteKey(t *testing.T, tpl map[string]any, wantRouteKey string) (map[string]any, bool) {
+	t.Helper()
+
+	resources, ok := tpl["Resources"].(map[string]any)
+	if !ok {
+		t.Fatalf("template Resources missing or wrong type")
+	}
+
+	restApiLogicalID := ""
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] == "AWS::ApiGateway::RestApi" {
+			restApiLogicalID = logicalID
+			break
+		}
+	}
+
+	resourceToPathPart := make(map[string]string)
+	resourceToParent := make(map[string]string)
+	for logicalID, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::ApiGateway::Resource" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		part, ok := props["PathPart"].(string)
+		if !ok || part == "" {
+			continue
+		}
+		resourceToPathPart[logicalID] = part
+
+		parentID := props["ParentId"]
+		if restApiLogicalID != "" && isRestApiRootResourceRef(parentID, restApiLogicalID) {
+			resourceToParent[logicalID] = ""
+			continue
+		}
+		if parentLogicalID, ok := findFirstRefLogicalID(parentID); ok {
+			resourceToParent[logicalID] = parentLogicalID
+		}
+	}
+
+	resourceLogicalIDToFullPath := make(map[string]string)
+	var buildPath func(logicalID string) string
+	buildPath = func(logicalID string) string {
+		if logicalID == "" {
+			return ""
+		}
+		if existing, ok := resourceLogicalIDToFullPath[logicalID]; ok {
+			return existing
+		}
+		part := resourceToPathPart[logicalID]
+		parent := resourceToParent[logicalID]
+		full := ""
+		if parent == "" {
+			full = "/" + part
+		} else {
+			full = buildPath(parent) + "/" + part
+		}
+		resourceLogicalIDToFullPath[logicalID] = full
+		return full
+	}
+
+	for _, raw := range resources {
+		res, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if res["Type"] != "AWS::ApiGateway::Method" {
+			continue
+		}
+		props, ok := res["Properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		httpMethod, ok := props["HttpMethod"].(string)
+		if !ok || httpMethod == "" {
+			continue
+		}
+
+		fullPath := ""
+		if resourceLogicalID, ok := findFirstRefLogicalID(props["ResourceId"]); ok {
+			fullPath = buildPath(resourceLogicalID)
+		} else if restApiLogicalID != "" && isRestApiRootResourceRef(props["ResourceId"], restApiLogicalID) {
+			fullPath = "/"
+		}
+		if fullPath == "" {
+			continue
+		}
+
+		routeKey := fmt.Sprintf("%s %s", httpMethod, fullPath)
+		if routeKey == wantRouteKey {
+			return props, true
+		}
+	}
+
+	return nil, false
+}
+
+func firstIntegrationResponseParameterValue(integration map[string]any, key string) string {
+	rawResponses, ok := integration["IntegrationResponses"].([]any)
+	if !ok || len(rawResponses) == 0 {
+		return ""
+	}
+
+	firstResponse, ok := rawResponses[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	responseParameters, ok := firstResponse["ResponseParameters"].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	value, _ := responseParameters[key].(string)
+	return value
 }
