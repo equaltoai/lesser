@@ -41,12 +41,13 @@ func (r *accountsRound20FailingEnsuringActorRepo) EnsureNumericIDMapping(_ conte
 type accountsRound20LookupActorRepo struct {
 	interfaces.ActorRepository
 	actor    *activitypub.Actor
+	err      error
 	username string
 }
 
 func (r *accountsRound20LookupActorRepo) GetActor(_ context.Context, username string) (*activitypub.Actor, error) {
 	r.username = username
-	return r.actor, nil
+	return r.actor, r.err
 }
 
 func TestAccountsRound20_PublicAccountFallbackHelpers(t *testing.T) {
@@ -253,6 +254,38 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 		require.Nil(t, account)
 	})
 
+	t.Run("localStorageAccountForActor fills missing repository actors from the resolved actor", func(t *testing.T) {
+		cfg := round10TestConfig()
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {
+					Username:     "alice",
+					DisplayName:  "Alice",
+					CreatedAt:    time.Now().Add(-time.Hour),
+					UpdatedAt:    time.Now().Add(-time.Hour),
+					Discoverable: true,
+					Role:         "user",
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		h.registry = nil
+
+		actor := &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+			PreferredUsername: "alice",
+			Name:              "Alice",
+		}
+
+		account, err := h.localStorageAccountForActor(context.Background(), actor)
+		require.NoError(t, err)
+		require.NotNil(t, account)
+		require.NotNil(t, account.Actor)
+		require.Equal(t, actor.ID, account.Actor.ID)
+		require.Equal(t, "alice", account.User.Username)
+	})
+
 	t.Run("lookupStorageAccountByID falls back to repository account lookup", func(t *testing.T) {
 		cfg := round10TestConfig()
 		state := &round10QueryState{
@@ -383,6 +416,36 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 		require.Equal(t, "alice@example.com", account.User.Username)
 		require.Equal(t, "Alice", account.User.DisplayName)
 		require.Equal(t, "https://remote.example/users/alice", account.Actor.ID)
+		repos.AssertExpectations(t)
+	})
+
+	t.Run("lookupStorageAccountByID propagates actor resolution errors during fallback", func(t *testing.T) {
+		cfg := round10TestConfig()
+		repos := &MockRepositoryStorage{}
+		actorRepo := &accountsRound20LookupActorRepo{err: errors.New("actor lookup failed")}
+		repos.On("Account").Return(nil).Once()
+		repos.On("Actor").Return(actorRepo).Once()
+
+		h := &Handler{cfg: cfg, repos: repos}
+		account, err := h.lookupStorageAccountByID(context.Background(), "alice")
+		require.Nil(t, account)
+		require.EqualError(t, err, "actor lookup failed")
+		require.Equal(t, "alice", actorRepo.username)
+		repos.AssertExpectations(t)
+	})
+
+	t.Run("lookupStorageAccountByID returns not found when fallback resolution finds no actor", func(t *testing.T) {
+		cfg := round10TestConfig()
+		repos := &MockRepositoryStorage{}
+		actorRepo := &accountsRound20LookupActorRepo{}
+		repos.On("Account").Return(nil).Once()
+		repos.On("Actor").Return(actorRepo).Once()
+
+		h := &Handler{cfg: cfg, repos: repos}
+		account, err := h.lookupStorageAccountByID(context.Background(), "alice")
+		require.Nil(t, account)
+		require.EqualError(t, err, "account not found")
+		require.Equal(t, "alice", actorRepo.username)
 		repos.AssertExpectations(t)
 	})
 
