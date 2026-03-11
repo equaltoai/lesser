@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -37,7 +38,18 @@ func TestStatusesGetAndTimelines_Round12(t *testing.T) {
 	}
 
 	notesByID := map[string]*storagemodels.Status{
-		"status-1": {StatusID: "status-1", AuthorUsername: "alice", AuthorID: cfg.ActorURL("alice"), Content: "hi"},
+		"status-1": {
+			StatusID:       "status-1",
+			AuthorUsername: "alice",
+			AuthorID:       cfg.ActorURL("alice"),
+			Content:        "hi",
+			LikeCount:      2,
+			ReblogCount:    1,
+			Note: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice/statuses/status-1", Type: activitypub.NoteType},
+				Content:    "hi",
+			},
+		},
 	}
 
 	listNotesResult := &notes.Result{
@@ -117,19 +129,27 @@ func TestStatusesGetAndTimelines_Round12(t *testing.T) {
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetStatusLift(ctx))
 	})
 
-	t.Run("get_status_account_error", func(t *testing.T) {
+	t.Run("get_status_account_falls_back_to_storage_data", func(t *testing.T) {
 		notesByID["status-2"] = &storagemodels.Status{StatusID: "status-2", AuthorUsername: "err", AuthorID: cfg.ActorURL("err"), Content: "hi"}
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/status-2", nil, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["id"] = "status-2"
-		requireStatus(t, http.StatusInternalServerError)(handler.HandleGetStatusLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetStatusLift(ctx))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "status-2", body["id"])
 	})
 
 	t.Run("get_status_success_with_viewer", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/statuses/status-1", readHeaders, nil, nil)
 		require.NoError(t, err)
 		ctx.Params["id"] = "status-1"
-		requireStatus(t, http.StatusOK)(handler.HandleGetStatusLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(handler.HandleGetStatusLift(ctx))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "status-1", body["id"])
+		require.Equal(t, float64(2), body["favourites_count"])
+		require.Equal(t, float64(1), body["reblogs_count"])
 	})
 
 	t.Run("home_timeline_auth_error", func(t *testing.T) {

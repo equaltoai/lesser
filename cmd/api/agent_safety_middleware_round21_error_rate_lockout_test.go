@@ -179,6 +179,34 @@ func TestMaybeApplyAgentErrorRateLockout_Round21(t *testing.T) {
 		maybeApplyAgentErrorRateLockout(&apptheory.Context{}, rateRepo, &auth.Claims{Username: "agent"}, apptheory.Text(http.StatusInternalServerError, "boom"), nil)
 		require.Equal(t, 3, createCalls)
 	})
+
+	t.Run("read only failures do not count toward lockout", func(t *testing.T) {
+		createCalls := 0
+		rateRepo := newRateLimitRepoWithFirstHook(t, nil, func(dest any) {
+			if limit, ok := dest.(*storageModels.APIRateLimit); ok {
+				limit.Count = agentErrorRateMinRequests
+				limit.Window = time.Now().UTC()
+			}
+		}, &createCalls)
+
+		ctx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodGet, Path: "/api/v1/timelines/public"}}
+		maybeApplyAgentErrorRateLockout(ctx, rateRepo, &auth.Claims{Username: "agent"}, apptheory.Text(http.StatusInternalServerError, "boom"), nil)
+		require.Equal(t, 1, createCalls)
+	})
+
+	t.Run("client errors do not count toward lockout", func(t *testing.T) {
+		createCalls := 0
+		rateRepo := newRateLimitRepoWithFirstHook(t, nil, func(dest any) {
+			if limit, ok := dest.(*storageModels.APIRateLimit); ok {
+				limit.Count = agentErrorRateMinRequests
+				limit.Window = time.Now().UTC()
+			}
+		}, &createCalls)
+
+		ctx := &apptheory.Context{Request: apptheory.Request{Method: http.MethodPost, Path: "/api/v1/accounts/bob/follow"}}
+		maybeApplyAgentErrorRateLockout(ctx, rateRepo, &auth.Claims{Username: "agent"}, apptheory.Text(http.StatusBadRequest, "bad"), nil)
+		require.Equal(t, 1, createCalls)
+	})
 }
 
 func TestRejectLockedCLIAutomation_Round21(t *testing.T) {

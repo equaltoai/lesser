@@ -29,12 +29,12 @@ const (
 	agentConcurrencyLimit         = 2
 	agentConcurrencyLeaseDuration = 30 * time.Second
 
-	agentErrorRateWindow      = time.Minute
-	agentErrorRateThreshold   = 0.10
-	agentErrorRateMinRequests = 10
+	agentErrorRateWindow      = 5 * time.Minute
+	agentErrorRateThreshold   = 0.60
+	agentErrorRateMinRequests = 25
 	agentErrorRateCounterCap  = 100000
 
-	agentErrorRateLockoutDuration = time.Hour
+	agentErrorRateLockoutDuration = 10 * time.Minute
 
 	cliAutomationDefaultConcurrencyLimit = 2
 	cliAutomationDefaultBurstLimit       = 20
@@ -179,9 +179,8 @@ func maybeApplyAgentErrorRateLockout(ctx *apptheory.Context, rateRepo *storageRe
 		return
 	}
 
-	isError := handlerErr != nil || (resp != nil && resp.Status >= 400)
 	_ = rateRepo.CheckAPIRateLimit(ctx.Context(), "agent:"+claims.Username, "agent_request_total", agentErrorRateCounterCap, agentErrorRateWindow)
-	if !isError {
+	if !agentResponseCountsTowardLockout(ctx, resp, handlerErr) {
 		return
 	}
 
@@ -201,6 +200,23 @@ func maybeApplyAgentErrorRateLockout(ctx *apptheory.Context, rateRepo *storageRe
 	if errorRate > agentErrorRateThreshold {
 		_ = rateRepo.ImposeLockout(ctx.Context(), agentLockoutIdentifier(claims.Username), agentErrorRateLockoutDuration)
 	}
+}
+
+func agentResponseCountsTowardLockout(ctx *apptheory.Context, resp *apptheory.Response, handlerErr error) bool {
+	if handlerErr != nil {
+		return true
+	}
+	if resp == nil {
+		return false
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(ctx.Request.Method))
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+
+	return resp.Status >= http.StatusInternalServerError
 }
 
 type agentConcurrencyLease struct {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		return common.RespondForbidden(ctx, "invalid instance api key")
 	}
 
-	recipient := strings.TrimSpace(h.cfg.AdminUsername)
+	recipient := h.notificationDeliveryRecipient(ctx.Context())
 	if recipient == "" {
 		return common.RespondServiceUnavailable(ctx, "notification delivery")
 	}
@@ -133,6 +134,27 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 	h.recordCommDeliveryAuditEvent(ctx, recipient, delivery, true, "", idempotent)
 
 	return noContent(), nil
+}
+
+func (h *Handler) notificationDeliveryRecipient(ctx context.Context) string {
+	if h == nil || h.cfg == nil {
+		return ""
+	}
+
+	if recipient := strings.TrimSpace(h.cfg.AdminUsername); recipient != "" {
+		return recipient
+	}
+
+	if h.repos == nil || h.repos.Instance() == nil {
+		return ""
+	}
+
+	state, err := h.repos.Instance().GetInstanceState(ctx)
+	if err != nil || state == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(state.PrimaryAdminUsername)
 }
 
 func (h *Handler) notificationDeliveryKeys() []string {

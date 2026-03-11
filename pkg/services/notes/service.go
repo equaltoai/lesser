@@ -3240,10 +3240,19 @@ func (s *Service) GetFavoritedNotes(ctx context.Context, query *ListNotesQuery) 
 		return nil, ErrLikeRepositoryNotAvailable
 	}
 
-	// Get the likes for the actor
-	likes, nextCursor, err := s.likeRepo.GetActorLikes(ctx, account.Actor.ID, query.Pagination.Limit, query.Pagination.Cursor)
-	if err != nil {
-		return nil, ErrGetLikedObjects
+	lookupIDs := s.viewerLikeLookupIDs(account, query.ViewerID)
+	var (
+		likes      []*models.Like
+		nextCursor string
+	)
+	for idx, lookupID := range lookupIDs {
+		likes, nextCursor, err = s.likeRepo.GetActorLikes(ctx, lookupID, query.Pagination.Limit, query.Pagination.Cursor)
+		if err != nil {
+			return nil, ErrGetLikedObjects
+		}
+		if len(likes) > 0 || nextCursor != "" || idx == len(lookupIDs)-1 {
+			break
+		}
 	}
 
 	// Collect the liked status IDs
@@ -3291,6 +3300,39 @@ func (s *Service) GetFavoritedNotes(ctx context.Context, query *ListNotesQuery) 
 		Pagination: paginatedResult,
 		Events:     []*streaming.Event{}, // No events for read operations
 	}, nil
+}
+
+func (s *Service) viewerLikeLookupIDs(account *storage.Account, viewerID string) []string {
+	lookupIDs := make([]string, 0, 3)
+
+	viewerUsername, viewerActorID := s.resolveViewerActorID(viewerID)
+	if account != nil {
+		if account.Actor != nil && strings.TrimSpace(account.Actor.ID) != "" {
+			viewerActorID = strings.TrimSpace(account.Actor.ID)
+		}
+		if account.User != nil && strings.TrimSpace(account.User.Username) != "" {
+			viewerUsername = strings.TrimSpace(account.User.Username)
+		}
+	}
+
+	lookupIDs = appendUniqueLookupID(lookupIDs, viewerActorID)
+	lookupIDs = appendUniqueLookupID(lookupIDs, viewerUsername)
+	if viewerUsername != "" && strings.TrimSpace(s.domainName) != "" {
+		lookupIDs = appendUniqueLookupID(lookupIDs, fmt.Sprintf("https://%s/users/%s", s.domainName, viewerUsername))
+	}
+
+	return lookupIDs
+}
+
+func appendUniqueLookupID(values []string, raw string) []string {
+	candidate := strings.TrimSpace(raw)
+	if candidate == "" {
+		return values
+	}
+	if slices.Contains(values, candidate) {
+		return values
+	}
+	return append(values, candidate)
 }
 
 // Scheduled Status Commands and Results

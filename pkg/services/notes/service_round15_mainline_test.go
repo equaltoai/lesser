@@ -1475,6 +1475,19 @@ func TestService_round15_getFavoritedNotes_error_branches(t *testing.T) {
 	}
 }
 
+func TestService_round15_viewerLikeLookupIDs(t *testing.T) {
+	service, _, _, _, _ := newNotesServiceHarness(t)
+
+	account, err := service.accountRepo.GetAccount(context.Background(), "alice")
+	require.NoError(t, err)
+
+	lookupIDs := service.viewerLikeLookupIDs(account, "alice")
+	require.Equal(t, []string{
+		"https://example.com/users/alice",
+		"alice",
+	}, lookupIDs)
+}
+
 func TestService_round15_bookmarks_update_history_and_boost_delete_edges(t *testing.T) {
 	ctx := context.Background()
 
