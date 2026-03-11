@@ -107,4 +107,24 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 			require.FailNow(t, "unexpected attachments type")
 		}
 	})
+
+	t.Run("managed lesser-host key is accepted", func(t *testing.T) {
+		managedCfg := round11TestConfig()
+		managedCfg.AdminUsername = "admin"
+		managedCfg.LesserHostInstanceKey = "managed-instance-key"
+
+		managedHandler, _, _ := round11NewHandler(t, managedCfg, &round10QueryState{})
+		managedHandler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					require.Equal(t, managedCfg.AdminUsername, cmd.UserID)
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		headers := map[string]string{"Authorization": "Bearer " + managedCfg.LesserHostInstanceKey}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, payload)
+		requireStatus(t, http.StatusNoContent)(managedHandler.HandleDeliverNotificationLift(ctx))
+	})
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -462,11 +463,7 @@ func (h *Handler) handleAccountRelationshipsList(ctx *apptheory.Context, relType
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Extract username from accountID
-	username := accountID
-
-	// Get the actor to verify it exists
-	_, err := h.registry.Accounts().GetAccount(ctx.Context(), username)
+	username, err := h.resolveRelationshipUsername(ctx.Context(), accountID)
 	if err != nil {
 		return common.RespondAccountNotFound(ctx)
 	}
@@ -525,6 +522,33 @@ func (h *Handler) handleAccountRelationshipsList(ctx *apptheory.Context, relType
 	}
 
 	return resp, nil
+}
+
+func (h *Handler) resolveRelationshipUsername(ctx context.Context, accountID string) (string, error) {
+	if h != nil && h.registry != nil && h.registry.Accounts() != nil {
+		account, err := h.registry.Accounts().GetAccount(ctx, accountID)
+		if err == nil && account != nil && account.Actor != nil {
+			username := strings.TrimSpace(account.Actor.PreferredUsername)
+			if username != "" {
+				return username, nil
+			}
+		}
+	}
+
+	actor, err := h.resolveAccountID(ctx, accountID)
+	if err != nil {
+		return "", err
+	}
+	if actor == nil {
+		return "", errors.New("relationship not found")
+	}
+
+	username := strings.TrimSpace(actor.PreferredUsername)
+	if username == "" {
+		return "", errors.New("relationship not found")
+	}
+
+	return username, nil
 }
 
 // HandleGetAccountFollowersLift retrieves the list of accounts following the given account

@@ -14,6 +14,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	repoMocks "github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
@@ -453,6 +455,43 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 		ctx.Params["id"] = "alice"
 
 		requireStatus(t, http.StatusInternalServerError)(h.HandleGetAccountFollowingLift(ctx))
+	})
+
+	t.Run("handleAccountRelationshipsList_resolves_numeric_account_id", func(t *testing.T) {
+		const numericID = "446117837104852"
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return nil, errors.New("not found")
+				},
+			},
+			RelationshipsSvc: &RelationshipsServiceStub{
+				GetFollowersFunc: func(_ context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error) {
+					require.Equal(t, "alice", username)
+					return []*storage.Account{actorAccount}, "", nil
+				},
+			},
+		})
+
+		actorRepo := repoMocks.NewMockActorRepository()
+		actorRepo.On("GetActorByNumericID", mock.Anything, numericID).Return(actorAccount.Actor, nil).Once()
+
+		repos := &MockRepositoryStorage{}
+		repos.On("Actor").Return(actorRepo).Maybe()
+		h.repos = repos
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/"+numericID+"/followers", authHeaders, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = numericID
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetAccountFollowersLift(ctx))
+
+		var body []apimodels.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Len(t, body, 1)
+		require.Equal(t, "alice", body[0].Username)
+		actorRepo.AssertExpectations(t)
 	})
 
 	t.Run("HandleGetFamiliarFollowersLift_error_cases", func(t *testing.T) {

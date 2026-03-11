@@ -124,6 +124,7 @@ func apiRequestIsPublic(method, path string) bool {
 		switch path {
 		case "/api/v1/apps",
 			"/api/v1/accounts",
+			"/api/v1/notifications/deliver",
 			"/oauth/token",
 			"/oauth/revoke",
 			"/oauth/consent",

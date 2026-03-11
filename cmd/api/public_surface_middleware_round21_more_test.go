@@ -42,6 +42,7 @@ func TestAPIRequestIsPublic_Round21(t *testing.T) {
 		{"oauth revoke is public", http.MethodPost, "/oauth/revoke", true},
 		{"wallet login is public", http.MethodPost, "/auth/wallet/login", true},
 		{"post search statuses is public", http.MethodPost, "/api/v1/search/statuses", true},
+		{"notification delivery uses handler auth", http.MethodPost, "/api/v1/notifications/deliver", true},
 		{"notifications not public", http.MethodPost, "/api/v1/notifications", false},
 
 		{"unsupported method not public", http.MethodPut, "/oauth/token", false},

@@ -30,6 +30,8 @@ GET /api/v1/accounts/relationships
 GET /api/v1/accounts/search
 GET /api/v1/accounts/search/suggestions
 GET /api/v1/accounts/verify_credentials
+GET /api/v1/accounts/{id}/followers
+GET /api/v1/accounts/{id}/following
 GET /api/v1/accounts/{id}/notes
 GET /api/v1/accounts/{id}/quote_permissions
 GET /api/v1/accounts/{id}/statuses

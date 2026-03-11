@@ -7853,6 +7853,62 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - write
+    /api/v1/accounts/{id}/followers:
+        get:
+            operationId: get_api_v1_accounts_by_id_followers
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AccountList'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetAccountFollowersLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/accounts/{id}/following:
+        get:
+            operationId: get_api_v1_accounts_by_id_following
+            tags:
+                - accounts
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AccountList'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleGetAccountFollowingLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/accounts/{id}/mute:
         post:
             operationId: post_api_v1_accounts_by_id_mute
