@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -522,5 +523,69 @@ func TestAccountsRound20_AccountResolutionHelpers(t *testing.T) {
 
 		_, err := h.resolveRelationshipUsername(context.Background(), "missing")
 		require.EqualError(t, err, "lookup failed")
+	})
+
+	t.Run("ensureMastodonAccountCollections tolerates nil accounts", func(t *testing.T) {
+		ensureMastodonAccountCollections(nil)
+	})
+
+	t.Run("handleAccountRelationshipsList validates account ids", func(t *testing.T) {
+		cfg := round10TestConfig()
+		h := &Handler{cfg: cfg, logger: zap.NewNop()}
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts//followers", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = ""
+
+		requireStatus(t, http.StatusBadRequest)(h.HandleGetAccountFollowersLift(ctx))
+	})
+
+	t.Run("handleAccountRelationshipsList returns account not found when resolution fails", func(t *testing.T) {
+		cfg := round10TestConfig()
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return nil, errors.New("missing")
+				},
+			},
+		})
+		h.logger = zap.NewNop()
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/followers", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "alice"
+
+		requireStatus(t, http.StatusNotFound)(h.HandleGetAccountFollowersLift(ctx))
+	})
+
+	t.Run("handleAccountRelationshipsList returns internal server error for follower lookup failures", func(t *testing.T) {
+		cfg := round10TestConfig()
+		actorAccount := &storage.Account{
+			User: &storage.User{Username: "alice"},
+			Actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"},
+				PreferredUsername: "alice",
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return actorAccount, nil
+				},
+			},
+			RelationshipsSvc: &RelationshipsServiceStub{
+				GetFollowersFunc: func(context.Context, string, int, string) ([]*storage.Account, string, error) {
+					return nil, "", errors.New("boom")
+				},
+			},
+		})
+		h.logger = zap.NewNop()
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice/followers", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "alice"
+
+		requireStatus(t, http.StatusInternalServerError)(h.HandleGetAccountFollowersLift(ctx))
 	})
 }
