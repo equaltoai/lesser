@@ -703,34 +703,11 @@ func (h *Handler) HandleGetStatusLift(ctx *apptheory.Context) (*apptheory.Respon
 		return common.RespondInternalServerError(ctx, "failed to retrieve status")
 	}
 
-	// Get the author actor for proper conversion
-	account, err := h.registry.Accounts().GetAccount(ctx.Context(), transformations.ExtractUsernameFromActorID(status.AuthorID))
+	mastodonStatus, err := h.convertStorageStatusToAPI(status, viewerUsername)
 	if err != nil {
-		h.logger.Error("failed to get author account", zap.Error(err))
+		h.logger.Error("failed to convert status", zap.Error(err))
 		return common.RespondInternalServerError(ctx, "failed to retrieve status")
 	}
-
-	// Check user-specific metadata if viewer is authenticated
-	var favorited, reblogged, bookmarked bool
-	if viewerUsername != "" {
-		// Check if the viewer has liked/favorited this status
-		if likeRepo := h.repos.Like(); likeRepo != nil {
-			favorited, _ = likeRepo.HasLiked(ctx.Context(), viewerUsername, statusID)
-		}
-
-		// Check if the viewer has reblogged this status
-		if likeRepo := h.repos.Like(); likeRepo != nil {
-			reblogged, _ = likeRepo.HasReblogged(ctx.Context(), viewerUsername, statusID)
-		}
-
-		// Check if the viewer has bookmarked this status
-		if userRepo := h.repos.User(); userRepo != nil {
-			bookmarked, _ = userRepo.IsBookmarked(ctx.Context(), viewerUsername, statusID)
-		}
-	}
-
-	// Convert to Mastodon API format using correct converter with user context
-	mastodonStatus := transformations.ObjectToStatusWithContextAndCounts(ctx.Context(), status, account.Actor, 0, 0, favorited, reblogged, bookmarked, h.cfg.BaseURL())
 
 	return okJSON(mastodonStatus)
 }

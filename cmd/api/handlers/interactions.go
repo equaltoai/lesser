@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -55,6 +56,11 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		return common.RespondServiceUnavailable(ctx, "service unavailable")
 	}
 
+	targetID, err := h.resolveRelationshipTargetID(ctx.Context(), accountID)
+	if err != nil {
+		return common.RespondInternalServerError(ctx, err.Error())
+	}
+
 	switch operation {
 	case relationshipOpFollow:
 		var req models.FollowRequest
@@ -68,7 +74,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 
 		r, err := h.registry.Relationships().Follow(ctx.Context(), &relationships.FollowCommand{
 			FollowerID:  claims.Username,
-			FollowingID: accountID,
+			FollowingID: targetID,
 			ShowReblogs: req.Reblogs == nil || *req.Reblogs,
 			Notify:      req.Notify != nil && *req.Notify,
 		})
@@ -79,7 +85,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	case relationshipOpUnfollow:
 		r, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
 			FollowerID:  claims.Username,
-			FollowingID: accountID,
+			FollowingID: targetID,
 		})
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
@@ -88,7 +94,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	case "block":
 		r, err := h.registry.Relationships().Block(ctx.Context(), &relationships.BlockCommand{
 			BlockerID: claims.Username,
-			BlockedID: accountID,
+			BlockedID: targetID,
 		})
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
@@ -97,7 +103,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	case "unblock":
 		r, err := h.registry.Relationships().Unblock(ctx.Context(), &relationships.UnblockCommand{
 			BlockerID: claims.Username,
-			BlockedID: accountID,
+			BlockedID: targetID,
 		})
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
@@ -106,6 +112,23 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	default:
 		return common.RespondBadRequest(ctx, "invalid operation")
 	}
+}
+
+func (h *Handler) resolveRelationshipTargetID(ctx context.Context, accountID string) (string, error) {
+	actor, err := h.resolveAccountID(ctx, accountID)
+	if err != nil {
+		return "", err
+	}
+	if actor == nil {
+		return "", fmt.Errorf("actor not found: %s", accountID)
+	}
+	if actorID := strings.TrimSpace(actor.ID); actorID != "" {
+		return actorID, nil
+	}
+	if username := strings.TrimSpace(actor.PreferredUsername); username != "" {
+		return username, nil
+	}
+	return "", fmt.Errorf("actor not found: %s", accountID)
 }
 
 func (h *Handler) enforceAgentFollowRails(ctx *apptheory.Context, username string) (*apptheory.Response, error) {

@@ -232,6 +232,8 @@ func TestConvertStorageStatusToAPI(t *testing.T) {
 		Mentions:       []string{"bob"},
 		Note:           statusNote,
 		ReblogOfID:     "reblog",
+		LikeCount:      4,
+		ReblogCount:    3,
 	}
 
 	apiStatus, err := handler.convertStorageStatusToAPI(status, "alice")
@@ -242,6 +244,8 @@ func TestConvertStorageStatusToAPI(t *testing.T) {
 	require.Len(t, apiStatus.MediaAttachments, 1)
 	require.Len(t, apiStatus.Tags, 1)
 	require.NotNil(t, apiStatus.Reblog)
+	require.Equal(t, 4, apiStatus.FavouritesCount)
+	require.Equal(t, 3, apiStatus.ReblogsCount)
 
 	serialized, err := json.Marshal(apiStatus)
 	require.NoError(t, err)

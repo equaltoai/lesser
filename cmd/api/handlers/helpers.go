@@ -43,6 +43,8 @@ const MaxPaginationLimit = 80
 
 // resolveAccountID resolves an account ID (which can be a username, numeric ID, or URL) to an actor
 func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
+	accountID = normalizeResolvedAccountID(accountID)
+
 	// Validate account ID format
 	if err := common.ValidateAccountID(accountID); err != nil {
 		return nil, errors.Join(invalidAccountID(), err)
@@ -105,6 +107,18 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 
 	// Assume it's a username for local accounts
 	return h.repos.Actor().GetActor(ctx, accountID)
+}
+
+func normalizeResolvedAccountID(accountID string) string {
+	normalized := strings.TrimSpace(accountID)
+	for range 3 {
+		decoded, err := url.PathUnescape(normalized)
+		if err != nil || decoded == normalized {
+			break
+		}
+		normalized = decoded
+	}
+	return normalized
 }
 
 // authenticateUser handles the common pattern of extracting and validating user authentication
@@ -232,199 +246,14 @@ func (h *Handler) isLocal(username string) bool {
 //
 //nolint:gocognit // Complex conversion between storage and API models with many fields
 func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
-	ctx := context.Background()
+	ctx := h.statusConversionContext()
+	inReplyToID, inReplyToAccountID := h.statusReplyReferences(ctx, storageStatus)
+	authorAccount := h.loadStatusAuthorAccount(ctx, storageStatus)
+	counts := h.statusEngagementCounts(ctx, storageStatus)
+	interactions := h.statusInteractionState(ctx, storageStatus, currentUsername)
+	reblogStatus := h.loadReblogStatus(ctx, storageStatus, currentUsername)
+	baseStatus := h.transformStatusBase(ctx, storageStatus)
 
-	// Attach loaders to context for DataLoader usage
-	ctx = graph.WithLoaders(ctx, h.loaders)
-
-	// Convert InReplyToID to pointer if not empty
-	var inReplyToID *string
-	var inReplyToAccountID *string
-	if storageStatus.InReplyToID != "" {
-		inReplyToID = &storageStatus.InReplyToID
-		// Get the parent status to find the account ID
-		if parentStatus, err := h.repos.Status().GetStatus(ctx, storageStatus.InReplyToID); err == nil {
-			inReplyToAccountID = &parentStatus.AuthorID
-		}
-	}
-
-	// Get author account details using DataLoader for efficient batched loading
-	authorAccount, err := h.repos.Account().GetAccount(ctx, storageStatus.AuthorUsername)
-	if err != nil {
-		// Fallback to basic info if account not found
-		authorAccount = &storage.Account{
-			User: &storage.User{
-				Username:    storageStatus.AuthorUsername,
-				DisplayName: storageStatus.AuthorUsername,
-			},
-		}
-	}
-
-	// Get interaction counts
-	statusObjectID := fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), storageStatus.StatusID)
-	likeCount, _ := h.repos.Like().GetLikeCount(ctx, statusObjectID)
-	reblogCount, _ := h.repos.Social().CountObjectAnnounces(ctx, statusObjectID)
-
-	// Get reply count
-	replyCount := 0
-	paginationOpts := interfaces.PaginationOptions{Limit: 1}
-	if replies, err := h.repos.Status().GetReplies(ctx, storageStatus.StatusID, paginationOpts); err == nil && replies != nil {
-		replyCount = len(replies.Items)
-	}
-
-	// Check current user's interactions
-	var favourited, reblogged, bookmarked, muted, pinned bool
-	currentUserActorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), currentUsername)
-
-	// Check if favorited
-	if _, err := h.repos.Like().GetLike(ctx, currentUserActorID, statusObjectID); err == nil {
-		favourited = true
-	}
-
-	// Check if reblogged
-	if _, err := h.repos.Social().GetAnnounce(ctx, currentUserActorID, statusObjectID); err == nil {
-		reblogged = true
-	}
-
-	// Check if bookmarked using bookmark repository
-	if bookmarkRepo := h.repos.Bookmark(); bookmarkRepo != nil {
-		if isMarked, err := bookmarkRepo.IsBookmarked(ctx, currentUsername, storageStatus.StatusID); err == nil {
-			bookmarked = isMarked
-		} else if h.logger != nil {
-			h.logger.Debug("failed to check bookmark status",
-				zap.String("username", currentUsername),
-				zap.String("status_id", storageStatus.StatusID),
-				zap.Error(err))
-		}
-	}
-
-	// Check if muted (conversation mute)
-	if storageStatus.ConversationID != "" {
-		muted, _ = h.repos.Conversation().IsConversationMuted(ctx, currentUsername, storageStatus.ConversationID)
-	}
-
-	// Check if pinned - check if status is in user's pinned statuses
-	// For now we'll skip this check since GetPinnedStatuses doesn't exist
-	// pinned = false // Already initialized as false above
-
-	// Extract hashtags from content
-	tags := []any{}
-	if err := common.ValidateSliceNotEmpty("storage status hashtags", storageStatus.Hashtags); err == nil {
-		for _, hashtag := range storageStatus.Hashtags {
-			tags = append(tags, map[string]string{
-				"name": hashtag,
-				"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
-			})
-		}
-	}
-
-	// Extract mentions
-	mentions := []any{}
-	if err := common.ValidateSliceNotEmpty("storage status mentions", storageStatus.Mentions); err == nil {
-		for _, mention := range storageStatus.Mentions {
-			mentions = append(mentions, map[string]string{
-				"id":       mention,
-				"username": mention,
-				"url":      fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), mention),
-				"acct":     mention,
-			})
-		}
-	}
-
-	// Handle media attachments from the ActivityPub Note
-	mediaAttachments := []any{}
-	if storageStatus.Note != nil && storageStatus.Note.Attachment != nil {
-		for _, attachment := range storageStatus.Note.Attachment {
-			// Convert ActivityPub attachment to API format
-			mediaAttachment := map[string]any{
-				"id":          attachment.URL, // Use URL as ID if no specific ID
-				"type":        attachment.MediaType,
-				"url":         attachment.URL,
-				"preview_url": attachment.URL, // Use same URL for preview if not specified
-			}
-			if attachment.Name != "" {
-				mediaAttachment["description"] = attachment.Name
-			}
-			mediaAttachments = append(mediaAttachments, mediaAttachment)
-		}
-	}
-
-	// Build the account object using transformation framework and storage data
-	var account models.Account
-	if authorAccount.Actor != nil {
-		// Use centralized transformation framework for Actor fields - ELIMINATES 30+ LINES OF DUPLICATE CODE
-		account = transformations.ActorToAccountBase(authorAccount.Actor, h.cfg.BaseURL())
-
-		// Override specific fields with storage data that has precedence
-		account.ID = storageStatus.AuthorID
-		account.Username = storageStatus.AuthorUsername
-		account.Acct = storageStatus.AuthorUsername
-		account.DisplayName = authorAccount.User.DisplayName
-		account.CreatedAt = authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z")
-	} else {
-		// Fallback for cases where Actor is not available - use minimal transformation
-		fakeActor := &activitypub.Actor{
-			BaseObject: activitypub.BaseObject{
-				ID:   storageStatus.AuthorID,
-				Type: "Person",
-			},
-			PreferredUsername: storageStatus.AuthorUsername,
-			Name:              authorAccount.User.DisplayName,
-			URL:               fmt.Sprintf("https://%s/@%s", h.cfg.BaseURL(), storageStatus.AuthorUsername),
-		}
-
-		// Use centralized transformation framework even for fallback - ELIMINATES 6+ LINES OF DUPLICATE CODE
-		account = transformations.ActorToAccountBase(fakeActor, h.cfg.BaseURL())
-		account.CreatedAt = authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z")
-	}
-
-	// Get follower/following counts - these would come from a separate query in real implementation
-	// For now, we'll use default values
-	account.FollowersCount = 0
-	account.FollowingCount = 0
-	account.StatusesCount = 0
-
-	// Handle reblog if this is a reblog
-	var reblogStatus *models.Status
-	reblogTargetID := storageStatus.ReblogOfID
-	if reblogTargetID == "" {
-		reblogTargetID = storageStatus.BoostOfStatusID
-	}
-	if reblogTargetID != "" {
-		if rebloggedStatus, err := h.repos.Status().GetStatus(ctx, reblogTargetID); err == nil {
-			// Recursively convert the reblogged status
-			reblogStatus, _ = h.convertStorageStatusToAPI(rebloggedStatus, currentUsername)
-		}
-	}
-
-	// Build the final API status using transformation framework - ELIMINATES 25+ LINES OF DUPLICATE CODE
-	statusMap := map[string]interface{}{
-		"id":        storageStatus.StatusID,
-		"content":   storageStatus.Content,
-		"sensitive": storageStatus.Sensitive,
-		"published": storageStatus.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
-	}
-
-	// Add optional fields to status map
-	if storageStatus.InReplyToID != "" {
-		statusMap["inReplyTo"] = storageStatus.InReplyToID
-	}
-
-	// Use centralized transformation framework for base status creation
-	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-	transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
-
-	baseStatus, err := transformer.Transform(transformCtx, statusMap)
-	if err != nil || baseStatus.ID == "" {
-		// Fallback to minimal status if transformation fails
-		baseStatus = models.Status{
-			ID:        storageStatus.StatusID,
-			Content:   storageStatus.Content,
-			CreatedAt: storageStatus.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
-		}
-	}
-
-	// Override with storage-specific and computed fields
 	apiStatus := &models.Status{
 		ID:                 baseStatus.ID,
 		Content:            baseStatus.Content,
@@ -435,19 +264,19 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 		CreatedAt:          baseStatus.CreatedAt,
 		InReplyToID:        inReplyToID,
 		InReplyToAccountID: inReplyToAccountID,
-		Account:            account,
-		MediaAttachments:   mediaAttachments,
-		Mentions:           mentions,
-		Tags:               tags,
+		Account:            h.statusAccount(storageStatus, authorAccount),
+		MediaAttachments:   h.statusMediaAttachments(storageStatus),
+		Mentions:           h.statusMentions(storageStatus),
+		Tags:               h.statusTags(storageStatus),
 		Emojis:             []any{}, // Custom emojis would go here
-		ReblogsCount:       int(reblogCount),
-		FavouritesCount:    int(likeCount),
-		RepliesCount:       replyCount,
-		Reblogged:          reblogged,
-		Favourited:         favourited,
-		Bookmarked:         bookmarked,
-		Muted:              muted,
-		Pinned:             pinned,
+		ReblogsCount:       counts.reblogCount,
+		FavouritesCount:    counts.likeCount,
+		RepliesCount:       counts.replyCount,
+		Reblogged:          interactions.reblogged,
+		Favourited:         interactions.favourited,
+		Bookmarked:         interactions.bookmarked,
+		Muted:              interactions.muted,
+		Pinned:             interactions.pinned,
 		Reblog:             reblogStatus,
 		URI:                fmt.Sprintf("https://%s/users/%s/statuses/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
 		URL:                fmt.Sprintf("https://%s/@%s/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
@@ -459,6 +288,323 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 	// Status.Poll field would be populated here if the status has an associated poll
 
 	return apiStatus, nil
+}
+
+type statusEngagementCounts struct {
+	likeCount   int
+	reblogCount int
+	replyCount  int
+}
+
+type statusInteractionState struct {
+	favourited bool
+	reblogged  bool
+	bookmarked bool
+	muted      bool
+	pinned     bool
+}
+
+func (h *Handler) statusConversionContext() context.Context {
+	return graph.WithLoaders(context.Background(), h.loaders)
+}
+
+func (h *Handler) statusReplyReferences(ctx context.Context, storageStatus *storageModels.Status) (*string, *string) {
+	if storageStatus == nil || storageStatus.InReplyToID == "" {
+		return nil, nil
+	}
+
+	inReplyToID := &storageStatus.InReplyToID
+	var inReplyToAccountID *string
+	if parentStatus, err := h.repos.Status().GetStatus(ctx, storageStatus.InReplyToID); err == nil {
+		inReplyToAccountID = &parentStatus.AuthorID
+	}
+
+	return inReplyToID, inReplyToAccountID
+}
+
+func (h *Handler) loadStatusAuthorAccount(ctx context.Context, storageStatus *storageModels.Status) *storage.Account {
+	if storageStatus == nil {
+		return &storage.Account{User: &storage.User{}}
+	}
+
+	authorAccount, err := h.repos.Account().GetAccount(ctx, storageStatus.AuthorUsername)
+	if err != nil || authorAccount == nil {
+		return &storage.Account{
+			User: &storage.User{
+				Username:    storageStatus.AuthorUsername,
+				DisplayName: storageStatus.AuthorUsername,
+			},
+		}
+	}
+
+	if authorAccount.User == nil {
+		authorAccount.User = &storage.User{
+			Username:    storageStatus.AuthorUsername,
+			DisplayName: storageStatus.AuthorUsername,
+		}
+	}
+
+	if strings.TrimSpace(authorAccount.User.DisplayName) == "" {
+		authorAccount.User.DisplayName = storageStatus.AuthorUsername
+	}
+
+	return authorAccount
+}
+
+func (h *Handler) statusEngagementCounts(ctx context.Context, storageStatus *storageModels.Status) statusEngagementCounts {
+	if storageStatus == nil {
+		return statusEngagementCounts{}
+	}
+
+	counts := statusEngagementCounts{
+		likeCount:   storageStatus.LikeCount,
+		reblogCount: storageStatus.ReblogCount,
+		replyCount:  storageStatus.ReplyCount,
+	}
+
+	if counts.likeCount == 0 {
+		counts.likeCount = h.lookupStatusLikeCount(ctx, storageStatus)
+	}
+	if counts.reblogCount == 0 {
+		counts.reblogCount = h.lookupStatusReblogCount(ctx, storageStatus)
+	}
+	if counts.replyCount == 0 {
+		counts.replyCount = h.lookupStatusReplyCount(ctx, storageStatus)
+	}
+
+	return counts
+}
+
+func (h *Handler) lookupStatusLikeCount(ctx context.Context, storageStatus *storageModels.Status) int {
+	likeCount := 0
+	for _, statusObjectID := range h.statusLookupObjectIDs(storageStatus) {
+		count, err := h.repos.Like().GetLikeCount(ctx, statusObjectID)
+		if err == nil && int(count) > likeCount {
+			likeCount = int(count)
+		}
+	}
+
+	return likeCount
+}
+
+func (h *Handler) lookupStatusReblogCount(ctx context.Context, storageStatus *storageModels.Status) int {
+	reblogCount := 0
+	for _, statusObjectID := range h.statusLookupObjectIDs(storageStatus) {
+		count, err := h.repos.Social().CountObjectAnnounces(ctx, statusObjectID)
+		if err == nil && count > reblogCount {
+			reblogCount = count
+		}
+	}
+
+	return reblogCount
+}
+
+func (h *Handler) lookupStatusReplyCount(ctx context.Context, storageStatus *storageModels.Status) int {
+	paginationOpts := interfaces.PaginationOptions{Limit: 1}
+	replies, err := h.repos.Status().GetReplies(ctx, storageStatus.StatusID, paginationOpts)
+	if err != nil || replies == nil {
+		return 0
+	}
+
+	return len(replies.Items)
+}
+
+func (h *Handler) statusInteractionState(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) statusInteractionState {
+	state := statusInteractionState{}
+	h.populateStatusReactionState(ctx, &state, storageStatus, currentUsername)
+	state.bookmarked = h.statusBookmarked(ctx, storageStatus, currentUsername)
+	state.muted = h.statusMuted(ctx, storageStatus, currentUsername)
+
+	return state
+}
+
+func (h *Handler) populateStatusReactionState(ctx context.Context, state *statusInteractionState, storageStatus *storageModels.Status, currentUsername string) {
+	for _, currentUserActorID := range h.viewerActorLookupIDs(currentUsername) {
+		for _, statusObjectID := range h.statusLookupObjectIDs(storageStatus) {
+			if !state.favourited {
+				if _, err := h.repos.Like().GetLike(ctx, currentUserActorID, statusObjectID); err == nil {
+					state.favourited = true
+				}
+			}
+			if !state.reblogged {
+				if _, err := h.repos.Social().GetAnnounce(ctx, currentUserActorID, statusObjectID); err == nil {
+					state.reblogged = true
+				}
+			}
+			if state.favourited && state.reblogged {
+				return
+			}
+		}
+	}
+}
+
+func (h *Handler) statusBookmarked(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) bool {
+	bookmarkRepo := h.repos.Bookmark()
+	if bookmarkRepo == nil || storageStatus == nil {
+		return false
+	}
+
+	isMarked, err := bookmarkRepo.IsBookmarked(ctx, currentUsername, storageStatus.StatusID)
+	if err == nil {
+		return isMarked
+	}
+
+	if h.logger != nil {
+		h.logger.Debug("failed to check bookmark status",
+			zap.String("username", currentUsername),
+			zap.String("status_id", storageStatus.StatusID),
+			zap.Error(err))
+	}
+
+	return false
+}
+
+func (h *Handler) statusMuted(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) bool {
+	if storageStatus == nil || storageStatus.ConversationID == "" {
+		return false
+	}
+
+	muted, _ := h.repos.Conversation().IsConversationMuted(ctx, currentUsername, storageStatus.ConversationID)
+	return muted
+}
+
+func (h *Handler) statusTags(storageStatus *storageModels.Status) []any {
+	tags := []any{}
+	if storageStatus == nil || common.ValidateSliceNotEmpty("storage status hashtags", storageStatus.Hashtags) != nil {
+		return tags
+	}
+
+	for _, hashtag := range storageStatus.Hashtags {
+		tags = append(tags, map[string]string{
+			"name": hashtag,
+			"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
+		})
+	}
+
+	return tags
+}
+
+func (h *Handler) statusMentions(storageStatus *storageModels.Status) []any {
+	mentions := []any{}
+	if storageStatus == nil || common.ValidateSliceNotEmpty("storage status mentions", storageStatus.Mentions) != nil {
+		return mentions
+	}
+
+	for _, mention := range storageStatus.Mentions {
+		mentions = append(mentions, map[string]string{
+			"id":       mention,
+			"username": mention,
+			"url":      fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), mention),
+			"acct":     mention,
+		})
+	}
+
+	return mentions
+}
+
+func (h *Handler) statusMediaAttachments(storageStatus *storageModels.Status) []any {
+	attachments := []any{}
+	if storageStatus == nil || storageStatus.Note == nil || storageStatus.Note.Attachment == nil {
+		return attachments
+	}
+
+	for _, attachment := range storageStatus.Note.Attachment {
+		mediaAttachment := map[string]any{
+			"id":          attachment.URL,
+			"type":        attachment.MediaType,
+			"url":         attachment.URL,
+			"preview_url": attachment.URL,
+		}
+		if attachment.Name != "" {
+			mediaAttachment["description"] = attachment.Name
+		}
+		attachments = append(attachments, mediaAttachment)
+	}
+
+	return attachments
+}
+
+func (h *Handler) statusAccount(storageStatus *storageModels.Status, authorAccount *storage.Account) models.Account {
+	if authorAccount != nil && authorAccount.Actor != nil {
+		account := transformations.ActorToAccountBase(authorAccount.Actor, h.cfg.BaseURL())
+		account.ID = storageStatus.AuthorID
+		account.Username = storageStatus.AuthorUsername
+		account.Acct = storageStatus.AuthorUsername
+		account.DisplayName = authorAccount.User.DisplayName
+		account.CreatedAt = authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z")
+		return withZeroAccountCounts(account)
+	}
+
+	fakeActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   storageStatus.AuthorID,
+			Type: "Person",
+		},
+		PreferredUsername: storageStatus.AuthorUsername,
+		Name:              authorAccount.User.DisplayName,
+		URL:               fmt.Sprintf("https://%s/@%s", h.cfg.BaseURL(), storageStatus.AuthorUsername),
+	}
+
+	account := transformations.ActorToAccountBase(fakeActor, h.cfg.BaseURL())
+	account.CreatedAt = authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z")
+	return withZeroAccountCounts(account)
+}
+
+func withZeroAccountCounts(account models.Account) models.Account {
+	account.FollowersCount = 0
+	account.FollowingCount = 0
+	account.StatusesCount = 0
+	return account
+}
+
+func (h *Handler) loadReblogStatus(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) *models.Status {
+	reblogTargetID := statusReblogTargetID(storageStatus)
+	if reblogTargetID == "" {
+		return nil
+	}
+
+	rebloggedStatus, err := h.repos.Status().GetStatus(ctx, reblogTargetID)
+	if err != nil {
+		return nil
+	}
+
+	reblogStatus, _ := h.convertStorageStatusToAPI(rebloggedStatus, currentUsername)
+	return reblogStatus
+}
+
+func statusReblogTargetID(storageStatus *storageModels.Status) string {
+	if storageStatus == nil {
+		return ""
+	}
+	if storageStatus.ReblogOfID != "" {
+		return storageStatus.ReblogOfID
+	}
+	return storageStatus.BoostOfStatusID
+}
+
+func (h *Handler) transformStatusBase(ctx context.Context, storageStatus *storageModels.Status) models.Status {
+	statusMap := map[string]interface{}{
+		"id":        storageStatus.StatusID,
+		"content":   storageStatus.Content,
+		"sensitive": storageStatus.Sensitive,
+		"published": storageStatus.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
+	}
+	if storageStatus.InReplyToID != "" {
+		statusMap["inReplyTo"] = storageStatus.InReplyToID
+	}
+
+	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
+	transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
+	baseStatus, err := transformer.Transform(transformCtx, statusMap)
+	if err == nil && baseStatus.ID != "" {
+		return baseStatus
+	}
+
+	return models.Status{
+		ID:        storageStatus.StatusID,
+		Content:   storageStatus.Content,
+		CreatedAt: storageStatus.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
+	}
 }
 
 func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, status *storageModels.Status) *models.AgentPostAttribution {
@@ -822,6 +968,57 @@ func (h *Handler) authenticateWithClaims(ctx *apptheory.Context, requiredScopes 
 	}
 
 	return claims, nil
+}
+
+func (h *Handler) statusLookupObjectIDs(storageStatus *storageModels.Status) []string {
+	if storageStatus == nil {
+		return nil
+	}
+
+	ids := []string{}
+	if storageStatus.Note != nil {
+		ids = appendUniqueLookupID(ids, storageStatus.Note.ID)
+		ids = appendUniqueLookupID(ids, strings.TrimRight(storageStatus.Note.ID, "/"))
+	}
+
+	authorUsername := strings.TrimSpace(storageStatus.AuthorUsername)
+	if authorUsername == "" {
+		authorUsername = strings.TrimSpace(transformations.ExtractUsernameFromActorID(storageStatus.AuthorID))
+	}
+	if h != nil && h.cfg != nil && authorUsername != "" && strings.TrimSpace(storageStatus.StatusID) != "" {
+		ids = appendUniqueLookupID(ids, fmt.Sprintf("%s/users/%s/statuses/%s", h.cfg.BaseURL(), authorUsername, storageStatus.StatusID))
+		ids = appendUniqueLookupID(ids, fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), storageStatus.StatusID))
+	}
+
+	ids = appendUniqueLookupID(ids, storageStatus.StatusID)
+	return ids
+}
+
+func (h *Handler) viewerActorLookupIDs(username string) []string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+
+	ids := []string{username}
+	if h != nil && h.cfg != nil {
+		ids = appendUniqueLookupID(ids, fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), username))
+	}
+
+	return ids
+}
+
+func appendUniqueLookupID(values []string, raw string) []string {
+	candidate := strings.TrimSpace(raw)
+	if candidate == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == candidate {
+			return values
+		}
+	}
+	return append(values, candidate)
 }
 
 // respondOK sends a 200 OK response with data

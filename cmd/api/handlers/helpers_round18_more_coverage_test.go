@@ -62,6 +62,13 @@ func TestHelpersRound18_ResolveAccountID_CacheHits(t *testing.T) {
 		require.NotNil(t, actor)
 		require.Equal(t, cfg.ActorURL("alice"), actor.ID)
 	})
+
+	t.Run("double escaped local actor URL is normalized before lookup", func(t *testing.T) {
+		actor, err := h.resolveAccountID(context.Background(), "https:%252F%252F"+cfg.Domain+"%252Fusers%252Falice")
+		require.NoError(t, err)
+		require.NotNil(t, actor)
+		require.Equal(t, cfg.ActorURL("alice"), actor.ID)
+	})
 }
 
 func TestHelpersRound18_ResolveAccountID_InvalidURLBranches(t *testing.T) {
@@ -153,6 +160,43 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 		require.Contains(t, out.Constraints, "restricted_domains:example.org")
 		require.Equal(t, "manifest-v1", out.ModelVersion)
 	})
+}
+
+func TestHelpersRound18_StatusAccountUsesActorData(t *testing.T) {
+	cfg := round11TestConfig()
+	h := &Handler{cfg: cfg}
+	createdAt := time.Now().Add(-2 * time.Hour).UTC()
+
+	account := h.statusAccount(&storagemodels.Status{
+		StatusID:       "status-1",
+		AuthorUsername: "alice",
+		AuthorID:       cfg.ActorURL("alice"),
+	}, &storage.Account{
+		User: &storage.User{
+			Username:    "alice",
+			DisplayName: "Alice",
+			CreatedAt:   createdAt,
+		},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   cfg.ActorURL("alice"),
+				Type: "Person",
+			},
+			PreferredUsername: "alice",
+		},
+	})
+
+	require.Equal(t, cfg.ActorURL("alice"), account.ID)
+	require.Equal(t, "alice", account.Username)
+	require.Equal(t, "alice", account.Acct)
+	require.Equal(t, "Alice", account.DisplayName)
+	require.Equal(t, createdAt.Format("2006-01-02T15:04:05.000Z"), account.CreatedAt)
+}
+
+func TestHelpersRound18_StatusReblogTargetID(t *testing.T) {
+	require.Equal(t, "reblog", statusReblogTargetID(&storagemodels.Status{ReblogOfID: "reblog"}))
+	require.Equal(t, "boost", statusReblogTargetID(&storagemodels.Status{BoostOfStatusID: "boost"}))
+	require.Empty(t, statusReblogTargetID(nil))
 }
 
 func TestHelpersRound18_ResponseDefaults(t *testing.T) {

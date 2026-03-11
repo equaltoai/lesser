@@ -4,16 +4,30 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	repomocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+type interactionsRound19Repos struct {
+	*MockRepositoryStorage
+	actor interfaces.ActorRepository
+}
+
+func (r *interactionsRound19Repos) Actor() interfaces.ActorRepository {
+	return r.actor
+}
 
 func round19SignAgentAccessToken(t *testing.T, secret, username string, scopes []string) string {
 	t.Helper()
@@ -90,6 +104,51 @@ func TestInteractionsRound19_relationshipOperation_InvalidOperation(t *testing.T
 	requireStatus(t, http.StatusBadRequest)(h.relationshipOperation(ctx, "unknown"))
 }
 
+func TestInteractionsRound19_followResolvesNumericAndEncodedTargets(t *testing.T) {
+	cfg := round11TestConfig()
+	h, repos, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	targetActor := &activitypub.Actor{
+		BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("simulacrum"), Type: "Person"},
+		PreferredUsername: "simulacrum",
+	}
+	actorRepo := repomocks.NewMockActorRepository()
+	actorRepo.On("GetActorByNumericID", mock.Anything, "3133216004869690").Return(targetActor, nil).Once()
+	actorRepo.On("GetActor", mock.Anything, "simulacrum").Return(targetActor, nil).Once()
+	h.repos = &interactionsRound19Repos{MockRepositoryStorage: repos, actor: actorRepo}
+
+	var followCalls int
+	h.registry = &RegistryStub{
+		RelationshipsSvc: &RelationshipsServiceStub{
+			FollowFunc: func(_ context.Context, cmd *relationships.FollowCommand) (*relationships.FollowResult, error) {
+				followCalls++
+				require.Equal(t, "alice", cmd.FollowerID)
+				require.Equal(t, targetActor.ID, cmd.FollowingID)
+				return &relationships.FollowResult{
+					Relationship: &relationships.RelationshipData{ID: "simulacrum", Following: true},
+				}, nil
+			},
+		},
+	}
+
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	ctxNumeric, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/3133216004869690/follow", headers, nil, nil)
+	require.NoError(t, err)
+	ctxNumeric.Params["id"] = "3133216004869690"
+	requireStatus(t, http.StatusOK)(h.HandleFollowLift(ctxNumeric))
+
+	doubleEscapedTarget := "https:%252F%252F" + strings.ReplaceAll(strings.TrimPrefix(cfg.ActorURL("simulacrum"), "https://"), "/", "%252F")
+	ctxEscaped, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/encoded/follow", headers, nil, nil)
+	require.NoError(t, err)
+	ctxEscaped.Params["id"] = doubleEscapedTarget
+	requireStatus(t, http.StatusOK)(h.HandleFollowLift(ctxEscaped))
+
+	require.Equal(t, 2, followCalls)
+	actorRepo.AssertExpectations(t)
+}
+
 func TestInteractionsRound19_statusInteraction_ErrorBranches(t *testing.T) {
 	cfg := round11TestConfig()
 
@@ -147,7 +206,7 @@ func TestInteractionsRound19_agentFollowRails_AllowsFollowWhenUnderLimit(t *test
 	relSvc := &RelationshipsServiceStub{
 		FollowFunc: func(_ context.Context, cmd *relationships.FollowCommand) (*relationships.FollowResult, error) {
 			require.Equal(t, "agent", cmd.FollowerID)
-			require.Equal(t, "bob", cmd.FollowingID)
+			require.Equal(t, cfg.ActorURL("bob"), cmd.FollowingID)
 			return &relationships.FollowResult{Relationship: rel}, nil
 		},
 	}

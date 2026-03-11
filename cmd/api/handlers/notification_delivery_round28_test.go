@@ -10,6 +10,7 @@ import (
 
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -118,6 +119,29 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 			NotificationsSvc: &NotificationsServiceStub{
 				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
 					require.Equal(t, managedCfg.AdminUsername, cmd.UserID)
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		headers := map[string]string{"Authorization": "Bearer " + managedCfg.LesserHostInstanceKey}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, payload)
+		requireStatus(t, http.StatusNoContent)(managedHandler.HandleDeliverNotificationLift(ctx))
+	})
+
+	t.Run("managed instances fall back to primary admin from instance state", func(t *testing.T) {
+		managedCfg := round11TestConfig()
+		managedCfg.AdminUsername = ""
+		managedCfg.LesserHostInstanceKey = "managed-instance-key"
+
+		state := &round10QueryState{
+			instanceState: &storagemodels.InstanceState{PrimaryAdminUsername: "simulacrum"},
+		}
+		managedHandler, _, _ := round11NewHandler(t, managedCfg, state)
+		managedHandler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					require.Equal(t, "simulacrum", cmd.UserID)
 					return &notifications.NotificationResult{}, nil
 				},
 			},
