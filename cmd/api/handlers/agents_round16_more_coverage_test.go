@@ -129,7 +129,7 @@ func TestAgentsRound16_UpdateAgentHelpers(t *testing.T) {
 }
 
 func TestAgentsRound16_DelegationAndOwnershipHelpers(t *testing.T) {
-	t.Run("validateAgentDelegationRequest enforces username and display_name", func(t *testing.T) {
+	t.Run("validateAgentDelegationRequest enforces username and allows blank legacy profile fields", func(t *testing.T) {
 		h := &Handler{}
 
 		resp, err := h.validateAgentDelegationRequest(&apptheory.Context{}, &apimodels.AgentDelegationRequest{
@@ -145,8 +145,7 @@ func TestAgentsRound16_DelegationAndOwnershipHelpers(t *testing.T) {
 			DisplayName:   "",
 		})
 		require.NoError(t, err)
-		require.NotNil(t, resp)
-		require.Equal(t, http.StatusBadRequest, resp.Status)
+		require.Nil(t, resp)
 	})
 
 	t.Run("validateAgentDelegationRequest applies mastodon rules when present", func(t *testing.T) {

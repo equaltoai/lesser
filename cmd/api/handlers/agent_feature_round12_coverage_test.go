@@ -94,6 +94,9 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
+				Metadata: map[string]any{
+					"agent_delegated_scopes": []any{"read", "write:statuses"},
+				},
 			},
 		},
 	}
@@ -107,7 +110,6 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 	t.Run("success_delegates_agent", func(t *testing.T) {
 		req := apimodels.AgentDelegationRequest{
 			AgentUsername: "agent1",
-			DisplayName:   "Agent One",
 			Scopes:        []string{"write:statuses"},
 		}
 
@@ -122,10 +124,47 @@ func TestAgentFeaturesRound12_DelegateAndScopes(t *testing.T) {
 		require.Equal(t, "Bearer", out.Token.TokenType)
 	})
 
+	t.Run("registration disabled still allows delegating to existing agent", func(t *testing.T) {
+		cfgNoRegistration := round10TestConfig()
+		cfgNoRegistration.AllowAgents = true
+		cfgNoRegistration.AllowAgentRegistration = false
+
+		policyNoRegistration := storagemodels.NewAgentInstanceConfig()
+		policyNoRegistration.AllowAgents = true
+		policyNoRegistration.AllowAgentRegistration = false
+
+		stateNoRegistration := &round10QueryState{
+			agentInstanceConfig: policyNoRegistration,
+			usersByUsername:     state.usersByUsername,
+		}
+
+		hNoRegistration, _, _ := round11NewHandler(t, cfgNoRegistration, stateNoRegistration)
+		hNoRegistration.repos.Account().SetEncryptor(noopEncryptor{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", headers, nil, apimodels.AgentDelegationRequest{
+			AgentUsername: "agent1",
+			Scopes:        []string{"read"},
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusOK)(hNoRegistration.HandleDelegateAgentLift(ctx))
+	})
+
+	t.Run("agent envelope limits granted scopes", func(t *testing.T) {
+		req := apimodels.AgentDelegationRequest{
+			AgentUsername: "agent1",
+			Scopes:        []string{"follow"},
+		}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", headers, nil, req)
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(ctx))
+	})
+
 	t.Run("rejects_admin_scope", func(t *testing.T) {
 		req := apimodels.AgentDelegationRequest{
 			AgentUsername: "agent1",
-			DisplayName:   "Agent One",
 			Scopes:        []string{auth.ScopeAdmin},
 		}
 

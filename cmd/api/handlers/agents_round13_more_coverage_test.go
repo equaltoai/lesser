@@ -124,6 +124,22 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 				Version:   1,
 				CreatedAt: time.Now().Add(-24 * time.Hour),
 			},
+			"agent1": {
+				PK:           "USER#agent1",
+				SK:           storagemodels.SKMetadata,
+				Username:     "agent1",
+				Role:         "user",
+				Approved:     true,
+				Version:      1,
+				CreatedAt:    time.Now().Add(-24 * time.Hour),
+				IsAgent:      true,
+				AgentOwner:   "@owner",
+				AgentType:    agentTypeCustom,
+				AgentVersion: "v1",
+				Metadata: map[string]any{
+					"agent_delegated_scopes": []any{"read", "write:statuses"},
+				},
+			},
 		},
 	}
 
@@ -140,14 +156,14 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(h.HandleDelegateAgentLift(ctx))
 	})
 
-	t.Run("missing display_name is rejected", func(t *testing.T) {
+	t.Run("missing display_name is allowed for existing agents", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", writeHeaders, nil, apimodels.AgentDelegationRequest{
 			AgentUsername: "agent1",
 			DisplayName:   "",
 			Scopes:        []string{"read"},
 		})
 		require.NoError(t, err)
-		requireStatus(t, http.StatusBadRequest)(h.HandleDelegateAgentLift(ctx))
+		requireStatus(t, http.StatusOK)(h.HandleDelegateAgentLift(ctx))
 	})
 
 	t.Run("missing scopes is rejected", func(t *testing.T) {
@@ -180,7 +196,7 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 		requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(ctx))
 	})
 
-	t.Run("agent_info parse error rejected", func(t *testing.T) {
+	t.Run("legacy agent_info is ignored for existing agents", func(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", writeHeaders, nil, apimodels.AgentDelegationRequest{
 			AgentUsername: "agent1",
 			DisplayName:   "Agent",
@@ -190,14 +206,15 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		requireStatus(t, http.StatusBadRequest)(h.HandleDelegateAgentLift(ctx))
+		requireStatus(t, http.StatusOK)(h.HandleDelegateAgentLift(ctx))
 	})
 
-	t.Run("conflict on create returns 409", func(t *testing.T) {
+	t.Run("existing agent delegation ignores create failures", func(t *testing.T) {
 		stateConflict := &round10QueryState{
 			agentInstanceConfig: policy,
 			usersByUsername: map[string]storagemodels.User{
-				"owner": state.usersByUsername["owner"],
+				"owner":  state.usersByUsername["owner"],
+				"agent1": state.usersByUsername["agent1"],
 			},
 			createErrorOnce: dynamormerrors.ErrConditionFailed,
 		}
@@ -207,11 +224,30 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", writeHeaders, nil, apimodels.AgentDelegationRequest{
 			AgentUsername: "agent1",
-			DisplayName:   "Agent",
 			Scopes:        []string{"read"},
 		})
 		require.NoError(t, err)
-		resp := requireStatus(t, http.StatusConflict)(hConflict.HandleDelegateAgentLift(ctx))
+		resp := requireStatus(t, http.StatusOK)(hConflict.HandleDelegateAgentLift(ctx))
+		require.NotEmpty(t, resp.Body)
+	})
+
+	t.Run("missing agent returns 404", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", writeHeaders, nil, apimodels.AgentDelegationRequest{
+			AgentUsername: "missing-agent",
+			Scopes:        []string{"read"},
+		})
+		require.NoError(t, err)
+		resp := requireStatus(t, http.StatusNotFound)(h.HandleDelegateAgentLift(ctx))
+		require.NotEmpty(t, resp.Body)
+	})
+
+	t.Run("agent delegated scope envelope is enforced", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", writeHeaders, nil, apimodels.AgentDelegationRequest{
+			AgentUsername: "agent1",
+			Scopes:        []string{"follow"},
+		})
+		require.NoError(t, err)
+		resp := requireStatus(t, http.StatusForbidden)(h.HandleDelegateAgentLift(ctx))
 		require.NotEmpty(t, resp.Body)
 	})
 
