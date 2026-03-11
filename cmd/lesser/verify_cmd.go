@@ -6,7 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+)
+
+const (
+	defaultVerifyCIJobs   = 2
+	lesserVerifyCIJobsEnv = "LESSER_VERIFY_CI_JOBS"
 )
 
 func runVerify(argv []string) error {
@@ -159,17 +165,35 @@ func runVerifyCI(argv []string) error {
 		return err
 	}
 
-	repoRoot, err := findRepoRootFn()
-	if err != nil {
-		return err
-	}
-	modulePath, err := readModulePath(repoRoot)
+	modulePath, err := readVerifyCIModulePath()
 	if err != nil {
 		return err
 	}
 	cmdPrefix := modulePath + "/cmd"
 	pkgPrefix := modulePath + "/pkg"
+	run := func() error { return runVerifyCIWorkflow(includeSecurity, cmdPrefix, pkgPrefix) }
 
+	if jobs := resolveVerifyCIJobs(); jobs > 0 {
+		return withTemporaryEnv(map[string]string{
+			lesserToolJobsEnvVar: fmt.Sprintf("%d", jobs),
+			goMaxProcsEnvVar:     fmt.Sprintf("%d", jobs),
+			goFlagsEnvVar:        goFlagsWithBuildParallelism(os.Getenv(goFlagsEnvVar), jobs),
+		}, run)
+	}
+
+	return run()
+}
+
+func readVerifyCIModulePath() (string, error) {
+	repoRoot, err := findRepoRootFn()
+	if err != nil {
+		return "", err
+	}
+
+	return readModulePath(repoRoot)
+}
+
+func runVerifyCIWorkflow(includeSecurity bool, cmdPrefix, pkgPrefix string) error {
 	// CI should not run formatting because it mutates the working tree.
 	// Prefer fast failure: lint first, then security, then the full verify suite.
 	if err := runLint([]string{"--disable-gosec"}); err != nil {
@@ -189,6 +213,15 @@ func runVerifyCI(argv []string) error {
 	if err := runVerifySupplyChain(nil); err != nil {
 		return err
 	}
+	if err := runVerifyCIContractsAndCoverage(cmdPrefix, pkgPrefix); err != nil {
+		return err
+	}
+
+	fmt.Println("✓ verify ci complete (lint, security, supply chain, verify suite, strict contracts, overall/pkg/cmd coverage gates)")
+	return nil
+}
+
+func runVerifyCIContractsAndCoverage(cmdPrefix, pkgPrefix string) error {
 	// Verify suite, but skip redundant work:
 	// - `runVerifyAll` includes non-strict OpenAPI + unit tests, which CI supersedes with strict OpenAPI + coverage runs.
 	if err := runVerifyLambdaSet(nil); err != nil {
@@ -225,8 +258,91 @@ func runVerifyCI(argv []string) error {
 		return err
 	}
 
-	fmt.Println("✓ verify ci complete (lint, security, supply chain, verify suite, strict contracts, overall/pkg/cmd coverage gates)")
 	return nil
+}
+
+func resolveVerifyCIJobs() int {
+	if raw := strings.TrimSpace(os.Getenv(lesserVerifyCIJobsEnv)); raw != "" {
+		if jobs, err := strconv.Atoi(raw); err == nil && jobs > 0 {
+			return jobs
+		}
+	}
+
+	if strings.TrimSpace(os.Getenv(lesserToolJobsEnvVar)) != "" ||
+		strings.TrimSpace(os.Getenv(goMaxProcsEnvVar)) != "" ||
+		goFlagsHasBuildParallelism(strings.TrimSpace(os.Getenv(goFlagsEnvVar))) {
+		return 0
+	}
+
+	jobs := resolveToolJobs()
+	if jobs <= 0 {
+		return defaultVerifyCIJobs
+	}
+	if jobs > defaultVerifyCIJobs {
+		return defaultVerifyCIJobs
+	}
+	return jobs
+}
+
+func withTemporaryEnv(overrides map[string]string, fn func() error) error {
+	type envValue struct {
+		value string
+		ok    bool
+	}
+
+	previous := make(map[string]envValue, len(overrides))
+	for key, value := range overrides {
+		current, ok := os.LookupEnv(key)
+		previous[key] = envValue{value: current, ok: ok}
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	defer func() {
+		for key, current := range previous {
+			if current.ok {
+				_ = os.Setenv(key, current.value)
+				continue
+			}
+			_ = os.Unsetenv(key)
+		}
+	}()
+
+	return fn()
+}
+
+func goFlagsWithBuildParallelism(goFlags string, jobs int) string {
+	fields := strings.Fields(strings.TrimSpace(goFlags))
+	if jobs <= 0 {
+		return strings.Join(fields, " ")
+	}
+
+	replacement := fmt.Sprintf("%s=%d", goBuildParallelismFlag, jobs)
+	out := make([]string, 0, len(fields)+1)
+	replaced := false
+
+	for i := 0; i < len(fields); i++ {
+		field := fields[i]
+		switch {
+		case field == goBuildParallelismFlag:
+			out = append(out, replacement)
+			replaced = true
+			if i+1 < len(fields) {
+				i++
+			}
+		case strings.HasPrefix(field, goBuildParallelismFlag+"="):
+			out = append(out, replacement)
+			replaced = true
+		default:
+			out = append(out, field)
+		}
+	}
+
+	if !replaced {
+		out = append(out, replacement)
+	}
+
+	return strings.Join(out, " ")
 }
 
 func runVerifyDocs(_ []string) error {

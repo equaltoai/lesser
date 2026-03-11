@@ -179,15 +179,15 @@ func maybeApplyAgentErrorRateLockout(ctx *apptheory.Context, rateRepo *storageRe
 		return
 	}
 
-	_ = rateRepo.CheckAPIRateLimit(ctx.Context(), "agent:"+claims.Username, "agent_request_total", agentErrorRateCounterCap, agentErrorRateWindow)
+	_ = rateRepo.CheckAPIRateLimit(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_request_total", agentErrorRateCounterCap, agentErrorRateWindow)
 	if !agentResponseCountsTowardLockout(ctx, resp, handlerErr) {
 		return
 	}
 
-	_ = rateRepo.CheckAPIRateLimit(ctx.Context(), "agent:"+claims.Username, "agent_request_error", agentErrorRateCounterCap, agentErrorRateWindow)
+	_ = rateRepo.CheckAPIRateLimit(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_request_error", agentErrorRateCounterCap, agentErrorRateWindow)
 
-	totalRemaining, _, _ := rateRepo.GetAPIRateLimitInfo(ctx.Context(), "agent:"+claims.Username, "agent_request_total", agentErrorRateCounterCap, agentErrorRateWindow)
-	errorRemaining, _, _ := rateRepo.GetAPIRateLimitInfo(ctx.Context(), "agent:"+claims.Username, "agent_request_error", agentErrorRateCounterCap, agentErrorRateWindow)
+	totalRemaining, _, _ := rateRepo.GetAPIRateLimitInfo(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_request_total", agentErrorRateCounterCap, agentErrorRateWindow)
+	errorRemaining, _, _ := rateRepo.GetAPIRateLimitInfo(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_request_error", agentErrorRateCounterCap, agentErrorRateWindow)
 
 	totalCount := agentErrorRateCounterCap - totalRemaining
 	errorCount := agentErrorRateCounterCap - errorRemaining
@@ -342,6 +342,14 @@ func agentClaimsFromContext(ctx *apptheory.Context) *auth.Claims {
 }
 
 func agentLockoutIdentifier(username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return "agent:unknown"
+	}
+	return agentRateLimitUserID(username)
+}
+
+func agentRateLimitUserID(username string) string {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return "agent:unknown"

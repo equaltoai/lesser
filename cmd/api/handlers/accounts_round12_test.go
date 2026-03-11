@@ -11,6 +11,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -398,6 +399,58 @@ func TestAccountsRound12_AccountHandlers_ErrorBranches(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("HandleGetAccountLift_and_lookup_return_mastodon_identity", func(t *testing.T) {
+		createdAt := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
+		account := &storage.Account{
+			User: &storage.User{
+				Username:    "alice",
+				DisplayName: "Alice",
+				CreatedAt:   createdAt,
+			},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID:   cfg.ActorURL("alice"),
+					Type: "Person",
+				},
+				PreferredUsername: "alice",
+				Name:              "Alice",
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return account, nil
+				},
+				LookupAccountFunc: func(context.Context, *accounts.LookupAccountQuery) (*storage.Account, error) {
+					return account, nil
+				},
+			},
+		})
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/alice", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "alice"
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetAccountLift(ctx))
+		var got apimodels.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &got))
+		require.Equal(t, common.GenerateNumericID("alice"), got.ID)
+		require.Equal(t, "alice", got.Username)
+		require.Equal(t, "alice", got.Acct)
+		require.Equal(t, "Alice", got.DisplayName)
+		require.Equal(t, cfg.BaseURL()+"/@alice", got.URL)
+
+		ctxLookup, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/lookup", nil, map[string]string{"acct": "alice@example.com"}, nil)
+		require.NoError(t, err)
+
+		respLookup := requireStatus(t, http.StatusOK)(h.HandleAccountLookupLift(ctxLookup))
+		var lookedUp apimodels.Account
+		require.NoError(t, json.Unmarshal(respLookup.Body, &lookedUp))
+		require.Equal(t, common.GenerateNumericID("alice"), lookedUp.ID)
+		require.Equal(t, "alice", lookedUp.Username)
+	})
 }
 
 func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
@@ -460,7 +513,7 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 	t.Run("handleAccountRelationshipsList_resolves_numeric_account_id", func(t *testing.T) {
 		const numericID = "446117837104852"
 
-		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+		h, baseRepos, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			AccountsSvc: &AccountsServiceStub{
 				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
 					return nil, errors.New("not found")
@@ -478,6 +531,7 @@ func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {
 		actorRepo.On("GetActorByNumericID", mock.Anything, numericID).Return(actorAccount.Actor, nil).Once()
 
 		repos := &MockRepositoryStorage{}
+		repos.On("Account").Return(baseRepos.Account()).Maybe()
 		repos.On("Actor").Return(actorRepo).Maybe()
 		h.repos = repos
 

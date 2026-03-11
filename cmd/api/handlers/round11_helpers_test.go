@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	storage "github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/golang-jwt/jwt/v5"
@@ -238,14 +238,15 @@ func TestConvertStorageStatusToAPI(t *testing.T) {
 
 	apiStatus, err := handler.convertStorageStatusToAPI(status, "alice")
 	require.NoError(t, err)
-	require.True(t, strings.Contains(apiStatus.URI, "/statuses/s1"))
-	require.True(t, strings.Contains(apiStatus.URL, "/@alice/s1"))
+	require.Equal(t, cfg.ActorURL("alice")+"/statuses/s1", apiStatus.URI)
+	require.Equal(t, cfg.BaseURL()+"/@alice/s1", apiStatus.URL)
 	require.NotNil(t, apiStatus.InReplyToID)
 	require.Len(t, apiStatus.MediaAttachments, 1)
 	require.Len(t, apiStatus.Tags, 1)
 	require.NotNil(t, apiStatus.Reblog)
 	require.Equal(t, 4, apiStatus.FavouritesCount)
 	require.Equal(t, 3, apiStatus.ReblogsCount)
+	require.Equal(t, common.GenerateNumericID("alice"), apiStatus.Account.ID)
 
 	serialized, err := json.Marshal(apiStatus)
 	require.NoError(t, err)

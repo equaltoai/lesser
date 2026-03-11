@@ -220,6 +220,7 @@ POST /api/v1/admin/accounts/{id}/reject
 POST /api/v1/admin/accounts/{id}/unsensitive
 POST /api/v1/admin/accounts/{id}/unsilence
 POST /api/v1/admin/accounts/{id}/unsuspend
+POST /api/v1/admin/agents/{username}/unlock
 POST /api/v1/admin/agents/{username}/unverify
 POST /api/v1/admin/agents/{username}/verify
 POST /api/v1/admin/announcements

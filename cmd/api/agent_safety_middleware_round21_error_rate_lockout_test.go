@@ -322,6 +322,7 @@ func TestAgentSafetyHelpers_Round21(t *testing.T) {
 	t.Run("identifier helpers", func(t *testing.T) {
 		require.Equal(t, "agent:unknown", agentLockoutIdentifier(""))
 		require.Equal(t, "agent:alice", agentLockoutIdentifier("Alice"))
+		require.Equal(t, "agent:alice", agentRateLimitUserID("Alice"))
 		require.Equal(t, "cli:unknown", cliAutomationLockoutIdentifier(""))
 		require.Equal(t, "cli:sid", cliAutomationLockoutIdentifier("SID"))
 	})

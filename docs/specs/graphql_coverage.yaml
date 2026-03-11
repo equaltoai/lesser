@@ -58,6 +58,11 @@ exemptions:
         exact:
             - /api/v1/admin/soul/well-known
             - /api/v1/notifications/deliver
+    - id: admin_agent_unlock
+      reason: Agent operator unlock is currently exposed as a REST-only admin operation.
+      match:
+        exact:
+            - /api/v1/admin/agents/{username}/unlock
 routes:
     - method: GET
       path: /
@@ -259,6 +264,10 @@ routes:
       status: covered
       graphql:
         - Mutation.updateAdminAgentPolicy
+    - method: POST
+      path: /api/v1/admin/agents/{username}/unlock
+      policy: rest_only
+      exemptedBy: admin_agent_unlock
     - method: POST
       path: /api/v1/admin/agents/{username}/unverify
       policy: graphql_required

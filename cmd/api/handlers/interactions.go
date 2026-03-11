@@ -12,7 +12,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
-	"github.com/equaltoai/lesser/pkg/transformations"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -23,6 +22,11 @@ const (
 
 	relationshipOpFollow   = "follow"
 	relationshipOpUnfollow = "unfollow"
+
+	statusOpFavorite   = "favorite"
+	statusOpUnfavorite = "unfavorite"
+	statusOpReblog     = "reblog"
+	statusOpUnreblog   = "unreblog"
 )
 
 // relationshipOperation performs common relationship operations (follow/unfollow/block/unblock)
@@ -61,6 +65,11 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
+	targetPublicID := ""
+	if targetAccount, lookupErr := h.lookupStorageAccountByID(ctx.Context(), accountID); lookupErr == nil && targetAccount != nil {
+		targetPublicID = h.publicAccountFromStorageAccount(targetAccount).ID
+	}
+
 	switch operation {
 	case relationshipOpFollow:
 		var req models.FollowRequest
@@ -81,7 +90,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return okJSON(h.relationshipFromService(r.Relationship))
+		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	case relationshipOpUnfollow:
 		r, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
 			FollowerID:  claims.Username,
@@ -90,7 +99,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return okJSON(h.relationshipFromService(r.Relationship))
+		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	case "block":
 		r, err := h.registry.Relationships().Block(ctx.Context(), &relationships.BlockCommand{
 			BlockerID: claims.Username,
@@ -99,7 +108,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return okJSON(h.relationshipFromService(r.Relationship))
+		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	case "unblock":
 		r, err := h.registry.Relationships().Unblock(ctx.Context(), &relationships.UnblockCommand{
 			BlockerID: claims.Username,
@@ -108,7 +117,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return okJSON(h.relationshipFromService(r.Relationship))
+		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	default:
 		return common.RespondBadRequest(ctx, "invalid operation")
 	}
@@ -166,7 +175,7 @@ func (h *Handler) enforceAgentFollowRails(ctx *apptheory.Context, username strin
 		return nil, nil
 	}
 
-	if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), "agent:"+username, "agent_follows_per_hour", allowed, time.Hour); err != nil {
+	if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), agentRateLimitUserID(username), "agent_follows_per_hour", allowed, time.Hour); err != nil {
 		return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
 			"error":             "too_many_requests",
 			"error_description": "agent follow limit exceeded",
@@ -224,8 +233,7 @@ func (h *Handler) HandleGetBlocksLift(ctx *apptheory.Context) (*apptheory.Respon
 	accounts := []models.Account{}
 	for _, blockedAccount := range result.BlockedUsers {
 		if blockedAccount.Actor != nil {
-			account := transformations.ActorToAccountBase(blockedAccount.Actor, h.cfg.BaseURL())
-			accounts = append(accounts, account)
+			accounts = append(accounts, h.publicAccountFromStorageAccount(blockedAccount))
 		}
 	}
 
@@ -259,84 +267,112 @@ func (h *Handler) statusInteraction(ctx *apptheory.Context, operation string) (*
 		return common.RespondUnauthorized(ctx)
 	}
 
-	switch operation {
-	case "favorite":
-		r, err := h.registry.Notes().LikeNote(ctx.Context(), &notes.LikeNoteCommand{
-			StatusID: statusID,
-			LikerID:  claims.Username,
-		})
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return common.RespondNotFound(ctx, "status not found")
-			}
-			return common.RespondInternalServerError(ctx, "failed to like status")
-		}
-		mastodonStatus := transformations.NotesToStatusAny(r.Status, h.cfg.BaseURL())
-		mastodonStatus.Favourited = true
-		return okJSON(mastodonStatus)
-	case "unfavorite":
-		r, err := h.registry.Notes().UnlikeNote(ctx.Context(), &notes.UnlikeNoteCommand{
-			StatusID:  statusID,
-			UnlikerID: claims.Username,
-		})
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return common.RespondNotFound(ctx, "status not found")
-			}
-			return common.RespondInternalServerError(ctx, "failed to unlike status")
-		}
-		mastodonStatus := transformations.NotesToStatusAny(r.Status, h.cfg.BaseURL())
-		mastodonStatus.Favourited = false
-		return okJSON(mastodonStatus)
-	case "reblog":
-		r, err := h.registry.Notes().ReblogNote(ctx.Context(), &notes.ReblogNoteCommand{
-			StatusID:    statusID,
-			RebloggerID: claims.Username,
-		})
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return common.RespondNotFound(ctx, "status not found")
-			}
-			return common.RespondInternalServerError(ctx, "failed to reblog status")
-		}
-		mastodonStatus := transformations.NotesToStatusAny(r.Status, h.cfg.BaseURL())
-		mastodonStatus.Reblogged = true
-		return okJSON(mastodonStatus)
-	case "unreblog":
-		r, err := h.registry.Notes().UnreblogNote(ctx.Context(), &notes.UnreblogNoteCommand{
-			StatusID:      statusID,
-			UnrebloggerID: claims.Username,
-		})
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return common.RespondNotFound(ctx, "status not found")
-			}
-			return common.RespondInternalServerError(ctx, "failed to unreblog status")
-		}
-		mastodonStatus := transformations.NotesToStatusAny(r.Status, h.cfg.BaseURL())
-		mastodonStatus.Reblogged = false
-		return okJSON(mastodonStatus)
-	default:
+	if !isSupportedStatusInteraction(operation) {
 		return common.RespondBadRequest(ctx, "invalid operation")
+	}
+
+	result, err := h.executeStatusInteraction(ctx.Context(), operation, statusID, claims.Username)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return common.RespondNotFound(ctx, "status not found")
+		}
+		return common.RespondInternalServerError(ctx, statusInteractionFailureMessage(operation))
+	}
+
+	mastodonStatus, convErr := h.convertStorageStatusToAPI(result.Status, claims.Username)
+	if convErr != nil {
+		h.logger.Error("failed to serialize interacted status", zap.String("operation", operation), zap.Error(convErr))
+		return common.RespondInternalServerError(ctx, "failed to serialize status")
+	}
+
+	applyStatusInteractionState(mastodonStatus, operation)
+	return okJSON(mastodonStatus)
+}
+
+func isSupportedStatusInteraction(operation string) bool {
+	switch operation {
+	case statusOpFavorite, statusOpUnfavorite, statusOpReblog, statusOpUnreblog:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handler) executeStatusInteraction(ctx context.Context, operation string, statusID string, username string) (*notes.LikeResult, error) {
+	switch operation {
+	case statusOpFavorite:
+		return h.registry.Notes().LikeNote(ctx, &notes.LikeNoteCommand{
+			StatusID: statusID,
+			LikerID:  username,
+		})
+	case statusOpUnfavorite:
+		return h.registry.Notes().UnlikeNote(ctx, &notes.UnlikeNoteCommand{
+			StatusID:  statusID,
+			UnlikerID: username,
+		})
+	case statusOpReblog:
+		return h.registry.Notes().ReblogNote(ctx, &notes.ReblogNoteCommand{
+			StatusID:    statusID,
+			RebloggerID: username,
+		})
+	case statusOpUnreblog:
+		return h.registry.Notes().UnreblogNote(ctx, &notes.UnreblogNoteCommand{
+			StatusID:      statusID,
+			UnrebloggerID: username,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported status interaction: %s", operation)
+	}
+}
+
+func statusInteractionFailureMessage(operation string) string {
+	switch operation {
+	case statusOpFavorite:
+		return "failed to like status"
+	case statusOpUnfavorite:
+		return "failed to unlike status"
+	case statusOpReblog:
+		return "failed to reblog status"
+	case statusOpUnreblog:
+		return "failed to unreblog status"
+	default:
+		return "failed to update status"
+	}
+}
+
+func applyStatusInteractionState(status *models.Status, operation string) {
+	if status == nil {
+		return
+	}
+
+	switch operation {
+	case statusOpFavorite:
+		status.Favourited = true
+	case statusOpUnfavorite:
+		status.Favourited = false
+	case statusOpReblog:
+		status.Reblogged = true
+	case statusOpUnreblog:
+		status.Reblogged = false
 	}
 }
 
 // HandleFavoriteLift handles POST /api/v1/statuses/:id/favourite
 func (h *Handler) HandleFavoriteLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	return h.statusInteraction(ctx, "favorite")
+	return h.statusInteraction(ctx, statusOpFavorite)
 }
 
 // HandleUnfavoriteLift handles POST /api/v1/statuses/:id/unfavourite
 func (h *Handler) HandleUnfavoriteLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	return h.statusInteraction(ctx, "unfavorite")
+	return h.statusInteraction(ctx, statusOpUnfavorite)
 }
 
 // HandleReblogLift handles POST /api/v1/statuses/:id/reblog
 func (h *Handler) HandleReblogLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	return h.statusInteraction(ctx, "reblog")
+	return h.statusInteraction(ctx, statusOpReblog)
 }
 
 // HandleUnreblogLift handles POST /api/v1/statuses/:id/unreblog
 func (h *Handler) HandleUnreblogLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	return h.statusInteraction(ctx, "unreblog")
+	return h.statusInteraction(ctx, statusOpUnreblog)
 }

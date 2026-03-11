@@ -186,6 +186,81 @@ func (r *RateLimitRepository) ImposeLockout(ctx context.Context, identifier stri
 	return r.rateLimitLockouts.Create(ctx, lockout)
 }
 
+// ClearLockout removes an active lockout record for the given identifier.
+func (r *RateLimitRepository) ClearLockout(ctx context.Context, identifier string) error {
+	if r == nil || r.rateLimitLockouts == nil {
+		return ErrorHandler.HandleCreateError(storage.ErrDatabaseConnectionFailed, EntityRateLimit, "lockout")
+	}
+
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityRateLimit, "lockout")
+	}
+
+	pk := fmt.Sprintf("RATELIMIT#%s", identifier)
+	err := r.rateLimitLockouts.Delete(ctx, pk, "LOCKOUT")
+	if err != nil && !errors.IsNotFound(err) {
+		r.logger.Error("failed to clear rate limit lockout",
+			zap.String("identifier", identifier),
+			zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+// ClearAPIRateLimitsForUser removes all API rate-limit counters tracked for a user identifier.
+func (r *RateLimitRepository) ClearAPIRateLimitsForUser(ctx context.Context, userID string) error {
+	if r == nil || r.apiRateLimits == nil || r.db == nil {
+		return ErrorHandler.HandleCreateError(storage.ErrDatabaseConnectionFailed, EntityRateLimit, "api rate limits")
+	}
+
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityRateLimit, "api rate limits")
+	}
+
+	prefix := fmt.Sprintf("RATELIMIT#%s:", userID)
+	var rateLimits []models.APIRateLimit
+	if err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+		Filter("PK", "begins_with", prefix).
+		All(&rateLimits); err != nil {
+		r.logger.Error("failed to query api rate limits for clearing",
+			zap.String("user_id", userID),
+			zap.Error(err))
+		return err
+	}
+
+	if len(rateLimits) == 0 {
+		return nil
+	}
+
+	keys := make([]struct{ PK, SK string }, 0, len(rateLimits))
+	for _, rateLimit := range rateLimits {
+		if strings.TrimSpace(rateLimit.PK) == "" || strings.TrimSpace(rateLimit.SK) == "" {
+			continue
+		}
+		keys = append(keys, struct{ PK, SK string }{
+			PK: rateLimit.PK,
+			SK: rateLimit.SK,
+		})
+	}
+
+	if len(keys) == 0 {
+		return nil
+	}
+
+	if err := r.apiRateLimits.BatchDelete(ctx, keys); err != nil {
+		r.logger.Error("failed to clear api rate limits",
+			zap.String("user_id", userID),
+			zap.Int("count", len(keys)),
+			zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
 // ClearLoginAttempts clears all login attempts for an identifier using BaseRepository
 func (r *RateLimitRepository) ClearLoginAttempts(ctx context.Context, identifier string) error {
 	pk := fmt.Sprintf("RATELIMIT#%s", identifier)

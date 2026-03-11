@@ -127,7 +127,7 @@ func (h *Handler) executeAccountSearch(ctx *apptheory.Context, params *SearchPar
 
 	// Convert actors to accounts
 	for _, actor := range actors {
-		account := h.convertActorToAccount(actor)
+		account := h.convertActorToAccount(ctx.Context(), actor)
 		result.Accounts = append(result.Accounts, account)
 	}
 }
@@ -167,15 +167,9 @@ func (h *Handler) executeHashtagSearch(ctx *apptheory.Context, params *SearchPar
 	h.addPlaceholderHashtag(params.Query, result)
 }
 
-// convertActorToAccount converts an ActivityPub actor to API account using transformation framework
-func (h *Handler) convertActorToAccount(actor *activitypub.Actor) models.Account {
-	// Use centralized transformation framework - ELIMINATES 25+ LINES OF DUPLICATE CODE
-	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
-
-	// Override ID to use PreferredUsername instead of numeric ID for this specific use case
-	account.ID = actor.PreferredUsername
-
-	return account
+// convertActorToAccount converts an ActivityPub actor to a public Mastodon account payload.
+func (h *Handler) convertActorToAccount(ctx context.Context, actor *activitypub.Actor) models.Account {
+	return h.publicAccountFromActor(ctx, actor)
 }
 
 // searchStatusByURL searches for a status by direct URL

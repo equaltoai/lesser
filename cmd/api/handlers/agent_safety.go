@@ -21,15 +21,15 @@ const (
 	agentMaxTagsPerPost = 5
 	agentMaxPostChars   = 500
 
-	agentRapidFireMaxPosts = 5
-	agentRapidFireWindow   = 10 * time.Second
+	agentRapidFireMaxPosts = 10
+	agentRapidFireWindow   = 30 * time.Second
 
-	agentRepetitionMax    = 3
-	agentRepetitionWindow = time.Hour
+	agentRepetitionMax    = 5
+	agentRepetitionWindow = 30 * time.Minute
 
 	agentDefaultMaxPostsPerHour         = 50
 	agentVerifiedDefaultMaxPostsPerHour = 200
-	agentLockoutDuration                = time.Hour
+	agentLockoutDuration                = 10 * time.Minute
 )
 
 func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *auth.Claims, req *models.CreateStatusRequest) (*apptheory.Response, error) {
@@ -80,15 +80,15 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 	if h.repos != nil && h.repos.RateLimit() != nil {
 		// Enforce per-hour posting cap (capability-driven, conservative default).
 		maxPerHour := h.agentMaxPostsPerHourLimit(ctx.Context(), agentUser)
-		if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), "agent:"+claims.Username, "agent_posts_per_hour", maxPerHour, time.Hour); err != nil {
+		if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_posts_per_hour", maxPerHour, time.Hour); err != nil {
 			return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
 				"error":             "too_many_requests",
 				"error_description": "agent post limit exceeded",
 			})
 		}
 
-		// Rapid-fire breaker: >5 posts in 10s => lockout.
-		if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), "agent:"+claims.Username, "agent_posts_10s", agentRapidFireMaxPosts, agentRapidFireWindow); err != nil {
+		// Rapid-fire breaker: sustained bursts beyond the short testing envelope trigger a temporary lockout.
+		if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_posts_10s", agentRapidFireMaxPosts, agentRapidFireWindow); err != nil {
 			h.imposeAgentLockout(ctx.Context(), claims.Username, "rapid_fire")
 			return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
 				"error":             "agent_locked",
@@ -96,10 +96,10 @@ func (h *Handler) enforceAgentStatusCreateRails(ctx *apptheory.Context, claims *
 			})
 		}
 
-		// Repetition breaker: identical content >3 times => lockout.
+		// Repetition breaker: repeated identical content within the short window triggers a temporary lockout.
 		hash := hashAgentContent(req.Status)
 		if hash != "" {
-			if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), "agent:"+claims.Username, "agent_repeat:"+hash, agentRepetitionMax, agentRepetitionWindow); err != nil {
+			if err := h.repos.RateLimit().CheckAPIRateLimit(ctx.Context(), agentRateLimitUserID(claims.Username), "agent_repeat:"+hash, agentRepetitionMax, agentRepetitionWindow); err != nil {
 				h.imposeAgentLockout(ctx.Context(), claims.Username, "repetition")
 				return apptheory.JSON(http.StatusTooManyRequests, map[string]any{
 					"error":             "agent_locked",
@@ -235,5 +235,28 @@ func agentLockoutIdentifier(username string) string {
 	if username == "" {
 		return "agent:unknown"
 	}
+	return agentRateLimitUserID(username)
+}
+
+func agentRateLimitUserID(username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return "agent:unknown"
+	}
 	return "agent:" + strings.ToLower(username)
+}
+
+func agentRateLimitUserIDVariants(username string) []string {
+	normalized := agentRateLimitUserID(username)
+	rawUsername := strings.TrimSpace(username)
+	if rawUsername == "" {
+		return []string{normalized}
+	}
+
+	legacy := "agent:" + rawUsername
+	if legacy == normalized {
+		return []string{normalized}
+	}
+
+	return []string{normalized, legacy}
 }

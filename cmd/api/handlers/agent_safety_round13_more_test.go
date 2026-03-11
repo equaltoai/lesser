@@ -56,5 +56,9 @@ func TestAgentSafetyRound13_EnforceRails_AndLockout(t *testing.T) {
 		h.imposeAgentLockout(ctx.Context(), "agent", "rapid_fire")
 		h.imposeAgentLockout(ctx.Context(), "", "noop")
 		require.Equal(t, "agent:unknown", agentLockoutIdentifier(""))
+		require.Equal(t, "agent:agent", agentRateLimitUserID("Agent"))
+		require.Equal(t, []string{"agent:agent-0", "agent:Agent-0"}, agentRateLimitUserIDVariants("Agent-0"))
+		require.Equal(t, []string{"agent:unknown"}, agentRateLimitUserIDVariants(""))
+		require.Equal(t, []string{"agent:agent"}, agentRateLimitUserIDVariants("agent"))
 	})
 }
