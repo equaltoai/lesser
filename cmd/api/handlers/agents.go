@@ -769,18 +769,6 @@ func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 	return caps
 }
 
-func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
-	if capabilities == nil {
-		return
-	}
-	if capabilities.MaxPostsPerHour <= 0 {
-		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
-	}
-	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
-		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
-	}
-}
-
 func scopesAreSubset(ownerScopes, requested []string) bool {
 	owned := map[string]struct{}{}
 	for _, s := range ownerScopes {
