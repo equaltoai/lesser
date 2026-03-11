@@ -96,6 +96,13 @@ func TestMisc_Search_StatusURL_And_Params_Round12(t *testing.T) {
 
 		requireStatus(t, http.StatusBadRequest)(handler.HandleSearchLift(ctxInvalidQuery))
 	})
+
+	t.Run("convertActorToAccount uses stored public identity for local actors", func(t *testing.T) {
+		actor := state.actorsByUser["alice"].Actor
+		account := handler.convertActorToAccount(context.Background(), actor)
+		require.Equal(t, common.GenerateNumericID("alice"), account.ID)
+		require.Equal(t, "alice", account.Username)
+	})
 }
 
 func TestMisc_Search_HashtagPlaceholder_And_TagHistory_Round12(t *testing.T) {

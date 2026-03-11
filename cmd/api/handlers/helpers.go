@@ -253,6 +253,16 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 	interactions := h.statusInteractionState(ctx, storageStatus, currentUsername)
 	reblogStatus := h.loadReblogStatus(ctx, storageStatus, currentUsername)
 	baseStatus := h.transformStatusBase(ctx, storageStatus)
+	baseURL := handlerBaseURL(h)
+	statusID := url.PathEscape(storageStatus.StatusID)
+	statusURI := ""
+	if actorURL := strings.TrimSpace(h.cfg.ActorURL(storageStatus.AuthorUsername)); actorURL != "" {
+		statusURI = strings.TrimSuffix(actorURL, "/") + "/statuses/" + statusID
+	}
+	statusURL := ""
+	if baseURL != "" {
+		statusURL = fmt.Sprintf("%s/@%s/%s", baseURL, storageStatus.AuthorUsername, statusID)
+	}
 
 	apiStatus := &models.Status{
 		ID:                 baseStatus.ID,
@@ -278,8 +288,8 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 		Muted:              interactions.muted,
 		Pinned:             interactions.pinned,
 		Reblog:             reblogStatus,
-		URI:                fmt.Sprintf("https://%s/users/%s/statuses/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
-		URL:                fmt.Sprintf("https://%s/@%s/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
+		URI:                statusURI,
+		URL:                statusURL,
 	}
 
 	apiStatus.AgentAttribution = h.buildStatusAgentAttribution(authorAccount, storageStatus)
@@ -525,29 +535,47 @@ func (h *Handler) statusMediaAttachments(storageStatus *storageModels.Status) []
 }
 
 func (h *Handler) statusAccount(storageStatus *storageModels.Status, authorAccount *storage.Account) models.Account {
-	if authorAccount != nil && authorAccount.Actor != nil {
-		account := transformations.ActorToAccountBase(authorAccount.Actor, h.cfg.BaseURL())
-		account.ID = storageStatus.AuthorID
-		account.Username = storageStatus.AuthorUsername
-		account.Acct = storageStatus.AuthorUsername
-		account.DisplayName = authorAccount.User.DisplayName
-		account.CreatedAt = authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z")
-		return withZeroAccountCounts(account)
+	if storageStatus == nil {
+		return models.Account{}
 	}
 
-	fakeActor := &activitypub.Actor{
-		BaseObject: activitypub.BaseObject{
-			ID:   storageStatus.AuthorID,
-			Type: "Person",
-		},
-		PreferredUsername: storageStatus.AuthorUsername,
-		Name:              authorAccount.User.DisplayName,
-		URL:               fmt.Sprintf("https://%s/@%s", h.cfg.BaseURL(), storageStatus.AuthorUsername),
+	baseURL := handlerBaseURL(h)
+	account := authorAccount
+	if account == nil {
+		account = &storage.Account{}
+	}
+	if account.User == nil {
+		account.User = &storage.User{}
+	}
+	if strings.TrimSpace(account.User.Username) == "" {
+		account.User.Username = storageStatus.AuthorUsername
+	}
+	if strings.TrimSpace(account.User.DisplayName) == "" {
+		account.User.DisplayName = storageStatus.AuthorUsername
 	}
 
-	account := transformations.ActorToAccountBase(fakeActor, h.cfg.BaseURL())
-	account.CreatedAt = authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z")
-	return withZeroAccountCounts(account)
+	if account.Actor == nil {
+		account.Actor = &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   storageStatus.AuthorID,
+				Type: "Person",
+			},
+			PreferredUsername: storageStatus.AuthorUsername,
+			Name:              account.User.DisplayName,
+			URL:               fmt.Sprintf("%s/@%s", baseURL, storageStatus.AuthorUsername),
+		}
+	}
+
+	if account.Actor != nil && !h.actorAppearsLocal(account.Actor) {
+		remote := transformations.ActorToAccountBase(account.Actor, baseURL)
+		if displayName := strings.TrimSpace(account.User.DisplayName); displayName != "" {
+			remote.DisplayName = displayName
+		}
+		ensureMastodonAccountCollections(&remote)
+		return withZeroAccountCounts(remote)
+	}
+
+	return withZeroAccountCounts(h.publicAccountFromStorageAccount(account))
 }
 
 func withZeroAccountCounts(account models.Account) models.Account {

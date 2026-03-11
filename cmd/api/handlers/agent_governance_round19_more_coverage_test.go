@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -176,6 +177,101 @@ func TestAgentGovernanceRound19_AdminVerifyAndUnverify_ErrorBranches(t *testing.
 		unverifyCtx.Params["username"] = "agent"
 
 		requireStatus(t, http.StatusForbidden)(h.HandleAdminUnverifyAgentLift(unverifyCtx))
+	})
+}
+
+func TestAgentGovernanceRound19_AdminUnlockAgent_SuccessAndErrors(t *testing.T) {
+	cfg := round10TestConfig()
+	adminToken := round11SignAccessToken(t, cfg.JWTSecret, "admin", []string{auth.ScopeAdmin})
+	headers := map[string]string{"Authorization": "Bearer " + adminToken}
+
+	t.Run("invalid username returns 400", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/not a username/unlock", headers, nil, apimodels.AdminUnlockAgentRequest{})
+		require.NoError(t, err)
+		ctx.Params["username"] = "not a username"
+
+		requireStatus(t, http.StatusBadRequest)(h.HandleAdminUnlockAgentLift(ctx))
+	})
+
+	t.Run("missing token returns 401", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/agent/unlock", nil, nil, apimodels.AdminUnlockAgentRequest{})
+		require.NoError(t, err)
+		ctx.Params["username"] = "agent"
+
+		requireStatus(t, http.StatusUnauthorized)(h.HandleAdminUnlockAgentLift(ctx))
+	})
+
+	t.Run("agent not found returns 404", func(t *testing.T) {
+		state := &round10QueryState{
+			notFoundPKSK: map[string]bool{"USER#missing#METADATA": true},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/missing/unlock", headers, nil, apimodels.AdminUnlockAgentRequest{})
+		require.NoError(t, err)
+		ctx.Params["username"] = "missing"
+
+		requireStatus(t, http.StatusNotFound)(h.HandleAdminUnlockAgentLift(ctx))
+	})
+
+	t.Run("rate limit clear failures return 500", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"Agent-0": {
+					PK:       "USER#Agent-0",
+					SK:       storagemodels.SKMetadata,
+					Username: "Agent-0",
+					Role:     "user",
+					Approved: true,
+					Version:  1,
+					IsAgent:  true,
+				},
+			},
+			allErrorOnce: errors.New("boom"),
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/Agent-0/unlock", headers, nil, apimodels.AdminUnlockAgentRequest{})
+		require.NoError(t, err)
+		ctx.Params["username"] = "Agent-0"
+
+		requireStatus(t, http.StatusInternalServerError)(h.HandleAdminUnlockAgentLift(ctx))
+	})
+
+	t.Run("success returns unlock metadata", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"Agent-0": {
+					PK:       "USER#Agent-0",
+					SK:       storagemodels.SKMetadata,
+					Username: "Agent-0",
+					Role:     "user",
+					Approved: true,
+					Version:  1,
+					IsAgent:  true,
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/Agent-0/unlock", headers, nil, apimodels.AdminUnlockAgentRequest{
+			Reason: "resume testing",
+		})
+		require.NoError(t, err)
+		ctx.Params["username"] = "Agent-0"
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleAdminUnlockAgentLift(ctx))
+		var out apimodels.AdminUnlockAgentResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &out))
+		require.Equal(t, "Agent-0", out.Username)
+		require.True(t, out.Unlocked)
+		require.Equal(t, "admin", out.UnlockedBy)
+		require.Equal(t, "resume testing", out.Reason)
+		require.False(t, out.UnlockedAt.IsZero())
 	})
 }
 

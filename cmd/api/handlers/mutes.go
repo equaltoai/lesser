@@ -1,13 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
-	"github.com/equaltoai/lesser/pkg/transformations"
+	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -29,6 +31,46 @@ func (h *Handler) relationshipFromService(relationship *relationshipsvc.Relation
 		Endorsed:            relationship.Endorsed,
 		Note:                relationship.Note,
 	}
+}
+
+func (h *Handler) relationshipFromServiceWithPublicID(relationship *relationshipsvc.RelationshipData, publicID string) models.Relationship {
+	out := h.relationshipFromService(relationship)
+	if normalizedID := strings.TrimSpace(publicID); normalizedID != "" {
+		out.ID = normalizedID
+	}
+	return out
+}
+
+func (h *Handler) relationshipFromServiceForAccount(ctx context.Context, relationship *relationshipsvc.RelationshipData, accountID string) models.Relationship {
+	if h == nil || h.repos == nil {
+		return h.relationshipFromService(relationship)
+	}
+
+	account, err := h.lookupStorageAccountByID(ctx, accountID)
+	if err != nil || account == nil {
+		return h.relationshipFromService(relationship)
+	}
+
+	return h.relationshipFromServiceWithPublicID(relationship, h.publicAccountFromStorageAccount(account).ID)
+}
+
+func relationshipLookupTargetID(account *storage.Account, fallback string) string {
+	if account != nil && account.Actor != nil {
+		if actorID := strings.TrimSpace(account.Actor.ID); actorID != "" {
+			return actorID
+		}
+		if username := strings.TrimSpace(account.Actor.PreferredUsername); username != "" {
+			return username
+		}
+	}
+
+	if account != nil && account.User != nil {
+		if username := strings.TrimSpace(account.User.Username); username != "" {
+			return username
+		}
+	}
+
+	return strings.TrimSpace(fallback)
 }
 
 // HandleMuteAccountLift handles POST /api/v1/accounts/:id/mute
@@ -82,7 +124,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *apptheory.Context) (*apptheory.Resp
 			return common.RespondInternalServerError(ctx)
 		}
 
-		return okJSON(h.relationshipFromService(result.Relationship))
+		return okJSON(h.relationshipFromServiceForAccount(ctx.Context(), result.Relationship, accountID))
 	}
 
 	// If we reach here, service is not available - return error
@@ -116,7 +158,7 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *apptheory.Context) (*apptheory.Re
 			return common.RespondInternalServerError(ctx)
 		}
 
-		return okJSON(h.relationshipFromService(result.Relationship))
+		return okJSON(h.relationshipFromServiceForAccount(ctx.Context(), result.Relationship, accountID))
 	}
 
 	// If we reach here, service is not available - return error
@@ -159,9 +201,7 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *apptheory.Context) (*apptheory
 			accounts := make([]models.Account, 0, len(result.MutedUsers))
 			for _, mutedUser := range result.MutedUsers {
 				if mutedUser.Actor != nil {
-					// Get follower/following counts (simplified for service response)
-					account := transformations.ActorToAccountWithCounts(mutedUser.Actor, h.cfg.BaseURL(), 0, 0, 0)
-					accounts = append(accounts, account)
+					accounts = append(accounts, h.publicAccountFromStorageAccount(mutedUser))
 				}
 			}
 

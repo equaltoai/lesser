@@ -169,6 +169,158 @@ func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (m
 	return out, nil
 }
 
+func (h *Handler) publicAccountFromStorageAccount(account *storage.Account) models.Account {
+	if mastodonAccount, err := h.mastodonAccountFromStorageAccount(account); err == nil {
+		return mastodonAccount
+	}
+
+	if account != nil && account.Actor != nil {
+		out := transformations.ActorToAccountBase(account.Actor, handlerBaseURL(h))
+		ensureMastodonAccountCollections(&out)
+		return out
+	}
+
+	return models.Account{}
+}
+
+func (h *Handler) publicAccountFromActor(ctx context.Context, actor *activitypub.Actor) models.Account {
+	if actor == nil {
+		return models.Account{}
+	}
+
+	if localAccount, err := h.localStorageAccountForActor(ctx, actor); err == nil && localAccount != nil {
+		return h.publicAccountFromStorageAccount(localAccount)
+	}
+
+	out := transformations.ActorToAccountBase(actor, handlerBaseURL(h))
+	ensureMastodonAccountCollections(&out)
+	return out
+}
+
+func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string) (*storage.Account, error) {
+	if h != nil && h.registry != nil && h.registry.Accounts() != nil {
+		account, err := h.registry.Accounts().GetAccount(ctx, accountID)
+		if err == nil && account != nil {
+			return account, nil
+		}
+		if !shouldFallbackAccountResolution(accountID) {
+			if err != nil {
+				return nil, err
+			}
+			return nil, fmt.Errorf("account not found")
+		}
+	}
+
+	if h != nil && (h.registry == nil || h.registry.Accounts() == nil) && h.repos != nil && h.repos.Account() != nil {
+		normalizedID := strings.TrimSpace(accountID)
+		if normalizedID != "" {
+			account, err := h.repos.Account().GetAccount(ctx, normalizedID)
+			if err == nil && account != nil {
+				return account, nil
+			}
+		}
+	}
+
+	if h == nil || h.repos == nil {
+		return nil, fmt.Errorf("account not found")
+	}
+
+	actor, err := h.resolveAccountID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if actor == nil {
+		return nil, fmt.Errorf("account not found")
+	}
+
+	if localAccount, err := h.localStorageAccountForActor(ctx, actor); err == nil && localAccount != nil {
+		return localAccount, nil
+	}
+
+	return storageAccountFromActor(actor), nil
+}
+
+func shouldFallbackAccountResolution(accountID string) bool {
+	normalized := normalizeResolvedAccountID(accountID)
+	normalized = strings.TrimSpace(normalized)
+	if normalized == "" {
+		return false
+	}
+	if strings.HasPrefix(normalized, "https://") || strings.HasPrefix(normalized, "http://") {
+		return true
+	}
+	if strings.Contains(normalized, "@") {
+		return true
+	}
+	return common.ValidateNumericID("account_id", normalized) == nil && len(normalized) >= 10
+}
+
+func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activitypub.Actor) (*storage.Account, error) {
+	if actor == nil || !h.actorAppearsLocal(actor) {
+		return nil, nil
+	}
+
+	username := strings.TrimSpace(actor.PreferredUsername)
+	if username == "" {
+		return nil, nil
+	}
+
+	if h != nil && h.registry != nil && h.registry.Accounts() != nil {
+		account, err := h.registry.Accounts().GetAccount(ctx, username)
+		if err == nil && account != nil {
+			if account.Actor == nil {
+				account.Actor = actor
+			}
+			return account, nil
+		}
+	}
+
+	if h != nil && h.repos != nil && h.repos.Account() != nil {
+		account, err := h.repos.Account().GetAccount(ctx, username)
+		if err == nil && account != nil {
+			if account.Actor == nil {
+				account.Actor = actor
+			}
+			return account, nil
+		}
+	}
+
+	return storageAccountFromActor(actor), nil
+}
+
+func (h *Handler) actorAppearsLocal(actor *activitypub.Actor) bool {
+	if actor == nil {
+		return false
+	}
+
+	baseURL := handlerBaseURL(h)
+	if baseURL != "" && strings.HasPrefix(strings.TrimSpace(actor.ID), baseURL+"/users/") {
+		return true
+	}
+
+	return !strings.Contains(strings.TrimSpace(actor.PreferredUsername), "@")
+}
+
+func storageAccountFromActor(actor *activitypub.Actor) *storage.Account {
+	if actor == nil {
+		return nil
+	}
+
+	username := strings.TrimSpace(actor.PreferredUsername)
+	if username == "" {
+		return nil
+	}
+
+	displayName := strings.TrimSpace(actor.Name)
+	return &storage.Account{
+		User: &storage.User{
+			Username:    username,
+			DisplayName: displayName,
+		},
+		Actor: actor,
+	}
+}
+
 func handlerBaseURL(h *Handler) string {
 	if h == nil || h.cfg == nil {
 		return ""
@@ -408,8 +560,7 @@ func (h *Handler) HandleGetAccountLift(ctx *apptheory.Context) (*apptheory.Respo
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Call Accounts service
-	account, err := h.registry.Accounts().GetAccount(ctx.Context(), accountID)
+	account, err := h.lookupStorageAccountByID(ctx.Context(), accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return common.RespondAccountNotFound(ctx)
@@ -418,7 +569,7 @@ func (h *Handler) HandleGetAccountLift(ctx *apptheory.Context) (*apptheory.Respo
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(account)
+	return okJSON(h.publicAccountFromStorageAccount(account))
 }
 
 // HandleAccountLookupLift looks up an account by username@domain
@@ -442,10 +593,7 @@ func (h *Handler) HandleAccountLookupLift(ctx *apptheory.Context) (*apptheory.Re
 		return common.RespondInternalServerError(ctx)
 	}
 
-	// Convert to Mastodon account format
-	mastodonAccount := transformations.ActorToAccountWithCounts(account.Actor, h.cfg.BaseURL(), 0, 0, 0)
-
-	return okJSON(mastodonAccount)
+	return okJSON(h.publicAccountFromStorageAccount(account))
 }
 
 // relationshipType represents the type of relationship being queried
@@ -505,9 +653,7 @@ func (h *Handler) handleAccountRelationshipsList(ctx *apptheory.Context, relType
 			continue
 		}
 
-		// Convert to account using the Actor from the account we already have
-		account := transformations.ActorToAccountBase(relatedAccount.Actor, h.cfg.BaseURL())
-		accounts = append(accounts, account)
+		accounts = append(accounts, h.publicAccountFromStorageAccount(relatedAccount))
 	}
 
 	resp, err := okJSON(accounts)
@@ -525,25 +671,22 @@ func (h *Handler) handleAccountRelationshipsList(ctx *apptheory.Context, relType
 }
 
 func (h *Handler) resolveRelationshipUsername(ctx context.Context, accountID string) (string, error) {
-	if h != nil && h.registry != nil && h.registry.Accounts() != nil {
-		account, err := h.registry.Accounts().GetAccount(ctx, accountID)
-		if err == nil && account != nil && account.Actor != nil {
-			username := strings.TrimSpace(account.Actor.PreferredUsername)
-			if username != "" {
-				return username, nil
-			}
-		}
-	}
-
-	actor, err := h.resolveAccountID(ctx, accountID)
+	account, err := h.lookupStorageAccountByID(ctx, accountID)
 	if err != nil {
 		return "", err
 	}
-	if actor == nil {
-		return "", errors.New("relationship not found")
+
+	if account != nil && account.User != nil {
+		username := strings.TrimSpace(account.User.Username)
+		if username != "" {
+			return username, nil
+		}
 	}
 
-	username := strings.TrimSpace(actor.PreferredUsername)
+	var username string
+	if account != nil && account.Actor != nil {
+		username = strings.TrimSpace(account.Actor.PreferredUsername)
+	}
 	if username == "" {
 		return "", errors.New("relationship not found")
 	}
@@ -606,7 +749,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *apptheory.Context) (*appth
 		apiAccounts := make([]models.Account, 0, len(familiarResult.Accounts))
 		for _, storageAccount := range familiarResult.Accounts {
 			if storageAccount.Actor != nil {
-				apiAccount := transformations.ActorToAccountBase(storageAccount.Actor, h.cfg.BaseURL())
+				apiAccount := h.publicAccountFromStorageAccount(storageAccount)
 				apiAccounts = append(apiAccounts, apiAccount)
 			}
 		}

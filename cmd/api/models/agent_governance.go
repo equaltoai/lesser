@@ -8,6 +8,20 @@ type AdminVerifyAgentRequest struct {
 	ExitQuarantine bool   `json:"exit_quarantine,omitempty"`
 }
 
+// AdminUnlockAgentRequest is the request payload for operator unlock actions.
+type AdminUnlockAgentRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+// AdminUnlockAgentResponse is the REST response for a successful operator unlock.
+type AdminUnlockAgentResponse struct {
+	Username   string    `json:"username"`
+	Unlocked   bool      `json:"unlocked"`
+	UnlockedBy string    `json:"unlocked_by"`
+	Reason     string    `json:"reason,omitempty"`
+	UnlockedAt time.Time `json:"unlocked_at"`
+}
+
 // AdminAgentPolicy is the REST representation of instance-level agent policy.
 type AdminAgentPolicy struct {
 	AllowAgents            bool `json:"allow_agents"`

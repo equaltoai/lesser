@@ -794,6 +794,31 @@ components:
                 - total_edges
                 - total_nodes
             type: object
+        AdminUnlockAgentRequest:
+            additionalProperties: false
+            properties:
+                reason:
+                    type: string
+            type: object
+        AdminUnlockAgentResponse:
+            additionalProperties: false
+            properties:
+                reason:
+                    type: string
+                unlocked:
+                    type: boolean
+                unlocked_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                unlocked_by:
+                    type: string
+                username:
+                    type: string
+            required:
+                - unlocked
+                - unlocked_at
+                - unlocked_by
+                - username
+            type: object
         AdminUpdateTrustRequest:
             additionalProperties: false
             properties:
@@ -8822,6 +8847,49 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - admin:write
+    /api/v1/admin/agents/{username}/unlock:
+        post:
+            operationId: post_api_v1_admin_agents_by_username_unlock
+            tags:
+                - admin
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AdminUnlockAgentRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdminUnlockAgentResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "401":
+                    $ref: '#/components/responses/Unauthorized'
+                "403":
+                    $ref: '#/components/responses/Forbidden'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAdminUnlockAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+            x-oauth-scopes:
+                - admin
     /api/v1/admin/agents/{username}/unverify:
         post:
             operationId: post_api_v1_admin_agents_by_username_unverify

@@ -9,9 +9,13 @@ import (
 	"testing"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
+	repomocks "github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -87,7 +91,56 @@ func TestRelationshipsRound12(t *testing.T) {
 		var body []apimodels.Relationship
 		require.NoError(t, json.Unmarshal(resp.Body, &body))
 		require.Len(t, body, 1)
-		require.Equal(t, "bob", body[0].ID)
+		require.Equal(t, common.GenerateNumericID("bob"), body[0].ID)
 		require.True(t, body[0].Following)
+	})
+
+	t.Run("numeric account ids resolve to canonical public ids", func(t *testing.T) {
+		targetActor := &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("bob"), Type: "Person"},
+			PreferredUsername: "bob",
+		}
+		targetAccount := &storage.Account{
+			User:  &storage.User{Username: "bob"},
+			Actor: targetActor,
+		}
+
+		accountsSvc := &AccountsServiceStub{
+			GetAccountFunc: func(_ context.Context, accountID string) (*storage.Account, error) {
+				if accountID == "3133216004869690" {
+					return nil, errors.New("not found")
+				}
+				if accountID == "bob" {
+					return targetAccount, nil
+				}
+				return nil, errors.New("not found")
+			},
+		}
+		relationshipsSvc := &RelationshipsServiceStub{
+			GetRelationshipFunc: func(_ context.Context, requesterID, targetID string) (*relationships.RelationshipData, error) {
+				require.Equal(t, "alice", requesterID)
+				require.Equal(t, cfg.ActorURL("bob"), targetID)
+				return &relationships.RelationshipData{ID: "bob", Following: true}, nil
+			},
+		}
+
+		h, repos, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{AccountsSvc: accountsSvc, RelationshipsSvc: relationshipsSvc})
+		actorRepo := repomocks.NewMockActorRepository()
+		actorRepo.On("GetActorByNumericID", mock.Anything, "3133216004869690").Return(targetActor, nil).Once()
+		h.repos = &interactionsRound19Repos{MockRepositoryStorage: repos, actor: actorRepo}
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/relationships", map[string]string{
+			"Authorization": "Bearer " + readToken,
+		}, map[string]string{"id[0]": "3133216004869690"}, nil)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetRelationshipsLift(ctx))
+
+		var body []apimodels.Relationship
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Len(t, body, 1)
+		require.Equal(t, common.GenerateNumericID("bob"), body[0].ID)
+		require.True(t, body[0].Following)
+		actorRepo.AssertExpectations(t)
 	})
 }

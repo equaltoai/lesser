@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	apiModels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -149,6 +152,65 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 
 		headers := map[string]string{"Authorization": "Bearer " + managedCfg.LesserHostInstanceKey}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, payload)
+		requireStatus(t, http.StatusNoContent)(managedHandler.HandleDeliverNotificationLift(ctx))
+	})
+
+	t.Run("addressed local agents receive the notification before admin fallback", func(t *testing.T) {
+		managedCfg := round11TestConfig()
+		managedCfg.AdminUsername = "admin"
+		managedCfg.LesserHostInstanceKey = "managed-instance-key"
+
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"Agent-0": {
+					PK:        "USER#Agent-0",
+					SK:        storagemodels.SKMetadata,
+					Username:  "Agent-0",
+					Role:      "user",
+					Approved:  true,
+					Version:   1,
+					IsAgent:   true,
+					CreatedAt: time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC),
+				},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"Agent-0": {
+					Username: "Agent-0",
+					Actor: &activitypub.Actor{
+						BaseObject: activitypub.BaseObject{
+							ID:   managedCfg.ActorURL("Agent-0"),
+							Type: "Person",
+						},
+						PreferredUsername: "Agent-0",
+					},
+				},
+			},
+		}
+
+		managedHandler, _, _ := round11NewHandler(t, managedCfg, state)
+		managedHandler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					require.Equal(t, "Agent-0", cmd.UserID)
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
+			Type:       "communication:inbound",
+			Channel:    "email",
+			From:       apiModels.NotificationDeliveryFrom{Address: "alice@example.com", DisplayName: "Alice"},
+			To:         &apiModels.NotificationDeliveryTo{Address: "agent-0@lessersoul.ai"},
+			Subject:    "hello",
+			Body:       "test message",
+			ReceivedAt: time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			MessageID:  "comm-msg-agent-0",
+		})
+		require.NoError(t, err)
+
+		headers := map[string]string{"Authorization": "Bearer " + managedCfg.LesserHostInstanceKey}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
 		requireStatus(t, http.StatusNoContent)(managedHandler.HandleDeliverNotificationLift(ctx))
 	})
 }

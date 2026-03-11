@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -43,9 +45,8 @@ func (h *Handler) handleRelationshipsLogic(ctx *apptheory.Context, username stri
 			continue
 		}
 
-		// Check if account exists (basic validation)
-		_, err := h.registry.Accounts().GetAccount(ctx.Context(), accountID)
-		if err != nil {
+		targetAccount, err := h.lookupStorageAccountByID(ctx.Context(), accountID)
+		if err != nil || targetAccount == nil {
 			// Skip accounts that don't exist
 			h.logger.Warn("account not found for relationship",
 				zap.String("account_id", accountID),
@@ -53,31 +54,21 @@ func (h *Handler) handleRelationshipsLogic(ctx *apptheory.Context, username stri
 			continue
 		}
 
+		targetLookupID := relationshipLookupTargetID(targetAccount, accountID)
+
 		// Use the Relationships service to get relationship data
-		relationshipData, err := h.registry.Relationships().GetRelationship(ctx.Context(), username, accountID)
+		relationshipData, err := h.registry.Relationships().GetRelationship(ctx.Context(), username, targetLookupID)
 		if err != nil {
 			h.logger.Error("failed to get relationship from service",
 				zap.String("requester", username),
-				zap.String("target", accountID),
+				zap.String("target", targetLookupID),
 				zap.Error(err))
 			return common.RespondInternalServerError(ctx, "failed to get relationships")
 		}
 
-		// Convert service relationship data to API model
-		relationship := models.Relationship{
-			ID:                  relationshipData.ID,
-			Following:           relationshipData.Following,
-			ShowingReblogs:      relationshipData.ShowingReblogs,
-			Notifying:           relationshipData.Notifying,
-			FollowedBy:          relationshipData.FollowedBy,
-			Blocking:            relationshipData.Blocking,
-			BlockedBy:           relationshipData.BlockedBy,
-			Muting:              relationshipData.Muting,
-			MutingNotifications: relationshipData.MutingNotifications,
-			Requested:           relationshipData.Requested,
-			DomainBlocking:      relationshipData.DomainBlocking,
-			Endorsed:            relationshipData.Endorsed,
-			Note:                relationshipData.Note,
+		relationship := h.relationshipFromService(relationshipData)
+		if publicID := strings.TrimSpace(h.publicAccountFromStorageAccount(targetAccount).ID); publicID != "" {
+			relationship.ID = publicID
 		}
 		relationships = append(relationships, relationship)
 	}

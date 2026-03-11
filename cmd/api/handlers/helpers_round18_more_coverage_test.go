@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -186,11 +187,11 @@ func TestHelpersRound18_StatusAccountUsesActorData(t *testing.T) {
 		},
 	})
 
-	require.Equal(t, cfg.ActorURL("alice"), account.ID)
+	require.Equal(t, common.GenerateNumericID("alice"), account.ID)
 	require.Equal(t, "alice", account.Username)
 	require.Equal(t, "alice", account.Acct)
 	require.Equal(t, "Alice", account.DisplayName)
-	require.Equal(t, createdAt.Format("2006-01-02T15:04:05.000Z"), account.CreatedAt)
+	require.Equal(t, createdAt.Format(time.RFC3339), account.CreatedAt)
 }
 
 func TestHelpersRound18_StatusReblogTargetID(t *testing.T) {

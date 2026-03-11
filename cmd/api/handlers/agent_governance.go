@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -223,6 +224,72 @@ func (h *Handler) HandleAdminUnverifyAgentLift(ctx *apptheory.Context) (*apptheo
 	})
 
 	return okJSON(agentFromStorageUser(account.User))
+}
+
+// HandleAdminUnlockAgentLift handles POST /api/v1/admin/agents/:username/unlock.
+func (h *Handler) HandleAdminUnlockAgentLift(ctx *apptheory.Context) (*apptheory.Response, error) {
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeAdmin)
+	if err != nil {
+		if isInsufficientScopeError(err) {
+			return common.RespondInsufficientScope(ctx, auth.ScopeAdmin)
+		}
+		return common.RespondUnauthorized(ctx)
+	}
+
+	if h.repos == nil || h.repos.Account() == nil || h.repos.RateLimit() == nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	username := ctx.Param("username")
+	if err := common.ValidateUsernameParamID(username); err != nil {
+		return common.RespondValidationError(ctx, err)
+	}
+
+	var req apimodels.AdminUnlockAgentRequest
+	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
+		return common.RespondBadRequest(ctx, "invalid request body")
+	}
+
+	account, err := h.repos.Account().GetAccount(ctx.Context(), username)
+	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
+		return common.RespondNotFound(ctx, "agent")
+	}
+
+	if err := h.clearAgentSafetyState(ctx.Context(), account.User.Username); err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+
+	reason := strings.TrimSpace(req.Reason)
+	h.recordAgentGovernanceEvent(ctx, account.User.Username, "agent.unlocked", map[string]any{
+		"unlocked_by":         claims.Username,
+		"reason":              reason,
+		"rate_limit_subjects": agentRateLimitUserIDVariants(account.User.Username),
+	})
+
+	return okJSON(apimodels.AdminUnlockAgentResponse{
+		Username:   strings.TrimSpace(account.User.Username),
+		Unlocked:   true,
+		UnlockedBy: claims.Username,
+		Reason:     reason,
+		UnlockedAt: time.Now().UTC(),
+	})
+}
+
+func (h *Handler) clearAgentSafetyState(ctx context.Context, username string) error {
+	if h == nil || h.repos == nil || h.repos.RateLimit() == nil {
+		return nil
+	}
+
+	for _, subject := range agentRateLimitUserIDVariants(username) {
+		if err := h.repos.RateLimit().ClearLockout(ctx, subject); err != nil {
+			return err
+		}
+		if err := h.repos.RateLimit().ClearAPIRateLimitsForUser(ctx, subject); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (h *Handler) recordAgentGovernanceEvent(ctx *apptheory.Context, username string, eventType string, metadata map[string]any) {

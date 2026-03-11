@@ -463,6 +463,7 @@ func configureRoutes(app *apptheory.App) {
 	// Agent governance (Admin only)
 	app.Get("/api/v1/admin/agents/policy", apiHandler.HandleAdminGetAgentPolicyLift)
 	app.Put("/api/v1/admin/agents/policy", apiHandler.HandleAdminUpdateAgentPolicyLift)
+	app.Post("/api/v1/admin/agents/{username}/unlock", apiHandler.HandleAdminUnlockAgentLift)
 	app.Post("/api/v1/admin/agents/{username}/verify", apiHandler.HandleAdminVerifyAgentLift)
 	app.Post("/api/v1/admin/agents/{username}/unverify", apiHandler.HandleAdminUnverifyAgentLift)
 

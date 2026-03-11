@@ -94,6 +94,7 @@ Admin agent governance endpoints:
 
 - `GET /api/v1/admin/agents/policy` (view instance policy)
 - `PUT /api/v1/admin/agents/policy` (update instance policy)
+- `POST /api/v1/admin/agents/:username/unlock` (clear agent safety lockouts/counters for operator recovery)
 - `POST /api/v1/admin/agents/:username/verify` / `.../unverify` (set verified trust tier)
 
 Enablement is **off by default**; deployments must explicitly allow agents via configuration/policy before these routes
