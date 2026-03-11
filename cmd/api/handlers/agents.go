@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
@@ -123,12 +121,6 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 	return okJSON(respPayload)
 }
 
-type delegationResolvedInfo struct {
-	AgentType    string
-	AgentVersion string
-	Capabilities *agents.Capabilities
-}
-
 func parseAgentDelegationRequest(ctx *apptheory.Context) (*apimodels.AgentDelegationRequest, *apptheory.Response, error) {
 	var req apimodels.AgentDelegationRequest
 	if err := common.ParseRequestWithFallback(ctx, &req); err != nil {
@@ -219,158 +211,6 @@ func agentDelegationEnvelope(user *storage.User) ([]string, bool) {
 		return nil, false
 	}
 	return agentDelegatedScopes(user), true
-}
-
-func parseAgentDelegationInfo(ctx *apptheory.Context, raw any, requestedScopes []string) (delegationResolvedInfo, *apptheory.Response, error) {
-	info, err := parseDelegationAgentInfo(raw)
-	if err != nil {
-		resp, respErr := common.RespondBadRequest(ctx, "invalid agent_info")
-		return delegationResolvedInfo{}, resp, respErr
-	}
-
-	capabilities := info.Capabilities
-	if capabilities == nil {
-		derived := deriveAgentCapabilitiesFromScopes(requestedScopes)
-		capabilities = &derived
-	}
-
-	agentType := strings.TrimSpace(info.AgentType)
-	if agentType == "" {
-		agentType = agentTypeCustom
-	}
-
-	agentVersion := strings.TrimSpace(info.Version)
-	if agentVersion == "" {
-		agentVersion = agentVersionUnknown
-	}
-
-	return delegationResolvedInfo{
-		AgentType:    agentType,
-		AgentVersion: agentVersion,
-		Capabilities: capabilities,
-	}, nil, nil
-}
-
-func (h *Handler) agentRegistrationLimits(ctx *apptheory.Context) (quarantineDays int, maxPostsPerHourAllowed int) {
-	quarantineDays = 7
-	maxPostsPerHourAllowed = agentDefaultMaxPostsPerHour
-
-	if h != nil && h.repos != nil && h.repos.Instance() != nil {
-		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
-			if policy.DefaultQuarantineDays > 0 {
-				quarantineDays = policy.DefaultQuarantineDays
-			}
-			if policy.AgentMaxPostsPerHour > 0 {
-				maxPostsPerHourAllowed = policy.AgentMaxPostsPerHour
-			}
-		}
-	}
-
-	if maxPostsPerHourAllowed <= 0 {
-		maxPostsPerHourAllowed = agentDefaultMaxPostsPerHour
-	}
-
-	return quarantineDays, maxPostsPerHourAllowed
-}
-
-func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
-	if capabilities == nil {
-		return
-	}
-	if capabilities.MaxPostsPerHour <= 0 {
-		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
-	}
-	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
-		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
-	}
-}
-
-func (h *Handler) createDelegatedAgentAccount(
-	ctx *apptheory.Context,
-	ownerClaims *auth.Claims,
-	req *apimodels.AgentDelegationRequest,
-	info delegationResolvedInfo,
-	requestedScopes []string,
-	now time.Time,
-) (*storage.Account, *apptheory.Response, error) {
-	quarantineDays, maxPostsPerHourAllowed := h.agentRegistrationLimits(ctx)
-	clampMaxPostsPerHour(info.Capabilities, maxPostsPerHourAllowed)
-	quarantineEnd := now.AddDate(0, 0, quarantineDays)
-
-	ownerIdentifier := "@" + ownerClaims.Username
-	user := &storage.User{
-		Username:          req.AgentUsername,
-		Email:             "",
-		DisplayName:       req.DisplayName,
-		Note:              req.Bio,
-		Approved:          true,
-		Suspended:         false,
-		Silenced:          false,
-		Role:              "user",
-		Locale:            "",
-		Locked:            false,
-		Discoverable:      true,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		IsAgent:           true,
-		AgentType:         info.AgentType,
-		AgentVersion:      info.AgentVersion,
-		AgentOwner:        ownerIdentifier,
-		AgentCreatedBy:    ownerClaims.Username,
-		AgentCapabilities: info.Capabilities,
-		Metadata: map[string]interface{}{
-			"agent_quarantine_status": "quarantined",
-			"agent_quarantine_start":  now.Format(time.RFC3339),
-			"agent_quarantine_end":    quarantineEnd.Format(time.RFC3339),
-			"agent_delegated_scopes":  requestedScopes,
-		},
-	}
-
-	privateKey, err := federation.GenerateRSAKeyPair(2048)
-	if err != nil {
-		resp, respErr := common.RespondInternalServerError(ctx)
-		return nil, resp, respErr
-	}
-	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
-	if err != nil {
-		resp, respErr := common.RespondInternalServerError(ctx)
-		return nil, resp, respErr
-	}
-	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
-	if err != nil {
-		resp, respErr := common.RespondInternalServerError(ctx)
-		return nil, resp, respErr
-	}
-
-	actorID := h.cfg.ActorURL(req.AgentUsername)
-	actor := activitypub.NewActor(activitypub.ServiceType, actorID, req.AgentUsername)
-	actor.Name = req.DisplayName
-	actor.Summary = req.Bio
-	actor.URL = fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), req.AgentUsername)
-	actor.CreatedAt = &now
-	actor.PublicKey = &activitypub.PublicKey{
-		ID:           actorID + "#main-key",
-		Owner:        actorID,
-		PublicKeyPem: string(publicKeyPEM),
-	}
-
-	actor = activitypubutil.BuildLocalActor(req.AgentUsername, h.cfg.BaseURL(), user, actor)
-	account := &storage.Account{
-		User:       user,
-		Actor:      actor,
-		PrivateKey: string(privateKeyPEM),
-	}
-
-	if err := h.repos.Account().CreateAccount(ctx.Context(), account); err != nil {
-		if common.IsConflict(err) {
-			resp, respErr := common.RespondConflict(ctx, "username already taken")
-			return nil, resp, respErr
-		}
-		resp, respErr := common.RespondInternalServerError(ctx)
-		return nil, resp, respErr
-	}
-
-	return account, nil, nil
 }
 
 func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername string, requestedScopes []string, accessTTL time.Duration) (apimodels.OAuthTokenResponse, error) {
@@ -927,6 +767,18 @@ func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 	}
 
 	return caps
+}
+
+func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
+	if capabilities == nil {
+		return
+	}
+	if capabilities.MaxPostsPerHour <= 0 {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
+	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
 }
 
 func scopesAreSubset(ownerScopes, requested []string) bool {
