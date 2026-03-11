@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -17,11 +20,11 @@ jobs:
       STAGE: dev
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
         id: setup-go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -36,7 +39,7 @@ jobs:
         run: bash scripts/install_ci_tools.sh
 
       - name: Cache Lesser XDG caches
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             tmp/xdg-cache/go${{ steps.setup-go.outputs.go-version }}
@@ -65,7 +68,7 @@ jobs:
 
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: reports
           path: report/
