@@ -468,6 +468,55 @@ func normalizeDomainValue(domain string) string {
 	return normalized
 }
 
+func (r *AccountRepository) ensureNumericIDMapping(ctx context.Context, numericID, username, actorID string) error {
+	if strings.TrimSpace(numericID) == "" || strings.TrimSpace(username) == "" {
+		return nil
+	}
+
+	mapping := &models.NumericIDMapping{
+		NumericID: strings.TrimSpace(numericID),
+		Username:  strings.TrimSpace(username),
+		ActorID:   strings.TrimSpace(actorID),
+	}
+
+	err := r.db.WithContext(ctx).Model(mapping).Create()
+	if err == nil {
+		return nil
+	}
+	if !dynamormErrors.IsConditionFailed(err) {
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+	}
+
+	var existing models.NumericIDMapping
+	lookupErr := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
+		Where("PK", "=", "NUMERIC_ID#"+numericID).
+		Where("SK", "=", models.SKMetadata).
+		First(&existing)
+	if lookupErr == nil && strings.EqualFold(existing.Username, mapping.Username) {
+		return nil
+	}
+	if lookupErr == nil {
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+	}
+	return ErrorHandler.HandleCreateError(lookupErr, "numeric ID mapping", numericID)
+}
+
+func (r *AccountRepository) deleteNumericIDMapping(ctx context.Context, numericID string) error {
+	if strings.TrimSpace(numericID) == "" {
+		return nil
+	}
+
+	err := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
+		Where("PK", "=", "NUMERIC_ID#"+numericID).
+		Where("SK", "=", models.SKMetadata).
+		Delete()
+	if err == nil || dynamormErrors.IsNotFound(err) {
+		return nil
+	}
+
+	return ErrorHandler.HandleDeleteError(err, "numeric ID mapping", numericID)
+}
+
 // createActor creates an actor (internal helper)
 func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
 	if err := common.ValidateRequiredParam("preferred_username", actor.PreferredUsername); err != nil {
@@ -548,6 +597,14 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		return ErrorHandler.HandleCreateError(err, EntityActor, username)
 	}
 
+	if err := r.ensureNumericIDMapping(ctx, numericID, username, actor.ID); err != nil {
+		_ = r.db.WithContext(ctx).Model(&models.Actor{}).
+			Where("PK", "=", actorModel.PK).
+			Where("SK", "=", actorModel.SK).
+			Delete()
+		return err
+	}
+
 	r.logger.Info("actor created successfully",
 		zap.String("username", username),
 		zap.String("pk", actorModel.PK))
@@ -566,7 +623,11 @@ func (r *AccountRepository) deleteActor(ctx context.Context, username string) er
 		Delete()
 
 	// Use error utility for consistent error handling (delete doesn't fail on not found)
-	return ErrorHandler.HandleDeleteError(err, EntityActor, username)
+	if handled := ErrorHandler.HandleDeleteError(err, EntityActor, username); handled != nil {
+		return handled
+	}
+
+	return r.deleteNumericIDMapping(ctx, common.GenerateNumericID(username))
 }
 
 // GetActorPrivateKey retrieves an actor's private key

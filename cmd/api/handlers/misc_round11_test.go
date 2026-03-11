@@ -84,8 +84,8 @@ func TestMiscSearchAndHelpers_Round11(t *testing.T) {
 		URL:       "https://example.com/s1",
 		Published: now,
 		AuthorID:  "https://example.com/users/alice",
-	})
-	require.Equal(t, "hi", status.Content)
+	}, "")
+	require.Equal(t, "hello", status.Content)
 }
 
 func TestMiscNotificationsAndGrouping_Round11(t *testing.T) {

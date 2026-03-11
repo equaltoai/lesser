@@ -206,6 +206,34 @@ func TestInteractionsRound19_statusInteraction_ErrorBranches(t *testing.T) {
 	requireStatus(t, http.StatusBadRequest)(h.statusInteraction(ctxInvalid, "invalid"))
 }
 
+func TestInteractionsRound19_HandleFollowLift_ReturnsNotFoundForMissingNumericTarget(t *testing.T) {
+	cfg := round11TestConfig()
+	h, repos, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+		RelationshipsSvc: &RelationshipsServiceStub{
+			FollowFunc: func(context.Context, *relationships.FollowCommand) (*relationships.FollowResult, error) {
+				t.Fatal("follow service should not be called when the target account cannot be resolved")
+				return nil, nil
+			},
+		},
+	})
+
+	actorRepo := repomocks.NewMockActorRepository()
+	actorRepo.On("GetActorByNumericID", mock.Anything, "3133216004869690").
+		Return(nil, common.ActorNotFoundError{Username: "3133216004869690"}).
+		Once()
+	h.repos = &interactionsRound19Repos{MockRepositoryStorage: repos, actor: actorRepo}
+
+	token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+	headers := map[string]string{"Authorization": "Bearer " + token}
+
+	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/accounts/3133216004869690/follow", headers, nil, nil)
+	require.NoError(t, err)
+	ctx.Params["id"] = "3133216004869690"
+
+	requireStatus(t, http.StatusNotFound)(h.HandleFollowLift(ctx))
+	actorRepo.AssertExpectations(t)
+}
+
 func TestInteractionsRound19_statusInteraction_UsesStorageBackedSerialization(t *testing.T) {
 	cfg := round11TestConfig()
 	now := time.Now().UTC()

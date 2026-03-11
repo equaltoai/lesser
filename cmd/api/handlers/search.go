@@ -342,7 +342,7 @@ func (h *Handler) HandleStatusSearchLift(ctx *apptheory.Context) (*apptheory.Res
 	}
 
 	// Convert results to API format
-	results := h.convertStatusSearchResults(statuses)
+	results := h.convertStatusSearchResults(ctx.Context(), statuses, authenticatedUser)
 
 	resp, err = okJSON(results)
 	if err != nil {
@@ -452,7 +452,7 @@ func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchP
 }
 
 // convertStatusSearchResults converts status search results to API format
-func (h *Handler) convertStatusSearchResults(statuses []storage.StatusSearchResult) []models.StatusSearchResult {
+func (h *Handler) convertStatusSearchResults(ctx context.Context, statuses []storage.StatusSearchResult, viewerUsername string) []models.StatusSearchResult {
 	results := make([]models.StatusSearchResult, 0, len(statuses))
 
 	for _, status := range statuses {
@@ -464,6 +464,17 @@ func (h *Handler) convertStatusSearchResults(statuses []storage.StatusSearchResu
 			AccountUsername: status.AuthorUsername,
 			CreatedAt:       status.Published.Format(time.RFC3339),
 			Score:           status.Score,
+		}
+
+		if fullStatus, err := h.resolveStatusFromSearchResult(ctx, &status); err == nil && fullStatus != nil {
+			if apiStatus, convErr := h.convertStorageStatusToAPI(fullStatus, viewerUsername); convErr == nil && apiStatus != nil {
+				result.ID = apiStatus.ID
+				result.Content = apiStatus.Content
+				result.URL = apiStatus.URL
+				result.AccountID = apiStatus.Account.ID
+				result.AccountUsername = apiStatus.Account.Username
+				result.CreatedAt = apiStatus.CreatedAt
+			}
 		}
 
 		// Add highlights if available

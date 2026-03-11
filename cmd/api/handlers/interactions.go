@@ -62,6 +62,9 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 
 	targetID, err := h.resolveRelationshipTargetID(ctx.Context(), accountID)
 	if err != nil {
+		if relationshipTargetNotFound(err) {
+			return common.RespondAccountNotFound(ctx)
+		}
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
@@ -138,6 +141,16 @@ func (h *Handler) resolveRelationshipTargetID(ctx context.Context, accountID str
 		return username, nil
 	}
 	return "", fmt.Errorf("actor not found: %s", accountID)
+}
+
+func relationshipTargetNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if common.IsNotFound(err) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 func (h *Handler) enforceAgentFollowRails(ctx *apptheory.Context, username string) (*apptheory.Response, error) {

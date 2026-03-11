@@ -52,7 +52,7 @@ type SearchParams struct {
 // HandleSearchLift performs a search across accounts, statuses, and hashtags
 func (h *Handler) HandleSearchLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Optional authentication for search
-	h.logSearchAuthentication(ctx)
+	viewerUsername := h.searchViewerUsername(ctx)
 
 	// Parse and validate parameters
 	params, resp, err := h.parseSearchParams(ctx)
@@ -69,23 +69,26 @@ func (h *Handler) HandleSearchLift(ctx *apptheory.Context) (*apptheory.Response,
 
 	// Execute searches based on type
 	h.executeAccountSearch(ctx, params, &result)
-	h.executeStatusSearch(ctx, params, &result)
+	h.executeStatusSearch(ctx, params, viewerUsername, &result)
 	h.executeHashtagSearch(ctx, params, &result)
 
 	return okJSON(result)
 }
 
-// logSearchAuthentication handles optional authentication logging
-func (h *Handler) logSearchAuthentication(ctx *apptheory.Context) {
+// searchViewerUsername returns the optional authenticated viewer for search requests.
+func (h *Handler) searchViewerUsername(ctx *apptheory.Context) string {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return
+		return ""
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 		h.logger.Debug("Authenticated search", zap.String("username", claims.Username))
+		return claims.Username
 	}
+
+	return ""
 }
 
 // parseSearchParams extracts and validates search parameters
@@ -133,15 +136,15 @@ func (h *Handler) executeAccountSearch(ctx *apptheory.Context, params *SearchPar
 }
 
 // executeStatusSearch performs status search if requested
-func (h *Handler) executeStatusSearch(ctx *apptheory.Context, params *SearchParams, result *models.SearchResult) {
+func (h *Handler) executeStatusSearch(ctx *apptheory.Context, params *SearchParams, viewerUsername string, result *models.SearchResult) {
 	if params.Type != "" && params.Type != searchTypeStatuses {
 		return
 	}
 
 	if strings.HasPrefix(params.Query, schemeHTTP) {
-		h.searchStatusByURL(ctx, params.Query, result)
+		h.searchStatusByURL(ctx, params.Query, viewerUsername, result)
 	} else {
-		h.searchStatusByContent(ctx, params, result)
+		h.searchStatusByContent(ctx, params, viewerUsername, result)
 	}
 }
 
@@ -173,8 +176,16 @@ func (h *Handler) convertActorToAccount(ctx context.Context, actor *activitypub.
 }
 
 // searchStatusByURL searches for a status by direct URL
-func (h *Handler) searchStatusByURL(ctx *apptheory.Context, url string, result *models.SearchResult) {
-	obj, err := h.repos.Object().GetObject(ctx.Context(), url)
+func (h *Handler) searchStatusByURL(ctx *apptheory.Context, statusURL string, viewerUsername string, result *models.SearchResult) {
+	if fullStatus, err := h.resolveStatusBySearchURL(ctx.Context(), statusURL); err == nil && fullStatus != nil {
+		apiStatus, convErr := h.convertStorageStatusToAPI(fullStatus, viewerUsername)
+		if convErr == nil && apiStatus != nil {
+			result.Statuses = append(result.Statuses, *apiStatus)
+			return
+		}
+	}
+
+	obj, err := h.repos.Object().GetObject(ctx.Context(), statusURL)
 	if err != nil || obj == nil {
 		return
 	}
@@ -184,12 +195,12 @@ func (h *Handler) searchStatusByURL(ctx *apptheory.Context, url string, result *
 		return
 	}
 
-	status := h.convertStatusResultToAPI(ctx, statusResult)
+	status := h.convertStatusResultToAPI(ctx, statusResult, viewerUsername)
 	result.Statuses = append(result.Statuses, status)
 }
 
 // searchStatusByContent searches for statuses by content
-func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchParams, result *models.SearchResult) {
+func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchParams, viewerUsername string, result *models.SearchResult) {
 	searchOptions := storage.StatusSearchOptions{
 		Limit:     params.Limit,
 		AccountID: params.AccountID,
@@ -201,11 +212,22 @@ func (h *Handler) searchStatusByContent(ctx *apptheory.Context, params *SearchPa
 		return
 	}
 
+	seen := make(map[string]struct{}, len(statusResults))
+
 	// Convert search results to API format
 	for _, sr := range statusResults {
-		status := h.convertStatusResultToAPI(ctx, sr)
+		status := h.convertStatusResultToAPI(ctx, sr, viewerUsername)
+		if strings.TrimSpace(status.ID) == "" {
+			continue
+		}
+		if _, exists := seen[status.ID]; exists {
+			continue
+		}
 		result.Statuses = append(result.Statuses, status)
+		seen[status.ID] = struct{}{}
 	}
+
+	h.addAuthorMatchedStatuses(ctx, params, viewerUsername, seen, result)
 }
 
 // convertObjectToStatusResult converts object to status search result
@@ -254,7 +276,18 @@ func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSe
 }
 
 // convertStatusResultToAPI converts status result to API format
-func (h *Handler) convertStatusResultToAPI(ctx *apptheory.Context, sr *storage.StatusSearchResult) models.Status {
+func (h *Handler) convertStatusResultToAPI(ctx *apptheory.Context, sr *storage.StatusSearchResult, viewerUsername string) models.Status {
+	if status, err := h.resolveStatusFromSearchResult(ctx.Context(), sr); err == nil && status != nil {
+		apiStatus, convErr := h.convertStorageStatusToAPI(status, viewerUsername)
+		if convErr == nil && apiStatus != nil {
+			return *apiStatus
+		}
+	}
+
+	return h.convertThinStatusResultToAPI(ctx, sr)
+}
+
+func (h *Handler) convertThinStatusResultToAPI(ctx *apptheory.Context, sr *storage.StatusSearchResult) models.Status {
 	// Convert search result to object map for transformation framework
 	statusMap := map[string]interface{}{
 		"id":        sr.StatusID,
@@ -281,7 +314,7 @@ func (h *Handler) convertStatusResultToAPI(ctx *apptheory.Context, sr *storage.S
 	// Add account info if we can get the actor
 	if sr.AuthorID != "" {
 		if statusActor := h.getActorFromAuthorID(ctx, sr.AuthorID); statusActor != nil {
-			account := transformations.ActorToAccountBase(statusActor, h.cfg.BaseURL())
+			account := h.convertActorToAccount(ctx.Context(), statusActor)
 			status.Account = account
 		}
 	}
@@ -291,14 +324,163 @@ func (h *Handler) convertStatusResultToAPI(ctx *apptheory.Context, sr *storage.S
 
 // getActorFromAuthorID extracts actor from author ID
 func (h *Handler) getActorFromAuthorID(ctx *apptheory.Context, authorID string) *activitypub.Actor {
-	parts := strings.Split(authorID, "/")
-	if err := common.ValidateSliceNotEmpty("author_id_parts", parts); err != nil {
+	if strings.TrimSpace(authorID) == "" {
 		return nil
 	}
-
-	username := parts[len(parts)-1]
-	actor, _ := h.repos.Actor().GetActor(ctx.Context(), username)
+	actor, _ := h.resolveAccountID(ctx.Context(), authorID)
 	return actor
+}
+
+func (h *Handler) resolveStatusBySearchURL(ctx context.Context, statusURL string) (*storagemodels.Status, error) {
+	if h == nil || h.repos == nil || h.repos.Status() == nil {
+		return nil, errors.New("status repository unavailable")
+	}
+
+	if status, err := h.repos.Status().GetStatusByURL(ctx, strings.TrimSpace(statusURL)); err == nil && status != nil {
+		return status, nil
+	}
+
+	if candidate := deriveSearchStatusID(statusURL); candidate != "" {
+		return h.repos.Status().GetStatus(ctx, candidate)
+	}
+
+	return nil, errors.New("status not found")
+}
+
+func (h *Handler) resolveStatusFromSearchResult(ctx context.Context, sr *storage.StatusSearchResult) (*storagemodels.Status, error) {
+	if h == nil || h.repos == nil || h.repos.Status() == nil || sr == nil {
+		return nil, errors.New("status repository unavailable")
+	}
+
+	candidates := []string{
+		strings.TrimSpace(sr.StatusID),
+		deriveSearchStatusID(sr.StatusID),
+		deriveSearchStatusID(sr.URL),
+	}
+	seen := map[string]struct{}{}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+
+		status, err := h.repos.Status().GetStatus(ctx, candidate)
+		if err == nil && status != nil {
+			return status, nil
+		}
+	}
+
+	for _, statusURL := range []string{strings.TrimSpace(sr.URL), strings.TrimSpace(sr.StatusID)} {
+		if statusURL == "" || !strings.Contains(statusURL, "://") {
+			continue
+		}
+		status, err := h.repos.Status().GetStatusByURL(ctx, statusURL)
+		if err == nil && status != nil {
+			return status, nil
+		}
+	}
+
+	return nil, errors.New("status not found")
+}
+
+func deriveSearchStatusID(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if !strings.Contains(trimmed, "://") {
+		return trimmed
+	}
+
+	trimmed = strings.TrimRight(trimmed, "/")
+	lastSlash := strings.LastIndex(trimmed, "/")
+	if lastSlash == -1 || lastSlash+1 >= len(trimmed) {
+		return ""
+	}
+
+	return trimmed[lastSlash+1:]
+}
+
+func shouldAugmentStatusSearchByAuthor(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+	if strings.ContainsAny(trimmed, " \t\r\n") {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, schemeHTTP) {
+		return false
+	}
+	return true
+}
+
+func (h *Handler) addAuthorMatchedStatuses(ctx *apptheory.Context, params *SearchParams, viewerUsername string, seen map[string]struct{}, result *models.SearchResult) {
+	if len(result.Statuses) >= params.Limit || params.AccountID != "" || !shouldAugmentStatusSearchByAuthor(params.Query) {
+		return
+	}
+	if h == nil || h.repos == nil || h.repos.Search() == nil || h.repos.Status() == nil {
+		return
+	}
+
+	actors, err := h.repos.Search().SearchAccounts(ctx.Context(), params.Query, params.Limit, false, 0)
+	if err != nil {
+		h.logger.Debug("status author search fallback failed", zap.String("query", params.Query), zap.Error(err))
+		return
+	}
+
+	for _, actor := range actors {
+		if actor == nil || strings.TrimSpace(actor.ID) == "" {
+			continue
+		}
+
+		remaining := params.Limit - len(result.Statuses)
+		if remaining <= 0 {
+			return
+		}
+
+		timeline, timelineErr := h.repos.Status().GetUserTimeline(ctx.Context(), actor.ID, interfaces.PaginationOptions{Limit: remaining})
+		if timelineErr != nil || timeline == nil {
+			continue
+		}
+
+		for _, status := range timeline.Items {
+			if len(result.Statuses) >= params.Limit {
+				return
+			}
+			if !statusVisibleInSearch(status, viewerUsername) {
+				continue
+			}
+
+			apiStatus, convErr := h.convertStorageStatusToAPI(status, viewerUsername)
+			if convErr != nil || apiStatus == nil || strings.TrimSpace(apiStatus.ID) == "" {
+				continue
+			}
+			if _, exists := seen[apiStatus.ID]; exists {
+				continue
+			}
+
+			result.Statuses = append(result.Statuses, *apiStatus)
+			seen[apiStatus.ID] = struct{}{}
+		}
+	}
+}
+
+func statusVisibleInSearch(status *storagemodels.Status, viewerUsername string) bool {
+	if status == nil {
+		return false
+	}
+
+	switch status.Visibility {
+	case storagemodels.VisibilityPublic, storagemodels.VisibilityUnlisted:
+		return true
+	default:
+		return strings.TrimSpace(viewerUsername) != "" && strings.EqualFold(strings.TrimSpace(viewerUsername), strings.TrimSpace(status.AuthorUsername))
+	}
 }
 
 // convertHashtagToTag converts hashtag with history to API tag

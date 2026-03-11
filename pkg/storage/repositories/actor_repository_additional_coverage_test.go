@@ -467,6 +467,75 @@ func TestActorRepository_numeric_id_and_account_search_queries(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestActorRepository_EnsureNumericIDMapping_createsMissingMapping(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	mockDB, mockQuery := setupPermissiveDBAndQuery()
+	repo := NewActorRepository(mockDB, "test-table", logger)
+
+	mockQuery.On("First", mock.AnythingOfType("*models.NumericIDMapping")).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.Actor)
+		m.Actor = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice"},
+			PreferredUsername: "alice",
+		}
+	}).Once()
+	mockQuery.On("Create").Return(nil).Once()
+
+	require.NoError(t, repo.EnsureNumericIDMapping(ctx, "alice"))
+}
+
+func TestActorRepository_EnsureNumericIDMapping_skipsBlankAndExistingMapping(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	mockDB, mockQuery := setupPermissiveDBAndQuery()
+	repo := NewActorRepository(mockDB, "test-table", logger)
+
+	require.NoError(t, repo.EnsureNumericIDMapping(ctx, "   "))
+
+	mockQuery.On("First", mock.AnythingOfType("*models.NumericIDMapping")).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.NumericIDMapping)
+		m.Username = "alice"
+	}).Once()
+
+	require.NoError(t, repo.EnsureNumericIDMapping(ctx, "alice"))
+}
+
+func TestActorRepository_EnsureNumericIDMapping_returnsLookupError(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	mockDB, mockQuery := setupPermissiveDBAndQuery()
+	repo := NewActorRepository(mockDB, "test-table", logger)
+
+	mockQuery.On("First", mock.AnythingOfType("*models.NumericIDMapping")).Return(errors.New("boom")).Once()
+
+	require.Error(t, repo.EnsureNumericIDMapping(ctx, "alice"))
+}
+
+func TestActorRepository_EnsureNumericIDMapping_conditionFailedWithExistingMappingIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	mockDB, mockQuery := setupPermissiveDBAndQuery()
+	repo := NewActorRepository(mockDB, "test-table", logger)
+
+	mockQuery.On("First", mock.AnythingOfType("*models.NumericIDMapping")).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.Actor)
+		m.Actor = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice"},
+			PreferredUsername: "alice",
+		}
+	}).Once()
+	mockQuery.On("Create").Return(dynamormerrors.ErrConditionFailed).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.NumericIDMapping")).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.NumericIDMapping)
+		m.Username = "alice"
+	}).Once()
+
+	require.NoError(t, repo.EnsureNumericIDMapping(ctx, "alice"))
+}
+
 func TestActorRepository_misc_methods(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -497,6 +566,6 @@ func TestActorRepository_misc_methods(t *testing.T) {
 	assert.NoError(t, repo.UpdateActorLastStatusTime(ctx, "alice"))
 	assert.NoError(t, repo.SetActorFields(ctx, "alice", []storage.ActorField{{Name: "n", Value: "v"}}))
 
-	mockQuery.On("Delete").Return(nil).Once()
+	mockQuery.On("Delete").Return(nil).Twice()
 	assert.NoError(t, repo.DeleteActor(ctx, "alice"))
 }

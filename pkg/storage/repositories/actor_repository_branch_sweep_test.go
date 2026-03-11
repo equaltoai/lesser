@@ -26,7 +26,7 @@ func TestActorRepository_branch_sweep_more_lines(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
-		mockQuery.On("Delete").Return(nil).Once()
+		mockQuery.On("Delete").Return(nil).Twice()
 
 		repo := NewActorRepository(mockDB, "test-table", logger)
 		assert.NoError(t, repo.DeleteActor(ctx, "alice"))

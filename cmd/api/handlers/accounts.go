@@ -137,6 +137,8 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *apptheory.Context) (*apptheor
 	h.logger.Info("handle verify_credentials: account retrieved",
 		zap.String("username", claims.Username))
 
+	h.ensureLocalNumericIDMapping(ctx.Context(), claims.Username)
+
 	mastodonAccount, err := h.mastodonAccountFromStorageAccount(account)
 	if err != nil {
 		h.logger.Error("handle verify_credentials: failed to transform account response",
@@ -271,6 +273,7 @@ func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activi
 			if account.Actor == nil {
 				account.Actor = actor
 			}
+			h.ensureLocalNumericIDMapping(ctx, username)
 			return account, nil
 		}
 	}
@@ -281,6 +284,7 @@ func (h *Handler) localStorageAccountForActor(ctx context.Context, actor *activi
 			if account.Actor == nil {
 				account.Actor = actor
 			}
+			h.ensureLocalNumericIDMapping(ctx, username)
 			return account, nil
 		}
 	}
@@ -299,6 +303,37 @@ func (h *Handler) actorAppearsLocal(actor *activitypub.Actor) bool {
 	}
 
 	return !strings.Contains(strings.TrimSpace(actor.PreferredUsername), "@")
+}
+
+type actorNumericIDMappingEnsurer interface {
+	EnsureNumericIDMapping(ctx context.Context, username string) error
+}
+
+func (h *Handler) ensureLocalNumericIDMapping(ctx context.Context, username string) {
+	if h == nil || h.repos == nil {
+		return
+	}
+
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return
+	}
+
+	actorRepo := h.repos.Actor()
+	if actorRepo == nil {
+		return
+	}
+
+	ensurer, ok := actorRepo.(actorNumericIDMappingEnsurer)
+	if !ok {
+		return
+	}
+
+	if err := ensurer.EnsureNumericIDMapping(ctx, username); err != nil && h.logger != nil {
+		h.logger.Warn("failed to ensure local numeric ID mapping",
+			zap.String("username", username),
+			zap.Error(err))
+	}
 }
 
 func storageAccountFromActor(actor *activitypub.Actor) *storage.Account {

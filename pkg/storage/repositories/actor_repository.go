@@ -132,6 +132,11 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 		return ErrorHandler.HandleCreateError(err, "actor", username)
 	}
 
+	if err := r.ensureNumericIDMapping(ctx, numericID, username, actor.ID); err != nil {
+		_ = r.Delete(ctx, "ACTOR#"+username, "PROFILE")
+		return err
+	}
+
 	return nil
 }
 
@@ -191,13 +196,7 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 
 // GetActorByNumericID retrieves an actor by numeric ID
 func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error) {
-	// First get the numeric ID mapping using BaseRepository pattern
-	// Note: This uses a different model type, so we use direct query
-	var mapping models.NumericIDMapping
-	err := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
-		Where("PK", "=", "NUMERIC_ID#"+numericID).
-		Where("SK", "=", "METADATA").
-		First(&mapping)
+	mapping, err := r.lookupNumericIDMapping(ctx, numericID)
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleGetError(err, EntityActor, numericID)
@@ -205,8 +204,34 @@ func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID str
 		return nil, ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
 	}
 
-	// Now get the actual actor using the username
 	return r.GetActor(ctx, mapping.Username)
+}
+
+// EnsureNumericIDMapping recreates the numeric ID lookup row for an existing actor when it is missing.
+func (r *ActorRepository) EnsureNumericIDMapping(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+
+	numericID := common.GenerateNumericID(username)
+	if _, err := r.lookupNumericIDMapping(ctx, numericID); err == nil {
+		return nil
+	} else if !dynamormerrors.IsNotFound(err) {
+		return ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
+	}
+
+	actor, err := r.GetActor(ctx, username)
+	if err != nil {
+		return err
+	}
+
+	actorID := ""
+	if actor != nil {
+		actorID = strings.TrimSpace(actor.ID)
+	}
+
+	return r.ensureNumericIDMapping(ctx, numericID, username, actorID)
 }
 
 // GetActorPrivateKey retrieves an actor's private key
@@ -431,7 +456,70 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 		return ErrorHandler.HandleDeleteError(err, EntityActor, username)
 	}
 
+	if err := r.deleteNumericIDMapping(ctx, common.GenerateNumericID(username)); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (r *ActorRepository) lookupNumericIDMapping(ctx context.Context, numericID string) (*models.NumericIDMapping, error) {
+	var mapping models.NumericIDMapping
+	err := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
+		Where("PK", "=", "NUMERIC_ID#"+numericID).
+		Where("SK", "=", "METADATA").
+		First(&mapping)
+	if err != nil {
+		return nil, err
+	}
+	return &mapping, nil
+}
+
+func (r *ActorRepository) ensureNumericIDMapping(ctx context.Context, numericID, username, actorID string) error {
+	if strings.TrimSpace(numericID) == "" || strings.TrimSpace(username) == "" {
+		return nil
+	}
+
+	mapping := &models.NumericIDMapping{
+		NumericID: strings.TrimSpace(numericID),
+		Username:  strings.TrimSpace(username),
+		ActorID:   strings.TrimSpace(actorID),
+	}
+	err := r.db.WithContext(ctx).Model(mapping).Create()
+	if err == nil {
+		return nil
+	}
+	if !dynamormerrors.IsConditionFailed(err) {
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+	}
+
+	existing, lookupErr := r.lookupNumericIDMapping(ctx, numericID)
+	if lookupErr == nil && existing != nil && strings.EqualFold(existing.Username, mapping.Username) {
+		return nil
+	}
+	if lookupErr == nil {
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+	}
+	if dynamormerrors.IsNotFound(lookupErr) {
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+	}
+	return ErrorHandler.HandleCreateError(lookupErr, "numeric ID mapping", numericID)
+}
+
+func (r *ActorRepository) deleteNumericIDMapping(ctx context.Context, numericID string) error {
+	if strings.TrimSpace(numericID) == "" {
+		return nil
+	}
+
+	err := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
+		Where("PK", "=", "NUMERIC_ID#"+numericID).
+		Where("SK", "=", "METADATA").
+		Delete()
+	if err == nil || dynamormerrors.IsNotFound(err) {
+		return nil
+	}
+
+	return ErrorHandler.HandleDeleteError(err, "numeric ID mapping", numericID)
 }
 
 // SearchAccounts searches for actors by username or display name
