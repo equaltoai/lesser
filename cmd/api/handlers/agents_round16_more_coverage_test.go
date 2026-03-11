@@ -7,7 +7,6 @@ import (
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -129,7 +128,7 @@ func TestAgentsRound16_UpdateAgentHelpers(t *testing.T) {
 }
 
 func TestAgentsRound16_DelegationAndOwnershipHelpers(t *testing.T) {
-	t.Run("validateAgentDelegationRequest enforces username and display_name", func(t *testing.T) {
+	t.Run("validateAgentDelegationRequest enforces username and allows blank legacy profile fields", func(t *testing.T) {
 		h := &Handler{}
 
 		resp, err := h.validateAgentDelegationRequest(&apptheory.Context{}, &apimodels.AgentDelegationRequest{
@@ -145,8 +144,7 @@ func TestAgentsRound16_DelegationAndOwnershipHelpers(t *testing.T) {
 			DisplayName:   "",
 		})
 		require.NoError(t, err)
-		require.NotNil(t, resp)
-		require.Equal(t, http.StatusBadRequest, resp.Status)
+		require.Nil(t, resp)
 	})
 
 	t.Run("validateAgentDelegationRequest applies mastodon rules when present", func(t *testing.T) {
@@ -161,16 +159,6 @@ func TestAgentsRound16_DelegationAndOwnershipHelpers(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusBadRequest, resp.Status)
-	})
-
-	t.Run("clampMaxPostsPerHour applies defaults and clamps", func(t *testing.T) {
-		caps := &agents.Capabilities{MaxPostsPerHour: 0}
-		clampMaxPostsPerHour(caps, 10)
-		require.Equal(t, 10, caps.MaxPostsPerHour)
-
-		caps.MaxPostsPerHour = 100
-		clampMaxPostsPerHour(caps, 10)
-		require.Equal(t, 10, caps.MaxPostsPerHour)
 	})
 
 	t.Run("applyAgentQuarantineExit initializes metadata and stamps approvals", func(t *testing.T) {

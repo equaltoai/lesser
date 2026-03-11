@@ -14,7 +14,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -24,12 +23,9 @@ var errAgentSupportNotImplemented = apperrors.Internal("agent support is not imp
 const delegatedAgentClientID = "lesser-agent-delegation"
 
 const (
-	oauthScopeAdmin         = "admin"
-	oauthScopePush          = "push"
-	oauthScopeWrite         = "write"
-	oauthScopeFollow        = "follow"
-	oauthScopeWriteStatuses = "write:statuses"
-	oauthScopeWriteFollows  = "write:follows"
+	oauthScopeAdmin = "admin"
+	oauthScopePush  = "push"
+	oauthScopeWrite = "write"
 
 	agentQuarantineStatusApproved = "approved"
 )
@@ -607,7 +603,7 @@ func (r *mutationResolver) DeleteAgent(ctx context.Context, username string) (*m
 
 // DelegateToAgent is the resolver for the delegateToAgent field.
 func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.DelegateToAgentInput) (*model.DelegationPayload, error) {
-	if err := r.ensureAgentRegistrationEnabled(ctx); err != nil {
+	if err := r.ensureAgentsEnabled(ctx); err != nil {
 		return nil, err
 	}
 
@@ -619,26 +615,13 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 		return nil, apperrors.InsufficientScope("write:accounts")
 	}
 
-	if r.Storage == nil || r.Storage.Account() == nil || r.Storage.User() == nil {
+	if r.Storage == nil || r.Storage.Account() == nil {
 		return nil, ErrStorageUnavailable
 	}
 
 	agentUsername := strings.TrimSpace(input.AgentUsername)
 	if err := common.ValidateUsernameParamID(agentUsername); err != nil {
 		return nil, err
-	}
-	displayName := strings.TrimSpace(input.DisplayName)
-	if err := common.ValidateRequiredParam("displayName", displayName); err != nil {
-		return nil, err
-	}
-	if err := common.ValidateDisplayName(displayName); err != nil {
-		return nil, err
-	}
-	bio := strings.TrimSpace(derefString(input.Bio))
-	if bio != "" {
-		if err := common.ValidateAccountBio(bio); err != nil {
-			return nil, err
-		}
 	}
 
 	requestedScopes, err := validateDelegationScopes(claims.Scopes, input.Scopes)
@@ -652,91 +635,9 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	}
 
 	now := time.Now().UTC()
-	quarantineDays, maxPostsPerHourAllowed := r.agentRegistrationLimits(ctx)
-
-	agentType := strings.TrimSpace(input.AgentType.String())
-	agentVersion := strings.TrimSpace(derefString(input.AgentVersion))
-	if agentVersion == "" {
-		agentVersion = strings.TrimSpace(input.Version)
-	}
-	if agentVersion == "" {
-		agentVersion = agentVersionUnknown
-	}
-
-	capsDerived := deriveAgentCapabilitiesFromScopes(requestedScopes)
-	clampMaxPostsPerHour(&capsDerived, maxPostsPerHourAllowed)
-	quarantineEnd := now.AddDate(0, 0, quarantineDays)
-
-	ownerIdentifier := "@" + strings.TrimSpace(claims.Username)
-	user := &storage.User{
-		Username:          agentUsername,
-		Email:             "",
-		DisplayName:       displayName,
-		Note:              bio,
-		Approved:          true,
-		Suspended:         false,
-		Silenced:          false,
-		Role:              "user",
-		Locale:            "",
-		Locked:            false,
-		Discoverable:      true,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		IsAgent:           true,
-		AgentType:         agentType,
-		AgentVersion:      agentVersion,
-		AgentOwner:        ownerIdentifier,
-		AgentCreatedBy:    claims.Username,
-		AgentCapabilities: &capsDerived,
-		Metadata: map[string]any{
-			"agent_quarantine_status": "quarantined",
-			"agent_quarantine_start":  now.Format(time.RFC3339),
-			"agent_quarantine_end":    quarantineEnd.Format(time.RFC3339),
-			"agent_delegated_scopes":  requestedScopes,
-		},
-	}
-
-	privateKey, err := federation.GenerateRSAKeyPair(2048)
+	account, err := r.resolveDelegatedAgentAccount(ctx, claims, agentUsername, requestedScopes)
 	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to generate key pair")
-	}
-	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
-	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to encode public key")
-	}
-	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
-	if err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to encode private key")
-	}
-
-	if r.Config == nil {
-		return nil, apperrors.Internal("instance config unavailable")
-	}
-
-	actorID := r.Config.ActorURL(agentUsername)
-	actor := activitypub.NewActor(activitypub.ServiceType, actorID, agentUsername)
-	actor.Name = displayName
-	actor.Summary = bio
-	actor.URL = r.Config.BaseURL() + "/@" + agentUsername
-	actor.CreatedAt = &now
-	actor.PublicKey = &activitypub.PublicKey{
-		ID:           actorID + "#main-key",
-		Owner:        actorID,
-		PublicKeyPem: string(publicKeyPEM),
-	}
-
-	actor = activitypubutil.BuildLocalActor(agentUsername, r.Config.BaseURL(), user, actor)
-	account := &storage.Account{
-		User:       user,
-		Actor:      actor,
-		PrivateKey: string(privateKeyPEM),
-	}
-
-	if err := r.Storage.Account().CreateAccount(ctx, account); err != nil {
-		if common.IsConflict(err) {
-			return nil, apperrors.NewAppError(apperrors.CodeConflict, apperrors.CategoryBusiness, "username already taken")
-		}
-		return nil, apperrors.InternalWithCause(err, "failed to create agent account")
+		return nil, err
 	}
 
 	if r.Config.JWTSecret == "" {
@@ -759,7 +660,7 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	})
 
 	return &model.DelegationPayload{
-		Agent:        r.convertStorageUserToAgent(ctx, user),
+		Agent:        r.convertStorageUserToAgent(ctx, account.User),
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    "Bearer",
@@ -767,6 +668,27 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 		CreatedAt:    model.Time(now),
 		ExpiresIn:    int(accessTTL.Seconds()),
 	}, nil
+}
+
+func (r *mutationResolver) resolveDelegatedAgentAccount(ctx context.Context, claims *auth.Claims, agentUsername string, requestedScopes []string) (*storage.Account, error) {
+	account, err := r.Storage.Account().GetAccount(ctx, agentUsername)
+	if err != nil {
+		if common.IsNotFound(err) {
+			return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
+		}
+		return nil, apperrors.InternalWithCause(err, "failed to load agent account")
+	}
+	if account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
+		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
+	}
+	if !isAgentOwnerOrAdmin(claims, account.User) {
+		return nil, apperrors.Forbidden("not authorized to delegate to agent")
+	}
+	if err := validateDelegationAgainstAgentEnvelope(account.User, requestedScopes); err != nil {
+		return nil, err
+	}
+
+	return account, nil
 }
 
 // RevokeAgentToken is the resolver for the revokeAgentToken field.
@@ -1037,29 +959,6 @@ func (r *Resolver) ensureAgentsEnabled(ctx context.Context) error {
 	return nil
 }
 
-func (r *Resolver) ensureAgentRegistrationEnabled(ctx context.Context) error {
-	if err := r.ensureAgentsEnabled(ctx); err != nil {
-		return err
-	}
-	if r.Config == nil || !r.Config.AllowAgentRegistration {
-		return apperrors.Forbidden("agent registration is disabled")
-	}
-
-	if r.Storage == nil || r.Storage.Instance() == nil {
-		return nil
-	}
-
-	policy, err := r.Storage.Instance().GetAgentInstanceConfig(ctx)
-	if err != nil {
-		return apperrors.InternalWithCause(err, "failed to load agent policy")
-	}
-	if policy == nil || !policy.AllowAgentRegistration {
-		return apperrors.Forbidden("agent registration is disabled by instance policy")
-	}
-
-	return nil
-}
-
 func validateDelegationScopes(ownerScopes []string, requested []string) ([]string, error) {
 	if err := common.ValidateSliceNotEmpty("scopes", requested); err != nil {
 		return nil, err
@@ -1090,6 +989,27 @@ func validateDelegationScopes(ownerScopes []string, requested []string) ([]strin
 	return clean, nil
 }
 
+func validateDelegationAgainstAgentEnvelope(user *storage.User, requestedScopes []string) error {
+	allowedScopes, hasStoredEnvelope := agentDelegationEnvelope(user)
+	if !hasStoredEnvelope {
+		return nil
+	}
+	if !scopesAreSubset(allowedScopes, requestedScopes) {
+		return apperrors.Forbidden("requested scopes exceed agent delegated scopes")
+	}
+	return nil
+}
+
+func agentDelegationEnvelope(user *storage.User) ([]string, bool) {
+	if user == nil || user.Metadata == nil {
+		return nil, false
+	}
+	if _, ok := user.Metadata["agent_delegated_scopes"]; !ok {
+		return nil, false
+	}
+	return agentDelegatedScopes(user), true
+}
+
 func validateAccessTokenTTL(expiresIn *int) (time.Duration, error) {
 	if expiresIn == nil || *expiresIn == 0 {
 		return auth.AccessTokenDuration, nil
@@ -1105,47 +1025,6 @@ func validateAccessTokenTTL(expiresIn *int) (time.Duration, error) {
 	}
 
 	return time.Duration(*expiresIn) * time.Second, nil
-}
-
-func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
-	var caps agents.Capabilities
-
-	for _, scope := range scopes {
-		base := strings.Split(strings.TrimSpace(scope), ":")[0]
-		switch base {
-		case oauthScopeWrite:
-			caps.CanPost = true
-			caps.CanReply = true
-			caps.CanBoost = true
-			caps.CanDM = true
-		case oauthScopeFollow:
-			caps.CanFollow = true
-		}
-
-		if scope == oauthScopeWriteStatuses {
-			caps.CanPost = true
-			caps.CanReply = true
-			caps.CanBoost = true
-			caps.CanDM = true
-		}
-		if scope == oauthScopeWriteFollows {
-			caps.CanFollow = true
-		}
-	}
-
-	return caps
-}
-
-func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
-	if capabilities == nil {
-		return
-	}
-	if capabilities.MaxPostsPerHour <= 0 {
-		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
-	}
-	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
-		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
-	}
 }
 
 func scopesAreSubset(ownerScopes, requested []string) bool {
@@ -1193,28 +1072,6 @@ func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User) bool {
 	}
 	owner = strings.TrimPrefix(owner, "@")
 	return strings.EqualFold(owner, strings.TrimSpace(claims.Username))
-}
-
-func (r *Resolver) agentRegistrationLimits(ctx context.Context) (quarantineDays int, maxPostsPerHourAllowed int) {
-	quarantineDays = 7
-	maxPostsPerHourAllowed = 50
-
-	if r != nil && r.Storage != nil && r.Storage.Instance() != nil {
-		if policy, err := r.Storage.Instance().GetAgentInstanceConfig(ctx); err == nil && policy != nil {
-			if policy.DefaultQuarantineDays > 0 {
-				quarantineDays = policy.DefaultQuarantineDays
-			}
-			if policy.AgentMaxPostsPerHour > 0 {
-				maxPostsPerHourAllowed = policy.AgentMaxPostsPerHour
-			}
-		}
-	}
-
-	if maxPostsPerHourAllowed <= 0 {
-		maxPostsPerHourAllowed = 50
-	}
-
-	return quarantineDays, maxPostsPerHourAllowed
 }
 
 func applyAgentCapabilitiesInput(ctx context.Context, r *mutationResolver, user *storage.User, input *model.AgentCapabilitiesInput) {
