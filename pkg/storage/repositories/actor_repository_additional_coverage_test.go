@@ -405,6 +405,10 @@ func TestActorRepository_numeric_id_and_account_search_queries(t *testing.T) {
 
 	// GetActorByNumericID mapping not found
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.Actor)
+		*out = nil
+	}).Once()
 	_, err := repo.GetActorByNumericID(ctx, "123")
 	assert.Error(t, err)
 
@@ -467,6 +471,36 @@ func TestActorRepository_numeric_id_and_account_search_queries(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestActorRepository_GetActorByNumericID_repairsMissingMappingFromActorRecord(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	mockDB, mockQuery := setupPermissiveDBAndQuery()
+	repo := NewActorRepository(mockDB, "test-table", logger)
+
+	mockQuery.On("First", mock.AnythingOfType("*models.NumericIDMapping")).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		out := args.Get(0).(*[]models.Actor)
+		*out = []models.Actor{{
+			Username:  "alice",
+			NumericID: "123",
+			Actor: &activitypub.Actor{
+				BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice"},
+				PreferredUsername: "alice",
+			},
+		}}
+	}).Once()
+	mockQuery.On("Create").Return(nil).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.Actor)
+		m.Actor = &activitypub.Actor{PreferredUsername: "alice"}
+	}).Once()
+
+	actor, err := repo.GetActorByNumericID(ctx, "123")
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, "alice", actor.PreferredUsername)
+}
+
 func TestActorRepository_misc_methods(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
@@ -497,6 +531,6 @@ func TestActorRepository_misc_methods(t *testing.T) {
 	assert.NoError(t, repo.UpdateActorLastStatusTime(ctx, "alice"))
 	assert.NoError(t, repo.SetActorFields(ctx, "alice", []storage.ActorField{{Name: "n", Value: "v"}}))
 
-	mockQuery.On("Delete").Return(nil).Once()
+	mockQuery.On("Delete").Return(nil).Twice()
 	assert.NoError(t, repo.DeleteActor(ctx, "alice"))
 }

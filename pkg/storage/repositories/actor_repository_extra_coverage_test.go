@@ -106,8 +106,14 @@ func TestActorRepository_SearchAccounts_and_numericID_branches(t *testing.T) {
 		mockDB.On("WithContext", mock.Anything).Return(mockDB)
 		mockDB.On("Model", mock.Anything).Return(mockQuery)
 		mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery)
+		mockQuery.On("Limit", mock.Anything).Return(mockQuery)
 
 		mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Once()
+		mockQuery.On("Scan", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			out := args.Get(0).(*[]models.Actor)
+			*out = nil
+		}).Once()
 
 		repo := NewActorRepository(mockDB, "test-table", logger)
 		_, err := repo.GetActorByNumericID(ctx, "123")
