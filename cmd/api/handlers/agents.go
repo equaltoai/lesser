@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -73,9 +74,9 @@ func (h *Handler) ensureAgentRegistrationEnabled(ctx *apptheory.Context) (*appth
 
 // HandleDelegateAgentLift handles POST /api/v1/agents/delegate.
 //
-// M2: delegated OAuth agent creation.
+// M2: delegated OAuth token issuance for an existing agent.
 func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Response, error) {
-	if resp, err := h.ensureAgentRegistrationEnabled(ctx); resp != nil || err != nil {
+	if resp, err := h.ensureAgentsEnabled(ctx); resp != nil || err != nil {
 		return resp, err
 	}
 
@@ -103,13 +104,7 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		return resp, err
 	}
 
-	now := time.Now().UTC()
-	info, resp, err := parseAgentDelegationInfo(ctx, req.AgentInfo, requestedScopes)
-	if resp != nil || err != nil {
-		return resp, err
-	}
-
-	account, resp, err := h.createDelegatedAgentAccount(ctx, ownerClaims, req, info, requestedScopes, now)
+	account, resp, err := h.resolveDelegatedAgentAccount(ctx, ownerClaims, req.AgentUsername, requestedScopes)
 	if resp != nil || err != nil {
 		return resp, err
 	}
@@ -151,20 +146,79 @@ func (h *Handler) validateAgentDelegationRequest(ctx *apptheory.Context, req *ap
 	if err := common.ValidateUsernameParamID(req.AgentUsername); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
-	if err := common.ValidateRequiredParam("display_name", req.DisplayName); err != nil {
-		return common.RespondValidationError(ctx, err)
-	}
 
 	if h.mastodonLogic != nil {
-		if err := h.mastodonLogic.ValidateDisplayName(req.DisplayName); err != nil {
-			return common.RespondValidationError(ctx, err)
+		if strings.TrimSpace(req.DisplayName) != "" {
+			if err := h.mastodonLogic.ValidateDisplayName(req.DisplayName); err != nil {
+				return common.RespondValidationError(ctx, err)
+			}
 		}
-		if err := h.mastodonLogic.ValidateBio(req.Bio); err != nil {
-			return common.RespondValidationError(ctx, err)
+		if strings.TrimSpace(req.Bio) != "" {
+			if err := h.mastodonLogic.ValidateBio(req.Bio); err != nil {
+				return common.RespondValidationError(ctx, err)
+			}
 		}
 	}
 
 	return nil, nil
+}
+
+func (h *Handler) resolveDelegatedAgentAccount(
+	ctx *apptheory.Context,
+	ownerClaims *auth.Claims,
+	agentUsername string,
+	requestedScopes []string,
+) (*storage.Account, *apptheory.Response, error) {
+	if h == nil || h.repos == nil || h.repos.Account() == nil {
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
+	}
+
+	account, err := h.repos.Account().GetAccount(ctx.Context(), agentUsername)
+	if err != nil {
+		if common.IsNotFound(err) {
+			resp, respErr := common.RespondNotFound(ctx, "agent")
+			return nil, resp, respErr
+		}
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
+	}
+	if account == nil || account.User == nil || !account.User.IsAgent || account.User.Suspended {
+		resp, respErr := common.RespondNotFound(ctx, "agent")
+		return nil, resp, respErr
+	}
+	if !h.isAgentOwnerOrAdmin(ownerClaims, account.User) {
+		resp, respErr := common.RespondForbidden(ctx, "not authorized to delegate to agent")
+		return nil, resp, respErr
+	}
+	if err := validateDelegationAgainstAgentEnvelope(account.User, requestedScopes); err != nil {
+		resp, respErr := common.RespondForbidden(ctx, err.Error())
+		return nil, resp, respErr
+	}
+
+	h.ensureAgentActor(agentUsername, account)
+	return account, nil, nil
+}
+
+func validateDelegationAgainstAgentEnvelope(user *storage.User, requestedScopes []string) error {
+	allowedScopes, hasStoredEnvelope := agentDelegationEnvelope(user)
+	if !hasStoredEnvelope {
+		return nil
+	}
+	if !scopesAreSubset(allowedScopes, requestedScopes) {
+		return errors.New("requested scopes exceed agent delegated scopes")
+	}
+	return nil
+}
+
+func agentDelegationEnvelope(user *storage.User) ([]string, bool) {
+	if user == nil || user.Metadata == nil {
+		return nil, false
+	}
+	if _, ok := user.Metadata["agent_delegated_scopes"]; !ok {
+		return nil, false
+	}
+	return agentDelegatedScopes(user), true
 }
 
 func parseAgentDelegationInfo(ctx *apptheory.Context, raw any, requestedScopes []string) (delegationResolvedInfo, *apptheory.Response, error) {
