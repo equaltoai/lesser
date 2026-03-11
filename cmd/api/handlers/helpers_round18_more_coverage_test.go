@@ -199,6 +199,19 @@ func TestHelpersRound18_StatusReblogTargetID(t *testing.T) {
 	require.Empty(t, statusReblogTargetID(nil))
 }
 
+func TestHelpersRound18_StatusHelpersHandleNilInputs(t *testing.T) {
+	cfg := round11TestConfig()
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	authorAccount := h.loadStatusAuthorAccount(context.Background(), nil)
+	require.NotNil(t, authorAccount)
+	require.NotNil(t, authorAccount.User)
+	require.Empty(t, authorAccount.User.Username)
+
+	require.False(t, h.statusBookmarked(context.Background(), nil, "alice"))
+	require.Nil(t, h.loadReblogStatus(context.Background(), nil, "alice"))
+}
+
 func TestHelpersRound18_ResponseDefaults(t *testing.T) {
 	h := &Handler{logger: round10TestLogger(t)}
 
