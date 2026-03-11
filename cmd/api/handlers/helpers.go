@@ -347,6 +347,8 @@ func (h *Handler) loadStatusAuthorAccount(ctx context.Context, storageStatus *st
 		}
 	}
 
+	h.ensureLocalNumericIDMapping(ctx, storageStatus.AuthorUsername)
+
 	if authorAccount.User == nil {
 		authorAccount.User = &storage.User{
 			Username:    storageStatus.AuthorUsername,

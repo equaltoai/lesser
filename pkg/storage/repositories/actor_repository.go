@@ -198,20 +198,40 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error) {
 	mapping, err := r.lookupNumericIDMapping(ctx, numericID)
 	if err != nil {
-		if !dynamormerrors.IsNotFound(err) {
-			return nil, ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, EntityActor, numericID)
 		}
-
-		mapping, err = r.repairNumericIDMapping(ctx, numericID)
-		if err != nil {
-			if dynamormerrors.IsNotFound(err) {
-				return nil, ErrorHandler.HandleGetError(err, EntityActor, numericID)
-			}
-			return nil, ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
-		}
+		return nil, ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
 	}
 
 	return r.GetActor(ctx, mapping.Username)
+}
+
+// EnsureNumericIDMapping recreates the numeric ID lookup row for an existing actor when it is missing.
+func (r *ActorRepository) EnsureNumericIDMapping(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+
+	numericID := common.GenerateNumericID(username)
+	if _, err := r.lookupNumericIDMapping(ctx, numericID); err == nil {
+		return nil
+	} else if !dynamormerrors.IsNotFound(err) {
+		return ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
+	}
+
+	actor, err := r.GetActor(ctx, username)
+	if err != nil {
+		return err
+	}
+
+	actorID := ""
+	if actor != nil {
+		actorID = strings.TrimSpace(actor.ID)
+	}
+
+	return r.ensureNumericIDMapping(ctx, numericID, username, actorID)
 }
 
 // GetActorPrivateKey retrieves an actor's private key
@@ -453,36 +473,6 @@ func (r *ActorRepository) lookupNumericIDMapping(ctx context.Context, numericID 
 		return nil, err
 	}
 	return &mapping, nil
-}
-
-func (r *ActorRepository) repairNumericIDMapping(ctx context.Context, numericID string) (*models.NumericIDMapping, error) {
-	var actors []models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Filter("NumericID", "=", numericID).
-		Filter("SK", "=", models.SKProfile).
-		Limit(1).
-		Scan(&actors)
-	if err != nil {
-		return nil, err
-	}
-	if len(actors) == 0 {
-		return nil, dynamormerrors.ErrItemNotFound
-	}
-
-	actorModel := actors[0]
-	mapping := &models.NumericIDMapping{
-		NumericID: numericID,
-		Username:  actorModel.Username,
-	}
-	if actorModel.Actor != nil {
-		mapping.ActorID = actorModel.Actor.ID
-	}
-
-	if err := r.ensureNumericIDMapping(ctx, numericID, mapping.Username, mapping.ActorID); err != nil {
-		return nil, err
-	}
-
-	return mapping, nil
 }
 
 func (r *ActorRepository) ensureNumericIDMapping(ctx context.Context, numericID, username, actorID string) error {
