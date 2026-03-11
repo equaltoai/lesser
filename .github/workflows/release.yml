@@ -14,6 +14,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   publish:
     # Prevent duplicate releases when a workflow_dispatch run creates + pushes a tag.
@@ -24,12 +27,12 @@ jobs:
       RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -69,13 +72,22 @@ jobs:
         run: bash scripts/build_release_assets.sh "${RELEASE_VERSION}" dist/release
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_VERSION }}
-          files: |
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          assets=(
             dist/release/lesser-linux-amd64
             dist/release/lesser-linux-arm64
             dist/release/lesser-darwin-amd64
             dist/release/lesser-darwin-arm64
             dist/release/checksums.txt
             dist/release/lesser-release.json
+          )
+
+          if gh release view "${RELEASE_VERSION}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_VERSION}" "${assets[@]}" --clobber
+          else
+            gh release create "${RELEASE_VERSION}" "${assets[@]}" --verify-tag
+          fi
