@@ -147,6 +147,28 @@ func TestRelationshipRecord_UpdateKeys(t *testing.T) {
 		assert.Empty(t, record.GSI3PK)
 		assert.Empty(t, record.GSI3SK)
 	})
+
+	t.Run("preserves prepopulated local domain GSIs", func(t *testing.T) {
+		record := &RelationshipRecord{
+			PK:     "FOLLOW#alice",
+			SK:     "FOLLOWING#bob",
+			GSI1PK: "FOLLOW#bob",
+			GSI1SK: "FOLLOWER#alice",
+			GSI2PK: "FOLLOWER_DOMAIN#dev.simulacrum.greater.website",
+			GSI2SK: "FOLLOWING#bob",
+			GSI3PK: "FOLLOWING_DOMAIN#dev.simulacrum.greater.website",
+			GSI3SK: "FOLLOWER#alice",
+			State:  RelationshipAccepted,
+		}
+
+		err := record.UpdateKeys()
+		require.NoError(t, err)
+
+		assert.Equal(t, "FOLLOWER_DOMAIN#dev.simulacrum.greater.website", record.GSI2PK)
+		assert.Equal(t, "FOLLOWING#bob", record.GSI2SK)
+		assert.Equal(t, "FOLLOWING_DOMAIN#dev.simulacrum.greater.website", record.GSI3PK)
+		assert.Equal(t, "FOLLOWER#alice", record.GSI3SK)
+	})
 }
 
 func TestNewRelationshipRecord(t *testing.T) {
