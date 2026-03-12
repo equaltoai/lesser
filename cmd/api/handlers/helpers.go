@@ -82,8 +82,7 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 
 	// Check if it's a numeric ID (Mastodon compatibility)
 	if common.ValidateNumericID("account_id", accountID) == nil && len(accountID) >= 10 {
-		// It's a numeric ID - use the dedicated lookup method
-		return h.repos.Actor().GetActorByNumericID(ctx, accountID)
+		return h.resolveNumericAccountID(ctx, accountID)
 	}
 
 	// Support federated handles in addition to local usernames.
@@ -119,6 +118,107 @@ func normalizeResolvedAccountID(accountID string) string {
 		normalized = decoded
 	}
 	return normalized
+}
+
+func (h *Handler) resolveNumericAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
+	actor, err := h.repos.Actor().GetActorByNumericID(ctx, accountID)
+	if err == nil || !isMissingAccountLookup(err) {
+		return actor, err
+	}
+
+	recovered, recoverErr := h.recoverLocalActorByNumericID(ctx, accountID)
+	if recoverErr == nil {
+		return recovered, nil
+	}
+	if !isMissingAccountLookup(recoverErr) {
+		return nil, recoverErr
+	}
+	return nil, err
+}
+
+func isMissingAccountLookup(err error) bool {
+	if err == nil {
+		return false
+	}
+	if common.IsNotFound(err) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+func (h *Handler) recoverLocalActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error) {
+	if h == nil || h.repos == nil || h.repos.GetDB() == nil || h.cfg == nil {
+		return nil, common.ActorNotFoundError{Username: numericID}
+	}
+
+	domain := normalizeLocalActorDomain(h.cfg.Domain)
+	if domain == "" {
+		return nil, common.ActorNotFoundError{Username: numericID}
+	}
+
+	var actorModels []storageModels.Actor
+	err := h.repos.GetDB().WithContext(ctx).
+		Model(&storageModels.Actor{}).
+		Index("gsi3").
+		Where("gsi3PK", "=", fmt.Sprintf("DOMAIN#%s", domain)).
+		All(&actorModels)
+	if err != nil {
+		return nil, err
+	}
+
+	trimmedNumericID := strings.TrimSpace(numericID)
+	for _, actorModel := range actorModels {
+		if strings.TrimSpace(actorModel.NumericID) != trimmedNumericID {
+			continue
+		}
+
+		username := strings.TrimSpace(actorModel.Username)
+		if username == "" && actorModel.Actor != nil {
+			username = strings.TrimSpace(actorModel.Actor.PreferredUsername)
+		}
+		if username == "" {
+			continue
+		}
+
+		h.ensureLocalNumericIDMapping(ctx, username)
+
+		actor, err := h.repos.Actor().GetActor(ctx, username)
+		if err == nil && actor != nil {
+			return actor, nil
+		}
+		if err != nil && !isMissingAccountLookup(err) {
+			return nil, err
+		}
+
+		actor = actorModel.Actor
+		if actor == nil {
+			continue
+		}
+		if strings.TrimSpace(actor.PreferredUsername) == "" {
+			actor.PreferredUsername = username
+		}
+		if strings.TrimSpace(actor.ID) == "" {
+			baseURL := handlerBaseURL(h)
+			if baseURL != "" {
+				actor.ID = baseURL + "/users/" + username
+			}
+		}
+		return actor, nil
+	}
+
+	return nil, common.ActorNotFoundError{Username: numericID}
+}
+
+func normalizeLocalActorDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimPrefix(strings.TrimPrefix(domain, "https://"), "http://")
+	if idx := strings.Index(domain, "/"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	if idx := strings.Index(domain, ":"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	return strings.ToLower(strings.TrimSpace(domain))
 }
 
 // authenticateUser handles the common pattern of extracting and validating user authentication

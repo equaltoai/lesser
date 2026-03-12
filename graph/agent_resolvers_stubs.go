@@ -23,12 +23,9 @@ var errAgentSupportNotImplemented = apperrors.Internal("agent support is not imp
 const delegatedAgentClientID = "lesser-agent-delegation"
 
 const (
-	oauthScopeAdmin         = "admin"
-	oauthScopePush          = "push"
-	oauthScopeWrite         = "write"
-	oauthScopeFollow        = "follow"
-	oauthScopeWriteStatuses = "write:statuses"
-	oauthScopeWriteFollows  = "write:follows"
+	oauthScopeAdmin = "admin"
+	oauthScopePush  = "push"
+	oauthScopeWrite = "write"
 
 	agentQuarantineStatusApproved = "approved"
 )
@@ -985,7 +982,6 @@ func (r *Resolver) ensureAgentRegistrationEnabled(ctx context.Context) error {
 
 	return nil
 }
-
 func validateDelegationScopes(ownerScopes []string, requested []string) ([]string, error) {
 	if err := common.ValidateSliceNotEmpty("scopes", requested); err != nil {
 		return nil, err
@@ -1066,17 +1062,17 @@ func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 			caps.CanReply = true
 			caps.CanBoost = true
 			caps.CanDM = true
-		case oauthScopeFollow:
+		case "follow":
 			caps.CanFollow = true
 		}
 
-		if scope == oauthScopeWriteStatuses {
+		if scope == "write:statuses" {
 			caps.CanPost = true
 			caps.CanReply = true
 			caps.CanBoost = true
 			caps.CanDM = true
 		}
-		if scope == oauthScopeWriteFollows {
+		if scope == "write:follows" {
 			caps.CanFollow = true
 		}
 	}
