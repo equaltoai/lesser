@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -127,5 +128,32 @@ func TestAgentDelegationHelpersRound20(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, account)
 		require.NotNil(t, resp)
+	})
+
+	t.Run("createDelegatedAgentAccount internal error", func(t *testing.T) {
+		errorState := &round10QueryState{
+			agentInstanceConfig: policy,
+			createErrorOnce:     errors.New("boom"),
+		}
+		hError, _, _ := round11NewHandler(t, cfg, errorState)
+		hError.repos.Account().SetEncryptor(noopEncryptor{})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", nil, nil, nil)
+		require.NoError(t, err)
+		account, resp, err := hError.createDelegatedAgentAccount(
+			ctx,
+			&auth.Claims{Username: "owner"},
+			&apimodels.AgentDelegationRequest{AgentUsername: "agent1"},
+			delegationResolvedInfo{
+				AgentType:    agentTypeCustom,
+				AgentVersion: "v1",
+				Capabilities: &agents.Capabilities{},
+			},
+			[]string{"read"},
+			time.Now().UTC(),
+		)
+		require.NoError(t, err)
+		require.Nil(t, account)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusInternalServerError, resp.Status)
 	})
 }
