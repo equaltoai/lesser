@@ -554,6 +554,60 @@ type ComplexityRoot struct {
 		Version           func(childComplexity int) int
 	}
 
+	AgentAccessLease struct {
+		AbsoluteExpiresAt    func(childComplexity int) int
+		AgentWallet          func(childComplexity int) int
+		CreatedAt            func(childComplexity int) int
+		DeviceLabel          func(childComplexity int) int
+		ID                   func(childComplexity int) int
+		IdleExpiresAt        func(childComplexity int) int
+		IdleTimeoutHours     func(childComplexity int) int
+		LastUsedAt           func(childComplexity int) int
+		LeaseVersion         func(childComplexity int) int
+		PrincipalUsername    func(childComplexity int) int
+		PrincipalWallet      func(childComplexity int) int
+		RevokedAt            func(childComplexity int) int
+		RevokedBy            func(childComplexity int) int
+		RevokedReason        func(childComplexity int) int
+		Scopes               func(childComplexity int) int
+		SessionKeyCreatedAt  func(childComplexity int) int
+		SessionKeyLastUsedAt func(childComplexity int) int
+		SessionKeyType       func(childComplexity int) int
+		SessionPublicKey     func(childComplexity int) int
+		Status               func(childComplexity int) int
+		UpdatedAt            func(childComplexity int) int
+		Username             func(childComplexity int) int
+	}
+
+	AgentAccessLeaseChallenge struct {
+		AbsoluteTTLHours func(childComplexity int) int
+		Action           func(childComplexity int) int
+		AgentWallet      func(childComplexity int) int
+		DeviceLabel      func(childComplexity int) int
+		ExpiresAt        func(childComplexity int) int
+		ID               func(childComplexity int) int
+		IdleTimeoutHours func(childComplexity int) int
+		IssuedAt         func(childComplexity int) int
+		LeaseID          func(childComplexity int) int
+		Message          func(childComplexity int) int
+		PrincipalWallet  func(childComplexity int) int
+		Scopes           func(childComplexity int) int
+		SessionKeyType   func(childComplexity int) int
+		SessionPublicKey func(childComplexity int) int
+		TypedDataJSON    func(childComplexity int) int
+		Username         func(childComplexity int) int
+		WalletAddress    func(childComplexity int) int
+	}
+
+	AgentAccessLeaseTokenPayload struct {
+		AccessToken func(childComplexity int) int
+		CreatedAt   func(childComplexity int) int
+		ExpiresIn   func(childComplexity int) int
+		LeaseID     func(childComplexity int) int
+		Scope       func(childComplexity int) int
+		TokenType   func(childComplexity int) int
+	}
+
 	AgentActivityConnection struct {
 		Edges      func(childComplexity int) int
 		PageInfo   func(childComplexity int) int
@@ -1722,169 +1776,177 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AcceptFollowRequest                func(childComplexity int, accountID string) int
-		AcceptMessageRequest               func(childComplexity int, conversationID string) int
-		AcknowledgeSeverance               func(childComplexity int, id string) int
-		AddAccountsToList                  func(childComplexity int, id string, accountIds []string) int
-		AddAnnouncementReaction            func(childComplexity int, id string, name string) int
-		AddArticleToCategory               func(childComplexity int, categoryID string, articleID string) int
-		AddArticleToSeries                 func(childComplexity int, seriesID string, articleID string, order *int) int
-		AddCommunityNote                   func(childComplexity int, input model.CommunityNoteInput) int
-		AddDomainBlock                     func(childComplexity int, domain string) int
-		AddFilterKeyword                   func(childComplexity int, filterID string, input model.AddFilterKeywordInput) int
-		AddFilterStatus                    func(childComplexity int, filterID string, statusID string) int
-		AdminAccountAction                 func(childComplexity int, input model.AdminAccountActionInput) int
-		AdminCreateAnnouncement            func(childComplexity int, input model.AdminCreateAnnouncementInput) int
-		AdminCreateDomainAllow             func(childComplexity int, domain string) int
-		AdminCreateDomainBlock             func(childComplexity int, input model.AdminDomainBlockCreateInput) int
-		AdminCreateEmailDomainBlock        func(childComplexity int, domain string) int
-		AdminCreateUser                    func(childComplexity int, input model.AdminCreateUserInput) int
-		AdminDeleteDomainAllow             func(childComplexity int, id string) int
-		AdminDeleteDomainBlock             func(childComplexity int, id string) int
-		AdminDeleteEmailDomainBlock        func(childComplexity int, id string) int
-		AdminDeleteStatus                  func(childComplexity int, id string) int
-		AdminDemoteReviewer                func(childComplexity int, id string) int
-		AdminOverrideModerationEvent       func(childComplexity int, input model.AdminModerationEventOverrideInput) int
-		AdminPromoteReviewer               func(childComplexity int, id string) int
-		AdminReportAction                  func(childComplexity int, id string, action model.AdminReportAction) int
-		AdminSetStatusSensitive            func(childComplexity int, id string, sensitive bool) int
-		AdminSuspendAgent                  func(childComplexity int, username string) int
-		AdminUnverifyAgent                 func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
-		AdminUpdateDomainBlock             func(childComplexity int, id string, input model.AdminDomainBlockUpdateInput) int
-		AdminUpdateTrust                   func(childComplexity int, input model.AdminUpdateTrustInput) int
-		AdminVerifyAgent                   func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
-		AttemptReconnection                func(childComplexity int, id string) int
-		AutosaveDraft                      func(childComplexity int, id string, content string) int
-		BlockActor                         func(childComplexity int, id string) int
-		BookmarkObject                     func(childComplexity int, id string) int
-		CancelImport                       func(childComplexity int, id string) int
-		CancelScheduledDraft               func(childComplexity int, id string) int
-		CancelScheduledStatus              func(childComplexity int, id string) int
-		ClearAdminInstanceOverrides        func(childComplexity int, features []model.InstanceConfigFeature) int
-		ClearNotifications                 func(childComplexity int) int
-		CreateArticle                      func(childComplexity int, input model.CreateArticleInput) int
-		CreateCategory                     func(childComplexity int, input model.CreateCategoryInput) int
-		CreateConversation                 func(childComplexity int, participantID string) int
-		CreateDraft                        func(childComplexity int, input model.CreateDraftInput) int
-		CreateEmoji                        func(childComplexity int, input model.CreateEmojiInput) int
-		CreateExport                       func(childComplexity int, input model.CreateExportInput) int
-		CreateFilter                       func(childComplexity int, input model.CreateFilterInput) int
-		CreateImport                       func(childComplexity int, input model.CreateImportInput) int
-		CreateList                         func(childComplexity int, input model.CreateListInput) int
-		CreateModerationPattern            func(childComplexity int, input model.ModerationPatternInput) int
-		CreateNote                         func(childComplexity int, input model.CreateNoteInput) int
-		CreatePublication                  func(childComplexity int, input model.CreatePublicationInput) int
-		CreateQuoteNote                    func(childComplexity int, input model.CreateQuoteNoteInput) int
-		CreateReport                       func(childComplexity int, input model.CreateReportInput) int
-		CreateSeries                       func(childComplexity int, input model.CreateSeriesInput) int
-		CreateVouch                        func(childComplexity int, input model.CreateVouchInput) int
-		DeclineMessageRequest              func(childComplexity int, conversationID string) int
-		DelegateToAgent                    func(childComplexity int, input model.DelegateToAgentInput) int
-		DeleteAgent                        func(childComplexity int, username string) int
-		DeleteArticle                      func(childComplexity int, id string) int
-		DeleteCategory                     func(childComplexity int, id string) int
-		DeleteConversation                 func(childComplexity int, conversationID string) int
-		DeleteDraft                        func(childComplexity int, id string) int
-		DeleteEmoji                        func(childComplexity int, shortcode string) int
-		DeleteFilter                       func(childComplexity int, id string) int
-		DeleteFilterKeyword                func(childComplexity int, filterID string, keywordID string) int
-		DeleteFilterStatus                 func(childComplexity int, filterID string, filterStatusID string) int
-		DeleteList                         func(childComplexity int, id string) int
-		DeleteMessage                      func(childComplexity int, messageID string) int
-		DeleteModerationPattern            func(childComplexity int, id string) int
-		DeleteObject                       func(childComplexity int, id string) int
-		DeletePushSubscription             func(childComplexity int) int
-		DeleteSeries                       func(childComplexity int, id string) int
-		DismissAnnouncement                func(childComplexity int, id string) int
-		DismissNotification                func(childComplexity int, id string) int
-		ExportReputation                   func(childComplexity int) int
-		FlagObject                         func(childComplexity int, input model.FlagInput) int
-		FollowActor                        func(childComplexity int, id string) int
-		FollowHashtag                      func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
-		ImportReputation                   func(childComplexity int, document string) int
-		IncorporateSoul                    func(childComplexity int, agentID string, targetAgentUsername string) int
-		InvitePublicationMember            func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
-		LikeObject                         func(childComplexity int, id string) int
-		MarkConversationAsRead             func(childComplexity int, id string) int
-		MarkNotificationGroupAsRead        func(childComplexity int, groupID string) int
-		MuteActor                          func(childComplexity int, id string, notifications *bool) int
-		MuteHashtag                        func(childComplexity int, hashtag string, until *model.Time) int
-		MuteStatus                         func(childComplexity int, id string, durationSeconds *int) int
-		OptimizeFederationCosts            func(childComplexity int, threshold float64) int
-		PauseFederation                    func(childComplexity int, domain string, reason string, until *model.Time) int
-		PinObject                          func(childComplexity int, id string) int
-		PreloadMedia                       func(childComplexity int, mediaIds []string) int
-		PublishDraft                       func(childComplexity int, id string) int
-		RegisterAccount                    func(childComplexity int, input model.RegisterAccountInput) int
-		RegisterAgent                      func(childComplexity int, input model.RegisterAgentInput) int
-		RegisterPushSubscription           func(childComplexity int, input model.RegisterPushSubscriptionInput) int
-		RejectFollowRequest                func(childComplexity int, accountID string) int
-		RemoveAccountsFromList             func(childComplexity int, id string, accountIds []string) int
-		RemoveAnnouncementReaction         func(childComplexity int, id string, name string) int
-		RemoveArticleFromCategory          func(childComplexity int, categoryID string, articleID string) int
-		RemoveArticleFromSeries            func(childComplexity int, seriesID string, articleID string) int
-		RemoveDomainBlock                  func(childComplexity int, domain string) int
-		RemovePublicationMember            func(childComplexity int, publicationID string, userID string) int
-		ReorderSeriesArticles              func(childComplexity int, seriesID string, articleIds []string) int
-		ReportStreamingQuality             func(childComplexity int, input model.StreamingQualityInput) int
-		RequestAIAnalysis                  func(childComplexity int, objectID string, objectType *string, force *bool) int
-		RequestStreamingURL                func(childComplexity int, mediaID string, quality *model.StreamQuality) int
-		RestoreRevision                    func(childComplexity int, objectID string, version int) int
-		ResumeFederation                   func(childComplexity int, domain string) int
-		RevokeAgentToken                   func(childComplexity int, username string) int
-		RevokeVouch                        func(childComplexity int, id string) int
-		SaveMarkers                        func(childComplexity int, input []*model.SaveMarkerInput) int
-		ScheduleDraft                      func(childComplexity int, id string, scheduledAt model.Time) int
-		ScheduleStatus                     func(childComplexity int, input model.ScheduleStatusInput) int
-		SendDirectMessage                  func(childComplexity int, to string, content string, mediaIds []string) int
-		SendMessage                        func(childComplexity int, conversationID string, content string, mediaIds []string) int
-		SetFederationLimit                 func(childComplexity int, domain string, limit model.FederationLimitInput) int
-		SetInstanceBudget                  func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
-		ShareObject                        func(childComplexity int, id string) int
-		SubmitModerationReview             func(childComplexity int, input model.ModerationReviewInput) int
-		SyncMissingReplies                 func(childComplexity int, noteID string) int
-		SyncThread                         func(childComplexity int, noteURL string, depth *int) int
-		TestFilters                        func(childComplexity int, input model.FilterTestInput) int
-		TrainModerationModel               func(childComplexity int, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) int
-		UnblockActor                       func(childComplexity int, id string) int
-		UnbookmarkObject                   func(childComplexity int, id string) int
-		UnfollowActor                      func(childComplexity int, id string) int
-		UnfollowHashtag                    func(childComplexity int, hashtag string) int
-		UnlikeObject                       func(childComplexity int, id string) int
-		UnmuteActor                        func(childComplexity int, id string) int
-		UnmuteStatus                       func(childComplexity int, id string) int
-		UnpinObject                        func(childComplexity int, id string) int
-		UnshareObject                      func(childComplexity int, id string) int
-		UpdateAccountQuotePermissions      func(childComplexity int, input model.UpdateAccountQuotePermissionsInput) int
-		UpdateAdminAgentPolicy             func(childComplexity int, input model.UpdateAdminAgentPolicyInput) int
-		UpdateAdminInstanceManagedDefaults func(childComplexity int, input model.UpdateAdminInstanceManagedDefaultsInput) int
-		UpdateAdminInstanceOverrides       func(childComplexity int, input model.UpdateAdminInstanceOverridesInput) int
-		UpdateAgent                        func(childComplexity int, username string, input model.UpdateAgentInput) int
-		UpdateArticle                      func(childComplexity int, id string, input model.UpdateArticleInput) int
-		UpdateCategory                     func(childComplexity int, id string, input model.UpdateCategoryInput) int
-		UpdateDraft                        func(childComplexity int, id string, input model.UpdateDraftInput) int
-		UpdateEmoji                        func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
-		UpdateFilter                       func(childComplexity int, id string, input model.UpdateFilterInput) int
-		UpdateHashtagNotifications         func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
-		UpdateList                         func(childComplexity int, id string, input model.UpdateListInput) int
-		UpdateMedia                        func(childComplexity int, id string, input model.UpdateMediaInput) int
-		UpdateModerationPattern            func(childComplexity int, id string, input model.ModerationPatternInput) int
-		UpdateProfile                      func(childComplexity int, input model.UpdateProfileInput) int
-		UpdatePublication                  func(childComplexity int, id string, input model.UpdatePublicationInput) int
-		UpdatePublicationMemberRole        func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
-		UpdatePushSubscription             func(childComplexity int, input model.UpdatePushSubscriptionInput) int
-		UpdateQuotePermissions             func(childComplexity int, noteID string, quoteable bool, permission model.QuotePermission) int
-		UpdateRelationship                 func(childComplexity int, id string, input model.UpdateRelationshipInput) int
-		UpdateScheduledStatus              func(childComplexity int, id string, input model.UpdateScheduledStatusInput) int
-		UpdateSeries                       func(childComplexity int, id string, input model.UpdateSeriesInput) int
-		UpdateStatus                       func(childComplexity int, id string, input model.UpdateStatusInput) int
-		UpdateStreamingPreferences         func(childComplexity int, input model.StreamingPreferencesInput) int
-		UpdateTrust                        func(childComplexity int, input model.TrustInput) int
-		UpdateUserPreferences              func(childComplexity int, input model.UpdateUserPreferencesInput) int
-		UploadMedia                        func(childComplexity int, input model.UploadMediaInput) int
-		VerifyReputation                   func(childComplexity int, document string) int
-		VoteCommunityNote                  func(childComplexity int, id string, helpful bool) int
-		WithdrawFromQuotes                 func(childComplexity int, noteID string) int
+		AcceptFollowRequest                       func(childComplexity int, accountID string) int
+		AcceptMessageRequest                      func(childComplexity int, conversationID string) int
+		AcknowledgeSeverance                      func(childComplexity int, id string) int
+		AddAccountsToList                         func(childComplexity int, id string, accountIds []string) int
+		AddAnnouncementReaction                   func(childComplexity int, id string, name string) int
+		AddArticleToCategory                      func(childComplexity int, categoryID string, articleID string) int
+		AddArticleToSeries                        func(childComplexity int, seriesID string, articleID string, order *int) int
+		AddCommunityNote                          func(childComplexity int, input model.CommunityNoteInput) int
+		AddDomainBlock                            func(childComplexity int, domain string) int
+		AddFilterKeyword                          func(childComplexity int, filterID string, input model.AddFilterKeywordInput) int
+		AddFilterStatus                           func(childComplexity int, filterID string, statusID string) int
+		AdminAccountAction                        func(childComplexity int, input model.AdminAccountActionInput) int
+		AdminCreateAnnouncement                   func(childComplexity int, input model.AdminCreateAnnouncementInput) int
+		AdminCreateDomainAllow                    func(childComplexity int, domain string) int
+		AdminCreateDomainBlock                    func(childComplexity int, input model.AdminDomainBlockCreateInput) int
+		AdminCreateEmailDomainBlock               func(childComplexity int, domain string) int
+		AdminCreateUser                           func(childComplexity int, input model.AdminCreateUserInput) int
+		AdminDeleteDomainAllow                    func(childComplexity int, id string) int
+		AdminDeleteDomainBlock                    func(childComplexity int, id string) int
+		AdminDeleteEmailDomainBlock               func(childComplexity int, id string) int
+		AdminDeleteStatus                         func(childComplexity int, id string) int
+		AdminDemoteReviewer                       func(childComplexity int, id string) int
+		AdminOverrideModerationEvent              func(childComplexity int, input model.AdminModerationEventOverrideInput) int
+		AdminPromoteReviewer                      func(childComplexity int, id string) int
+		AdminReportAction                         func(childComplexity int, id string, action model.AdminReportAction) int
+		AdminSetStatusSensitive                   func(childComplexity int, id string, sensitive bool) int
+		AdminSuspendAgent                         func(childComplexity int, username string) int
+		AdminUnverifyAgent                        func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
+		AdminUpdateDomainBlock                    func(childComplexity int, id string, input model.AdminDomainBlockUpdateInput) int
+		AdminUpdateTrust                          func(childComplexity int, input model.AdminUpdateTrustInput) int
+		AdminVerifyAgent                          func(childComplexity int, username string, input *model.AdminVerifyAgentInput) int
+		AttemptReconnection                       func(childComplexity int, id string) int
+		AuthorizeAgentAccessLeaseSessionKey       func(childComplexity int, username string, leaseID string, input model.AuthorizeAgentAccessLeaseSessionKeyInput) int
+		AutosaveDraft                             func(childComplexity int, id string, content string) int
+		BlockActor                                func(childComplexity int, id string) int
+		BookmarkObject                            func(childComplexity int, id string) int
+		CancelImport                              func(childComplexity int, id string) int
+		CancelScheduledDraft                      func(childComplexity int, id string) int
+		CancelScheduledStatus                     func(childComplexity int, id string) int
+		ClearAdminInstanceOverrides               func(childComplexity int, features []model.InstanceConfigFeature) int
+		ClearNotifications                        func(childComplexity int) int
+		CreateAgentAccessLease                    func(childComplexity int, username string, input model.CreateAgentAccessLeaseInput) int
+		CreateAgentAccessLeaseAgentChallenge      func(childComplexity int, username string, input model.AgentAccessLeaseChallengeInput) int
+		CreateAgentAccessLeasePrincipalChallenge  func(childComplexity int, username string, input model.AgentAccessLeaseChallengeInput) int
+		CreateAgentAccessLeaseRenewChallenge      func(childComplexity int, username string, leaseID string) int
+		CreateAgentAccessLeaseSessionKeyChallenge func(childComplexity int, username string, leaseID string, input model.AgentAccessLeaseSessionKeyChallengeInput) int
+		CreateArticle                             func(childComplexity int, input model.CreateArticleInput) int
+		CreateCategory                            func(childComplexity int, input model.CreateCategoryInput) int
+		CreateConversation                        func(childComplexity int, participantID string) int
+		CreateDraft                               func(childComplexity int, input model.CreateDraftInput) int
+		CreateEmoji                               func(childComplexity int, input model.CreateEmojiInput) int
+		CreateExport                              func(childComplexity int, input model.CreateExportInput) int
+		CreateFilter                              func(childComplexity int, input model.CreateFilterInput) int
+		CreateImport                              func(childComplexity int, input model.CreateImportInput) int
+		CreateList                                func(childComplexity int, input model.CreateListInput) int
+		CreateModerationPattern                   func(childComplexity int, input model.ModerationPatternInput) int
+		CreateNote                                func(childComplexity int, input model.CreateNoteInput) int
+		CreatePublication                         func(childComplexity int, input model.CreatePublicationInput) int
+		CreateQuoteNote                           func(childComplexity int, input model.CreateQuoteNoteInput) int
+		CreateReport                              func(childComplexity int, input model.CreateReportInput) int
+		CreateSeries                              func(childComplexity int, input model.CreateSeriesInput) int
+		CreateVouch                               func(childComplexity int, input model.CreateVouchInput) int
+		DeclineMessageRequest                     func(childComplexity int, conversationID string) int
+		DelegateToAgent                           func(childComplexity int, input model.DelegateToAgentInput) int
+		DeleteAgent                               func(childComplexity int, username string) int
+		DeleteArticle                             func(childComplexity int, id string) int
+		DeleteCategory                            func(childComplexity int, id string) int
+		DeleteConversation                        func(childComplexity int, conversationID string) int
+		DeleteDraft                               func(childComplexity int, id string) int
+		DeleteEmoji                               func(childComplexity int, shortcode string) int
+		DeleteFilter                              func(childComplexity int, id string) int
+		DeleteFilterKeyword                       func(childComplexity int, filterID string, keywordID string) int
+		DeleteFilterStatus                        func(childComplexity int, filterID string, filterStatusID string) int
+		DeleteList                                func(childComplexity int, id string) int
+		DeleteMessage                             func(childComplexity int, messageID string) int
+		DeleteModerationPattern                   func(childComplexity int, id string) int
+		DeleteObject                              func(childComplexity int, id string) int
+		DeletePushSubscription                    func(childComplexity int) int
+		DeleteSeries                              func(childComplexity int, id string) int
+		DismissAnnouncement                       func(childComplexity int, id string) int
+		DismissNotification                       func(childComplexity int, id string) int
+		ExchangeAgentAccessLeaseToken             func(childComplexity int, username string, leaseID string, input model.ExchangeAgentAccessLeaseTokenInput) int
+		ExportReputation                          func(childComplexity int) int
+		FlagObject                                func(childComplexity int, input model.FlagInput) int
+		FollowActor                               func(childComplexity int, id string) int
+		FollowHashtag                             func(childComplexity int, hashtag string, notifyLevel *model.NotificationLevel) int
+		ImportReputation                          func(childComplexity int, document string) int
+		IncorporateSoul                           func(childComplexity int, agentID string, targetAgentUsername string) int
+		InvitePublicationMember                   func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
+		LikeObject                                func(childComplexity int, id string) int
+		MarkConversationAsRead                    func(childComplexity int, id string) int
+		MarkNotificationGroupAsRead               func(childComplexity int, groupID string) int
+		MuteActor                                 func(childComplexity int, id string, notifications *bool) int
+		MuteHashtag                               func(childComplexity int, hashtag string, until *model.Time) int
+		MuteStatus                                func(childComplexity int, id string, durationSeconds *int) int
+		OptimizeFederationCosts                   func(childComplexity int, threshold float64) int
+		PauseFederation                           func(childComplexity int, domain string, reason string, until *model.Time) int
+		PinObject                                 func(childComplexity int, id string) int
+		PreloadMedia                              func(childComplexity int, mediaIds []string) int
+		PublishDraft                              func(childComplexity int, id string) int
+		RegisterAccount                           func(childComplexity int, input model.RegisterAccountInput) int
+		RegisterAgent                             func(childComplexity int, input model.RegisterAgentInput) int
+		RegisterPushSubscription                  func(childComplexity int, input model.RegisterPushSubscriptionInput) int
+		RejectFollowRequest                       func(childComplexity int, accountID string) int
+		RemoveAccountsFromList                    func(childComplexity int, id string, accountIds []string) int
+		RemoveAnnouncementReaction                func(childComplexity int, id string, name string) int
+		RemoveArticleFromCategory                 func(childComplexity int, categoryID string, articleID string) int
+		RemoveArticleFromSeries                   func(childComplexity int, seriesID string, articleID string) int
+		RemoveDomainBlock                         func(childComplexity int, domain string) int
+		RemovePublicationMember                   func(childComplexity int, publicationID string, userID string) int
+		ReorderSeriesArticles                     func(childComplexity int, seriesID string, articleIds []string) int
+		ReportStreamingQuality                    func(childComplexity int, input model.StreamingQualityInput) int
+		RequestAIAnalysis                         func(childComplexity int, objectID string, objectType *string, force *bool) int
+		RequestStreamingURL                       func(childComplexity int, mediaID string, quality *model.StreamQuality) int
+		RestoreRevision                           func(childComplexity int, objectID string, version int) int
+		ResumeFederation                          func(childComplexity int, domain string) int
+		RevokeAgentAccessLease                    func(childComplexity int, username string, leaseID string, input *model.RevokeAgentAccessLeaseInput) int
+		RevokeAgentToken                          func(childComplexity int, username string) int
+		RevokeVouch                               func(childComplexity int, id string) int
+		SaveMarkers                               func(childComplexity int, input []*model.SaveMarkerInput) int
+		ScheduleDraft                             func(childComplexity int, id string, scheduledAt model.Time) int
+		ScheduleStatus                            func(childComplexity int, input model.ScheduleStatusInput) int
+		SendDirectMessage                         func(childComplexity int, to string, content string, mediaIds []string) int
+		SendMessage                               func(childComplexity int, conversationID string, content string, mediaIds []string) int
+		SetFederationLimit                        func(childComplexity int, domain string, limit model.FederationLimitInput) int
+		SetInstanceBudget                         func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
+		ShareObject                               func(childComplexity int, id string) int
+		SubmitModerationReview                    func(childComplexity int, input model.ModerationReviewInput) int
+		SyncMissingReplies                        func(childComplexity int, noteID string) int
+		SyncThread                                func(childComplexity int, noteURL string, depth *int) int
+		TestFilters                               func(childComplexity int, input model.FilterTestInput) int
+		TrainModerationModel                      func(childComplexity int, samples []*model.ModerationSampleInput, options *model.BedrockTrainingOptions) int
+		UnblockActor                              func(childComplexity int, id string) int
+		UnbookmarkObject                          func(childComplexity int, id string) int
+		UnfollowActor                             func(childComplexity int, id string) int
+		UnfollowHashtag                           func(childComplexity int, hashtag string) int
+		UnlikeObject                              func(childComplexity int, id string) int
+		UnmuteActor                               func(childComplexity int, id string) int
+		UnmuteStatus                              func(childComplexity int, id string) int
+		UnpinObject                               func(childComplexity int, id string) int
+		UnshareObject                             func(childComplexity int, id string) int
+		UpdateAccountQuotePermissions             func(childComplexity int, input model.UpdateAccountQuotePermissionsInput) int
+		UpdateAdminAgentPolicy                    func(childComplexity int, input model.UpdateAdminAgentPolicyInput) int
+		UpdateAdminInstanceManagedDefaults        func(childComplexity int, input model.UpdateAdminInstanceManagedDefaultsInput) int
+		UpdateAdminInstanceOverrides              func(childComplexity int, input model.UpdateAdminInstanceOverridesInput) int
+		UpdateAgent                               func(childComplexity int, username string, input model.UpdateAgentInput) int
+		UpdateArticle                             func(childComplexity int, id string, input model.UpdateArticleInput) int
+		UpdateCategory                            func(childComplexity int, id string, input model.UpdateCategoryInput) int
+		UpdateDraft                               func(childComplexity int, id string, input model.UpdateDraftInput) int
+		UpdateEmoji                               func(childComplexity int, shortcode string, input model.UpdateEmojiInput) int
+		UpdateFilter                              func(childComplexity int, id string, input model.UpdateFilterInput) int
+		UpdateHashtagNotifications                func(childComplexity int, hashtag string, settings model.HashtagNotificationSettingsInput) int
+		UpdateList                                func(childComplexity int, id string, input model.UpdateListInput) int
+		UpdateMedia                               func(childComplexity int, id string, input model.UpdateMediaInput) int
+		UpdateModerationPattern                   func(childComplexity int, id string, input model.ModerationPatternInput) int
+		UpdateProfile                             func(childComplexity int, input model.UpdateProfileInput) int
+		UpdatePublication                         func(childComplexity int, id string, input model.UpdatePublicationInput) int
+		UpdatePublicationMemberRole               func(childComplexity int, publicationID string, userID string, role model.PublicationRole) int
+		UpdatePushSubscription                    func(childComplexity int, input model.UpdatePushSubscriptionInput) int
+		UpdateQuotePermissions                    func(childComplexity int, noteID string, quoteable bool, permission model.QuotePermission) int
+		UpdateRelationship                        func(childComplexity int, id string, input model.UpdateRelationshipInput) int
+		UpdateScheduledStatus                     func(childComplexity int, id string, input model.UpdateScheduledStatusInput) int
+		UpdateSeries                              func(childComplexity int, id string, input model.UpdateSeriesInput) int
+		UpdateStatus                              func(childComplexity int, id string, input model.UpdateStatusInput) int
+		UpdateStreamingPreferences                func(childComplexity int, input model.StreamingPreferencesInput) int
+		UpdateTrust                               func(childComplexity int, input model.TrustInput) int
+		UpdateUserPreferences                     func(childComplexity int, input model.UpdateUserPreferencesInput) int
+		UploadMedia                               func(childComplexity int, input model.UploadMediaInput) int
+		VerifyReputation                          func(childComplexity int, document string) int
+		VoteCommunityNote                         func(childComplexity int, id string, helpful bool) int
+		WithdrawFromQuotes                        func(childComplexity int, noteID string) int
 	}
 
 	MuteHashtagPayload struct {
@@ -2180,6 +2242,7 @@ type ComplexityRoot struct {
 		AdminTrustGraph           func(childComplexity int, limit *int) int
 		AffectedRelationships     func(childComplexity int, severedRelationshipID string) int
 		Agent                     func(childComplexity int, username string) int
+		AgentAccessLeases         func(childComplexity int, username string) int
 		AgentActivity             func(childComplexity int, username string, first *int, after *model.Cursor) int
 		AgentMemorySearch         func(childComplexity int, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) int
 		Agents                    func(childComplexity int, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) int
@@ -3158,6 +3221,14 @@ type MutationResolver interface {
 	DeleteAgent(ctx context.Context, username string) (*model.Agent, error)
 	DelegateToAgent(ctx context.Context, input model.DelegateToAgentInput) (*model.DelegationPayload, error)
 	RevokeAgentToken(ctx context.Context, username string) (bool, error)
+	CreateAgentAccessLeasePrincipalChallenge(ctx context.Context, username string, input model.AgentAccessLeaseChallengeInput) (*model.AgentAccessLeaseChallenge, error)
+	CreateAgentAccessLeaseAgentChallenge(ctx context.Context, username string, input model.AgentAccessLeaseChallengeInput) (*model.AgentAccessLeaseChallenge, error)
+	CreateAgentAccessLease(ctx context.Context, username string, input model.CreateAgentAccessLeaseInput) (*model.AgentAccessLease, error)
+	RevokeAgentAccessLease(ctx context.Context, username string, leaseID string, input *model.RevokeAgentAccessLeaseInput) (*model.AgentAccessLease, error)
+	CreateAgentAccessLeaseSessionKeyChallenge(ctx context.Context, username string, leaseID string, input model.AgentAccessLeaseSessionKeyChallengeInput) (*model.AgentAccessLeaseChallenge, error)
+	AuthorizeAgentAccessLeaseSessionKey(ctx context.Context, username string, leaseID string, input model.AuthorizeAgentAccessLeaseSessionKeyInput) (*model.AgentAccessLease, error)
+	CreateAgentAccessLeaseRenewChallenge(ctx context.Context, username string, leaseID string) (*model.AgentAccessLeaseChallenge, error)
+	ExchangeAgentAccessLeaseToken(ctx context.Context, username string, leaseID string, input model.ExchangeAgentAccessLeaseTokenInput) (*model.AgentAccessLeaseTokenPayload, error)
 	UpdateAdminAgentPolicy(ctx context.Context, input model.UpdateAdminAgentPolicyInput) (*model.AdminAgentPolicy, error)
 	AdminVerifyAgent(ctx context.Context, username string, input *model.AdminVerifyAgentInput) (*model.Agent, error)
 	AdminUnverifyAgent(ctx context.Context, username string, input *model.AdminVerifyAgentInput) (*model.Agent, error)
@@ -3312,6 +3383,7 @@ type QueryResolver interface {
 	Agents(ctx context.Context, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) (*model.AgentConnection, error)
 	MyAgents(ctx context.Context) ([]*model.Agent, error)
 	AgentActivity(ctx context.Context, username string, first *int, after *model.Cursor) (*model.AgentActivityConnection, error)
+	AgentAccessLeases(ctx context.Context, username string) ([]*model.AgentAccessLease, error)
 	AdminAgentPolicy(ctx context.Context) (*model.AdminAgentPolicy, error)
 	AgentMemorySearch(ctx context.Context, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 	MySouls(ctx context.Context) ([]*model.SoulInventoryItem, error)
@@ -5568,6 +5640,321 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Agent.Version(childComplexity), true
+
+	case "AgentAccessLease.absoluteExpiresAt":
+		if e.complexity.AgentAccessLease.AbsoluteExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.AbsoluteExpiresAt(childComplexity), true
+
+	case "AgentAccessLease.agentWallet":
+		if e.complexity.AgentAccessLease.AgentWallet == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.AgentWallet(childComplexity), true
+
+	case "AgentAccessLease.createdAt":
+		if e.complexity.AgentAccessLease.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.CreatedAt(childComplexity), true
+
+	case "AgentAccessLease.deviceLabel":
+		if e.complexity.AgentAccessLease.DeviceLabel == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.DeviceLabel(childComplexity), true
+
+	case "AgentAccessLease.id":
+		if e.complexity.AgentAccessLease.ID == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.ID(childComplexity), true
+
+	case "AgentAccessLease.idleExpiresAt":
+		if e.complexity.AgentAccessLease.IdleExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.IdleExpiresAt(childComplexity), true
+
+	case "AgentAccessLease.idleTimeoutHours":
+		if e.complexity.AgentAccessLease.IdleTimeoutHours == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.IdleTimeoutHours(childComplexity), true
+
+	case "AgentAccessLease.lastUsedAt":
+		if e.complexity.AgentAccessLease.LastUsedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.LastUsedAt(childComplexity), true
+
+	case "AgentAccessLease.leaseVersion":
+		if e.complexity.AgentAccessLease.LeaseVersion == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.LeaseVersion(childComplexity), true
+
+	case "AgentAccessLease.principalUsername":
+		if e.complexity.AgentAccessLease.PrincipalUsername == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.PrincipalUsername(childComplexity), true
+
+	case "AgentAccessLease.principalWallet":
+		if e.complexity.AgentAccessLease.PrincipalWallet == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.PrincipalWallet(childComplexity), true
+
+	case "AgentAccessLease.revokedAt":
+		if e.complexity.AgentAccessLease.RevokedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.RevokedAt(childComplexity), true
+
+	case "AgentAccessLease.revokedBy":
+		if e.complexity.AgentAccessLease.RevokedBy == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.RevokedBy(childComplexity), true
+
+	case "AgentAccessLease.revokedReason":
+		if e.complexity.AgentAccessLease.RevokedReason == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.RevokedReason(childComplexity), true
+
+	case "AgentAccessLease.scopes":
+		if e.complexity.AgentAccessLease.Scopes == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.Scopes(childComplexity), true
+
+	case "AgentAccessLease.sessionKeyCreatedAt":
+		if e.complexity.AgentAccessLease.SessionKeyCreatedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.SessionKeyCreatedAt(childComplexity), true
+
+	case "AgentAccessLease.sessionKeyLastUsedAt":
+		if e.complexity.AgentAccessLease.SessionKeyLastUsedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.SessionKeyLastUsedAt(childComplexity), true
+
+	case "AgentAccessLease.sessionKeyType":
+		if e.complexity.AgentAccessLease.SessionKeyType == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.SessionKeyType(childComplexity), true
+
+	case "AgentAccessLease.sessionPublicKey":
+		if e.complexity.AgentAccessLease.SessionPublicKey == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.SessionPublicKey(childComplexity), true
+
+	case "AgentAccessLease.status":
+		if e.complexity.AgentAccessLease.Status == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.Status(childComplexity), true
+
+	case "AgentAccessLease.updatedAt":
+		if e.complexity.AgentAccessLease.UpdatedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.UpdatedAt(childComplexity), true
+
+	case "AgentAccessLease.username":
+		if e.complexity.AgentAccessLease.Username == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.Username(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.absoluteTTLHours":
+		if e.complexity.AgentAccessLeaseChallenge.AbsoluteTTLHours == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.AbsoluteTTLHours(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.action":
+		if e.complexity.AgentAccessLeaseChallenge.Action == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.Action(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.agentWallet":
+		if e.complexity.AgentAccessLeaseChallenge.AgentWallet == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.AgentWallet(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.deviceLabel":
+		if e.complexity.AgentAccessLeaseChallenge.DeviceLabel == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.DeviceLabel(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.expiresAt":
+		if e.complexity.AgentAccessLeaseChallenge.ExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.ExpiresAt(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.id":
+		if e.complexity.AgentAccessLeaseChallenge.ID == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.ID(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.idleTimeoutHours":
+		if e.complexity.AgentAccessLeaseChallenge.IdleTimeoutHours == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.IdleTimeoutHours(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.issuedAt":
+		if e.complexity.AgentAccessLeaseChallenge.IssuedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.IssuedAt(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.leaseID":
+		if e.complexity.AgentAccessLeaseChallenge.LeaseID == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.LeaseID(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.message":
+		if e.complexity.AgentAccessLeaseChallenge.Message == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.Message(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.principalWallet":
+		if e.complexity.AgentAccessLeaseChallenge.PrincipalWallet == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.PrincipalWallet(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.scopes":
+		if e.complexity.AgentAccessLeaseChallenge.Scopes == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.Scopes(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.sessionKeyType":
+		if e.complexity.AgentAccessLeaseChallenge.SessionKeyType == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.SessionKeyType(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.sessionPublicKey":
+		if e.complexity.AgentAccessLeaseChallenge.SessionPublicKey == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.SessionPublicKey(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.typedDataJson":
+		if e.complexity.AgentAccessLeaseChallenge.TypedDataJSON == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.TypedDataJSON(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.username":
+		if e.complexity.AgentAccessLeaseChallenge.Username == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.Username(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.walletAddress":
+		if e.complexity.AgentAccessLeaseChallenge.WalletAddress == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.WalletAddress(childComplexity), true
+
+	case "AgentAccessLeaseTokenPayload.accessToken":
+		if e.complexity.AgentAccessLeaseTokenPayload.AccessToken == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseTokenPayload.AccessToken(childComplexity), true
+
+	case "AgentAccessLeaseTokenPayload.createdAt":
+		if e.complexity.AgentAccessLeaseTokenPayload.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseTokenPayload.CreatedAt(childComplexity), true
+
+	case "AgentAccessLeaseTokenPayload.expiresIn":
+		if e.complexity.AgentAccessLeaseTokenPayload.ExpiresIn == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseTokenPayload.ExpiresIn(childComplexity), true
+
+	case "AgentAccessLeaseTokenPayload.leaseID":
+		if e.complexity.AgentAccessLeaseTokenPayload.LeaseID == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseTokenPayload.LeaseID(childComplexity), true
+
+	case "AgentAccessLeaseTokenPayload.scope":
+		if e.complexity.AgentAccessLeaseTokenPayload.Scope == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseTokenPayload.Scope(childComplexity), true
+
+	case "AgentAccessLeaseTokenPayload.tokenType":
+		if e.complexity.AgentAccessLeaseTokenPayload.TokenType == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseTokenPayload.TokenType(childComplexity), true
 
 	case "AgentActivityConnection.edges":
 		if e.complexity.AgentActivityConnection.Edges == nil {
@@ -11313,6 +11700,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.AttemptReconnection(childComplexity, args["id"].(string)), true
 
+	case "Mutation.authorizeAgentAccessLeaseSessionKey":
+		if e.complexity.Mutation.AuthorizeAgentAccessLeaseSessionKey == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_authorizeAgentAccessLeaseSessionKey_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.AuthorizeAgentAccessLeaseSessionKey(childComplexity, args["username"].(string), args["leaseID"].(string), args["input"].(model.AuthorizeAgentAccessLeaseSessionKeyInput)), true
+
 	case "Mutation.autosaveDraft":
 		if e.complexity.Mutation.AutosaveDraft == nil {
 			break
@@ -11403,6 +11802,66 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.ClearNotifications(childComplexity), true
+
+	case "Mutation.createAgentAccessLease":
+		if e.complexity.Mutation.CreateAgentAccessLease == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createAgentAccessLease_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateAgentAccessLease(childComplexity, args["username"].(string), args["input"].(model.CreateAgentAccessLeaseInput)), true
+
+	case "Mutation.createAgentAccessLeaseAgentChallenge":
+		if e.complexity.Mutation.CreateAgentAccessLeaseAgentChallenge == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createAgentAccessLeaseAgentChallenge_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateAgentAccessLeaseAgentChallenge(childComplexity, args["username"].(string), args["input"].(model.AgentAccessLeaseChallengeInput)), true
+
+	case "Mutation.createAgentAccessLeasePrincipalChallenge":
+		if e.complexity.Mutation.CreateAgentAccessLeasePrincipalChallenge == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createAgentAccessLeasePrincipalChallenge_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateAgentAccessLeasePrincipalChallenge(childComplexity, args["username"].(string), args["input"].(model.AgentAccessLeaseChallengeInput)), true
+
+	case "Mutation.createAgentAccessLeaseRenewChallenge":
+		if e.complexity.Mutation.CreateAgentAccessLeaseRenewChallenge == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createAgentAccessLeaseRenewChallenge_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateAgentAccessLeaseRenewChallenge(childComplexity, args["username"].(string), args["leaseID"].(string)), true
+
+	case "Mutation.createAgentAccessLeaseSessionKeyChallenge":
+		if e.complexity.Mutation.CreateAgentAccessLeaseSessionKeyChallenge == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createAgentAccessLeaseSessionKeyChallenge_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.CreateAgentAccessLeaseSessionKeyChallenge(childComplexity, args["username"].(string), args["leaseID"].(string), args["input"].(model.AgentAccessLeaseSessionKeyChallengeInput)), true
 
 	case "Mutation.createArticle":
 		if e.complexity.Mutation.CreateArticle == nil {
@@ -11819,6 +12278,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.DismissNotification(childComplexity, args["id"].(string)), true
 
+	case "Mutation.exchangeAgentAccessLeaseToken":
+		if e.complexity.Mutation.ExchangeAgentAccessLeaseToken == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_exchangeAgentAccessLeaseToken_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.ExchangeAgentAccessLeaseToken(childComplexity, args["username"].(string), args["leaseID"].(string), args["input"].(model.ExchangeAgentAccessLeaseTokenInput)), true
+
 	case "Mutation.exportReputation":
 		if e.complexity.Mutation.ExportReputation == nil {
 			break
@@ -12221,6 +12692,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.ResumeFederation(childComplexity, args["domain"].(string)), true
+
+	case "Mutation.revokeAgentAccessLease":
+		if e.complexity.Mutation.RevokeAgentAccessLease == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_revokeAgentAccessLease_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.RevokeAgentAccessLease(childComplexity, args["username"].(string), args["leaseID"].(string), args["input"].(*model.RevokeAgentAccessLeaseInput)), true
 
 	case "Mutation.revokeAgentToken":
 		if e.complexity.Mutation.RevokeAgentToken == nil {
@@ -14362,6 +14845,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Agent(childComplexity, args["username"].(string)), true
+
+	case "Query.agentAccessLeases":
+		if e.complexity.Query.AgentAccessLeases == nil {
+			break
+		}
+
+		args, err := ec.field_Query_agentAccessLeases_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.AgentAccessLeases(childComplexity, args["username"].(string)), true
 
 	case "Query.agentActivity":
 		if e.complexity.Query.AgentActivity == nil {
@@ -18618,11 +19113,15 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputAdminTrustConfigPatchInput,
 		ec.unmarshalInputAdminUpdateTrustInput,
 		ec.unmarshalInputAdminVerifyAgentInput,
+		ec.unmarshalInputAgentAccessLeaseChallengeInput,
+		ec.unmarshalInputAgentAccessLeaseSessionKeyChallengeInput,
 		ec.unmarshalInputAgentCapabilitiesInput,
 		ec.unmarshalInputAgentPostAttributionInput,
+		ec.unmarshalInputAuthorizeAgentAccessLeaseSessionKeyInput,
 		ec.unmarshalInputBedrockTrainingOptions,
 		ec.unmarshalInputCommunityNoteInput,
 		ec.unmarshalInputContentMapInput,
+		ec.unmarshalInputCreateAgentAccessLeaseInput,
 		ec.unmarshalInputCreateArticleInput,
 		ec.unmarshalInputCreateCategoryInput,
 		ec.unmarshalInputCreateDraftInput,
@@ -18641,6 +19140,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputDateRangeInput,
 		ec.unmarshalInputDelegateToAgentInput,
 		ec.unmarshalInputDirectoryFiltersInput,
+		ec.unmarshalInputExchangeAgentAccessLeaseTokenInput,
 		ec.unmarshalInputFederationLimitInput,
 		ec.unmarshalInputFilterTestInput,
 		ec.unmarshalInputFlagInput,
@@ -18662,6 +19162,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputRegisterAccountInput,
 		ec.unmarshalInputRegisterAgentInput,
 		ec.unmarshalInputRegisterPushSubscriptionInput,
+		ec.unmarshalInputRevokeAgentAccessLeaseInput,
 		ec.unmarshalInputSaveMarkerInput,
 		ec.unmarshalInputScheduleStatusInput,
 		ec.unmarshalInputStreamingPreferencesInput,
@@ -19253,6 +19754,27 @@ func (ec *executionContext) field_Mutation_attemptReconnection_args(ctx context.
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_authorizeAgentAccessLeaseSessionKey_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "leaseID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["leaseID"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNAuthorizeAgentAccessLeaseSessionKeyInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAuthorizeAgentAccessLeaseSessionKeyInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_autosaveDraft_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -19332,6 +19854,91 @@ func (ec *executionContext) field_Mutation_clearAdminInstanceOverrides_args(ctx 
 		return nil, err
 	}
 	args["features"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_createAgentAccessLeaseAgentChallenge_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNAgentAccessLeaseChallengeInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallengeInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_createAgentAccessLeasePrincipalChallenge_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNAgentAccessLeaseChallengeInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallengeInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_createAgentAccessLeaseRenewChallenge_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "leaseID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["leaseID"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_createAgentAccessLeaseSessionKeyChallenge_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "leaseID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["leaseID"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNAgentAccessLeaseSessionKeyChallengeInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseSessionKeyChallengeInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg2
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_createAgentAccessLease_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNCreateAgentAccessLeaseInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCreateAgentAccessLeaseInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg1
 	return args, nil
 }
 
@@ -19716,6 +20323,27 @@ func (ec *executionContext) field_Mutation_dismissNotification_args(ctx context.
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_exchangeAgentAccessLeaseToken_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "leaseID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["leaseID"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNExchangeAgentAccessLeaseTokenInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐExchangeAgentAccessLeaseTokenInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg2
 	return args, nil
 }
 
@@ -20174,6 +20802,27 @@ func (ec *executionContext) field_Mutation_resumeFederation_args(ctx context.Con
 		return nil, err
 	}
 	args["domain"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_revokeAgentAccessLease_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "leaseID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["leaseID"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalORevokeAgentAccessLeaseInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRevokeAgentAccessLeaseInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg2
 	return args, nil
 }
 
@@ -21208,6 +21857,17 @@ func (ec *executionContext) field_Query_affectedRelationships_args(ctx context.C
 		return nil, err
 	}
 	args["severedRelationshipId"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_agentAccessLeases_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
 	return args, nil
 }
 
@@ -38031,6 +38691,1956 @@ func (ec *executionContext) _Agent_activityCount(ctx context.Context, field grap
 func (ec *executionContext) fieldContext_Agent_activityCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Agent",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_id(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_username(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_username(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Username, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_username(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_principalUsername(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_principalUsername(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalUsername, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_principalUsername(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_principalWallet(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_principalWallet(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalWallet, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_principalWallet(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_agentWallet(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_agentWallet(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentWallet, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_agentWallet(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_scopes(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_scopes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Scopes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_scopes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_deviceLabel(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_deviceLabel(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeviceLabel, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_deviceLabel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_status(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_status(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Status, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_idleTimeoutHours(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IdleTimeoutHours, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_idleTimeoutHours(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_idleExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IdleExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_idleExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_absoluteExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_absoluteExpiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AbsoluteExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_absoluteExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_lastUsedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_lastUsedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LastUsedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_lastUsedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_leaseVersion(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_leaseVersion(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LeaseVersion, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_leaseVersion(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_sessionPublicKey(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_sessionPublicKey(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SessionPublicKey, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_sessionPublicKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_sessionKeyType(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_sessionKeyType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SessionKeyType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_sessionKeyType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_sessionKeyCreatedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_sessionKeyCreatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SessionKeyCreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_sessionKeyCreatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_sessionKeyLastUsedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_sessionKeyLastUsedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SessionKeyLastUsedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_sessionKeyLastUsedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_updatedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_updatedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.UpdatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_updatedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_revokedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_revokedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RevokedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_revokedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_revokedBy(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_revokedBy(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RevokedBy, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_revokedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLease_revokedReason(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_revokedReason(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RevokedReason, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_revokedReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_id(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_id(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_leaseID(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_leaseID(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LeaseID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_leaseID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_username(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_username(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Username, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_username(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_action(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_action(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Action, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_action(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_walletAddress(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_walletAddress(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.WalletAddress, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_walletAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_principalWallet(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_principalWallet(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.PrincipalWallet, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_principalWallet(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_agentWallet(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_agentWallet(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AgentWallet, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_agentWallet(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_sessionPublicKey(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_sessionPublicKey(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SessionPublicKey, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_sessionPublicKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_sessionKeyType(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_sessionKeyType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SessionKeyType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_sessionKeyType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_scopes(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_scopes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Scopes, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]string)
+	fc.Result = res
+	return ec.marshalNString2ᚕstringᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_scopes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_deviceLabel(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_deviceLabel(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeviceLabel, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_deviceLabel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_idleTimeoutHours(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IdleTimeoutHours, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_absoluteTTLHours(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AbsoluteTTLHours, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_message(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Message, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_message(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_typedDataJson(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_typedDataJson(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TypedDataJSON, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_typedDataJson(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_issuedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_issuedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IssuedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_issuedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_expiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseTokenPayload_leaseID(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseTokenPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseTokenPayload_leaseID(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LeaseID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseTokenPayload_leaseID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseTokenPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseTokenPayload_accessToken(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseTokenPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseTokenPayload_accessToken(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AccessToken, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseTokenPayload_accessToken(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseTokenPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseTokenPayload_tokenType(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseTokenPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseTokenPayload_tokenType(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TokenType, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseTokenPayload_tokenType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseTokenPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseTokenPayload_scope(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseTokenPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseTokenPayload_scope(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Scope, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseTokenPayload_scope(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseTokenPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseTokenPayload_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseTokenPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseTokenPayload_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseTokenPayload_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseTokenPayload",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseTokenPayload_expiresIn(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseTokenPayload) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseTokenPayload_expiresIn(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ExpiresIn, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseTokenPayload_expiresIn(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseTokenPayload",
 		Field:      field,
 		IsMethod:   false,
 		IsResolver: false,
@@ -85167,6 +87777,742 @@ func (ec *executionContext) fieldContext_Mutation_revokeAgentToken(ctx context.C
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_createAgentAccessLeasePrincipalChallenge(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_createAgentAccessLeasePrincipalChallenge(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateAgentAccessLeasePrincipalChallenge(rctx, fc.Args["username"].(string), fc.Args["input"].(model.AgentAccessLeaseChallengeInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLeaseChallenge)
+	fc.Result = res
+	return ec.marshalNAgentAccessLeaseChallenge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallenge(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeasePrincipalChallenge(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLeaseChallenge_id(ctx, field)
+			case "leaseID":
+				return ec.fieldContext_AgentAccessLeaseChallenge_leaseID(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLeaseChallenge_username(ctx, field)
+			case "action":
+				return ec.fieldContext_AgentAccessLeaseChallenge_action(ctx, field)
+			case "walletAddress":
+				return ec.fieldContext_AgentAccessLeaseChallenge_walletAddress(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_agentWallet(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionKeyType(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLeaseChallenge_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLeaseChallenge_deviceLabel(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
+			case "absoluteTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "message":
+				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
+			case "typedDataJson":
+				return ec.fieldContext_AgentAccessLeaseChallenge_typedDataJson(ctx, field)
+			case "issuedAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_issuedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_expiresAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLeaseChallenge", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createAgentAccessLeasePrincipalChallenge_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_createAgentAccessLeaseAgentChallenge(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_createAgentAccessLeaseAgentChallenge(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateAgentAccessLeaseAgentChallenge(rctx, fc.Args["username"].(string), fc.Args["input"].(model.AgentAccessLeaseChallengeInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLeaseChallenge)
+	fc.Result = res
+	return ec.marshalNAgentAccessLeaseChallenge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallenge(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeaseAgentChallenge(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLeaseChallenge_id(ctx, field)
+			case "leaseID":
+				return ec.fieldContext_AgentAccessLeaseChallenge_leaseID(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLeaseChallenge_username(ctx, field)
+			case "action":
+				return ec.fieldContext_AgentAccessLeaseChallenge_action(ctx, field)
+			case "walletAddress":
+				return ec.fieldContext_AgentAccessLeaseChallenge_walletAddress(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_agentWallet(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionKeyType(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLeaseChallenge_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLeaseChallenge_deviceLabel(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
+			case "absoluteTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "message":
+				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
+			case "typedDataJson":
+				return ec.fieldContext_AgentAccessLeaseChallenge_typedDataJson(ctx, field)
+			case "issuedAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_issuedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_expiresAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLeaseChallenge", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createAgentAccessLeaseAgentChallenge_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_createAgentAccessLease(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_createAgentAccessLease(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateAgentAccessLease(rctx, fc.Args["username"].(string), fc.Args["input"].(model.CreateAgentAccessLeaseInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLease)
+	fc.Result = res
+	return ec.marshalNAgentAccessLease2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLease(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createAgentAccessLease(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLease_id(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLease_username(ctx, field)
+			case "principalUsername":
+				return ec.fieldContext_AgentAccessLease_principalUsername(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLease_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLease_agentWallet(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLease_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLease_deviceLabel(ctx, field)
+			case "status":
+				return ec.fieldContext_AgentAccessLease_status(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "idleExpiresAt":
+				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
+			case "absoluteExpiresAt":
+				return ec.fieldContext_AgentAccessLease_absoluteExpiresAt(ctx, field)
+			case "lastUsedAt":
+				return ec.fieldContext_AgentAccessLease_lastUsedAt(ctx, field)
+			case "leaseVersion":
+				return ec.fieldContext_AgentAccessLease_leaseVersion(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLease_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLease_sessionKeyType(ctx, field)
+			case "sessionKeyCreatedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyCreatedAt(ctx, field)
+			case "sessionKeyLastUsedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyLastUsedAt(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_AgentAccessLease_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AgentAccessLease_updatedAt(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_AgentAccessLease_revokedAt(ctx, field)
+			case "revokedBy":
+				return ec.fieldContext_AgentAccessLease_revokedBy(ctx, field)
+			case "revokedReason":
+				return ec.fieldContext_AgentAccessLease_revokedReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLease", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createAgentAccessLease_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_revokeAgentAccessLease(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_revokeAgentAccessLease(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().RevokeAgentAccessLease(rctx, fc.Args["username"].(string), fc.Args["leaseID"].(string), fc.Args["input"].(*model.RevokeAgentAccessLeaseInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLease)
+	fc.Result = res
+	return ec.marshalNAgentAccessLease2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLease(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_revokeAgentAccessLease(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLease_id(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLease_username(ctx, field)
+			case "principalUsername":
+				return ec.fieldContext_AgentAccessLease_principalUsername(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLease_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLease_agentWallet(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLease_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLease_deviceLabel(ctx, field)
+			case "status":
+				return ec.fieldContext_AgentAccessLease_status(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "idleExpiresAt":
+				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
+			case "absoluteExpiresAt":
+				return ec.fieldContext_AgentAccessLease_absoluteExpiresAt(ctx, field)
+			case "lastUsedAt":
+				return ec.fieldContext_AgentAccessLease_lastUsedAt(ctx, field)
+			case "leaseVersion":
+				return ec.fieldContext_AgentAccessLease_leaseVersion(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLease_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLease_sessionKeyType(ctx, field)
+			case "sessionKeyCreatedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyCreatedAt(ctx, field)
+			case "sessionKeyLastUsedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyLastUsedAt(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_AgentAccessLease_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AgentAccessLease_updatedAt(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_AgentAccessLease_revokedAt(ctx, field)
+			case "revokedBy":
+				return ec.fieldContext_AgentAccessLease_revokedBy(ctx, field)
+			case "revokedReason":
+				return ec.fieldContext_AgentAccessLease_revokedReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLease", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_revokeAgentAccessLease_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_createAgentAccessLeaseSessionKeyChallenge(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_createAgentAccessLeaseSessionKeyChallenge(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateAgentAccessLeaseSessionKeyChallenge(rctx, fc.Args["username"].(string), fc.Args["leaseID"].(string), fc.Args["input"].(model.AgentAccessLeaseSessionKeyChallengeInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLeaseChallenge)
+	fc.Result = res
+	return ec.marshalNAgentAccessLeaseChallenge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallenge(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeaseSessionKeyChallenge(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLeaseChallenge_id(ctx, field)
+			case "leaseID":
+				return ec.fieldContext_AgentAccessLeaseChallenge_leaseID(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLeaseChallenge_username(ctx, field)
+			case "action":
+				return ec.fieldContext_AgentAccessLeaseChallenge_action(ctx, field)
+			case "walletAddress":
+				return ec.fieldContext_AgentAccessLeaseChallenge_walletAddress(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_agentWallet(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionKeyType(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLeaseChallenge_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLeaseChallenge_deviceLabel(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
+			case "absoluteTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "message":
+				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
+			case "typedDataJson":
+				return ec.fieldContext_AgentAccessLeaseChallenge_typedDataJson(ctx, field)
+			case "issuedAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_issuedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_expiresAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLeaseChallenge", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createAgentAccessLeaseSessionKeyChallenge_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_authorizeAgentAccessLeaseSessionKey(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_authorizeAgentAccessLeaseSessionKey(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().AuthorizeAgentAccessLeaseSessionKey(rctx, fc.Args["username"].(string), fc.Args["leaseID"].(string), fc.Args["input"].(model.AuthorizeAgentAccessLeaseSessionKeyInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLease)
+	fc.Result = res
+	return ec.marshalNAgentAccessLease2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLease(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_authorizeAgentAccessLeaseSessionKey(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLease_id(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLease_username(ctx, field)
+			case "principalUsername":
+				return ec.fieldContext_AgentAccessLease_principalUsername(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLease_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLease_agentWallet(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLease_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLease_deviceLabel(ctx, field)
+			case "status":
+				return ec.fieldContext_AgentAccessLease_status(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "idleExpiresAt":
+				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
+			case "absoluteExpiresAt":
+				return ec.fieldContext_AgentAccessLease_absoluteExpiresAt(ctx, field)
+			case "lastUsedAt":
+				return ec.fieldContext_AgentAccessLease_lastUsedAt(ctx, field)
+			case "leaseVersion":
+				return ec.fieldContext_AgentAccessLease_leaseVersion(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLease_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLease_sessionKeyType(ctx, field)
+			case "sessionKeyCreatedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyCreatedAt(ctx, field)
+			case "sessionKeyLastUsedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyLastUsedAt(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_AgentAccessLease_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AgentAccessLease_updatedAt(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_AgentAccessLease_revokedAt(ctx, field)
+			case "revokedBy":
+				return ec.fieldContext_AgentAccessLease_revokedBy(ctx, field)
+			case "revokedReason":
+				return ec.fieldContext_AgentAccessLease_revokedReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLease", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_authorizeAgentAccessLeaseSessionKey_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_createAgentAccessLeaseRenewChallenge(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_createAgentAccessLeaseRenewChallenge(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().CreateAgentAccessLeaseRenewChallenge(rctx, fc.Args["username"].(string), fc.Args["leaseID"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLeaseChallenge)
+	fc.Result = res
+	return ec.marshalNAgentAccessLeaseChallenge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallenge(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeaseRenewChallenge(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLeaseChallenge_id(ctx, field)
+			case "leaseID":
+				return ec.fieldContext_AgentAccessLeaseChallenge_leaseID(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLeaseChallenge_username(ctx, field)
+			case "action":
+				return ec.fieldContext_AgentAccessLeaseChallenge_action(ctx, field)
+			case "walletAddress":
+				return ec.fieldContext_AgentAccessLeaseChallenge_walletAddress(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLeaseChallenge_agentWallet(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLeaseChallenge_sessionKeyType(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLeaseChallenge_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLeaseChallenge_deviceLabel(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
+			case "absoluteTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "message":
+				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
+			case "typedDataJson":
+				return ec.fieldContext_AgentAccessLeaseChallenge_typedDataJson(ctx, field)
+			case "issuedAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_issuedAt(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_AgentAccessLeaseChallenge_expiresAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLeaseChallenge", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createAgentAccessLeaseRenewChallenge_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_exchangeAgentAccessLeaseToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_exchangeAgentAccessLeaseToken(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().ExchangeAgentAccessLeaseToken(rctx, fc.Args["username"].(string), fc.Args["leaseID"].(string), fc.Args["input"].(model.ExchangeAgentAccessLeaseTokenInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentAccessLeaseTokenPayload)
+	fc.Result = res
+	return ec.marshalNAgentAccessLeaseTokenPayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseTokenPayload(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_exchangeAgentAccessLeaseToken(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "leaseID":
+				return ec.fieldContext_AgentAccessLeaseTokenPayload_leaseID(ctx, field)
+			case "accessToken":
+				return ec.fieldContext_AgentAccessLeaseTokenPayload_accessToken(ctx, field)
+			case "tokenType":
+				return ec.fieldContext_AgentAccessLeaseTokenPayload_tokenType(ctx, field)
+			case "scope":
+				return ec.fieldContext_AgentAccessLeaseTokenPayload_scope(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_AgentAccessLeaseTokenPayload_createdAt(ctx, field)
+			case "expiresIn":
+				return ec.fieldContext_AgentAccessLeaseTokenPayload_expiresIn(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLeaseTokenPayload", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_exchangeAgentAccessLeaseToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_updateAdminAgentPolicy(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_updateAdminAgentPolicy(ctx, field)
 	if err != nil {
@@ -104193,6 +107539,107 @@ func (ec *executionContext) fieldContext_Query_agentActivity(ctx context.Context
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_agentActivity_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_agentAccessLeases(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_agentAccessLeases(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().AgentAccessLeases(rctx, fc.Args["username"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.AgentAccessLease)
+	fc.Result = res
+	return ec.marshalNAgentAccessLease2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_agentAccessLeases(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AgentAccessLease_id(ctx, field)
+			case "username":
+				return ec.fieldContext_AgentAccessLease_username(ctx, field)
+			case "principalUsername":
+				return ec.fieldContext_AgentAccessLease_principalUsername(ctx, field)
+			case "principalWallet":
+				return ec.fieldContext_AgentAccessLease_principalWallet(ctx, field)
+			case "agentWallet":
+				return ec.fieldContext_AgentAccessLease_agentWallet(ctx, field)
+			case "scopes":
+				return ec.fieldContext_AgentAccessLease_scopes(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentAccessLease_deviceLabel(ctx, field)
+			case "status":
+				return ec.fieldContext_AgentAccessLease_status(ctx, field)
+			case "idleTimeoutHours":
+				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "idleExpiresAt":
+				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
+			case "absoluteExpiresAt":
+				return ec.fieldContext_AgentAccessLease_absoluteExpiresAt(ctx, field)
+			case "lastUsedAt":
+				return ec.fieldContext_AgentAccessLease_lastUsedAt(ctx, field)
+			case "leaseVersion":
+				return ec.fieldContext_AgentAccessLease_leaseVersion(ctx, field)
+			case "sessionPublicKey":
+				return ec.fieldContext_AgentAccessLease_sessionPublicKey(ctx, field)
+			case "sessionKeyType":
+				return ec.fieldContext_AgentAccessLease_sessionKeyType(ctx, field)
+			case "sessionKeyCreatedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyCreatedAt(ctx, field)
+			case "sessionKeyLastUsedAt":
+				return ec.fieldContext_AgentAccessLease_sessionKeyLastUsedAt(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_AgentAccessLease_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_AgentAccessLease_updatedAt(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_AgentAccessLease_revokedAt(ctx, field)
+			case "revokedBy":
+				return ec.fieldContext_AgentAccessLease_revokedBy(ctx, field)
+			case "revokedReason":
+				return ec.fieldContext_AgentAccessLease_revokedReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentAccessLease", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_agentAccessLeases_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -127300,6 +130747,109 @@ func (ec *executionContext) unmarshalInputAdminVerifyAgentInput(ctx context.Cont
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputAgentAccessLeaseChallengeInput(ctx context.Context, obj any) (model.AgentAccessLeaseChallengeInput, error) {
+	var it model.AgentAccessLeaseChallengeInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"principalWallet", "agentWallet", "sessionPublicKey", "scopes", "deviceLabel", "leaseID", "idleTimeoutHours", "absoluteTTLHours"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "principalWallet":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("principalWallet"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrincipalWallet = data
+		case "agentWallet":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentWallet"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentWallet = data
+		case "sessionPublicKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sessionPublicKey"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SessionPublicKey = data
+		case "scopes":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("scopes"))
+			data, err := ec.unmarshalNString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Scopes = data
+		case "deviceLabel":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("deviceLabel"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DeviceLabel = data
+		case "leaseID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("leaseID"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.LeaseID = data
+		case "idleTimeoutHours":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("idleTimeoutHours"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.IdleTimeoutHours = data
+		case "absoluteTTLHours":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("absoluteTTLHours"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AbsoluteTTLHours = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputAgentAccessLeaseSessionKeyChallengeInput(ctx context.Context, obj any) (model.AgentAccessLeaseSessionKeyChallengeInput, error) {
+	var it model.AgentAccessLeaseSessionKeyChallengeInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"sessionPublicKey"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "sessionPublicKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sessionPublicKey"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SessionPublicKey = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputAgentCapabilitiesInput(ctx context.Context, obj any) (model.AgentCapabilitiesInput, error) {
 	var it model.AgentCapabilitiesInput
 	asMap := map[string]any{}
@@ -127445,6 +130995,40 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputAuthorizeAgentAccessLeaseSessionKeyInput(ctx context.Context, obj any) (model.AuthorizeAgentAccessLeaseSessionKeyInput, error) {
+	var it model.AuthorizeAgentAccessLeaseSessionKeyInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"challengeID", "signature"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "challengeID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("challengeID"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ChallengeID = data
+		case "signature":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("signature"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Signature = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputBedrockTrainingOptions(ctx context.Context, obj any) (model.BedrockTrainingOptions, error) {
 	var it model.BedrockTrainingOptions
 	asMap := map[string]any{}
@@ -127562,6 +131146,54 @@ func (ec *executionContext) unmarshalInputContentMapInput(ctx context.Context, o
 				return it, err
 			}
 			it.Content = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputCreateAgentAccessLeaseInput(ctx context.Context, obj any) (model.CreateAgentAccessLeaseInput, error) {
+	var it model.CreateAgentAccessLeaseInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"principalChallengeID", "principalSignature", "agentChallengeID", "agentSignature"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "principalChallengeID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("principalChallengeID"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrincipalChallengeID = data
+		case "principalSignature":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("principalSignature"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrincipalSignature = data
+		case "agentChallengeID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentChallengeID"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentChallengeID = data
+		case "agentSignature":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("agentSignature"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AgentSignature = data
 		}
 	}
 
@@ -128690,6 +132322,40 @@ func (ec *executionContext) unmarshalInputDirectoryFiltersInput(ctx context.Cont
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputExchangeAgentAccessLeaseTokenInput(ctx context.Context, obj any) (model.ExchangeAgentAccessLeaseTokenInput, error) {
+	var it model.ExchangeAgentAccessLeaseTokenInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"challengeID", "signature"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "challengeID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("challengeID"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ChallengeID = data
+		case "signature":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("signature"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Signature = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputFederationLimitInput(ctx context.Context, obj any) (model.FederationLimitInput, error) {
 	var it model.FederationLimitInput
 	asMap := map[string]any{}
@@ -129742,6 +133408,33 @@ func (ec *executionContext) unmarshalInputRegisterPushSubscriptionInput(ctx cont
 				return it, err
 			}
 			it.Alerts = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputRevokeAgentAccessLeaseInput(ctx context.Context, obj any) (model.RevokeAgentAccessLeaseInput, error) {
+	var it model.RevokeAgentAccessLeaseInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"reason"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "reason":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("reason"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Reason = data
 		}
 	}
 
@@ -135413,6 +139106,303 @@ func (ec *executionContext) _Agent(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "activityCount":
 			out.Values[i] = ec._Agent_activityCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var agentAccessLeaseImplementors = []string{"AgentAccessLease"}
+
+func (ec *executionContext) _AgentAccessLease(ctx context.Context, sel ast.SelectionSet, obj *model.AgentAccessLease) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentAccessLeaseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentAccessLease")
+		case "id":
+			out.Values[i] = ec._AgentAccessLease_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "username":
+			out.Values[i] = ec._AgentAccessLease_username(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalUsername":
+			out.Values[i] = ec._AgentAccessLease_principalUsername(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalWallet":
+			out.Values[i] = ec._AgentAccessLease_principalWallet(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "agentWallet":
+			out.Values[i] = ec._AgentAccessLease_agentWallet(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "scopes":
+			out.Values[i] = ec._AgentAccessLease_scopes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deviceLabel":
+			out.Values[i] = ec._AgentAccessLease_deviceLabel(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._AgentAccessLease_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "idleTimeoutHours":
+			out.Values[i] = ec._AgentAccessLease_idleTimeoutHours(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "idleExpiresAt":
+			out.Values[i] = ec._AgentAccessLease_idleExpiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "absoluteExpiresAt":
+			out.Values[i] = ec._AgentAccessLease_absoluteExpiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastUsedAt":
+			out.Values[i] = ec._AgentAccessLease_lastUsedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "leaseVersion":
+			out.Values[i] = ec._AgentAccessLease_leaseVersion(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sessionPublicKey":
+			out.Values[i] = ec._AgentAccessLease_sessionPublicKey(ctx, field, obj)
+		case "sessionKeyType":
+			out.Values[i] = ec._AgentAccessLease_sessionKeyType(ctx, field, obj)
+		case "sessionKeyCreatedAt":
+			out.Values[i] = ec._AgentAccessLease_sessionKeyCreatedAt(ctx, field, obj)
+		case "sessionKeyLastUsedAt":
+			out.Values[i] = ec._AgentAccessLease_sessionKeyLastUsedAt(ctx, field, obj)
+		case "createdAt":
+			out.Values[i] = ec._AgentAccessLease_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updatedAt":
+			out.Values[i] = ec._AgentAccessLease_updatedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokedAt":
+			out.Values[i] = ec._AgentAccessLease_revokedAt(ctx, field, obj)
+		case "revokedBy":
+			out.Values[i] = ec._AgentAccessLease_revokedBy(ctx, field, obj)
+		case "revokedReason":
+			out.Values[i] = ec._AgentAccessLease_revokedReason(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var agentAccessLeaseChallengeImplementors = []string{"AgentAccessLeaseChallenge"}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge(ctx context.Context, sel ast.SelectionSet, obj *model.AgentAccessLeaseChallenge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentAccessLeaseChallengeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentAccessLeaseChallenge")
+		case "id":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "leaseID":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_leaseID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "username":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_username(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "action":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_action(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "walletAddress":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_walletAddress(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "principalWallet":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_principalWallet(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "agentWallet":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_agentWallet(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sessionPublicKey":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_sessionPublicKey(ctx, field, obj)
+		case "sessionKeyType":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_sessionKeyType(ctx, field, obj)
+		case "scopes":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_scopes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deviceLabel":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_deviceLabel(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "idleTimeoutHours":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "absoluteTTLHours":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "message":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_message(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "typedDataJson":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_typedDataJson(ctx, field, obj)
+		case "issuedAt":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_issuedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var agentAccessLeaseTokenPayloadImplementors = []string{"AgentAccessLeaseTokenPayload"}
+
+func (ec *executionContext) _AgentAccessLeaseTokenPayload(ctx context.Context, sel ast.SelectionSet, obj *model.AgentAccessLeaseTokenPayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentAccessLeaseTokenPayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentAccessLeaseTokenPayload")
+		case "leaseID":
+			out.Values[i] = ec._AgentAccessLeaseTokenPayload_leaseID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "accessToken":
+			out.Values[i] = ec._AgentAccessLeaseTokenPayload_accessToken(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tokenType":
+			out.Values[i] = ec._AgentAccessLeaseTokenPayload_tokenType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "scope":
+			out.Values[i] = ec._AgentAccessLeaseTokenPayload_scope(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._AgentAccessLeaseTokenPayload_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresIn":
+			out.Values[i] = ec._AgentAccessLeaseTokenPayload_expiresIn(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -145540,6 +149530,62 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "createAgentAccessLeasePrincipalChallenge":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createAgentAccessLeasePrincipalChallenge(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createAgentAccessLeaseAgentChallenge":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createAgentAccessLeaseAgentChallenge(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createAgentAccessLease":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createAgentAccessLease(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokeAgentAccessLease":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_revokeAgentAccessLease(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createAgentAccessLeaseSessionKeyChallenge":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createAgentAccessLeaseSessionKeyChallenge(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "authorizeAgentAccessLeaseSessionKey":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_authorizeAgentAccessLeaseSessionKey(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createAgentAccessLeaseRenewChallenge":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createAgentAccessLeaseRenewChallenge(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "exchangeAgentAccessLeaseToken":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_exchangeAgentAccessLeaseToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "updateAdminAgentPolicy":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_updateAdminAgentPolicy(ctx, field)
@@ -150590,6 +154636,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_agentActivity(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "agentAccessLeases":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_agentAccessLeases(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -157198,6 +161266,102 @@ func (ec *executionContext) marshalNAgent2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 	return ec._Agent(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNAgentAccessLease2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLease(ctx context.Context, sel ast.SelectionSet, v model.AgentAccessLease) graphql.Marshaler {
+	return ec._AgentAccessLease(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAgentAccessLease2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.AgentAccessLease) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNAgentAccessLease2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLease(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNAgentAccessLease2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLease(ctx context.Context, sel ast.SelectionSet, v *model.AgentAccessLease) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AgentAccessLease(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAgentAccessLeaseChallenge2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallenge(ctx context.Context, sel ast.SelectionSet, v model.AgentAccessLeaseChallenge) graphql.Marshaler {
+	return ec._AgentAccessLeaseChallenge(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAgentAccessLeaseChallenge2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallenge(ctx context.Context, sel ast.SelectionSet, v *model.AgentAccessLeaseChallenge) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AgentAccessLeaseChallenge(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNAgentAccessLeaseChallengeInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseChallengeInput(ctx context.Context, v any) (model.AgentAccessLeaseChallengeInput, error) {
+	res, err := ec.unmarshalInputAgentAccessLeaseChallengeInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalNAgentAccessLeaseSessionKeyChallengeInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseSessionKeyChallengeInput(ctx context.Context, v any) (model.AgentAccessLeaseSessionKeyChallengeInput, error) {
+	res, err := ec.unmarshalInputAgentAccessLeaseSessionKeyChallengeInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNAgentAccessLeaseTokenPayload2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseTokenPayload(ctx context.Context, sel ast.SelectionSet, v model.AgentAccessLeaseTokenPayload) graphql.Marshaler {
+	return ec._AgentAccessLeaseTokenPayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAgentAccessLeaseTokenPayload2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentAccessLeaseTokenPayload(ctx context.Context, sel ast.SelectionSet, v *model.AgentAccessLeaseTokenPayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AgentAccessLeaseTokenPayload(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNAgentActivityConnection2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentActivityConnection(ctx context.Context, sel ast.SelectionSet, v model.AgentActivityConnection) graphql.Marshaler {
 	return ec._AgentActivityConnection(ctx, sel, &v)
 }
@@ -157634,6 +161798,11 @@ func (ec *executionContext) marshalNAttachment2ᚖgithubᚗcomᚋequaltoaiᚋles
 		return graphql.Null
 	}
 	return ec._Attachment(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNAuthorizeAgentAccessLeaseSessionKeyInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAuthorizeAgentAccessLeaseSessionKeyInput(ctx context.Context, v any) (model.AuthorizeAgentAccessLeaseSessionKeyInput, error) {
+	res, err := ec.unmarshalInputAuthorizeAgentAccessLeaseSessionKeyInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNBandwidthReport2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐBandwidthReport(ctx context.Context, sel ast.SelectionSet, v model.BandwidthReport) graphql.Marshaler {
@@ -158414,6 +162583,11 @@ func (ec *executionContext) marshalNCostUpdate2ᚖgithubᚗcomᚋequaltoaiᚋles
 	return ec._CostUpdate(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNCreateAgentAccessLeaseInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCreateAgentAccessLeaseInput(ctx context.Context, v any) (model.CreateAgentAccessLeaseInput, error) {
+	res, err := ec.unmarshalInputCreateAgentAccessLeaseInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNCreateArticleInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐCreateArticleInput(ctx context.Context, v any) (model.CreateArticleInput, error) {
 	res, err := ec.unmarshalInputCreateArticleInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -158913,6 +163087,11 @@ func (ec *executionContext) marshalNEntity2ᚖgithubᚗcomᚋequaltoaiᚋlesser�
 		return graphql.Null
 	}
 	return ec._Entity(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNExchangeAgentAccessLeaseTokenInput2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐExchangeAgentAccessLeaseTokenInput(ctx context.Context, v any) (model.ExchangeAgentAccessLeaseTokenInput, error) {
+	res, err := ec.unmarshalInputExchangeAgentAccessLeaseTokenInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalNExpandMediaPreference2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐExpandMediaPreference(ctx context.Context, v any) (model.ExpandMediaPreference, error) {
@@ -166928,6 +171107,14 @@ func (ec *executionContext) marshalORevision2ᚖgithubᚗcomᚋequaltoaiᚋlesse
 		return graphql.Null
 	}
 	return ec._Revision(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalORevokeAgentAccessLeaseInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐRevokeAgentAccessLeaseInput(ctx context.Context, v any) (*model.RevokeAgentAccessLeaseInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputRevokeAgentAccessLeaseInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalOScheduledStatus2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐScheduledStatus(ctx context.Context, sel ast.SelectionSet, v *model.ScheduledStatus) graphql.Marshaler {

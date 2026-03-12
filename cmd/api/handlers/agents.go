@@ -123,6 +123,7 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 	return okJSON(respPayload)
 }
 
+//nolint:unused // Retained for follow-up delegated-agent creation work.
 type delegationResolvedInfo struct {
 	AgentType    string
 	AgentVersion string
@@ -221,6 +222,7 @@ func agentDelegationEnvelope(user *storage.User) ([]string, bool) {
 	return agentDelegatedScopes(user), true
 }
 
+//nolint:unused // Retained for follow-up delegated-agent creation work.
 func parseAgentDelegationInfo(ctx *apptheory.Context, raw any, requestedScopes []string) (delegationResolvedInfo, *apptheory.Response, error) {
 	info, err := parseDelegationAgentInfo(raw)
 	if err != nil {
@@ -251,6 +253,7 @@ func parseAgentDelegationInfo(ctx *apptheory.Context, raw any, requestedScopes [
 	}, nil, nil
 }
 
+//nolint:unused // Retained for follow-up delegated-agent creation work.
 func (h *Handler) agentRegistrationLimits(ctx *apptheory.Context) (quarantineDays int, maxPostsPerHourAllowed int) {
 	quarantineDays = 7
 	maxPostsPerHourAllowed = agentDefaultMaxPostsPerHour
@@ -273,6 +276,7 @@ func (h *Handler) agentRegistrationLimits(ctx *apptheory.Context) (quarantineDay
 	return quarantineDays, maxPostsPerHourAllowed
 }
 
+//nolint:unused // Retained for follow-up delegated-agent creation work.
 func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
 	if capabilities == nil {
 		return
@@ -285,6 +289,7 @@ func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllo
 	}
 }
 
+//nolint:unused // Retained for follow-up delegated-agent creation work.
 func (h *Handler) createDelegatedAgentAccount(
 	ctx *apptheory.Context,
 	ownerClaims *auth.Claims,

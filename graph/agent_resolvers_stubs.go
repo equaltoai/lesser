@@ -962,6 +962,7 @@ func (r *Resolver) ensureAgentsEnabled(ctx context.Context) error {
 	return nil
 }
 
+//nolint:unused // Retained for follow-up GraphQL registration flows.
 func (r *Resolver) ensureAgentRegistrationEnabled(ctx context.Context) error {
 	if err := r.ensureAgentsEnabled(ctx); err != nil {
 		return err
@@ -1053,6 +1054,7 @@ func validateAccessTokenTTL(expiresIn *int) (time.Duration, error) {
 	return time.Duration(*expiresIn) * time.Second, nil
 }
 
+//nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.
 func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 	var caps agents.Capabilities
 
@@ -1082,6 +1084,7 @@ func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 	return caps
 }
 
+//nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.
 func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
 	if capabilities == nil {
 		return
@@ -1141,6 +1144,7 @@ func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User) bool {
 	return strings.EqualFold(owner, strings.TrimSpace(claims.Username))
 }
 
+//nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.
 func (r *Resolver) agentRegistrationLimits(ctx context.Context) (quarantineDays int, maxPostsPerHourAllowed int) {
 	quarantineDays = 7
 	maxPostsPerHourAllowed = 50

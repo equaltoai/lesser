@@ -44,6 +44,33 @@ models:
   Cursor:
     model:
       - github.com/equaltoai/lesser/graph/model.Cursor
+  AgentAccessLease:
+    model:
+      - github.com/equaltoai/lesser/graph/model.AgentAccessLease
+  AgentAccessLeaseChallenge:
+    model:
+      - github.com/equaltoai/lesser/graph/model.AgentAccessLeaseChallenge
+  AgentAccessLeaseTokenPayload:
+    model:
+      - github.com/equaltoai/lesser/graph/model.AgentAccessLeaseTokenPayload
+  AgentAccessLeaseChallengeInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.AgentAccessLeaseChallengeInput
+  CreateAgentAccessLeaseInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.CreateAgentAccessLeaseInput
+  RevokeAgentAccessLeaseInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.RevokeAgentAccessLeaseInput
+  AgentAccessLeaseSessionKeyChallengeInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.AgentAccessLeaseSessionKeyChallengeInput
+  AuthorizeAgentAccessLeaseSessionKeyInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.AuthorizeAgentAccessLeaseSessionKeyInput
+  ExchangeAgentAccessLeaseTokenInput:
+    model:
+      - github.com/equaltoai/lesser/graph/model.ExchangeAgentAccessLeaseTokenInput
   Duration:
     model:
       - github.com/equaltoai/lesser/graph/model.Duration

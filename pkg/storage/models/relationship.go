@@ -93,7 +93,7 @@ func (r *RelationshipRecord) UpdateKeys() error {
 	if followerDomain, ok := extractRelationshipDomain(followerUsername); ok {
 		r.GSI2PK = fmt.Sprintf("FOLLOWER_DOMAIN#%s", followerDomain)
 		r.GSI2SK = r.SK // FOLLOWING#{username}
-	} else {
+	} else if strings.TrimSpace(r.GSI2PK) == "" || strings.TrimSpace(r.GSI2SK) == "" {
 		r.GSI2PK = ""
 		r.GSI2SK = ""
 	}
@@ -103,7 +103,7 @@ func (r *RelationshipRecord) UpdateKeys() error {
 	if followingDomain, ok := extractRelationshipDomain(followingUsername); ok {
 		r.GSI3PK = fmt.Sprintf("FOLLOWING_DOMAIN#%s", followingDomain)
 		r.GSI3SK = r.GSI1SK // FOLLOWER#{username}
-	} else {
+	} else if strings.TrimSpace(r.GSI3PK) == "" || strings.TrimSpace(r.GSI3SK) == "" {
 		r.GSI3PK = ""
 		r.GSI3SK = ""
 	}

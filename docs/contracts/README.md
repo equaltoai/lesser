@@ -37,6 +37,16 @@ Client generation guidance:
 - Generate: `./lesser schema`
 - Verify: `./lesser verify schema`
 
+## GraphQL coverage inventory
+
+- Published inventory: `docs/specs/graphql_coverage.yaml`
+- Purpose: tracks which REST routes require GraphQL parity and the exact GraphQL operations that cover them
+- Generate: `./lesser generate graphql-coverage`
+- Verify: `./lesser verify graphql-coverage`
+
+This is especially useful for agent features that ship across both REST and GraphQL at the same time, such as the
+wallet-backed agent access lease flow.
+
 ## Common workflow (contract change)
 
 1) Update the source of truth (routes/handlers or `graph/*.graphql`)
@@ -45,6 +55,7 @@ Client generation guidance:
 ```bash
 ./lesser generate openapi
 ./lesser schema
+./lesser generate graphql-coverage
 ```
 
 3) Verify:

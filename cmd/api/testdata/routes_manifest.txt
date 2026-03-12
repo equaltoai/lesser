@@ -56,6 +56,7 @@ GET /api/v1/admin/statuses/{id}
 GET /api/v1/agents
 GET /api/v1/agents/memory/search
 GET /api/v1/agents/{username}
+GET /api/v1/agents/{username}/access-leases
 GET /api/v1/agents/{username}/activity
 GET /api/v1/announcements
 GET /api/v1/auth/webauthn/credentials
@@ -158,6 +159,14 @@ OPTIONS /api/v1/agents/memory/search
 OPTIONS /api/v1/agents/register
 OPTIONS /api/v1/agents/register/challenge
 OPTIONS /api/v1/agents/{username}
+OPTIONS /api/v1/agents/{username}/access-leases
+OPTIONS /api/v1/agents/{username}/access-leases/challenge/agent
+OPTIONS /api/v1/agents/{username}/access-leases/challenge/principal
+OPTIONS /api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge
+OPTIONS /api/v1/agents/{username}/access-leases/{leaseID}/revoke
+OPTIONS /api/v1/agents/{username}/access-leases/{leaseID}/session-key
+OPTIONS /api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge
+OPTIONS /api/v1/agents/{username}/access-leases/{leaseID}/token
 OPTIONS /api/v1/agents/{username}/activity
 OPTIONS /api/v1/agents/{username}/rotate-key
 OPTIONS /api/v1/agents/{username}/rotate-key/challenge
@@ -243,6 +252,14 @@ POST /api/v1/agents/delegate
 POST /api/v1/agents/memory/search
 POST /api/v1/agents/register
 POST /api/v1/agents/register/challenge
+POST /api/v1/agents/{username}/access-leases
+POST /api/v1/agents/{username}/access-leases/challenge/agent
+POST /api/v1/agents/{username}/access-leases/challenge/principal
+POST /api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge
+POST /api/v1/agents/{username}/access-leases/{leaseID}/revoke
+POST /api/v1/agents/{username}/access-leases/{leaseID}/session-key
+POST /api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge
+POST /api/v1/agents/{username}/access-leases/{leaseID}/token
 POST /api/v1/agents/{username}/rotate-key
 POST /api/v1/agents/{username}/rotate-key/challenge
 POST /api/v1/agents/{username}/suspend

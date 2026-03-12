@@ -321,6 +321,7 @@ func TestBuildLambdaBinary_WiresGoBuildCommand(t *testing.T) {
 	require.Contains(t, env, "GOARCH=arm64")
 	require.Contains(t, env, "CGO_ENABLED=0")
 	require.Contains(t, env, "GOCACHE="+cacheDir)
+	require.Contains(t, env, "GOTOOLCHAIN="+defaultGoToolchainForDir(repoRoot))
 
 	runExecCmdFn = func(cmd *exec.Cmd) error {
 		require.NotContains(t, cmd.Args, "-tags")

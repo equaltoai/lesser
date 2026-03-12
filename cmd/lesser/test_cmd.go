@@ -498,3 +498,31 @@ func readModulePath(repoRoot string) (string, error) {
 
 	return "", fmt.Errorf("unable to determine module path from go.mod")
 }
+
+func readRequestedGoToolchain(repoRoot string) (string, error) {
+	modPath := filepath.Join(repoRoot, "go.mod")
+	content, err := os.ReadFile(filepath.Clean(modPath))
+	if err != nil {
+		return "", fmt.Errorf("read go.mod: %w", err)
+	}
+
+	goVersion := ""
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "toolchain "):
+			toolchain := strings.TrimSpace(strings.TrimPrefix(line, "toolchain "))
+			if toolchain == "" || toolchain == "default" {
+				break
+			}
+			return toolchain, nil
+		case strings.HasPrefix(line, "go ") && goVersion == "":
+			goVersion = strings.TrimSpace(strings.TrimPrefix(line, "go "))
+		}
+	}
+
+	if goVersion == "" {
+		return "", fmt.Errorf("unable to determine requested go toolchain from go.mod")
+	}
+	return "go" + goVersion, nil
+}

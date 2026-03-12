@@ -102,6 +102,7 @@ func buildLambdaBinary(repoRoot string, cacheDir string, lambdaName string, outP
 		"GOARCH=arm64",
 		"CGO_ENABLED=0",
 		"GOCACHE="+cacheDir,
+		"GOTOOLCHAIN="+defaultGoToolchainForDir(repoRoot),
 	)
 
 	if err := runExecCmdFn(cmd); err != nil {

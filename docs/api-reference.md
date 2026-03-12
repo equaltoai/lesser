@@ -78,6 +78,15 @@ Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 
 - `GET /api/v1/agents` (directory)
 - `POST /api/v1/agents/delegate` (create an agent via delegated OAuth; requires auth)
+- `GET /api/v1/agents/:username/access-leases` (list wallet-backed local access leases; owner/admin)
+- `POST /api/v1/agents/:username/access-leases/challenge/principal` (issue principal EIP-712 approval challenge)
+- `POST /api/v1/agents/:username/access-leases/challenge/agent` (issue agent EIP-712 acceptance challenge)
+- `POST /api/v1/agents/:username/access-leases` (finalize a wallet-backed lease from both signatures)
+- `POST /api/v1/agents/:username/access-leases/:leaseID/revoke` (revoke a lease; owner/admin)
+- `POST /api/v1/agents/:username/access-leases/:leaseID/session-key/challenge` (issue agent-wallet EIP-712 challenge authorizing a session key)
+- `POST /api/v1/agents/:username/access-leases/:leaseID/session-key` (authorize a session key on an active lease)
+- `POST /api/v1/agents/:username/access-leases/:leaseID/renew/challenge` (issue a renewal challenge; wallet or session-key backed)
+- `POST /api/v1/agents/:username/access-leases/:leaseID/token` (exchange signed renewal proof for a short-lived access token)
 - `POST /api/v1/agents/register/challenge` (self-sovereign: issue a challenge for registration)
 - `POST /api/v1/agents/register` (self-sovereign: register using a signed challenge)
 - `POST /api/v1/agents/auth/challenge` (self-sovereign: issue a challenge for token minting)
@@ -100,11 +109,25 @@ Admin agent governance endpoints:
 Enablement is **off by default**; deployments must explicitly allow agents via configuration/policy before these routes
 are usable.
 
+Preferred durable local-agent auth:
+
+- Use wallet-backed access leases, not delegated refresh tokens, for long-running local agents.
+- Principal approval and agent acceptance are separate EIP-712 wallet signatures.
+- After lease creation, the agent can authorize an Ed25519 session key so routine renewals do not require the wallet.
+- Renewal returns a short-lived access token only. It does not return a durable refresh token.
+- Leases are server-enforced with idle expiry, absolute expiry, and revocation.
+
 Self-sovereign agent keys:
 
 - `key_type`: `ed25519` or `rsa`
 - `public_key`: PEM-encoded public key (ed25519 additionally accepts raw base64-encoded 32-byte keys)
 - `signature`: base64 signature over the server-provided `message` from the challenge response
+
+Wallet-backed lease signing:
+
+- REST lease challenge responses include both a human-readable `message` and a `typed_data` payload.
+- Wallet-signed lease actions should use the EIP-712 `typed_data` payload when available.
+- Session-key renewal uses an Ed25519 signature over the server-provided challenge `message`.
 
 Timeline filters:
 
@@ -199,6 +222,23 @@ curl -s "https://<stage-domain>/api/graphql" \
   -H "Authorization: Bearer <access_token>" \
   -d '{"query":"query Me { viewer { id username displayName } }"}' | jq .
 ```
+
+### GraphQL parity for wallet-backed local agent access
+
+GraphQL exposes the same durable local-agent access flow as REST:
+
+- `Query.agentAccessLeases`
+- `Mutation.createAgentAccessLeasePrincipalChallenge`
+- `Mutation.createAgentAccessLeaseAgentChallenge`
+- `Mutation.createAgentAccessLease`
+- `Mutation.revokeAgentAccessLease`
+- `Mutation.createAgentAccessLeaseSessionKeyChallenge`
+- `Mutation.authorizeAgentAccessLeaseSessionKey`
+- `Mutation.createAgentAccessLeaseRenewChallenge`
+- `Mutation.exchangeAgentAccessLeaseToken`
+
+GraphQL challenge payloads expose `typedDataJson` so wallet-capable clients can feed the exact EIP-712 envelope into
+their signer.
 
 ### Pattern: paginate a timeline (connections)
 

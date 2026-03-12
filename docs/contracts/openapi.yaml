@@ -905,6 +905,188 @@ components:
                 - username
                 - verified
             type: object
+        AgentAccessLease:
+            additionalProperties: false
+            properties:
+                absolute_expires_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                agent_wallet:
+                    type: string
+                created_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                device_label:
+                    type: string
+                id:
+                    type: string
+                idle_expires_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                idle_timeout_hours:
+                    type: integer
+                last_used_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                lease_version:
+                    type: integer
+                principal_username:
+                    type: string
+                principal_wallet:
+                    type: string
+                revoked_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                revoked_by:
+                    type: string
+                revoked_reason:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                session_key_created_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                session_key_last_used_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                session_key_type:
+                    type: string
+                session_public_key:
+                    type: string
+                status:
+                    type: string
+                updated_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                username:
+                    type: string
+            required:
+                - absolute_expires_at
+                - agent_wallet
+                - created_at
+                - device_label
+                - id
+                - idle_expires_at
+                - idle_timeout_hours
+                - last_used_at
+                - lease_version
+                - principal_username
+                - principal_wallet
+                - scopes
+                - status
+                - updated_at
+                - username
+            type: object
+        AgentAccessLeaseChallengeRequest:
+            additionalProperties: false
+            properties:
+                absolute_ttl_hours:
+                    type: integer
+                agent_wallet:
+                    type: string
+                device_label:
+                    type: string
+                idle_timeout_hours:
+                    type: integer
+                lease_id:
+                    type: string
+                principal_wallet:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                session_public_key:
+                    type: string
+            required:
+                - agent_wallet
+                - device_label
+                - principal_wallet
+                - scopes
+            type: object
+        AgentAccessLeaseChallengeResponse:
+            additionalProperties: false
+            properties:
+                absolute_ttl_hours:
+                    type: integer
+                action:
+                    type: string
+                agent_wallet:
+                    type: string
+                device_label:
+                    type: string
+                expires_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                id:
+                    type: string
+                idle_timeout_hours:
+                    type: integer
+                issued_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                lease_id:
+                    type: string
+                message:
+                    type: string
+                principal_wallet:
+                    type: string
+                scopes:
+                    items:
+                        type: string
+                    type: array
+                session_key_type:
+                    type: string
+                session_public_key:
+                    type: string
+                typed_data: {}
+                username:
+                    type: string
+                wallet_address:
+                    type: string
+            required:
+                - absolute_ttl_hours
+                - action
+                - agent_wallet
+                - device_label
+                - expires_at
+                - id
+                - idle_timeout_hours
+                - issued_at
+                - lease_id
+                - message
+                - principal_wallet
+                - scopes
+                - username
+                - wallet_address
+            type: object
+        AgentAccessLeaseListResponse:
+            additionalProperties: false
+            properties:
+                leases:
+                    items:
+                        $ref: '#/components/schemas/AgentAccessLease'
+                    type: array
+            required:
+                - leases
+            type: object
+        AgentAccessLeaseSessionKeyChallengeRequest:
+            additionalProperties: false
+            properties:
+                session_public_key:
+                    type: string
+            required:
+                - session_public_key
+            type: object
+        AgentAccessLeaseTokenResponse:
+            additionalProperties: false
+            properties:
+                lease_id:
+                    type: string
+                token:
+                    $ref: '#/components/schemas/OAuthTokenResponse'
+            required:
+                - lease_id
+                - token
+            type: object
         AgentActivityLogEntry:
             additionalProperties: false
             properties:
@@ -1419,6 +1601,17 @@ components:
                 - message
                 - signature
             type: object
+        AuthorizeAgentAccessLeaseSessionKeyRequest:
+            additionalProperties: false
+            properties:
+                challenge_id:
+                    type: string
+                signature:
+                    type: string
+            required:
+                - challenge_id
+                - signature
+            type: object
         ClearNotificationsRequest:
             additionalProperties: false
             properties: {}
@@ -1686,6 +1879,23 @@ components:
             items:
                 $ref: '#/components/schemas/Conversation'
             type: array
+        CreateAgentAccessLeaseRequest:
+            additionalProperties: false
+            properties:
+                agent_challenge_id:
+                    type: string
+                agent_signature:
+                    type: string
+                principal_challenge_id:
+                    type: string
+                principal_signature:
+                    type: string
+            required:
+                - agent_challenge_id
+                - agent_signature
+                - principal_challenge_id
+                - principal_signature
+            type: object
         CreateAnnouncementRequest:
             additionalProperties: false
             properties:
@@ -4035,6 +4245,17 @@ components:
             required:
                 - account_ids
             type: object
+        RenewAgentAccessLeaseTokenRequest:
+            additionalProperties: false
+            properties:
+                challenge_id:
+                    type: string
+                signature:
+                    type: string
+            required:
+                - challenge_id
+                - signature
+            type: object
         Report:
             additionalProperties: false
             properties:
@@ -4408,6 +4629,12 @@ components:
                 - confidence
                 - event_id
                 - severity
+            type: object
+        RevokeAgentAccessLeaseRequest:
+            additionalProperties: false
+            properties:
+                reason:
+                    type: string
             type: object
         Role:
             additionalProperties: false
@@ -10569,6 +10796,333 @@ paths:
                 "500":
                     $ref: '#/components/responses/InternalServerError'
             x-lesser-handler: HandleDeleteAgentLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases:
+        get:
+            operationId: get_api_v1_agents_by_username_access_leases
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLeaseListResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleListAgentAccessLeasesLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateAgentAccessLeaseRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLease'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleCreateAgentAccessLeaseLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge:
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_renew_challenge
+            tags:
+                - agents
+            parameters:
+                - name: leaseID
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleCreateAgentAccessLeaseRenewChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases/{leaseID}/revoke:
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_revoke
+            tags:
+                - agents
+            parameters:
+                - name: leaseID
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RevokeAgentAccessLeaseRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLease'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleRevokeAgentAccessLeaseLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases/{leaseID}/session-key:
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key
+            tags:
+                - agents
+            parameters:
+                - name: leaseID
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AuthorizeAgentAccessLeaseSessionKeyRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLease'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleAuthorizeAgentAccessLeaseSessionKeyLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge:
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_session_key_challenge
+            tags:
+                - agents
+            parameters:
+                - name: leaseID
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentAccessLeaseSessionKeyChallengeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleCreateAgentAccessLeaseSessionKeyChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases/{leaseID}/token:
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases_by_leaseID_token
+            tags:
+                - agents
+            parameters:
+                - name: leaseID
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RenewAgentAccessLeaseTokenRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLeaseTokenResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleExchangeAgentAccessLeaseTokenLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases/challenge/agent:
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases_challenge_agent
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentAccessLeaseChallengeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleCreateAgentAccessLeaseAgentChallengeLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/access-leases/challenge/principal:
+        post:
+            operationId: post_api_v1_agents_by_username_access_leases_challenge_principal
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AgentAccessLeaseChallengeRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentAccessLeaseChallengeResponse'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleCreateAgentAccessLeasePrincipalChallengeLift
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go

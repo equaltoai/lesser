@@ -12,13 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMergeEnvAndSetEnv(t *testing.T) {
+func TestMergeEnvForDirAndSetEnv(t *testing.T) {
 	base := []string{"A=1", "B=2"}
-	merged := mergeEnv(base, map[string]string{
+	merged := mergeEnvForDir(base, map[string]string{
 		"B": "3",
 		"C": "4",
-	})
-	require.ElementsMatch(t, []string{"A=1", "B=3", "C=4", "GOTOOLCHAIN=auto"}, merged)
+	}, "")
+	require.ElementsMatch(t, []string{"A=1", "B=3", "C=4", "GOTOOLCHAIN=" + defaultGoToolchainForDir("")}, merged)
 
 	require.Equal(t, []string{"A=1", "B=2", "C=4"}, setEnv(base, "C", "4"))
 	require.Equal(t, []string{"A=1", "B=9"}, setEnv(base, "B", "9"))
@@ -28,8 +28,8 @@ func TestMergeEnv_PrependsGoBinToPath(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GOPATH", root)
 
-	merged := mergeEnv([]string{"PATH=/usr/bin"}, map[string]string{})
-	require.Contains(t, merged, "GOTOOLCHAIN=auto")
+	merged := mergeEnvForDir([]string{"PATH=/usr/bin"}, map[string]string{}, "")
+	require.Contains(t, merged, "GOTOOLCHAIN="+defaultGoToolchainForDir(""))
 	require.Contains(t, merged, "PATH="+filepath.Join(root, "bin")+string(os.PathListSeparator)+"/usr/bin")
 }
 
@@ -37,8 +37,8 @@ func TestMergeEnv_EmptyPathUsesGoBin(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GOPATH", root)
 
-	merged := mergeEnv([]string{"PATH="}, map[string]string{})
-	require.Contains(t, merged, "GOTOOLCHAIN=auto")
+	merged := mergeEnvForDir([]string{"PATH="}, map[string]string{}, "")
+	require.Contains(t, merged, "GOTOOLCHAIN="+defaultGoToolchainForDir(""))
 	require.Contains(t, merged, "PATH="+filepath.Join(root, "bin"))
 }
 
@@ -122,6 +122,50 @@ func TestCacheDirVersionKey_FallsBackWhenGoMissing(t *testing.T) {
 
 	key := cacheDirVersionKey()
 	require.Equal(t, sanitizeCacheKey(runtime.Version()), key)
+}
+
+func TestCacheDirVersionKey_UsesEffectiveGoToolchain(t *testing.T) {
+	dir := t.TempDir()
+	goPath := filepath.Join(dir, "go")
+	expectedToolchain := defaultGoToolchainForDir("")
+	script := `#!/bin/sh
+if [ "$1" = "env" ] && [ "$2" = "GOVERSION" ]; then
+	if [ "${GOTOOLCHAIN:-}" = "` + expectedToolchain + `" ]; then
+		printf 'go1.26.1'
+	else
+		printf 'go1.26.0'
+	fi
+	exit 0
+fi
+exit 1
+`
+	require.NoError(t, os.WriteFile(goPath, []byte(script), 0o755))
+
+	t.Setenv("PATH", dir)
+	previous, hadPrevious := os.LookupEnv("GOTOOLCHAIN")
+	require.NoError(t, os.Unsetenv("GOTOOLCHAIN"))
+	t.Cleanup(func() {
+		if !hadPrevious {
+			return
+		}
+		require.NoError(t, os.Setenv("GOTOOLCHAIN", previous))
+	})
+
+	require.Equal(t, "go1.26.1", cacheDirVersionKey())
+}
+
+func TestReadRequestedGoToolchain(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/lesser\n\ngo 1.26.1\n"), 0o644))
+
+	toolchain, err := readRequestedGoToolchain(repoRoot)
+	require.NoError(t, err)
+	require.Equal(t, "go1.26.1", toolchain)
+
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module example.com/lesser\n\ngo 1.26.1\ntoolchain go1.26.2\n"), 0o644))
+	toolchain, err = readRequestedGoToolchain(repoRoot)
+	require.NoError(t, err)
+	require.Equal(t, "go1.26.2", toolchain)
 }
 
 func TestSanitizeCacheKey_EmptyReturnsUnknown(t *testing.T) {
