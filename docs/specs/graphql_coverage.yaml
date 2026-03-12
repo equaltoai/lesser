@@ -561,6 +561,60 @@ routes:
       graphql:
         - Mutation.updateAgent
     - method: GET
+      path: /api/v1/agents/{username}/access-leases
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.agentAccessLeases
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.createAgentAccessLease
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases/challenge/agent
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.createAgentAccessLeaseAgentChallenge
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases/challenge/principal
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.createAgentAccessLeasePrincipalChallenge
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases/{leaseID}/renew/challenge
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.createAgentAccessLeaseRenewChallenge
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases/{leaseID}/revoke
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.revokeAgentAccessLease
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases/{leaseID}/session-key
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.authorizeAgentAccessLeaseSessionKey
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases/{leaseID}/session-key/challenge
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.createAgentAccessLeaseSessionKeyChallenge
+    - method: POST
+      path: /api/v1/agents/{username}/access-leases/{leaseID}/token
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.exchangeAgentAccessLeaseToken
+    - method: GET
       path: /api/v1/agents/{username}/activity
       policy: graphql_required
       status: covered

@@ -14,6 +14,10 @@ func findRepoRoot() (string, error) {
 		return "", err
 	}
 
+	return findRepoRootFrom(start)
+}
+
+func findRepoRootFrom(start string) (string, error) {
 	dir := start
 	for {
 		if looksLikeRepoRoot(dir) {

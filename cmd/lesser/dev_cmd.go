@@ -266,7 +266,7 @@ func randomBase64(size int) (string, error) {
 func captureCommandOutput(ctx context.Context, dir string, env map[string]string, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // tool invocation
 	cmd.Dir = dir
-	cmd.Env = mergeEnv(os.Environ(), env)
+	cmd.Env = mergeEnvForDir(os.Environ(), env, dir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))

@@ -15,10 +15,12 @@ type execOptions struct {
 	Env map[string]string
 }
 
+const goToolchainAuto = "auto"
+
 var runCommandFn = runCommand
 
 func runCommand(ctx context.Context, name string, args []string, opts execOptions) error {
-	env := mergeEnv(os.Environ(), opts.Env)
+	env := mergeEnvForDir(os.Environ(), opts.Env, opts.Dir)
 	path := name
 	if resolved, err := lookPathInEnv(name, env); err == nil && resolved != "" {
 		path = resolved
@@ -73,10 +75,10 @@ func isExecutable(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-func mergeEnv(base []string, overrides map[string]string) []string {
+func mergeEnvForDir(base []string, overrides map[string]string, dir string) []string {
 	env := append([]string(nil), base...)
 	if _, ok := overrides["GOTOOLCHAIN"]; !ok && !envHasKey(env, "GOTOOLCHAIN") {
-		env = append(env, "GOTOOLCHAIN=auto")
+		env = append(env, "GOTOOLCHAIN="+defaultGoToolchainForDir(dir))
 	}
 	if _, ok := overrides["PATH"]; !ok && envHasKey(env, "PATH") {
 		if goBin := strings.TrimSpace(goPathBin()); goBin != "" {
@@ -93,6 +95,28 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 		env = setEnv(env, key, value)
 	}
 	return env
+}
+
+func defaultGoToolchainForDir(dir string) string {
+	start := dir
+	if strings.TrimSpace(start) == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return goToolchainAuto
+		}
+		start = wd
+	}
+
+	repoRoot, err := findRepoRootFrom(start)
+	if err != nil {
+		return goToolchainAuto
+	}
+
+	toolchain, err := readRequestedGoToolchain(repoRoot)
+	if err != nil || strings.TrimSpace(toolchain) == "" {
+		return goToolchainAuto
+	}
+	return toolchain
 }
 
 func goPathBin() string {
@@ -180,8 +204,14 @@ func ensureXDGCacheDir(repoRoot string) (string, error) {
 }
 
 func cacheDirVersionKey() string {
-	// Prefer the Go tool version used on PATH, which matches the compiler used by our invoked `go` commands.
+	// Prefer the effective Go tool version our invoked `go` commands will use.
+	// Default to the repo's requested toolchain so cache directories stay
+	// isolated across patch-level upgrades and avoid launcher/tool drift.
 	cmd := exec.Command("go", "env", "GOVERSION") //nolint:gosec // tool invocation
+	cmd.Env = append([]string(nil), os.Environ()...)
+	if !envHasKey(cmd.Env, "GOTOOLCHAIN") {
+		cmd.Env = append(cmd.Env, "GOTOOLCHAIN="+defaultGoToolchainForDir(""))
+	}
 	output, err := cmd.Output()
 	if err == nil {
 		if version := strings.TrimSpace(string(output)); version != "" {

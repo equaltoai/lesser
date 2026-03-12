@@ -104,6 +104,42 @@ func TestAgentsRound16_AgentEnablementGuards(t *testing.T) {
 
 		requireStatus(t, http.StatusForbidden)(h.ensureAgentRegistrationEnabled(ctx))
 	})
+
+	t.Run("ensureAgentRegistrationEnabled returns 500 on instance repo error", func(t *testing.T) {
+		cfg := round10TestConfig()
+		cfg.AllowAgents = true
+		cfg.AllowAgentRegistration = true
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			firstErrorOnce: errors.New("boom"),
+		})
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/agents/register/challenge", nil, nil, nil)
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusInternalServerError)(h.ensureAgentRegistrationEnabled(ctx))
+	})
+
+	t.Run("ensureAgentRegistrationEnabled allows when config and policy enable registration", func(t *testing.T) {
+		cfg := round10TestConfig()
+		cfg.AllowAgents = true
+		cfg.AllowAgentRegistration = true
+
+		policy := storagemodels.NewAgentInstanceConfig()
+		policy.AllowAgents = true
+		policy.AllowAgentRegistration = true
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			agentInstanceConfig: policy,
+		})
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/agents/register/challenge", nil, nil, nil)
+		require.NoError(t, err)
+
+		resp, err := h.ensureAgentRegistrationEnabled(ctx)
+		require.NoError(t, err)
+		require.Nil(t, resp)
+	})
 }
 
 func TestAgentsRound16_UpdateAgentHelpers(t *testing.T) {
@@ -155,6 +191,14 @@ func TestAgentsRound16_DelegationAndOwnershipHelpers(t *testing.T) {
 		resp, err := h.validateAgentDelegationRequest(&apptheory.Context{}, &apimodels.AgentDelegationRequest{
 			AgentUsername: "agent",
 			DisplayName:   "this display name is far too long for mastodon rules",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+
+		resp, err = h.validateAgentDelegationRequest(&apptheory.Context{}, &apimodels.AgentDelegationRequest{
+			AgentUsername: "agent",
+			Bio:           "this bio is way too long for mastodon rules this bio is way too long for mastodon rules this bio is way too long for mastodon rules this bio is way too long for mastodon rules this bio is way too long for mastodon rules",
 		})
 		require.NoError(t, err)
 		require.NotNil(t, resp)

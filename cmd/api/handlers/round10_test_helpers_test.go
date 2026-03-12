@@ -112,10 +112,12 @@ type round10QueryState struct {
 	trendingStatuses           []storagemodels.StatusTrend
 	trendingLinks              []storagemodels.LinkTrend
 
-	agentKeyChallengesByID   map[string]storagemodels.AgentKeyChallenge
-	agentMemoryEventsByAgent map[string][]storagemodels.AgentMemoryEvent
-	remoteActorsByPK         map[string]storagemodels.RemoteActor
-	auditLogsByUser          map[string][]*storagemodels.AuthAuditLog
+	agentKeyChallengesByID    map[string]storagemodels.AgentKeyChallenge
+	agentAccessLeasesByKey    map[string]storagemodels.AgentAccessLease
+	agentAccessChallengesByID map[string]storagemodels.AgentAccessLeaseChallenge
+	agentMemoryEventsByAgent  map[string][]storagemodels.AgentMemoryEvent
+	remoteActorsByPK          map[string]storagemodels.RemoteActor
+	auditLogsByUser           map[string][]*storagemodels.AuthAuditLog
 
 	forceVapidNotFound bool
 
@@ -302,6 +304,24 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.revokedAccessTokensByJTI = map[string]storagemodels.RevokedAccessToken{}
 			}
 			state.revokedAccessTokensByJTI[jti] = *m
+		case *storagemodels.AgentAccessLease:
+			if m == nil {
+				return
+			}
+			_ = m.BeforeCreate()
+			if state.agentAccessLeasesByKey == nil {
+				state.agentAccessLeasesByKey = map[string]storagemodels.AgentAccessLease{}
+			}
+			state.agentAccessLeasesByKey[m.PK+"#"+m.SK] = *m
+		case *storagemodels.AgentAccessLeaseChallenge:
+			if m == nil {
+				return
+			}
+			_ = m.BeforeCreate()
+			if state.agentAccessChallengesByID == nil {
+				state.agentAccessChallengesByID = map[string]storagemodels.AgentAccessLeaseChallenge{}
+			}
+			state.agentAccessChallengesByID[m.ID] = *m
 		}
 	}).Maybe()
 
@@ -569,6 +589,27 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 			}
 			*d = storagemodels.AgentKeyChallenge{PK: pk, SK: "CHALLENGE", ID: id}
+		case *storagemodels.AgentAccessLeaseChallenge:
+			pk, _ := state.whereString("PK")
+			id := strings.TrimPrefix(pk, "AGENT_ACCESS_CHALLENGE#")
+			if state.agentAccessChallengesByID != nil {
+				if challenge, ok := state.agentAccessChallengesByID[id]; ok {
+					*d = challenge
+					return
+				}
+			}
+			*d = storagemodels.AgentAccessLeaseChallenge{PK: pk, SK: "CHALLENGE", ID: id}
+		case *storagemodels.AgentAccessLease:
+			pk, _ := state.whereString("PK")
+			sk, _ := state.whereString("SK")
+			key := pk + "#" + sk
+			if state.agentAccessLeasesByKey != nil {
+				if lease, ok := state.agentAccessLeasesByKey[key]; ok {
+					*d = lease
+					return
+				}
+			}
+			*d = storagemodels.AgentAccessLease{PK: pk, SK: sk}
 		case *storagemodels.RemoteActor:
 			pk, _ := state.whereString("PK")
 			if state.remoteActorsByPK != nil {
@@ -1917,6 +1958,20 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				return
 			}
 			*d = []storagemodels.WalletCredential{}
+		case *[]storagemodels.AgentAccessLease:
+			items := make([]storagemodels.AgentAccessLease, 0)
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "AGENT_ACCESS_LEASE#") {
+				for key, lease := range state.agentAccessLeasesByKey {
+					if strings.HasPrefix(key, pk+"#") {
+						items = append(items, lease)
+					}
+				}
+			} else {
+				for _, lease := range state.agentAccessLeasesByKey {
+					items = append(items, lease)
+				}
+			}
+			*d = items
 		case *[]storagemodels.WalletIndex:
 			address := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "WALLET#") {

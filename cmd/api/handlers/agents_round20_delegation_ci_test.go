@@ -88,6 +88,21 @@ func TestAgentsRound20_ResolveDelegatedAgentAccount_Branches(t *testing.T) {
 		requireStatus(t, http.StatusNotFound)(resp, respErr)
 	})
 
+	t.Run("account lookup errors return internal server error", func(t *testing.T) {
+		cfg := round10TestConfig()
+		cfg.AllowAgents = true
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			firstErrorOnce: errors.New("boom"),
+		})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", nil, nil, nil)
+		require.NoError(t, err)
+
+		account, resp, respErr := h.resolveDelegatedAgentAccount(ctx, &auth.Claims{Username: "owner", Scopes: []string{auth.ScopeWrite}}, "agent1", []string{"read"})
+		require.Nil(t, account)
+		requireStatus(t, http.StatusInternalServerError)(resp, respErr)
+	})
+
 	t.Run("suspended agent returns not found", func(t *testing.T) {
 		cfg := round10TestConfig()
 		cfg.AllowAgents = true

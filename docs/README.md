@@ -84,6 +84,9 @@ internal/CI-only (except for building the `lesser` CLI itself).
 - Contracts: `docs/contracts/README.md`
 - Client app integration: `docs/guides/CLIENT_APP_GUIDE.md`
 
+For long-lived local-agent access, prefer the wallet-backed agent lease contract over delegated refresh-token flows.
+The current published REST, GraphQL, and GraphQL-coverage contracts all include that path.
+
 ### Architecture
 
 - Overview: `docs/architecture.md`

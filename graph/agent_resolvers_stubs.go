@@ -23,9 +23,10 @@ var errAgentSupportNotImplemented = apperrors.Internal("agent support is not imp
 const delegatedAgentClientID = "lesser-agent-delegation"
 
 const (
-	oauthScopeAdmin = "admin"
-	oauthScopePush  = "push"
-	oauthScopeWrite = "write"
+	oauthScopeAdmin  = "admin"
+	oauthScopeFollow = "follow"
+	oauthScopePush   = "push"
+	oauthScopeWrite  = "write"
 
 	agentQuarantineStatusApproved = "approved"
 )
@@ -959,6 +960,29 @@ func (r *Resolver) ensureAgentsEnabled(ctx context.Context) error {
 	return nil
 }
 
+//nolint:unused // Retained for follow-up GraphQL registration flows.
+func (r *Resolver) ensureAgentRegistrationEnabled(ctx context.Context) error {
+	if err := r.ensureAgentsEnabled(ctx); err != nil {
+		return err
+	}
+	if r.Config == nil || !r.Config.AllowAgentRegistration {
+		return apperrors.Forbidden("agent registration is disabled")
+	}
+
+	if r.Storage == nil || r.Storage.Instance() == nil {
+		return nil
+	}
+
+	policy, err := r.Storage.Instance().GetAgentInstanceConfig(ctx)
+	if err != nil {
+		return apperrors.InternalWithCause(err, "failed to load agent policy")
+	}
+	if policy == nil || !policy.AllowAgentRegistration {
+		return apperrors.Forbidden("agent registration is disabled by instance policy")
+	}
+
+	return nil
+}
 func validateDelegationScopes(ownerScopes []string, requested []string) ([]string, error) {
 	if err := common.ValidateSliceNotEmpty("scopes", requested); err != nil {
 		return nil, err
@@ -1027,6 +1051,49 @@ func validateAccessTokenTTL(expiresIn *int) (time.Duration, error) {
 	return time.Duration(*expiresIn) * time.Second, nil
 }
 
+//nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.
+func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
+	var caps agents.Capabilities
+
+	for _, scope := range scopes {
+		base := strings.Split(strings.TrimSpace(scope), ":")[0]
+		switch base {
+		case oauthScopeWrite:
+			caps.CanPost = true
+			caps.CanReply = true
+			caps.CanBoost = true
+			caps.CanDM = true
+		case oauthScopeFollow:
+			caps.CanFollow = true
+		}
+
+		if scope == "write:statuses" {
+			caps.CanPost = true
+			caps.CanReply = true
+			caps.CanBoost = true
+			caps.CanDM = true
+		}
+		if scope == "write:follows" {
+			caps.CanFollow = true
+		}
+	}
+
+	return caps
+}
+
+//nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.
+func clampMaxPostsPerHour(capabilities *agents.Capabilities, maxPostsPerHourAllowed int) {
+	if capabilities == nil {
+		return
+	}
+	if capabilities.MaxPostsPerHour <= 0 {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
+	if capabilities.MaxPostsPerHour > maxPostsPerHourAllowed {
+		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
+	}
+}
+
 func scopesAreSubset(ownerScopes, requested []string) bool {
 	owned := map[string]struct{}{}
 	for _, s := range ownerScopes {
@@ -1072,6 +1139,29 @@ func isAgentOwnerOrAdmin(claims *auth.Claims, agentUser *storage.User) bool {
 	}
 	owner = strings.TrimPrefix(owner, "@")
 	return strings.EqualFold(owner, strings.TrimSpace(claims.Username))
+}
+
+//nolint:unused // Retained for follow-up GraphQL delegated-agent creation work.
+func (r *Resolver) agentRegistrationLimits(ctx context.Context) (quarantineDays int, maxPostsPerHourAllowed int) {
+	quarantineDays = 7
+	maxPostsPerHourAllowed = 50
+
+	if r != nil && r.Storage != nil && r.Storage.Instance() != nil {
+		if policy, err := r.Storage.Instance().GetAgentInstanceConfig(ctx); err == nil && policy != nil {
+			if policy.DefaultQuarantineDays > 0 {
+				quarantineDays = policy.DefaultQuarantineDays
+			}
+			if policy.AgentMaxPostsPerHour > 0 {
+				maxPostsPerHourAllowed = policy.AgentMaxPostsPerHour
+			}
+		}
+	}
+
+	if maxPostsPerHourAllowed <= 0 {
+		maxPostsPerHourAllowed = 50
+	}
+
+	return quarantineDays, maxPostsPerHourAllowed
 }
 
 func applyAgentCapabilitiesInput(ctx context.Context, r *mutationResolver, user *storage.User, input *model.AgentCapabilitiesInput) {

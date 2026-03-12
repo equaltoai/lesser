@@ -4216,6 +4216,96 @@ type DelegationPayload {
   expiresIn: Int!
 }
 
+type AgentAccessLease {
+  id: ID!
+  username: String!
+  principalUsername: String!
+  principalWallet: String!
+  agentWallet: String!
+  scopes: [String!]!
+  deviceLabel: String!
+  status: String!
+  idleTimeoutHours: Int!
+  idleExpiresAt: Time!
+  absoluteExpiresAt: Time!
+  lastUsedAt: Time!
+  leaseVersion: Int!
+  sessionPublicKey: String
+  sessionKeyType: String
+  sessionKeyCreatedAt: Time
+  sessionKeyLastUsedAt: Time
+  createdAt: Time!
+  updatedAt: Time!
+  revokedAt: Time
+  revokedBy: String
+  revokedReason: String
+}
+
+type AgentAccessLeaseChallenge {
+  id: ID!
+  leaseID: ID!
+  username: String!
+  action: String!
+  walletAddress: String!
+  principalWallet: String!
+  agentWallet: String!
+  sessionPublicKey: String
+  sessionKeyType: String
+  scopes: [String!]!
+  deviceLabel: String!
+  idleTimeoutHours: Int!
+  absoluteTTLHours: Int!
+  message: String!
+  typedDataJson: String
+  issuedAt: Time!
+  expiresAt: Time!
+}
+
+type AgentAccessLeaseTokenPayload {
+  leaseID: ID!
+  accessToken: String!
+  tokenType: String!
+  scope: String!
+  createdAt: Time!
+  expiresIn: Int!
+}
+
+input AgentAccessLeaseChallengeInput {
+  principalWallet: String!
+  agentWallet: String!
+  sessionPublicKey: String
+  scopes: [String!]!
+  deviceLabel: String
+  leaseID: ID
+  idleTimeoutHours: Int
+  absoluteTTLHours: Int
+}
+
+input CreateAgentAccessLeaseInput {
+  principalChallengeID: ID!
+  principalSignature: String!
+  agentChallengeID: ID!
+  agentSignature: String!
+}
+
+input RevokeAgentAccessLeaseInput {
+  reason: String
+}
+
+input AgentAccessLeaseSessionKeyChallengeInput {
+  sessionPublicKey: String!
+}
+
+input AuthorizeAgentAccessLeaseSessionKeyInput {
+  challengeID: ID!
+  signature: String!
+}
+
+input ExchangeAgentAccessLeaseTokenInput {
+  challengeID: ID!
+  signature: String!
+}
+
 type AgentActivityEvent {
   eventId: ID!
   agentUsername: String!
@@ -4316,6 +4406,7 @@ extend type Query {
   agents(first: Int = 20, after: Cursor, type: AgentType, query: String, verified: Boolean, ownerUsername: String): AgentConnection!
   myAgents: [Agent!]!
   agentActivity(username: String!, first: Int = 20, after: Cursor): AgentActivityConnection!
+  agentAccessLeases(username: String!): [AgentAccessLease!]!
   adminAgentPolicy: AdminAgentPolicy!
   agentMemorySearch(query: String!, tags: [String!], dateRange: DateRangeInput, first: Int = 20, after: Cursor): ObjectConnection!
   mySouls: [SoulInventoryItem!]!
@@ -4327,6 +4418,14 @@ extend type Mutation {
   deleteAgent(username: String!): Agent!
   delegateToAgent(input: DelegateToAgentInput!): DelegationPayload!
   revokeAgentToken(username: String!): Boolean!
+  createAgentAccessLeasePrincipalChallenge(username: String!, input: AgentAccessLeaseChallengeInput!): AgentAccessLeaseChallenge!
+  createAgentAccessLeaseAgentChallenge(username: String!, input: AgentAccessLeaseChallengeInput!): AgentAccessLeaseChallenge!
+  createAgentAccessLease(username: String!, input: CreateAgentAccessLeaseInput!): AgentAccessLease!
+  revokeAgentAccessLease(username: String!, leaseID: ID!, input: RevokeAgentAccessLeaseInput): AgentAccessLease!
+  createAgentAccessLeaseSessionKeyChallenge(username: String!, leaseID: ID!, input: AgentAccessLeaseSessionKeyChallengeInput!): AgentAccessLeaseChallenge!
+  authorizeAgentAccessLeaseSessionKey(username: String!, leaseID: ID!, input: AuthorizeAgentAccessLeaseSessionKeyInput!): AgentAccessLease!
+  createAgentAccessLeaseRenewChallenge(username: String!, leaseID: ID!): AgentAccessLeaseChallenge!
+  exchangeAgentAccessLeaseToken(username: String!, leaseID: ID!, input: ExchangeAgentAccessLeaseTokenInput!): AgentAccessLeaseTokenPayload!
 
   # Admin flows
   updateAdminAgentPolicy(input: UpdateAdminAgentPolicyInput!): AdminAgentPolicy!
