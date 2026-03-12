@@ -105,6 +105,7 @@ bootstrap*
 .gomodcache/
 /bootstrap_*/
 .pai/
+.codex/
 lint-report.json
 
 /*/.astro/
