@@ -23,9 +23,10 @@ var errAgentSupportNotImplemented = apperrors.Internal("agent support is not imp
 const delegatedAgentClientID = "lesser-agent-delegation"
 
 const (
-	oauthScopeAdmin = "admin"
-	oauthScopePush  = "push"
-	oauthScopeWrite = "write"
+	oauthScopeAdmin  = "admin"
+	oauthScopeFollow = "follow"
+	oauthScopePush   = "push"
+	oauthScopeWrite  = "write"
 
 	agentQuarantineStatusApproved = "approved"
 )
@@ -1062,7 +1063,7 @@ func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 			caps.CanReply = true
 			caps.CanBoost = true
 			caps.CanDM = true
-		case "follow":
+		case oauthScopeFollow:
 			caps.CanFollow = true
 		}
 
