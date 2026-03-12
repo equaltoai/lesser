@@ -202,7 +202,7 @@ func (h *Handler) publicAccountFromActor(ctx context.Context, actor *activitypub
 func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string) (*storage.Account, error) {
 	if h != nil && h.registry != nil && h.registry.Accounts() != nil {
 		account, err := h.registry.Accounts().GetAccount(ctx, accountID)
-		if err == nil && account != nil {
+		if err == nil && account != nil && h.accountLookupMatchesRequestedID(account, accountID) {
 			return account, nil
 		}
 		if !shouldFallbackAccountResolution(accountID) {
@@ -217,7 +217,7 @@ func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string
 		normalizedID := strings.TrimSpace(accountID)
 		if normalizedID != "" {
 			account, err := h.repos.Account().GetAccount(ctx, normalizedID)
-			if err == nil && account != nil {
+			if err == nil && account != nil && h.accountLookupMatchesRequestedID(account, accountID) {
 				return account, nil
 			}
 		}
@@ -240,6 +240,19 @@ func (h *Handler) lookupStorageAccountByID(ctx context.Context, accountID string
 	}
 
 	return storageAccountFromActor(actor), nil
+}
+
+func (h *Handler) accountLookupMatchesRequestedID(account *storage.Account, accountID string) bool {
+	if account == nil {
+		return false
+	}
+
+	normalizedID := normalizeResolvedAccountID(accountID)
+	if common.ValidateNumericID("account_id", normalizedID) == nil && len(normalizedID) >= 10 {
+		return strings.TrimSpace(h.publicAccountFromStorageAccount(account).ID) == normalizedID
+	}
+
+	return true
 }
 
 func shouldFallbackAccountResolution(accountID string) bool {

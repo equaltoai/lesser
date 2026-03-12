@@ -299,6 +299,12 @@ func (h *Handler) HandleGetAccountFollowingFull(ctx *apptheory.Context) (*appthe
 // Helper methods
 
 func (h *Handler) resolveAccountIDFull(ctx context.Context, accountID string) (*activitypub.Actor, error) {
+	accountID = normalizeResolvedAccountID(accountID)
+
+	if common.ValidateNumericID("account_id", accountID) == nil && len(accountID) >= 10 {
+		return h.resolveAccountID(ctx, accountID)
+	}
+
 	// Check if it's a local username or full actor ID
 	if strings.HasPrefix(accountID, schemeHTTP) {
 		// Full actor ID - extract username from URL
