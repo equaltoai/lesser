@@ -48,6 +48,19 @@ func TestCalculateStats_Empty(t *testing.T) {
 	require.Equal(t, 0, stats["average_score"])
 }
 
+func TestCalculateStats_NonEmpty(t *testing.T) {
+	stats := CalculateStats([]CommunityNote{
+		{Score: 0.8, VisibilityStatus: VisibilityVisible},
+		{Score: 0.2, VisibilityStatus: VisibilityDisputed},
+		{Score: 0.4, VisibilityStatus: VisibilityPending},
+	})
+
+	require.Equal(t, 3, stats["total"])
+	require.Equal(t, 1, stats["visible"])
+	require.Equal(t, 1, stats["disputed"])
+	require.InDelta(t, (0.8+0.2+0.4)/3, stats["average_score"], 0.0001)
+}
+
 func TestCalculateNoteScore_NoVotes_UsesInitialScore(t *testing.T) {
 	note := &CommunityNote{
 		AuthorRep:        1000,
@@ -59,5 +72,23 @@ func TestCalculateNoteScore_NoVotes_UsesInitialScore(t *testing.T) {
 	}
 
 	score := CalculateNoteScore(note, nil)
+	require.Greater(t, score, 0.0)
+}
+
+func TestCalculateNoteScore_WithVotes_UsesWilsonPath(t *testing.T) {
+	note := &CommunityNote{
+		AuthorRep:        1000,
+		Sentiment:        0.9,
+		Objectivity:      0.8,
+		SourceQuality:    0.7,
+		CreatedAt:        time.Now(),
+		VisibilityStatus: VisibilityPending,
+	}
+
+	score := CalculateNoteScore(note, []Vote{
+		{VoteType: VoteHelpful, Weight: 4},
+		{VoteType: VoteNotHelpful, Weight: 1},
+	})
+
 	require.Greater(t, score, 0.0)
 }
