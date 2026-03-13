@@ -13,7 +13,9 @@ export default defineConfig({
   ],
   output: 'static',
   build: {
-    inlineStylesheets: 'always',
+    // Auth UI is served behind a strict CSP, so emit external CSS assets instead of
+    // inlining styles into the HTML where every upstream CSS change would require a new hash.
+    inlineStylesheets: 'never',
     assets: '_assets',
   },
   vite: {
