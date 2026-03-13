@@ -17,13 +17,6 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 </Section>
 ```
 
-@example Custom spacing value
-```svelte
-<Section spacing="8rem">
-  <h2>Custom Spaced Section</h2>
-</Section>
-```
-
 @example Background variants
 ```svelte
 <Section background="muted">
@@ -32,6 +25,15 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 
 <Section background="gradient" gradientDirection="to-bottom-right">
   <h2>Gradient Background</h2>
+</Section>
+```
+
+@example Custom styling via external CSS
+For custom spacing or background values beyond presets, use the `class` prop
+with your own CSS classes defined in your application's stylesheet.
+```svelte
+<Section class="my-custom-section">
+  <h2>Custom Section</h2>
 </Section>
 ```
 -->
@@ -44,19 +46,19 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 	 * Preset spacing values.
 	 * @public
 	 */
-	type SpacingPreset = 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+	export type SpacingPreset = 'none' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
 
 	/**
 	 * Background variant presets.
 	 * @public
 	 */
-	type BackgroundVariant = 'default' | 'muted' | 'accent' | 'gradient';
+	export type BackgroundPreset = 'default' | 'muted' | 'accent' | 'gradient';
 
 	/**
 	 * Gradient direction options.
 	 * @public
 	 */
-	type GradientDirection =
+	export type GradientDirection =
 		| 'to-top'
 		| 'to-bottom'
 		| 'to-left'
@@ -74,7 +76,7 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 	interface Props extends HTMLAttributes<HTMLElement> {
 		/**
 		 * Vertical spacing (margin-top and margin-bottom).
-		 * Can be a preset value or a custom CSS value (e.g., '8rem', '128px').
+		 * Must be a preset value for CSP compliance.
 		 *
 		 * Preset values:
 		 * - `none`: No spacing
@@ -86,10 +88,12 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 		 * - `3xl`: 12rem
 		 * - `4xl`: 16rem
 		 *
+		 * For custom spacing, use the `class` prop with external CSS.
+		 *
 		 * @defaultValue 'md'
 		 * @public
 		 */
-		spacing?: SpacingPreset | string | number;
+		spacing?: SpacingPreset;
 
 		/**
 		 * Horizontal padding.
@@ -113,7 +117,8 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 		centered?: boolean;
 
 		/**
-		 * Background variant or custom CSS background value.
+		 * Background variant preset.
+		 * Must be a preset value for CSP compliance.
 		 *
 		 * Preset variants:
 		 * - `default`: Transparent/inherit
@@ -121,12 +126,12 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 		 * - `accent`: Primary color tinted background
 		 * - `gradient`: Gradient background (use with gradientDirection)
 		 *
-		 * Can also accept custom CSS values like 'linear-gradient(...)' or '#f5f5f5'.
+		 * For custom backgrounds, use the `class` prop with external CSS.
 		 *
 		 * @defaultValue 'default'
 		 * @public
 		 */
-		background?: BackgroundVariant | string;
+		background?: BackgroundPreset;
 
 		/**
 		 * Direction for gradient backgrounds.
@@ -139,6 +144,7 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 
 		/**
 		 * Additional CSS classes.
+		 * Use this for custom styling beyond presets.
 		 *
 		 * @public
 		 */
@@ -152,10 +158,6 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 		children?: Snippet;
 	}
 
-	// Preset spacing values for validation
-	const SPACING_PRESETS: SpacingPreset[] = ['none', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl'];
-	const BACKGROUND_PRESETS: BackgroundVariant[] = ['default', 'muted', 'accent', 'gradient'];
-
 	let {
 		spacing = 'md',
 		padding = false,
@@ -164,77 +166,47 @@ Section component - Semantic section wrapper with consistent vertical spacing.
 		gradientDirection = 'to-bottom',
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
-	// Check if spacing is a preset or custom value
-	const isSpacingPreset = $derived(
-		typeof spacing === 'string' && SPACING_PRESETS.includes(spacing as SpacingPreset)
-	);
-
-	// Check if background is a preset or custom value
-	const isBackgroundPreset = $derived(
-		typeof background === 'string' && BACKGROUND_PRESETS.includes(background as BackgroundVariant)
-	);
-
-	// Compute custom spacing style
-	const customSpacingStyle = $derived.by(() => {
-		if (isSpacingPreset) return '';
-		if (typeof spacing === 'number') {
-			return `--gr-section-custom-spacing: ${spacing}px;`;
-		}
-		return `--gr-section-custom-spacing: ${spacing};`;
-	});
-
-	// Compute custom background style
-	const customBackgroundStyle = $derived.by(() => {
-		if (isBackgroundPreset) return '';
-		return `--gr-section-custom-background: ${background};`;
-	});
-
-	// Combine custom styles
-	const customStyle = $derived.by(() => {
-		const styles = [customSpacingStyle, customBackgroundStyle].filter(Boolean);
-		return styles.length > 0 ? styles.join(' ') : undefined;
-	});
-
-	// Compute section classes
+	// Compute section classes (CSP-compliant: no inline styles)
 	const sectionClass = $derived(() => {
-		let paddingClass = '';
-		if (typeof padding === 'string') {
-			paddingClass = `gr-section--padded-${padding}`;
-		} else if (padding === true) {
-			paddingClass = 'gr-section--padded-md';
-		}
-
 		const classes = ['gr-section'];
 
-		// Spacing classes
-		if (isSpacingPreset) {
-			classes.push(`gr-section--spacing-${spacing}`);
-		} else {
-			classes.push('gr-section--spacing-custom');
-		}
+		// Spacing class (always a preset)
+		classes.push(`gr-section--spacing-${spacing}`);
 
-		// Background classes
-		if (isBackgroundPreset && background !== 'default') {
+		// Background classes (only for non-default presets)
+		if (background !== 'default') {
 			classes.push(`gr-section--bg-${background}`);
 			if (background === 'gradient') {
 				classes.push(`gr-section--gradient-${gradientDirection}`);
 			}
-		} else if (!isBackgroundPreset) {
-			classes.push('gr-section--bg-custom');
 		}
 
-		if (paddingClass) classes.push(paddingClass);
-		if (centered) classes.push('gr-section--centered');
-		if (className) classes.push(className);
+		// Padding classes
+		if (typeof padding === 'string') {
+			classes.push(`gr-section--padded-${padding}`);
+		} else if (padding === true) {
+			classes.push('gr-section--padded-md');
+		}
+
+		// Centered class
+		if (centered) {
+			classes.push('gr-section--centered');
+		}
+
+		// Custom class
+		if (className) {
+			classes.push(className);
+		}
 
 		return classes.filter(Boolean).join(' ');
 	});
 </script>
 
-<section class={sectionClass()} style={customStyle} {...restProps}>
+<section class={sectionClass()} {...restProps}>
 	{#if children}
 		{@render children()}
 	{/if}

@@ -3,6 +3,8 @@
 	import type { Snippet } from 'svelte';
 	import { getMenuContext } from './context.svelte';
 
+	type MaxHeightPreset = 'sm' | 'md' | 'lg';
+
 	interface Props {
 		/** Custom CSS class */
 		class?: string;
@@ -11,7 +13,7 @@
 		/** Minimum width matching trigger */
 		matchTriggerWidth?: boolean;
 		/** Maximum height before scrolling */
-		maxHeight?: string;
+		maxHeight?: MaxHeightPreset;
 		[key: string]: unknown;
 	}
 
@@ -19,7 +21,8 @@
 		class: className = '',
 		children,
 		matchTriggerWidth = false,
-		maxHeight = '300px',
+		maxHeight = 'md',
+		style: _style,
 		...restProps
 	}: Props = $props();
 
@@ -208,22 +211,27 @@
 		});
 	}
 
-	const triggerWidth = $derived(ctx.triggerElement?.getBoundingClientRect().width ?? 0);
+	const contentClass = $derived.by(() => {
+		return [
+			'gr-menu-content',
+			`gr-menu-content--max-height-${maxHeight}`,
+			matchTriggerWidth && 'gr-menu-content--match-trigger-width',
+			className,
+		]
+			.filter(Boolean)
+			.join(' ');
+	});
 </script>
 
 {#if ctx.isOpen}
 	<div
 		bind:this={contentRef}
-		class="gr-menu-content {className}"
+		class={contentClass}
 		role="menu"
 		id={ctx.menuId}
 		aria-labelledby={ctx.triggerId}
 		tabindex="-1"
 		data-placement={ctx.position.placement}
-		style:left="{ctx.position.x}px"
-		style:top="{ctx.position.y}px"
-		style:min-width={matchTriggerWidth ? `${triggerWidth}px` : undefined}
-		style:max-height={maxHeight}
 		onkeydown={handleKeyDown}
 		{...restProps}
 	>
@@ -233,7 +241,7 @@
 
 <style>
 	.gr-menu-content {
-		position: fixed;
+		position: absolute;
 		z-index: 1000;
 		background: var(--gr-color-surface, #ffffff);
 		border: 1px solid var(--gr-color-border, #e5e7eb);
@@ -242,6 +250,49 @@
 		padding: var(--gr-spacing-xs, 4px);
 		overflow-y: auto;
 		outline: none;
+		min-width: 12rem;
+	}
+
+	/* Placement classes - CSS-based positioning relative to trigger/root */
+	.gr-menu-content[data-placement='bottom-start'] {
+		top: 100%;
+		left: 0;
+		margin-top: var(--gr-menu-offset, 4px);
+	}
+
+	.gr-menu-content[data-placement='bottom-end'] {
+		top: 100%;
+		right: 0;
+		margin-top: var(--gr-menu-offset, 4px);
+	}
+
+	.gr-menu-content[data-placement='top-start'] {
+		bottom: 100%;
+		left: 0;
+		margin-bottom: var(--gr-menu-offset, 4px);
+	}
+
+	.gr-menu-content[data-placement='top-end'] {
+		bottom: 100%;
+		right: 0;
+		margin-bottom: var(--gr-menu-offset, 4px);
+	}
+
+	/* Sizing helpers */
+	.gr-menu-content--match-trigger-width {
+		min-width: max(12rem, 100%);
+	}
+
+	.gr-menu-content--max-height-sm {
+		max-height: 200px;
+	}
+
+	.gr-menu-content--max-height-md {
+		max-height: 300px;
+	}
+
+	.gr-menu-content--max-height-lg {
+		max-height: 400px;
 	}
 
 	.gr-menu-content[data-placement^='top'] {

@@ -15,7 +15,7 @@
 		'2xl': 'lg',
 	};
 
-	interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'role'> {
+	interface Props extends Omit<HTMLAttributes<HTMLElement>, 'role'> {
 		src?: string;
 		alt?: string;
 		name?: string;
@@ -62,7 +62,6 @@
 		class: className = '',
 		fallback,
 		id,
-		style,
 		onclick,
 		onmouseenter,
 		onmouseleave,
@@ -172,7 +171,9 @@
 		const words = name.trim().split(/\s+/);
 		if (words.length === 1) {
 			// Single word - take first two characters
-			return words[0].substring(0, 2).toUpperCase();
+			const firstWord = words[0];
+			if (!firstWord) return '';
+			return firstWord.substring(0, 2).toUpperCase();
 		} else {
 			// Multiple words - take first character of first two words
 			return words
@@ -183,10 +184,9 @@
 		}
 	});
 
-	// Generate background color from name or label
-	const initialsBackgroundColor = $derived.by(() => {
-		const colorSource = name || label;
-		if (!colorSource) return 'var(--gr-semantic-background-secondary)';
+	// Generate deterministic color class from name or label
+	function generateColorClass(colorSource: string): string {
+		if (!colorSource) return '';
 
 		// Simple hash function to generate consistent color
 		let hash = 0;
@@ -194,10 +194,16 @@
 			hash = colorSource.charCodeAt(i) + ((hash << 5) - hash);
 		}
 
-		// Convert to HSL for better color distribution
-		// Using 30% lightness to ensure WCAG AA contrast (4.5:1) with white text
-		const hue = Math.abs(hash) % 360;
-		return `hsl(${hue}, 65%, 30%)`;
+		// Map hash to color index (0-11)
+		const index = Math.abs(hash) % 12;
+		return `gr-avatar--color-${index}`;
+	}
+
+	// Generate color class from name or label
+	const colorClass = $derived.by(() => {
+		const colorSource = name || label;
+		if (!colorSource) return '';
+		return generateColorClass(colorSource);
 	});
 
 	function handleImageLoad() {
@@ -239,12 +245,11 @@
 	{:else if src && !imageError}
 		<img
 			bind:this={imageElement}
-			class="gr-avatar__image"
+			class="gr-avatar__image {imageLoaded ? 'gr-avatar__image--loaded' : ''}"
 			{src}
 			alt={alt || name || label || 'Avatar'}
 			onload={handleImageLoad}
 			onerror={handleImageError}
-			style="display: {imageLoaded ? 'block' : 'none'}"
 		/>
 
 		{#if !imageLoaded}
@@ -253,14 +258,11 @@
 				{#if fallback}
 					{@render fallback()}
 				{:else if fallbackMode === 'label' && label}
-					<span
-						class="gr-avatar__label"
-						style="background-color: {initialsBackgroundColor}; color: white;"
-					>
+					<span class="gr-avatar__label {colorClass}">
 						{label}
 					</span>
 				{:else if fallbackMode === 'icon'}
-					<span class="gr-avatar__icon" style="background-color: {initialsBackgroundColor};">
+					<span class="gr-avatar__icon {colorClass}">
 						{#if labelIcon}
 							{@render labelIcon()}
 						{:else}
@@ -279,10 +281,7 @@
 						{/if}
 					</span>
 				{:else if fallbackMode === 'initials' && computedInitials}
-					<span
-						class="gr-avatar__initials"
-						style="background-color: {initialsBackgroundColor}; color: white;"
-					>
+					<span class="gr-avatar__initials {colorClass}">
 						{computedInitials}
 					</span>
 				{:else}
@@ -304,15 +303,12 @@
 				{@render fallback()}
 			{:else if fallbackMode === 'label' && label}
 				<!-- Label fallback mode -->
-				<span
-					class="gr-avatar__label"
-					style="background-color: {initialsBackgroundColor}; color: white;"
-				>
+				<span class="gr-avatar__label {colorClass}">
 					{label}
 				</span>
 			{:else if fallbackMode === 'icon'}
 				<!-- Icon fallback mode -->
-				<span class="gr-avatar__icon" style="background-color: {initialsBackgroundColor};">
+				<span class="gr-avatar__icon {colorClass}">
 					{#if labelIcon}
 						{@render labelIcon()}
 					{:else}
@@ -333,10 +329,7 @@
 				</span>
 			{:else if fallbackMode === 'initials' && computedInitials}
 				<!-- Initials fallback mode (default) -->
-				<span
-					class="gr-avatar__initials"
-					style="background-color: {initialsBackgroundColor}; color: white;"
-				>
+				<span class="gr-avatar__initials {colorClass}">
 					{computedInitials}
 				</span>
 			{:else}
@@ -363,7 +356,6 @@
 		aria-labelledby={ariaLabelledby}
 		aria-describedby={ariaDescribedby ?? (status ? statusId : undefined)}
 		{id}
-		{style}
 		{onclick}
 		{onmouseenter}
 		{onmouseleave}
@@ -385,7 +377,6 @@
 		aria-labelledby={ariaLabelledby}
 		aria-describedby={ariaDescribedby ?? (status ? statusId : undefined)}
 		{id}
-		{style}
 		{onclick}
 		{onmouseenter}
 		{onmouseleave}

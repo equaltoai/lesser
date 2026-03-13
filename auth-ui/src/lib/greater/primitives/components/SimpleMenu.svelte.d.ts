@@ -5,7 +5,7 @@ export interface MenuItem {
 	submenu?: MenuItem[];
 }
 import type { Snippet } from 'svelte';
-import type { MenuPlacement } from './Menu/context';
+import type { MenuPlacement } from './Menu/context.svelte';
 interface TriggerProps {
 	open: boolean;
 	toggle: () => void;

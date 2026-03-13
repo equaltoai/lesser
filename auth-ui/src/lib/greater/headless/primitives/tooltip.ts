@@ -15,6 +15,7 @@
 
 import { generateId } from '../utils/id';
 import type { Action } from '../types/common';
+import { applyCspSafeStyles, clearCspSafeStyles } from '../utils/csp-safe-styles';
 
 /**
  * Tooltip placement options
@@ -414,10 +415,10 @@ export function createTooltip(config: TooltipConfig = {}) {
 		state.position = { x, y };
 		state.placement = finalPlacement;
 
-		// Apply position to content element
-		contentElement.style.position = 'fixed';
-		contentElement.style.left = `${x}px`;
-		contentElement.style.top = `${y}px`;
+		contentElement.classList.add('gr-floating-layer', 'gr-floating-layer--fixed');
+		applyCspSafeStyles(contentElement, {
+			transform: `translate3d(${x}px, ${y}px, 0)`,
+		});
 	}
 
 	/**
@@ -544,6 +545,7 @@ export function createTooltip(config: TooltipConfig = {}) {
 		node.setAttribute('role', 'tooltip');
 		node.setAttribute('id', state.id);
 		node.setAttribute('data-placement', state.placement);
+		node.classList.add('gr-floating-layer', 'gr-floating-layer--fixed');
 
 		// Update position on scroll/resize
 		const handleUpdate = () => {
@@ -572,6 +574,7 @@ export function createTooltip(config: TooltipConfig = {}) {
 				node.setAttribute('data-placement', state.placement);
 			},
 			destroy() {
+				clearCspSafeStyles(node);
 				node.removeEventListener('mouseenter', handleMouseEnter);
 				node.removeEventListener('mouseleave', handleMouseLeave);
 				window.removeEventListener('scroll', handleUpdate, true);

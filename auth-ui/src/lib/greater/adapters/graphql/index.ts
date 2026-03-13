@@ -12,7 +12,11 @@ export type {
 	LesserGraphQLAdapterConfig,
 	TimelineVariables,
 	CreateNoteVariables,
+	ConversationMessagesVariables,
+	CreateConversationVariables,
 	SearchVariables,
+	SendMessageVariables,
+	UpdateMediaVariables,
 	ViewerQuery,
 } from './LesserGraphQLAdapter.js';
 

@@ -27,7 +27,7 @@ export interface BaseBuilderConfig {
 /**
  * Action return type for Svelte use:action directive
  */
-export interface ActionReturn<P = never> {
+export interface ActionReturn<P = any> {
 	update?: (parameters: P) => void;
 	destroy?: () => void;
 }
@@ -36,7 +36,7 @@ export interface ActionReturn<P = never> {
  * Svelte action type
  * A function that receives a DOM node and returns an action object
  */
-export type Action<T extends HTMLElement = HTMLElement, P = never> = (
+export type Action<T extends HTMLElement = HTMLElement, P = any> = (
 	node: T,
 	parameters?: P
 ) => ActionReturn<P> | void;

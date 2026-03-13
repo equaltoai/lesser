@@ -3,7 +3,7 @@
  * Handles dropdown positioning with viewport boundary detection and auto-flip
  * @module @equaltoai/greater-components/primitives/Menu/positioning
  */
-import type { MenuPlacement, MenuPosition } from './context.svelte';
+import type { MenuPlacement } from './context.svelte';
 export interface PositionConfig {
 	triggerRect: DOMRect;
 	contentRect: DOMRect;
@@ -12,9 +12,10 @@ export interface PositionConfig {
 	viewportMargin?: number;
 }
 /**
- * Calculate menu position based on trigger element and preferred placement
+ * Calculate the best placement based on trigger element and preferred placement.
+ * Returns a placement string only (no pixel positioning) for strict CSP compatibility.
  */
-export declare function calculatePosition(config: PositionConfig): MenuPosition;
+export declare function calculatePlacement(config: PositionConfig): MenuPlacement;
 /**
  * Get scroll parent of an element
  */

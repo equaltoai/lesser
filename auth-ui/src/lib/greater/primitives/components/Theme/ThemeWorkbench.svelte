@@ -1,6 +1,7 @@
 <!--
   Complete theme creation workbench
   Combines: color picker, harmony selector, contrast checker, preview
+  CSP-compliant: Uses CSS custom properties instead of inline styles
 -->
 <script lang="ts">
 	import ColorHarmonyPicker from './ColorHarmonyPicker.svelte';
@@ -30,6 +31,20 @@
 	// Derived theme from seed color
 	let theme = $derived(generateTheme(seedColor));
 
+	// Primary color scale keys for swatch grid
+	const primaryScaleKeys = [
+		'50',
+		'100',
+		'200',
+		'300',
+		'400',
+		'500',
+		'600',
+		'700',
+		'800',
+		'900',
+	] as const;
+
 	const harmonyOptions = [
 		{ value: 'complementary', label: 'Complementary' },
 		{ value: 'analogous', label: 'Analogous' },
@@ -44,50 +59,50 @@
 	}
 </script>
 
-<div class="theme-workbench">
-	<div class="workbench-sidebar">
+<div class="gr-theme-workbench">
+	<div class="gr-theme-workbench__sidebar">
 		<SettingsSection title="Theme Controls">
-			<div class="color-input-group">
+			<div class="gr-theme-workbench__color-input-group">
 				<label for="seed-color">Primary Color</label>
-				<div class="input-wrapper">
+				<div class="gr-theme-workbench__input-wrapper">
 					<input type="color" id="seed-color" bind:value={seedColor} />
-					<input type="text" bind:value={seedColor} class="hex-input" />
+					<input type="text" bind:value={seedColor} class="gr-theme-workbench__hex-input" />
 				</div>
 			</div>
 
 			<SettingsSelect label="Harmony" bind:value={harmonyType} options={harmonyOptions} />
 
-			<div class="harmony-preview">
+			<div class="gr-theme-workbench__harmony-preview">
 				<ColorHarmonyPicker {seedColor} {harmonyType} />
 			</div>
 		</SettingsSection>
 
 		<SettingsSection title="Contrast Check">
-			<ContrastChecker foreground={theme.colors.text} background={theme.colors.surface} />
-			<div style="height: 1rem;"></div>
-			<ContrastChecker foreground={theme.colors.primary[500]} background={theme.colors.surface} />
+			<ContrastChecker preset="text-on-surface" />
+			<div class="gr-theme-workbench__spacer"></div>
+			<ContrastChecker preset="primary-on-surface" />
 		</SettingsSection>
 
-		<div class="actions">
-			<Button variant="primary" onclick={handleSave} fullWidth>Save Theme</Button>
+		<div class="gr-theme-workbench__actions">
+			<Button variant="solid" onclick={handleSave}>Save Theme</Button>
 		</div>
 	</div>
 
-	<div class="workbench-preview">
-		<ThemeProvider {theme}>
+	<div class="gr-theme-workbench__preview">
+		<ThemeProvider>
 			<Card>
-				<h2 style="margin-top: 0;">Component Preview</h2>
+				<h2 class="gr-theme-workbench__preview-heading">Component Preview</h2>
 				<p>This is how your components will look with the generated theme.</p>
 
-				<div class="component-grid">
-					<Button variant="primary">Primary Button</Button>
-					<Button variant="secondary">Secondary Button</Button>
+				<div class="gr-theme-workbench__component-grid">
+					<Button variant="solid">Primary Button</Button>
+					<Button variant="outline">Secondary Button</Button>
 					<Button variant="ghost">Ghost Button</Button>
 				</div>
 
-				<div class="swatch-grid">
-					{#each Object.entries(theme.colors.primary) as [key, color] (key)}
-						<div class="swatch" style="background-color: {color}" title="Primary {key}"></div>
+				<div class="gr-theme-workbench__swatch-grid">
+					{#each primaryScaleKeys as key (key)}
+						<div class="gr-swatch gr-swatch--primary-{key}" title="Primary {key}"></div>
 					{/each}
 				</div>
 			</Card>
@@ -96,7 +111,7 @@
 </div>
 
 <style>
-	.theme-workbench {
+	.gr-theme-workbench {
 		display: grid;
 		grid-template-columns: 350px 1fr;
 		gap: 2rem;
@@ -104,28 +119,28 @@
 	}
 
 	@media (max-width: 768px) {
-		.theme-workbench {
+		.gr-theme-workbench {
 			grid-template-columns: 1fr;
 		}
 	}
 
-	.color-input-group {
+	.gr-theme-workbench__color-input-group {
 		margin-bottom: 1.5rem;
 	}
 
-	.color-input-group label {
+	.gr-theme-workbench__color-input-group label {
 		display: block;
 		font-size: 0.875rem;
 		font-weight: 500;
 		margin-bottom: 0.5rem;
 	}
 
-	.input-wrapper {
+	.gr-theme-workbench__input-wrapper {
 		display: flex;
 		gap: 0.5rem;
 	}
 
-	input[type='color'] {
+	.gr-theme-workbench__input-wrapper input[type='color'] {
 		width: 40px;
 		height: 40px;
 		padding: 0;
@@ -134,7 +149,7 @@
 		cursor: pointer;
 	}
 
-	.hex-input {
+	.gr-theme-workbench__hex-input {
 		flex: 1;
 		padding: 0.5rem;
 		border: 1px solid var(--gr-color-border);
@@ -142,27 +157,31 @@
 		font-family: monospace;
 	}
 
-	.actions {
+	.gr-theme-workbench__actions {
 		margin-top: 1rem;
 	}
 
-	.component-grid {
+	.gr-theme-workbench__spacer {
+		height: 1rem;
+	}
+
+	.gr-theme-workbench__preview-heading {
+		margin-top: 0;
+	}
+
+	.gr-theme-workbench__component-grid {
 		display: flex;
 		gap: 1rem;
 		margin: 1.5rem 0;
 		flex-wrap: wrap;
 	}
 
-	.swatch-grid {
+	.gr-theme-workbench__swatch-grid {
 		display: grid;
 		grid-template-columns: repeat(10, 1fr);
 		height: 40px;
 		border-radius: 4px;
 		overflow: hidden;
 		margin-top: 1rem;
-	}
-
-	.swatch {
-		height: 100%;
 	}
 </style>

@@ -121,11 +121,26 @@ Text component - Paragraph and inline text component with size, weight, and colo
 		lines,
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
+	/**
+	 * Generate clamp class for supported line counts (2-6).
+	 * Returns empty string for unsupported values.
+	 */
+	function getClampClass(lines?: number): string {
+		if (!lines) return '';
+		if (lines >= 2 && lines <= 6) {
+			return `gr-text--clamp-${lines}`;
+		}
+		// Out of range values require external CSS
+		return '';
+	}
+
 	// Compute text classes
 	const textClass = $derived(() => {
+		const clampClass = truncate && lines ? getClampClass(lines) : '';
 		const classes = [
 			'gr-text',
 			`gr-text--size-${size}`,
@@ -133,7 +148,7 @@ Text component - Paragraph and inline text component with size, weight, and colo
 			`gr-text--color-${color}`,
 			`gr-text--align-${align}`,
 			truncate && 'gr-text--truncate',
-			truncate && lines && 'gr-text--clamp',
+			clampClass,
 			className,
 		]
 			.filter(Boolean)
@@ -141,17 +156,9 @@ Text component - Paragraph and inline text component with size, weight, and colo
 
 		return classes;
 	});
-
-	// Compute styles for line clamping
-	const textStyle = $derived(() => {
-		if (truncate && lines) {
-			return `--gr-text-clamp-lines: ${lines};`;
-		}
-		return '';
-	});
 </script>
 
-<svelte:element this={as} class={textClass()} style={textStyle() || undefined} {...restProps}>
+<svelte:element this={as} class={textClass()} {...restProps}>
 	{#if children}
 		{@render children()}
 	{/if}

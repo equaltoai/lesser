@@ -31,7 +31,7 @@ export type GradientDirection =
 interface Props extends HTMLAttributes<HTMLElement> {
 	/**
 	 * Vertical spacing (margin-top and margin-bottom).
-	 * Can be a preset value or a custom CSS value (e.g., '8rem', '128px').
+	 * Must be a preset value for CSP compliance.
 	 *
 	 * Preset values:
 	 * - `none`: No spacing
@@ -43,10 +43,12 @@ interface Props extends HTMLAttributes<HTMLElement> {
 	 * - `3xl`: 12rem
 	 * - `4xl`: 16rem
 	 *
+	 * For custom spacing, use the `class` prop with external CSS.
+	 *
 	 * @defaultValue 'md'
 	 * @public
 	 */
-	spacing?: SpacingPreset | string | number;
+	spacing?: SpacingPreset;
 	/**
 	 * Horizontal padding.
 	 * - `false`: No padding
@@ -67,7 +69,8 @@ interface Props extends HTMLAttributes<HTMLElement> {
 	 */
 	centered?: boolean;
 	/**
-	 * Background variant or custom CSS background value.
+	 * Background variant preset.
+	 * Must be a preset value for CSP compliance.
 	 *
 	 * Preset variants:
 	 * - `default`: Transparent/inherit
@@ -75,12 +78,12 @@ interface Props extends HTMLAttributes<HTMLElement> {
 	 * - `accent`: Primary color tinted background
 	 * - `gradient`: Gradient background (use with gradientDirection)
 	 *
-	 * Can also accept custom CSS values like 'linear-gradient(...)' or '#f5f5f5'.
+	 * For custom backgrounds, use the `class` prop with external CSS.
 	 *
 	 * @defaultValue 'default'
 	 * @public
 	 */
-	background?: BackgroundPreset | string;
+	background?: BackgroundPreset;
 	/**
 	 * Direction for gradient backgrounds.
 	 * Only applies when background="gradient".
@@ -121,10 +124,10 @@ interface Props extends HTMLAttributes<HTMLElement> {
  * </Section>
  * ```
  *
- * @example Custom spacing value
+ * @example Custom styling via external CSS
  * ```svelte
- * <Section spacing="8rem">
- * <h2>Custom Spaced Section</h2>
+ * <Section class="my-custom-section">
+ * <h2>Custom Section</h2>
  * </Section>
  * ```
  *

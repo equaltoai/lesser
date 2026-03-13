@@ -201,7 +201,7 @@ export class TransportFallback implements TransportAdapter<TransportFallbackStat
 	private connectSse(): void {
 		const instantiateClient = (): TransportAdapter<SseClientState> =>
 			new SseClient(this.config.primary);
-		let sseClient: TransportAdapter<SseClientState> | null = null;
+		let sseClient: TransportAdapter<SseClientState>;
 
 		try {
 			sseClient = instantiateClient();

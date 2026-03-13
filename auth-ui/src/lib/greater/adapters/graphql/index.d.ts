@@ -11,6 +11,7 @@ export type {
 	TimelineVariables,
 	CreateNoteVariables,
 	SearchVariables,
+	ViewerQuery,
 } from './LesserGraphQLAdapter.js';
 export * from './generated/types.js';
 export { typePolicies, cacheConfig, evictStaleCache, limitCacheSize } from './cache.js';

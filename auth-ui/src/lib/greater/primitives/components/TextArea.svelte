@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { HTMLTextAreaAttributes } from 'svelte/elements';
+	import type { HTMLTextareaAttributes } from 'svelte/elements';
 	import { useStableId } from 'src/lib/greater/utils';
 
-	interface Props extends Omit<HTMLTextAreaAttributes, 'value'> {
+	interface Props extends Omit<HTMLTextareaAttributes, 'value' | 'onchange' | 'oninput'> {
 		value?: string;
 		label?: string;
 		helpText?: string;
@@ -33,6 +33,7 @@
 		invalid = false,
 		onchange,
 		oninput,
+		style: _style,
 		...restProps
 	}: Props = $props();
 

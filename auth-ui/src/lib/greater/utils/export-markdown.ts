@@ -141,7 +141,7 @@ export function downloadMarkdown(markdown: string, filename: string): void {
 	const link = document.createElement('a');
 	link.href = url;
 	link.download = sanitizeFilename(filename);
-	link.style.display = 'none';
+	link.hidden = true;
 
 	document.body.appendChild(link);
 	link.click();

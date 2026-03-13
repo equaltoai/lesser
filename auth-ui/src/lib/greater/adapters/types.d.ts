@@ -82,10 +82,10 @@ export interface WebSocketEvent {
 }
 export type WebSocketEventHandler = (event: WebSocketEvent) => void;
 export interface TransportLogger {
-	debug?(message: string, context?: Record<string, unknown>): void;
-	info?(message: string, context?: Record<string, unknown>): void;
-	warn?(message: string, context?: Record<string, unknown>): void;
-	error?(message: string, context?: Record<string, unknown>): void;
+	debug?(message: string, context?: unknown): void;
+	info?(message: string, context?: unknown): void;
+	warn?(message: string, context?: unknown): void;
+	error?(message: string, context?: unknown): void;
 }
 export interface HeartbeatMessage {
 	type: 'ping' | 'pong';

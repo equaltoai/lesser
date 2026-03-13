@@ -7,7 +7,8 @@ interface Props {
 	/** Minimum width matching trigger */
 	matchTriggerWidth?: boolean;
 	/** Maximum height before scrolling */
-	maxHeight?: string;
+	maxHeight?: 'sm' | 'md' | 'lg';
+	[key: string]: unknown;
 }
 declare const Content: import('svelte').Component<Props, {}, ''>;
 type Content = ReturnType<typeof Content>;

@@ -157,18 +157,8 @@ function createLiveRegionElement(
 ): HTMLElement {
 	const element = document.createElement('div');
 
-	// Visually hidden but accessible to screen readers
-	element.style.cssText = `
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	`;
+	// Visually hidden but accessible to screen readers (requires a shipped CSS utility)
+	element.classList.add('gr-sr-only');
 
 	element.setAttribute('aria-live', politeness);
 	element.setAttribute('aria-atomic', String(config.atomic));

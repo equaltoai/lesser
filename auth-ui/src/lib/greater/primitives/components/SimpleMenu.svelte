@@ -27,7 +27,7 @@ and want to render them automatically.
 	import * as Menu from './Menu/index';
 	import type { Snippet } from 'svelte';
 	import { untrack } from 'svelte';
-	import type { MenuPlacement } from './Menu/context';
+	import type { MenuPlacement } from './Menu/context.svelte';
 
 	interface TriggerProps {
 		open: boolean;

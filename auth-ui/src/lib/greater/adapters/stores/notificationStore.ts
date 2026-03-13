@@ -15,6 +15,7 @@ import { unifiedNotificationToStoreNotification } from './unifiedToNotification.
 import { mapLesserNotification } from '../mappers/lesser/mappers.js';
 import {
 	convertGraphQLActorToLesserAccount,
+	convertGraphQLCommunicationNotificationToLesser,
 	convertGraphQLObjectToLesser,
 } from '../mappers/lesser/graphqlConverters.js';
 import type { LesserNotificationFragment } from '../mappers/lesser/types.js';
@@ -62,6 +63,8 @@ function convertNotificationStreamPayload(
 		(payload as Record<string, unknown>)['object'] ??
 		(payload as Record<string, unknown>)['post'];
 
+	const communicationValue = (payload as Record<string, unknown>)['communication'];
+
 	const readValue =
 		(payload as Record<string, unknown>)['read'] ?? (payload as Record<string, unknown>)['isRead'];
 
@@ -71,6 +74,10 @@ function convertNotificationStreamPayload(
 	}
 
 	const statusFragment = statusValue ? convertGraphQLObjectToLesser(statusValue) : null;
+	const communicationFragment =
+		communicationValue !== undefined
+			? convertGraphQLCommunicationNotificationToLesser(communicationValue)
+			: null;
 
 	const createdAt = (() => {
 		if (typeof createdAtValue === 'string') {
@@ -84,11 +91,14 @@ function convertNotificationStreamPayload(
 
 	return {
 		id: payload.id,
-		notificationType: normalizeNotificationType(typeValue),
+		notificationType: communicationFragment
+			? 'COMMUNICATION_INBOUND'
+			: normalizeNotificationType(typeValue),
 		createdAt,
 		triggerAccount,
 		status: statusFragment ?? undefined,
 		adminReport: undefined,
+		communication: communicationFragment ?? undefined,
 		isRead: typeof readValue === 'boolean' ? readValue : undefined,
 	};
 }

@@ -1,6 +1,6 @@
 import type { Snippet } from 'svelte';
 interface Props {
-	children: Snippet;
+	children?: Snippet;
 	prefix?: string;
 }
 declare const IdProvider: import('svelte').Component<Props, {}, ''>;

@@ -263,14 +263,41 @@ export function createModal(config: ModalConfig = {}) {
 
 	let contentElement: HTMLElement | null = null;
 	let triggerElement: HTMLButtonElement | null = null;
-	let originalBodyOverflow: string = '';
 	let previouslyFocusedElement: HTMLElement | null = null;
+	let hasScrollLock = false;
+
+	const SCROLL_LOCK_CLASS = 'gr-scroll-locked';
+	const SCROLL_LOCK_COUNT_ATTR = 'data-gr-scroll-lock-count';
+
+	function lockBodyScroll(): void {
+		const current = Number(document.body.getAttribute(SCROLL_LOCK_COUNT_ATTR) ?? '0');
+		const next = current + 1;
+		document.body.setAttribute(SCROLL_LOCK_COUNT_ATTR, String(next));
+		document.body.classList.add(SCROLL_LOCK_CLASS);
+		hasScrollLock = true;
+	}
+
+	function unlockBodyScroll(): void {
+		if (!hasScrollLock) return;
+
+		const current = Number(document.body.getAttribute(SCROLL_LOCK_COUNT_ATTR) ?? '0');
+		const next = Math.max(0, current - 1);
+
+		if (next === 0) {
+			document.body.removeAttribute(SCROLL_LOCK_COUNT_ATTR);
+			document.body.classList.remove(SCROLL_LOCK_CLASS);
+		} else {
+			document.body.setAttribute(SCROLL_LOCK_COUNT_ATTR, String(next));
+		}
+
+		hasScrollLock = false;
+	}
+
 	// Initialize if opened
 	if (initialOpen) {
 		previouslyFocusedElement = document.activeElement as HTMLElement;
 		if (preventScroll) {
-			originalBodyOverflow = document.body.style.overflow;
-			document.body.style.overflow = 'hidden';
+			lockBodyScroll();
 		}
 	}
 
@@ -288,8 +315,7 @@ export function createModal(config: ModalConfig = {}) {
 
 		// Lock body scroll
 		if (state.preventScroll) {
-			originalBodyOverflow = document.body.style.overflow;
-			document.body.style.overflow = 'hidden';
+			lockBodyScroll();
 		}
 
 		// Focus initial element
@@ -359,7 +385,7 @@ export function createModal(config: ModalConfig = {}) {
 
 		// Restore body scroll
 		if (state.preventScroll) {
-			document.body.style.overflow = originalBodyOverflow;
+			unlockBodyScroll();
 		}
 
 		// Return focus (synchronous for better test compatibility)
@@ -487,7 +513,7 @@ export function createModal(config: ModalConfig = {}) {
 
 				// Restore body overflow if modal was open
 				if (state.open && state.preventScroll) {
-					document.body.style.overflow = originalBodyOverflow;
+					unlockBodyScroll();
 				}
 
 				onDestroy?.();

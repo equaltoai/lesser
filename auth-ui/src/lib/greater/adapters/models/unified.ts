@@ -437,7 +437,8 @@ export interface UnifiedNotification {
 		| 'community_note'
 		| 'trust_update'
 		| 'cost_alert'
-		| 'moderation_action';
+		| 'moderation_action'
+		| 'communication_inbound';
 	/** Creation timestamp */
 	createdAt: string;
 	/** Account that triggered this notification */
@@ -482,6 +483,30 @@ export interface UnifiedNotification {
 		action: string;
 		reason: string;
 		statusId?: string;
+	};
+
+	/** Communication payload (for communication_inbound notifications) */
+	communication?: {
+		channel: string;
+		from: {
+			address: string;
+			displayName?: string;
+			soulAgentId?: string | null;
+		};
+		to?: { address: string } | null;
+		attachments: Array<{
+			id: string;
+			filename: string;
+			contentType: string;
+			sizeBytes: number;
+			sha256: string;
+		}>;
+		subject?: string | null;
+		body?: string | null;
+		receivedAt: string;
+		messageId: string;
+		inReplyTo?: string | null;
+		threadId: string;
 	};
 }
 

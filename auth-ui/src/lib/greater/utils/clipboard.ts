@@ -41,11 +41,12 @@ export async function copyToClipboard(text: string): Promise<CopyResult> {
 			const textArea = document.createElement('textarea');
 			textArea.value = text;
 
-			// Ensure the element is not visible but part of the DOM
-			textArea.style.position = 'fixed';
-			textArea.style.left = '-9999px';
-			textArea.style.top = '0';
+			// Ensure the element is not visible but part of the DOM (strict-CSP safe)
+			// Requires the `.gr-offscreen-input` utility class from Greater CSS.
+			textArea.className = 'gr-offscreen-input';
 			textArea.setAttribute('readonly', '');
+			textArea.setAttribute('aria-hidden', 'true');
+			textArea.tabIndex = -1;
 
 			document.body.appendChild(textArea);
 			textArea.focus();

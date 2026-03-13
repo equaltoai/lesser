@@ -16,7 +16,13 @@
 		disabled?: boolean;
 	}
 
-	let { class: className = '', children, disabled = false, ...restProps }: Props = $props();
+	let {
+		class: className = '',
+		children,
+		disabled = false,
+		style: _style,
+		...restProps
+	}: Props = $props();
 
 	const ctx = getMenuContext();
 	let triggerRef: HTMLElement | null = $state(null);

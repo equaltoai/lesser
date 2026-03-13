@@ -1,17 +1,17 @@
 import type { Snippet } from 'svelte';
 import { type ColorScheme } from '../stores/preferences';
-import { type PalettePreset, type CustomPalette } from 'src/lib/greater/tokens';
+import type { PalettePreset, FontPreset } from 'src/lib/greater/tokens';
 interface Props {
 	/** Color scheme: 'light', 'dark', 'high-contrast', or 'auto' */
 	theme?: ColorScheme;
 	/** Preset palette name: 'slate', 'stone', 'neutral', 'zinc', 'gray' */
 	palette?: PalettePreset;
-	/** Custom palette configuration with gray and/or primary color scales */
-	customPalette?: CustomPalette;
-	/** Custom heading font family (e.g., "'Crimson Pro', serif") */
-	headingFont?: string;
-	/** Custom body font family (e.g., "'Inter', sans-serif") */
-	bodyFont?: string;
+	/** Preset heading font: 'system', 'sans', 'serif', 'mono' */
+	headingFontPreset?: FontPreset;
+	/** Preset body font: 'system', 'sans', 'serif', 'mono' */
+	bodyFontPreset?: FontPreset;
+	/** Additional CSS class for custom theming via external CSS */
+	class?: string;
 	/** @deprecated Use app.html for flash prevention */
 	enableSystemDetection?: boolean;
 	/** @deprecated Use app.html for flash prevention */

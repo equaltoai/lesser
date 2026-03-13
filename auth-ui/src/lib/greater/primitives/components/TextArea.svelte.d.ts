@@ -1,5 +1,5 @@
-import type { HTMLTextAreaAttributes } from 'svelte/elements';
-interface Props extends Omit<HTMLTextAreaAttributes, 'value'> {
+import type { HTMLTextareaAttributes } from 'svelte/elements';
+interface Props extends Omit<HTMLTextareaAttributes, 'value' | 'onchange' | 'oninput'> {
 	value?: string;
 	label?: string;
 	helpText?: string;

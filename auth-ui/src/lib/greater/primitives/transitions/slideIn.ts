@@ -13,6 +13,7 @@
  */
 
 import type { TransitionConfig } from 'svelte/transition';
+import { waapiTransition } from './waapi.js';
 
 export interface SlideInParams {
 	/** Animation duration in milliseconds */
@@ -55,20 +56,17 @@ export function slideIn(node: Element, params: SlideInParams = {}): TransitionCo
 	const currentOpacity = +style.opacity;
 	const transform = style.transform === 'none' ? '' : style.transform;
 	const xValue = typeof x === 'number' ? x : parseFloat(x);
+	const transformPrefix = transform ? `${transform} ` : '';
+	const fromOpacity = fadeOpacity ? 0 : currentOpacity;
 
-	return {
-		delay,
-		duration,
-		easing,
-		css: (t: number) => {
-			const translateX = (1 - t) * xValue;
-			const opacityValue = fadeOpacity ? t * currentOpacity : currentOpacity;
-			return `
-        opacity: ${opacityValue};
-        transform: ${transform} translateX(${translateX}px);
-      `;
-		},
-	};
+	return waapiTransition(
+		node,
+		[
+			{ opacity: fromOpacity, transform: `${transformPrefix}translateX(${xValue}px)` },
+			{ opacity: currentOpacity, transform: `${transformPrefix}translateX(0)` },
+		],
+		{ delay, duration, easing }
+	);
 }
 
 export default slideIn;

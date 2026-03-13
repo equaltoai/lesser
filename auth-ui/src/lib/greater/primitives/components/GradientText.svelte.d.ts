@@ -1,30 +1,27 @@
 import type { Snippet } from 'svelte';
+type GradientPreset = 'primary' | 'success' | 'warning' | 'error';
+type GradientDirection =
+	| 'to-right'
+	| 'to-left'
+	| 'to-top'
+	| 'to-bottom'
+	| 'to-top-right'
+	| 'to-top-left'
+	| 'to-bottom-right'
+	| 'to-bottom-left';
 interface Props {
 	/**
-	 * Gradient preset or 'custom' mode.
+	 * Gradient preset.
 	 * - `primary`: Uses primary-600 to primary-400
 	 * - `success`: Uses success-600 to success-400
 	 * - `warning`: Uses warning-600 to warning-400
 	 * - `error`: Uses error-600 to error-400
-	 * - `custom`: Uses from/to/via props
 	 */
-	gradient?: 'primary' | 'success' | 'warning' | 'error' | 'custom';
+	gradient?: GradientPreset;
 	/**
-	 * Gradient direction (e.g., "to right", "45deg").
+	 * Gradient direction preset.
 	 */
-	direction?: string;
-	/**
-	 * Start color (for custom gradient).
-	 */
-	from?: string;
-	/**
-	 * End color (for custom gradient).
-	 */
-	to?: string;
-	/**
-	 * Optional middle color (for custom gradient).
-	 */
-	via?: string;
+	direction?: GradientDirection;
 	/**
 	 * Element tag to render.
 	 */
@@ -45,7 +42,6 @@ interface Props {
  * @example
  * ```svelte
  * <GradientText gradient="primary">Awesome Heading</GradientText>
- * <GradientText gradient="custom" from="#f00" to="#00f">Custom Gradient</GradientText>
  * ```
  */
 declare const GradientText: import('svelte').Component<Props, {}, ''>;

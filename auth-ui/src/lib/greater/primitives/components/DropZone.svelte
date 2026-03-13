@@ -10,6 +10,7 @@ DropZone component - Drag and drop file upload area with validation and mobile f
 ```
 -->
 <script lang="ts">
+	import type { HTMLAttributes } from 'svelte/elements';
 	import type { Snippet } from 'svelte';
 
 	export interface DroppedItem {
@@ -28,7 +29,7 @@ DropZone component - Drag and drop file upload area with validation and mobile f
 		file?: File;
 	}
 
-	interface Props {
+	interface Props extends HTMLAttributes<HTMLDivElement> {
 		/**
 		 * Accepted content types.
 		 */
@@ -111,6 +112,7 @@ DropZone component - Drag and drop file upload area with validation and mobile f
 		onDragEnter,
 		onDragLeave,
 		children,
+		style: _style,
 		...restProps
 	}: Props = $props();
 

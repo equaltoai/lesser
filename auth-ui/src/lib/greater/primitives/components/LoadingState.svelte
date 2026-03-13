@@ -77,7 +77,7 @@ LoadingState component - Wrapper for Spinner with message and fullscreen overlay
 		class: className = '',
 		children,
 		id,
-		style,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
@@ -89,15 +89,7 @@ LoadingState component - Wrapper for Spinner with message and fullscreen overlay
 	);
 </script>
 
-<div
-	class={containerClass}
-	role="status"
-	aria-live="polite"
-	aria-busy="true"
-	{id}
-	{style}
-	{...restProps}
->
+<div class={containerClass} role="status" aria-live="polite" aria-busy="true" {id} {...restProps}>
 	<div class="gr-loading-state__content">
 		{#if children}
 			{@render children()}

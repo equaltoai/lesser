@@ -1,7 +1,7 @@
 {
   "$schema": "https://greater.components.dev/schema.json",
   "version": "1.0.0",
-  "ref": "greater-v0.1.14",
+  "ref": "greater-v0.4.2",
   "installMode": "vendored",
   "style": "default",
   "rsc": false,
@@ -24,50 +24,50 @@
   "installed": [
     {
       "name": "icons",
-      "version": "greater-v0.1.14",
-      "installedAt": "2026-03-06T20:10:32.358Z",
+      "version": "greater-v0.4.2",
+      "installedAt": "2026-03-13T01:26:41.147Z",
       "modified": false,
       "checksums": []
     },
     {
       "name": "tokens",
-      "version": "greater-v0.1.14",
-      "installedAt": "2026-03-06T20:10:32.364Z",
+      "version": "greater-v0.4.2",
+      "installedAt": "2026-03-13T01:26:41.153Z",
       "modified": false,
       "checksums": []
     },
     {
       "name": "utils",
-      "version": "greater-v0.1.14",
-      "installedAt": "2026-03-06T20:10:32.370Z",
+      "version": "greater-v0.4.2",
+      "installedAt": "2026-03-13T01:26:41.181Z",
       "modified": false,
       "checksums": []
     },
     {
       "name": "primitives",
-      "version": "greater-v0.1.14",
-      "installedAt": "2026-03-06T20:10:32.388Z",
+      "version": "greater-v0.4.2",
+      "installedAt": "2026-03-13T01:26:41.451Z",
       "modified": false,
       "checksums": []
     },
     {
       "name": "content",
-      "version": "greater-v0.1.14",
-      "installedAt": "2026-03-06T20:10:32.392Z",
+      "version": "greater-v0.4.2",
+      "installedAt": "2026-03-13T01:26:41.454Z",
       "modified": false,
       "checksums": []
     },
     {
       "name": "adapters",
-      "version": "greater-v0.1.14",
-      "installedAt": "2026-03-06T20:10:32.405Z",
+      "version": "greater-v0.4.2",
+      "installedAt": "2026-03-13T01:26:46.278Z",
       "modified": false,
       "checksums": []
     },
     {
       "name": "headless",
-      "version": "greater-v0.1.14",
-      "installedAt": "2026-03-06T20:10:32.410Z",
+      "version": "greater-v0.4.2",
+      "installedAt": "2026-03-13T01:26:46.301Z",
       "modified": false,
       "checksums": []
     }

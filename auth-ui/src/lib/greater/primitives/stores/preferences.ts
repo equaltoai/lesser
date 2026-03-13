@@ -319,36 +319,39 @@ class PreferencesStore {
 		// Apply motion preference
 		root.setAttribute('data-motion', this.resolvedMotion);
 
-		// Apply custom CSS variables
-		this.applyCustomProperties();
+		// Strict-CSP safe: expose custom theme values via data attributes only.
+		// Consumers that require arbitrary values must apply them via external CSS.
+		this.applyCustomAttributes();
 	}
 
-	private applyCustomProperties() {
+	private applyCustomAttributes() {
 		if (typeof window === 'undefined') return;
 
 		const root = document.documentElement;
 
-		// Apply custom colors
-		if (this._preferences.customColors.primary) {
-			root.style.setProperty('--gr-custom-primary', this._preferences.customColors.primary);
-		}
-		if (this._preferences.customColors.secondary) {
-			root.style.setProperty('--gr-custom-secondary', this._preferences.customColors.secondary);
-		}
-		if (this._preferences.customColors.accent) {
-			root.style.setProperty('--gr-custom-accent', this._preferences.customColors.accent);
+		const primary = this._preferences.customColors.primary;
+		const secondary = this._preferences.customColors.secondary;
+		const accent = this._preferences.customColors.accent;
+
+		if (primary) {
+			root.setAttribute('data-gr-custom-primary', primary);
+		} else {
+			root.removeAttribute('data-gr-custom-primary');
 		}
 
-		// Apply font scale
-		root.style.setProperty('--gr-font-scale', String(this._preferences.fontScale));
+		if (secondary) {
+			root.setAttribute('data-gr-custom-secondary', secondary);
+		} else {
+			root.removeAttribute('data-gr-custom-secondary');
+		}
 
-		// Apply density-based spacing multiplier
-		const densityScale = {
-			compact: 0.85,
-			comfortable: 1,
-			spacious: 1.2,
-		};
-		root.style.setProperty('--gr-density-scale', String(densityScale[this._preferences.density]));
+		if (accent) {
+			root.setAttribute('data-gr-custom-accent', accent);
+		} else {
+			root.removeAttribute('data-gr-custom-accent');
+		}
+
+		root.setAttribute('data-gr-font-scale', String(this._preferences.fontScale));
 	}
 
 	// Cleanup method

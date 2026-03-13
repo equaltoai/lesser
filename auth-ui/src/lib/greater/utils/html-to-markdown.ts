@@ -3,8 +3,15 @@ import rehypeParse from 'rehype-parse';
 import { toMdast } from 'hast-util-to-mdast';
 import { toMarkdown } from 'mdast-util-to-markdown';
 import { gfmToMarkdown } from 'mdast-util-gfm';
-import type { Root as HastRoot } from 'hast';
-import type { Root as MdastRoot } from 'mdast';
+
+type HastChild = {
+	tagName?: string;
+	children?: HastChild[];
+};
+
+type HastRoot = {
+	children: HastChild[];
+};
 
 /**
  * Converts HTML string to Markdown.
@@ -28,10 +35,10 @@ export function htmlToMarkdown(html: string): string {
 	removeDangerousElements(hastTree);
 
 	// Convert HAST to MDAST (Markdown Abstract Syntax Tree)
-	const mdastTree = toMdast(hastTree) as MdastRoot;
+	const mdastTree = toMdast(hastTree as unknown as Parameters<typeof toMdast>[0]);
 
 	// Serialize MDAST to Markdown string with GFM support
-	const markdown = toMarkdown(mdastTree, {
+	const markdown = toMarkdown(mdastTree as unknown as Parameters<typeof toMarkdown>[0], {
 		extensions: [gfmToMarkdown()],
 		bullet: '-',
 		emphasis: '*',
@@ -45,8 +52,8 @@ export function htmlToMarkdown(html: string): string {
 /**
  * Recursively removes dangerous elements (script, style, iframe, etc.) from a HAST tree.
  */
-function removeDangerousElements(node: HastRoot | HastRoot['children'][number]): void {
-	if (!('children' in node) || !Array.isArray(node.children)) {
+function removeDangerousElements(node: HastRoot | HastChild): void {
+	if (!Array.isArray(node.children)) {
 		return;
 	}
 
@@ -61,18 +68,14 @@ function removeDangerousElements(node: HastRoot | HastRoot['children'][number]):
 		'form',
 	]);
 
-	// Filter out dangerous elements - cast to maintain proper typing
-	const parentNode = node as { children: HastRoot['children'] };
-	parentNode.children = parentNode.children.filter((child) => {
-		if ('tagName' in child && dangerousTags.has(child.tagName)) {
-			return false;
-		}
+	node.children = node.children.filter((child) => {
+		if (typeof child.tagName === 'string' && dangerousTags.has(child.tagName)) return false;
 		return true;
 	});
 
 	// Recursively process remaining children
-	for (const child of parentNode.children) {
-		if ('children' in child) {
+	for (const child of node.children) {
+		if (Array.isArray(child.children)) {
 			removeDangerousElements(child);
 		}
 	}

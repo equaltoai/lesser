@@ -21,8 +21,13 @@ CopyButton component - A button that copies text to the clipboard with visual fe
 		copyElementText,
 		type CopyResult,
 	} from 'src/lib/greater/utils';
+	import type { HTMLButtonAttributes } from 'svelte/elements';
 
-	interface Props {
+	type ButtonPassthroughProps = Omit<HTMLButtonAttributes, 'type'> & {
+		type?: 'button' | 'submit' | 'reset';
+	};
+
+	interface Props extends ButtonPassthroughProps {
 		/**
 		 * The text to copy to the clipboard.
 		 * Takes precedence over targetSelector if both are provided.
@@ -87,10 +92,13 @@ CopyButton component - A button that copies text to the clipboard with visual fe
 		variant = 'icon',
 		buttonVariant = 'ghost',
 		size = 'md',
+		type,
 		feedbackDuration = 2000,
 		labels = {},
 		onCopy,
+		onclick: onClick,
 		class: className = '',
+		style: _style,
 		...restProps
 	}: Props = $props();
 
@@ -106,9 +114,13 @@ CopyButton component - A button that copies text to the clipboard with visual fe
 
 	const currentLabels = $derived({ ...defaultLabels, ...labels });
 
-	async function handleCopy() {
+	type ClickEvent = MouseEvent & { currentTarget: EventTarget & HTMLButtonElement };
+
+	async function handleCopy(event: ClickEvent) {
 		// Prevent default button behavior if needed, though Button handles it.
 		// event.preventDefault(); // Optional, Button probably handles it.
+
+		onClick?.(event);
 
 		let result: CopyResult = { success: false, error: 'No text to copy' };
 
@@ -153,10 +165,11 @@ CopyButton component - A button that copies text to the clipboard with visual fe
 <Button
 	variant={buttonVariant}
 	{size}
+	{type}
 	class={className}
 	onclick={handleCopy}
 	aria-label={copied ? currentLabels.success : currentLabels.default}
-	{...restProps}
+	{...restProps as Record<string, unknown>}
 >
 	<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
 	{#snippet prefix()}

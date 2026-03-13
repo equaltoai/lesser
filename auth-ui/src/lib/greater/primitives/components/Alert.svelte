@@ -108,6 +108,7 @@ Alert component - A versatile alert/banner component for displaying error, warni
 		icon,
 		children,
 		class: className = '',
+		style: _style,
 		...restProps
 	}: Props = $props();
 

@@ -30,6 +30,8 @@ function getNotificationPriority(type: UnifiedNotification['type']): StoreNotifi
  */
 function getNotificationTitle(notification: UnifiedNotification): string {
 	switch (notification.type) {
+		case 'communication_inbound':
+			return 'Inbound Communication';
 		case 'quote':
 			return 'New Quote';
 		case 'community_note':
@@ -62,6 +64,18 @@ function getNotificationMessage(notification: UnifiedNotification): string {
 	const displayName = notification.account.displayName || notification.account.username;
 
 	switch (notification.type) {
+		case 'communication_inbound': {
+			const channel = notification.communication?.channel?.toLowerCase();
+			const from =
+				notification.communication?.from.displayName ||
+				notification.communication?.from.address ||
+				displayName;
+
+			if (channel === 'email') return `Inbound email from ${from}`;
+			if (channel === 'sms') return `Inbound SMS from ${from}`;
+			if (channel === 'voice') return `Voice event from ${from}`;
+			return `Inbound communication from ${from}`;
+		}
 		case 'quote':
 			return `${displayName} quoted your post`;
 		case 'community_note':

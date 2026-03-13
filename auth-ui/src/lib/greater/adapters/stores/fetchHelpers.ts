@@ -1,6 +1,7 @@
 import type { LesserGraphQLAdapter } from '../graphql';
 import {
 	convertGraphQLActorToLesserAccount,
+	convertGraphQLCommunicationNotificationToLesser,
 	convertGraphQLObjectToLesser,
 } from '../mappers/lesser/graphqlConverters.js';
 import { mapLesserNotification, mapLesserObject } from '../mappers/lesser/mappers.js';
@@ -33,7 +34,8 @@ export function normalizeNotificationType(
 	value: unknown
 ): LesserNotificationFragment['notificationType'] {
 	if (typeof value === 'string') {
-		const normalized = value.replace(/\./g, '_').toUpperCase();
+		const normalized = value.replace(/[.:]/g, '_').toUpperCase();
+		if (normalized.startsWith('COMMUNICATION')) return 'COMMUNICATION_INBOUND';
 		switch (normalized) {
 			case 'MENTION':
 			case 'FOLLOW':
@@ -50,6 +52,7 @@ export function normalizeNotificationType(
 			case 'TRUST_UPDATE':
 			case 'COST_ALERT':
 			case 'MODERATION_ACTION':
+			case 'COMMUNICATION_INBOUND':
 				return normalized;
 		}
 	}
@@ -150,16 +153,23 @@ export async function fetchNotificationPage(options: {
 				(node as Record<string, unknown>)['post']
 		);
 
+		const communication = convertGraphQLCommunicationNotificationToLesser(
+			(node as Record<string, unknown>)['communication']
+		);
+
 		const createdAtValue = (node as Record<string, unknown>)['createdAt'];
+		const notificationTypeRaw =
+			(node as Record<string, unknown>)['type'] ??
+			(node as Record<string, unknown>)['notificationType'];
 		const notification: LesserNotificationFragment = {
 			id: (node as Record<string, unknown>)['id'] as string,
-			notificationType: normalizeNotificationType(
-				(node as Record<string, unknown>)['type'] ??
-					(node as Record<string, unknown>)['notificationType']
-			),
+			notificationType: communication
+				? 'COMMUNICATION_INBOUND'
+				: normalizeNotificationType(notificationTypeRaw),
 			createdAt: typeof createdAtValue === 'string' ? createdAtValue : new Date().toISOString(),
 			triggerAccount,
 			status: status ?? undefined,
+			communication: communication ?? undefined,
 			isRead: Boolean((node as Record<string, unknown>)['read']),
 		};
 

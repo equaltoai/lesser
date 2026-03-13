@@ -124,13 +124,14 @@ export function getFocusableElements(container: HTMLElement): HTMLElement[] {
 	const elements = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
 
 	return elements.filter((el) => {
+		const style = window.getComputedStyle(el);
+
 		// Check if element is visible
-		if (el.offsetParent === null && el.style.position !== 'fixed') {
+		if (el.offsetParent === null && style.position !== 'fixed') {
 			return false;
 		}
 
 		// Check computed visibility
-		const style = window.getComputedStyle(el);
 		if (style.visibility === 'hidden' || style.display === 'none') {
 			return false;
 		}

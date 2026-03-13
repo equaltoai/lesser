@@ -7,12 +7,13 @@
 		type FontSize,
 		type MotionPreference,
 	} from '../stores/preferences';
-	import ThemeWorkbench from './Theme/ThemeWorkbench.svelte';
 
 	interface Props {
 		variant?: 'compact' | 'full';
 		showPreview?: boolean;
+		/** @deprecated showAdvanced is deprecated and will be removed in a future version. Custom colors require external CSS for CSP compliance. */
 		showAdvanced?: boolean;
+		/** @deprecated showWorkbench is deprecated and will be removed in a future version. Use the standalone ThemeWorkbench component for development purposes only. */
 		showWorkbench?: boolean;
 		class?: string;
 		value?: ColorScheme;
@@ -23,8 +24,8 @@
 	let {
 		variant = 'compact', // Default to compact for header usage
 		showPreview = true,
-		showAdvanced = false,
-		showWorkbench = false,
+		showAdvanced: _showAdvanced = false,
+		showWorkbench: _showWorkbench = false,
 		class: className = '',
 		value,
 		onThemeChange,
@@ -33,7 +34,7 @@
 
 	// Get reactive state from preferences store
 	let preferences = $state(preferencesStore.preferences);
-	let state = $state(preferencesStore.state);
+	let preferencesState = $state(preferencesStore.state);
 
 	// Use value prop if provided, otherwise use store
 	const currentScheme = $derived(value ?? preferences.colorScheme);
@@ -43,54 +44,9 @@
 	let compactTrigger: HTMLElement | null = $state(null);
 	let compactMenu: HTMLElement | null = $state(null);
 
-	// Local state for color picker
-	let primaryColor = $state('#3b82f6');
-	let secondaryColor = $state('#8b5cf6');
-	let accentColor = $state('#ec4899');
-	let fontScale = $state(1);
-
-	function hexToRgb(hex: string) {
-		const normalized = hex.replace('#', '').trim();
-		if (normalized.length !== 6) {
-			return null;
-		}
-
-		const r = Number.parseInt(normalized.slice(0, 2), 16) / 255;
-		const g = Number.parseInt(normalized.slice(2, 4), 16) / 255;
-		const b = Number.parseInt(normalized.slice(4, 6), 16) / 255;
-		return { r, g, b };
-	}
-
-	function relativeLuminance(rgb: { r: number; g: number; b: number }) {
-		const transform = (value: number) =>
-			value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
-		const r = transform(rgb.r);
-		const g = transform(rgb.g);
-		const b = transform(rgb.b);
-		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-	}
-
-	function getContrastRatio(hexA: string, hexB: string) {
-		const a = hexToRgb(hexA);
-		const b = hexToRgb(hexB);
-		if (!a || !b) {
-			return 1;
-		}
-
-		const lumA = relativeLuminance(a);
-		const lumB = relativeLuminance(b);
-		const lighter = Math.max(lumA, lumB);
-		const darker = Math.min(lumA, lumB);
-		return (lighter + 0.05) / (darker + 0.05);
-	}
-
 	function syncPreferences() {
 		preferences = preferencesStore.preferences;
-		state = preferencesStore.state;
-		primaryColor = preferences.customColors.primary;
-		secondaryColor = preferences.customColors.secondary;
-		accentColor = preferences.customColors.accent || '#ec4899';
-		fontScale = preferences.fontScale;
+		preferencesState = preferencesStore.state;
 	}
 
 	syncPreferences();
@@ -149,35 +105,8 @@
 		syncPreferences();
 	}
 
-	function handleFontScaleChange(scale: number) {
-		fontScale = scale;
-		preferencesStore.setFontScale(scale);
-		syncPreferences();
-	}
-
 	function handleMotionChange(motion: MotionPreference) {
 		preferencesStore.setMotion(motion);
-		syncPreferences();
-	}
-
-	function handleColorChange(type: 'primary' | 'secondary' | 'accent', color: string) {
-		switch (type) {
-			case 'primary':
-				primaryColor = color;
-				break;
-			case 'secondary':
-				secondaryColor = color;
-				break;
-			case 'accent':
-				accentColor = color;
-				break;
-		}
-
-		preferencesStore.setCustomColors({
-			primary: primaryColor,
-			secondary: secondaryColor,
-			accent: accentColor,
-		});
 		syncPreferences();
 	}
 
@@ -189,38 +118,6 @@
 	function resetToDefaults() {
 		preferencesStore.reset();
 		syncPreferences();
-	}
-
-	function exportSettings() {
-		if (!hasDocument) {
-			return;
-		}
-
-		const json = preferencesStore.export();
-		const blob = new Blob([json], { type: 'application/json' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = 'theme-preferences.json';
-		a.click();
-		URL.revokeObjectURL(url);
-	}
-
-	function importSettings(event: Event) {
-		const input = event.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-
-		const reader = new FileReader();
-		reader.onload = (e) => {
-			const json = e.target?.result as string;
-			if (preferencesStore.import(json)) {
-				syncPreferences();
-			} else {
-				alert('Invalid preferences file');
-			}
-		};
-		reader.readAsText(file);
 	}
 
 	// Compact variant handlers
@@ -272,12 +169,6 @@
 	// Filter color schemes for compact (only show Light, Dark, Auto)
 	const compactSchemes = $derived(() => {
 		return colorSchemes.filter((s) => ['light', 'dark', 'auto'].includes(s.value));
-	});
-
-	const previewButtonTextColor = $derived(() => {
-		const contrastWithBlack = getContrastRatio(primaryColor, '#000000');
-		const contrastWithWhite = getContrastRatio(primaryColor, '#ffffff');
-		return contrastWithBlack >= contrastWithWhite ? '#000000' : '#ffffff';
 	});
 </script>
 
@@ -358,7 +249,7 @@
 							<span class="gr-theme-switcher__option-description">{scheme.description}</span>
 							{#if scheme.value === 'auto'}
 								<span class="gr-theme-switcher__option-badge">
-									Currently: {state.systemColorScheme}
+									Currently: {preferencesState.systemColorScheme}
 								</span>
 							{/if}
 						</div>
@@ -418,24 +309,6 @@
 					</label>
 				{/each}
 			</div>
-
-			{#if showAdvanced}
-				<div class="gr-theme-switcher__slider">
-					<label for="fontScale">
-						Font Scale: {fontScale.toFixed(2)}x
-					</label>
-					<input
-						id="fontScale"
-						type="range"
-						min="0.85"
-						max="1.5"
-						step="0.05"
-						value={fontScale}
-						oninput={(e) => handleFontScaleChange(Number(e.currentTarget.value))}
-						class="gr-theme-switcher__range"
-					/>
-				</div>
-			{/if}
 		</div>
 
 		<div class="gr-theme-switcher__section">
@@ -448,14 +321,14 @@
 							name="motion"
 							value={motion.value}
 							checked={preferences.motion === motion.value}
-							disabled={state.systemMotion === 'reduced'}
+							disabled={preferencesState.systemMotion === 'reduced'}
 							onchange={() => handleMotionChange(motion.value)}
 							class="gr-theme-switcher__radio"
 						/>
 						<div class="gr-theme-switcher__option-content">
 							<span class="gr-theme-switcher__option-label">{motion.label}</span>
 							<span class="gr-theme-switcher__option-description">{motion.description}</span>
-							{#if state.systemMotion === 'reduced' && motion.value === 'normal'}
+							{#if preferencesState.systemMotion === 'reduced' && motion.value === 'normal'}
 								<span class="gr-theme-switcher__option-badge"> System prefers reduced motion </span>
 							{/if}
 						</div>
@@ -463,76 +336,6 @@
 				{/each}
 			</div>
 		</div>
-
-		{#if showAdvanced}
-			<div class="gr-theme-switcher__section">
-				<h3 class="gr-theme-switcher__heading">Custom Colors</h3>
-				<div class="gr-theme-switcher__colors">
-					<div class="gr-theme-switcher__color-input">
-						<label for="primaryColor">Primary</label>
-						<div class="gr-theme-switcher__color-wrapper">
-							<input
-								id="primaryColor"
-								type="color"
-								value={primaryColor}
-								oninput={(e) => handleColorChange('primary', e.currentTarget.value)}
-								class="gr-theme-switcher__color-picker"
-							/>
-							<input
-								type="text"
-								value={primaryColor}
-								oninput={(e) => handleColorChange('primary', e.currentTarget.value)}
-								pattern="^#[0-9A-Fa-f]{6}$"
-								aria-label="Primary color hex value"
-								class="gr-theme-switcher__color-text"
-							/>
-						</div>
-					</div>
-
-					<div class="gr-theme-switcher__color-input">
-						<label for="secondaryColor">Secondary</label>
-						<div class="gr-theme-switcher__color-wrapper">
-							<input
-								id="secondaryColor"
-								type="color"
-								value={secondaryColor}
-								oninput={(e) => handleColorChange('secondary', e.currentTarget.value)}
-								class="gr-theme-switcher__color-picker"
-							/>
-							<input
-								type="text"
-								value={secondaryColor}
-								oninput={(e) => handleColorChange('secondary', e.currentTarget.value)}
-								pattern="^#[0-9A-Fa-f]{6}$"
-								aria-label="Secondary color hex value"
-								class="gr-theme-switcher__color-text"
-							/>
-						</div>
-					</div>
-
-					<div class="gr-theme-switcher__color-input">
-						<label for="accentColor">Accent</label>
-						<div class="gr-theme-switcher__color-wrapper">
-							<input
-								id="accentColor"
-								type="color"
-								value={accentColor}
-								oninput={(e) => handleColorChange('accent', e.currentTarget.value)}
-								class="gr-theme-switcher__color-picker"
-							/>
-							<input
-								type="text"
-								value={accentColor}
-								oninput={(e) => handleColorChange('accent', e.currentTarget.value)}
-								pattern="^#[0-9A-Fa-f]{6}$"
-								aria-label="Accent color hex value"
-								class="gr-theme-switcher__color-text"
-							/>
-						</div>
-					</div>
-				</div>
-			</div>
-		{/if}
 
 		{#if showPreview}
 			<div class="gr-theme-switcher__section">
@@ -544,7 +347,6 @@
 						<div class="gr-theme-switcher__preview-buttons">
 							<button
 								class="gr-theme-switcher__preview-button gr-theme-switcher__preview-button--primary"
-								style={`background-color: ${primaryColor}; color: ${previewButtonTextColor()}`}
 							>
 								Primary
 							</button>
@@ -566,41 +368,7 @@
 			>
 				Reset to Defaults
 			</button>
-
-			{#if showAdvanced}
-				<button
-					onclick={exportSettings}
-					class="gr-theme-switcher__action-button gr-theme-switcher__action-button--secondary"
-				>
-					Export Settings
-				</button>
-
-				<label class="gr-theme-switcher__action-button gr-theme-switcher__action-button--secondary">
-					Import Settings
-					<input
-						type="file"
-						accept=".json"
-						onchange={importSettings}
-						class="gr-theme-switcher__file-input"
-					/>
-				</label>
-			{/if}
 		</div>
-
-		{#if showWorkbench}
-			<div class="gr-theme-switcher__section">
-				<h3 class="gr-theme-switcher__heading">Theme Workbench</h3>
-				<ThemeWorkbench
-					initialColor={primaryColor}
-					onSave={(theme) => {
-						// This would typically save to a custom theme store
-						handleColorChange('primary', theme.colors.primary[500]);
-						handleColorChange('secondary', theme.colors.secondary[500]);
-						// Example: just applying primary/secondary for now
-					}}
-				/>
-			</div>
-		{/if}
 
 		{#if children}
 			<div class="gr-theme-switcher__custom">

@@ -56,7 +56,7 @@ export async function smoothThemeTransition(
 	}
 
 	const opts = { ...DEFAULT_OPTIONS, ...options };
-	const { duration, easing, properties, target } = opts;
+	const { duration, target } = opts;
 
 	// Check for reduced motion preference
 	const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -67,49 +67,27 @@ export async function smoothThemeTransition(
 		return;
 	}
 
-	// Create transition style
-	const transitionValue = properties.map((prop) => `${prop} ${duration}ms ${easing}`).join(', ');
-
-	// Store original transition
-	const originalTransition = target.style.transition;
-
-	// Apply transition to target and all descendants
-	const styleId = 'gr-theme-transition-style';
-	let styleElement = document.getElementById(styleId) as HTMLStyleElement | null;
-
-	if (!styleElement) {
-		styleElement = document.createElement('style');
-		styleElement.id = styleId;
-		document.head.appendChild(styleElement);
-	}
-
-	styleElement.textContent = `
-    .${TRANSITION_CLASS},
-    .${TRANSITION_CLASS} * {
-      transition: ${transitionValue} !important;
-    }
-  `;
-
 	// Add transition class
 	target.classList.add(TRANSITION_CLASS);
 
-	// Execute the theme change callback
-	await callback();
+	/** @type {unknown} */
+	let callbackError;
 
-	// Wait for transition to complete, then clean up
-	return new Promise((resolve) => {
-		setTimeout(() => {
-			target.classList.remove(TRANSITION_CLASS);
-			target.style.transition = originalTransition;
+	try {
+		// Execute the theme change callback
+		await callback();
+	} catch (err) {
+		callbackError = err;
+	} finally {
+		// Wait for transition to complete, then clean up.
+		// Note: the transition CSS is shipped in primitives theme.css; no runtime <style> injection.
+		await new Promise((resolve) => setTimeout(resolve, duration));
+		target.classList.remove(TRANSITION_CLASS);
+	}
 
-			// Clean up style element
-			if (styleElement && styleElement.parentNode) {
-				styleElement.parentNode.removeChild(styleElement);
-			}
-
-			resolve();
-		}, duration);
-	});
+	if (callbackError) {
+		throw callbackError;
+	}
 }
 
 /**

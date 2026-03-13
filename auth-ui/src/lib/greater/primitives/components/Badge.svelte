@@ -81,8 +81,9 @@ Badge component - A versatile badge component for status indicators, labels, and
 		children,
 		pulse = false,
 		ariaLive,
+		style: _style,
 		...restProps
-	}: Props = $props();
+	}: Props & { style?: string } = $props();
 
 	const badgeClass = $derived(
 		[

@@ -5,7 +5,7 @@ import type { Snippet } from 'svelte';
  *
  * @public
  */
-interface Props extends HTMLAttributes<HTMLDivElement> {
+interface Props extends HTMLAttributes<HTMLElement> {
 	/**
 	 * Visual variant of the card.
 	 * - `elevated`: Card with shadow (default)
