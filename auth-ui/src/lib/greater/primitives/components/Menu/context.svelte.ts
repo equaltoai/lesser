@@ -1,5 +1,5 @@
 import { getContext, setContext, tick } from 'svelte';
-import { calculatePosition } from './positioning';
+import { calculatePlacement } from './positioning';
 
 export type MenuPlacement = 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end';
 
@@ -14,8 +14,6 @@ export interface MenuItemConfig {
 }
 
 export interface MenuPosition {
-	x: number;
-	y: number;
 	placement: MenuPlacement;
 }
 
@@ -28,7 +26,7 @@ export class MenuState {
 	isOpen = $state(false);
 	activeIndex = $state(-1);
 	items = $state<MenuItemConfig[]>([]);
-	position = $state<MenuPosition>({ x: 0, y: 0, placement: 'bottom-start' });
+	position = $state<MenuPosition>({ placement: 'bottom-start' });
 	triggerElement = $state<HTMLElement | null>(null);
 	contentElement = $state<HTMLElement | null>(null);
 
@@ -63,7 +61,7 @@ export class MenuState {
 		// But we want to respect initialOpen
 		this.isOpen = config.initialOpen ?? false;
 
-		this.position = { x: 0, y: 0, placement: this.placement };
+		this.position = { placement: this.placement };
 	}
 
 	open = () => {
@@ -157,12 +155,14 @@ export class MenuState {
 		const triggerRect = this.triggerElement.getBoundingClientRect();
 		const contentRect = this.contentElement.getBoundingClientRect();
 
-		this.position = calculatePosition({
-			triggerRect,
-			contentRect,
-			placement: this.placement,
-			offset: this.offset,
-		});
+		this.position = {
+			placement: calculatePlacement({
+				triggerRect,
+				contentRect,
+				placement: this.placement,
+				offset: this.offset,
+			}),
+		};
 	};
 }
 

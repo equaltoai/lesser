@@ -38,4 +38,3 @@ export function truncateMiddle(value: string, opts: TruncateMiddleOptions = {}):
 
 	return `${start}${safeEllipsis}${end}`;
 }
-

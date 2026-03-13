@@ -1,27 +1,16 @@
-<svelte:options
-	customElement={{
-		props: {
-			content: {},
-			placement: {},
-			trigger: {},
-			delay: {},
-			disabled: {},
-			class: {},
-			children: {},
-		},
-	}}
-/>
-
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { Snippet } from 'svelte';
 	import { untrack } from 'svelte';
 	import { useStableId } from 'src/lib/greater/utils';
 
+	export type Placement = 'top' | 'bottom' | 'left' | 'right' | 'auto';
+	type ActualPlacement = Exclude<Placement, 'auto'>;
+
 	interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
 		content: string;
 		id?: string;
-		placement?: 'top' | 'bottom' | 'left' | 'right' | 'auto';
+		placement?: Placement;
 		trigger?: 'hover' | 'focus' | 'click' | 'manual';
 		delay?: { show?: number; hide?: number } | number;
 		disabled?: boolean;
@@ -38,11 +27,12 @@
 		disabled = false,
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
-	}: Props = $props<Props>();
+	}: Props = $props();
 
 	// Normalize delay prop
-	const normalizedDelay = $derived(() => {
+	const normalizedDelay = $derived.by(() => {
 		if (typeof delay === 'number') {
 			return { show: delay, hide: delay };
 		}
@@ -56,14 +46,15 @@
 	let showTimeout: ReturnType<typeof setTimeout> | null = $state(null);
 	let hideTimeout: ReturnType<typeof setTimeout> | null = $state(null);
 	let longPressTimeout: ReturnType<typeof setTimeout> | null = $state(null);
-	let actualPlacement = $state(untrack(() => placement));
+	let actualPlacement: ActualPlacement = $state(
+		untrack(() => (placement === 'auto' ? 'top' : placement))
+	);
 
 	$effect(() => {
-		actualPlacement = placement;
+		if (placement !== 'auto') {
+			actualPlacement = placement;
+		}
 	});
-
-	// Computed tooltip position
-	let tooltipPosition = $state({ top: 0, left: 0 });
 
 	function clearTimeouts() {
 		if (showTimeout) {
@@ -80,17 +71,54 @@
 		}
 	}
 
+	/**
+	 * Calculate the best placement for auto placement mode.
+	 * Uses viewport heuristics to select the best placement class.
+	 * Returns a placement string (no pixel calculations).
+	 */
+	function calculatePlacement(): ActualPlacement {
+		if (placement !== 'auto') return placement;
+		if (!triggerElement) return 'top';
+
+		const triggerRect = triggerElement.getBoundingClientRect();
+		const viewportHeight = window.innerHeight;
+		const viewportWidth = window.innerWidth;
+
+		// Space available in each direction
+		const spaceAbove = triggerRect.top;
+		const spaceBelow = viewportHeight - triggerRect.bottom;
+		const spaceLeft = triggerRect.left;
+		const spaceRight = viewportWidth - triggerRect.right;
+
+		// Thresholds for minimum space needed
+		const verticalThreshold = 100;
+		const horizontalThreshold = 150;
+
+		// Prefer top, then bottom, then right, then left
+		if (spaceAbove >= verticalThreshold) return 'top';
+		if (spaceBelow >= verticalThreshold) return 'bottom';
+		if (spaceRight >= horizontalThreshold) return 'right';
+		if (spaceLeft >= horizontalThreshold) return 'left';
+
+		// Fallback: choose the direction with most space
+		const maxSpace = Math.max(spaceAbove, spaceBelow, spaceLeft, spaceRight);
+		if (maxSpace === spaceAbove) return 'top';
+		if (maxSpace === spaceBelow) return 'bottom';
+		if (maxSpace === spaceRight) return 'right';
+		return 'left';
+	}
+
 	function show() {
 		if (disabled || isVisible) return;
 
 		clearTimeouts();
 		showTimeout = setTimeout(() => {
+			// Calculate placement before showing (for auto placement)
+			if (placement === 'auto') {
+				actualPlacement = calculatePlacement();
+			}
 			isVisible = true;
-			// Calculate position after tooltip is rendered
-			requestAnimationFrame(() => {
-				calculatePosition();
-			});
-		}, normalizedDelay().show);
+		}, normalizedDelay.show);
 	}
 
 	function hide() {
@@ -99,93 +127,7 @@
 		clearTimeouts();
 		hideTimeout = setTimeout(() => {
 			isVisible = false;
-		}, normalizedDelay().hide);
-	}
-
-	function calculatePosition() {
-		if (!triggerElement || !tooltipElement) return;
-
-		const triggerRect = triggerElement.getBoundingClientRect();
-		const tooltipRect = tooltipElement.getBoundingClientRect();
-		const viewportWidth = window.innerWidth;
-		const viewportHeight = window.innerHeight;
-		const scrollX = window.scrollX;
-		const scrollY = window.scrollY;
-
-		let top = 0;
-		let left = 0;
-		let finalPlacement = placement;
-
-		// Calculate preferred position
-		switch (placement) {
-			case 'top':
-				top = triggerRect.top - tooltipRect.height - 8;
-				left = triggerRect.left + (triggerRect.width - tooltipRect.width) / 2;
-				break;
-			case 'bottom':
-				top = triggerRect.bottom + 8;
-				left = triggerRect.left + (triggerRect.width - tooltipRect.width) / 2;
-				break;
-			case 'left':
-				top = triggerRect.top + (triggerRect.height - tooltipRect.height) / 2;
-				left = triggerRect.left - tooltipRect.width - 8;
-				break;
-			case 'right':
-				top = triggerRect.top + (triggerRect.height - tooltipRect.height) / 2;
-				left = triggerRect.right + 8;
-				break;
-			case 'auto': {
-				// Smart placement - find the best position
-				const positions = [
-					{
-						placement: 'top',
-						top: triggerRect.top - tooltipRect.height - 8,
-						left: triggerRect.left + (triggerRect.width - tooltipRect.width) / 2,
-					},
-					{
-						placement: 'bottom',
-						top: triggerRect.bottom + 8,
-						left: triggerRect.left + (triggerRect.width - tooltipRect.width) / 2,
-					},
-					{
-						placement: 'left',
-						top: triggerRect.top + (triggerRect.height - tooltipRect.height) / 2,
-						left: triggerRect.left - tooltipRect.width - 8,
-					},
-					{
-						placement: 'right',
-						top: triggerRect.top + (triggerRect.height - tooltipRect.height) / 2,
-						left: triggerRect.right + 8,
-					},
-				];
-
-				// Find position that fits best in viewport
-				const bestPosition =
-					positions.find(
-						(pos) =>
-							pos.top >= 0 &&
-							pos.top + tooltipRect.height <= viewportHeight &&
-							pos.left >= 0 &&
-							pos.left + tooltipRect.width <= viewportWidth
-					) || positions[0]; // Fallback to top
-
-				top = bestPosition.top;
-				left = bestPosition.left;
-				finalPlacement = bestPosition.placement as typeof placement;
-				break;
-			}
-		}
-
-		// Clamp to viewport bounds
-		left = Math.max(8, Math.min(left, viewportWidth - tooltipRect.width - 8));
-		top = Math.max(8, Math.min(top, viewportHeight - tooltipRect.height - 8));
-
-		// Add scroll offset
-		top += scrollY;
-		left += scrollX;
-
-		tooltipPosition = { top, left };
-		actualPlacement = finalPlacement;
+		}, normalizedDelay.hide);
 	}
 
 	function handleMouseEnter() {
@@ -255,26 +197,26 @@
 		}
 	}
 
-	// Window resize handler
+	// Window resize handler - recalculate placement for auto mode
 	function handleResize() {
-		if (isVisible) {
-			calculatePosition();
+		if (isVisible && placement === 'auto') {
+			actualPlacement = calculatePlacement();
 		}
 	}
 
 	// Effects
 	$effect(() => {
-		if (isVisible) {
-			document.addEventListener('click', handleClickOutside);
-			window.addEventListener('resize', handleResize);
-			window.addEventListener('scroll', calculatePosition);
+		if (!isVisible) return;
 
-			return () => {
-				document.removeEventListener('click', handleClickOutside);
-				window.removeEventListener('resize', handleResize);
-				window.removeEventListener('scroll', calculatePosition);
-			};
-		}
+		document.addEventListener('click', handleClickOutside);
+		window.addEventListener('resize', handleResize);
+		window.addEventListener('scroll', handleResize);
+
+		return () => {
+			document.removeEventListener('click', handleClickOutside);
+			window.removeEventListener('resize', handleResize);
+			window.removeEventListener('scroll', handleResize);
+		};
 	});
 
 	// Cleanup on unmount
@@ -284,8 +226,8 @@
 		};
 	});
 
-	// Compute tooltip classes
-	const tooltipClass = $derived(() => {
+	// Compute tooltip classes - CSP compliant (no inline styles)
+	const tooltipClass = $derived.by(() => {
 		const classes = [
 			'gr-tooltip',
 			`gr-tooltip--${actualPlacement}`,
@@ -326,10 +268,9 @@
 	{#if isVisible}
 		<div
 			bind:this={tooltipElement}
-			class={tooltipClass()}
+			class={tooltipClass}
 			id={tooltipId}
 			role="tooltip"
-			style="position: absolute; top: {tooltipPosition.top}px; left: {tooltipPosition.left}px; z-index: 9999;"
 			{...restProps}
 		>
 			<div class="gr-tooltip__content">

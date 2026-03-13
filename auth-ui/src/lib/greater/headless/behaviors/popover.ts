@@ -7,6 +7,8 @@
  * @module @equaltoai/greater-components-headless/behaviors/popover
  */
 
+import { applyCspSafeStyles } from '../utils/csp-safe-styles';
+
 /**
  * Placement options
  */
@@ -474,9 +476,19 @@ export function createPopover(config: PopoverConfig = {}): Popover {
 		const position = computePosition();
 
 		if (position && state.floating) {
-			state.floating.style.position = currentConfig.strategy;
-			state.floating.style.left = `${position.x}px`;
-			state.floating.style.top = `${position.y}px`;
+			state.floating.classList.add('gr-floating-layer');
+			state.floating.classList.toggle(
+				'gr-floating-layer--fixed',
+				currentConfig.strategy === 'fixed'
+			);
+			state.floating.classList.toggle(
+				'gr-floating-layer--absolute',
+				currentConfig.strategy === 'absolute'
+			);
+
+			applyCspSafeStyles(state.floating, {
+				transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
+			});
 		}
 
 		return position;

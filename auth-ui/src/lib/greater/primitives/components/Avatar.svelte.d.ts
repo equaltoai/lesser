@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from 'svelte/elements';
 import type { Snippet } from 'svelte';
-interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'role'> {
+interface Props extends Omit<HTMLAttributes<HTMLElement>, 'role'> {
 	src?: string;
 	alt?: string;
 	name?: string;
@@ -29,6 +29,7 @@ interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'role'> {
 	statusPosition?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
 	class?: string;
 	fallback?: Snippet;
+	role?: string;
 }
 declare const Avatar: import('svelte').Component<Props, {}, ''>;
 type Avatar = ReturnType<typeof Avatar>;

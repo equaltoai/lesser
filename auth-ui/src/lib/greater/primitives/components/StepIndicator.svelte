@@ -64,8 +64,9 @@ StepIndicator component - Numbered badge for tutorials and multi-step workflows.
 		color = 'primary',
 		icon,
 		class: className = '',
+		style: _style,
 		...restProps
-	}: Props = $props();
+	}: Props & { style?: string } = $props();
 
 	// Icons based on state
 	const displayIcon = $derived.by(() => {

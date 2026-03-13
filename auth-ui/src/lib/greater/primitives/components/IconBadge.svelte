@@ -62,18 +62,18 @@ IconBadge component - A container for icons with consistent shapes, sizes, and c
 		shape = 'circle',
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
-	}: Props = $props();
+	}: Props & { style?: string } = $props();
 
-	const sizeMap = { sm: 40, md: 56, lg: 72, xl: 96 };
 	const defaultIconSizeMap = { sm: 20, md: 28, lg: 36, xl: 48 };
 
-	const badgeSize = $derived(sizeMap[size]);
 	const finalIconSize = $derived(iconSize || defaultIconSizeMap[size]);
 
 	const badgeClass = $derived(
 		[
 			'gr-icon-badge',
+			`gr-icon-badge--size-${size}`,
 			`gr-icon-badge--${variant}`,
 			`gr-icon-badge--${color}`,
 			`gr-icon-badge--${shape}`,
@@ -84,7 +84,7 @@ IconBadge component - A container for icons with consistent shapes, sizes, and c
 	);
 </script>
 
-<div class={badgeClass} style:width="{badgeSize}px" style:height="{badgeSize}px" {...restProps}>
+<div class={badgeClass} {...restProps}>
 	{#if icon}
 		{@const Icon = icon}
 		<Icon size={finalIconSize} />

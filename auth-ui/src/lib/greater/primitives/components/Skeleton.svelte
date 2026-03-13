@@ -2,10 +2,13 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { Snippet } from 'svelte';
 
-	interface Props extends HTMLAttributes<HTMLDivElement> {
+	export type WidthPreset = 'full' | '1/2' | '1/3' | '2/3' | '1/4' | '3/4' | 'content' | 'auto';
+	export type HeightPreset = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+
+	interface Props extends HTMLAttributes<HTMLElement> {
 		variant?: 'text' | 'circular' | 'rectangular' | 'rounded';
-		width?: string | number;
-		height?: string | number;
+		width?: WidthPreset;
+		height?: HeightPreset;
 		animation?: 'pulse' | 'wave' | 'none';
 		class?: string;
 		loading?: boolean;
@@ -21,7 +24,6 @@
 		loading = true,
 		children,
 		id,
-		style: styleProp,
 		onclick,
 		onmouseenter,
 		onmouseleave,
@@ -55,7 +57,7 @@
 		'treeitem',
 	]);
 
-	const parsedTabIndex = $derived<number | undefined>(() => {
+	const parsedTabIndex = $derived.by<number | undefined>(() => {
 		if (tabindex === undefined || tabindex === null) {
 			return undefined;
 		}
@@ -66,23 +68,23 @@
 		return Number.isFinite(numericValue) ? numericValue : undefined;
 	});
 
-	const hasInteractiveHandlers = $derived(() => Boolean(onclick || onkeydown || onkeyup));
+	const hasInteractiveHandlers = $derived(Boolean(onclick || onkeydown || onkeyup));
 
-	const isInteractiveRole = (roleValue: string | undefined): boolean => {
+	const isInteractiveRole = (roleValue: string | null | undefined): boolean => {
 		if (!roleValue) {
 			return false;
 		}
 		return INTERACTIVE_ROLES.has(roleValue);
 	};
 
-	const isInteractive = $derived(() => {
+	const isInteractive = $derived.by(() => {
 		if (isInteractiveRole(role)) {
 			return true;
 		}
-		if (hasInteractiveHandlers()) {
+		if (hasInteractiveHandlers) {
 			return true;
 		}
-		const parsedValue = parsedTabIndex();
+		const parsedValue = parsedTabIndex;
 		if (parsedValue !== undefined && parsedValue >= 0) {
 			return true;
 		}
@@ -90,50 +92,19 @@
 	});
 
 	// Compute skeleton classes
-	const skeletonClass = $derived(() => {
+	const skeletonClass = $derived.by(() => {
 		const classes = [
 			'gr-skeleton',
 			`gr-skeleton--${variant}`,
 			animation !== 'none' && `gr-skeleton--${animation}`,
+			width && `gr-skeleton--width-${width}`,
+			height && `gr-skeleton--height-${height}`,
 			className,
 		]
 			.filter(Boolean)
 			.join(' ');
 
 		return classes;
-	});
-
-	// Compute skeleton styles
-	const skeletonStyle = $derived(() => {
-		const styles: Record<string, string> = {};
-
-		if (width !== undefined) {
-			styles.width = typeof width === 'number' ? `${width}px` : width;
-		}
-
-		if (height !== undefined) {
-			styles.height = typeof height === 'number' ? `${height}px` : height;
-		}
-
-		// Default dimensions for different variants
-		if (variant === 'text') {
-			if (!height) styles.height = '1em';
-			if (!width) styles.width = '100%';
-		} else if (variant === 'circular') {
-			const size = width || height || '40px';
-			styles.width = typeof size === 'number' ? `${size}px` : size;
-			styles.height = typeof size === 'number' ? `${size}px` : size;
-		} else if (variant === 'rectangular' || variant === 'rounded') {
-			if (!width) styles.width = '100%';
-			if (!height) styles.height = '120px';
-		}
-
-		// Merge with provided style prop
-		const baseStyle = Object.entries(styles)
-			.map(([key, value]) => `${key}: ${value}`)
-			.join('; ');
-
-		return styleProp ? `${baseStyle}; ${styleProp}` : baseStyle;
 	});
 </script>
 
@@ -144,10 +115,9 @@
 {/snippet}
 
 {#if loading}
-	{#if isInteractive()}
+	{#if isInteractive}
 		<button
-			class={skeletonClass()}
-			style={skeletonStyle()}
+			class={skeletonClass}
 			{role}
 			aria-label={ariaLabel ?? 'Loading'}
 			aria-labelledby={ariaLabelledby}
@@ -160,15 +130,14 @@
 			{onblur}
 			{onkeydown}
 			{onkeyup}
-			tabindex={parsedTabIndex()}
+			tabindex={parsedTabIndex}
 			type="button"
 		>
 			{@render SkeletonContent()}
 		</button>
 	{:else}
 		<div
-			class={skeletonClass()}
-			style={skeletonStyle()}
+			class={skeletonClass}
 			aria-hidden="true"
 			role={role ?? 'status'}
 			aria-label={ariaLabel ?? 'Loading'}

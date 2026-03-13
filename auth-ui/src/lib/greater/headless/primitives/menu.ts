@@ -169,7 +169,7 @@ export interface MenuActions {
 	 */
 	item: (
 		node: HTMLElement,
-		options?: { disabled?: boolean; onClick?: () => void }
+		options?: string | { value?: string; disabled?: boolean; onClick?: () => void }
 	) => { destroy: () => void };
 
 	/**
@@ -632,14 +632,19 @@ export function createMenu(config: MenuConfig = {}) {
 	/**
 	 * Menu item action
 	 */
-	function item(node: HTMLElement, options: { disabled?: boolean; onClick?: () => void } = {}) {
-		const { disabled = false, onClick: onClickHandler } = options;
+	function item(
+		node: HTMLElement,
+		options: string | { value?: string; disabled?: boolean; onClick?: () => void } = {}
+	) {
+		const normalizedOptions = typeof options === 'string' ? { value: options } : options;
+		const { value = '', disabled = false, onClick: onClickHandler } = normalizedOptions;
 
 		// Check if item already exists and update it
 		const existingIndex = menuItems.findIndex((item) => item.element === node);
 		if (existingIndex !== -1) {
 			const existingItem = menuItems[existingIndex];
 			if (existingItem) {
+				existingItem.value = value;
 				existingItem.disabled = disabled;
 				existingItem.onClick = onClickHandler;
 			}
@@ -659,13 +664,14 @@ export function createMenu(config: MenuConfig = {}) {
 			};
 		}
 
-		const itemData = { element: node, value: '', disabled, onClick: onClickHandler };
+		const itemData = { element: node, value, disabled, onClick: onClickHandler };
 		menuItems.push(itemData);
 
 		function handleClick() {
 			if (itemData.disabled) return;
 
 			itemData.onClick?.();
+			_onSelect?.(itemData.value);
 
 			if (state.closeOnSelect) {
 				close();

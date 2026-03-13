@@ -180,13 +180,24 @@ Modal component - Accessible dialog with focus management, backdrop handling, an
 			return;
 		}
 
-		const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-		document.body.style.overflow = 'hidden';
-		document.body.style.paddingRight = `${scrollbarWidth}px`;
+		const lockCountAttr = 'data-gr-scroll-lock-count';
+		const existingCount = Number(document.body.getAttribute(lockCountAttr) || '0');
+		const nextCount = existingCount + 1;
+
+		document.body.setAttribute(lockCountAttr, String(nextCount));
+		document.body.classList.add('gr-scroll-locked');
 
 		return () => {
-			document.body.style.overflow = '';
-			document.body.style.paddingRight = '';
+			const currentCount = Number(document.body.getAttribute(lockCountAttr) || '0');
+			const updatedCount = Math.max(0, currentCount - 1);
+
+			if (updatedCount === 0) {
+				document.body.removeAttribute(lockCountAttr);
+				document.body.classList.remove('gr-scroll-locked');
+				return;
+			}
+
+			document.body.setAttribute(lockCountAttr, String(updatedCount));
 		};
 	});
 
@@ -236,9 +247,12 @@ Modal component - Accessible dialog with focus management, backdrop handling, an
 			'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 		);
 
-		const focusableArray = Array.from(focusableElements).filter(
-			(el) => !(el as HTMLElement).disabled && (el as HTMLElement).tabIndex >= 0
-		) as HTMLElement[];
+		const focusableArray = Array.from(focusableElements)
+			.map((element) => element as HTMLElement)
+			.filter((element) => {
+				const disableableElement = element as HTMLElement & { disabled?: boolean };
+				return !disableableElement.disabled && element.tabIndex >= 0;
+			});
 
 		firstFocusable = focusableArray[0];
 		lastFocusable = focusableArray[focusableArray.length - 1];

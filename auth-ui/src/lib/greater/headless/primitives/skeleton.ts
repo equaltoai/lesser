@@ -7,6 +7,8 @@
  * @module primitives/skeleton
  */
 
+import { applyCspSafeStyles, clearCspSafeStyles } from '../utils/csp-safe-styles';
+
 /**
  * Skeleton configuration
  */
@@ -196,6 +198,8 @@ export function createSkeleton(config: SkeletonConfig = {}): Skeleton {
 	// Internal state
 	let skeletonElement: HTMLElement | null = null;
 	let delayTimeout: ReturnType<typeof setTimeout> | null = null;
+	let waapiAnimation: Animation | null = null;
+	let onAnimationCompleteInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Reactive state (works in both Svelte and test environments)
 	const internalState: SkeletonState = {
@@ -219,11 +223,67 @@ export function createSkeleton(config: SkeletonConfig = {}): Skeleton {
 		},
 	});
 
+	function normalizeDimension(value: string | number): string {
+		return typeof value === 'number' ? `${value}px` : value;
+	}
+
+	function applyDimensions(): void {
+		if (!skeletonElement) return;
+
+		applyCspSafeStyles(skeletonElement, {
+			width: normalizeDimension(state.width),
+			height: normalizeDimension(state.height),
+		});
+	}
+
+	function stopAnimation(): void {
+		if (waapiAnimation) {
+			waapiAnimation.cancel();
+			waapiAnimation = null;
+		}
+
+		if (onAnimationCompleteInterval) {
+			clearInterval(onAnimationCompleteInterval);
+			onAnimationCompleteInterval = null;
+		}
+	}
+
+	function startAnimation(): void {
+		if (!skeletonElement) return;
+		if (state.animation === 'none' || !state.loading || !state.visible) return;
+		if (typeof skeletonElement.animate !== 'function') return;
+
+		const durationMs = Math.max(0, state.duration);
+		if (durationMs === 0) return;
+
+		if (state.animation === 'pulse') {
+			waapiAnimation = skeletonElement.animate(
+				[{ opacity: 0.6 }, { opacity: 1 }, { opacity: 0.6 }],
+				{ duration: durationMs, iterations: Infinity, easing: 'ease-in-out' }
+			);
+		} else if (state.animation === 'wave') {
+			waapiAnimation = skeletonElement.animate(
+				[{ backgroundPosition: '200% 0%' }, { backgroundPosition: '-200% 0%' }],
+				{ duration: durationMs, iterations: Infinity, easing: 'linear' }
+			);
+		}
+
+		if (waapiAnimation && onAnimationComplete) {
+			onAnimationCompleteInterval = setInterval(() => {
+				onAnimationComplete();
+			}, durationMs);
+		}
+	}
+
 	function updateDOM() {
 		if (skeletonElement) {
 			skeletonElement.setAttribute('data-visible', String(state.visible));
 			skeletonElement.setAttribute('data-animation', state.animation);
 			skeletonElement.setAttribute('data-variant', state.variant);
+
+			applyDimensions();
+			stopAnimation();
+			startAnimation();
 		}
 	}
 
@@ -237,13 +297,6 @@ export function createSkeleton(config: SkeletonConfig = {}): Skeleton {
 	}
 
 	/**
-	 * Handle animation end
-	 */
-	function handleAnimationEnd() {
-		onAnimationComplete?.();
-	}
-
-	/**
 	 * Skeleton action
 	 */
 	function skeleton(node: HTMLElement) {
@@ -253,22 +306,9 @@ export function createSkeleton(config: SkeletonConfig = {}): Skeleton {
 		node.setAttribute('data-animation', state.animation);
 		node.setAttribute('data-variant', state.variant);
 		node.setAttribute('data-visible', state.visible.toString());
-
-		// Set style properties
-		node.style.setProperty(
-			'--skeleton-width',
-			typeof state.width === 'number' ? `${state.width}px` : state.width
-		);
-		node.style.setProperty(
-			'--skeleton-height',
-			typeof state.height === 'number' ? `${state.height}px` : state.height
-		);
-		node.style.setProperty('--skeleton-duration', `${state.duration}ms`);
-
-		// Add animation end listener
-		if (state.animation !== 'none') {
-			node.addEventListener('animationiteration', handleAnimationEnd);
-		}
+		applyDimensions();
+		stopAnimation();
+		startAnimation();
 
 		return {
 			destroy() {
@@ -278,9 +318,8 @@ export function createSkeleton(config: SkeletonConfig = {}): Skeleton {
 				}
 
 				if (skeletonElement) {
-					if (state.animation !== 'none') {
-						node.removeEventListener('animationiteration', handleAnimationEnd);
-					}
+					stopAnimation();
+					clearCspSafeStyles(node);
 					skeletonElement = null;
 				}
 

@@ -1,6 +1,6 @@
 import type { HTMLInputAttributes } from 'svelte/elements';
 import type { Snippet } from 'svelte';
-interface Props extends Omit<HTMLInputAttributes, 'type' | 'value'> {
+interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'prefix'> {
 	label?: string;
 	value?: string;
 	type?: 'text' | 'email' | 'password' | 'url' | 'tel' | 'search';

@@ -157,6 +157,7 @@ Heading component - Semantic heading with consistent typography.
 		align = 'left',
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
 	}: Props = $props();
 

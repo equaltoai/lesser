@@ -18,6 +18,7 @@
 		class: className = '',
 		children,
 		actions,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
@@ -47,4 +48,3 @@
 		{/if}
 	</dd>
 </div>
-

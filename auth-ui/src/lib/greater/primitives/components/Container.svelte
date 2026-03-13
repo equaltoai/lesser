@@ -17,11 +17,17 @@ Container component - Max-width wrapper for content centering.
 </Container>
 ```
 
-@example Custom gutter
+@example Custom gutter via external CSS
 ```svelte
-<Container size="lg" gutter="2rem">
+<Container size="lg" class="custom-gutter">
   <h1>Custom Padding</h1>
 </Container>
+
+<style>
+  :global(.custom-gutter) {
+    --gr-container-custom-gutter: 2rem;
+  }
+</style>
 ```
 -->
 
@@ -33,13 +39,13 @@ Container component - Max-width wrapper for content centering.
 	 * Size/max-width preset values.
 	 * @public
 	 */
-	type ContainerSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
+	export type ContainerSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
 
 	/**
 	 * Gutter/padding preset values.
 	 * @public
 	 */
-	type GutterPreset = 'none' | 'sm' | 'md' | 'lg' | 'xl';
+	export type GutterPreset = 'none' | 'sm' | 'md' | 'lg' | 'xl';
 
 	/**
 	 * Container component props interface.
@@ -85,7 +91,7 @@ Container component - Max-width wrapper for content centering.
 
 		/**
 		 * Horizontal padding (gutter) control.
-		 * Can be a preset value or custom CSS value.
+		 * Only preset values are supported for CSP compliance.
 		 *
 		 * Preset values:
 		 * - `none`: No padding
@@ -94,12 +100,13 @@ Container component - Max-width wrapper for content centering.
 		 * - `lg`: 1.5rem
 		 * - `xl`: 2rem
 		 *
-		 * Can also accept custom CSS values like '2rem' or '24px'.
+		 * For custom gutter values, use the `class` prop with external CSS
+		 * to set the `--gr-container-custom-gutter` CSS variable.
 		 * Takes precedence over `padding` prop.
 		 *
 		 * @public
 		 */
-		gutter?: GutterPreset | string | number;
+		gutter?: GutterPreset;
 
 		/**
 		 * Center content horizontally.
@@ -124,9 +131,6 @@ Container component - Max-width wrapper for content centering.
 		children?: Snippet;
 	}
 
-	// Gutter preset values for validation
-	const GUTTER_PRESETS: GutterPreset[] = ['none', 'sm', 'md', 'lg', 'xl'];
-
 	let {
 		maxWidth = 'lg',
 		size,
@@ -135,25 +139,12 @@ Container component - Max-width wrapper for content centering.
 		centered = true,
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
 	// Resolve size (size prop takes precedence over maxWidth)
 	const resolvedSize = $derived(size ?? maxWidth);
-
-	// Check if gutter is a preset or custom value
-	const isGutterPreset = $derived(
-		typeof gutter === 'string' && GUTTER_PRESETS.includes(gutter as GutterPreset)
-	);
-
-	// Compute custom gutter style
-	const customGutterStyle = $derived.by(() => {
-		if (!gutter || isGutterPreset) return undefined;
-		if (typeof gutter === 'number') {
-			return `--gr-container-custom-gutter: ${gutter}px;`;
-		}
-		return `--gr-container-custom-gutter: ${gutter};`;
-	});
 
 	// Compute container classes
 	const containerClass = $derived(() => {
@@ -161,13 +152,9 @@ Container component - Max-width wrapper for content centering.
 
 		// Handle gutter/padding
 		if (gutter !== undefined) {
-			// Gutter prop takes precedence
-			if (isGutterPreset) {
-				if (gutter !== 'none') {
-					classes.push(`gr-container--padded-${gutter}`);
-				}
-			} else {
-				classes.push('gr-container--padded-custom');
+			// Gutter prop takes precedence - only presets are supported
+			if (gutter !== 'none') {
+				classes.push(`gr-container--padded-${gutter}`);
 			}
 		} else if (padding !== false) {
 			// Fall back to padding prop
@@ -185,7 +172,7 @@ Container component - Max-width wrapper for content centering.
 	});
 </script>
 
-<div class={containerClass()} style={customGutterStyle} {...restProps}>
+<div class={containerClass()} {...restProps}>
 	{#if children}
 		{@render children()}
 	{/if}

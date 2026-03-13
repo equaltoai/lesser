@@ -1,5 +1,6 @@
 <!--
   Visual color harmony selector with wheel representation
+  CSP-compliant: Uses SVG fill attributes (no inline styles)
 -->
 <script lang="ts">
 	import { generateColorHarmony, type ColorHarmony } from 'src/lib/greater/utils';
@@ -19,48 +20,67 @@
 		if (onSelect) {
 			onSelect([seedColor, color, ...selectedColors.filter((c) => c !== color)]);
 		}
-		// Optionally update seed color to clicked color?
-		// seedColor = color;
+	}
+
+	function handleSwatchKeyDown(event: KeyboardEvent, color: string) {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		handleColorClick(color);
 	}
 </script>
 
-<div class="color-harmony-picker">
-	<div class="color-wheel-visualization">
-		<!-- Simplified visualization: just boxes for now -->
-		<div
-			class="color-swatch base"
-			style="background-color: {seedColor}"
+<div class="gr-color-harmony-picker">
+	<div class="gr-color-harmony-picker__visualization">
+		<button
+			type="button"
+			class="gr-color-harmony-picker__swatch gr-color-harmony-picker__swatch--base"
 			onclick={() => handleColorClick(seedColor)}
+			onkeydown={(event) => handleSwatchKeyDown(event, seedColor)}
 			title="Base Color: {seedColor}"
-			role="button"
-			tabindex="0"
-			onkeydown={(e) => e.key === 'Enter' && handleColorClick(seedColor)}
+			aria-label="Base Color: {seedColor}"
 		>
-			<span class="color-label">Base</span>
-		</div>
+			<svg class="gr-color-harmony-picker__swatch-svg" viewBox="0 0 60 60" aria-hidden="true">
+				<circle
+					class="gr-color-harmony-picker__swatch-circle"
+					cx="30"
+					cy="30"
+					r="28"
+					fill={seedColor}
+				/>
+			</svg>
+			<span class="gr-color-harmony-picker__label">Base</span>
+		</button>
 
 		{#each selectedColors as color (color)}
-			<div
-				class="color-swatch harmony"
-				style="background-color: {color}"
+			<button
+				type="button"
+				class="gr-color-harmony-picker__swatch gr-color-harmony-picker__swatch--harmony"
 				onclick={() => handleColorClick(color)}
+				onkeydown={(event) => handleSwatchKeyDown(event, color)}
 				title="{harmonyType}: {color}"
-				role="button"
-				tabindex="0"
-				onkeydown={(e) => e.key === 'Enter' && handleColorClick(color)}
+				aria-label="{harmonyType}: {color}"
 			>
-				<span class="color-label">{color}</span>
-			</div>
+				<svg class="gr-color-harmony-picker__swatch-svg" viewBox="0 0 60 60" aria-hidden="true">
+					<circle
+						class="gr-color-harmony-picker__swatch-circle"
+						cx="30"
+						cy="30"
+						r="28"
+						fill={color}
+					/>
+				</svg>
+				<span class="gr-color-harmony-picker__label">{color}</span>
+			</button>
 		{/each}
 	</div>
 
-	<div class="harmony-info">
+	<div class="gr-color-harmony-picker__info">
 		<p>Harmony: <strong>{harmonyType}</strong></p>
 	</div>
 </div>
 
 <style>
-	.color-harmony-picker {
+	.gr-color-harmony-picker {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
@@ -70,7 +90,7 @@
 		border: 1px solid var(--gr-color-border);
 	}
 
-	.color-wheel-visualization {
+	.gr-color-harmony-picker__visualization {
 		display: flex;
 		gap: 0.5rem;
 		justify-content: center;
@@ -78,30 +98,44 @@
 		flex-wrap: wrap;
 	}
 
-	.color-swatch {
+	.gr-color-harmony-picker__swatch {
 		width: 60px;
 		height: 60px;
 		border-radius: 50%;
 		border: 2px solid var(--gr-color-border);
 		cursor: pointer;
+		padding: 0;
+		background: transparent;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		transition: transform 0.2s;
+		position: relative;
 	}
 
-	.color-swatch:hover {
+	.gr-color-harmony-picker__swatch-svg {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+
+	.gr-color-harmony-picker__swatch-circle {
+		transform-origin: 50% 50%;
+	}
+
+	.gr-color-harmony-picker__swatch:hover {
 		transform: scale(1.1);
 	}
 
-	.color-swatch.base {
+	.gr-color-harmony-picker__swatch--base {
 		width: 80px;
 		height: 80px;
 		border-width: 3px;
 		border-color: var(--gr-color-primary);
 	}
 
-	.color-label {
+	.gr-color-harmony-picker__label {
 		font-size: 0.625rem;
 		background: rgba(0, 0, 0, 0.5);
 		color: white;
@@ -111,11 +145,11 @@
 		transition: opacity 0.2s;
 	}
 
-	.color-swatch:hover .color-label {
+	.gr-color-harmony-picker__swatch:hover .gr-color-harmony-picker__label {
 		opacity: 1;
 	}
 
-	.harmony-info {
+	.gr-color-harmony-picker__info {
 		text-align: center;
 		font-size: 0.875rem;
 		color: var(--gr-color-text-muted);

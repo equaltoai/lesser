@@ -9,13 +9,15 @@
 	import { untrack } from 'svelte';
 	import { createPositionObserver } from './positioning';
 
+	type OffsetPreset = 'sm' | 'md' | 'lg';
+
 	interface Props {
 		/** Whether the menu is open (bindable) */
 		open?: boolean;
 		/** Preferred placement of the menu content */
 		placement?: MenuPlacement;
-		/** Offset from trigger in pixels */
-		offset?: number;
+		/** Offset preset between trigger and content */
+		offset?: OffsetPreset;
 		/** Close menu when item is selected */
 		closeOnSelect?: boolean;
 		/** Enable keyboard navigation loop */
@@ -31,13 +33,19 @@
 	let {
 		open = $bindable(false),
 		placement = 'bottom-start',
-		offset = 4,
+		offset = 'sm',
 		closeOnSelect = true,
 		loop = true,
 		class: className = '',
 		children,
 		onOpenChange,
 	}: Props = $props();
+
+	const offsetPx = $derived.by(() => {
+		if (offset === 'lg') return 12;
+		if (offset === 'md') return 8;
+		return 4;
+	});
 
 	// Generate unique IDs
 	const menuId = generateMenuId();
@@ -48,7 +56,7 @@
 		menuId,
 		triggerId,
 		placement: untrack(() => placement),
-		offset: untrack(() => offset),
+		offset: untrack(() => offsetPx),
 		loop: untrack(() => loop),
 		closeOnSelect: untrack(() => closeOnSelect),
 		onOpenChange: (isOpen) => {
@@ -70,7 +78,7 @@
 
 		// Sync configuration props
 		if (placement) menuState.placement = placement;
-		if (offset !== undefined) menuState.offset = offset;
+		menuState.offset = offsetPx;
 		if (loop !== undefined) menuState.loop = loop;
 		if (closeOnSelect !== undefined) menuState.closeOnSelect = closeOnSelect;
 
@@ -95,7 +103,7 @@
 	});
 </script>
 
-<div class="gr-menu-root {className}">
+<div class="gr-menu-root gr-menu-root--offset-{offset} {className}">
 	{@render children()}
 </div>
 
@@ -103,5 +111,18 @@
 	.gr-menu-root {
 		position: relative;
 		display: inline-block;
+		--gr-menu-offset: 4px;
+	}
+
+	.gr-menu-root--offset-sm {
+		--gr-menu-offset: 4px;
+	}
+
+	.gr-menu-root--offset-md {
+		--gr-menu-offset: 8px;
+	}
+
+	.gr-menu-root--offset-lg {
+		--gr-menu-offset: 12px;
 	}
 </style>

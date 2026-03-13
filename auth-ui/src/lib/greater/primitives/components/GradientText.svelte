@@ -11,36 +11,31 @@ GradientText component - Eye-catching gradient text effect.
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	type GradientPreset = 'primary' | 'success' | 'warning' | 'error';
+	type GradientDirection =
+		| 'to-right'
+		| 'to-left'
+		| 'to-top'
+		| 'to-bottom'
+		| 'to-top-right'
+		| 'to-top-left'
+		| 'to-bottom-right'
+		| 'to-bottom-left';
+
 	interface Props {
 		/**
-		 * Gradient preset or 'custom' mode.
+		 * Gradient preset.
 		 * - `primary`: Uses primary-600 to primary-400
 		 * - `success`: Uses success-600 to success-400
 		 * - `warning`: Uses warning-600 to warning-400
 		 * - `error`: Uses error-600 to error-400
-		 * - `custom`: Uses from/to/via props
 		 */
-		gradient?: 'primary' | 'success' | 'warning' | 'error' | 'custom';
+		gradient?: GradientPreset;
 
 		/**
-		 * Gradient direction (e.g., "to right", "45deg").
+		 * Gradient direction preset.
 		 */
-		direction?: string;
-
-		/**
-		 * Start color (for custom gradient).
-		 */
-		from?: string;
-
-		/**
-		 * End color (for custom gradient).
-		 */
-		to?: string;
-
-		/**
-		 * Optional middle color (for custom gradient).
-		 */
-		via?: string;
+		direction?: GradientDirection;
 
 		/**
 		 * Element tag to render.
@@ -60,40 +55,26 @@ GradientText component - Eye-catching gradient text effect.
 
 	let {
 		gradient = 'primary',
-		direction = 'to right',
-		from,
-		to,
-		via,
+		direction = 'to-right',
 		as: Tag = 'span',
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
-	}: Props = $props();
+	}: Props & { style?: string } = $props();
 
-	const gradientStyle = $derived.by(() => {
-		if (gradient === 'custom' && from && to) {
-			const colors = via ? `${from}, ${via}, ${to}` : `${from}, ${to}`;
-			return `linear-gradient(${direction}, ${colors})`;
-		}
-
-		// Preset gradients
-		const colorMap: Record<string, string> = {
-			primary: 'var(--gr-color-primary-600), var(--gr-color-primary-400)',
-			success: 'var(--gr-color-success-600), var(--gr-color-success-400)',
-			warning: 'var(--gr-color-warning-600), var(--gr-color-warning-400)',
-			error: 'var(--gr-color-error-600), var(--gr-color-error-400)',
-		};
-
-		const colors = colorMap[gradient] || colorMap['primary'];
-		return `linear-gradient(${direction}, ${colors})`;
+	const gradientClass = $derived(() => {
+		return [
+			'gr-gradient-text',
+			`gr-gradient-text--gradient-${gradient}`,
+			`gr-gradient-text--direction-${direction}`,
+			className,
+		]
+			.filter(Boolean)
+			.join(' ');
 	});
 </script>
 
-<svelte:element
-	this={Tag}
-	class="gr-gradient-text {className}"
-	style:background-image={gradientStyle}
-	{...restProps}
->
+<svelte:element this={Tag} class={gradientClass()} {...restProps}>
 	{@render children()}
 </svelte:element>

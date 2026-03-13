@@ -1,10 +1,12 @@
+import type { HTMLAttributes } from 'svelte/elements';
 import { type Component, type Snippet } from 'svelte';
-interface Props {
+type MaxWidthPreset = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
+interface Props extends HTMLAttributes<HTMLUListElement | HTMLOListElement> {
 	icon?: Component;
 	iconColor?: 'primary' | 'success' | 'warning' | 'error' | 'gray';
 	iconSize?: number;
 	spacing?: 'sm' | 'md' | 'lg';
-	maxWidth?: string | number;
+	maxWidth?: MaxWidthPreset;
 	ordered?: boolean;
 	class?: string;
 	children: Snippet;

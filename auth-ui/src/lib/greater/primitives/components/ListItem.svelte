@@ -34,7 +34,14 @@ Automatically inherits icon and styling from parent List.
 		children: Snippet;
 	}
 
-	let { icon, iconColor, class: className = '', children, ...restProps }: Props = $props();
+	let {
+		icon,
+		iconColor,
+		class: className = '',
+		children,
+		style: _style,
+		...restProps
+	}: Props & { style?: string } = $props();
 
 	const listContext =
 		getContext<{

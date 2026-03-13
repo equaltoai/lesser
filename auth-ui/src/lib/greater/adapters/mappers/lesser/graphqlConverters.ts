@@ -1,6 +1,7 @@
 import type {
 	LesserAccountFragment,
 	LesserAttachmentFragment,
+	LesserCommunicationNotificationFragment,
 	LesserCommunityNoteFragment,
 	LesserMentionFragment,
 	LesserObjectFragment,
@@ -217,6 +218,107 @@ export function convertGraphQLActorToLesserAccount(actor: unknown): LesserAccoun
 		trustScore: toMaybeNumber(actor['trustScore']),
 		reputation: undefined,
 		vouches: undefined,
+	};
+}
+
+const resolveNullableString = (value: unknown): string | null | undefined => {
+	if (isString(value)) return value;
+	if (value === null) return null;
+	return undefined;
+};
+
+export function convertGraphQLCommunicationNotificationToLesser(
+	comm: unknown
+): LesserCommunicationNotificationFragment | null {
+	if (!isRecord(comm)) {
+		return null;
+	}
+
+	const channel = toString(comm['channel']);
+	if (!channel) {
+		return null;
+	}
+
+	const fromValue = comm['from'];
+	if (!isRecord(fromValue)) {
+		return null;
+	}
+
+	const fromAddress = toString(fromValue['address']);
+	if (!fromAddress) {
+		return null;
+	}
+
+	const from: LesserCommunicationNotificationFragment['from'] = {
+		address: fromAddress,
+		displayName: isString(fromValue['displayName'] ?? fromValue['display_name'])
+			? toString(fromValue['displayName'] ?? fromValue['display_name'])
+			: undefined,
+		soulAgentId: resolveNullableString(fromValue['soulAgentId'] ?? fromValue['soul_agent_id']),
+	};
+
+	const toValue = comm['to'];
+	const to = (() => {
+		if (toValue === null) return null;
+		if (!isRecord(toValue)) return undefined;
+		const address = toString(toValue['address']);
+		if (!address) return undefined;
+		return { address };
+	})() satisfies LesserCommunicationNotificationFragment['to'];
+
+	const attachments = Array.isArray(comm['attachments'])
+		? comm['attachments']
+				.map(
+					(attachment): LesserCommunicationNotificationFragment['attachments'][number] | null => {
+						if (!isRecord(attachment)) {
+							return null;
+						}
+						const id = toString(attachment['id']);
+						const filename = toString(attachment['filename']);
+						const contentType = toString(attachment['contentType'] ?? attachment['content_type']);
+						const sizeBytesValue = attachment['sizeBytes'] ?? attachment['size_bytes'];
+						const sha256 = toString(attachment['sha256']);
+
+						if (!id || !filename || !contentType || !sha256 || !isNumber(sizeBytesValue)) {
+							return null;
+						}
+
+						return {
+							id,
+							filename,
+							contentType,
+							sizeBytes: sizeBytesValue,
+							sha256,
+						};
+					}
+				)
+				.filter(
+					(
+						attachment
+					): attachment is LesserCommunicationNotificationFragment['attachments'][number] =>
+						attachment !== null
+				)
+		: [];
+
+	const receivedAt = toString(comm['receivedAt'] ?? comm['received_at']);
+	const messageId = toString(comm['messageId'] ?? comm['message_id']);
+	const threadId = toString(comm['threadId'] ?? comm['thread_id']);
+
+	if (!receivedAt || !messageId || !threadId) {
+		return null;
+	}
+
+	return {
+		channel,
+		from,
+		to,
+		attachments,
+		subject: resolveNullableString(comm['subject']),
+		body: resolveNullableString(comm['body']),
+		receivedAt,
+		messageId,
+		inReplyTo: resolveNullableString(comm['inReplyTo'] ?? comm['in_reply_to']),
+		threadId,
 	};
 }
 

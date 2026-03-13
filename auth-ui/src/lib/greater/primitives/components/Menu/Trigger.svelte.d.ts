@@ -1,5 +1,6 @@
+import type { HTMLAttributes } from 'svelte/elements';
 import type { Snippet } from 'svelte';
-interface Props {
+interface Props extends HTMLAttributes<HTMLDivElement> {
 	/** Custom CSS class */
 	class?: string;
 	/** Trigger content */

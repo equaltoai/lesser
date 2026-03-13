@@ -10,8 +10,11 @@ CodeBlock component - Syntax highlighting code block with copy button.
 <script lang="ts">
 	import { CopyButton } from 'src/lib/greater/primitives';
 	import type { Highlighter } from 'shiki';
+	import type { HTMLAttributes } from 'svelte/elements';
 
-	interface Props {
+	type MaxHeightPreset = 'sm' | 'md' | 'lg' | 'xl';
+
+	interface Props extends HTMLAttributes<HTMLDivElement> {
 		/**
 		 * The code to display.
 		 */
@@ -41,9 +44,9 @@ CodeBlock component - Syntax highlighting code block with copy button.
 		highlightLines?: number[];
 
 		/**
-		 * Maximum height before scrolling (CSS value).
+		 * Maximum height before scrolling.
 		 */
-		maxHeight?: string | number;
+		maxHeight?: MaxHeightPreset;
 
 		/**
 		 * Whether to wrap long lines.
@@ -92,6 +95,7 @@ CodeBlock component - Syntax highlighting code block with copy button.
 		theme = 'github-dark',
 		class: className = '',
 		onCopy,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
@@ -215,7 +219,10 @@ CodeBlock component - Syntax highlighting code block with copy button.
 
 	<div
 		class="gr-code-block__content"
-		style:max-height={typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight}
+		class:gr-code-block--max-height-sm={maxHeight === 'sm'}
+		class:gr-code-block--max-height-md={maxHeight === 'md'}
+		class:gr-code-block--max-height-lg={maxHeight === 'lg'}
+		class:gr-code-block--max-height-xl={maxHeight === 'xl'}
 		class:gr-code-block--wrap={wrap}
 		class:gr-code-block--line-numbers={showLineNumbers}
 	>

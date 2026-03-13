@@ -1,12 +1,15 @@
 <script lang="ts">
+	import type { HTMLAttributes } from 'svelte/elements';
 	import { setContext, type Component, type Snippet } from 'svelte';
 
-	interface Props {
+	type MaxWidthPreset = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
+
+	interface Props extends HTMLAttributes<HTMLUListElement | HTMLOListElement> {
 		icon?: Component;
 		iconColor?: 'primary' | 'success' | 'warning' | 'error' | 'gray';
 		iconSize?: number;
 		spacing?: 'sm' | 'md' | 'lg';
-		maxWidth?: string | number;
+		maxWidth?: MaxWidthPreset;
 		ordered?: boolean;
 		class?: string;
 		children: Snippet;
@@ -21,6 +24,7 @@
 		ordered = false,
 		class: className = '',
 		children,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
@@ -37,21 +41,19 @@
 		},
 	});
 
-	const listClass = $derived(
-		['gr-list', `gr-list--spacing-${spacing}`, className].filter(Boolean).join(' ')
-	);
-
-	const style = $derived(
-		maxWidth ? `max-width: ${typeof maxWidth === 'number' ? `${maxWidth}px` : maxWidth};` : ''
+	const listClass = $derived(() =>
+		['gr-list', `gr-list--spacing-${spacing}`, maxWidth && `gr-list--max-${maxWidth}`, className]
+			.filter(Boolean)
+			.join(' ')
 	);
 </script>
 
 {#if ordered}
-	<ol class={listClass} {style} {...restProps}>
+	<ol class={listClass()} {...restProps}>
 		{@render children()}
 	</ol>
 {:else}
-	<ul class={listClass} {style} {...restProps}>
+	<ul class={listClass()} {...restProps}>
 		{@render children()}
 	</ul>
 {/if}

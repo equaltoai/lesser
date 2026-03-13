@@ -9,8 +9,6 @@ export interface MenuItemConfig {
 	onClick?: () => void;
 }
 export interface MenuPosition {
-	x: number;
-	y: number;
 	placement: MenuPlacement;
 }
 export type MenuContextValue = MenuState;

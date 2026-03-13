@@ -3,7 +3,7 @@
 	import type { Snippet } from 'svelte';
 	import { useStableId } from 'src/lib/greater/utils';
 
-	interface Props extends Omit<HTMLInputAttributes, 'type' | 'value'> {
+	interface Props extends Omit<HTMLInputAttributes, 'type' | 'value' | 'prefix'> {
 		label?: string;
 		value?: string;
 		type?: 'text' | 'email' | 'password' | 'url' | 'tel' | 'search';
@@ -40,6 +40,7 @@
 		onfocus,
 		oninput,
 		onkeydown,
+		style: _style,
 		...restProps
 	}: Props = $props();
 
@@ -53,7 +54,7 @@
 	let hasValue = $derived(Boolean(value));
 
 	// Compute field classes
-	const fieldClass = $derived(() => {
+	const fieldClass = $derived.by(() => {
 		const classes = [
 			'gr-textfield',
 			focused && 'gr-textfield--focused',
@@ -69,34 +70,33 @@
 		return classes;
 	});
 
-	const inputClasses = $derived(() => {
+	const inputClasses = $derived.by(() => {
 		const classes = ['gr-textfield__input', inputClass].filter(Boolean).join(' ');
 
 		return classes;
 	});
 
-	function handleFocus(event: FocusEvent) {
+	function handleFocus(event: FocusEvent & { currentTarget: EventTarget & HTMLInputElement }) {
 		focused = true;
 		onfocus?.(event);
 	}
 
-	function handleBlur(event: FocusEvent) {
+	function handleBlur(event: FocusEvent & { currentTarget: EventTarget & HTMLInputElement }) {
 		focused = false;
 		onblur?.(event);
 	}
 
-	function handleInput(event: Event) {
-		const target = event.target as HTMLInputElement;
-		value = target.value;
+	function handleInput(event: Event & { currentTarget: EventTarget & HTMLInputElement }) {
+		value = event.currentTarget.value;
 		oninput?.(event);
 	}
 
-	function handleKeydown(event: KeyboardEvent) {
+	function handleKeydown(event: KeyboardEvent & { currentTarget: EventTarget & HTMLInputElement }) {
 		onkeydown?.(event);
 	}
 </script>
 
-<div class={fieldClass()}>
+<div class={fieldClass}>
 	{#if label}
 		<label for={fieldId} class="gr-textfield__label" class:gr-textfield__label--required={required}>
 			{label}
@@ -116,7 +116,7 @@
 		<input
 			{type}
 			id={fieldId}
-			class={inputClasses()}
+			class={inputClasses}
 			{placeholder}
 			bind:value
 			{disabled}

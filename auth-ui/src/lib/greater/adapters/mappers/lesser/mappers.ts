@@ -183,6 +183,8 @@ function mapLesserNotificationType(type: string): UnifiedNotification['type'] {
 			return 'cost_alert';
 		case 'MODERATION_ACTION':
 			return 'moderation_action';
+		case 'COMMUNICATION_INBOUND':
+			return 'communication_inbound';
 		default:
 			return 'mention';
 	}
@@ -877,6 +879,36 @@ export function mapLesserNotification(
 			}
 		}
 
+		const communication = notification.communication
+			? {
+					channel: safeString(notification.communication.channel),
+					from: {
+						address: safeString(notification.communication.from.address),
+						displayName: notification.communication.from.displayName,
+						soulAgentId: notification.communication.from.soulAgentId,
+					},
+					to:
+						notification.communication.to === undefined
+							? undefined
+							: notification.communication.to === null
+								? null
+								: { address: safeString(notification.communication.to.address) },
+					attachments: (notification.communication.attachments ?? []).map((attachment) => ({
+						id: safeString(attachment.id),
+						filename: safeString(attachment.filename),
+						contentType: safeString(attachment.contentType),
+						sizeBytes: safeNumber(attachment.sizeBytes),
+						sha256: safeString(attachment.sha256),
+					})),
+					subject: notification.communication.subject,
+					body: notification.communication.body,
+					receivedAt: safeString(notification.communication.receivedAt),
+					messageId: safeString(notification.communication.messageId),
+					inReplyTo: notification.communication.inReplyTo,
+					threadId: safeString(notification.communication.threadId),
+				}
+			: undefined;
+
 		const unified: UnifiedNotification = {
 			id: notification.id,
 			type: mapLesserNotificationType(notification.notificationType),
@@ -885,6 +917,7 @@ export function mapLesserNotification(
 			status,
 			report,
 			read: notification.isRead,
+			communication,
 			metadata: createLesserMetadata(notification),
 
 			// Derive Lesser-specific notification payloads from status/account fields

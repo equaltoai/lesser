@@ -11,6 +11,7 @@
  */
 
 import type { TransitionConfig } from 'svelte/transition';
+import { waapiTransition } from './waapi.js';
 
 export interface ScaleInParams {
 	/** Animation duration in milliseconds */
@@ -52,20 +53,17 @@ export function scaleIn(node: Element, params: ScaleInParams = {}): TransitionCo
 	const style = getComputedStyle(node);
 	const currentOpacity = +style.opacity;
 	const transform = style.transform === 'none' ? '' : style.transform;
+	const transformPrefix = transform ? `${transform} ` : '';
+	const fromOpacity = fadeOpacity ? 0 : currentOpacity;
 
-	return {
-		delay,
-		duration,
-		easing,
-		css: (t: number) => {
-			const scale = start + (1 - start) * t;
-			const opacityValue = fadeOpacity ? t * currentOpacity : currentOpacity;
-			return `
-        opacity: ${opacityValue};
-        transform: ${transform} scale(${scale});
-      `;
-		},
-	};
+	return waapiTransition(
+		node,
+		[
+			{ opacity: fromOpacity, transform: `${transformPrefix}scale(${start})` },
+			{ opacity: currentOpacity, transform: `${transformPrefix}scale(1)` },
+		],
+		{ delay, duration, easing }
+	);
 }
 
 export default scaleIn;

@@ -5,7 +5,8 @@
  * GraphQL operations. Consumers should migrate towards the generic timeline
  * and object accessors rather than the legacy Mastodon-style wrappers.
  */
-import { Observable, type FetchResult } from '@apollo/client';
+import { Observable, type FetchResult, type OperationVariables } from '@apollo/client';
+import type { TypedDocumentNode } from '@graphql-typed-document-node/core';
 import { type GraphQLClientConfig } from './client.js';
 import type {
 	TimelineQueryVariables,
@@ -18,6 +19,15 @@ import type {
 	UpdateListMutationVariables,
 	ConversationsQueryVariables,
 	UpdateRelationshipMutationVariables,
+	AgentsQueryVariables,
+	AgentActivityQueryVariables,
+	AgentMemorySearchQueryVariables,
+	RegisterAgentMutationVariables,
+	UpdateAgentMutationVariables,
+	DelegateToAgentMutationVariables,
+	UpdateAdminAgentPolicyMutationVariables,
+	AdminVerifyAgentMutationVariables,
+	AdminUnverifyAgentMutationVariables,
 	TimelineUpdatesSubscription,
 	TimelineUpdatesSubscriptionVariables,
 	NotificationStreamSubscription,
@@ -57,13 +67,19 @@ import type {
 	PerformanceAlertSubscription,
 	PerformanceAlertSubscriptionVariables,
 	InfrastructureEventSubscription,
+	AgentActivityUpdatesSubscription,
+	AgentActivityUpdatesSubscriptionVariables,
 	RelationshipQuery,
 	ModerationPatternInput,
 	HashtagNotificationSettingsInput,
 	NotificationLevel,
 	UploadMediaInput,
 	UploadMediaMutation,
+	Actor,
 } from './generated/types.js';
+export type ViewerQuery = {
+	viewer: Actor;
+};
 export type LesserGraphQLAdapterConfig = GraphQLClientConfig;
 export type TimelineVariables = TimelineQueryVariables;
 export type SearchVariables = SearchQueryVariables;
@@ -75,9 +91,39 @@ export declare class LesserGraphQLAdapter {
 	private authToken;
 	constructor(config: LesserGraphQLAdapterConfig);
 	updateToken(token: string | null): void;
+	/**
+	 * Verify credentials and fetch current authenticated user
+	 *
+	 * @returns The authenticated actor/user account
+	 * @throws Error if not authenticated or credentials invalid
+	 */
+	verifyCredentials(): Promise<Actor>;
+	/**
+	 * Check if currently authenticated
+	 */
+	isAuthenticated(): boolean;
+	/**
+	 * Get current auth token
+	 */
+	getToken(): string | null;
+	/**
+	 * Refresh authentication token
+	 * @param newToken - New token to use
+	 */
+	refreshToken(newToken: string): void;
 	close(): void;
-	private query;
-	private mutate;
+	query<
+		TData extends Record<string, unknown>,
+		TVariables extends OperationVariables = OperationVariables,
+	>(
+		document: TypedDocumentNode<TData, TVariables>,
+		variables?: TVariables,
+		fetchPolicy?: 'cache-first' | 'network-only'
+	): Promise<TData>;
+	mutate<
+		TData extends Record<string, unknown>,
+		TVariables extends OperationVariables = OperationVariables,
+	>(document: TypedDocumentNode<TData, TVariables>, variables?: TVariables): Promise<TData>;
 	private static hasMissingTargetIdError;
 	private buildUploadMediaFormData;
 	fetchTimeline(variables: TimelineQueryVariables): Promise<{
@@ -99,6 +145,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -119,6 +168,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -154,6 +206,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -175,7 +240,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -216,7 +294,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -240,7 +331,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -268,7 +372,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -311,6 +428,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -332,7 +462,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -373,7 +516,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -397,7 +553,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -425,7 +594,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -467,6 +649,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -487,6 +672,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -522,6 +710,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -543,7 +744,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -584,7 +798,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -608,7 +835,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -636,7 +876,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -679,6 +932,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -700,7 +966,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -741,7 +1020,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -765,7 +1057,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -793,7 +1098,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -836,6 +1154,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -856,6 +1177,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -891,6 +1215,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -912,7 +1249,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -953,7 +1303,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -977,7 +1340,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1005,7 +1381,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -1048,6 +1437,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -1069,7 +1471,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1110,7 +1525,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -1134,7 +1562,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -1162,7 +1603,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1204,6 +1658,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -1224,6 +1681,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -1259,6 +1719,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -1280,7 +1753,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -1321,7 +1807,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -1345,7 +1844,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1373,7 +1885,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -1416,6 +1941,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -1437,7 +1975,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1478,7 +2029,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -1502,7 +2066,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -1530,7 +2107,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1573,6 +2163,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -1593,6 +2186,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -1628,6 +2224,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -1649,7 +2258,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -1690,7 +2312,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -1714,7 +2349,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1742,7 +2390,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -1785,6 +2446,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -1806,7 +2480,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1847,7 +2534,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -1871,7 +2571,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -1899,7 +2612,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -1942,6 +2668,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -1962,6 +2691,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -1997,6 +2729,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -2018,7 +2763,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -2059,7 +2817,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -2083,7 +2854,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2111,7 +2895,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -2154,6 +2951,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -2175,7 +2985,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2216,7 +3039,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -2240,7 +3076,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -2268,7 +3117,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2311,6 +3173,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -2331,6 +3196,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -2366,6 +3234,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -2387,7 +3268,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -2428,7 +3322,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -2452,7 +3359,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2480,7 +3400,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -2523,6 +3456,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -2544,7 +3490,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2585,7 +3544,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -2609,7 +3581,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -2637,7 +3622,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2672,6 +3670,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -2692,6 +3693,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -2727,6 +3731,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -2748,7 +3765,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -2789,7 +3819,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -2813,7 +3856,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2841,7 +3897,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -2884,6 +3953,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -2905,7 +3987,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -2946,7 +4041,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -2970,7 +4078,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -2998,7 +4119,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -3029,7 +4163,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -3056,7 +4203,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -3067,6 +4227,1261 @@ export declare class LesserGraphQLAdapter {
 		| null
 		| undefined
 	>;
+	getAgentByUsername(username: string): Promise<
+		| {
+				readonly __typename: 'Agent';
+				readonly id: string;
+				readonly username: string;
+				readonly displayName: string;
+				readonly bio?: string | null | undefined;
+				readonly agentType: import('./index.js').AgentType;
+				readonly agentVersion: string;
+				readonly agentOwner?: string | null | undefined;
+				readonly delegatedScopes: ReadonlyArray<string>;
+				readonly verified: boolean;
+				readonly verifiedAt?: string | null | undefined;
+				readonly createdAt: string;
+				readonly activityCount: number;
+				readonly agentCapabilities: {
+					readonly __typename: 'AgentCapabilities';
+					readonly canPost: boolean;
+					readonly canReply: boolean;
+					readonly canBoost: boolean;
+					readonly canFollow: boolean;
+					readonly canDM: boolean;
+					readonly maxPostsPerHour: number;
+					readonly requiresApproval: boolean;
+					readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+				};
+				readonly ownerActor?:
+					| {
+							readonly __typename: 'Actor';
+							readonly id: string;
+							readonly username: string;
+							readonly domain?: string | null | undefined;
+							readonly displayName?: string | null | undefined;
+							readonly summary?: string | null | undefined;
+							readonly avatar?: string | null | undefined;
+							readonly header?: string | null | undefined;
+							readonly followers: number;
+							readonly following: number;
+							readonly statusesCount: number;
+							readonly bot: boolean;
+							readonly locked: boolean;
+							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
+							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
+							readonly fields: ReadonlyArray<{
+								readonly __typename: 'Field';
+								readonly name: string;
+								readonly value: string;
+								readonly verifiedAt?: string | null | undefined;
+							}>;
+					  }
+					| null
+					| undefined;
+		  }
+		| null
+		| undefined
+	>;
+	getAgents(variables?: AgentsQueryVariables): Promise<{
+		readonly __typename: 'AgentConnection';
+		readonly totalCount: number;
+		readonly edges: ReadonlyArray<{
+			readonly __typename: 'AgentEdge';
+			readonly cursor: string;
+			readonly node: {
+				readonly __typename: 'Agent';
+				readonly id: string;
+				readonly username: string;
+				readonly displayName: string;
+				readonly bio?: string | null | undefined;
+				readonly agentType: import('./index.js').AgentType;
+				readonly agentVersion: string;
+				readonly agentOwner?: string | null | undefined;
+				readonly delegatedScopes: ReadonlyArray<string>;
+				readonly verified: boolean;
+				readonly verifiedAt?: string | null | undefined;
+				readonly createdAt: string;
+				readonly activityCount: number;
+				readonly agentCapabilities: {
+					readonly __typename: 'AgentCapabilities';
+					readonly canPost: boolean;
+					readonly canReply: boolean;
+					readonly canBoost: boolean;
+					readonly canFollow: boolean;
+					readonly canDM: boolean;
+					readonly maxPostsPerHour: number;
+					readonly requiresApproval: boolean;
+					readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+				};
+				readonly ownerActor?:
+					| {
+							readonly __typename: 'Actor';
+							readonly id: string;
+							readonly username: string;
+							readonly domain?: string | null | undefined;
+							readonly displayName?: string | null | undefined;
+							readonly summary?: string | null | undefined;
+							readonly avatar?: string | null | undefined;
+							readonly header?: string | null | undefined;
+							readonly followers: number;
+							readonly following: number;
+							readonly statusesCount: number;
+							readonly bot: boolean;
+							readonly locked: boolean;
+							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
+							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
+							readonly fields: ReadonlyArray<{
+								readonly __typename: 'Field';
+								readonly name: string;
+								readonly value: string;
+								readonly verifiedAt?: string | null | undefined;
+							}>;
+					  }
+					| null
+					| undefined;
+			};
+		}>;
+		readonly pageInfo: {
+			readonly __typename: 'PageInfo';
+			readonly hasNextPage: boolean;
+			readonly hasPreviousPage: boolean;
+			readonly startCursor?: string | null | undefined;
+			readonly endCursor?: string | null | undefined;
+		};
+	}>;
+	getMyAgents(): Promise<
+		readonly {
+			readonly __typename: 'Agent';
+			readonly id: string;
+			readonly username: string;
+			readonly displayName: string;
+			readonly bio?: string | null | undefined;
+			readonly agentType: import('./index.js').AgentType;
+			readonly agentVersion: string;
+			readonly agentOwner?: string | null | undefined;
+			readonly delegatedScopes: ReadonlyArray<string>;
+			readonly verified: boolean;
+			readonly verifiedAt?: string | null | undefined;
+			readonly createdAt: string;
+			readonly activityCount: number;
+			readonly agentCapabilities: {
+				readonly __typename: 'AgentCapabilities';
+				readonly canPost: boolean;
+				readonly canReply: boolean;
+				readonly canBoost: boolean;
+				readonly canFollow: boolean;
+				readonly canDM: boolean;
+				readonly maxPostsPerHour: number;
+				readonly requiresApproval: boolean;
+				readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+			};
+			readonly ownerActor?:
+				| {
+						readonly __typename: 'Actor';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly displayName?: string | null | undefined;
+						readonly summary?: string | null | undefined;
+						readonly avatar?: string | null | undefined;
+						readonly header?: string | null | undefined;
+						readonly followers: number;
+						readonly following: number;
+						readonly statusesCount: number;
+						readonly bot: boolean;
+						readonly locked: boolean;
+						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
+						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
+						readonly fields: ReadonlyArray<{
+							readonly __typename: 'Field';
+							readonly name: string;
+							readonly value: string;
+							readonly verifiedAt?: string | null | undefined;
+						}>;
+				  }
+				| null
+				| undefined;
+		}[]
+	>;
+	getAgentActivity(variables: AgentActivityQueryVariables): Promise<{
+		readonly __typename: 'AgentActivityConnection';
+		readonly totalCount: number;
+		readonly edges: ReadonlyArray<{
+			readonly __typename: 'AgentActivityEdge';
+			readonly cursor: string;
+			readonly node: {
+				readonly __typename: 'AgentActivityEvent';
+				readonly eventId: string;
+				readonly agentUsername: string;
+				readonly action: string;
+				readonly targetId?: string | null | undefined;
+				readonly metadataJson?: string | null | undefined;
+				readonly timestamp: string;
+			};
+		}>;
+		readonly pageInfo: {
+			readonly __typename: 'PageInfo';
+			readonly hasNextPage: boolean;
+			readonly hasPreviousPage: boolean;
+			readonly startCursor?: string | null | undefined;
+			readonly endCursor?: string | null | undefined;
+		};
+	}>;
+	getAdminAgentPolicy(): Promise<{
+		readonly __typename: 'AdminAgentPolicy';
+		readonly allowAgents: boolean;
+		readonly allowAgentRegistration: boolean;
+		readonly defaultQuarantineDays: number;
+		readonly maxAgentsPerOwner: number;
+		readonly allowRemoteAgents: boolean;
+		readonly remoteQuarantineDays: number;
+		readonly blockedAgentDomains: ReadonlyArray<string>;
+		readonly trustedAgentDomains: ReadonlyArray<string>;
+		readonly agentMaxPostsPerHour: number;
+		readonly verifiedAgentMaxPostsPerHour: number;
+		readonly agentMaxFollowsPerHour: number;
+		readonly verifiedAgentMaxFollowsPerHour: number;
+		readonly hybridRetrievalEnabled: boolean;
+		readonly hybridRetrievalMaxCandidates: number;
+		readonly updatedAt: string;
+	}>;
+	updateAdminAgentPolicy(input: UpdateAdminAgentPolicyMutationVariables['input']): Promise<{
+		readonly __typename: 'AdminAgentPolicy';
+		readonly allowAgents: boolean;
+		readonly allowAgentRegistration: boolean;
+		readonly defaultQuarantineDays: number;
+		readonly maxAgentsPerOwner: number;
+		readonly allowRemoteAgents: boolean;
+		readonly remoteQuarantineDays: number;
+		readonly blockedAgentDomains: ReadonlyArray<string>;
+		readonly trustedAgentDomains: ReadonlyArray<string>;
+		readonly agentMaxPostsPerHour: number;
+		readonly verifiedAgentMaxPostsPerHour: number;
+		readonly agentMaxFollowsPerHour: number;
+		readonly verifiedAgentMaxFollowsPerHour: number;
+		readonly hybridRetrievalEnabled: boolean;
+		readonly hybridRetrievalMaxCandidates: number;
+		readonly updatedAt: string;
+	}>;
+	agentMemorySearch(variables: AgentMemorySearchQueryVariables): Promise<{
+		readonly __typename: 'ObjectConnection';
+		readonly totalCount: number;
+		readonly edges: ReadonlyArray<{
+			readonly __typename: 'ObjectEdge';
+			readonly cursor: string;
+			readonly node: {
+				readonly __typename: 'Object';
+				readonly id: string;
+				readonly type: import('./index.js').ObjectType;
+				readonly content: string;
+				readonly visibility: import('./index.js').Visibility;
+				readonly sensitive: boolean;
+				readonly spoilerText?: string | null | undefined;
+				readonly createdAt: string;
+				readonly updatedAt: string;
+				readonly repliesCount: number;
+				readonly likesCount: number;
+				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
+				readonly estimatedCost: number;
+				readonly moderationScore?: number | null | undefined;
+				readonly quoteUrl?: string | null | undefined;
+				readonly quoteable: boolean;
+				readonly quotePermissions: import('./index.js').QuotePermission;
+				readonly quoteCount: number;
+				readonly boostedObject?:
+					| {
+							readonly __typename: 'Object';
+							readonly id: string;
+							readonly type: import('./index.js').ObjectType;
+							readonly content: string;
+							readonly visibility: import('./index.js').Visibility;
+							readonly sensitive: boolean;
+							readonly spoilerText?: string | null | undefined;
+							readonly createdAt: string;
+							readonly updatedAt: string;
+							readonly repliesCount: number;
+							readonly likesCount: number;
+							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
+							readonly estimatedCost: number;
+							readonly moderationScore?: number | null | undefined;
+							readonly quoteUrl?: string | null | undefined;
+							readonly quoteable: boolean;
+							readonly quotePermissions: import('./index.js').QuotePermission;
+							readonly quoteCount: number;
+							readonly contentMap: ReadonlyArray<{
+								readonly __typename: 'ContentMap';
+								readonly language: string;
+								readonly content: string;
+							}>;
+							readonly attachments: ReadonlyArray<{
+								readonly __typename: 'Attachment';
+								readonly id: string;
+								readonly type: string;
+								readonly url: string;
+								readonly preview?: string | null | undefined;
+								readonly description?: string | null | undefined;
+								readonly blurhash?: string | null | undefined;
+								readonly width?: number | null | undefined;
+								readonly height?: number | null | undefined;
+								readonly duration?: number | null | undefined;
+							}>;
+							readonly tags: ReadonlyArray<{
+								readonly __typename: 'Tag';
+								readonly name: string;
+								readonly url: string;
+							}>;
+							readonly mentions: ReadonlyArray<{
+								readonly __typename: 'Mention';
+								readonly id: string;
+								readonly username: string;
+								readonly domain?: string | null | undefined;
+								readonly url: string;
+							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
+							readonly quoteContext?:
+								| {
+										readonly __typename: 'QuoteContext';
+										readonly quoteAllowed: boolean;
+										readonly quoteType: import('./index.js').QuoteType;
+										readonly withdrawn: boolean;
+										readonly originalAuthor: {
+											readonly __typename: 'Actor';
+											readonly id: string;
+											readonly username: string;
+											readonly domain?: string | null | undefined;
+											readonly displayName?: string | null | undefined;
+											readonly summary?: string | null | undefined;
+											readonly avatar?: string | null | undefined;
+											readonly header?: string | null | undefined;
+											readonly followers: number;
+											readonly following: number;
+											readonly statusesCount: number;
+											readonly bot: boolean;
+											readonly locked: boolean;
+											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
+											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
+											readonly fields: ReadonlyArray<{
+												readonly __typename: 'Field';
+												readonly name: string;
+												readonly value: string;
+												readonly verifiedAt?: string | null | undefined;
+											}>;
+										};
+										readonly originalNote?:
+											| {
+													readonly __typename: 'Object';
+													readonly id: string;
+													readonly type: import('./index.js').ObjectType;
+											  }
+											| null
+											| undefined;
+								  }
+								| null
+								| undefined;
+							readonly communityNotes: ReadonlyArray<{
+								readonly __typename: 'CommunityNote';
+								readonly id: string;
+								readonly content: string;
+								readonly helpful: number;
+								readonly notHelpful: number;
+								readonly createdAt: string;
+								readonly author: {
+									readonly __typename: 'Actor';
+									readonly id: string;
+									readonly username: string;
+									readonly domain?: string | null | undefined;
+									readonly displayName?: string | null | undefined;
+									readonly summary?: string | null | undefined;
+									readonly avatar?: string | null | undefined;
+									readonly header?: string | null | undefined;
+									readonly followers: number;
+									readonly following: number;
+									readonly statusesCount: number;
+									readonly bot: boolean;
+									readonly locked: boolean;
+									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
+									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
+									readonly fields: ReadonlyArray<{
+										readonly __typename: 'Field';
+										readonly name: string;
+										readonly value: string;
+										readonly verifiedAt?: string | null | undefined;
+									}>;
+								};
+							}>;
+							readonly actor: {
+								readonly __typename: 'Actor';
+								readonly id: string;
+								readonly username: string;
+								readonly domain?: string | null | undefined;
+								readonly displayName?: string | null | undefined;
+								readonly summary?: string | null | undefined;
+								readonly avatar?: string | null | undefined;
+								readonly header?: string | null | undefined;
+								readonly followers: number;
+								readonly following: number;
+								readonly statusesCount: number;
+								readonly bot: boolean;
+								readonly locked: boolean;
+								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
+								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
+								readonly fields: ReadonlyArray<{
+									readonly __typename: 'Field';
+									readonly name: string;
+									readonly value: string;
+									readonly verifiedAt?: string | null | undefined;
+								}>;
+							};
+							readonly inReplyTo?:
+								| {
+										readonly __typename: 'Object';
+										readonly id: string;
+										readonly type: import('./index.js').ObjectType;
+										readonly actor: {
+											readonly __typename: 'Actor';
+											readonly id: string;
+											readonly username: string;
+											readonly domain?: string | null | undefined;
+											readonly displayName?: string | null | undefined;
+											readonly summary?: string | null | undefined;
+											readonly avatar?: string | null | undefined;
+											readonly header?: string | null | undefined;
+											readonly followers: number;
+											readonly following: number;
+											readonly statusesCount: number;
+											readonly bot: boolean;
+											readonly locked: boolean;
+											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
+											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
+											readonly fields: ReadonlyArray<{
+												readonly __typename: 'Field';
+												readonly name: string;
+												readonly value: string;
+												readonly verifiedAt?: string | null | undefined;
+											}>;
+										};
+								  }
+								| null
+								| undefined;
+					  }
+					| null
+					| undefined;
+				readonly contentMap: ReadonlyArray<{
+					readonly __typename: 'ContentMap';
+					readonly language: string;
+					readonly content: string;
+				}>;
+				readonly attachments: ReadonlyArray<{
+					readonly __typename: 'Attachment';
+					readonly id: string;
+					readonly type: string;
+					readonly url: string;
+					readonly preview?: string | null | undefined;
+					readonly description?: string | null | undefined;
+					readonly blurhash?: string | null | undefined;
+					readonly width?: number | null | undefined;
+					readonly height?: number | null | undefined;
+					readonly duration?: number | null | undefined;
+				}>;
+				readonly tags: ReadonlyArray<{
+					readonly __typename: 'Tag';
+					readonly name: string;
+					readonly url: string;
+				}>;
+				readonly mentions: ReadonlyArray<{
+					readonly __typename: 'Mention';
+					readonly id: string;
+					readonly username: string;
+					readonly domain?: string | null | undefined;
+					readonly url: string;
+				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
+				readonly quoteContext?:
+					| {
+							readonly __typename: 'QuoteContext';
+							readonly quoteAllowed: boolean;
+							readonly quoteType: import('./index.js').QuoteType;
+							readonly withdrawn: boolean;
+							readonly originalAuthor: {
+								readonly __typename: 'Actor';
+								readonly id: string;
+								readonly username: string;
+								readonly domain?: string | null | undefined;
+								readonly displayName?: string | null | undefined;
+								readonly summary?: string | null | undefined;
+								readonly avatar?: string | null | undefined;
+								readonly header?: string | null | undefined;
+								readonly followers: number;
+								readonly following: number;
+								readonly statusesCount: number;
+								readonly bot: boolean;
+								readonly locked: boolean;
+								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
+								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
+								readonly fields: ReadonlyArray<{
+									readonly __typename: 'Field';
+									readonly name: string;
+									readonly value: string;
+									readonly verifiedAt?: string | null | undefined;
+								}>;
+							};
+							readonly originalNote?:
+								| {
+										readonly __typename: 'Object';
+										readonly id: string;
+										readonly type: import('./index.js').ObjectType;
+								  }
+								| null
+								| undefined;
+					  }
+					| null
+					| undefined;
+				readonly communityNotes: ReadonlyArray<{
+					readonly __typename: 'CommunityNote';
+					readonly id: string;
+					readonly content: string;
+					readonly helpful: number;
+					readonly notHelpful: number;
+					readonly createdAt: string;
+					readonly author: {
+						readonly __typename: 'Actor';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly displayName?: string | null | undefined;
+						readonly summary?: string | null | undefined;
+						readonly avatar?: string | null | undefined;
+						readonly header?: string | null | undefined;
+						readonly followers: number;
+						readonly following: number;
+						readonly statusesCount: number;
+						readonly bot: boolean;
+						readonly locked: boolean;
+						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
+						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
+						readonly fields: ReadonlyArray<{
+							readonly __typename: 'Field';
+							readonly name: string;
+							readonly value: string;
+							readonly verifiedAt?: string | null | undefined;
+						}>;
+					};
+				}>;
+				readonly actor: {
+					readonly __typename: 'Actor';
+					readonly id: string;
+					readonly username: string;
+					readonly domain?: string | null | undefined;
+					readonly displayName?: string | null | undefined;
+					readonly summary?: string | null | undefined;
+					readonly avatar?: string | null | undefined;
+					readonly header?: string | null | undefined;
+					readonly followers: number;
+					readonly following: number;
+					readonly statusesCount: number;
+					readonly bot: boolean;
+					readonly locked: boolean;
+					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
+					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
+					readonly fields: ReadonlyArray<{
+						readonly __typename: 'Field';
+						readonly name: string;
+						readonly value: string;
+						readonly verifiedAt?: string | null | undefined;
+					}>;
+				};
+				readonly inReplyTo?:
+					| {
+							readonly __typename: 'Object';
+							readonly id: string;
+							readonly type: import('./index.js').ObjectType;
+							readonly actor: {
+								readonly __typename: 'Actor';
+								readonly id: string;
+								readonly username: string;
+								readonly domain?: string | null | undefined;
+								readonly displayName?: string | null | undefined;
+								readonly summary?: string | null | undefined;
+								readonly avatar?: string | null | undefined;
+								readonly header?: string | null | undefined;
+								readonly followers: number;
+								readonly following: number;
+								readonly statusesCount: number;
+								readonly bot: boolean;
+								readonly locked: boolean;
+								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
+								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
+								readonly fields: ReadonlyArray<{
+									readonly __typename: 'Field';
+									readonly name: string;
+									readonly value: string;
+									readonly verifiedAt?: string | null | undefined;
+								}>;
+							};
+					  }
+					| null
+					| undefined;
+			};
+		}>;
+		readonly pageInfo: {
+			readonly __typename: 'PageInfo';
+			readonly hasNextPage: boolean;
+			readonly hasPreviousPage: boolean;
+			readonly startCursor?: string | null | undefined;
+			readonly endCursor?: string | null | undefined;
+		};
+	}>;
+	registerAgent(input: RegisterAgentMutationVariables['input']): Promise<{
+		readonly __typename: 'RegisterAgentPayload';
+		readonly agent: {
+			readonly __typename: 'Agent';
+			readonly id: string;
+			readonly username: string;
+			readonly displayName: string;
+			readonly bio?: string | null | undefined;
+			readonly agentType: import('./index.js').AgentType;
+			readonly agentVersion: string;
+			readonly agentOwner?: string | null | undefined;
+			readonly delegatedScopes: ReadonlyArray<string>;
+			readonly verified: boolean;
+			readonly verifiedAt?: string | null | undefined;
+			readonly createdAt: string;
+			readonly activityCount: number;
+			readonly agentCapabilities: {
+				readonly __typename: 'AgentCapabilities';
+				readonly canPost: boolean;
+				readonly canReply: boolean;
+				readonly canBoost: boolean;
+				readonly canFollow: boolean;
+				readonly canDM: boolean;
+				readonly maxPostsPerHour: number;
+				readonly requiresApproval: boolean;
+				readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+			};
+			readonly ownerActor?:
+				| {
+						readonly __typename: 'Actor';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly displayName?: string | null | undefined;
+						readonly summary?: string | null | undefined;
+						readonly avatar?: string | null | undefined;
+						readonly header?: string | null | undefined;
+						readonly followers: number;
+						readonly following: number;
+						readonly statusesCount: number;
+						readonly bot: boolean;
+						readonly locked: boolean;
+						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
+						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
+						readonly fields: ReadonlyArray<{
+							readonly __typename: 'Field';
+							readonly name: string;
+							readonly value: string;
+							readonly verifiedAt?: string | null | undefined;
+						}>;
+				  }
+				| null
+				| undefined;
+		};
+	}>;
+	updateAgent(
+		username: string,
+		input: UpdateAgentMutationVariables['input']
+	): Promise<{
+		readonly __typename: 'Agent';
+		readonly id: string;
+		readonly username: string;
+		readonly displayName: string;
+		readonly bio?: string | null | undefined;
+		readonly agentType: import('./index.js').AgentType;
+		readonly agentVersion: string;
+		readonly agentOwner?: string | null | undefined;
+		readonly delegatedScopes: ReadonlyArray<string>;
+		readonly verified: boolean;
+		readonly verifiedAt?: string | null | undefined;
+		readonly createdAt: string;
+		readonly activityCount: number;
+		readonly agentCapabilities: {
+			readonly __typename: 'AgentCapabilities';
+			readonly canPost: boolean;
+			readonly canReply: boolean;
+			readonly canBoost: boolean;
+			readonly canFollow: boolean;
+			readonly canDM: boolean;
+			readonly maxPostsPerHour: number;
+			readonly requiresApproval: boolean;
+			readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+		};
+		readonly ownerActor?:
+			| {
+					readonly __typename: 'Actor';
+					readonly id: string;
+					readonly username: string;
+					readonly domain?: string | null | undefined;
+					readonly displayName?: string | null | undefined;
+					readonly summary?: string | null | undefined;
+					readonly avatar?: string | null | undefined;
+					readonly header?: string | null | undefined;
+					readonly followers: number;
+					readonly following: number;
+					readonly statusesCount: number;
+					readonly bot: boolean;
+					readonly locked: boolean;
+					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
+					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
+					readonly fields: ReadonlyArray<{
+						readonly __typename: 'Field';
+						readonly name: string;
+						readonly value: string;
+						readonly verifiedAt?: string | null | undefined;
+					}>;
+			  }
+			| null
+			| undefined;
+	}>;
+	deleteAgent(username: string): Promise<{
+		readonly __typename: 'Agent';
+		readonly id: string;
+		readonly username: string;
+		readonly displayName: string;
+		readonly bio?: string | null | undefined;
+		readonly agentType: import('./index.js').AgentType;
+		readonly agentVersion: string;
+		readonly agentOwner?: string | null | undefined;
+		readonly delegatedScopes: ReadonlyArray<string>;
+		readonly verified: boolean;
+		readonly verifiedAt?: string | null | undefined;
+		readonly createdAt: string;
+		readonly activityCount: number;
+		readonly agentCapabilities: {
+			readonly __typename: 'AgentCapabilities';
+			readonly canPost: boolean;
+			readonly canReply: boolean;
+			readonly canBoost: boolean;
+			readonly canFollow: boolean;
+			readonly canDM: boolean;
+			readonly maxPostsPerHour: number;
+			readonly requiresApproval: boolean;
+			readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+		};
+		readonly ownerActor?:
+			| {
+					readonly __typename: 'Actor';
+					readonly id: string;
+					readonly username: string;
+					readonly domain?: string | null | undefined;
+					readonly displayName?: string | null | undefined;
+					readonly summary?: string | null | undefined;
+					readonly avatar?: string | null | undefined;
+					readonly header?: string | null | undefined;
+					readonly followers: number;
+					readonly following: number;
+					readonly statusesCount: number;
+					readonly bot: boolean;
+					readonly locked: boolean;
+					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
+					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
+					readonly fields: ReadonlyArray<{
+						readonly __typename: 'Field';
+						readonly name: string;
+						readonly value: string;
+						readonly verifiedAt?: string | null | undefined;
+					}>;
+			  }
+			| null
+			| undefined;
+	}>;
+	delegateToAgent(input: DelegateToAgentMutationVariables['input']): Promise<{
+		readonly __typename: 'DelegationPayload';
+		readonly accessToken: string;
+		readonly refreshToken: string;
+		readonly tokenType: string;
+		readonly scope: string;
+		readonly createdAt: string;
+		readonly expiresIn: number;
+		readonly agent: {
+			readonly __typename: 'Agent';
+			readonly id: string;
+			readonly username: string;
+			readonly displayName: string;
+			readonly bio?: string | null | undefined;
+			readonly agentType: import('./index.js').AgentType;
+			readonly agentVersion: string;
+			readonly agentOwner?: string | null | undefined;
+			readonly delegatedScopes: ReadonlyArray<string>;
+			readonly verified: boolean;
+			readonly verifiedAt?: string | null | undefined;
+			readonly createdAt: string;
+			readonly activityCount: number;
+			readonly agentCapabilities: {
+				readonly __typename: 'AgentCapabilities';
+				readonly canPost: boolean;
+				readonly canReply: boolean;
+				readonly canBoost: boolean;
+				readonly canFollow: boolean;
+				readonly canDM: boolean;
+				readonly maxPostsPerHour: number;
+				readonly requiresApproval: boolean;
+				readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+			};
+			readonly ownerActor?:
+				| {
+						readonly __typename: 'Actor';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly displayName?: string | null | undefined;
+						readonly summary?: string | null | undefined;
+						readonly avatar?: string | null | undefined;
+						readonly header?: string | null | undefined;
+						readonly followers: number;
+						readonly following: number;
+						readonly statusesCount: number;
+						readonly bot: boolean;
+						readonly locked: boolean;
+						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
+						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
+						readonly fields: ReadonlyArray<{
+							readonly __typename: 'Field';
+							readonly name: string;
+							readonly value: string;
+							readonly verifiedAt?: string | null | undefined;
+						}>;
+				  }
+				| null
+				| undefined;
+		};
+	}>;
+	revokeAgentToken(username: string): Promise<boolean>;
+	adminVerifyAgent(
+		username: string,
+		input?: AdminVerifyAgentMutationVariables['input']
+	): Promise<{
+		readonly __typename: 'Agent';
+		readonly id: string;
+		readonly username: string;
+		readonly displayName: string;
+		readonly bio?: string | null | undefined;
+		readonly agentType: import('./index.js').AgentType;
+		readonly agentVersion: string;
+		readonly agentOwner?: string | null | undefined;
+		readonly delegatedScopes: ReadonlyArray<string>;
+		readonly verified: boolean;
+		readonly verifiedAt?: string | null | undefined;
+		readonly createdAt: string;
+		readonly activityCount: number;
+		readonly agentCapabilities: {
+			readonly __typename: 'AgentCapabilities';
+			readonly canPost: boolean;
+			readonly canReply: boolean;
+			readonly canBoost: boolean;
+			readonly canFollow: boolean;
+			readonly canDM: boolean;
+			readonly maxPostsPerHour: number;
+			readonly requiresApproval: boolean;
+			readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+		};
+		readonly ownerActor?:
+			| {
+					readonly __typename: 'Actor';
+					readonly id: string;
+					readonly username: string;
+					readonly domain?: string | null | undefined;
+					readonly displayName?: string | null | undefined;
+					readonly summary?: string | null | undefined;
+					readonly avatar?: string | null | undefined;
+					readonly header?: string | null | undefined;
+					readonly followers: number;
+					readonly following: number;
+					readonly statusesCount: number;
+					readonly bot: boolean;
+					readonly locked: boolean;
+					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
+					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
+					readonly fields: ReadonlyArray<{
+						readonly __typename: 'Field';
+						readonly name: string;
+						readonly value: string;
+						readonly verifiedAt?: string | null | undefined;
+					}>;
+			  }
+			| null
+			| undefined;
+	}>;
+	adminUnverifyAgent(
+		username: string,
+		input?: AdminUnverifyAgentMutationVariables['input']
+	): Promise<{
+		readonly __typename: 'Agent';
+		readonly id: string;
+		readonly username: string;
+		readonly displayName: string;
+		readonly bio?: string | null | undefined;
+		readonly agentType: import('./index.js').AgentType;
+		readonly agentVersion: string;
+		readonly agentOwner?: string | null | undefined;
+		readonly delegatedScopes: ReadonlyArray<string>;
+		readonly verified: boolean;
+		readonly verifiedAt?: string | null | undefined;
+		readonly createdAt: string;
+		readonly activityCount: number;
+		readonly agentCapabilities: {
+			readonly __typename: 'AgentCapabilities';
+			readonly canPost: boolean;
+			readonly canReply: boolean;
+			readonly canBoost: boolean;
+			readonly canFollow: boolean;
+			readonly canDM: boolean;
+			readonly maxPostsPerHour: number;
+			readonly requiresApproval: boolean;
+			readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+		};
+		readonly ownerActor?:
+			| {
+					readonly __typename: 'Actor';
+					readonly id: string;
+					readonly username: string;
+					readonly domain?: string | null | undefined;
+					readonly displayName?: string | null | undefined;
+					readonly summary?: string | null | undefined;
+					readonly avatar?: string | null | undefined;
+					readonly header?: string | null | undefined;
+					readonly followers: number;
+					readonly following: number;
+					readonly statusesCount: number;
+					readonly bot: boolean;
+					readonly locked: boolean;
+					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
+					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
+					readonly fields: ReadonlyArray<{
+						readonly __typename: 'Field';
+						readonly name: string;
+						readonly value: string;
+						readonly verifiedAt?: string | null | undefined;
+					}>;
+			  }
+			| null
+			| undefined;
+	}>;
+	adminSuspendAgent(username: string): Promise<{
+		readonly __typename: 'Agent';
+		readonly id: string;
+		readonly username: string;
+		readonly displayName: string;
+		readonly bio?: string | null | undefined;
+		readonly agentType: import('./index.js').AgentType;
+		readonly agentVersion: string;
+		readonly agentOwner?: string | null | undefined;
+		readonly delegatedScopes: ReadonlyArray<string>;
+		readonly verified: boolean;
+		readonly verifiedAt?: string | null | undefined;
+		readonly createdAt: string;
+		readonly activityCount: number;
+		readonly agentCapabilities: {
+			readonly __typename: 'AgentCapabilities';
+			readonly canPost: boolean;
+			readonly canReply: boolean;
+			readonly canBoost: boolean;
+			readonly canFollow: boolean;
+			readonly canDM: boolean;
+			readonly maxPostsPerHour: number;
+			readonly requiresApproval: boolean;
+			readonly restrictedDomains?: ReadonlyArray<string> | null | undefined;
+		};
+		readonly ownerActor?:
+			| {
+					readonly __typename: 'Actor';
+					readonly id: string;
+					readonly username: string;
+					readonly domain?: string | null | undefined;
+					readonly displayName?: string | null | undefined;
+					readonly summary?: string | null | undefined;
+					readonly avatar?: string | null | undefined;
+					readonly header?: string | null | undefined;
+					readonly followers: number;
+					readonly following: number;
+					readonly statusesCount: number;
+					readonly bot: boolean;
+					readonly locked: boolean;
+					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
+					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
+					readonly fields: ReadonlyArray<{
+						readonly __typename: 'Field';
+						readonly name: string;
+						readonly value: string;
+						readonly verifiedAt?: string | null | undefined;
+					}>;
+			  }
+			| null
+			| undefined;
+	}>;
 	search(variables: SearchQueryVariables): Promise<{
 		readonly __typename: 'SearchResult';
 		readonly accounts: ReadonlyArray<{
@@ -3084,7 +5499,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -3105,6 +5533,9 @@ export declare class LesserGraphQLAdapter {
 			readonly repliesCount: number;
 			readonly likesCount: number;
 			readonly sharesCount: number;
+			readonly boosted: boolean;
+			readonly relationshipType: import('./index.js').ObjectRelationshipType;
+			readonly contentHash: string;
 			readonly estimatedCost: number;
 			readonly moderationScore?: number | null | undefined;
 			readonly quoteUrl?: string | null | undefined;
@@ -3125,6 +5556,9 @@ export declare class LesserGraphQLAdapter {
 						readonly repliesCount: number;
 						readonly likesCount: number;
 						readonly sharesCount: number;
+						readonly boosted: boolean;
+						readonly relationshipType: import('./index.js').ObjectRelationshipType;
+						readonly contentHash: string;
 						readonly estimatedCost: number;
 						readonly moderationScore?: number | null | undefined;
 						readonly quoteUrl?: string | null | undefined;
@@ -3160,6 +5594,19 @@ export declare class LesserGraphQLAdapter {
 							readonly domain?: string | null | undefined;
 							readonly url: string;
 						}>;
+						readonly agentAttribution?:
+							| {
+									readonly __typename: 'AgentPostAttribution';
+									readonly triggerType?: string | null | undefined;
+									readonly triggerDetails?: string | null | undefined;
+									readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+									readonly delegatedBy?: string | null | undefined;
+									readonly scopes?: ReadonlyArray<string> | null | undefined;
+									readonly constraints?: ReadonlyArray<string> | null | undefined;
+									readonly modelVersion?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly quoteContext?:
 							| {
 									readonly __typename: 'QuoteContext';
@@ -3181,7 +5628,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -3222,7 +5682,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -3246,7 +5719,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -3274,7 +5760,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -3317,6 +5816,19 @@ export declare class LesserGraphQLAdapter {
 				readonly domain?: string | null | undefined;
 				readonly url: string;
 			}>;
+			readonly agentAttribution?:
+				| {
+						readonly __typename: 'AgentPostAttribution';
+						readonly triggerType?: string | null | undefined;
+						readonly triggerDetails?: string | null | undefined;
+						readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+						readonly delegatedBy?: string | null | undefined;
+						readonly scopes?: ReadonlyArray<string> | null | undefined;
+						readonly constraints?: ReadonlyArray<string> | null | undefined;
+						readonly modelVersion?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly quoteContext?:
 				| {
 						readonly __typename: 'QuoteContext';
@@ -3338,7 +5850,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -3379,7 +5904,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -3403,7 +5941,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -3431,7 +5982,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -3476,7 +6040,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -3498,6 +6075,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -3518,6 +6098,9 @@ export declare class LesserGraphQLAdapter {
 										readonly repliesCount: number;
 										readonly likesCount: number;
 										readonly sharesCount: number;
+										readonly boosted: boolean;
+										readonly relationshipType: import('./index.js').ObjectRelationshipType;
+										readonly contentHash: string;
 										readonly estimatedCost: number;
 										readonly moderationScore?: number | null | undefined;
 										readonly quoteUrl?: string | null | undefined;
@@ -3553,6 +6136,19 @@ export declare class LesserGraphQLAdapter {
 											readonly domain?: string | null | undefined;
 											readonly url: string;
 										}>;
+										readonly agentAttribution?:
+											| {
+													readonly __typename: 'AgentPostAttribution';
+													readonly triggerType?: string | null | undefined;
+													readonly triggerDetails?: string | null | undefined;
+													readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+													readonly delegatedBy?: string | null | undefined;
+													readonly scopes?: ReadonlyArray<string> | null | undefined;
+													readonly constraints?: ReadonlyArray<string> | null | undefined;
+													readonly modelVersion?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly quoteContext?:
 											| {
 													readonly __typename: 'QuoteContext';
@@ -3574,7 +6170,20 @@ export declare class LesserGraphQLAdapter {
 														readonly bot: boolean;
 														readonly locked: boolean;
 														readonly updatedAt: string;
+														readonly isAgent: boolean;
+														readonly tipAddress?: string | null | undefined;
+														readonly tipChainId?: number | null | undefined;
 														readonly trustScore: number;
+														readonly agentInfo?:
+															| {
+																	readonly __typename: 'Agent';
+																	readonly id: string;
+																	readonly agentType: import('./index.js').AgentType;
+																	readonly verified: boolean;
+																	readonly verifiedAt?: string | null | undefined;
+															  }
+															| null
+															| undefined;
 														readonly fields: ReadonlyArray<{
 															readonly __typename: 'Field';
 															readonly name: string;
@@ -3615,7 +6224,20 @@ export declare class LesserGraphQLAdapter {
 												readonly bot: boolean;
 												readonly locked: boolean;
 												readonly updatedAt: string;
+												readonly isAgent: boolean;
+												readonly tipAddress?: string | null | undefined;
+												readonly tipChainId?: number | null | undefined;
 												readonly trustScore: number;
+												readonly agentInfo?:
+													| {
+															readonly __typename: 'Agent';
+															readonly id: string;
+															readonly agentType: import('./index.js').AgentType;
+															readonly verified: boolean;
+															readonly verifiedAt?: string | null | undefined;
+													  }
+													| null
+													| undefined;
 												readonly fields: ReadonlyArray<{
 													readonly __typename: 'Field';
 													readonly name: string;
@@ -3639,7 +6261,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -3667,7 +6302,20 @@ export declare class LesserGraphQLAdapter {
 														readonly bot: boolean;
 														readonly locked: boolean;
 														readonly updatedAt: string;
+														readonly isAgent: boolean;
+														readonly tipAddress?: string | null | undefined;
+														readonly tipChainId?: number | null | undefined;
 														readonly trustScore: number;
+														readonly agentInfo?:
+															| {
+																	readonly __typename: 'Agent';
+																	readonly id: string;
+																	readonly agentType: import('./index.js').AgentType;
+																	readonly verified: boolean;
+																	readonly verifiedAt?: string | null | undefined;
+															  }
+															| null
+															| undefined;
 														readonly fields: ReadonlyArray<{
 															readonly __typename: 'Field';
 															readonly name: string;
@@ -3710,6 +6358,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -3731,7 +6392,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -3772,7 +6446,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -3796,7 +6483,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -3824,7 +6524,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -3872,7 +6585,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -3894,6 +6620,9 @@ export declare class LesserGraphQLAdapter {
 						readonly repliesCount: number;
 						readonly likesCount: number;
 						readonly sharesCount: number;
+						readonly boosted: boolean;
+						readonly relationshipType: import('./index.js').ObjectRelationshipType;
+						readonly contentHash: string;
 						readonly estimatedCost: number;
 						readonly moderationScore?: number | null | undefined;
 						readonly quoteUrl?: string | null | undefined;
@@ -3914,6 +6643,9 @@ export declare class LesserGraphQLAdapter {
 									readonly repliesCount: number;
 									readonly likesCount: number;
 									readonly sharesCount: number;
+									readonly boosted: boolean;
+									readonly relationshipType: import('./index.js').ObjectRelationshipType;
+									readonly contentHash: string;
 									readonly estimatedCost: number;
 									readonly moderationScore?: number | null | undefined;
 									readonly quoteUrl?: string | null | undefined;
@@ -3949,6 +6681,19 @@ export declare class LesserGraphQLAdapter {
 										readonly domain?: string | null | undefined;
 										readonly url: string;
 									}>;
+									readonly agentAttribution?:
+										| {
+												readonly __typename: 'AgentPostAttribution';
+												readonly triggerType?: string | null | undefined;
+												readonly triggerDetails?: string | null | undefined;
+												readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+												readonly delegatedBy?: string | null | undefined;
+												readonly scopes?: ReadonlyArray<string> | null | undefined;
+												readonly constraints?: ReadonlyArray<string> | null | undefined;
+												readonly modelVersion?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly quoteContext?:
 										| {
 												readonly __typename: 'QuoteContext';
@@ -3970,7 +6715,20 @@ export declare class LesserGraphQLAdapter {
 													readonly bot: boolean;
 													readonly locked: boolean;
 													readonly updatedAt: string;
+													readonly isAgent: boolean;
+													readonly tipAddress?: string | null | undefined;
+													readonly tipChainId?: number | null | undefined;
 													readonly trustScore: number;
+													readonly agentInfo?:
+														| {
+																readonly __typename: 'Agent';
+																readonly id: string;
+																readonly agentType: import('./index.js').AgentType;
+																readonly verified: boolean;
+																readonly verifiedAt?: string | null | undefined;
+														  }
+														| null
+														| undefined;
 													readonly fields: ReadonlyArray<{
 														readonly __typename: 'Field';
 														readonly name: string;
@@ -4011,7 +6769,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -4035,7 +6806,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -4063,7 +6847,20 @@ export declare class LesserGraphQLAdapter {
 													readonly bot: boolean;
 													readonly locked: boolean;
 													readonly updatedAt: string;
+													readonly isAgent: boolean;
+													readonly tipAddress?: string | null | undefined;
+													readonly tipChainId?: number | null | undefined;
 													readonly trustScore: number;
+													readonly agentInfo?:
+														| {
+																readonly __typename: 'Agent';
+																readonly id: string;
+																readonly agentType: import('./index.js').AgentType;
+																readonly verified: boolean;
+																readonly verifiedAt?: string | null | undefined;
+														  }
+														| null
+														| undefined;
 													readonly fields: ReadonlyArray<{
 														readonly __typename: 'Field';
 														readonly name: string;
@@ -4106,6 +6903,19 @@ export declare class LesserGraphQLAdapter {
 							readonly domain?: string | null | undefined;
 							readonly url: string;
 						}>;
+						readonly agentAttribution?:
+							| {
+									readonly __typename: 'AgentPostAttribution';
+									readonly triggerType?: string | null | undefined;
+									readonly triggerDetails?: string | null | undefined;
+									readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+									readonly delegatedBy?: string | null | undefined;
+									readonly scopes?: ReadonlyArray<string> | null | undefined;
+									readonly constraints?: ReadonlyArray<string> | null | undefined;
+									readonly modelVersion?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly quoteContext?:
 							| {
 									readonly __typename: 'QuoteContext';
@@ -4127,7 +6937,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -4168,7 +6991,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -4192,7 +7028,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -4220,7 +7069,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -4258,7 +7120,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -4280,6 +7155,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -4300,6 +7178,9 @@ export declare class LesserGraphQLAdapter {
 										readonly repliesCount: number;
 										readonly likesCount: number;
 										readonly sharesCount: number;
+										readonly boosted: boolean;
+										readonly relationshipType: import('./index.js').ObjectRelationshipType;
+										readonly contentHash: string;
 										readonly estimatedCost: number;
 										readonly moderationScore?: number | null | undefined;
 										readonly quoteUrl?: string | null | undefined;
@@ -4335,6 +7216,19 @@ export declare class LesserGraphQLAdapter {
 											readonly domain?: string | null | undefined;
 											readonly url: string;
 										}>;
+										readonly agentAttribution?:
+											| {
+													readonly __typename: 'AgentPostAttribution';
+													readonly triggerType?: string | null | undefined;
+													readonly triggerDetails?: string | null | undefined;
+													readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+													readonly delegatedBy?: string | null | undefined;
+													readonly scopes?: ReadonlyArray<string> | null | undefined;
+													readonly constraints?: ReadonlyArray<string> | null | undefined;
+													readonly modelVersion?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly quoteContext?:
 											| {
 													readonly __typename: 'QuoteContext';
@@ -4356,7 +7250,20 @@ export declare class LesserGraphQLAdapter {
 														readonly bot: boolean;
 														readonly locked: boolean;
 														readonly updatedAt: string;
+														readonly isAgent: boolean;
+														readonly tipAddress?: string | null | undefined;
+														readonly tipChainId?: number | null | undefined;
 														readonly trustScore: number;
+														readonly agentInfo?:
+															| {
+																	readonly __typename: 'Agent';
+																	readonly id: string;
+																	readonly agentType: import('./index.js').AgentType;
+																	readonly verified: boolean;
+																	readonly verifiedAt?: string | null | undefined;
+															  }
+															| null
+															| undefined;
 														readonly fields: ReadonlyArray<{
 															readonly __typename: 'Field';
 															readonly name: string;
@@ -4397,7 +7304,20 @@ export declare class LesserGraphQLAdapter {
 												readonly bot: boolean;
 												readonly locked: boolean;
 												readonly updatedAt: string;
+												readonly isAgent: boolean;
+												readonly tipAddress?: string | null | undefined;
+												readonly tipChainId?: number | null | undefined;
 												readonly trustScore: number;
+												readonly agentInfo?:
+													| {
+															readonly __typename: 'Agent';
+															readonly id: string;
+															readonly agentType: import('./index.js').AgentType;
+															readonly verified: boolean;
+															readonly verifiedAt?: string | null | undefined;
+													  }
+													| null
+													| undefined;
 												readonly fields: ReadonlyArray<{
 													readonly __typename: 'Field';
 													readonly name: string;
@@ -4421,7 +7341,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -4449,7 +7382,20 @@ export declare class LesserGraphQLAdapter {
 														readonly bot: boolean;
 														readonly locked: boolean;
 														readonly updatedAt: string;
+														readonly isAgent: boolean;
+														readonly tipAddress?: string | null | undefined;
+														readonly tipChainId?: number | null | undefined;
 														readonly trustScore: number;
+														readonly agentInfo?:
+															| {
+																	readonly __typename: 'Agent';
+																	readonly id: string;
+																	readonly agentType: import('./index.js').AgentType;
+																	readonly verified: boolean;
+																	readonly verifiedAt?: string | null | undefined;
+															  }
+															| null
+															| undefined;
 														readonly fields: ReadonlyArray<{
 															readonly __typename: 'Field';
 															readonly name: string;
@@ -4492,6 +7438,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -4513,7 +7472,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -4554,7 +7526,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -4578,7 +7563,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -4606,7 +7604,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -4668,7 +7679,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -4696,7 +7720,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -4751,7 +7788,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -4782,7 +7832,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -4807,6 +7870,9 @@ export declare class LesserGraphQLAdapter {
 			readonly repliesCount: number;
 			readonly likesCount: number;
 			readonly sharesCount: number;
+			readonly boosted: boolean;
+			readonly relationshipType: import('./index.js').ObjectRelationshipType;
+			readonly contentHash: string;
 			readonly estimatedCost: number;
 			readonly moderationScore?: number | null | undefined;
 			readonly quoteUrl?: string | null | undefined;
@@ -4827,6 +7893,9 @@ export declare class LesserGraphQLAdapter {
 						readonly repliesCount: number;
 						readonly likesCount: number;
 						readonly sharesCount: number;
+						readonly boosted: boolean;
+						readonly relationshipType: import('./index.js').ObjectRelationshipType;
+						readonly contentHash: string;
 						readonly estimatedCost: number;
 						readonly moderationScore?: number | null | undefined;
 						readonly quoteUrl?: string | null | undefined;
@@ -4862,6 +7931,19 @@ export declare class LesserGraphQLAdapter {
 							readonly domain?: string | null | undefined;
 							readonly url: string;
 						}>;
+						readonly agentAttribution?:
+							| {
+									readonly __typename: 'AgentPostAttribution';
+									readonly triggerType?: string | null | undefined;
+									readonly triggerDetails?: string | null | undefined;
+									readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+									readonly delegatedBy?: string | null | undefined;
+									readonly scopes?: ReadonlyArray<string> | null | undefined;
+									readonly constraints?: ReadonlyArray<string> | null | undefined;
+									readonly modelVersion?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly quoteContext?:
 							| {
 									readonly __typename: 'QuoteContext';
@@ -4883,7 +7965,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -4924,7 +8019,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -4948,7 +8056,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -4976,7 +8097,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -5019,6 +8153,19 @@ export declare class LesserGraphQLAdapter {
 				readonly domain?: string | null | undefined;
 				readonly url: string;
 			}>;
+			readonly agentAttribution?:
+				| {
+						readonly __typename: 'AgentPostAttribution';
+						readonly triggerType?: string | null | undefined;
+						readonly triggerDetails?: string | null | undefined;
+						readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+						readonly delegatedBy?: string | null | undefined;
+						readonly scopes?: ReadonlyArray<string> | null | undefined;
+						readonly constraints?: ReadonlyArray<string> | null | undefined;
+						readonly modelVersion?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly quoteContext?:
 				| {
 						readonly __typename: 'QuoteContext';
@@ -5040,7 +8187,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -5081,7 +8241,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -5105,7 +8278,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -5133,7 +8319,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -5166,7 +8365,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -5213,6 +8425,9 @@ export declare class LesserGraphQLAdapter {
 			readonly repliesCount: number;
 			readonly likesCount: number;
 			readonly sharesCount: number;
+			readonly boosted: boolean;
+			readonly relationshipType: import('./index.js').ObjectRelationshipType;
+			readonly contentHash: string;
 			readonly estimatedCost: number;
 			readonly moderationScore?: number | null | undefined;
 			readonly quoteUrl?: string | null | undefined;
@@ -5233,6 +8448,9 @@ export declare class LesserGraphQLAdapter {
 						readonly repliesCount: number;
 						readonly likesCount: number;
 						readonly sharesCount: number;
+						readonly boosted: boolean;
+						readonly relationshipType: import('./index.js').ObjectRelationshipType;
+						readonly contentHash: string;
 						readonly estimatedCost: number;
 						readonly moderationScore?: number | null | undefined;
 						readonly quoteUrl?: string | null | undefined;
@@ -5268,6 +8486,19 @@ export declare class LesserGraphQLAdapter {
 							readonly domain?: string | null | undefined;
 							readonly url: string;
 						}>;
+						readonly agentAttribution?:
+							| {
+									readonly __typename: 'AgentPostAttribution';
+									readonly triggerType?: string | null | undefined;
+									readonly triggerDetails?: string | null | undefined;
+									readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+									readonly delegatedBy?: string | null | undefined;
+									readonly scopes?: ReadonlyArray<string> | null | undefined;
+									readonly constraints?: ReadonlyArray<string> | null | undefined;
+									readonly modelVersion?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly quoteContext?:
 							| {
 									readonly __typename: 'QuoteContext';
@@ -5289,7 +8520,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -5330,7 +8574,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -5354,7 +8611,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -5382,7 +8652,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -5425,6 +8708,19 @@ export declare class LesserGraphQLAdapter {
 				readonly domain?: string | null | undefined;
 				readonly url: string;
 			}>;
+			readonly agentAttribution?:
+				| {
+						readonly __typename: 'AgentPostAttribution';
+						readonly triggerType?: string | null | undefined;
+						readonly triggerDetails?: string | null | undefined;
+						readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+						readonly delegatedBy?: string | null | undefined;
+						readonly scopes?: ReadonlyArray<string> | null | undefined;
+						readonly constraints?: ReadonlyArray<string> | null | undefined;
+						readonly modelVersion?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly quoteContext?:
 				| {
 						readonly __typename: 'QuoteContext';
@@ -5446,7 +8742,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -5487,7 +8796,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -5511,7 +8833,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -5539,7 +8874,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -5572,7 +8920,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -5622,6 +8983,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -5647,6 +9011,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -5667,6 +9034,9 @@ export declare class LesserGraphQLAdapter {
 										readonly repliesCount: number;
 										readonly likesCount: number;
 										readonly sharesCount: number;
+										readonly boosted: boolean;
+										readonly relationshipType: import('./index.js').ObjectRelationshipType;
+										readonly contentHash: string;
 										readonly estimatedCost: number;
 										readonly moderationScore?: number | null | undefined;
 										readonly quoteUrl?: string | null | undefined;
@@ -5702,6 +9072,19 @@ export declare class LesserGraphQLAdapter {
 											readonly domain?: string | null | undefined;
 											readonly url: string;
 										}>;
+										readonly agentAttribution?:
+											| {
+													readonly __typename: 'AgentPostAttribution';
+													readonly triggerType?: string | null | undefined;
+													readonly triggerDetails?: string | null | undefined;
+													readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+													readonly delegatedBy?: string | null | undefined;
+													readonly scopes?: ReadonlyArray<string> | null | undefined;
+													readonly constraints?: ReadonlyArray<string> | null | undefined;
+													readonly modelVersion?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly quoteContext?:
 											| {
 													readonly __typename: 'QuoteContext';
@@ -5723,7 +9106,20 @@ export declare class LesserGraphQLAdapter {
 														readonly bot: boolean;
 														readonly locked: boolean;
 														readonly updatedAt: string;
+														readonly isAgent: boolean;
+														readonly tipAddress?: string | null | undefined;
+														readonly tipChainId?: number | null | undefined;
 														readonly trustScore: number;
+														readonly agentInfo?:
+															| {
+																	readonly __typename: 'Agent';
+																	readonly id: string;
+																	readonly agentType: import('./index.js').AgentType;
+																	readonly verified: boolean;
+																	readonly verifiedAt?: string | null | undefined;
+															  }
+															| null
+															| undefined;
 														readonly fields: ReadonlyArray<{
 															readonly __typename: 'Field';
 															readonly name: string;
@@ -5764,7 +9160,20 @@ export declare class LesserGraphQLAdapter {
 												readonly bot: boolean;
 												readonly locked: boolean;
 												readonly updatedAt: string;
+												readonly isAgent: boolean;
+												readonly tipAddress?: string | null | undefined;
+												readonly tipChainId?: number | null | undefined;
 												readonly trustScore: number;
+												readonly agentInfo?:
+													| {
+															readonly __typename: 'Agent';
+															readonly id: string;
+															readonly agentType: import('./index.js').AgentType;
+															readonly verified: boolean;
+															readonly verifiedAt?: string | null | undefined;
+													  }
+													| null
+													| undefined;
 												readonly fields: ReadonlyArray<{
 													readonly __typename: 'Field';
 													readonly name: string;
@@ -5788,7 +9197,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -5816,7 +9238,20 @@ export declare class LesserGraphQLAdapter {
 														readonly bot: boolean;
 														readonly locked: boolean;
 														readonly updatedAt: string;
+														readonly isAgent: boolean;
+														readonly tipAddress?: string | null | undefined;
+														readonly tipChainId?: number | null | undefined;
 														readonly trustScore: number;
+														readonly agentInfo?:
+															| {
+																	readonly __typename: 'Agent';
+																	readonly id: string;
+																	readonly agentType: import('./index.js').AgentType;
+																	readonly verified: boolean;
+																	readonly verifiedAt?: string | null | undefined;
+															  }
+															| null
+															| undefined;
 														readonly fields: ReadonlyArray<{
 															readonly __typename: 'Field';
 															readonly name: string;
@@ -5859,6 +9294,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -5880,7 +9328,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -5921,7 +9382,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -5945,7 +9419,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -5973,7 +9460,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -6008,6 +9508,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -6043,6 +9546,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -6064,7 +9580,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -6105,7 +9634,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -6129,7 +9671,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -6157,7 +9712,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -6200,6 +9768,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -6221,7 +9802,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -6262,7 +9856,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -6286,7 +9893,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -6314,7 +9934,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -6346,6 +9979,9 @@ export declare class LesserGraphQLAdapter {
 			readonly repliesCount: number;
 			readonly likesCount: number;
 			readonly sharesCount: number;
+			readonly boosted: boolean;
+			readonly relationshipType: import('./index.js').ObjectRelationshipType;
+			readonly contentHash: string;
 			readonly estimatedCost: number;
 			readonly moderationScore?: number | null | undefined;
 			readonly quoteUrl?: string | null | undefined;
@@ -6366,6 +10002,9 @@ export declare class LesserGraphQLAdapter {
 						readonly repliesCount: number;
 						readonly likesCount: number;
 						readonly sharesCount: number;
+						readonly boosted: boolean;
+						readonly relationshipType: import('./index.js').ObjectRelationshipType;
+						readonly contentHash: string;
 						readonly estimatedCost: number;
 						readonly moderationScore?: number | null | undefined;
 						readonly quoteUrl?: string | null | undefined;
@@ -6401,6 +10040,19 @@ export declare class LesserGraphQLAdapter {
 							readonly domain?: string | null | undefined;
 							readonly url: string;
 						}>;
+						readonly agentAttribution?:
+							| {
+									readonly __typename: 'AgentPostAttribution';
+									readonly triggerType?: string | null | undefined;
+									readonly triggerDetails?: string | null | undefined;
+									readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+									readonly delegatedBy?: string | null | undefined;
+									readonly scopes?: ReadonlyArray<string> | null | undefined;
+									readonly constraints?: ReadonlyArray<string> | null | undefined;
+									readonly modelVersion?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly quoteContext?:
 							| {
 									readonly __typename: 'QuoteContext';
@@ -6422,7 +10074,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -6463,7 +10128,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -6487,7 +10165,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -6515,7 +10206,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -6558,6 +10262,19 @@ export declare class LesserGraphQLAdapter {
 				readonly domain?: string | null | undefined;
 				readonly url: string;
 			}>;
+			readonly agentAttribution?:
+				| {
+						readonly __typename: 'AgentPostAttribution';
+						readonly triggerType?: string | null | undefined;
+						readonly triggerDetails?: string | null | undefined;
+						readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+						readonly delegatedBy?: string | null | undefined;
+						readonly scopes?: ReadonlyArray<string> | null | undefined;
+						readonly constraints?: ReadonlyArray<string> | null | undefined;
+						readonly modelVersion?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly quoteContext?:
 				| {
 						readonly __typename: 'QuoteContext';
@@ -6579,7 +10296,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -6620,7 +10350,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -6644,7 +10387,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -6672,7 +10428,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -6706,6 +10475,9 @@ export declare class LesserGraphQLAdapter {
 			readonly repliesCount: number;
 			readonly likesCount: number;
 			readonly sharesCount: number;
+			readonly boosted: boolean;
+			readonly relationshipType: import('./index.js').ObjectRelationshipType;
+			readonly contentHash: string;
 			readonly estimatedCost: number;
 			readonly moderationScore?: number | null | undefined;
 			readonly quoteUrl?: string | null | undefined;
@@ -6726,6 +10498,9 @@ export declare class LesserGraphQLAdapter {
 						readonly repliesCount: number;
 						readonly likesCount: number;
 						readonly sharesCount: number;
+						readonly boosted: boolean;
+						readonly relationshipType: import('./index.js').ObjectRelationshipType;
+						readonly contentHash: string;
 						readonly estimatedCost: number;
 						readonly moderationScore?: number | null | undefined;
 						readonly quoteUrl?: string | null | undefined;
@@ -6761,6 +10536,19 @@ export declare class LesserGraphQLAdapter {
 							readonly domain?: string | null | undefined;
 							readonly url: string;
 						}>;
+						readonly agentAttribution?:
+							| {
+									readonly __typename: 'AgentPostAttribution';
+									readonly triggerType?: string | null | undefined;
+									readonly triggerDetails?: string | null | undefined;
+									readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+									readonly delegatedBy?: string | null | undefined;
+									readonly scopes?: ReadonlyArray<string> | null | undefined;
+									readonly constraints?: ReadonlyArray<string> | null | undefined;
+									readonly modelVersion?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly quoteContext?:
 							| {
 									readonly __typename: 'QuoteContext';
@@ -6782,7 +10570,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -6823,7 +10624,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -6847,7 +10661,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -6875,7 +10702,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -6918,6 +10758,19 @@ export declare class LesserGraphQLAdapter {
 				readonly domain?: string | null | undefined;
 				readonly url: string;
 			}>;
+			readonly agentAttribution?:
+				| {
+						readonly __typename: 'AgentPostAttribution';
+						readonly triggerType?: string | null | undefined;
+						readonly triggerDetails?: string | null | undefined;
+						readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+						readonly delegatedBy?: string | null | undefined;
+						readonly scopes?: ReadonlyArray<string> | null | undefined;
+						readonly constraints?: ReadonlyArray<string> | null | undefined;
+						readonly modelVersion?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly quoteContext?:
 				| {
 						readonly __typename: 'QuoteContext';
@@ -6939,7 +10792,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -6980,7 +10846,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -7004,7 +10883,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -7032,7 +10924,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -7067,7 +10972,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -7106,6 +11024,9 @@ export declare class LesserGraphQLAdapter {
 		readonly repliesCount: number;
 		readonly likesCount: number;
 		readonly sharesCount: number;
+		readonly boosted: boolean;
+		readonly relationshipType: import('./index.js').ObjectRelationshipType;
+		readonly contentHash: string;
 		readonly estimatedCost: number;
 		readonly moderationScore?: number | null | undefined;
 		readonly quoteUrl?: string | null | undefined;
@@ -7126,6 +11047,9 @@ export declare class LesserGraphQLAdapter {
 					readonly repliesCount: number;
 					readonly likesCount: number;
 					readonly sharesCount: number;
+					readonly boosted: boolean;
+					readonly relationshipType: import('./index.js').ObjectRelationshipType;
+					readonly contentHash: string;
 					readonly estimatedCost: number;
 					readonly moderationScore?: number | null | undefined;
 					readonly quoteUrl?: string | null | undefined;
@@ -7161,6 +11085,19 @@ export declare class LesserGraphQLAdapter {
 						readonly domain?: string | null | undefined;
 						readonly url: string;
 					}>;
+					readonly agentAttribution?:
+						| {
+								readonly __typename: 'AgentPostAttribution';
+								readonly triggerType?: string | null | undefined;
+								readonly triggerDetails?: string | null | undefined;
+								readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+								readonly delegatedBy?: string | null | undefined;
+								readonly scopes?: ReadonlyArray<string> | null | undefined;
+								readonly constraints?: ReadonlyArray<string> | null | undefined;
+								readonly modelVersion?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly quoteContext?:
 						| {
 								readonly __typename: 'QuoteContext';
@@ -7182,7 +11119,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -7223,7 +11173,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -7247,7 +11210,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -7275,7 +11251,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -7318,6 +11307,19 @@ export declare class LesserGraphQLAdapter {
 			readonly domain?: string | null | undefined;
 			readonly url: string;
 		}>;
+		readonly agentAttribution?:
+			| {
+					readonly __typename: 'AgentPostAttribution';
+					readonly triggerType?: string | null | undefined;
+					readonly triggerDetails?: string | null | undefined;
+					readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+					readonly delegatedBy?: string | null | undefined;
+					readonly scopes?: ReadonlyArray<string> | null | undefined;
+					readonly constraints?: ReadonlyArray<string> | null | undefined;
+					readonly modelVersion?: string | null | undefined;
+			  }
+			| null
+			| undefined;
 		readonly quoteContext?:
 			| {
 					readonly __typename: 'QuoteContext';
@@ -7339,7 +11341,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -7380,7 +11395,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -7404,7 +11432,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -7432,7 +11473,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -7444,7 +11498,493 @@ export declare class LesserGraphQLAdapter {
 			| null
 			| undefined;
 	}>;
-	unshareObject(id: string): Promise<boolean>;
+	unshareObject(id: string): Promise<{
+		readonly __typename: 'Object';
+		readonly id: string;
+		readonly type: import('./index.js').ObjectType;
+		readonly content: string;
+		readonly visibility: import('./index.js').Visibility;
+		readonly sensitive: boolean;
+		readonly spoilerText?: string | null | undefined;
+		readonly createdAt: string;
+		readonly updatedAt: string;
+		readonly repliesCount: number;
+		readonly likesCount: number;
+		readonly sharesCount: number;
+		readonly boosted: boolean;
+		readonly relationshipType: import('./index.js').ObjectRelationshipType;
+		readonly contentHash: string;
+		readonly estimatedCost: number;
+		readonly moderationScore?: number | null | undefined;
+		readonly quoteUrl?: string | null | undefined;
+		readonly quoteable: boolean;
+		readonly quotePermissions: import('./index.js').QuotePermission;
+		readonly quoteCount: number;
+		readonly boostedObject?:
+			| {
+					readonly __typename: 'Object';
+					readonly id: string;
+					readonly type: import('./index.js').ObjectType;
+					readonly content: string;
+					readonly visibility: import('./index.js').Visibility;
+					readonly sensitive: boolean;
+					readonly spoilerText?: string | null | undefined;
+					readonly createdAt: string;
+					readonly updatedAt: string;
+					readonly repliesCount: number;
+					readonly likesCount: number;
+					readonly sharesCount: number;
+					readonly boosted: boolean;
+					readonly relationshipType: import('./index.js').ObjectRelationshipType;
+					readonly contentHash: string;
+					readonly estimatedCost: number;
+					readonly moderationScore?: number | null | undefined;
+					readonly quoteUrl?: string | null | undefined;
+					readonly quoteable: boolean;
+					readonly quotePermissions: import('./index.js').QuotePermission;
+					readonly quoteCount: number;
+					readonly contentMap: ReadonlyArray<{
+						readonly __typename: 'ContentMap';
+						readonly language: string;
+						readonly content: string;
+					}>;
+					readonly attachments: ReadonlyArray<{
+						readonly __typename: 'Attachment';
+						readonly id: string;
+						readonly type: string;
+						readonly url: string;
+						readonly preview?: string | null | undefined;
+						readonly description?: string | null | undefined;
+						readonly blurhash?: string | null | undefined;
+						readonly width?: number | null | undefined;
+						readonly height?: number | null | undefined;
+						readonly duration?: number | null | undefined;
+					}>;
+					readonly tags: ReadonlyArray<{
+						readonly __typename: 'Tag';
+						readonly name: string;
+						readonly url: string;
+					}>;
+					readonly mentions: ReadonlyArray<{
+						readonly __typename: 'Mention';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly url: string;
+					}>;
+					readonly agentAttribution?:
+						| {
+								readonly __typename: 'AgentPostAttribution';
+								readonly triggerType?: string | null | undefined;
+								readonly triggerDetails?: string | null | undefined;
+								readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+								readonly delegatedBy?: string | null | undefined;
+								readonly scopes?: ReadonlyArray<string> | null | undefined;
+								readonly constraints?: ReadonlyArray<string> | null | undefined;
+								readonly modelVersion?: string | null | undefined;
+						  }
+						| null
+						| undefined;
+					readonly quoteContext?:
+						| {
+								readonly __typename: 'QuoteContext';
+								readonly quoteAllowed: boolean;
+								readonly quoteType: import('./index.js').QuoteType;
+								readonly withdrawn: boolean;
+								readonly originalAuthor: {
+									readonly __typename: 'Actor';
+									readonly id: string;
+									readonly username: string;
+									readonly domain?: string | null | undefined;
+									readonly displayName?: string | null | undefined;
+									readonly summary?: string | null | undefined;
+									readonly avatar?: string | null | undefined;
+									readonly header?: string | null | undefined;
+									readonly followers: number;
+									readonly following: number;
+									readonly statusesCount: number;
+									readonly bot: boolean;
+									readonly locked: boolean;
+									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
+									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
+									readonly fields: ReadonlyArray<{
+										readonly __typename: 'Field';
+										readonly name: string;
+										readonly value: string;
+										readonly verifiedAt?: string | null | undefined;
+									}>;
+								};
+								readonly originalNote?:
+									| {
+											readonly __typename: 'Object';
+											readonly id: string;
+											readonly type: import('./index.js').ObjectType;
+									  }
+									| null
+									| undefined;
+						  }
+						| null
+						| undefined;
+					readonly communityNotes: ReadonlyArray<{
+						readonly __typename: 'CommunityNote';
+						readonly id: string;
+						readonly content: string;
+						readonly helpful: number;
+						readonly notHelpful: number;
+						readonly createdAt: string;
+						readonly author: {
+							readonly __typename: 'Actor';
+							readonly id: string;
+							readonly username: string;
+							readonly domain?: string | null | undefined;
+							readonly displayName?: string | null | undefined;
+							readonly summary?: string | null | undefined;
+							readonly avatar?: string | null | undefined;
+							readonly header?: string | null | undefined;
+							readonly followers: number;
+							readonly following: number;
+							readonly statusesCount: number;
+							readonly bot: boolean;
+							readonly locked: boolean;
+							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
+							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
+							readonly fields: ReadonlyArray<{
+								readonly __typename: 'Field';
+								readonly name: string;
+								readonly value: string;
+								readonly verifiedAt?: string | null | undefined;
+							}>;
+						};
+					}>;
+					readonly actor: {
+						readonly __typename: 'Actor';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly displayName?: string | null | undefined;
+						readonly summary?: string | null | undefined;
+						readonly avatar?: string | null | undefined;
+						readonly header?: string | null | undefined;
+						readonly followers: number;
+						readonly following: number;
+						readonly statusesCount: number;
+						readonly bot: boolean;
+						readonly locked: boolean;
+						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
+						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
+						readonly fields: ReadonlyArray<{
+							readonly __typename: 'Field';
+							readonly name: string;
+							readonly value: string;
+							readonly verifiedAt?: string | null | undefined;
+						}>;
+					};
+					readonly inReplyTo?:
+						| {
+								readonly __typename: 'Object';
+								readonly id: string;
+								readonly type: import('./index.js').ObjectType;
+								readonly actor: {
+									readonly __typename: 'Actor';
+									readonly id: string;
+									readonly username: string;
+									readonly domain?: string | null | undefined;
+									readonly displayName?: string | null | undefined;
+									readonly summary?: string | null | undefined;
+									readonly avatar?: string | null | undefined;
+									readonly header?: string | null | undefined;
+									readonly followers: number;
+									readonly following: number;
+									readonly statusesCount: number;
+									readonly bot: boolean;
+									readonly locked: boolean;
+									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
+									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
+									readonly fields: ReadonlyArray<{
+										readonly __typename: 'Field';
+										readonly name: string;
+										readonly value: string;
+										readonly verifiedAt?: string | null | undefined;
+									}>;
+								};
+						  }
+						| null
+						| undefined;
+			  }
+			| null
+			| undefined;
+		readonly contentMap: ReadonlyArray<{
+			readonly __typename: 'ContentMap';
+			readonly language: string;
+			readonly content: string;
+		}>;
+		readonly attachments: ReadonlyArray<{
+			readonly __typename: 'Attachment';
+			readonly id: string;
+			readonly type: string;
+			readonly url: string;
+			readonly preview?: string | null | undefined;
+			readonly description?: string | null | undefined;
+			readonly blurhash?: string | null | undefined;
+			readonly width?: number | null | undefined;
+			readonly height?: number | null | undefined;
+			readonly duration?: number | null | undefined;
+		}>;
+		readonly tags: ReadonlyArray<{
+			readonly __typename: 'Tag';
+			readonly name: string;
+			readonly url: string;
+		}>;
+		readonly mentions: ReadonlyArray<{
+			readonly __typename: 'Mention';
+			readonly id: string;
+			readonly username: string;
+			readonly domain?: string | null | undefined;
+			readonly url: string;
+		}>;
+		readonly agentAttribution?:
+			| {
+					readonly __typename: 'AgentPostAttribution';
+					readonly triggerType?: string | null | undefined;
+					readonly triggerDetails?: string | null | undefined;
+					readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+					readonly delegatedBy?: string | null | undefined;
+					readonly scopes?: ReadonlyArray<string> | null | undefined;
+					readonly constraints?: ReadonlyArray<string> | null | undefined;
+					readonly modelVersion?: string | null | undefined;
+			  }
+			| null
+			| undefined;
+		readonly quoteContext?:
+			| {
+					readonly __typename: 'QuoteContext';
+					readonly quoteAllowed: boolean;
+					readonly quoteType: import('./index.js').QuoteType;
+					readonly withdrawn: boolean;
+					readonly originalAuthor: {
+						readonly __typename: 'Actor';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly displayName?: string | null | undefined;
+						readonly summary?: string | null | undefined;
+						readonly avatar?: string | null | undefined;
+						readonly header?: string | null | undefined;
+						readonly followers: number;
+						readonly following: number;
+						readonly statusesCount: number;
+						readonly bot: boolean;
+						readonly locked: boolean;
+						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
+						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
+						readonly fields: ReadonlyArray<{
+							readonly __typename: 'Field';
+							readonly name: string;
+							readonly value: string;
+							readonly verifiedAt?: string | null | undefined;
+						}>;
+					};
+					readonly originalNote?:
+						| {
+								readonly __typename: 'Object';
+								readonly id: string;
+								readonly type: import('./index.js').ObjectType;
+						  }
+						| null
+						| undefined;
+			  }
+			| null
+			| undefined;
+		readonly communityNotes: ReadonlyArray<{
+			readonly __typename: 'CommunityNote';
+			readonly id: string;
+			readonly content: string;
+			readonly helpful: number;
+			readonly notHelpful: number;
+			readonly createdAt: string;
+			readonly author: {
+				readonly __typename: 'Actor';
+				readonly id: string;
+				readonly username: string;
+				readonly domain?: string | null | undefined;
+				readonly displayName?: string | null | undefined;
+				readonly summary?: string | null | undefined;
+				readonly avatar?: string | null | undefined;
+				readonly header?: string | null | undefined;
+				readonly followers: number;
+				readonly following: number;
+				readonly statusesCount: number;
+				readonly bot: boolean;
+				readonly locked: boolean;
+				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
+				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
+				readonly fields: ReadonlyArray<{
+					readonly __typename: 'Field';
+					readonly name: string;
+					readonly value: string;
+					readonly verifiedAt?: string | null | undefined;
+				}>;
+			};
+		}>;
+		readonly actor: {
+			readonly __typename: 'Actor';
+			readonly id: string;
+			readonly username: string;
+			readonly domain?: string | null | undefined;
+			readonly displayName?: string | null | undefined;
+			readonly summary?: string | null | undefined;
+			readonly avatar?: string | null | undefined;
+			readonly header?: string | null | undefined;
+			readonly followers: number;
+			readonly following: number;
+			readonly statusesCount: number;
+			readonly bot: boolean;
+			readonly locked: boolean;
+			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
+			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
+			readonly fields: ReadonlyArray<{
+				readonly __typename: 'Field';
+				readonly name: string;
+				readonly value: string;
+				readonly verifiedAt?: string | null | undefined;
+			}>;
+		};
+		readonly inReplyTo?:
+			| {
+					readonly __typename: 'Object';
+					readonly id: string;
+					readonly type: import('./index.js').ObjectType;
+					readonly actor: {
+						readonly __typename: 'Actor';
+						readonly id: string;
+						readonly username: string;
+						readonly domain?: string | null | undefined;
+						readonly displayName?: string | null | undefined;
+						readonly summary?: string | null | undefined;
+						readonly avatar?: string | null | undefined;
+						readonly header?: string | null | undefined;
+						readonly followers: number;
+						readonly following: number;
+						readonly statusesCount: number;
+						readonly bot: boolean;
+						readonly locked: boolean;
+						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
+						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
+						readonly fields: ReadonlyArray<{
+							readonly __typename: 'Field';
+							readonly name: string;
+							readonly value: string;
+							readonly verifiedAt?: string | null | undefined;
+						}>;
+					};
+			  }
+			| null
+			| undefined;
+	}>;
 	bookmarkObject(id: string): Promise<{
 		readonly __typename: 'Object';
 		readonly id: string;
@@ -7458,6 +11998,9 @@ export declare class LesserGraphQLAdapter {
 		readonly repliesCount: number;
 		readonly likesCount: number;
 		readonly sharesCount: number;
+		readonly boosted: boolean;
+		readonly relationshipType: import('./index.js').ObjectRelationshipType;
+		readonly contentHash: string;
 		readonly estimatedCost: number;
 		readonly moderationScore?: number | null | undefined;
 		readonly quoteUrl?: string | null | undefined;
@@ -7478,6 +12021,9 @@ export declare class LesserGraphQLAdapter {
 					readonly repliesCount: number;
 					readonly likesCount: number;
 					readonly sharesCount: number;
+					readonly boosted: boolean;
+					readonly relationshipType: import('./index.js').ObjectRelationshipType;
+					readonly contentHash: string;
 					readonly estimatedCost: number;
 					readonly moderationScore?: number | null | undefined;
 					readonly quoteUrl?: string | null | undefined;
@@ -7513,6 +12059,19 @@ export declare class LesserGraphQLAdapter {
 						readonly domain?: string | null | undefined;
 						readonly url: string;
 					}>;
+					readonly agentAttribution?:
+						| {
+								readonly __typename: 'AgentPostAttribution';
+								readonly triggerType?: string | null | undefined;
+								readonly triggerDetails?: string | null | undefined;
+								readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+								readonly delegatedBy?: string | null | undefined;
+								readonly scopes?: ReadonlyArray<string> | null | undefined;
+								readonly constraints?: ReadonlyArray<string> | null | undefined;
+								readonly modelVersion?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly quoteContext?:
 						| {
 								readonly __typename: 'QuoteContext';
@@ -7534,7 +12093,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -7575,7 +12147,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -7599,7 +12184,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -7627,7 +12225,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -7670,6 +12281,19 @@ export declare class LesserGraphQLAdapter {
 			readonly domain?: string | null | undefined;
 			readonly url: string;
 		}>;
+		readonly agentAttribution?:
+			| {
+					readonly __typename: 'AgentPostAttribution';
+					readonly triggerType?: string | null | undefined;
+					readonly triggerDetails?: string | null | undefined;
+					readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+					readonly delegatedBy?: string | null | undefined;
+					readonly scopes?: ReadonlyArray<string> | null | undefined;
+					readonly constraints?: ReadonlyArray<string> | null | undefined;
+					readonly modelVersion?: string | null | undefined;
+			  }
+			| null
+			| undefined;
 		readonly quoteContext?:
 			| {
 					readonly __typename: 'QuoteContext';
@@ -7691,7 +12315,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -7732,7 +12369,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -7756,7 +12406,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -7784,7 +12447,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -7810,6 +12486,9 @@ export declare class LesserGraphQLAdapter {
 		readonly repliesCount: number;
 		readonly likesCount: number;
 		readonly sharesCount: number;
+		readonly boosted: boolean;
+		readonly relationshipType: import('./index.js').ObjectRelationshipType;
+		readonly contentHash: string;
 		readonly estimatedCost: number;
 		readonly moderationScore?: number | null | undefined;
 		readonly quoteUrl?: string | null | undefined;
@@ -7830,6 +12509,9 @@ export declare class LesserGraphQLAdapter {
 					readonly repliesCount: number;
 					readonly likesCount: number;
 					readonly sharesCount: number;
+					readonly boosted: boolean;
+					readonly relationshipType: import('./index.js').ObjectRelationshipType;
+					readonly contentHash: string;
 					readonly estimatedCost: number;
 					readonly moderationScore?: number | null | undefined;
 					readonly quoteUrl?: string | null | undefined;
@@ -7865,6 +12547,19 @@ export declare class LesserGraphQLAdapter {
 						readonly domain?: string | null | undefined;
 						readonly url: string;
 					}>;
+					readonly agentAttribution?:
+						| {
+								readonly __typename: 'AgentPostAttribution';
+								readonly triggerType?: string | null | undefined;
+								readonly triggerDetails?: string | null | undefined;
+								readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+								readonly delegatedBy?: string | null | undefined;
+								readonly scopes?: ReadonlyArray<string> | null | undefined;
+								readonly constraints?: ReadonlyArray<string> | null | undefined;
+								readonly modelVersion?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly quoteContext?:
 						| {
 								readonly __typename: 'QuoteContext';
@@ -7886,7 +12581,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -7927,7 +12635,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -7951,7 +12672,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -7979,7 +12713,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -8022,6 +12769,19 @@ export declare class LesserGraphQLAdapter {
 			readonly domain?: string | null | undefined;
 			readonly url: string;
 		}>;
+		readonly agentAttribution?:
+			| {
+					readonly __typename: 'AgentPostAttribution';
+					readonly triggerType?: string | null | undefined;
+					readonly triggerDetails?: string | null | undefined;
+					readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+					readonly delegatedBy?: string | null | undefined;
+					readonly scopes?: ReadonlyArray<string> | null | undefined;
+					readonly constraints?: ReadonlyArray<string> | null | undefined;
+					readonly modelVersion?: string | null | undefined;
+			  }
+			| null
+			| undefined;
 		readonly quoteContext?:
 			| {
 					readonly __typename: 'QuoteContext';
@@ -8043,7 +12803,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -8084,7 +12857,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -8108,7 +12894,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -8136,7 +12935,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -8189,7 +13001,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -8294,7 +13119,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -8326,7 +13164,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -8366,7 +13217,20 @@ export declare class LesserGraphQLAdapter {
 		readonly bot: boolean;
 		readonly locked: boolean;
 		readonly updatedAt: string;
+		readonly isAgent: boolean;
+		readonly tipAddress?: string | null | undefined;
+		readonly tipChainId?: number | null | undefined;
 		readonly trustScore: number;
+		readonly agentInfo?:
+			| {
+					readonly __typename: 'Agent';
+					readonly id: string;
+					readonly agentType: import('./index.js').AgentType;
+					readonly verified: boolean;
+					readonly verifiedAt?: string | null | undefined;
+			  }
+			| null
+			| undefined;
 		readonly fields: ReadonlyArray<{
 			readonly __typename: 'Field';
 			readonly name: string;
@@ -8648,7 +13512,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -8688,7 +13565,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -8715,6 +13605,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -8743,7 +13636,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -8766,6 +13672,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -8801,6 +13710,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -8822,7 +13744,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -8863,7 +13798,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -8887,7 +13835,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -8915,7 +13876,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -8958,6 +13932,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -8979,7 +13966,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -9013,7 +14013,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -9041,7 +14054,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -9087,7 +14113,20 @@ export declare class LesserGraphQLAdapter {
 			readonly bot: boolean;
 			readonly locked: boolean;
 			readonly updatedAt: string;
+			readonly isAgent: boolean;
+			readonly tipAddress?: string | null | undefined;
+			readonly tipChainId?: number | null | undefined;
 			readonly trustScore: number;
+			readonly agentInfo?:
+				| {
+						readonly __typename: 'Agent';
+						readonly id: string;
+						readonly agentType: import('./index.js').AgentType;
+						readonly verified: boolean;
+						readonly verifiedAt?: string | null | undefined;
+				  }
+				| null
+				| undefined;
 			readonly fields: ReadonlyArray<{
 				readonly __typename: 'Field';
 				readonly name: string;
@@ -9289,7 +14328,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -9312,7 +14364,20 @@ export declare class LesserGraphQLAdapter {
 				readonly bot: boolean;
 				readonly locked: boolean;
 				readonly updatedAt: string;
+				readonly isAgent: boolean;
+				readonly tipAddress?: string | null | undefined;
+				readonly tipChainId?: number | null | undefined;
 				readonly trustScore: number;
+				readonly agentInfo?:
+					| {
+							readonly __typename: 'Agent';
+							readonly id: string;
+							readonly agentType: import('./index.js').AgentType;
+							readonly verified: boolean;
+							readonly verifiedAt?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly fields: ReadonlyArray<{
 					readonly __typename: 'Field';
 					readonly name: string;
@@ -9432,6 +14497,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -9452,6 +14520,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -9487,6 +14558,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -9508,7 +14592,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -9549,7 +14646,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -9573,7 +14683,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -9601,7 +14724,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -9644,6 +14780,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -9665,7 +14814,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -9706,7 +14868,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -9730,7 +14905,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -9758,7 +14946,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -9796,6 +14997,9 @@ export declare class LesserGraphQLAdapter {
 				readonly repliesCount: number;
 				readonly likesCount: number;
 				readonly sharesCount: number;
+				readonly boosted: boolean;
+				readonly relationshipType: import('./index.js').ObjectRelationshipType;
+				readonly contentHash: string;
 				readonly estimatedCost: number;
 				readonly moderationScore?: number | null | undefined;
 				readonly quoteUrl?: string | null | undefined;
@@ -9816,6 +15020,9 @@ export declare class LesserGraphQLAdapter {
 							readonly repliesCount: number;
 							readonly likesCount: number;
 							readonly sharesCount: number;
+							readonly boosted: boolean;
+							readonly relationshipType: import('./index.js').ObjectRelationshipType;
+							readonly contentHash: string;
 							readonly estimatedCost: number;
 							readonly moderationScore?: number | null | undefined;
 							readonly quoteUrl?: string | null | undefined;
@@ -9851,6 +15058,19 @@ export declare class LesserGraphQLAdapter {
 								readonly domain?: string | null | undefined;
 								readonly url: string;
 							}>;
+							readonly agentAttribution?:
+								| {
+										readonly __typename: 'AgentPostAttribution';
+										readonly triggerType?: string | null | undefined;
+										readonly triggerDetails?: string | null | undefined;
+										readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+										readonly delegatedBy?: string | null | undefined;
+										readonly scopes?: ReadonlyArray<string> | null | undefined;
+										readonly constraints?: ReadonlyArray<string> | null | undefined;
+										readonly modelVersion?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly quoteContext?:
 								| {
 										readonly __typename: 'QuoteContext';
@@ -9872,7 +15092,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -9913,7 +15146,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -9937,7 +15183,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -9965,7 +15224,20 @@ export declare class LesserGraphQLAdapter {
 											readonly bot: boolean;
 											readonly locked: boolean;
 											readonly updatedAt: string;
+											readonly isAgent: boolean;
+											readonly tipAddress?: string | null | undefined;
+											readonly tipChainId?: number | null | undefined;
 											readonly trustScore: number;
+											readonly agentInfo?:
+												| {
+														readonly __typename: 'Agent';
+														readonly id: string;
+														readonly agentType: import('./index.js').AgentType;
+														readonly verified: boolean;
+														readonly verifiedAt?: string | null | undefined;
+												  }
+												| null
+												| undefined;
 											readonly fields: ReadonlyArray<{
 												readonly __typename: 'Field';
 												readonly name: string;
@@ -10008,6 +15280,19 @@ export declare class LesserGraphQLAdapter {
 					readonly domain?: string | null | undefined;
 					readonly url: string;
 				}>;
+				readonly agentAttribution?:
+					| {
+							readonly __typename: 'AgentPostAttribution';
+							readonly triggerType?: string | null | undefined;
+							readonly triggerDetails?: string | null | undefined;
+							readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+							readonly delegatedBy?: string | null | undefined;
+							readonly scopes?: ReadonlyArray<string> | null | undefined;
+							readonly constraints?: ReadonlyArray<string> | null | undefined;
+							readonly modelVersion?: string | null | undefined;
+					  }
+					| null
+					| undefined;
 				readonly quoteContext?:
 					| {
 							readonly __typename: 'QuoteContext';
@@ -10029,7 +15314,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -10070,7 +15368,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -10094,7 +15405,20 @@ export declare class LesserGraphQLAdapter {
 					readonly bot: boolean;
 					readonly locked: boolean;
 					readonly updatedAt: string;
+					readonly isAgent: boolean;
+					readonly tipAddress?: string | null | undefined;
+					readonly tipChainId?: number | null | undefined;
 					readonly trustScore: number;
+					readonly agentInfo?:
+						| {
+								readonly __typename: 'Agent';
+								readonly id: string;
+								readonly agentType: import('./index.js').AgentType;
+								readonly verified: boolean;
+								readonly verifiedAt?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly fields: ReadonlyArray<{
 						readonly __typename: 'Field';
 						readonly name: string;
@@ -10122,7 +15446,20 @@ export declare class LesserGraphQLAdapter {
 								readonly bot: boolean;
 								readonly locked: boolean;
 								readonly updatedAt: string;
+								readonly isAgent: boolean;
+								readonly tipAddress?: string | null | undefined;
+								readonly tipChainId?: number | null | undefined;
 								readonly trustScore: number;
+								readonly agentInfo?:
+									| {
+											readonly __typename: 'Agent';
+											readonly id: string;
+											readonly agentType: import('./index.js').AgentType;
+											readonly verified: boolean;
+											readonly verifiedAt?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly fields: ReadonlyArray<{
 									readonly __typename: 'Field';
 									readonly name: string;
@@ -10157,6 +15494,9 @@ export declare class LesserGraphQLAdapter {
 					readonly repliesCount: number;
 					readonly likesCount: number;
 					readonly sharesCount: number;
+					readonly boosted: boolean;
+					readonly relationshipType: import('./index.js').ObjectRelationshipType;
+					readonly contentHash: string;
 					readonly estimatedCost: number;
 					readonly moderationScore?: number | null | undefined;
 					readonly quoteUrl?: string | null | undefined;
@@ -10177,6 +15517,9 @@ export declare class LesserGraphQLAdapter {
 								readonly repliesCount: number;
 								readonly likesCount: number;
 								readonly sharesCount: number;
+								readonly boosted: boolean;
+								readonly relationshipType: import('./index.js').ObjectRelationshipType;
+								readonly contentHash: string;
 								readonly estimatedCost: number;
 								readonly moderationScore?: number | null | undefined;
 								readonly quoteUrl?: string | null | undefined;
@@ -10212,6 +15555,19 @@ export declare class LesserGraphQLAdapter {
 									readonly domain?: string | null | undefined;
 									readonly url: string;
 								}>;
+								readonly agentAttribution?:
+									| {
+											readonly __typename: 'AgentPostAttribution';
+											readonly triggerType?: string | null | undefined;
+											readonly triggerDetails?: string | null | undefined;
+											readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+											readonly delegatedBy?: string | null | undefined;
+											readonly scopes?: ReadonlyArray<string> | null | undefined;
+											readonly constraints?: ReadonlyArray<string> | null | undefined;
+											readonly modelVersion?: string | null | undefined;
+									  }
+									| null
+									| undefined;
 								readonly quoteContext?:
 									| {
 											readonly __typename: 'QuoteContext';
@@ -10233,7 +15589,20 @@ export declare class LesserGraphQLAdapter {
 												readonly bot: boolean;
 												readonly locked: boolean;
 												readonly updatedAt: string;
+												readonly isAgent: boolean;
+												readonly tipAddress?: string | null | undefined;
+												readonly tipChainId?: number | null | undefined;
 												readonly trustScore: number;
+												readonly agentInfo?:
+													| {
+															readonly __typename: 'Agent';
+															readonly id: string;
+															readonly agentType: import('./index.js').AgentType;
+															readonly verified: boolean;
+															readonly verifiedAt?: string | null | undefined;
+													  }
+													| null
+													| undefined;
 												readonly fields: ReadonlyArray<{
 													readonly __typename: 'Field';
 													readonly name: string;
@@ -10274,7 +15643,20 @@ export declare class LesserGraphQLAdapter {
 										readonly bot: boolean;
 										readonly locked: boolean;
 										readonly updatedAt: string;
+										readonly isAgent: boolean;
+										readonly tipAddress?: string | null | undefined;
+										readonly tipChainId?: number | null | undefined;
 										readonly trustScore: number;
+										readonly agentInfo?:
+											| {
+													readonly __typename: 'Agent';
+													readonly id: string;
+													readonly agentType: import('./index.js').AgentType;
+													readonly verified: boolean;
+													readonly verifiedAt?: string | null | undefined;
+											  }
+											| null
+											| undefined;
 										readonly fields: ReadonlyArray<{
 											readonly __typename: 'Field';
 											readonly name: string;
@@ -10298,7 +15680,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -10326,7 +15721,20 @@ export declare class LesserGraphQLAdapter {
 												readonly bot: boolean;
 												readonly locked: boolean;
 												readonly updatedAt: string;
+												readonly isAgent: boolean;
+												readonly tipAddress?: string | null | undefined;
+												readonly tipChainId?: number | null | undefined;
 												readonly trustScore: number;
+												readonly agentInfo?:
+													| {
+															readonly __typename: 'Agent';
+															readonly id: string;
+															readonly agentType: import('./index.js').AgentType;
+															readonly verified: boolean;
+															readonly verifiedAt?: string | null | undefined;
+													  }
+													| null
+													| undefined;
 												readonly fields: ReadonlyArray<{
 													readonly __typename: 'Field';
 													readonly name: string;
@@ -10369,6 +15777,19 @@ export declare class LesserGraphQLAdapter {
 						readonly domain?: string | null | undefined;
 						readonly url: string;
 					}>;
+					readonly agentAttribution?:
+						| {
+								readonly __typename: 'AgentPostAttribution';
+								readonly triggerType?: string | null | undefined;
+								readonly triggerDetails?: string | null | undefined;
+								readonly memoryCitations?: ReadonlyArray<string> | null | undefined;
+								readonly delegatedBy?: string | null | undefined;
+								readonly scopes?: ReadonlyArray<string> | null | undefined;
+								readonly constraints?: ReadonlyArray<string> | null | undefined;
+								readonly modelVersion?: string | null | undefined;
+						  }
+						| null
+						| undefined;
 					readonly quoteContext?:
 						| {
 								readonly __typename: 'QuoteContext';
@@ -10390,7 +15811,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -10431,7 +15865,20 @@ export declare class LesserGraphQLAdapter {
 							readonly bot: boolean;
 							readonly locked: boolean;
 							readonly updatedAt: string;
+							readonly isAgent: boolean;
+							readonly tipAddress?: string | null | undefined;
+							readonly tipChainId?: number | null | undefined;
 							readonly trustScore: number;
+							readonly agentInfo?:
+								| {
+										readonly __typename: 'Agent';
+										readonly id: string;
+										readonly agentType: import('./index.js').AgentType;
+										readonly verified: boolean;
+										readonly verifiedAt?: string | null | undefined;
+								  }
+								| null
+								| undefined;
 							readonly fields: ReadonlyArray<{
 								readonly __typename: 'Field';
 								readonly name: string;
@@ -10455,7 +15902,20 @@ export declare class LesserGraphQLAdapter {
 						readonly bot: boolean;
 						readonly locked: boolean;
 						readonly updatedAt: string;
+						readonly isAgent: boolean;
+						readonly tipAddress?: string | null | undefined;
+						readonly tipChainId?: number | null | undefined;
 						readonly trustScore: number;
+						readonly agentInfo?:
+							| {
+									readonly __typename: 'Agent';
+									readonly id: string;
+									readonly agentType: import('./index.js').AgentType;
+									readonly verified: boolean;
+									readonly verifiedAt?: string | null | undefined;
+							  }
+							| null
+							| undefined;
 						readonly fields: ReadonlyArray<{
 							readonly __typename: 'Field';
 							readonly name: string;
@@ -10483,7 +15943,20 @@ export declare class LesserGraphQLAdapter {
 									readonly bot: boolean;
 									readonly locked: boolean;
 									readonly updatedAt: string;
+									readonly isAgent: boolean;
+									readonly tipAddress?: string | null | undefined;
+									readonly tipChainId?: number | null | undefined;
 									readonly trustScore: number;
+									readonly agentInfo?:
+										| {
+												readonly __typename: 'Agent';
+												readonly id: string;
+												readonly agentType: import('./index.js').AgentType;
+												readonly verified: boolean;
+												readonly verifiedAt?: string | null | undefined;
+										  }
+										| null
+										| undefined;
 									readonly fields: ReadonlyArray<{
 										readonly __typename: 'Field';
 										readonly name: string;
@@ -10803,6 +16276,9 @@ export declare class LesserGraphQLAdapter {
 		variables: PerformanceAlertSubscriptionVariables
 	): Observable<FetchResult<PerformanceAlertSubscription>>;
 	subscribeToInfrastructureEvent(): Observable<FetchResult<InfrastructureEventSubscription>>;
+	subscribeToAgentActivityUpdates(
+		variables: AgentActivityUpdatesSubscriptionVariables
+	): Observable<FetchResult<AgentActivityUpdatesSubscription>>;
 }
 export declare function createLesserGraphQLAdapter(
 	config: LesserGraphQLAdapterConfig

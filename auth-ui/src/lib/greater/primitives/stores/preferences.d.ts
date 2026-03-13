@@ -52,7 +52,7 @@ declare class PreferencesStore {
 	private validatePreferences;
 	private setupSystemPreferenceDetection;
 	private applyTheme;
-	private applyCustomProperties;
+	private applyCustomAttributes;
 	destroy(): void;
 }
 export declare const preferencesStore: PreferencesStore;

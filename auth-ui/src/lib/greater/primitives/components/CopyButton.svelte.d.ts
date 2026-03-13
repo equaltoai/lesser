@@ -1,5 +1,9 @@
 import { type CopyResult } from 'src/lib/greater/utils';
-interface Props {
+import type { HTMLButtonAttributes } from 'svelte/elements';
+type ButtonPassthroughProps = Omit<HTMLButtonAttributes, 'type'> & {
+	type?: 'button' | 'submit' | 'reset';
+};
+interface Props extends ButtonPassthroughProps {
 	/**
 	 * The text to copy to the clipboard.
 	 * Takes precedence over targetSelector if both are provided.

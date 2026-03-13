@@ -43,9 +43,9 @@ export function hexToHsl(hex: string): HSL {
 		cmax = Math.max(r, g, b),
 		delta = cmax - cmin;
 
-	let h = 0,
-		s = 0,
-		l = 0;
+	let h: number;
+	let s: number;
+	let l: number;
 
 	if (delta === 0) h = 0;
 	else if (cmax === r) h = ((g - b) / delta) % 6;

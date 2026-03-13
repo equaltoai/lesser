@@ -23,4 +23,3 @@ export interface TruncateMiddleOptions {
  */
 export declare function truncateMiddle(value: string, opts?: TruncateMiddleOptions): string;
 //# sourceMappingURL=truncateMiddle.d.ts.map
-

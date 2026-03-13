@@ -1,3 +1,4 @@
+import type { HTMLAttributes } from 'svelte/elements';
 import type { Snippet } from 'svelte';
 export interface DroppedItem {
 	id: string;
@@ -13,7 +14,7 @@ export interface DropError {
 	message: string;
 	file?: File;
 }
-interface Props {
+interface Props extends HTMLAttributes<HTMLDivElement> {
 	/**
 	 * Accepted content types.
 	 */

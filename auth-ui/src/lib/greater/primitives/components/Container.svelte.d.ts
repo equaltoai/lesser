@@ -51,7 +51,7 @@ interface Props extends HTMLAttributes<HTMLDivElement> {
 	padding?: boolean | 'sm' | 'md' | 'lg';
 	/**
 	 * Horizontal padding (gutter) control.
-	 * Can be a preset value or custom CSS value.
+	 * Only preset values are supported for CSP compliance.
 	 *
 	 * Preset values:
 	 * - `none`: No padding
@@ -60,12 +60,13 @@ interface Props extends HTMLAttributes<HTMLDivElement> {
 	 * - `lg`: 1.5rem
 	 * - `xl`: 2rem
 	 *
-	 * Can also accept custom CSS values like '2rem' or '24px'.
+	 * For custom gutter values, use the `class` prop with external CSS
+	 * to set the `--gr-container-custom-gutter` CSS variable.
 	 * Takes precedence over `padding` prop.
 	 *
 	 * @public
 	 */
-	gutter?: GutterPreset | string | number;
+	gutter?: GutterPreset;
 	/**
 	 * Center content horizontally.
 	 *
@@ -105,11 +106,17 @@ interface Props extends HTMLAttributes<HTMLDivElement> {
  * </Container>
  * ```
  *
- * @example Custom gutter
+ * @example Custom gutter via external CSS
  * ```svelte
- * <Container size="lg" gutter="2rem">
+ * <Container size="lg" class="custom-gutter">
  * <h1>Custom Padding</h1>
  * </Container>
+ *
+ * <style>
+ *   :global(.custom-gutter) {
+ *     --gr-container-custom-gutter: 2rem;
+ *   }
+ * </style>
  * ```
  */
 declare const Container: import('svelte').Component<Props, {}, ''>;

@@ -10,4 +10,3 @@ declare const DefinitionList: Component<Props, {}, ''>;
 type DefinitionList = ReturnType<typeof DefinitionList>;
 export default DefinitionList;
 //# sourceMappingURL=DefinitionList.svelte.d.ts.map
-

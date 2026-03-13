@@ -5,7 +5,7 @@ import type { Snippet } from 'svelte';
  *
  * @public
  */
-interface Props extends Omit<HTMLButtonAttributes, 'type'> {
+interface Props extends Omit<HTMLButtonAttributes, 'type' | 'prefix'> {
 	/**
 	 * Visual variant of the button.
 	 * - `solid`: Primary button with filled background (default)

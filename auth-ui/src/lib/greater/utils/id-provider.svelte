@@ -3,7 +3,7 @@
 	import type { Snippet } from 'svelte';
 
 	interface Props {
-		children: Snippet;
+		children?: Snippet;
 		prefix?: string;
 	}
 
@@ -14,4 +14,6 @@
 	setContext('gr-id-provider', counter);
 </script>
 
-{@render children()}
+{#if children}
+	{@render children()}
+{/if}

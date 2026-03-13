@@ -2,25 +2,19 @@
 	import { onMount, untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { preferencesStore, type ColorScheme } from '../stores/preferences';
-	import {
-		palettes,
-		generatePaletteCSS,
-		getPresetGrayScale,
-		type PalettePreset,
-		type CustomPalette,
-	} from 'src/lib/greater/tokens';
+	import type { PalettePreset, FontPreset } from 'src/lib/greater/tokens';
 
 	interface Props {
 		/** Color scheme: 'light', 'dark', 'high-contrast', or 'auto' */
 		theme?: ColorScheme;
 		/** Preset palette name: 'slate', 'stone', 'neutral', 'zinc', 'gray' */
 		palette?: PalettePreset;
-		/** Custom palette configuration with gray and/or primary color scales */
-		customPalette?: CustomPalette;
-		/** Custom heading font family (e.g., "'Crimson Pro', serif") */
-		headingFont?: string;
-		/** Custom body font family (e.g., "'Inter', sans-serif") */
-		bodyFont?: string;
+		/** Preset heading font: 'system', 'sans', 'serif', 'mono' */
+		headingFontPreset?: FontPreset;
+		/** Preset body font: 'system', 'sans', 'serif', 'mono' */
+		bodyFontPreset?: FontPreset;
+		/** Additional CSS class for custom theming via external CSS */
+		class?: string;
 		/** @deprecated Use app.html for flash prevention */
 		enableSystemDetection?: boolean;
 		/** @deprecated Use app.html for flash prevention */
@@ -33,41 +27,38 @@
 	let {
 		theme,
 		palette,
-		customPalette,
-		headingFont,
-		bodyFont,
+		headingFontPreset,
+		bodyFontPreset,
+		class: className,
 		enableSystemDetection = true,
 		enablePersistence = true,
 		preventFlash = true,
 		children,
 	}: Props = $props();
 
-	// Generate custom CSS for palette and typography overrides
-	let customCSS = $derived.by(() => {
-		const cssRules: string[] = [];
+	// Generate class names based on preset values (CSP-compliant)
+	let providerClasses = $derived.by(() => {
+		const classes = ['gr-theme-provider'];
 
-		// Handle palette preset
-		if (palette && palette in palettes) {
-			const presetGrayScale = getPresetGrayScale(palette);
-			if (presetGrayScale) {
-				cssRules.push(generatePaletteCSS({ gray: presetGrayScale }));
-			}
+		// Add palette preset class
+		if (palette) {
+			classes.push(`gr-theme-provider--palette-${palette}`);
 		}
 
-		// Handle custom palette (takes precedence over preset)
-		if (customPalette) {
-			cssRules.push(generatePaletteCSS(customPalette));
+		// Add typography preset classes
+		if (headingFontPreset) {
+			classes.push(`gr-theme-provider--heading-${headingFontPreset}`);
+		}
+		if (bodyFontPreset) {
+			classes.push(`gr-theme-provider--body-${bodyFontPreset}`);
 		}
 
-		// Handle typography customization
-		if (headingFont) {
-			cssRules.push(`--gr-typography-fontFamily-heading: ${headingFont};`);
-		}
-		if (bodyFont) {
-			cssRules.push(`--gr-typography-fontFamily-sans: ${bodyFont};`);
+		// Add custom class if provided
+		if (className) {
+			classes.push(className);
 		}
 
-		return cssRules.length > 0 ? cssRules.join('\n') : '';
+		return classes.join(' ');
 	});
 
 	// Apply theme override if provided
@@ -107,6 +98,6 @@
 	the recommended app.html approach.
 -->
 
-<div class="gr-theme-provider" data-theme-provider style={customCSS}>
+<div class={providerClasses} data-theme-provider>
 	{@render children()}
 </div>

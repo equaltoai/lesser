@@ -5,8 +5,8 @@ interface Props {
 	open?: boolean;
 	/** Preferred placement of the menu content */
 	placement?: MenuPlacement;
-	/** Offset from trigger in pixels */
-	offset?: number;
+	/** Offset preset between trigger and content */
+	offset?: 'sm' | 'md' | 'lg';
 	/** Close menu when item is selected */
 	closeOnSelect?: boolean;
 	/** Enable keyboard navigation loop */

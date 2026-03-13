@@ -85,7 +85,7 @@ export interface PooledWebSocket {
 	/**
 	 * Heartbeat interval ID
 	 */
-	heartbeatId?: NodeJS.Timeout;
+	heartbeatId?: ReturnType<typeof setInterval>;
 }
 
 /**

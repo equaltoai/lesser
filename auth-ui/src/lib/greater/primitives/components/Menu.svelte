@@ -11,17 +11,15 @@
 	
 	See packages/primitives/src/components/Menu/index.ts for the new API.
 -->
-<svelte:options
-	customElement={{
-		props: {
-			items: {},
-			orientation: {},
-			class: {},
-			trigger: {},
-			onItemSelect: {},
-		},
-	}}
-/>
+<script lang="ts" module>
+	export interface MenuItemData {
+		id: string;
+		label: string;
+		disabled?: boolean;
+		submenu?: MenuItemData[];
+		action?: () => void;
+	}
+</script>
 
 <script lang="ts">
 	import { tick, onMount } from 'svelte';
@@ -35,14 +33,6 @@
 	});
 	import type { HTMLAttributes } from 'svelte/elements';
 	import type { Snippet } from 'svelte';
-
-	export interface MenuItemData {
-		id: string;
-		label: string;
-		disabled?: boolean;
-		submenu?: MenuItemData[];
-		action?: () => void;
-	}
 
 	interface Props extends Omit<HTMLAttributes<HTMLUListElement>, 'role'> {
 		items: MenuItemData[];
@@ -58,8 +48,9 @@
 		class: className = '',
 		trigger,
 		onItemSelect,
+		style: _style,
 		...restProps
-	}: Props = $props<Props>();
+	}: Props = $props();
 
 	// State management
 	let isOpen = $state(false);
@@ -72,16 +63,14 @@
 	let expandedSubmenu = $state<string | null>(null);
 
 	// Compute menu classes
-	const menuClass = $derived(() => {
+	const menuClass = $derived.by(() => {
 		const classes = ['gr-menu', `gr-menu--${orientation}`, className].filter(Boolean).join(' ');
 
 		return classes;
 	});
 
 	// Get focusable items (non-disabled items)
-	const focusableItems = $derived(() => {
-		return items.filter((item) => !item.disabled);
-	});
+	const focusableItems = $derived.by(() => items.filter((item) => !item.disabled));
 
 	const focusableSelector =
 		'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -184,7 +173,7 @@
 					moveToNext();
 				} else {
 					// Expand submenu in vertical orientation
-					const currentItem = focusableItems()[activeIndex];
+					const currentItem = focusableItems[activeIndex];
 					if (currentItem?.submenu) {
 						event.preventDefault();
 						expandedSubmenu = currentItem.id;
@@ -218,7 +207,7 @@
 			case 'Enter':
 			case ' ': {
 				event.preventDefault();
-				const currentItem = focusableItems()[activeIndex];
+				const currentItem = focusableItems[activeIndex];
 				if (currentItem) {
 					selectItem(currentItem);
 				}
@@ -235,12 +224,12 @@
 	}
 
 	function moveToNext() {
-		const nextIndex = (activeIndex + 1) % focusableItems().length;
+		const nextIndex = (activeIndex + 1) % focusableItems.length;
 		setActiveIndex(nextIndex);
 	}
 
 	function moveToPrevious() {
-		const prevIndex = activeIndex <= 0 ? focusableItems().length - 1 : activeIndex - 1;
+		const prevIndex = activeIndex <= 0 ? focusableItems.length - 1 : activeIndex - 1;
 		setActiveIndex(prevIndex);
 	}
 
@@ -249,7 +238,7 @@
 	}
 
 	function moveToLast() {
-		setActiveIndex(focusableItems().length - 1);
+		setActiveIndex(focusableItems.length - 1);
 	}
 
 	function setActiveIndex(index: number) {
@@ -267,7 +256,7 @@
 		typeaheadString += key;
 
 		// Find matching item
-		const matchingIndex = focusableItems().findIndex((item) =>
+		const matchingIndex = focusableItems.findIndex((item) =>
 			item.label.toLowerCase().startsWith(typeaheadString)
 		);
 
@@ -296,10 +285,9 @@
 
 	// Click outside handler
 	$effect(() => {
-		if (isOpen) {
-			document.addEventListener('click', handleClickOutside);
-			return () => document.removeEventListener('click', handleClickOutside);
-		}
+		if (!isOpen) return;
+		document.addEventListener('click', handleClickOutside);
+		return () => document.removeEventListener('click', handleClickOutside);
 	});
 </script>
 
@@ -313,7 +301,7 @@
 	{#if isOpen}
 		<ul
 			bind:this={menuElement}
-			class={menuClass()}
+			class={menuClass}
 			role={orientation === 'horizontal' ? 'menubar' : 'menu'}
 			aria-orientation={orientation}
 			onkeydown={handleKeydown}
@@ -321,7 +309,7 @@
 			{...restProps}
 		>
 			{#each items as item (item.id)}
-				{@const focusableIndex = focusableItems().findIndex((fi) => fi.id === item.id)}
+				{@const focusableIndex = focusableItems.findIndex((fi) => fi.id === item.id)}
 				<li role="none" class="gr-menu__item-wrapper">
 					<div
 						role="menuitem"

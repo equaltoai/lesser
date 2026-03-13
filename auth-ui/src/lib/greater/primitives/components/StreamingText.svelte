@@ -66,8 +66,9 @@ Designed to work with externally streaming content (e.g. AI responses).
 		as: Tag = 'span',
 		class: className = '',
 		onComplete,
+		style: _style,
 		...restProps
-	}: Props = $props();
+	}: Props & { style?: string } = $props();
 
 	let displayedContent = $state('');
 	let cursorVisible = $state(true);
@@ -106,6 +107,6 @@ Designed to work with externally streaming content (e.g. AI responses).
 <svelte:element this={Tag} class="gr-streaming-text {className}" {...restProps}>
 	{displayedContent}
 	{#if streaming && showCursor}
-		<span class="gr-cursor" style:opacity={cursorVisible ? 1 : 0}>{cursorChar}</span>
+		<span class="gr-cursor" class:gr-cursor--visible={cursorVisible}>{cursorChar}</span>
 	{/if}
 </svelte:element>
