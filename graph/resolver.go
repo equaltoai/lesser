@@ -26,6 +26,7 @@ type notesService interface {
 type soulInventoryService interface {
 	ListMine(context.Context, string) ([]soulservice.Soul, error)
 	Incorporate(context.Context, string, string, string) (*soulservice.Soul, error)
+	ResolveBoundAgent(context.Context, string) (*soulservice.Soul, error)
 }
 
 // This file will not be regenerated automatically.

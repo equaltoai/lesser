@@ -13,6 +13,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -319,6 +320,74 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		ctx.Params["username"] = "agent1"
 		ctx.Params["leaseID"] = leaseID
 		requireStatus(t, http.StatusOK)(h.HandleExchangeAgentAccessLeaseTokenLift(ctx))
+	})
+
+	t.Run("bound_soul_agent_enrollment_does_not_require_wallet_auth_credentials", func(t *testing.T) {
+		state := newState()
+		delete(state.walletCredentialsByUser, "owner")
+		delete(state.walletCredentialsByUser, "agent1")
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		h.soulsService = &stubSoulHandlerService{
+			resolveBoundOut: &soulservice.Soul{
+				AgentID:               "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				Domain:                "example.com",
+				LocalID:               "alpha",
+				Wallet:                agentAddr,
+				PrincipalAddress:      ownerAddr,
+				Status:                "active",
+				Bound:                 true,
+				BoundAgentUsername:    "agent1",
+				BoundPrincipalAddress: ownerAddr,
+			},
+		}
+
+		headers := map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeWrite, auth.ScopeRead, "follow"})}
+		req := apimodels.AgentAccessLeaseChallengeRequest{
+			PrincipalWallet:  ownerAddr,
+			AgentWallet:      agentAddr,
+			Scopes:           []string{"read", "write", "follow"},
+			DeviceLabel:      "bound-soul-agent",
+			IdleTimeoutHours: 168,
+			AbsoluteTTLHours: 720,
+		}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases/challenge/principal", headers, nil, req)
+		require.NoError(t, err)
+		ctx.Params["username"] = "agent1"
+		resp := requireStatus(t, http.StatusOK)(h.HandleCreateAgentAccessLeasePrincipalChallengeLift(ctx))
+
+		var principalChallengeResp apimodels.AgentAccessLeaseChallengeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &principalChallengeResp))
+
+		req.LeaseID = principalChallengeResp.LeaseID
+		ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases/challenge/agent", headers, nil, req)
+		require.NoError(t, err)
+		ctx.Params["username"] = "agent1"
+		resp = requireStatus(t, http.StatusOK)(h.HandleCreateAgentAccessLeaseAgentChallengeLift(ctx))
+
+		var agentChallengeResp apimodels.AgentAccessLeaseChallengeResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &agentChallengeResp))
+
+		principalChallenge := state.agentAccessChallengesByID[principalChallengeResp.ID]
+		agentChallenge := state.agentAccessChallengesByID[agentChallengeResp.ID]
+		principalSig := signTypedDataRound20(t, ownerKey, buildAgentAccessLeaseTypedData(&principalChallenge))
+		agentSig := signTypedDataRound20(t, agentKey, buildAgentAccessLeaseTypedData(&agentChallenge))
+
+		ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases", headers, nil, apimodels.CreateAgentAccessLeaseRequest{
+			PrincipalChallengeID: principalChallengeResp.ID,
+			PrincipalSignature:   principalSig,
+			AgentChallengeID:     agentChallengeResp.ID,
+			AgentSignature:       agentSig,
+		})
+		require.NoError(t, err)
+		ctx.Params["username"] = "agent1"
+		resp = requireStatus(t, http.StatusOK)(h.HandleCreateAgentAccessLeaseLift(ctx))
+
+		var lease apimodels.AgentAccessLease
+		require.NoError(t, json.Unmarshal(resp.Body, &lease))
+		require.Equal(t, ownerAddr, strings.ToLower(lease.PrincipalWallet))
+		require.Equal(t, agentAddr, strings.ToLower(lease.AgentWallet))
 	})
 }
 

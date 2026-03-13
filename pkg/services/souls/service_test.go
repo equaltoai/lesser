@@ -69,6 +69,13 @@ func (f *fakeInstanceRepo) GetSoulBodyBinding(_ context.Context, agentID string)
 	return f.bindingsByAgent[strings.ToLower(strings.TrimSpace(agentID))], nil
 }
 
+func (f *fakeInstanceRepo) GetSoulBodyBindingByUsername(_ context.Context, username string) (*storageModels.InstanceSoulBodyBinding, error) {
+	if f == nil {
+		return nil, nil
+	}
+	return f.bindingsByUser[strings.TrimSpace(username)], nil
+}
+
 func (f *fakeInstanceRepo) BindSoulBody(_ context.Context, agentID string, username string, principalAddress string) (*storageModels.InstanceSoulBodyBinding, error) {
 	if f.bindErr != nil {
 		return nil, f.bindErr
@@ -1196,6 +1203,72 @@ func TestService_Incorporate_FetchIdentityError(t *testing.T) {
 	require.ErrorIs(t, err, ErrSoulNotAvailable)
 }
 
+func TestService_ResolveBoundAgent_ReturnsCanonicalBoundSoul(t *testing.T) {
+	t.Parallel()
+
+	const (
+		agentAlpha      = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		agentWallet     = "0x1111111111111111111111111111111111111111"
+		principalWallet = "0x2222222222222222222222222222222222222222"
+	)
+
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/soul/agents/"+agentAlpha, r.URL.Path)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"version": "1",
+			"agent": map[string]any{
+				"agent_id":          agentAlpha,
+				"domain":            "example.com",
+				"local_id":          "alpha",
+				"wallet":            agentWallet,
+				"principal_address": principalWallet,
+				"status":            "active",
+				"lifecycle_status":  "active",
+			},
+		}))
+	}))
+	defer host.Close()
+
+	service := NewService(
+		nil,
+		&fakeInstanceRepo{
+			trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: host.URL},
+			bindingsByUser: map[string]*storageModels.InstanceSoulBodyBinding{
+				"agent-alpha": {
+					AgentID:          agentAlpha,
+					Username:         "agent-alpha",
+					PrincipalAddress: principalWallet,
+				},
+			},
+		},
+		&config.Config{Domain: "example.com"},
+		zap.NewNop(),
+	).WithHTTPClient(host.Client())
+
+	soul, err := service.ResolveBoundAgent(context.Background(), "agent-alpha")
+	require.NoError(t, err)
+	require.NotNil(t, soul)
+	require.True(t, soul.Bound)
+	require.Equal(t, "agent-alpha", soul.BoundAgentUsername)
+	require.Equal(t, principalWallet, soul.BoundPrincipalAddress)
+	require.Equal(t, agentWallet, soul.Wallet)
+}
+
+func TestService_ResolveBoundAgent_ReturnsNilWhenUnbound(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(
+		nil,
+		&fakeInstanceRepo{trust: &storageModels.EffectiveTrustConfig{TrustBaseURL: "https://trust.example"}},
+		&config.Config{Domain: "example.com"},
+		zap.NewNop(),
+	)
+
+	soul, err := service.ResolveBoundAgent(context.Background(), "agent-alpha")
+	require.NoError(t, err)
+	require.Nil(t, soul)
+}
+
 type erroringInstanceRepo struct {
 	instanceRepository
 	getBindingErr error
@@ -1206,4 +1279,11 @@ func (e *erroringInstanceRepo) GetSoulBodyBinding(ctx context.Context, agentID s
 		return nil, e.getBindingErr
 	}
 	return e.instanceRepository.GetSoulBodyBinding(ctx, agentID)
+}
+
+func (e *erroringInstanceRepo) GetSoulBodyBindingByUsername(ctx context.Context, username string) (*storageModels.InstanceSoulBodyBinding, error) {
+	if e.getBindingErr != nil {
+		return nil, e.getBindingErr
+	}
+	return e.instanceRepository.GetSoulBodyBindingByUsername(ctx, username)
 }

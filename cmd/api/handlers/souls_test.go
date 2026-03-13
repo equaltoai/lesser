@@ -19,6 +19,8 @@ type stubSoulHandlerService struct {
 	listMineErr     error
 	incorporateOut  *soulservice.Soul
 	incorporateErr  error
+	resolveBoundOut *soulservice.Soul
+	resolveBoundErr error
 	lastUsername    string
 	lastSoulAgentID string
 	lastTargetAgent string
@@ -34,6 +36,11 @@ func (s *stubSoulHandlerService) Incorporate(_ context.Context, username string,
 	s.lastTargetAgent = targetAgentUsername
 	s.lastSoulAgentID = soulAgentID
 	return s.incorporateOut, s.incorporateErr
+}
+
+func (s *stubSoulHandlerService) ResolveBoundAgent(_ context.Context, agentUsername string) (*soulservice.Soul, error) {
+	s.lastTargetAgent = agentUsername
+	return s.resolveBoundOut, s.resolveBoundErr
 }
 
 func TestHandleGetMySoulsLift_ListsOwnedSoulsWithBindingState(t *testing.T) {

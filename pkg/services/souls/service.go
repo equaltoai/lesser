@@ -189,6 +189,43 @@ func (s *Service) Incorporate(ctx context.Context, principalUsername string, tar
 	return &soul, nil
 }
 
+// ResolveBoundAgent returns the canonical bound soul identity for a local agent username.
+// It returns (nil, nil) when the agent is not soul-bound.
+func (s *Service) ResolveBoundAgent(ctx context.Context, agentUsername string) (*Soul, error) {
+	if s == nil || s.instanceRepo == nil {
+		return nil, fmt.Errorf("soul service misconfigured")
+	}
+
+	agentUsername = strings.TrimSpace(agentUsername)
+	if agentUsername == "" {
+		return nil, ErrTargetAgentRequired
+	}
+
+	binding, err := s.instanceRepo.GetSoulBodyBindingByUsername(ctx, agentUsername)
+	if err != nil {
+		return nil, err
+	}
+	if binding == nil {
+		return nil, nil
+	}
+
+	trustBaseURL, instanceDomain, err := s.trustInputs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	identity, err := s.fetchSoulIdentity(ctx, trustBaseURL, binding.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	if !domainMatches(identity.Domain, instanceDomain) || !identityIsActive(identity) {
+		return nil, ErrSoulNotAvailable
+	}
+
+	soul := soulFromIdentity(identity, binding)
+	return &soul, nil
+}
+
 func (s *Service) discoveryInputs(ctx context.Context, username string) (string, string, map[string]struct{}, error) {
 	if s == nil || s.accountRepo == nil || s.instanceRepo == nil || s.cfg == nil {
 		return "", "", nil, fmt.Errorf("soul service misconfigured")
@@ -198,18 +235,9 @@ func (s *Service) discoveryInputs(ctx context.Context, username string) (string,
 		return "", "", nil, fmt.Errorf("username is required")
 	}
 
-	effectiveTrust, err := s.instanceRepo.EffectiveTrustConfig(ctx)
+	trustBaseURL, instanceDomain, err := s.trustInputs(ctx)
 	if err != nil {
 		return "", "", nil, err
-	}
-	trustBaseURL := strings.TrimRight(strings.TrimSpace(effectiveTrust.TrustBaseURL), "/")
-	if trustBaseURL == "" {
-		return "", "", nil, ErrTrustNotConfigured
-	}
-
-	instanceDomain := strings.ToLower(strings.TrimSpace(s.cfg.Domain))
-	if instanceDomain == "" {
-		return "", "", nil, fmt.Errorf("instance domain is required")
 	}
 
 	wallets, err := s.accountRepo.GetUserWalletCredentials(ctx, username)
@@ -218,6 +246,28 @@ func (s *Service) discoveryInputs(ctx context.Context, username string) (string,
 	}
 
 	return trustBaseURL, instanceDomain, canonicalOwnerWallets(wallets), nil
+}
+
+func (s *Service) trustInputs(ctx context.Context) (string, string, error) {
+	if s == nil || s.instanceRepo == nil || s.cfg == nil {
+		return "", "", fmt.Errorf("soul service misconfigured")
+	}
+
+	effectiveTrust, err := s.instanceRepo.EffectiveTrustConfig(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	trustBaseURL := strings.TrimRight(strings.TrimSpace(effectiveTrust.TrustBaseURL), "/")
+	if trustBaseURL == "" {
+		return "", "", ErrTrustNotConfigured
+	}
+
+	instanceDomain := strings.ToLower(strings.TrimSpace(s.cfg.Domain))
+	if instanceDomain == "" {
+		return "", "", fmt.Errorf("instance domain is required")
+	}
+
+	return trustBaseURL, instanceDomain, nil
 }
 
 func (s *Service) resolveTargetAgent(ctx context.Context, principalUsername string, targetAgentUsername string) (*storage.User, error) {
@@ -528,5 +578,6 @@ type accountRepository interface {
 type instanceRepository interface {
 	EffectiveTrustConfig(ctx context.Context) (*storageModels.EffectiveTrustConfig, error)
 	GetSoulBodyBinding(ctx context.Context, agentID string) (*storageModels.InstanceSoulBodyBinding, error)
+	GetSoulBodyBindingByUsername(ctx context.Context, username string) (*storageModels.InstanceSoulBodyBinding, error)
 	BindSoulBody(ctx context.Context, agentID string, username string, principalAddress string) (*storageModels.InstanceSoulBodyBinding, error)
 }

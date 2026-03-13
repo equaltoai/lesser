@@ -14,8 +14,9 @@ import (
 )
 
 type stubSoulService struct {
-	listMineFunc    func(context.Context, string) ([]soulservice.Soul, error)
-	incorporateFunc func(context.Context, string, string, string) (*soulservice.Soul, error)
+	listMineFunc     func(context.Context, string) ([]soulservice.Soul, error)
+	incorporateFunc  func(context.Context, string, string, string) (*soulservice.Soul, error)
+	resolveBoundFunc func(context.Context, string) (*soulservice.Soul, error)
 }
 
 func (s *stubSoulService) ListMine(ctx context.Context, username string) ([]soulservice.Soul, error) {
@@ -30,6 +31,13 @@ func (s *stubSoulService) Incorporate(ctx context.Context, username string, targ
 		return nil, nil
 	}
 	return s.incorporateFunc(ctx, username, targetAgentUsername, agentID)
+}
+
+func (s *stubSoulService) ResolveBoundAgent(ctx context.Context, agentUsername string) (*soulservice.Soul, error) {
+	if s.resolveBoundFunc == nil {
+		return nil, nil
+	}
+	return s.resolveBoundFunc(ctx, agentUsername)
 }
 
 func soulAuthContext(username string, scopes ...string) context.Context {
@@ -119,6 +127,35 @@ func TestRound12SoulsGraphQLHelpers_ConvertInventoryItem(t *testing.T) {
 	require.True(t, unbound.AvailableForIncorporation)
 	require.Equal(t, "UNBOUND", unbound.BindingState.String())
 	require.Equal(t, []string{"chat"}, unbound.Agent.Capabilities)
+}
+
+func TestRound12AgentLeaseWalletValidation_UsesBoundSoulIdentity(t *testing.T) {
+	resolver := &Resolver{
+		Logger: zap.NewNop(),
+		soulsClient: &stubSoulService{
+			resolveBoundFunc: func(_ context.Context, agentUsername string) (*soulservice.Soul, error) {
+				require.Equal(t, "agent-alpha", agentUsername)
+				return &soulservice.Soul{
+					Wallet:                "0x1111111111111111111111111111111111111111",
+					PrincipalAddress:      "0x2222222222222222222222222222222222222222",
+					Bound:                 true,
+					BoundAgentUsername:    "agent-alpha",
+					BoundPrincipalAddress: "0x2222222222222222222222222222222222222222",
+				}, nil
+			},
+		},
+	}
+
+	usedBoundSoul, principalOK, agentOK, err := resolver.validateGraphBoundAgentAccessLeaseWallets(
+		context.Background(),
+		"agent-alpha",
+		"0x2222222222222222222222222222222222222222",
+		"0x1111111111111111111111111111111111111111",
+	)
+	require.NoError(t, err)
+	require.True(t, usedBoundSoul)
+	require.True(t, principalOK)
+	require.True(t, agentOK)
 }
 
 func TestRound12SoulsQuery_MySouls(t *testing.T) {
