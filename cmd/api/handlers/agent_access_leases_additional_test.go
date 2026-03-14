@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/config"
+	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
@@ -191,6 +192,74 @@ func TestAgentAccessLeaseAdditionalHelpers_StateAndDomainBranches(t *testing.T) 
 	ok, err := nilHandler.userHasWallet(nil, "owner", "0x1111111111111111111111111111111111111111")
 	require.False(t, ok)
 	require.ErrorContains(t, err, "account repository unavailable")
+}
+
+func TestAgentAccessLeaseAdditionalHelpers_BoundSoulWalletValidation(t *testing.T) {
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/agents/agent1/access-leases", nil, nil, nil)
+	require.NoError(t, err)
+
+	h := &Handler{
+		cfg:    round10TestConfig(),
+		logger: round10TestLogger(t),
+		soulsService: &stubSoulHandlerService{
+			resolveBoundOut: &soulservice.Soul{
+				Wallet:                "0x2222222222222222222222222222222222222222",
+				PrincipalAddress:      "0x1111111111111111111111111111111111111111",
+				Bound:                 true,
+				BoundAgentUsername:    "agent1",
+				BoundPrincipalAddress: "0x1111111111111111111111111111111111111111",
+			},
+		},
+	}
+
+	usedBoundSoul, principalOK, agentOK, err := h.validateBoundAgentAccessLeaseWallets(
+		ctx,
+		"agent1",
+		"0x1111111111111111111111111111111111111111",
+		"0x2222222222222222222222222222222222222222",
+	)
+	require.NoError(t, err)
+	require.True(t, usedBoundSoul)
+	require.True(t, principalOK)
+	require.True(t, agentOK)
+
+	h.soulsService = &stubSoulHandlerService{}
+	usedBoundSoul, principalOK, agentOK, err = h.validateBoundAgentAccessLeaseWallets(
+		ctx,
+		"agent1",
+		"0x1111111111111111111111111111111111111111",
+		"0x2222222222222222222222222222222222222222",
+	)
+	require.NoError(t, err)
+	require.False(t, usedBoundSoul)
+	require.False(t, principalOK)
+	require.False(t, agentOK)
+
+	h.soulsService = &stubSoulHandlerService{resolveBoundErr: errors.New("boom")}
+	usedBoundSoul, principalOK, agentOK, err = h.validateBoundAgentAccessLeaseWallets(
+		ctx,
+		"agent1",
+		"0x1111111111111111111111111111111111111111",
+		"0x2222222222222222222222222222222222222222",
+	)
+	require.ErrorContains(t, err, "boom")
+	require.False(t, usedBoundSoul)
+	require.False(t, principalOK)
+	require.False(t, agentOK)
+
+	require.Equal(t,
+		"0x3333333333333333333333333333333333333333",
+		boundSoulLeasePrincipalWallet(&soulservice.Soul{
+			PrincipalAddress: "0x3333333333333333333333333333333333333333",
+		}),
+	)
+	require.Equal(t,
+		"0x4444444444444444444444444444444444444444",
+		boundSoulLeasePrincipalWallet(&soulservice.Soul{
+			Wallet: "0x4444444444444444444444444444444444444444",
+		}),
+	)
+	require.Equal(t, "", boundSoulLeasePrincipalWallet(nil))
 }
 
 func TestAgentAccessLeaseAdditionalHelpers_HandlerErrorBranches(t *testing.T) {
