@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 )
@@ -29,6 +30,14 @@ const (
 	agentKeyActionAuth      = "auth"
 	agentKeyActionRotateKey = "rotate_key"
 )
+
+func (h *Handler) agentKeyChallengeRepo() *storageRepos.AgentKeyChallengeRepository {
+	if h == nil || h.repos == nil {
+		return nil
+	}
+
+	return storageRepos.NewAgentKeyChallengeRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
+}
 
 // HandleAgentRegisterChallengeLift issues a one-time challenge for self-sovereign agent registration.
 func (h *Handler) HandleAgentRegisterChallengeLift(ctx *apptheory.Context) (*apptheory.Response, error) {
@@ -590,7 +599,8 @@ func (h *Handler) HandleAgentRotateKeyLift(ctx *apptheory.Context) (*apptheory.R
 }
 
 func (h *Handler) createAgentKeyChallenge(ctx *apptheory.Context, username string, action string, ttl time.Duration) (*storageModels.AgentKeyChallenge, error) {
-	if h == nil || h.repos == nil || h.repos.GetDB() == nil {
+	repo := h.agentKeyChallengeRepo()
+	if repo == nil {
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
@@ -623,7 +633,7 @@ func (h *Handler) createAgentKeyChallenge(ctx *apptheory.Context, username strin
 		Used:      false,
 	}
 
-	if err := h.repos.GetDB().Model(model).WithContext(ctx.Context()).IfNotExists().Create(); err != nil {
+	if err := repo.Create(ctx.Context(), model); err != nil {
 		return nil, err
 	}
 
@@ -631,7 +641,8 @@ func (h *Handler) createAgentKeyChallenge(ctx *apptheory.Context, username strin
 }
 
 func (h *Handler) loadAndValidateAgentKeyChallenge(ctx *apptheory.Context, challengeID string, username string, action string) (*storageModels.AgentKeyChallenge, *apptheory.Response, error) {
-	if h == nil || h.repos == nil || h.repos.GetDB() == nil {
+	repo := h.agentKeyChallengeRepo()
+	if repo == nil {
 		resp, respErr := apptheory.JSON(http.StatusServiceUnavailable, map[string]any{
 			"error":             "service_unavailable",
 			"error_description": "storage is not initialized",
@@ -647,13 +658,7 @@ func (h *Handler) loadAndValidateAgentKeyChallenge(ctx *apptheory.Context, chall
 		return nil, resp, respErr
 	}
 
-	pk := fmt.Sprintf("AGENT_KEY_CHALLENGE#%s", challengeID)
-	challenge := &storageModels.AgentKeyChallenge{}
-	err := h.repos.GetDB().WithContext(ctx.Context()).
-		Model(&storageModels.AgentKeyChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "CHALLENGE").
-		First(challenge)
+	challenge, err := repo.Get(ctx.Context(), challengeID)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			resp, respErr := apptheory.JSON(http.StatusUnauthorized, map[string]any{
@@ -695,7 +700,8 @@ func (h *Handler) loadAndValidateAgentKeyChallenge(ctx *apptheory.Context, chall
 }
 
 func (h *Handler) markAgentKeyChallengeUsed(ctx *apptheory.Context, challengeID string) error {
-	if h == nil || h.repos == nil || h.repos.GetDB() == nil {
+	repo := h.agentKeyChallengeRepo()
+	if repo == nil {
 		return fmt.Errorf("storage not initialized")
 	}
 
@@ -704,15 +710,7 @@ func (h *Handler) markAgentKeyChallengeUsed(ctx *apptheory.Context, challengeID 
 		return fmt.Errorf("challenge id is empty")
 	}
 
-	now := time.Now().UTC()
-	pk := fmt.Sprintf("AGENT_KEY_CHALLENGE#%s", challengeID)
-	existing := &storageModels.AgentKeyChallenge{PK: pk, SK: "CHALLENGE"}
-
-	return h.repos.GetDB().Model(existing).WithContext(ctx.Context()).UpdateBuilder().
-		Set("Used", true).
-		Condition("Used", "=", false).
-		Condition("TTL", ">", now.Unix()).
-		Execute()
+	return repo.MarkUsed(ctx.Context(), challengeID, time.Now().UTC())
 }
 
 func buildAgentKeyChallengeMessage(id string, action string, username string, nonce string, issuedAt time.Time, expiresAt time.Time) string {

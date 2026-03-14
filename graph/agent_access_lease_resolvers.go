@@ -20,6 +20,7 @@ import (
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
@@ -57,6 +58,14 @@ type graphAgentAccessLeaseOptions struct {
 	DeviceLabel       string
 	IdleTimeoutHours  int
 	AbsoluteTTLHours  int
+}
+
+func (r *Resolver) agentAccessLeaseRepo() *storageRepos.AgentAccessLeaseRepository {
+	if r == nil || r.Storage == nil {
+		return nil
+	}
+
+	return storageRepos.NewAgentAccessLeaseRepository(r.Storage.GetDB(), r.Storage.GetTableName(), r.Logger)
 }
 
 // AgentAccessLeases is the resolver for the agentAccessLeases field.
@@ -174,7 +183,11 @@ func (r *mutationResolver) CreateAgentAccessLease(ctx context.Context, username 
 		}
 		return nil, apperrors.InternalWithCause(err, "failed to mark agent challenge used")
 	}
-	if err := r.Storage.GetDB().Model(lease).WithContext(ctx).IfNotExists().Create(); err != nil {
+	repo := r.agentAccessLeaseRepo()
+	if repo == nil {
+		return nil, ErrStorageUnavailable
+	}
+	if err := repo.CreateLease(ctx, lease); err != nil {
 		if dynamormErrors.IsConditionFailed(err) {
 			return nil, apperrors.NewAppError(apperrors.CodeConflict, apperrors.CategoryBusiness, "lease already exists")
 		}
@@ -652,25 +665,20 @@ func graphBoundSoulLeasePrincipalWallet(soul *soulservice.Soul) string {
 }
 
 func (r *Resolver) listGraphAgentAccessLeases(ctx context.Context, username string) ([]storageModels.AgentAccessLease, error) {
-	var leases []storageModels.AgentAccessLease
-	err := r.Storage.GetDB().WithContext(ctx).
-		Model(&storageModels.AgentAccessLease{}).
-		Where("PK", "=", fmt.Sprintf("AGENT_ACCESS_LEASE#%s", strings.TrimSpace(username))).
-		Where("SK", "BEGINS_WITH", "LEASE#").
-		All(&leases)
-	return leases, err
+	repo := r.agentAccessLeaseRepo()
+	if repo == nil {
+		return nil, ErrStorageUnavailable
+	}
+
+	return repo.ListLeases(ctx, username)
 }
 
 func (r *Resolver) loadGraphAgentAccessLease(ctx context.Context, username, leaseID string) (*storageModels.AgentAccessLease, error) {
-	if r == nil || r.Storage == nil || r.Storage.GetDB() == nil {
+	repo := r.agentAccessLeaseRepo()
+	if repo == nil {
 		return nil, ErrStorageUnavailable
 	}
-	lease := &storageModels.AgentAccessLease{}
-	err := r.Storage.GetDB().WithContext(ctx).
-		Model(&storageModels.AgentAccessLease{}).
-		Where("PK", "=", fmt.Sprintf("AGENT_ACCESS_LEASE#%s", strings.TrimSpace(username))).
-		Where("SK", "=", fmt.Sprintf("LEASE#%s", strings.TrimSpace(leaseID))).
-		First(lease)
+	lease, err := repo.GetLease(ctx, username, leaseID)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent access lease not found")
@@ -681,7 +689,8 @@ func (r *Resolver) loadGraphAgentAccessLease(ctx context.Context, username, leas
 }
 
 func (r *Resolver) createGraphAgentAccessLeaseChallengeRecord(ctx context.Context, opts graphAgentAccessLeaseOptions, action string) (*storageModels.AgentAccessLeaseChallenge, error) {
-	if r == nil || r.Storage == nil || r.Storage.GetDB() == nil {
+	repo := r.agentAccessLeaseRepo()
+	if repo == nil {
 		return nil, ErrStorageUnavailable
 	}
 	now := time.Now().UTC()
@@ -721,22 +730,18 @@ func (r *Resolver) createGraphAgentAccessLeaseChallengeRecord(ctx context.Contex
 		ExpiresAt:         expiresAt,
 		Used:              false,
 	}
-	if err := r.Storage.GetDB().Model(model).WithContext(ctx).IfNotExists().Create(); err != nil {
+	if err := repo.CreateChallenge(ctx, model); err != nil {
 		return nil, err
 	}
 	return model, nil
 }
 
 func (r *Resolver) loadGraphAgentAccessLeaseChallenge(ctx context.Context, challengeID string) (*storageModels.AgentAccessLeaseChallenge, error) {
-	if r == nil || r.Storage == nil || r.Storage.GetDB() == nil {
+	repo := r.agentAccessLeaseRepo()
+	if repo == nil {
 		return nil, ErrStorageUnavailable
 	}
-	challenge := &storageModels.AgentAccessLeaseChallenge{}
-	err := r.Storage.GetDB().WithContext(ctx).
-		Model(&storageModels.AgentAccessLeaseChallenge{}).
-		Where("PK", "=", fmt.Sprintf("AGENT_ACCESS_CHALLENGE#%s", strings.TrimSpace(challengeID))).
-		Where("SK", "=", "CHALLENGE").
-		First(challenge)
+	challenge, err := repo.GetChallenge(ctx, challengeID)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			return nil, apperrors.Unauthorized("challenge not found")
@@ -754,16 +759,11 @@ func (r *Resolver) loadGraphAgentAccessLeaseChallenge(ctx context.Context, chall
 }
 
 func (r *Resolver) markGraphAgentAccessLeaseChallengeUsed(ctx context.Context, challengeID string) error {
-	if r == nil || r.Storage == nil || r.Storage.GetDB() == nil {
+	repo := r.agentAccessLeaseRepo()
+	if repo == nil {
 		return ErrStorageUnavailable
 	}
-	now := time.Now().UTC()
-	existing := &storageModels.AgentAccessLeaseChallenge{PK: fmt.Sprintf("AGENT_ACCESS_CHALLENGE#%s", strings.TrimSpace(challengeID)), SK: "CHALLENGE"}
-	return r.Storage.GetDB().Model(existing).WithContext(ctx).UpdateBuilder().
-		Set("Used", true).
-		Condition("Used", "=", false).
-		Condition("TTL", ">", now.Unix()).
-		Execute()
+	return repo.MarkChallengeUsed(ctx, challengeID, time.Now().UTC())
 }
 
 func normalizeGraphAgentAccessLeaseOptions(

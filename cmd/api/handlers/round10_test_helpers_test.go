@@ -308,7 +308,6 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			if m == nil {
 				return
 			}
-			_ = m.BeforeCreate()
 			if state.agentAccessLeasesByKey == nil {
 				state.agentAccessLeasesByKey = map[string]storagemodels.AgentAccessLease{}
 			}
@@ -317,11 +316,18 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			if m == nil {
 				return
 			}
-			_ = m.BeforeCreate()
 			if state.agentAccessChallengesByID == nil {
 				state.agentAccessChallengesByID = map[string]storagemodels.AgentAccessLeaseChallenge{}
 			}
 			state.agentAccessChallengesByID[m.ID] = *m
+		case *storagemodels.AgentKeyChallenge:
+			if m == nil {
+				return
+			}
+			if state.agentKeyChallengesByID == nil {
+				state.agentKeyChallengesByID = map[string]storagemodels.AgentKeyChallenge{}
+			}
+			state.agentKeyChallengesByID[m.ID] = *m
 		}
 	}).Maybe()
 

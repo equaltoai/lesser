@@ -46,6 +46,25 @@ func (c *AgentKeyChallenge) BeforeCreate() error {
 		c.IssuedAt = now
 	}
 
+	return c.UpdateKeys()
+}
+
+// GetPK returns the partition key.
+func (c *AgentKeyChallenge) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key.
+func (c *AgentKeyChallenge) GetSK() string {
+	return c.SK
+}
+
+// UpdateKeys derives keys and TTL.
+func (c *AgentKeyChallenge) UpdateKeys() error {
+	if c == nil {
+		return fmt.Errorf("nil model")
+	}
+
 	c.ID = strings.TrimSpace(c.ID)
 	c.Username = strings.TrimSpace(c.Username)
 	c.Action = strings.TrimSpace(c.Action)

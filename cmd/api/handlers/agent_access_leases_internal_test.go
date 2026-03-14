@@ -161,6 +161,9 @@ func TestAgentAccessLeasesRound20_InternalHelpers(t *testing.T) {
 	}, agentAccessLeaseActionAgent)
 	require.NoError(t, err)
 	require.Equal(t, "agent1", createdChallenge.Username)
+	require.Equal(t, "AGENT_ACCESS_CHALLENGE#"+createdChallenge.ID, createdChallenge.PK)
+	require.Equal(t, "CHALLENGE", createdChallenge.SK)
+	require.Equal(t, createdChallenge.ExpiresAt.Unix(), createdChallenge.TTL)
 
 	badCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/agents/agent1/access-leases", map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "intruder", []string{"write"})}, nil, nil)
 	require.NoError(t, err)
