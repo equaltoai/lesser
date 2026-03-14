@@ -6,8 +6,13 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -30,6 +35,19 @@ func (reposWithAccount) Activity() interfaces.ActivityRepository         { retur
 func (reposWithAccount) Notification() interfaces.NotificationRepository { return nil }
 func (reposWithAccount) Recovery() *repositories.RecoveryRepository      { return nil }
 func (reposWithAccount) Audit() *repositories.AuditRepository            { return nil }
+
+type leaseReposStub struct {
+	db dynamormCore.DB
+}
+
+func (leaseReposStub) Account() *repositories.AccountRepository        { return nil }
+func (leaseReposStub) Actor() interfaces.ActorRepository               { return nil }
+func (leaseReposStub) Activity() interfaces.ActivityRepository         { return nil }
+func (leaseReposStub) Notification() interfaces.NotificationRepository { return nil }
+func (leaseReposStub) Recovery() *repositories.RecoveryRepository      { return nil }
+func (leaseReposStub) Audit() *repositories.AuditRepository            { return nil }
+func (r leaseReposStub) GetDB() dynamormCore.DB                        { return r.db }
+func (leaseReposStub) GetTableName() string                            { return "test-table" }
 
 func TestOAuthService_GenerateTokensWithAccessTokenTTLAndClientContext(t *testing.T) {
 	t.Parallel()
@@ -60,6 +78,110 @@ func TestOAuthService_GenerateTokensWithAccessTokenTTLAndClientContext(t *testin
 	require.Equal(t, "sid-1", claims.SessionID)
 	require.NotNil(t, claims.ExpiresAt)
 	require.Greater(t, time.Until(claims.ExpiresAt.Time), 30*time.Minute)
+}
+
+func TestOAuthService_ValidateAccessToken_AllowsLongLivedLeaseTokens(t *testing.T) {
+	t.Parallel()
+
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+	now := time.Now().UTC()
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.AgentAccessLease")).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", "LEASE#lease-1").Return(mockQuery).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.AgentAccessLease")).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.AgentAccessLease)
+			*dest = models.AgentAccessLease{
+				ID:                "lease-1",
+				Username:          "agent1",
+				Status:            "active",
+				IdleExpiresAt:     now.Add(7 * 24 * time.Hour),
+				AbsoluteExpiresAt: now.Add(30 * 24 * time.Hour),
+			}
+		}).
+		Return(nil).Once()
+
+	svc := &OAuthService{
+		jwtSecret: []byte("test-secret"),
+		repos:     leaseReposStub{db: mockDB},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "agent1",
+			IssuedAt:  jwt.NewNumericDate(now.Add(-48 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(48 * time.Hour)),
+			NotBefore: jwt.NewNumericDate(now.Add(-48 * time.Hour)),
+		},
+		Username:    "agent1",
+		ClientID:    agentLeaseOAuthClientID,
+		ClientClass: ClientClassAgent,
+		SessionID:   "lease-1",
+		Scopes:      []string{ScopeRead},
+	})
+	tokenString, err := token.SignedString(svc.jwtSecret)
+	require.NoError(t, err)
+
+	claims, err := svc.ValidateAccessToken(tokenString)
+	require.NoError(t, err)
+	require.Equal(t, "agent1", claims.Username)
+	require.Equal(t, "lease-1", claims.SessionID)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestOAuthService_ValidateAccessToken_RejectsRevokedLeaseTokens(t *testing.T) {
+	t.Parallel()
+
+	mockDB := new(dynamormmocks.MockDB)
+	mockQuery := new(dynamormmocks.MockQuery)
+	now := time.Now().UTC()
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.AgentAccessLease")).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", "LEASE#lease-1").Return(mockQuery).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.AgentAccessLease")).
+		Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.AgentAccessLease)
+			*dest = models.AgentAccessLease{
+				ID:                "lease-1",
+				Username:          "agent1",
+				Status:            "revoked",
+				IdleExpiresAt:     now.Add(7 * 24 * time.Hour),
+				AbsoluteExpiresAt: now.Add(30 * 24 * time.Hour),
+			}
+		}).
+		Return(nil).Once()
+
+	svc := &OAuthService{
+		jwtSecret: []byte("test-secret"),
+		repos:     leaseReposStub{db: mockDB},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "agent1",
+			IssuedAt:  jwt.NewNumericDate(now.Add(-48 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(48 * time.Hour)),
+			NotBefore: jwt.NewNumericDate(now.Add(-48 * time.Hour)),
+		},
+		Username:    "agent1",
+		ClientID:    agentLeaseOAuthClientID,
+		ClientClass: ClientClassAgent,
+		SessionID:   "lease-1",
+		Scopes:      []string{ScopeRead},
+	})
+	tokenString, err := token.SignedString(svc.jwtSecret)
+	require.NoError(t, err)
+
+	_, err = svc.ValidateAccessToken(tokenString)
+	require.ErrorIs(t, err, ErrInvalidToken)
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
 }
 
 func TestResolveAgentClaims_Branches(t *testing.T) {

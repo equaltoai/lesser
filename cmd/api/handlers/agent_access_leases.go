@@ -596,17 +596,14 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 	if newIdleExpiresAt.After(lease.AbsoluteExpiresAt) {
 		newIdleExpiresAt = lease.AbsoluteExpiresAt
 	}
-	accessTTL := auth.AccessTokenDuration
-	remaining := time.Until(newIdleExpiresAt)
+	remaining := newIdleExpiresAt.Sub(now)
 	if remaining <= 0 {
 		return apptheory.JSON(http.StatusUnauthorized, map[string]any{
 			"error":             "invalid_lease",
 			"error_description": "lease expired",
 		})
 	}
-	if remaining < accessTTL {
-		accessTTL = remaining
-	}
+	accessTTL := remaining
 
 	if h.cfg == nil || h.cfg.JWTSecret == "" {
 		return common.RespondInternalServerError(ctx)
@@ -619,8 +616,8 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 		"",
 		lease.Scopes,
 		accessTTL,
-		"",
-		"",
+		auth.ClientClassAgent,
+		lease.ID,
 	)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)

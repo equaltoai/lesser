@@ -80,7 +80,7 @@ type AgentAccessLeaseListResponse struct {
 	Leases []AgentAccessLease `json:"leases"`
 }
 
-// RenewAgentAccessLeaseTokenRequest exchanges a renewal proof for a short-lived access token.
+// RenewAgentAccessLeaseTokenRequest exchanges a renewal proof for a lease-window access token.
 type RenewAgentAccessLeaseTokenRequest struct {
 	ChallengeID string `json:"challenge_id"`
 	Signature   string `json:"signature"`
@@ -97,7 +97,7 @@ type AuthorizeAgentAccessLeaseSessionKeyRequest struct {
 	Signature   string `json:"signature"`
 }
 
-// AgentAccessLeaseTokenResponse returns a short-lived access token for a lease.
+// AgentAccessLeaseTokenResponse returns a lease-window access token for a lease.
 type AgentAccessLeaseTokenResponse struct {
 	LeaseID string             `json:"lease_id"`
 	Token   OAuthTokenResponse `json:"token"`

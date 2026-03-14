@@ -26,7 +26,7 @@ Introduce a wallet-backed `AgentAccessLease` flow where:
 
 - the principal explicitly authorizes local access for an agent
 - the agent explicitly accepts the lease with its own wallet
-- the local runtime renews short-lived access tokens by signing server-issued renewal challenges
+- the local runtime renews lease-window access tokens by signing server-issued renewal challenges
 - Lesser enforces revocation, idle expiry, and absolute expiry on the server side
 - no long-lived bearer refresh token is required for the steady-state local-agent flow
 
@@ -37,7 +37,7 @@ Introduce a wallet-backed `AgentAccessLease` flow where:
 - The principal wallet must already be linked to the principal account.
 - The agent wallet must already be linked to the target agent account.
 - Renewal must require proof of possession of the agent-side signer.
-- Access tokens remain short-lived.
+- Access token TTL is bounded by the active lease window.
 - Renewal may extend the idle window, but must never extend the absolute expiry.
 - The legacy `/api/v1/agents/delegate` flow remains available for short-lived/manual delegation, but it is not the
   durable local-agent path.
@@ -86,7 +86,7 @@ Acceptance criteria:
 - Lesser verifies the renewal signature against the agent wallet
 - Lesser updates `last_used_at`
 - Lesser slides `idle_expires_at` forward up to `absolute_expires_at`
-- Lesser mints a new short-lived access token without minting a durable refresh token
+- Lesser mints a new lease-window access token without minting a durable refresh token
 
 ### M4: Lease management APIs
 
@@ -297,7 +297,7 @@ Behavior:
 
 - validates the challenge and signature
 - updates lease activity timestamps
-- returns a short-lived access token
+- returns a lease-window access token
 - does not return a refresh token
 
 ## Message format
@@ -325,7 +325,7 @@ Session-key renewals use an Ed25519 signature over the server-issued renewal cha
 
 ## Token model
 
-- Lease renewal mints a short-lived agent access token with a dedicated client id, separate from the delegated refresh
+- Lease renewal mints a lease-window agent access token with a dedicated client id, separate from the delegated refresh
   client.
 - No durable refresh token is returned from the lease renewal path.
 - Token TTL is capped by the remaining lease lifetime.

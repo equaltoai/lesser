@@ -14,7 +14,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
+	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -69,6 +71,8 @@ const (
 	ClientClassWeb   = "web"
 	ClientClassCLI   = "cli"
 	ClientClassAgent = "agent"
+
+	agentLeaseOAuthClientID = "lesser-agent-wallet-lease"
 )
 
 // Claims represents the JWT claims for access tokens with enhanced security
@@ -512,6 +516,9 @@ func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessi
 	if err := s.validateEnhancedClaims(claims, expectedSessionID, expectedIP, expectedTokenVersion); err != nil {
 		return nil, err
 	}
+	if err := s.validateAgentLeaseAccessToken(claims); err != nil {
+		return nil, err
+	}
 
 	// Best-effort access token revocation check (RFC 7009).
 	// This is a read-after-parse DynamoDB lookup keyed by token JTI; if storage is unavailable,
@@ -543,9 +550,70 @@ func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID,
 	// Check if token is too old (additional security check)
 	if claims.IssuedAt != nil {
 		maxAge := 24 * time.Hour // Maximum token age regardless of expiry
-		if time.Since(claims.IssuedAt.Time) > maxAge {
+		if isAgentLeaseAccessToken(claims) {
+			maxAge = 0
+		}
+		if maxAge > 0 && time.Since(claims.IssuedAt.Time) > maxAge {
 			return ErrTokenTooOld
 		}
+	}
+
+	return nil
+}
+
+func isAgentLeaseAccessToken(claims *Claims) bool {
+	if claims == nil {
+		return false
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(claims.ClientID), agentLeaseOAuthClientID) {
+		return false
+	}
+
+	return strings.TrimSpace(claims.SessionID) != "" || strings.TrimSpace(claims.AgentSessionID) != ""
+}
+
+func (s *OAuthService) validateAgentLeaseAccessToken(claims *Claims) error {
+	if !isAgentLeaseAccessToken(claims) {
+		return nil
+	}
+
+	type leaseStorage interface {
+		GetDB() dynamormCore.DB
+		GetTableName() string
+	}
+
+	provider, ok := s.repos.(leaseStorage)
+	if !ok || provider.GetDB() == nil {
+		return nil
+	}
+
+	leaseID := strings.TrimSpace(claims.AgentSessionID)
+	if leaseID == "" {
+		leaseID = strings.TrimSpace(claims.SessionID)
+	}
+	if leaseID == "" || strings.TrimSpace(claims.Username) == "" {
+		return ErrInvalidToken
+	}
+
+	repo := storageRepos.NewAgentAccessLeaseRepository(provider.GetDB(), provider.GetTableName(), nil)
+	checkCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	lease, err := repo.GetLease(checkCtx, claims.Username, leaseID)
+	if err != nil || lease == nil {
+		return ErrInvalidToken
+	}
+
+	now := time.Now().UTC()
+	if strings.EqualFold(strings.TrimSpace(lease.Status), "revoked") {
+		return ErrInvalidToken
+	}
+	if !lease.AbsoluteExpiresAt.IsZero() && now.After(lease.AbsoluteExpiresAt) {
+		return ErrInvalidToken
+	}
+	if !lease.IdleExpiresAt.IsZero() && now.After(lease.IdleExpiresAt) {
+		return ErrInvalidToken
 	}
 
 	return nil

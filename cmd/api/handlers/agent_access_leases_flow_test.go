@@ -259,6 +259,13 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &tokenResp))
 		require.NotEmpty(t, tokenResp.Token.AccessToken)
 		require.Empty(t, tokenResp.Token.RefreshToken)
+		require.Greater(t, tokenResp.Token.ExpiresIn, 24*60*60)
+
+		oauthSvc := createOAuthService(cfg.JWTSecret, cfg, h.repos, h.logger)
+		claims, err := oauthSvc.ValidateAccessToken(tokenResp.Token.AccessToken)
+		require.NoError(t, err)
+		require.Equal(t, agentAccessLeaseClientID, claims.ClientID)
+		require.Equal(t, lease.ID, claims.SessionID)
 
 		ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases/"+lease.ID+"/revoke", headers, nil, apimodels.RevokeAgentAccessLeaseRequest{
 			Reason: "operator request",
@@ -319,7 +326,11 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["username"] = "agent1"
 		ctx.Params["leaseID"] = leaseID
-		requireStatus(t, http.StatusOK)(h.HandleExchangeAgentAccessLeaseTokenLift(ctx))
+		resp = requireStatus(t, http.StatusOK)(h.HandleExchangeAgentAccessLeaseTokenLift(ctx))
+
+		var tokenResp apimodels.AgentAccessLeaseTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &tokenResp))
+		require.Greater(t, tokenResp.Token.ExpiresIn, 24*60*60)
 	})
 
 	t.Run("bound_soul_agent_enrollment_does_not_require_wallet_auth_credentials", func(t *testing.T) {

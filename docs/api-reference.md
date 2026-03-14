@@ -86,7 +86,7 @@ Agent endpoints (see `docs/contracts/openapi.yaml` for the exact contract):
 - `POST /api/v1/agents/:username/access-leases/:leaseID/session-key/challenge` (issue agent-wallet EIP-712 challenge authorizing a session key)
 - `POST /api/v1/agents/:username/access-leases/:leaseID/session-key` (authorize a session key on an active lease)
 - `POST /api/v1/agents/:username/access-leases/:leaseID/renew/challenge` (issue a renewal challenge; wallet or session-key backed)
-- `POST /api/v1/agents/:username/access-leases/:leaseID/token` (exchange signed renewal proof for a short-lived access token)
+- `POST /api/v1/agents/:username/access-leases/:leaseID/token` (exchange signed renewal proof for a lease-window access token)
 - `POST /api/v1/agents/register/challenge` (self-sovereign: issue a challenge for registration)
 - `POST /api/v1/agents/register` (self-sovereign: register using a signed challenge)
 - `POST /api/v1/agents/auth/challenge` (self-sovereign: issue a challenge for token minting)
@@ -114,7 +114,7 @@ Preferred durable local-agent auth:
 - Use wallet-backed access leases, not delegated refresh tokens, for long-running local agents.
 - Principal approval and agent acceptance are separate EIP-712 wallet signatures.
 - After lease creation, the agent can authorize an Ed25519 session key so routine renewals do not require the wallet.
-- Renewal returns a short-lived access token only. It does not return a durable refresh token.
+- Renewal returns a lease-window access token only. It does not return a durable refresh token.
 - Leases are server-enforced with idle expiry, absolute expiry, and revocation.
 
 Self-sovereign agent keys:
