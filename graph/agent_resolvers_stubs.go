@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -636,7 +638,7 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	}
 
 	now := time.Now().UTC()
-	account, err := r.resolveDelegatedAgentAccount(ctx, claims, agentUsername, requestedScopes)
+	account, err := r.resolveOrCreateDelegatedAgentAccount(ctx, claims, input, requestedScopes, now)
 	if err != nil {
 		return nil, err
 	}
@@ -671,10 +673,32 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	}, nil
 }
 
+func (r *mutationResolver) resolveOrCreateDelegatedAgentAccount(
+	ctx context.Context,
+	claims *auth.Claims,
+	input model.DelegateToAgentInput,
+	requestedScopes []string,
+	now time.Time,
+) (*storage.Account, error) {
+	account, err := r.resolveDelegatedAgentAccount(ctx, claims, input.AgentUsername, requestedScopes)
+	if err == nil {
+		return account, nil
+	}
+	if !apperrors.HasCode(err, apperrors.CodeNotFound) {
+		return nil, err
+	}
+
+	if regErr := r.ensureAgentRegistrationEnabled(ctx); regErr != nil {
+		return nil, regErr
+	}
+
+	return r.createDelegatedAgentAccount(ctx, claims, input, requestedScopes, now)
+}
+
 func (r *mutationResolver) resolveDelegatedAgentAccount(ctx context.Context, claims *auth.Claims, agentUsername string, requestedScopes []string) (*storage.Account, error) {
 	account, err := r.Storage.Account().GetAccount(ctx, agentUsername)
 	if err != nil {
-		if common.IsNotFound(err) {
+		if apperrors.HasCode(err, apperrors.CodeNotFound) {
 			return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 		}
 		return nil, apperrors.InternalWithCause(err, "failed to load agent account")
@@ -687,6 +711,119 @@ func (r *mutationResolver) resolveDelegatedAgentAccount(ctx context.Context, cla
 	}
 	if err := validateDelegationAgainstAgentEnvelope(account.User, requestedScopes); err != nil {
 		return nil, err
+	}
+
+	return account, nil
+}
+
+func (r *mutationResolver) createDelegatedAgentAccount(
+	ctx context.Context,
+	claims *auth.Claims,
+	input model.DelegateToAgentInput,
+	requestedScopes []string,
+	now time.Time,
+) (*storage.Account, error) {
+	if r == nil || r.Storage == nil || r.Storage.Account() == nil || r.Config == nil {
+		return nil, ErrStorageUnavailable
+	}
+
+	agentUsername := strings.TrimSpace(input.AgentUsername)
+	displayName := strings.TrimSpace(input.DisplayName)
+	if displayName == "" {
+		displayName = agentUsername
+	} else if err := common.ValidateDisplayName(displayName); err != nil {
+		return nil, err
+	}
+
+	bio := strings.TrimSpace(derefString(input.Bio))
+	if bio != "" {
+		if err := common.ValidateAccountBio(bio); err != nil {
+			return nil, err
+		}
+	}
+
+	agentType := strings.TrimSpace(string(input.AgentType))
+	if agentType == "" {
+		agentType = string(model.AgentTypeCustom)
+	}
+
+	agentVersion := strings.TrimSpace(derefString(input.AgentVersion))
+	if agentVersion == "" {
+		agentVersion = strings.TrimSpace(input.Version)
+	}
+	if agentVersion == "" {
+		agentVersion = agentVersionUnknown
+	}
+
+	quarantineDays, maxPostsPerHourAllowed := r.agentRegistrationLimits(ctx)
+	capabilities := deriveAgentCapabilitiesFromScopes(requestedScopes)
+	clampMaxPostsPerHour(&capabilities, maxPostsPerHourAllowed)
+	quarantineEnd := now.AddDate(0, 0, quarantineDays)
+	ownerIdentifier := "@" + strings.TrimSpace(claims.Username)
+
+	user := &storage.User{
+		Username:          agentUsername,
+		DisplayName:       displayName,
+		Note:              bio,
+		Approved:          true,
+		Suspended:         false,
+		Silenced:          false,
+		Role:              "user",
+		Locked:            false,
+		Discoverable:      true,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		IsAgent:           true,
+		AgentType:         agentType,
+		AgentVersion:      agentVersion,
+		AgentOwner:        ownerIdentifier,
+		AgentCreatedBy:    strings.TrimSpace(claims.Username),
+		AgentCapabilities: &capabilities,
+		Metadata: map[string]any{
+			"agent_quarantine_status": "quarantined",
+			"agent_quarantine_start":  now.Format(time.RFC3339),
+			"agent_quarantine_end":    quarantineEnd.Format(time.RFC3339),
+			"agent_delegated_scopes":  append([]string(nil), requestedScopes...),
+		},
+	}
+
+	privateKey, err := federation.GenerateRSAKeyPair(2048)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to generate agent keypair")
+	}
+	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to encode agent public key")
+	}
+	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to encode agent private key")
+	}
+
+	actorID := r.Config.ActorURL(agentUsername)
+	actor := activitypub.NewActor(activitypub.ServiceType, actorID, agentUsername)
+	actor.Name = displayName
+	actor.Summary = bio
+	actor.URL = fmt.Sprintf("%s/@%s", r.Config.BaseURL(), agentUsername)
+	actor.CreatedAt = &now
+	actor.PublicKey = &activitypub.PublicKey{
+		ID:           actorID + "#main-key",
+		Owner:        actorID,
+		PublicKeyPem: string(publicKeyPEM),
+	}
+	actor = activitypubutil.BuildLocalActor(agentUsername, r.Config.BaseURL(), user, actor)
+
+	account := &storage.Account{
+		User:       user,
+		Actor:      actor,
+		PrivateKey: string(privateKeyPEM),
+	}
+
+	if err := r.Storage.Account().CreateAccount(ctx, account); err != nil {
+		if common.IsConflict(err) {
+			return r.resolveDelegatedAgentAccount(ctx, claims, agentUsername, requestedScopes)
+		}
+		return nil, apperrors.InternalWithCause(err, "failed to create agent account")
 	}
 
 	return account, nil
