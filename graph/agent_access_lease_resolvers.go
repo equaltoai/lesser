@@ -226,13 +226,8 @@ func (r *mutationResolver) RevokeAgentAccessLease(ctx context.Context, username 
 	if input != nil && input.Reason != nil {
 		reason = strings.TrimSpace(*input.Reason)
 	}
-	update := r.Storage.GetDB().Model(&storageModels.AgentAccessLease{PK: lease.PK, SK: lease.SK}).WithContext(ctx).UpdateBuilder().
-		Set("Status", graphAgentAccessLeaseStatusRevoked).
-		Set("UpdatedAt", now).
-		Set("RevokedAt", now).
-		Set("RevokedBy", claims.Username).
-		Set("RevokedReason", reason)
-	if err := update.Execute(); err != nil {
+	repo := r.agentAccessLeaseRepo()
+	if err := repo.RevokeLease(ctx, lease, claims.Username, reason, now); err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to revoke agent access lease")
 	}
 	lease.Status = graphAgentAccessLeaseStatusRevoked
@@ -324,12 +319,8 @@ func (r *mutationResolver) AuthorizeAgentAccessLeaseSessionKey(ctx context.Conte
 		}
 		return nil, apperrors.InternalWithCause(err, "failed to mark session key challenge used")
 	}
-	update := r.Storage.GetDB().Model(&storageModels.AgentAccessLease{PK: lease.PK, SK: lease.SK}).WithContext(ctx).UpdateBuilder().
-		Set("SessionPublicKey", challenge.SessionPublicKey).
-		Set("SessionKeyType", graphAgentAccessLeaseSessionKeyType).
-		Set("SessionKeyCreatedAt", now).
-		Set("UpdatedAt", now)
-	if err := update.Execute(); err != nil {
+	repo := r.agentAccessLeaseRepo()
+	if err := repo.AuthorizeSessionKey(ctx, lease, challenge.SessionPublicKey, graphAgentAccessLeaseSessionKeyType, now); err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to authorize session key")
 	}
 	lease.SessionPublicKey = challenge.SessionPublicKey
@@ -447,14 +438,8 @@ func (r *mutationResolver) ExchangeAgentAccessLeaseToken(ctx context.Context, us
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to mint lease access token")
 	}
-	update := r.Storage.GetDB().Model(&storageModels.AgentAccessLease{PK: lease.PK, SK: lease.SK}).WithContext(ctx).UpdateBuilder().
-		Set("LastUsedAt", now).
-		Set("IdleExpiresAt", newIdleExpiresAt).
-		Set("UpdatedAt", now)
-	if challenge.Action == graphAgentAccessLeaseActionRenewSession {
-		update = update.Set("SessionKeyLastUsedAt", now)
-	}
-	if err := update.Execute(); err != nil {
+	repo := r.agentAccessLeaseRepo()
+	if err := repo.RecordLeaseUse(ctx, lease, newIdleExpiresAt, now, challenge.Action == graphAgentAccessLeaseActionRenewSession); err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to update lease activity")
 	}
 	return &model.AgentAccessLeaseTokenPayload{
