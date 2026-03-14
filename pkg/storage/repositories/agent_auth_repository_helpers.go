@@ -17,6 +17,11 @@ type keyedPreparableModel interface {
 	GetSK() string
 }
 
+type keyedStoredModel interface {
+	GetPK() string
+	GetSK() string
+}
+
 func createPreparedModel[T keyedPreparableModel](
 	ctx context.Context,
 	db core.DB,
@@ -65,19 +70,44 @@ func isNilModel[T any](model T) bool {
 	}
 }
 
+func keyedUpdateBuilder[T keyedStoredModel](ctx context.Context, db core.DB, model T) (core.UpdateBuilder, error) {
+	if db == nil {
+		return nil, storage.ErrDatabaseConnectionFailed
+	}
+	if isNilModel(model) {
+		return nil, storage.ErrInvalidInput
+	}
+
+	if updater, ok := any(model).(interface{ UpdateKeys() error }); ok {
+		if strings.TrimSpace(model.GetPK()) == "" || strings.TrimSpace(model.GetSK()) == "" {
+			if err := updater.UpdateKeys(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	pk := strings.TrimSpace(model.GetPK())
+	sk := strings.TrimSpace(model.GetSK())
+	if pk == "" || sk == "" {
+		return nil, storage.ErrInvalidInput
+	}
+
+	return db.WithContext(ctx).
+		Model(model).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder(), nil
+}
+
 func markChallengeUsed(
 	ctx context.Context,
 	db core.DB,
 	logger *zap.Logger,
 	challengeID string,
 	now time.Time,
-	existing interface{},
+	existing keyedStoredModel,
 	warnMessage string,
 ) error {
-	if db == nil {
-		return storage.ErrDatabaseConnectionFailed
-	}
-
 	challengeID = strings.TrimSpace(challengeID)
 	if challengeID == "" {
 		return storage.ErrInvalidInput
@@ -86,7 +116,12 @@ func markChallengeUsed(
 		now = time.Now().UTC()
 	}
 
-	if err := db.Model(existing).WithContext(ctx).UpdateBuilder().
+	update, err := keyedUpdateBuilder(ctx, db, existing)
+	if err != nil {
+		return err
+	}
+
+	if err := update.
 		Set("Used", true).
 		Condition("Used", "=", false).
 		Condition("TTL", ">", now.Unix()).

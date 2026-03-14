@@ -110,11 +110,13 @@ func TestAgentAccessLeaseRepository_MarkChallengeUsed_UsesConditionalUpdate(t *t
 	mockQuery := new(dynamormmocks.MockQuery)
 	mockUpdate := new(dynamormmocks.MockUpdateBuilder)
 
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 	mockDB.On("Model", mock.MatchedBy(func(model any) bool {
 		m, ok := model.(*models.AgentAccessLeaseChallenge)
 		return ok && m.PK == "AGENT_ACCESS_CHALLENGE#challenge-1" && m.SK == "CHALLENGE"
 	})).Return(mockQuery).Once()
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_CHALLENGE#challenge-1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", "CHALLENGE").Return(mockQuery).Once()
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
 	mockUpdate.On("Set", "Used", true).Return(mockUpdate).Once()
 	mockUpdate.On("Condition", "Used", "=", false).Return(mockUpdate).Once()
@@ -126,6 +128,93 @@ func TestAgentAccessLeaseRepository_MarkChallengeUsed_UsesConditionalUpdate(t *t
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 	mockUpdate.AssertExpectations(t)
+}
+
+func TestAgentAccessLeaseRepository_UpdatePaths_UseKeyConditions(t *testing.T) {
+	t.Run("RevokeLease", func(t *testing.T) {
+		mockDB := new(dynamormmocks.MockDB)
+		mockQuery := new(dynamormmocks.MockQuery)
+		mockUpdate := new(dynamormmocks.MockUpdateBuilder)
+		now := time.Now().UTC()
+		lease := &models.AgentAccessLease{
+			ID:       "lease-1",
+			Username: "agent-1",
+		}
+
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+		mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+			m, ok := model.(*models.AgentAccessLease)
+			return ok && m.PK == "AGENT_ACCESS_LEASE#agent-1" && m.SK == "LEASE#lease-1"
+		})).Return(mockQuery).Once()
+		mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent-1").Return(mockQuery).Once()
+		mockQuery.On("Where", "SK", "=", "LEASE#lease-1").Return(mockQuery).Once()
+		mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "Status", "revoked").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "UpdatedAt", now).Return(mockUpdate).Once()
+		mockUpdate.On("Set", "RevokedAt", now).Return(mockUpdate).Once()
+		mockUpdate.On("Set", "RevokedBy", "owner").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "RevokedReason", "expired").Return(mockUpdate).Once()
+		mockUpdate.On("Execute").Return(nil).Once()
+
+		repo := NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop())
+		require.NoError(t, repo.RevokeLease(context.Background(), lease, "owner", "expired", now))
+		require.Equal(t, "AGENT_ACCESS_LEASE#agent-1", lease.PK)
+		require.Equal(t, "LEASE#lease-1", lease.SK)
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
+		mockUpdate.AssertExpectations(t)
+	})
+
+	t.Run("AuthorizeSessionKey", func(t *testing.T) {
+		mockDB := new(dynamormmocks.MockDB)
+		mockQuery := new(dynamormmocks.MockQuery)
+		mockUpdate := new(dynamormmocks.MockUpdateBuilder)
+		now := time.Now().UTC()
+		lease := &models.AgentAccessLease{PK: "AGENT_ACCESS_LEASE#agent-1", SK: "LEASE#lease-1", ID: "lease-1", Username: "agent-1"}
+
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+		mockDB.On("Model", lease).Return(mockQuery).Once()
+		mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent-1").Return(mockQuery).Once()
+		mockQuery.On("Where", "SK", "=", "LEASE#lease-1").Return(mockQuery).Once()
+		mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "SessionPublicKey", "pub").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "SessionKeyType", "ed25519").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "SessionKeyCreatedAt", now).Return(mockUpdate).Once()
+		mockUpdate.On("Set", "UpdatedAt", now).Return(mockUpdate).Once()
+		mockUpdate.On("Execute").Return(nil).Once()
+
+		repo := NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop())
+		require.NoError(t, repo.AuthorizeSessionKey(context.Background(), lease, "pub", "ed25519", now))
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
+		mockUpdate.AssertExpectations(t)
+	})
+
+	t.Run("RecordLeaseUse", func(t *testing.T) {
+		mockDB := new(dynamormmocks.MockDB)
+		mockQuery := new(dynamormmocks.MockQuery)
+		mockUpdate := new(dynamormmocks.MockUpdateBuilder)
+		now := time.Now().UTC()
+		idleExpiresAt := now.Add(time.Hour)
+		lease := &models.AgentAccessLease{PK: "AGENT_ACCESS_LEASE#agent-1", SK: "LEASE#lease-1", ID: "lease-1", Username: "agent-1"}
+
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+		mockDB.On("Model", lease).Return(mockQuery).Once()
+		mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent-1").Return(mockQuery).Once()
+		mockQuery.On("Where", "SK", "=", "LEASE#lease-1").Return(mockQuery).Once()
+		mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "LastUsedAt", now).Return(mockUpdate).Once()
+		mockUpdate.On("Set", "IdleExpiresAt", idleExpiresAt).Return(mockUpdate).Once()
+		mockUpdate.On("Set", "UpdatedAt", now).Return(mockUpdate).Once()
+		mockUpdate.On("Set", "SessionKeyLastUsedAt", now).Return(mockUpdate).Once()
+		mockUpdate.On("Execute").Return(nil).Once()
+
+		repo := NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop())
+		require.NoError(t, repo.RecordLeaseUse(context.Background(), lease, idleExpiresAt, now, true))
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
+		mockUpdate.AssertExpectations(t)
+	})
 }
 
 func TestAgentAccessLeaseRepository_ReadPaths(t *testing.T) {
@@ -438,8 +527,10 @@ func TestAgentAuthRepositoryHelpers(t *testing.T) {
 		mockDB := new(dynamormmocks.MockDB)
 		mockQuery := new(dynamormmocks.MockQuery)
 		mockUpdate := new(dynamormmocks.MockUpdateBuilder)
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
 		mockDB.On("Model", mock.AnythingOfType("*models.AgentKeyChallenge")).Return(mockQuery).Once()
-		mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Once()
+		mockQuery.On("Where", "PK", "=", "AGENT_KEY_CHALLENGE#challenge-1").Return(mockQuery).Once()
+		mockQuery.On("Where", "SK", "=", "CHALLENGE").Return(mockQuery).Once()
 		mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
 		mockUpdate.On("Set", "Used", true).Return(mockUpdate).Once()
 		mockUpdate.On("Condition", "Used", "=", false).Return(mockUpdate).Once()
@@ -459,6 +550,33 @@ func TestAgentAuthRepositoryHelpers(t *testing.T) {
 		mockDB.AssertExpectations(t)
 		mockQuery.AssertExpectations(t)
 		mockUpdate.AssertExpectations(t)
+	})
+
+	t.Run("keyed update builder derives missing keys", func(t *testing.T) {
+		mockDB := new(dynamormmocks.MockDB)
+		mockQuery := new(dynamormmocks.MockQuery)
+		mockUpdate := new(dynamormmocks.MockUpdateBuilder)
+		lease := &models.AgentAccessLease{
+			ID:       "lease-1",
+			Username: "agent-1",
+		}
+
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Once()
+		mockDB.On("Model", mock.MatchedBy(func(model any) bool {
+			m, ok := model.(*models.AgentAccessLease)
+			return ok && m.PK == "AGENT_ACCESS_LEASE#agent-1" && m.SK == "LEASE#lease-1"
+		})).Return(mockQuery).Once()
+		mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent-1").Return(mockQuery).Once()
+		mockQuery.On("Where", "SK", "=", "LEASE#lease-1").Return(mockQuery).Once()
+		mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
+
+		update, err := keyedUpdateBuilder(context.Background(), mockDB, lease)
+		require.NoError(t, err)
+		require.NotNil(t, update)
+		require.Equal(t, "AGENT_ACCESS_LEASE#agent-1", lease.PK)
+		require.Equal(t, "LEASE#lease-1", lease.SK)
+		mockDB.AssertExpectations(t)
+		mockQuery.AssertExpectations(t)
 	})
 }
 
@@ -486,6 +604,9 @@ func TestAgentAuthRepositories_InvalidInputAndStorage(t *testing.T) {
 	_, err = NewAgentKeyChallengeRepository(mockDB, "table", zap.NewNop()).Get(context.Background(), " ")
 	require.ErrorIs(t, err, storage.ErrInvalidInput)
 	require.ErrorIs(t, NewAgentKeyChallengeRepository(mockDB, "table", zap.NewNop()).MarkUsed(context.Background(), " ", time.Time{}), storage.ErrInvalidInput)
+	require.ErrorIs(t, NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop()).AuthorizeSessionKey(context.Background(), &models.AgentAccessLease{}, " ", "ed25519", time.Time{}), storage.ErrInvalidInput)
+	require.ErrorIs(t, NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop()).AuthorizeSessionKey(context.Background(), &models.AgentAccessLease{}, "pub", " ", time.Time{}), storage.ErrInvalidInput)
+	require.ErrorIs(t, NewAgentAccessLeaseRepository(mockDB, "table", zap.NewNop()).RecordLeaseUse(context.Background(), &models.AgentAccessLease{}, time.Time{}, time.Time{}, false), storage.ErrInvalidInput)
 }
 
 func TestAgentAuthRepositories_NilReceivers(t *testing.T) {
@@ -493,6 +614,9 @@ func TestAgentAuthRepositories_NilReceivers(t *testing.T) {
 	require.ErrorIs(t, leaseRepo.CreateChallenge(context.Background(), &models.AgentAccessLeaseChallenge{}), storage.ErrDatabaseConnectionFailed)
 	require.ErrorIs(t, leaseRepo.CreateLease(context.Background(), &models.AgentAccessLease{}), storage.ErrDatabaseConnectionFailed)
 	require.ErrorIs(t, leaseRepo.MarkChallengeUsed(context.Background(), "challenge-1", time.Time{}), storage.ErrDatabaseConnectionFailed)
+	require.ErrorIs(t, leaseRepo.RevokeLease(context.Background(), &models.AgentAccessLease{}, "owner", "reason", time.Time{}), storage.ErrDatabaseConnectionFailed)
+	require.ErrorIs(t, leaseRepo.AuthorizeSessionKey(context.Background(), &models.AgentAccessLease{}, "pub", "ed25519", time.Time{}), storage.ErrDatabaseConnectionFailed)
+	require.ErrorIs(t, leaseRepo.RecordLeaseUse(context.Background(), &models.AgentAccessLease{}, time.Now().UTC(), time.Time{}, false), storage.ErrDatabaseConnectionFailed)
 
 	var keyRepo *AgentKeyChallengeRepository
 	require.ErrorIs(t, keyRepo.Create(context.Background(), &models.AgentKeyChallenge{}), storage.ErrDatabaseConnectionFailed)

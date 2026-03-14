@@ -305,15 +305,9 @@ func (h *Handler) HandleRevokeAgentAccessLeaseLift(ctx *apptheory.Context) (*app
 	if effectiveAgentAccessLeaseStatus(lease, now) == agentAccessLeaseStatusRevoked {
 		return okJSON(agentAccessLeaseResponse(lease, now))
 	}
-
-	update := h.repos.GetDB().Model(&storageModels.AgentAccessLease{PK: lease.PK, SK: lease.SK}).WithContext(ctx.Context()).UpdateBuilder().
-		Set("Status", agentAccessLeaseStatusRevoked).
-		Set("UpdatedAt", now).
-		Set("RevokedAt", now).
-		Set("RevokedBy", claims.Username).
-		Set("RevokedReason", strings.TrimSpace(req.Reason))
-
-	if err := update.Execute(); err != nil {
+	reason := strings.TrimSpace(req.Reason)
+	repo := h.agentAccessLeaseRepo()
+	if err := repo.RevokeLease(ctx.Context(), lease, claims.Username, reason, now); err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
 
@@ -321,10 +315,10 @@ func (h *Handler) HandleRevokeAgentAccessLeaseLift(ctx *apptheory.Context) (*app
 	lease.UpdatedAt = now
 	lease.RevokedAt = now
 	lease.RevokedBy = claims.Username
-	lease.RevokedReason = strings.TrimSpace(req.Reason)
+	lease.RevokedReason = reason
 	h.recordAgentGovernanceEvent(ctx, username, "agent.access_lease.revoked", map[string]any{
 		"lease_id": lease.ID,
-		"reason":   strings.TrimSpace(req.Reason),
+		"reason":   reason,
 	})
 	return okJSON(agentAccessLeaseResponse(lease, now))
 }
@@ -452,13 +446,8 @@ func (h *Handler) HandleAuthorizeAgentAccessLeaseSessionKeyLift(ctx *apptheory.C
 		}
 		return common.RespondInternalServerError(ctx)
 	}
-
-	update := h.repos.GetDB().Model(&storageModels.AgentAccessLease{PK: lease.PK, SK: lease.SK}).WithContext(ctx.Context()).UpdateBuilder().
-		Set("SessionPublicKey", challenge.SessionPublicKey).
-		Set("SessionKeyType", agentAccessLeaseSessionKeyType).
-		Set("SessionKeyCreatedAt", now).
-		Set("UpdatedAt", now)
-	if err := update.Execute(); err != nil {
+	repo := h.agentAccessLeaseRepo()
+	if err := repo.AuthorizeSessionKey(ctx.Context(), lease, challenge.SessionPublicKey, agentAccessLeaseSessionKeyType, now); err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
 
@@ -636,15 +625,8 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
-
-	update := h.repos.GetDB().Model(&storageModels.AgentAccessLease{PK: lease.PK, SK: lease.SK}).WithContext(ctx.Context()).UpdateBuilder().
-		Set("LastUsedAt", now).
-		Set("IdleExpiresAt", newIdleExpiresAt).
-		Set("UpdatedAt", now)
-	if challenge.Action == agentAccessLeaseActionRenewSession {
-		update = update.Set("SessionKeyLastUsedAt", now)
-	}
-	if err := update.Execute(); err != nil {
+	repo := h.agentAccessLeaseRepo()
+	if err := repo.RecordLeaseUse(ctx.Context(), lease, newIdleExpiresAt, now, challenge.Action == agentAccessLeaseActionRenewSession); err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
 
