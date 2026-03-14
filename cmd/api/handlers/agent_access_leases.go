@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -136,15 +137,26 @@ func (h *Handler) HandleCreateAgentAccessLeaseLift(ctx *apptheory.Context) (*app
 		})
 	}
 
-	if ok, walletErr := h.userHasWallet(ctx, claims.Username, principalChallenge.PrincipalWallet); walletErr != nil {
+	if usedBoundSoul, principalOK, agentOK, walletErr := h.validateBoundAgentAccessLeaseWallets(ctx, username, principalChallenge.PrincipalWallet, principalChallenge.AgentWallet); walletErr != nil {
 		return common.RespondInternalServerError(ctx)
-	} else if !ok {
-		return common.RespondForbidden(ctx, "principal wallet is not linked to the owner account")
-	}
-	if ok, walletErr := h.userHasWallet(ctx, username, principalChallenge.AgentWallet); walletErr != nil {
-		return common.RespondInternalServerError(ctx)
-	} else if !ok {
-		return common.RespondForbidden(ctx, "agent wallet is not linked to the agent account")
+	} else if usedBoundSoul {
+		if !principalOK {
+			return common.RespondForbidden(ctx, "principal wallet does not match the bound soul principal")
+		}
+		if !agentOK {
+			return common.RespondForbidden(ctx, "agent wallet does not match the bound soul body wallet")
+		}
+	} else {
+		if ok, walletErr := h.userHasWallet(ctx, claims.Username, principalChallenge.PrincipalWallet); walletErr != nil {
+			return common.RespondInternalServerError(ctx)
+		} else if !ok {
+			return common.RespondForbidden(ctx, "principal wallet is not linked to the owner account")
+		}
+		if ok, walletErr := h.userHasWallet(ctx, username, principalChallenge.AgentWallet); walletErr != nil {
+			return common.RespondInternalServerError(ctx)
+		} else if !ok {
+			return common.RespondForbidden(ctx, "agent wallet is not linked to the agent account")
+		}
 	}
 
 	if err := h.verifyLeaseChallengeSignature(ctx, principalChallenge, req.PrincipalSignature); err != nil {
@@ -691,15 +703,26 @@ func (h *Handler) handleCreateAgentAccessLeaseChallenge(ctx *apptheory.Context, 
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	if ok, walletErr := h.userHasWallet(ctx, claims.Username, opts.PrincipalWallet); walletErr != nil {
+	if usedBoundSoul, principalOK, agentOK, walletErr := h.validateBoundAgentAccessLeaseWallets(ctx, username, opts.PrincipalWallet, opts.AgentWallet); walletErr != nil {
 		return common.RespondInternalServerError(ctx)
-	} else if !ok {
-		return common.RespondForbidden(ctx, "principal wallet is not linked to the owner account")
-	}
-	if ok, walletErr := h.userHasWallet(ctx, username, opts.AgentWallet); walletErr != nil {
-		return common.RespondInternalServerError(ctx)
-	} else if !ok {
-		return common.RespondForbidden(ctx, "agent wallet is not linked to the agent account")
+	} else if usedBoundSoul {
+		if !principalOK {
+			return common.RespondForbidden(ctx, "principal wallet does not match the bound soul principal")
+		}
+		if !agentOK {
+			return common.RespondForbidden(ctx, "agent wallet does not match the bound soul body wallet")
+		}
+	} else {
+		if ok, walletErr := h.userHasWallet(ctx, claims.Username, opts.PrincipalWallet); walletErr != nil {
+			return common.RespondInternalServerError(ctx)
+		} else if !ok {
+			return common.RespondForbidden(ctx, "principal wallet is not linked to the owner account")
+		}
+		if ok, walletErr := h.userHasWallet(ctx, username, opts.AgentWallet); walletErr != nil {
+			return common.RespondInternalServerError(ctx)
+		} else if !ok {
+			return common.RespondForbidden(ctx, "agent wallet is not linked to the agent account")
+		}
 	}
 
 	challenge, err := h.createAgentAccessLeaseChallenge(ctx, opts, action)
@@ -936,6 +959,45 @@ func (h *Handler) userHasWallet(ctx *apptheory.Context, username, address string
 		}
 	}
 	return false, nil
+}
+
+func (h *Handler) validateBoundAgentAccessLeaseWallets(ctx *apptheory.Context, agentUsername, principalWallet, agentWallet string) (bool, bool, bool, error) {
+	service := h.getSoulService()
+	if service == nil {
+		return false, false, false, nil
+	}
+
+	soul, err := service.ResolveBoundAgent(ctx.Context(), agentUsername)
+	if err != nil {
+		return false, false, false, err
+	}
+	if soul == nil || !soul.Bound {
+		return false, false, false, nil
+	}
+
+	expectedPrincipal := boundSoulLeasePrincipalWallet(soul)
+	expectedAgent := strings.TrimSpace(strings.ToLower(soul.Wallet))
+	normalizedPrincipal := strings.TrimSpace(strings.ToLower(principalWallet))
+	normalizedAgent := strings.TrimSpace(strings.ToLower(agentWallet))
+
+	return true,
+		expectedPrincipal != "" && strings.EqualFold(expectedPrincipal, normalizedPrincipal),
+		expectedAgent != "" && strings.EqualFold(expectedAgent, normalizedAgent),
+		nil
+}
+
+func boundSoulLeasePrincipalWallet(soul *soulservice.Soul) string {
+	if soul == nil {
+		return ""
+	}
+
+	if principal := strings.TrimSpace(strings.ToLower(soul.BoundPrincipalAddress)); principal != "" {
+		return principal
+	}
+	if principal := strings.TrimSpace(strings.ToLower(soul.PrincipalAddress)); principal != "" {
+		return principal
+	}
+	return strings.TrimSpace(strings.ToLower(soul.Wallet))
 }
 
 func normalizeAgentAccessLeaseOptions(

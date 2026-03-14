@@ -15,6 +15,7 @@ import (
 type soulHandlerService interface {
 	ListMine(ctx context.Context, username string) ([]soulservice.Soul, error)
 	Incorporate(ctx context.Context, principalUsername string, targetAgentUsername string, soulAgentID string) (*soulservice.Soul, error)
+	ResolveBoundAgent(ctx context.Context, agentUsername string) (*soulservice.Soul, error)
 }
 
 // HandleGetMySoulsLift returns souls owned by the authenticated user's linked wallet(s) for this instance.
