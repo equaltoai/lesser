@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -177,7 +178,7 @@ func (h *Handler) resolveDelegatedAgentAccount(
 
 	account, err := h.repos.Account().GetAccount(ctx.Context(), agentUsername)
 	if err != nil {
-		if common.IsNotFound(err) {
+		if apperrors.HasCode(err, apperrors.CodeNotFound) {
 			resp, respErr := common.RespondNotFound(ctx, "agent")
 			return nil, resp, respErr
 		}
