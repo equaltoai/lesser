@@ -129,26 +129,8 @@ func (r *mutationResolver) CreateAgentAccessLease(ctx context.Context, username 
 	if !strings.EqualFold(principalChallenge.PrincipalUsername, claims.Username) {
 		return nil, apperrors.Unauthorized("challenge principal does not match authenticated owner")
 	}
-	if usedBoundSoul, principalOK, agentOK, walletErr := r.validateGraphBoundAgentAccessLeaseWallets(ctx, username, principalChallenge.PrincipalWallet, principalChallenge.AgentWallet); walletErr != nil {
-		return nil, apperrors.InternalWithCause(walletErr, "failed to verify bound soul wallets")
-	} else if usedBoundSoul {
-		if !principalOK {
-			return nil, apperrors.Forbidden("principal wallet does not match the bound soul principal")
-		}
-		if !agentOK {
-			return nil, apperrors.Forbidden("agent wallet does not match the bound soul body wallet")
-		}
-	} else {
-		if ok, walletErr := r.graphUserHasWallet(ctx, claims.Username, principalChallenge.PrincipalWallet); walletErr != nil {
-			return nil, apperrors.InternalWithCause(walletErr, "failed to verify principal wallet")
-		} else if !ok {
-			return nil, apperrors.Forbidden("principal wallet is not linked to the owner account")
-		}
-		if ok, walletErr := r.graphUserHasWallet(ctx, username, principalChallenge.AgentWallet); walletErr != nil {
-			return nil, apperrors.InternalWithCause(walletErr, "failed to verify agent wallet")
-		} else if !ok {
-			return nil, apperrors.Forbidden("agent wallet is not linked to the agent account")
-		}
+	if err := r.authorizeGraphAgentAccessLeaseWallets(ctx, claims.Username, username, principalChallenge.PrincipalWallet, principalChallenge.AgentWallet); err != nil {
+		return nil, err
 	}
 
 	if err := verifyGraphAgentAccessLeaseChallengeSignature(principalChallenge, input.PrincipalSignature); err != nil {
@@ -530,26 +512,8 @@ func (r *mutationResolver) createGraphAgentAccessLeaseChallenge(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	if usedBoundSoul, principalOK, agentOK, walletErr := r.validateGraphBoundAgentAccessLeaseWallets(ctx, username, opts.PrincipalWallet, opts.AgentWallet); walletErr != nil {
-		return nil, apperrors.InternalWithCause(walletErr, "failed to verify bound soul wallets")
-	} else if usedBoundSoul {
-		if !principalOK {
-			return nil, apperrors.Forbidden("principal wallet does not match the bound soul principal")
-		}
-		if !agentOK {
-			return nil, apperrors.Forbidden("agent wallet does not match the bound soul body wallet")
-		}
-	} else {
-		if ok, walletErr := r.graphUserHasWallet(ctx, claims.Username, opts.PrincipalWallet); walletErr != nil {
-			return nil, apperrors.InternalWithCause(walletErr, "failed to verify principal wallet")
-		} else if !ok {
-			return nil, apperrors.Forbidden("principal wallet is not linked to the owner account")
-		}
-		if ok, walletErr := r.graphUserHasWallet(ctx, username, opts.AgentWallet); walletErr != nil {
-			return nil, apperrors.InternalWithCause(walletErr, "failed to verify agent wallet")
-		} else if !ok {
-			return nil, apperrors.Forbidden("agent wallet is not linked to the agent account")
-		}
+	if err := r.authorizeGraphAgentAccessLeaseWallets(ctx, claims.Username, username, opts.PrincipalWallet, opts.AgentWallet); err != nil {
+		return nil, err
 	}
 	challenge, err := r.createGraphAgentAccessLeaseChallengeRecord(ctx, opts, action)
 	if err != nil {
@@ -644,6 +608,33 @@ func (r *Resolver) validateGraphBoundAgentAccessLeaseWallets(ctx context.Context
 		expectedPrincipal != "" && strings.EqualFold(expectedPrincipal, normalizedPrincipal),
 		expectedAgent != "" && strings.EqualFold(expectedAgent, normalizedAgent),
 		nil
+}
+
+func (r *Resolver) authorizeGraphAgentAccessLeaseWallets(ctx context.Context, principalUsername, agentUsername, principalWallet, agentWallet string) error {
+	if usedBoundSoul, principalOK, agentOK, walletErr := r.validateGraphBoundAgentAccessLeaseWallets(ctx, agentUsername, principalWallet, agentWallet); walletErr != nil {
+		return apperrors.InternalWithCause(walletErr, "failed to verify bound soul wallets")
+	} else if usedBoundSoul {
+		if !principalOK {
+			return apperrors.Forbidden("principal wallet does not match the bound soul principal")
+		}
+		if !agentOK {
+			return apperrors.Forbidden("agent wallet does not match the bound soul body wallet")
+		}
+		return nil
+	}
+
+	if ok, walletErr := r.graphUserHasWallet(ctx, principalUsername, principalWallet); walletErr != nil {
+		return apperrors.InternalWithCause(walletErr, "failed to verify principal wallet")
+	} else if !ok {
+		return apperrors.Forbidden("principal wallet is not linked to the owner account")
+	}
+	if ok, walletErr := r.graphUserHasWallet(ctx, agentUsername, agentWallet); walletErr != nil {
+		return apperrors.InternalWithCause(walletErr, "failed to verify agent wallet")
+	} else if !ok {
+		return apperrors.Forbidden("agent wallet is not linked to the agent account")
+	}
+
+	return nil
 }
 
 func graphBoundSoulLeasePrincipalWallet(soul *soulservice.Soul) string {
