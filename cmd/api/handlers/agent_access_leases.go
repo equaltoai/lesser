@@ -18,6 +18,7 @@ import (
 	soulservice "github.com/equaltoai/lesser/pkg/services/souls"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	storageRepos "github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
@@ -56,6 +57,14 @@ type agentAccessLeaseOptions struct {
 	DeviceLabel       string
 	IdleTimeoutHours  int
 	AbsoluteTTLHours  int
+}
+
+func (h *Handler) agentAccessLeaseRepo() *storageRepos.AgentAccessLeaseRepository {
+	if h == nil || h.repos == nil {
+		return nil
+	}
+
+	return storageRepos.NewAgentAccessLeaseRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
 }
 
 // HandleCreateAgentAccessLeasePrincipalChallengeLift issues the owner approval challenge.
@@ -211,7 +220,11 @@ func (h *Handler) HandleCreateAgentAccessLeaseLift(ctx *apptheory.Context) (*app
 		return common.RespondInternalServerError(ctx)
 	}
 
-	if err := h.repos.GetDB().Model(model).WithContext(ctx.Context()).IfNotExists().Create(); err != nil {
+	repo := h.agentAccessLeaseRepo()
+	if repo == nil {
+		return common.RespondInternalServerError(ctx)
+	}
+	if err := repo.CreateLease(ctx.Context(), model); err != nil {
 		if dynamormErrors.IsConditionFailed(err) {
 			return common.RespondConflict(ctx, "lease already exists")
 		}
@@ -787,7 +800,8 @@ func (h *Handler) requireManagedAgentAccount(ctx *apptheory.Context, username st
 }
 
 func (h *Handler) createAgentAccessLeaseChallenge(ctx *apptheory.Context, opts agentAccessLeaseOptions, action string) (*storageModels.AgentAccessLeaseChallenge, error) {
-	if h == nil || h.repos == nil || h.repos.GetDB() == nil {
+	repo := h.agentAccessLeaseRepo()
+	if repo == nil {
 		return nil, errors.New("storage not initialized")
 	}
 
@@ -832,25 +846,20 @@ func (h *Handler) createAgentAccessLeaseChallenge(ctx *apptheory.Context, opts a
 		Used:              false,
 	}
 
-	if err := h.repos.GetDB().Model(model).WithContext(ctx.Context()).IfNotExists().Create(); err != nil {
+	if err := repo.CreateChallenge(ctx.Context(), model); err != nil {
 		return nil, err
 	}
 	return model, nil
 }
 
 func (h *Handler) loadAgentAccessLeaseChallenge(ctx *apptheory.Context, challengeID string) (*storageModels.AgentAccessLeaseChallenge, *apptheory.Response, error) {
-	if h == nil || h.repos == nil || h.repos.GetDB() == nil {
+	repo := h.agentAccessLeaseRepo()
+	if repo == nil {
 		resp, respErr := common.RespondInternalServerError(ctx)
 		return nil, resp, respErr
 	}
 
-	pk := fmt.Sprintf("AGENT_ACCESS_CHALLENGE#%s", strings.TrimSpace(challengeID))
-	challenge := &storageModels.AgentAccessLeaseChallenge{}
-	err := h.repos.GetDB().WithContext(ctx.Context()).
-		Model(&storageModels.AgentAccessLeaseChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "CHALLENGE").
-		First(challenge)
+	challenge, err := repo.GetChallenge(ctx.Context(), challengeID)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			resp, respErr := apptheory.JSON(http.StatusUnauthorized, map[string]any{
@@ -883,15 +892,12 @@ func (h *Handler) loadAgentAccessLeaseChallenge(ctx *apptheory.Context, challeng
 }
 
 func (h *Handler) markAgentAccessLeaseChallengeUsed(ctx *apptheory.Context, challengeID string) error {
-	now := time.Now().UTC()
-	pk := fmt.Sprintf("AGENT_ACCESS_CHALLENGE#%s", strings.TrimSpace(challengeID))
-	existing := &storageModels.AgentAccessLeaseChallenge{PK: pk, SK: "CHALLENGE"}
+	repo := h.agentAccessLeaseRepo()
+	if repo == nil {
+		return errors.New("storage not initialized")
+	}
 
-	return h.repos.GetDB().Model(existing).WithContext(ctx.Context()).UpdateBuilder().
-		Set("Used", true).
-		Condition("Used", "=", false).
-		Condition("TTL", ">", now.Unix()).
-		Execute()
+	return repo.MarkChallengeUsed(ctx.Context(), challengeID, time.Now().UTC())
 }
 
 func (h *Handler) verifyLeaseChallengeSignature(_ *apptheory.Context, challenge *storageModels.AgentAccessLeaseChallenge, signature string) error {
@@ -910,14 +916,13 @@ func (h *Handler) verifyLeaseChallengeSignature(_ *apptheory.Context, challenge 
 }
 
 func (h *Handler) loadAgentAccessLease(ctx *apptheory.Context, username, leaseID string) (*storageModels.AgentAccessLease, *apptheory.Response, error) {
-	pk := fmt.Sprintf("AGENT_ACCESS_LEASE#%s", strings.TrimSpace(username))
-	sk := fmt.Sprintf("LEASE#%s", strings.TrimSpace(leaseID))
-	lease := &storageModels.AgentAccessLease{}
-	err := h.repos.GetDB().WithContext(ctx.Context()).
-		Model(&storageModels.AgentAccessLease{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(lease)
+	repo := h.agentAccessLeaseRepo()
+	if repo == nil {
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
+	}
+
+	lease, err := repo.GetLease(ctx.Context(), username, leaseID)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			resp, respErr := common.RespondNotFound(ctx, "agent access lease")
@@ -930,13 +935,12 @@ func (h *Handler) loadAgentAccessLease(ctx *apptheory.Context, username, leaseID
 }
 
 func (h *Handler) listAgentAccessLeases(ctx *apptheory.Context, username string) ([]storageModels.AgentAccessLease, error) {
-	var leases []storageModels.AgentAccessLease
-	err := h.repos.GetDB().WithContext(ctx.Context()).
-		Model(&storageModels.AgentAccessLease{}).
-		Where("PK", "=", fmt.Sprintf("AGENT_ACCESS_LEASE#%s", strings.TrimSpace(username))).
-		Where("SK", "BEGINS_WITH", "LEASE#").
-		All(&leases)
-	return leases, err
+	repo := h.agentAccessLeaseRepo()
+	if repo == nil {
+		return nil, errors.New("storage not initialized")
+	}
+
+	return repo.ListLeases(ctx.Context(), username)
 }
 
 func (h *Handler) userHasWallet(ctx *apptheory.Context, username, address string) (bool, error) {

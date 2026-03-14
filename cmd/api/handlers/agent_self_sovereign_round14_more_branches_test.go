@@ -82,6 +82,9 @@ func TestAgentSelfSovereignRound14_CreateAndConsumeChallengeBranches(t *testing.
 		require.Equal(t, agentKeyActionRegister, challenge.Action)
 		require.False(t, challenge.Used)
 		require.False(t, challenge.ExpiresAt.IsZero())
+		require.Equal(t, "AGENT_KEY_CHALLENGE#"+challenge.ID, challenge.PK)
+		require.Equal(t, "CHALLENGE", challenge.SK)
+		require.Equal(t, challenge.ExpiresAt.Unix(), challenge.TTL)
 	})
 
 	t.Run("markAgentKeyChallengeUsed rejects empty id", func(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestAgentAccessLeaseAdditionalHelpers_ValidationBranches(t *testing.T) {
@@ -188,6 +189,14 @@ func TestAgentAccessLeaseAdditionalHelpers_StateAndDomainBranches(t *testing.T) 
 	var nilHandler *Handler
 	_, err := nilHandler.createAgentAccessLeaseChallenge(nil, agentAccessLeaseOptions{}, agentAccessLeaseActionPrincipal)
 	require.ErrorContains(t, err, "storage not initialized")
+	require.ErrorContains(t, nilHandler.markAgentAccessLeaseChallengeUsed(nil, "challenge-1"), "storage not initialized")
+	leases, err := nilHandler.listAgentAccessLeases(nil, "agent1")
+	require.Nil(t, leases)
+	require.ErrorContains(t, err, "storage not initialized")
+	lease, resp, err := nilHandler.loadAgentAccessLease(&apptheory.Context{}, "agent1", "lease-1")
+	require.Nil(t, lease)
+	require.NotNil(t, resp)
+	require.NoError(t, err)
 
 	ok, err := nilHandler.userHasWallet(nil, "owner", "0x1111111111111111111111111111111111111111")
 	require.False(t, ok)
@@ -357,7 +366,7 @@ func TestAgentAccessLeaseAdditionalHelpers_HandlerErrorBranches(t *testing.T) {
 			DeviceLabel:       "local-agent",
 			IdleTimeoutHours:  24,
 			AbsoluteTTLHours:  48,
-		}, agentAccessLeaseActionRenewSession)
+		}, agentAccessLeaseActionAgent)
 		require.ErrorContains(t, err, "boom")
 	})
 }
