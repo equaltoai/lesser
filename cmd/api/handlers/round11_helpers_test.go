@@ -229,7 +229,7 @@ func TestConvertStorageStatusToAPI(t *testing.T) {
 		CreatedAt:      now.Add(-1 * time.Hour),
 		UpdatedAt:      now.Add(-30 * time.Minute),
 		Hashtags:       []string{"Go"},
-		Mentions:       []string{"bob"},
+		Mentions:       []string{cfg.ActorURL("bob")},
 		Note:           statusNote,
 		ReblogOfID:     "reblog",
 		LikeCount:      4,
@@ -247,6 +247,12 @@ func TestConvertStorageStatusToAPI(t *testing.T) {
 	require.Equal(t, 4, apiStatus.FavouritesCount)
 	require.Equal(t, 3, apiStatus.ReblogsCount)
 	require.Equal(t, common.GenerateNumericID("alice"), apiStatus.Account.ID)
+	require.Len(t, apiStatus.Mentions, 1)
+	mention, ok := apiStatus.Mentions[0].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, "bob", mention["username"])
+	require.Equal(t, "bob", mention["acct"])
+	require.Equal(t, cfg.ActorURL("bob"), mention["url"])
 
 	serialized, err := json.Marshal(apiStatus)
 	require.NoError(t, err)
@@ -277,6 +283,21 @@ func TestHelperResolveAccountAndAction(t *testing.T) {
 	var body apimodels.Status
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	require.Equal(t, "1", body.ID)
+}
+
+func TestDescribeStoredMention(t *testing.T) {
+	cfg := round11TestConfig()
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+	username, acct, profileURL := handler.describeStoredMention("https://remote.example/users/bob")
+	require.Equal(t, "bob", username)
+	require.Equal(t, "bob@remote.example", acct)
+	require.Equal(t, "https://remote.example/users/bob", profileURL)
+
+	username, acct, profileURL = handler.describeStoredMention("@alice")
+	require.Equal(t, "alice", username)
+	require.Equal(t, "alice", acct)
+	require.Equal(t, cfg.BaseURL()+"/@alice", profileURL)
 }
 
 func TestHelperResponseHelpers(t *testing.T) {

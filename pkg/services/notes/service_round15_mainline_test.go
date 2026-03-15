@@ -293,7 +293,9 @@ func populateStructWithTime(target any, state *permissiveQueryState, at time.Tim
 
 type stubAccountRepo struct {
 	*repositories.AccountRepository
-	domain string
+	domain    string
+	missing   map[string]bool
+	omitActor map[string]bool
 }
 
 func (r *stubAccountRepo) GetAccount(_ context.Context, id string) (*storage.Account, error) {
@@ -315,11 +317,17 @@ func (r *stubAccountRepo) GetAccount(_ context.Context, id string) (*storage.Acc
 		username = parts[len(parts)-1]
 	}
 
+	if r.missing != nil && r.missing[username] {
+		return nil, pkgerrors.ItemNotFound("account")
+	}
+
 	account := &storage.Account{
 		User: &storage.User{Username: username},
-		Actor: &activitypub.Actor{
+	}
+	if r.omitActor == nil || !r.omitActor[username] {
+		account.Actor = &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{ID: fmt.Sprintf("https://%s/users/%s", r.domain, username)},
-		},
+		}
 	}
 	return account, nil
 }
@@ -771,6 +779,45 @@ func TestService_round15_create_update_delete_smoke(t *testing.T) {
 		StatusID:  created.Note.StatusID,
 		DeleterID: "alice",
 	}))
+}
+
+func TestService_round15_create_note_generates_local_mention_tags_and_notifications(t *testing.T) {
+	service, _, federation, notifier, _ := newNotesServiceHarness(t)
+	service.accountRepo = &stubAccountRepo{
+		domain:  "example.com",
+		missing: map[string]bool{"missing": true},
+	}
+
+	ctx := context.Background()
+	created, err := service.CreateNote(ctx, &CreateNoteCommand{
+		AuthorID:     "alice",
+		Content:      "hello @bob and @bob and @missing",
+		Visibility:   VisibilityPublic,
+		ToRecipients: []string{activitypub.PublicAddress},
+		CcRecipients: []string{"https://example.com/users/alice/followers"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, created.Note)
+	require.NotNil(t, created.Note.Note)
+
+	require.Equal(t, []string{"https://example.com/users/bob"}, created.Note.Mentions)
+	require.Len(t, created.Note.Note.Tag, 1)
+	assert.Equal(t, "Mention", created.Note.Note.Tag[0].Type)
+	assert.Equal(t, "https://example.com/users/bob", created.Note.Note.Tag[0].Href)
+	assert.Equal(t, "@bob", created.Note.Note.Tag[0].Name)
+
+	require.Len(t, notifier.cmds, 1)
+	assert.Equal(t, "bob", notifier.cmds[0].UserID)
+	assert.Equal(t, "alice", notifier.cmds[0].ActorID)
+	assert.Equal(t, "mention", notifier.cmds[0].Type)
+	assert.Equal(t, created.Note.StatusID, notifier.cmds[0].TargetID)
+
+	require.Len(t, federation.activities, 1)
+	federatedNote, ok := federation.activities[0].Object.(*activitypub.Note)
+	require.True(t, ok)
+	require.Len(t, federatedNote.Tag, 1)
+	assert.Equal(t, "Mention", federatedNote.Tag[0].Type)
 }
 
 func TestService_round15_html_by_contract_is_sanitized_at_write_time(t *testing.T) {

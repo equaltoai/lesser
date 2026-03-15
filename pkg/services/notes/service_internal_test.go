@@ -61,6 +61,82 @@ func TestResolveConversationID(t *testing.T) {
 	})
 }
 
+func TestCanViewDirectMessageMatchesMentionURLs(t *testing.T) {
+	service := &Service{domainName: "example.com"}
+
+	status := &models.Status{
+		Mentions: []string{"https://example.com/users/bob"},
+	}
+
+	assert.True(t, service.canViewDirectMessage(status, "bob"))
+}
+
+func TestBuildMentionTagsUsesActorFallbackAndSkipsUnresolved(t *testing.T) {
+	service := &Service{
+		domainName: "example.com",
+		accountRepo: &stubAccountRepo{
+			domain:    "example.com",
+			missing:   map[string]bool{"missing": true},
+			omitActor: map[string]bool{"bob": true},
+		},
+		logger: zap.NewNop(),
+	}
+
+	tags, usernames := service.buildMentionTags(context.Background(), "hi @bob @missing @alice", &storage.Account{
+		User: &storage.User{Username: "alice"},
+	})
+
+	require.Len(t, tags, 2)
+	assert.Equal(t, "https://example.com/users/bob", tags[0].Href)
+	assert.Equal(t, "@bob", tags[0].Name)
+	assert.Equal(t, "https://example.com/users/alice", tags[1].Href)
+	assert.Equal(t, "@alice", tags[1].Name)
+	assert.Equal(t, []string{"bob"}, usernames)
+}
+
+func TestNotifyMentionsDeduplicatesRecipientsAndSkipsAuthor(t *testing.T) {
+	notifier := &stubNotificationService{}
+	service := &Service{
+		domainName:    "example.com",
+		notifications: notifier,
+		logger:        zap.NewNop(),
+	}
+
+	service.notifyMentions(context.Background(), &models.Status{
+		StatusID:       "status-1",
+		AuthorUsername: "alice",
+	}, []string{"bob", "Bob", "alice", ""})
+
+	require.Len(t, notifier.cmds, 1)
+	assert.Equal(t, "bob", notifier.cmds[0].UserID)
+	assert.Equal(t, "alice", notifier.cmds[0].ActorID)
+	assert.Equal(t, "mention", notifier.cmds[0].Type)
+}
+
+func TestBuildMentionTagsSkipsWhenActorIDCannotBeResolved(t *testing.T) {
+	service := &Service{
+		accountRepo: &stubAccountRepo{
+			omitActor: map[string]bool{"bob": true},
+		},
+		logger: zap.NewNop(),
+	}
+
+	tags, usernames := service.buildMentionTags(context.Background(), "hi @bob", nil)
+
+	assert.Nil(t, tags)
+	assert.Nil(t, usernames)
+}
+
+func TestMentionHelpersNormalizeURLsAndUsernames(t *testing.T) {
+	assert.Equal(t, "bob", extractMentionUsername("https://example.com/users/bob"))
+	assert.Equal(t, "carol", extractMentionUsername("https://example.com/@carol"))
+	assert.Equal(t, "dan", extractMentionUsername("@dan"))
+
+	assert.True(t, mentionMatchesViewer("https://example.com/users/bob", "bob", "https://example.com/users/bob"))
+	assert.True(t, mentionMatchesViewer("@carol", "carol", "https://example.com/users/carol"))
+	assert.False(t, mentionMatchesViewer("https://example.com/users/dan", "erin", "https://example.com/users/erin"))
+}
+
 type stubPublisher struct {
 	userEvents   []streamingEventRecord
 	streamEvents []streamingEventRecord

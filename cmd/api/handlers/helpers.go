@@ -603,15 +603,53 @@ func (h *Handler) statusMentions(storageStatus *storageModels.Status) []any {
 	}
 
 	for _, mention := range storageStatus.Mentions {
+		username, acct, profileURL := h.describeStoredMention(mention)
+		if username == "" {
+			continue
+		}
 		mentions = append(mentions, map[string]string{
 			"id":       mention,
-			"username": mention,
-			"url":      fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), mention),
-			"acct":     mention,
+			"username": username,
+			"url":      profileURL,
+			"acct":     acct,
 		})
 	}
 
 	return mentions
+}
+
+func (h *Handler) describeStoredMention(mention string) (username string, acct string, profileURL string) {
+	candidate := strings.TrimSpace(mention)
+	if candidate == "" {
+		return "", "", ""
+	}
+
+	if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
+		parsed, err := url.Parse(candidate)
+		if err == nil {
+			path := strings.Trim(parsed.Path, "/")
+			if path != "" {
+				segments := strings.Split(path, "/")
+				username = strings.TrimPrefix(segments[len(segments)-1], "@")
+			}
+			if username != "" {
+				host := strings.TrimSpace(parsed.Hostname())
+				if host == "" || strings.EqualFold(host, h.cfg.Domain) {
+					acct = username
+				} else {
+					acct = username + "@" + host
+				}
+				return username, acct, candidate
+			}
+		}
+	}
+
+	username = strings.TrimPrefix(candidate, "@")
+	if username == "" {
+		return "", "", ""
+	}
+
+	return username, username, fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), username)
 }
 
 func (h *Handler) statusMediaAttachments(storageStatus *storageModels.Status) []any {

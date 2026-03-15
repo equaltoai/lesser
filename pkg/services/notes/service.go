@@ -346,6 +346,11 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		note.Tag = append(note.Tag, hashtagTags...)
 	}
 
+	mentionTags, mentionedUsers := s.buildMentionTags(ctx, rawContent, author)
+	if len(mentionTags) > 0 {
+		note.Tag = append(note.Tag, mentionTags...)
+	}
+
 	// Attach media if provided
 	attachments, mediaIDsToMark, err := s.prepareMediaAttachments(ctx, author, sanitizedCmd.MediaIDs)
 	if err != nil {
@@ -374,6 +379,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Ensure AuthorUsername is populated before emitting events
 	s.ensureAuthorUsername(ctx, status)
+	s.notifyMentions(ctx, status, mentionedUsers)
 
 	// Emit events and queue federation
 	events := s.emitStatusCreatedEvents(ctx, status)
@@ -751,8 +757,10 @@ func (s *Service) canViewDirectMessage(status *models.Status, viewerID string) b
 		return false
 	}
 
-	if stringSliceContains(status.Mentions, viewerUsername) {
-		return true
+	for _, mention := range status.Mentions {
+		if mentionMatchesViewer(mention, viewerUsername, viewerActorID) {
+			return true
+		}
 	}
 	return stringSliceContains(status.ToRecipients, viewerActorID) ||
 		stringSliceContains(status.CcRecipients, viewerActorID) ||
@@ -767,6 +775,40 @@ func stringSliceContains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func mentionMatchesViewer(mention, viewerUsername, viewerActorID string) bool {
+	candidate := strings.TrimSpace(mention)
+	if candidate == "" {
+		return false
+	}
+
+	if strings.EqualFold(candidate, viewerUsername) || strings.EqualFold(candidate, viewerActorID) {
+		return true
+	}
+
+	return strings.EqualFold(extractMentionUsername(candidate), viewerUsername)
+}
+
+func extractMentionUsername(mention string) string {
+	candidate := strings.TrimSpace(mention)
+	if candidate == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
+		parsed, err := url.Parse(candidate)
+		if err == nil {
+			path := strings.Trim(parsed.Path, "/")
+			if path != "" {
+				segments := strings.Split(path, "/")
+				last := strings.TrimSpace(segments[len(segments)-1])
+				return strings.TrimPrefix(last, "@")
+			}
+		}
+	}
+
+	return strings.TrimPrefix(candidate, "@")
 }
 
 func (s *Service) resolveViewerActorID(viewerID string) (viewerUsername string, viewerActorID string) {
@@ -1214,6 +1256,83 @@ func (s *Service) buildHashtagTags(content string) ([]activitypub.Tag, []string)
 	}
 
 	return tags, normalized
+}
+
+func (s *Service) buildMentionTags(ctx context.Context, content string, author *storage.Account) ([]activitypub.Tag, []string) {
+	if s.accountRepo == nil {
+		return nil, nil
+	}
+
+	extracted := common.ExtractMentions(content)
+	if len(extracted) == 0 {
+		return nil, nil
+	}
+
+	authorUsername := ""
+	if author != nil && author.User != nil {
+		authorUsername = strings.TrimSpace(author.User.Username)
+	}
+
+	seenActors := make(map[string]struct{}, len(extracted))
+	tags := make([]activitypub.Tag, 0, len(extracted))
+	usernames := make([]string, 0, len(extracted))
+
+	for _, rawMention := range extracted {
+		mention := strings.TrimSpace(rawMention)
+		if mention == "" {
+			continue
+		}
+
+		account, err := s.accountRepo.GetAccount(ctx, mention)
+		if err != nil || account == nil || account.User == nil {
+			s.logger.Debug("skipping unresolved local mention",
+				zap.String("mention", mention),
+				zap.Error(err))
+			continue
+		}
+
+		username := strings.TrimSpace(account.User.Username)
+		if username == "" {
+			continue
+		}
+
+		actorID := ""
+		if account.Actor != nil {
+			actorID = strings.TrimSpace(account.Actor.ID)
+		}
+		if actorID == "" {
+			domain := strings.TrimSpace(s.domainName)
+			if domain == "" {
+				s.logger.Debug("skipping mention without actor id or domain",
+					zap.String("mention", mention),
+					zap.String("username", username))
+				continue
+			}
+			actorID = fmt.Sprintf("https://%s/users/%s", domain, username)
+		}
+
+		key := strings.ToLower(actorID)
+		if _, ok := seenActors[key]; ok {
+			continue
+		}
+		seenActors[key] = struct{}{}
+
+		tags = append(tags, activitypub.Tag{
+			Type: "Mention",
+			Href: actorID,
+			Name: "@" + username,
+		})
+
+		if !strings.EqualFold(username, authorUsername) {
+			usernames = append(usernames, username)
+		}
+	}
+
+	if len(tags) == 0 {
+		return nil, nil
+	}
+
+	return tags, usernames
 }
 
 // prepareMediaAttachments validates the provided media IDs, converts them to ActivityPub attachments,
@@ -2897,6 +3016,59 @@ func (s *Service) notifyBoost(ctx context.Context, status *models.Status, booste
 			zap.String("status_id", status.StatusID),
 			zap.String("recipient", recipient),
 			zap.Error(err))
+	}
+}
+
+func (s *Service) notifyMentions(ctx context.Context, status *models.Status, mentionedUsers []string) {
+	if s.notifications == nil || status == nil || len(mentionedUsers) == 0 {
+		return
+	}
+
+	s.ensureAuthorUsername(ctx, status)
+	authorUsername := strings.TrimSpace(status.AuthorUsername)
+	if authorUsername == "" {
+		return
+	}
+
+	statusURL := s.buildStatusURL(status)
+	title := fmt.Sprintf("%s mentioned you", authorUsername)
+	seen := make(map[string]struct{}, len(mentionedUsers))
+
+	for _, rawRecipient := range mentionedUsers {
+		recipient := strings.TrimSpace(rawRecipient)
+		if recipient == "" || strings.EqualFold(recipient, authorUsername) {
+			continue
+		}
+
+		key := strings.ToLower(recipient)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		cmd := &notifications.CreateNotificationCommand{
+			UserID:     recipient,
+			Type:       common.NotificationTypeMention,
+			ActorID:    authorUsername,
+			ActorType:  "user",
+			TargetID:   status.StatusID,
+			TargetType: "status",
+			Title:      title,
+			Body:       title,
+			GroupKey:   fmt.Sprintf("mention:%s", status.StatusID),
+			Data: map[string]interface{}{
+				"status_id":  status.StatusID,
+				"status_url": statusURL,
+				"mentioner":  authorUsername,
+			},
+		}
+
+		if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
+			s.logger.Error("failed to create mention notification",
+				zap.String("status_id", status.StatusID),
+				zap.String("recipient", recipient),
+				zap.Error(err))
+		}
 	}
 }
 

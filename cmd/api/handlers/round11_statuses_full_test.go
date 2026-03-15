@@ -100,7 +100,7 @@ func TestStatusesFullPermissions(t *testing.T) {
 	directStatus := &storagemodels.Status{
 		StatusID:     "dm",
 		Visibility:   "direct",
-		Mentions:     []string{"alice"},
+		Mentions:     []string{cfg.ActorURL("alice")},
 		ToRecipients: []string{"https://example.com/users/alice"},
 	}
 	require.True(t, handler.isViewerMentioned(directStatus.Mentions, "alice"))
