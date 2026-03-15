@@ -244,6 +244,15 @@ func (r *AccountRepository) createActorWithRollback(ctx context.Context, actor i
 			r.logger.Warn("failed to rollback user creation after actor failure",
 				zap.Error(delErr),
 				zap.String("username", userModel.Username))
+			rawDeleteErr := r.db.WithContext(ctx).Model(&models.User{}).
+				Where("PK", "=", pk).
+				Where("SK", "=", models.SKMetadata).
+				Delete()
+			if rawDeleteErr != nil {
+				r.logger.Warn("failed raw rollback delete after actor failure",
+					zap.Error(rawDeleteErr),
+					zap.String("username", userModel.Username))
+			}
 		}
 		return ErrorHandler.HandleCreateError(err, EntityActor, userModel.Username)
 	}
@@ -478,6 +487,9 @@ func (r *AccountRepository) ensureNumericIDMapping(ctx context.Context, numericI
 		Username:  strings.TrimSpace(username),
 		ActorID:   strings.TrimSpace(actorID),
 	}
+	if err := mapping.BeforeCreate(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+	}
 
 	err := r.db.WithContext(ctx).Model(mapping).Create()
 	if err == nil {
@@ -558,20 +570,10 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		FollowerCount:  0,
 		FollowingCount: 0,
 		StatusCount:    0,
+		CreatedAt:      time.Now().UTC(),
 	}
+	actorModel.UpdatedAt = actorModel.CreatedAt
 
-	// Set domain for GSI3
-	if r.domain != "" {
-		actorModel.GSI3PK = fmt.Sprintf("DOMAIN#%s", r.domain)
-		actorModel.GSI3SK = username
-	}
-
-	r.logger.Info("actor model before UpdateKeys",
-		zap.String("username", actorModel.Username),
-		zap.String("pk", actorModel.PK),
-		zap.String("sk", actorModel.SK))
-
-	// Explicitly call UpdateKeys to ensure PK/SK are set
 	if err := actorModel.UpdateKeys(); err != nil {
 		r.logger.Error("failed to update actor keys",
 			zap.String("username", username),
@@ -579,10 +581,10 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		return err
 	}
 
-	r.logger.Info("actor model after UpdateKeys",
-		zap.String("username", actorModel.Username),
-		zap.String("pk", actorModel.PK),
-		zap.String("sk", actorModel.SK))
+	if r.domain != "" {
+		actorModel.GSI3PK = fmt.Sprintf("DOMAIN#%s", r.domain)
+		actorModel.GSI3SK = username
+	}
 
 	// Create using DynamORM
 	if err := r.db.WithContext(ctx).Model(actorModel).Create(); err != nil {

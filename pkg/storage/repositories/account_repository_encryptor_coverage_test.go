@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
@@ -77,6 +78,56 @@ func TestAccountRepository_CreateActor_EncryptorSuccessAndConflict(t *testing.T)
 		}, "private-key")
 		require.Error(t, err)
 	})
+}
+
+func TestAccountRepository_CreateActor_PreparesActorAndNumericIDMapping(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var currentModel any
+	var createdActor *models.Actor
+	var createdMapping *models.NumericIDMapping
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Run(func(args mock.Arguments) {
+		currentModel = args.Get(0)
+	}).Return(mockQuery).Maybe()
+
+	mockQuery.On("Create").Run(func(mock.Arguments) {
+		switch model := currentModel.(type) {
+		case *models.Actor:
+			copyActor := *model
+			createdActor = &copyActor
+		case *models.NumericIDMapping:
+			copyMapping := *model
+			createdMapping = &copyMapping
+		}
+	}).Return(nil).Maybe()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+	repo.SetEncryptor(testEncryptor{})
+
+	err := repo.createActor(ctx, &activitypub.Actor{
+		PreferredUsername: "alice",
+		BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/alice"},
+		Name:              "Alice",
+	}, "private-key")
+	require.NoError(t, err)
+
+	require.NotNil(t, createdActor)
+	require.Equal(t, "ACTOR#alice", createdActor.PK)
+	require.Equal(t, models.SKProfile, createdActor.SK)
+	require.Equal(t, "DOMAIN#example.com", createdActor.GSI3PK)
+	require.Equal(t, "alice", createdActor.GSI3SK)
+	require.False(t, createdActor.CreatedAt.IsZero())
+	require.False(t, createdActor.UpdatedAt.IsZero())
+
+	require.NotNil(t, createdMapping)
+	require.Equal(t, "NUMERIC_ID#"+common.GenerateNumericID("alice"), createdMapping.PK)
+	require.Equal(t, models.SKMetadata, createdMapping.SK)
+	require.Equal(t, "NumericIDMapping", createdMapping.Type)
+	require.Equal(t, "alice", createdMapping.Username)
+	require.False(t, createdMapping.CreatedAt.IsZero())
 }
 
 func TestAccountRepository_GetActorPrivateKey_DecryptPaths(t *testing.T) {
