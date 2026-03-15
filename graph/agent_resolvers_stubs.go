@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -632,7 +633,7 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 		return nil, err
 	}
 
-	accessTTL, err := validateAccessTokenTTL(input.ExpiresIn)
+	accessTTL, err := validateAccessTokenTTL(r.Config, input.ExpiresIn)
 	if err != nil {
 		return nil, err
 	}
@@ -1171,9 +1172,9 @@ func agentDelegationEnvelope(user *storage.User) ([]string, bool) {
 	return agentDelegatedScopes(user), true
 }
 
-func validateAccessTokenTTL(expiresIn *int) (time.Duration, error) {
+func validateAccessTokenTTL(cfg *config.Config, expiresIn *int) (time.Duration, error) {
 	if expiresIn == nil || *expiresIn == 0 {
-		return auth.AccessTokenDuration, nil
+		return auth.AgentAccessTokenTTL(cfg), nil
 	}
 
 	if *expiresIn < 60 {

@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -100,7 +101,7 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		return resp, err
 	}
 
-	accessTTL, resp, err := validateAgentAccessTokenTTL(ctx, req.ExpiresIn)
+	accessTTL, resp, err := validateAgentAccessTokenTTLWithConfig(ctx, h.cfg, req.ExpiresIn)
 	if resp != nil || err != nil {
 		return resp, err
 	}
@@ -965,9 +966,14 @@ func scopesAreSubset(ownerScopes, requested []string) bool {
 	return true
 }
 
+//nolint:unused // Retained as the config-free helper for callers and tests that do not inject runtime config.
 func validateAgentAccessTokenTTL(ctx *apptheory.Context, expiresIn int) (time.Duration, *apptheory.Response, error) {
+	return validateAgentAccessTokenTTLWithConfig(ctx, nil, expiresIn)
+}
+
+func validateAgentAccessTokenTTLWithConfig(ctx *apptheory.Context, cfg *config.Config, expiresIn int) (time.Duration, *apptheory.Response, error) {
 	if expiresIn == 0 {
-		return auth.AccessTokenDuration, nil, nil
+		return auth.AgentAccessTokenTTL(cfg), nil, nil
 	}
 
 	if expiresIn < 60 {

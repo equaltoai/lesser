@@ -101,12 +101,13 @@ type Config struct {
 	FollowingURL string // Following URL pattern
 
 	// Features
-	MaxUploadSize          int64 // Maximum file upload size in bytes
-	PageSize               int   // Default pagination size
-	AllowRegistration      bool  // Whether new users can register
-	AllowAgents            bool  // Whether agent accounts are enabled
-	AllowAgentRegistration bool  // Whether new agent accounts can be registered/delegated
-	AllowDeviceFlow        bool  // Whether OAuth device authorization is enabled
+	MaxUploadSize            int64         // Maximum file upload size in bytes
+	PageSize                 int           // Default pagination size
+	AllowRegistration        bool          // Whether new users can register
+	AllowAgents              bool          // Whether agent accounts are enabled
+	AllowAgentRegistration   bool          // Whether new agent accounts can be registered/delegated
+	AllowDeviceFlow          bool          // Whether OAuth device authorization is enabled
+	AgentAccessTokenDuration time.Duration // Default lifetime for agent-minted access tokens
 
 	// CLI automation safety rails (device-flow tokens classified as client_class=cli)
 	CLIAutomationConcurrencyLimit   int           // Max concurrent in-flight requests per CLI session (sid)
@@ -371,6 +372,7 @@ func loadConfig() *Config {
 		AllowAgents:                     getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
 		AllowAgentRegistration:          getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
 		AllowDeviceFlow:                 getEnvAsBoolOrDefault("ALLOW_DEVICE_FLOW", false),
+		AgentAccessTokenDuration:        getEnvAsDurationOrDefault("AGENT_ACCESS_TOKEN_DURATION", time.Hour),
 		CLIAutomationConcurrencyLimit:   getEnvAsIntOrDefault("CLI_AUTOMATION_CONCURRENCY_LIMIT", 2),
 		CLIAutomationBurstLimit:         getEnvAsIntOrDefault("CLI_AUTOMATION_BURST_LIMIT", 20),
 		CLIAutomationBurstWindow:        getEnvAsDurationOrDefault("CLI_AUTOMATION_BURST_WINDOW", 10*time.Second),

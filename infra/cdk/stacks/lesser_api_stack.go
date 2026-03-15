@@ -1048,9 +1048,10 @@ func loadEnvironmentConfig(environment string) map[string]interface{} {
 	// Default environment tuning used by the CDK app.
 	// Note: `infra/cdk/config/` contains reference templates and is not loaded at deploy time.
 	config := map[string]interface{}{
-		"logLevel":   "INFO",
-		"memorySize": 3008.0, // ARM64 Lambda optimized default
-		"timeout":    30.0,
+		"logLevel":                 "INFO",
+		"memorySize":               3008.0, // ARM64 Lambda optimized default
+		"timeout":                  30.0,
+		"agentAccessTokenDuration": "24h",
 		"features": map[string]interface{}{
 			"enableMonitoring": true,
 		},

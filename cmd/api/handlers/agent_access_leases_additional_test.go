@@ -30,6 +30,7 @@ func TestAgentAccessLeaseAdditionalHelpers_ValidationBranches(t *testing.T) {
 			"",
 			0,
 			0,
+			0,
 			true,
 		)
 		require.ErrorContains(t, err, "lease_id is required")
@@ -45,6 +46,7 @@ func TestAgentAccessLeaseAdditionalHelpers_ValidationBranches(t *testing.T) {
 			"",
 			0,
 			0,
+			0,
 			true,
 		)
 		require.ErrorContains(t, err, "principal_wallet")
@@ -58,6 +60,7 @@ func TestAgentAccessLeaseAdditionalHelpers_ValidationBranches(t *testing.T) {
 			"",
 			[]string{"read"},
 			"",
+			0,
 			0,
 			0,
 			true,
@@ -81,6 +84,7 @@ func TestAgentAccessLeaseAdditionalHelpers_ValidationBranches(t *testing.T) {
 			" desktop ",
 			agentAccessLeaseMaxIdleHrs+10,
 			1,
+			48,
 			true,
 		)
 		require.NoError(t, err)
@@ -89,6 +93,7 @@ func TestAgentAccessLeaseAdditionalHelpers_ValidationBranches(t *testing.T) {
 		require.Equal(t, "desktop", opts.DeviceLabel)
 		require.Equal(t, agentAccessLeaseMaxIdleHrs, opts.IdleTimeoutHours)
 		require.Equal(t, agentAccessLeaseMaxIdleHrs, opts.AbsoluteTTLHours)
+		require.Equal(t, 48, opts.TokenTTLHours)
 		require.Equal(t, agentAccessLeaseSessionKeyType, opts.SessionKeyType)
 		require.Equal(t, pubBase64, opts.SessionPublicKey)
 		require.Equal(t, []string{"read", "write"}, opts.Scopes)

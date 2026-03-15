@@ -11,6 +11,7 @@ type AgentAccessLease struct {
 	DeviceLabel          string   `json:"deviceLabel"`
 	Status               string   `json:"status"`
 	IdleTimeoutHours     int      `json:"idleTimeoutHours"`
+	TokenTTLHours        int      `json:"tokenTTLHours"`
 	IdleExpiresAt        Time     `json:"idleExpiresAt"`
 	AbsoluteExpiresAt    Time     `json:"absoluteExpiresAt"`
 	LastUsedAt           Time     `json:"lastUsedAt"`
@@ -41,6 +42,7 @@ type AgentAccessLeaseChallenge struct {
 	DeviceLabel      string   `json:"deviceLabel"`
 	IdleTimeoutHours int      `json:"idleTimeoutHours"`
 	AbsoluteTTLHours int      `json:"absoluteTTLHours"`
+	TokenTTLHours    int      `json:"tokenTTLHours"`
 	Message          string   `json:"message"`
 	TypedDataJSON    *string  `json:"typedDataJson,omitempty"`
 	IssuedAt         Time     `json:"issuedAt"`
@@ -67,6 +69,7 @@ type AgentAccessLeaseChallengeInput struct {
 	LeaseID          *string  `json:"leaseID,omitempty"`
 	IdleTimeoutHours *int     `json:"idleTimeoutHours,omitempty"`
 	AbsoluteTTLHours *int     `json:"absoluteTTLHours,omitempty"`
+	TokenTTLHours    *int     `json:"tokenTTLHours,omitempty"`
 }
 
 // CreateAgentAccessLeaseInput is the GraphQL input for finalizing a lease.

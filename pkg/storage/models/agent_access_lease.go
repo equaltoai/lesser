@@ -33,6 +33,7 @@ type AgentAccessLease struct {
 	DeviceLabel          string    `theorydb:"attr:deviceLabel" json:"device_label"`
 	Status               string    `theorydb:"attr:status" json:"status"`
 	IdleTimeoutHours     int       `theorydb:"attr:idleTimeoutHours" json:"idle_timeout_hours"`
+	TokenTTLHours        int       `theorydb:"attr:tokenTTLHours" json:"token_ttl_hours"`
 	IdleExpiresAt        time.Time `theorydb:"attr:idleExpiresAt" json:"idle_expires_at"`
 	AbsoluteExpiresAt    time.Time `theorydb:"attr:absoluteExpiresAt" json:"absolute_expires_at"`
 	LastUsedAt           time.Time `theorydb:"attr:lastUsedAt" json:"last_used_at"`
@@ -139,6 +140,7 @@ type AgentAccessLeaseChallenge struct {
 	Scopes            []string  `theorydb:"attr:scopes" json:"scopes"`
 	DeviceLabel       string    `theorydb:"attr:deviceLabel" json:"device_label"`
 	IdleTimeoutHours  int       `theorydb:"attr:idleTimeoutHours" json:"idle_timeout_hours"`
+	TokenTTLHours     int       `theorydb:"attr:tokenTTLHours" json:"token_ttl_hours"`
 	AbsoluteTTLHours  int       `theorydb:"attr:absoluteTTLHours" json:"absolute_ttl_hours"`
 	Nonce             string    `theorydb:"attr:nonce" json:"nonce"`
 	Message           string    `theorydb:"attr:message" json:"message"`
@@ -204,4 +206,70 @@ func (c *AgentAccessLeaseChallenge) UpdateKeys() error {
 	c.SK = agentAccessChallengeSK
 	c.TTL = c.ExpiresAt.UTC().Unix()
 	return nil
+}
+
+// NormalizeAgentAccessLeaseTokenTTLHours clamps a lease token TTL policy to the
+// lease bounds so it remains meaningful to clients.
+func NormalizeAgentAccessLeaseTokenTTLHours(idleTimeoutHours, absoluteTTLHours, tokenTTLHours int) int {
+	if idleTimeoutHours < 0 {
+		idleTimeoutHours = 0
+	}
+	if absoluteTTLHours < 0 {
+		absoluteTTLHours = 0
+	}
+	if absoluteTTLHours > 0 && (idleTimeoutHours == 0 || absoluteTTLHours < idleTimeoutHours) {
+		idleTimeoutHours = absoluteTTLHours
+	}
+	if tokenTTLHours <= 0 {
+		tokenTTLHours = idleTimeoutHours
+	}
+	if idleTimeoutHours > 0 && tokenTTLHours > idleTimeoutHours {
+		tokenTTLHours = idleTimeoutHours
+	}
+	if absoluteTTLHours > 0 && tokenTTLHours > absoluteTTLHours {
+		tokenTTLHours = absoluteTTLHours
+	}
+	if tokenTTLHours < 0 {
+		return 0
+	}
+	return tokenTTLHours
+}
+
+// EffectiveTokenTTLHours returns the lease token TTL policy after applying
+// lease-safe defaults and clamps.
+func (l *AgentAccessLease) EffectiveTokenTTLHours() int {
+	if l == nil {
+		return 0
+	}
+	return NormalizeAgentAccessLeaseTokenTTLHours(l.IdleTimeoutHours, l.IdleTimeoutHours, l.TokenTTLHours)
+}
+
+// EffectiveTokenTTLHours returns the challenge token TTL policy after applying
+// lease-safe defaults and clamps.
+func (c *AgentAccessLeaseChallenge) EffectiveTokenTTLHours() int {
+	if c == nil {
+		return 0
+	}
+	return NormalizeAgentAccessLeaseTokenTTLHours(c.IdleTimeoutHours, c.AbsoluteTTLHours, c.TokenTTLHours)
+}
+
+// AgentAccessLeaseTokenExpiresAt returns the effective bearer-token expiry for
+// a lease renewal after combining lease policy, idle-window renewal, and the
+// absolute lease expiry.
+func AgentAccessLeaseTokenExpiresAt(now time.Time, lease *AgentAccessLease, idleExpiresAt time.Time) time.Time {
+	expiresAt := idleExpiresAt
+	if lease == nil {
+		return expiresAt
+	}
+
+	if tokenTTLHours := lease.EffectiveTokenTTLHours(); tokenTTLHours > 0 {
+		candidate := now.Add(time.Duration(tokenTTLHours) * time.Hour)
+		if expiresAt.IsZero() || candidate.Before(expiresAt) {
+			expiresAt = candidate
+		}
+	}
+	if !lease.AbsoluteExpiresAt.IsZero() && (expiresAt.IsZero() || lease.AbsoluteExpiresAt.Before(expiresAt)) {
+		expiresAt = lease.AbsoluteExpiresAt
+	}
+	return expiresAt
 }

@@ -575,6 +575,7 @@ type ComplexityRoot struct {
 		SessionKeyType       func(childComplexity int) int
 		SessionPublicKey     func(childComplexity int) int
 		Status               func(childComplexity int) int
+		TokenTTLHours        func(childComplexity int) int
 		UpdatedAt            func(childComplexity int) int
 		Username             func(childComplexity int) int
 	}
@@ -594,6 +595,7 @@ type ComplexityRoot struct {
 		Scopes           func(childComplexity int) int
 		SessionKeyType   func(childComplexity int) int
 		SessionPublicKey func(childComplexity int) int
+		TokenTTLHours    func(childComplexity int) int
 		TypedDataJSON    func(childComplexity int) int
 		Username         func(childComplexity int) int
 		WalletAddress    func(childComplexity int) int
@@ -5781,6 +5783,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.AgentAccessLease.Status(childComplexity), true
 
+	case "AgentAccessLease.tokenTTLHours":
+		if e.complexity.AgentAccessLease.TokenTTLHours == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLease.TokenTTLHours(childComplexity), true
+
 	case "AgentAccessLease.updatedAt":
 		if e.complexity.AgentAccessLease.UpdatedAt == nil {
 			break
@@ -5892,6 +5901,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AgentAccessLeaseChallenge.SessionPublicKey(childComplexity), true
+
+	case "AgentAccessLeaseChallenge.tokenTTLHours":
+		if e.complexity.AgentAccessLeaseChallenge.TokenTTLHours == nil {
+			break
+		}
+
+		return e.complexity.AgentAccessLeaseChallenge.TokenTTLHours(childComplexity), true
 
 	case "AgentAccessLeaseChallenge.typedDataJson":
 		if e.complexity.AgentAccessLeaseChallenge.TypedDataJSON == nil {
@@ -39097,6 +39113,50 @@ func (ec *executionContext) fieldContext_AgentAccessLease_idleTimeoutHours(_ con
 	return fc, nil
 }
 
+func (ec *executionContext) _AgentAccessLease_tokenTTLHours(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLease_tokenTTLHours(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TokenTTLHours, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLease_tokenTTLHours(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLease",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _AgentAccessLease_idleExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLease) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
 	if err != nil {
@@ -40202,6 +40262,50 @@ func (ec *executionContext) _AgentAccessLeaseChallenge_absoluteTTLHours(ctx cont
 }
 
 func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentAccessLeaseChallenge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentAccessLeaseChallenge_tokenTTLHours(ctx context.Context, field graphql.CollectedField, obj *model.AgentAccessLeaseChallenge) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentAccessLeaseChallenge_tokenTTLHours(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.TokenTTLHours, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	fc.Result = res
+	return ec.marshalNInt2int(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentAccessLeaseChallenge_tokenTTLHours(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AgentAccessLeaseChallenge",
 		Field:      field,
@@ -87842,6 +87946,8 @@ func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeasePrincipa
 				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
 			case "absoluteTTLHours":
 				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_tokenTTLHours(ctx, field)
 			case "message":
 				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
 			case "typedDataJson":
@@ -87933,6 +88039,8 @@ func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeaseAgentCha
 				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
 			case "absoluteTTLHours":
 				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_tokenTTLHours(ctx, field)
 			case "message":
 				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
 			case "typedDataJson":
@@ -88016,6 +88124,8 @@ func (ec *executionContext) fieldContext_Mutation_createAgentAccessLease(ctx con
 				return ec.fieldContext_AgentAccessLease_status(ctx, field)
 			case "idleTimeoutHours":
 				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLease_tokenTTLHours(ctx, field)
 			case "idleExpiresAt":
 				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
 			case "absoluteExpiresAt":
@@ -88117,6 +88227,8 @@ func (ec *executionContext) fieldContext_Mutation_revokeAgentAccessLease(ctx con
 				return ec.fieldContext_AgentAccessLease_status(ctx, field)
 			case "idleTimeoutHours":
 				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLease_tokenTTLHours(ctx, field)
 			case "idleExpiresAt":
 				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
 			case "absoluteExpiresAt":
@@ -88226,6 +88338,8 @@ func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeaseSessionK
 				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
 			case "absoluteTTLHours":
 				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_tokenTTLHours(ctx, field)
 			case "message":
 				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
 			case "typedDataJson":
@@ -88309,6 +88423,8 @@ func (ec *executionContext) fieldContext_Mutation_authorizeAgentAccessLeaseSessi
 				return ec.fieldContext_AgentAccessLease_status(ctx, field)
 			case "idleTimeoutHours":
 				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLease_tokenTTLHours(ctx, field)
 			case "idleExpiresAt":
 				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
 			case "absoluteExpiresAt":
@@ -88418,6 +88534,8 @@ func (ec *executionContext) fieldContext_Mutation_createAgentAccessLeaseRenewCha
 				return ec.fieldContext_AgentAccessLeaseChallenge_idleTimeoutHours(ctx, field)
 			case "absoluteTTLHours":
 				return ec.fieldContext_AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLeaseChallenge_tokenTTLHours(ctx, field)
 			case "message":
 				return ec.fieldContext_AgentAccessLeaseChallenge_message(ctx, field)
 			case "typedDataJson":
@@ -107602,6 +107720,8 @@ func (ec *executionContext) fieldContext_Query_agentAccessLeases(ctx context.Con
 				return ec.fieldContext_AgentAccessLease_status(ctx, field)
 			case "idleTimeoutHours":
 				return ec.fieldContext_AgentAccessLease_idleTimeoutHours(ctx, field)
+			case "tokenTTLHours":
+				return ec.fieldContext_AgentAccessLease_tokenTTLHours(ctx, field)
 			case "idleExpiresAt":
 				return ec.fieldContext_AgentAccessLease_idleExpiresAt(ctx, field)
 			case "absoluteExpiresAt":
@@ -130754,7 +130874,7 @@ func (ec *executionContext) unmarshalInputAgentAccessLeaseChallengeInput(ctx con
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"principalWallet", "agentWallet", "sessionPublicKey", "scopes", "deviceLabel", "leaseID", "idleTimeoutHours", "absoluteTTLHours"}
+	fieldsInOrder := [...]string{"principalWallet", "agentWallet", "sessionPublicKey", "scopes", "deviceLabel", "leaseID", "idleTimeoutHours", "absoluteTTLHours", "tokenTTLHours"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -130817,6 +130937,13 @@ func (ec *executionContext) unmarshalInputAgentAccessLeaseChallengeInput(ctx con
 				return it, err
 			}
 			it.AbsoluteTTLHours = data
+		case "tokenTTLHours":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("tokenTTLHours"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.TokenTTLHours = data
 		}
 	}
 
@@ -139188,6 +139315,11 @@ func (ec *executionContext) _AgentAccessLease(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "tokenTTLHours":
+			out.Values[i] = ec._AgentAccessLease_tokenTTLHours(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "idleExpiresAt":
 			out.Values[i] = ec._AgentAccessLease_idleExpiresAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -139322,6 +139454,11 @@ func (ec *executionContext) _AgentAccessLeaseChallenge(ctx context.Context, sel 
 			}
 		case "absoluteTTLHours":
 			out.Values[i] = ec._AgentAccessLeaseChallenge_absoluteTTLHours(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tokenTTLHours":
+			out.Values[i] = ec._AgentAccessLeaseChallenge_tokenTTLHours(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
