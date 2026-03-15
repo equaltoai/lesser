@@ -13,6 +13,7 @@ type AgentAccessLeaseChallengeRequest struct {
 
 	IdleTimeoutHours int `json:"idle_timeout_hours,omitempty"`
 	AbsoluteTTLHours int `json:"absolute_ttl_hours,omitempty"`
+	TokenTTLHours    int `json:"token_ttl_hours,omitempty"`
 }
 
 // AgentAccessLeaseChallengeResponse returns a one-time signing challenge.
@@ -30,6 +31,7 @@ type AgentAccessLeaseChallengeResponse struct {
 	DeviceLabel      string    `json:"device_label"`
 	IdleTimeoutHours int       `json:"idle_timeout_hours"`
 	AbsoluteTTLHours int       `json:"absolute_ttl_hours"`
+	TokenTTLHours    int       `json:"token_ttl_hours"`
 	Message          string    `json:"message"`
 	TypedData        any       `json:"typed_data,omitempty"`
 	IssuedAt         time.Time `json:"issued_at"`
@@ -60,6 +62,7 @@ type AgentAccessLease struct {
 	DeviceLabel          string     `json:"device_label"`
 	Status               string     `json:"status"`
 	IdleTimeoutHours     int        `json:"idle_timeout_hours"`
+	TokenTTLHours        int        `json:"token_ttl_hours"`
 	IdleExpiresAt        time.Time  `json:"idle_expires_at"`
 	AbsoluteExpiresAt    time.Time  `json:"absolute_expires_at"`
 	LastUsedAt           time.Time  `json:"last_used_at"`

@@ -20,6 +20,7 @@ func TestNormalizeAgentAccessLeaseOptions_DefaultsAndSorting(t *testing.T) {
 		"",
 		0,
 		0,
+		0,
 		false,
 	)
 	require.NoError(t, err)
@@ -27,6 +28,7 @@ func TestNormalizeAgentAccessLeaseOptions_DefaultsAndSorting(t *testing.T) {
 	require.Equal(t, "local-agent", opts.DeviceLabel)
 	require.Equal(t, agentAccessLeaseDefaultIdleHrs, opts.IdleTimeoutHours)
 	require.Equal(t, agentAccessLeaseDefaultAbsHrs, opts.AbsoluteTTLHours)
+	require.Equal(t, agentAccessLeaseDefaultIdleHrs, opts.TokenTTLHours)
 	require.Equal(t, []string{"follow", "read", "write"}, opts.Scopes)
 }
 
@@ -42,11 +44,13 @@ func TestNormalizeAgentAccessLeaseOptions_ClampsAbsoluteToIdle(t *testing.T) {
 		"mac-mini",
 		72,
 		24,
+		36,
 		true,
 	)
 	require.NoError(t, err)
 	require.Equal(t, 72, opts.IdleTimeoutHours)
 	require.Equal(t, 72, opts.AbsoluteTTLHours)
+	require.Equal(t, 36, opts.TokenTTLHours)
 }
 
 func TestComputeLeaseExpiries_ClampsIdleToAbsolute(t *testing.T) {

@@ -71,6 +71,15 @@ const (
 	ClientClassAgent = "agent"
 )
 
+// AgentAccessTokenTTL returns the configured default lifetime for agent access tokens.
+// When no agent-specific override is configured, Lesser falls back to the shared OAuth default.
+func AgentAccessTokenTTL(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.AgentAccessTokenDuration > 0 {
+		return cfg.AgentAccessTokenDuration
+	}
+	return AccessTokenDuration
+}
+
 // Claims represents the JWT claims for access tokens with enhanced security
 type Claims struct {
 	jwt.RegisteredClaims

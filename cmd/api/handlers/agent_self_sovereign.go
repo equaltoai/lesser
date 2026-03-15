@@ -313,14 +313,15 @@ func (h *Handler) createSelfSovereignAgentAccount(ctx *apptheory.Context, user *
 }
 
 func (h *Handler) mintSelfSovereignTokens(ctx *apptheory.Context, username string, requestedScopes []string) (apimodels.OAuthTokenResponse, error) {
+	accessTTL := auth.AgentAccessTokenTTL(h.cfg)
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx.Context(), username, selfSovereignAgentClientID, "", requestedScopes)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx.Context(), username, selfSovereignAgentClientID, "", requestedScopes, accessTTL)
 	if err != nil {
 		return apimodels.OAuthTokenResponse{}, err
 	}
 
 	now := time.Now()
-	refreshExpiry := now.Add(auth.AccessTokenDuration)
+	refreshExpiry := now.Add(auth.RefreshTokenDuration)
 	oauthRefreshToken := &storage.RefreshToken{
 		Token:     refreshToken,
 		Username:  username,
@@ -336,7 +337,7 @@ func (h *Handler) mintSelfSovereignTokens(ctx *apptheory.Context, username strin
 		TokenType:    "Bearer",
 		Scope:        strings.Join(requestedScopes, " "),
 		CreatedAt:    now.Unix(),
-		ExpiresIn:    int(auth.AccessTokenDuration.Seconds()),
+		ExpiresIn:    int(accessTTL.Seconds()),
 		RefreshToken: refreshToken,
 	}, nil
 }
@@ -429,19 +430,21 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 	}
 
 	scopes := agentSelfSovereignScopes(agentUser)
+	accessTTL := auth.AgentAccessTokenTTL(h.cfg)
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx.Context(), req.Username, selfSovereignAgentClientID, "", scopes)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx.Context(), req.Username, selfSovereignAgentClientID, "", scopes, accessTTL)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	refreshExpiry := time.Now().Add(auth.AccessTokenDuration)
+	now := time.Now()
+	refreshExpiry := now.Add(auth.RefreshTokenDuration)
 	oauthRefreshToken := &storage.RefreshToken{
 		Token:     refreshToken,
 		Username:  req.Username,
 		ClientID:  selfSovereignAgentClientID,
 		Scopes:    scopes,
-		CreatedAt: time.Now(),
+		CreatedAt: now,
 		ExpiresAt: refreshExpiry,
 	}
 	_ = h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken)
@@ -450,8 +453,8 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 		AccessToken:  accessToken,
 		TokenType:    "Bearer",
 		Scope:        strings.Join(scopes, " "),
-		CreatedAt:    time.Now().Unix(),
-		ExpiresIn:    int(auth.AccessTokenDuration.Seconds()),
+		CreatedAt:    now.Unix(),
+		ExpiresIn:    int(accessTTL.Seconds()),
 		RefreshToken: refreshToken,
 	})
 }

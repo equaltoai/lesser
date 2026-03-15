@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/stretchr/testify/require"
@@ -99,4 +100,12 @@ func TestNormalizeDelegatedBy(t *testing.T) {
 	require.Equal(t, "@owner", normalizeDelegatedBy("owner"))
 	require.Equal(t, "@owner", normalizeDelegatedBy("@owner"))
 	require.Equal(t, "@owner", normalizeDelegatedBy(" @owner "))
+}
+
+func TestAgentAccessTokenTTL(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, AccessTokenDuration, AgentAccessTokenTTL(nil))
+	require.Equal(t, AccessTokenDuration, AgentAccessTokenTTL(&config.Config{}))
+	require.Equal(t, 6*time.Hour, AgentAccessTokenTTL(&config.Config{AgentAccessTokenDuration: 6 * time.Hour}))
 }

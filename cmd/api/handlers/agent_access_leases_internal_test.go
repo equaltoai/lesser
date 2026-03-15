@@ -73,6 +73,7 @@ func TestAgentAccessLeasesRound20_InternalHelpers(t *testing.T) {
 				DeviceLabel:       "local-agent",
 				Status:            "active",
 				IdleTimeoutHours:  24,
+				TokenTTLHours:     12,
 				IdleExpiresAt:     now.Add(24 * time.Hour),
 				AbsoluteExpiresAt: now.Add(48 * time.Hour),
 				LastUsedAt:        now,
@@ -97,6 +98,7 @@ func TestAgentAccessLeasesRound20_InternalHelpers(t *testing.T) {
 				DeviceLabel:       "local-agent",
 				IdleTimeoutHours:  24,
 				AbsoluteTTLHours:  48,
+				TokenTTLHours:     12,
 				Message:           "challenge",
 				IssuedAt:          now,
 				ExpiresAt:         now.Add(time.Minute),
@@ -158,12 +160,14 @@ func TestAgentAccessLeasesRound20_InternalHelpers(t *testing.T) {
 		DeviceLabel:       "local-agent",
 		IdleTimeoutHours:  24,
 		AbsoluteTTLHours:  48,
+		TokenTTLHours:     12,
 	}, agentAccessLeaseActionAgent)
 	require.NoError(t, err)
 	require.Equal(t, "agent1", createdChallenge.Username)
 	require.Equal(t, "AGENT_ACCESS_CHALLENGE#"+createdChallenge.ID, createdChallenge.PK)
 	require.Equal(t, "CHALLENGE", createdChallenge.SK)
 	require.Equal(t, createdChallenge.ExpiresAt.Unix(), createdChallenge.TTL)
+	require.Equal(t, 12, createdChallenge.EffectiveTokenTTLHours())
 
 	badCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/agents/agent1/access-leases", map[string]string{"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "intruder", []string{"write"})}, nil, nil)
 	require.NoError(t, err)

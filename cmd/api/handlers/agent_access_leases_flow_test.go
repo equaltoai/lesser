@@ -101,6 +101,7 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 			DeviceLabel:      "local-agent",
 			IdleTimeoutHours: 168,
 			AbsoluteTTLHours: 720,
+			TokenTTLHours:    12,
 		}
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases/challenge/principal", headers, nil, principalChallengeReq)
 		require.NoError(t, err)
@@ -110,6 +111,7 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		var principalChallengeResp apimodels.AgentAccessLeaseChallengeResponse
 		require.NoError(t, json.Unmarshal(resp.Body, &principalChallengeResp))
 		require.NotEmpty(t, principalChallengeResp.LeaseID)
+		require.Equal(t, 12, principalChallengeResp.TokenTTLHours)
 
 		agentChallengeReq := principalChallengeReq
 		agentChallengeReq.LeaseID = principalChallengeResp.LeaseID
@@ -143,6 +145,7 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		require.Equal(t, "active", lease.Status)
 		require.Equal(t, ownerAddr, strings.ToLower(lease.PrincipalWallet))
 		require.Equal(t, agentAddr, strings.ToLower(lease.AgentWallet))
+		require.Equal(t, 12, lease.TokenTTLHours)
 
 		ctx, err = round10NewLiftContext(http.MethodGet, "/api/v1/agents/agent1/access-leases", headers, nil, nil)
 		require.NoError(t, err)
@@ -195,6 +198,7 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 			DeviceLabel:         "local-agent",
 			Status:              "active",
 			IdleTimeoutHours:    168,
+			TokenTTLHours:       12,
 			IdleExpiresAt:       now.Add(168 * time.Hour),
 			AbsoluteExpiresAt:   now.Add(720 * time.Hour),
 			LastUsedAt:          now,
@@ -235,6 +239,7 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 			DeviceLabel:         "local-agent",
 			Status:              "active",
 			IdleTimeoutHours:    168,
+			TokenTTLHours:       12,
 			IdleExpiresAt:       now.Add(168 * time.Hour),
 			AbsoluteExpiresAt:   now.Add(720 * time.Hour),
 			LastUsedAt:          now,
@@ -259,6 +264,7 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		require.NoError(t, json.Unmarshal(resp.Body, &tokenResp))
 		require.NotEmpty(t, tokenResp.Token.AccessToken)
 		require.Empty(t, tokenResp.Token.RefreshToken)
+		require.InDelta(t, 12*60*60, tokenResp.Token.ExpiresIn, 5)
 
 		ctx, err = round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/access-leases/"+lease.ID+"/revoke", headers, nil, apimodels.RevokeAgentAccessLeaseRequest{
 			Reason: "operator request",
@@ -319,7 +325,10 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["username"] = "agent1"
 		ctx.Params["leaseID"] = leaseID
-		requireStatus(t, http.StatusOK)(h.HandleExchangeAgentAccessLeaseTokenLift(ctx))
+		resp = requireStatus(t, http.StatusOK)(h.HandleExchangeAgentAccessLeaseTokenLift(ctx))
+		var tokenResp apimodels.AgentAccessLeaseTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &tokenResp))
+		require.InDelta(t, 168*60*60, tokenResp.Token.ExpiresIn, 5)
 	})
 
 	t.Run("bound_soul_agent_enrollment_does_not_require_wallet_auth_credentials", func(t *testing.T) {

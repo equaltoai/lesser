@@ -19,6 +19,7 @@ func TestAgentAccessLease_BeforeCreateDefaultsAndKeys(t *testing.T) {
 		Scopes:            []string{"read", "write"},
 		DeviceLabel:       "local-agent",
 		IdleTimeoutHours:  24,
+		TokenTTLHours:     12,
 		IdleExpiresAt:     now.Add(24 * time.Hour),
 		AbsoluteExpiresAt: now.Add(48 * time.Hour),
 	}
@@ -29,6 +30,7 @@ func TestAgentAccessLease_BeforeCreateDefaultsAndKeys(t *testing.T) {
 	require.Equal(t, lease.AbsoluteExpiresAt.Unix(), lease.TTL)
 	require.Equal(t, agentAccessLeaseStatusActive, lease.Status)
 	require.Equal(t, 1, lease.LeaseVersion)
+	require.Equal(t, 12, lease.EffectiveTokenTTLHours())
 	require.False(t, lease.CreatedAt.IsZero())
 	require.False(t, lease.UpdatedAt.IsZero())
 	require.False(t, lease.LastUsedAt.IsZero())
@@ -73,6 +75,7 @@ func TestAgentAccessLeaseChallenge_BeforeCreateAndKeys(t *testing.T) {
 		SessionKeyType:    "  ed25519  ",
 		Scopes:            []string{"read"},
 		DeviceLabel:       " local-agent ",
+		TokenTTLHours:     12,
 		Message:           "typed-data-payload",
 		ExpiresAt:         now.Add(5 * time.Minute),
 	}
@@ -87,6 +90,7 @@ func TestAgentAccessLeaseChallenge_BeforeCreateAndKeys(t *testing.T) {
 	require.Equal(t, "pubkey", challenge.SessionPublicKey)
 	require.Equal(t, "ed25519", challenge.SessionKeyType)
 	require.Equal(t, "local-agent", challenge.DeviceLabel)
+	require.Equal(t, 12, challenge.EffectiveTokenTTLHours())
 	require.False(t, challenge.IssuedAt.IsZero())
 }
 
@@ -121,4 +125,40 @@ func TestAgentAccessLeaseChallenge_UpdateKeysRequiresSigner(t *testing.T) {
 	var nilChallenge *AgentAccessLeaseChallenge
 	require.Error(t, nilChallenge.UpdateKeys())
 	require.Error(t, nilChallenge.BeforeCreate())
+}
+
+func TestNormalizeAgentAccessLeaseTokenTTLHours(t *testing.T) {
+	require.Equal(t, 24, NormalizeAgentAccessLeaseTokenTTLHours(24, 72, 0))
+	require.Equal(t, 12, NormalizeAgentAccessLeaseTokenTTLHours(24, 72, 12))
+	require.Equal(t, 24, NormalizeAgentAccessLeaseTokenTTLHours(24, 72, 48))
+	require.Equal(t, 6, NormalizeAgentAccessLeaseTokenTTLHours(24, 6, 12))
+	require.Equal(t, 0, NormalizeAgentAccessLeaseTokenTTLHours(0, 0, 0))
+}
+
+func TestAgentAccessLeaseTokenExpiresAt(t *testing.T) {
+	now := time.Now().UTC()
+	lease := &AgentAccessLease{
+		IdleTimeoutHours:  24,
+		TokenTTLHours:     6,
+		AbsoluteExpiresAt: now.Add(72 * time.Hour),
+	}
+
+	expiresAt := AgentAccessLeaseTokenExpiresAt(now, lease, now.Add(24*time.Hour))
+	require.WithinDuration(t, now.Add(6*time.Hour), expiresAt, time.Second)
+
+	lease.TokenTTLHours = 48
+	expiresAt = AgentAccessLeaseTokenExpiresAt(now, lease, now.Add(24*time.Hour))
+	require.WithinDuration(t, now.Add(24*time.Hour), expiresAt, time.Second)
+
+	lease.TokenTTLHours = 12
+	lease.AbsoluteExpiresAt = now.Add(2 * time.Hour)
+	expiresAt = AgentAccessLeaseTokenExpiresAt(now, lease, now.Add(24*time.Hour))
+	require.WithinDuration(t, now.Add(2*time.Hour), expiresAt, time.Second)
+
+	var nilLease *AgentAccessLease
+	require.Equal(t, 0, nilLease.EffectiveTokenTTLHours())
+	require.WithinDuration(t, now.Add(time.Hour), AgentAccessLeaseTokenExpiresAt(now, nilLease, now.Add(time.Hour)), time.Second)
+
+	var nilChallenge *AgentAccessLeaseChallenge
+	require.Equal(t, 0, nilChallenge.EffectiveTokenTTLHours())
 }

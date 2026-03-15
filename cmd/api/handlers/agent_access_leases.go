@@ -57,6 +57,7 @@ type agentAccessLeaseOptions struct {
 	DeviceLabel       string
 	IdleTimeoutHours  int
 	AbsoluteTTLHours  int
+	TokenTTLHours     int
 }
 
 func (h *Handler) agentAccessLeaseRepo() *storageRepos.AgentAccessLeaseRepository {
@@ -193,6 +194,7 @@ func (h *Handler) HandleCreateAgentAccessLeaseLift(ctx *apptheory.Context) (*app
 		DeviceLabel:       principalChallenge.DeviceLabel,
 		Status:            agentAccessLeaseStatusActive,
 		IdleTimeoutHours:  principalChallenge.IdleTimeoutHours,
+		TokenTTLHours:     principalChallenge.EffectiveTokenTTLHours(),
 		IdleExpiresAt:     idleExpiresAt,
 		AbsoluteExpiresAt: absoluteExpiresAt,
 		LastUsedAt:        now,
@@ -237,6 +239,7 @@ func (h *Handler) HandleCreateAgentAccessLeaseLift(ctx *apptheory.Context) (*app
 		"agent_wallet":     model.AgentWallet,
 		"scopes":           model.Scopes,
 		"idle_hours":       model.IdleTimeoutHours,
+		"token_ttl_hours":  model.EffectiveTokenTTLHours(),
 		"absolute_expires": model.AbsoluteExpiresAt.Format(time.RFC3339),
 	})
 	h.ensureAgentActor(username, account)
@@ -596,17 +599,15 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 	if newIdleExpiresAt.After(lease.AbsoluteExpiresAt) {
 		newIdleExpiresAt = lease.AbsoluteExpiresAt
 	}
-	accessTTL := auth.AccessTokenDuration
-	remaining := time.Until(newIdleExpiresAt)
+	tokenExpiresAt := storageModels.AgentAccessLeaseTokenExpiresAt(now, lease, newIdleExpiresAt)
+	remaining := time.Until(tokenExpiresAt)
 	if remaining <= 0 {
 		return apptheory.JSON(http.StatusUnauthorized, map[string]any{
 			"error":             "invalid_lease",
 			"error_description": "lease expired",
 		})
 	}
-	if remaining < accessTTL {
-		accessTTL = remaining
-	}
+	accessTTL := remaining
 
 	if h.cfg == nil || h.cfg.JWTSecret == "" {
 		return common.RespondInternalServerError(ctx)
@@ -640,6 +641,7 @@ func (h *Handler) HandleExchangeAgentAccessLeaseTokenLift(ctx *apptheory.Context
 		"lease_id":    lease.ID,
 		"signer_kind": challenge.Action,
 		"expires_in":  int(accessTTL.Seconds()),
+		"token_hours": lease.EffectiveTokenTTLHours(),
 	})
 	return okJSON(apimodels.AgentAccessLeaseTokenResponse{
 		LeaseID: lease.ID,
@@ -692,6 +694,7 @@ func (h *Handler) handleCreateAgentAccessLeaseChallenge(ctx *apptheory.Context, 
 		req.DeviceLabel,
 		req.IdleTimeoutHours,
 		req.AbsoluteTTLHours,
+		req.TokenTTLHours,
 		action == agentAccessLeaseActionAgent,
 	)
 	if err != nil {
@@ -821,6 +824,7 @@ func (h *Handler) createAgentAccessLeaseChallenge(ctx *apptheory.Context, opts a
 		DeviceLabel:       opts.DeviceLabel,
 		IdleTimeoutHours:  opts.IdleTimeoutHours,
 		AbsoluteTTLHours:  opts.AbsoluteTTLHours,
+		TokenTTLHours:     opts.TokenTTLHours,
 		Nonce:             nonce,
 		Message:           message,
 		IssuedAt:          now,
@@ -997,6 +1001,7 @@ func normalizeAgentAccessLeaseOptions(
 	deviceLabel string,
 	idleTimeoutHours int,
 	absoluteTTLHours int,
+	tokenTTLHours int,
 	requireLeaseID bool,
 ) (agentAccessLeaseOptions, error) {
 	leaseID = strings.TrimSpace(leaseID)
@@ -1041,6 +1046,7 @@ func normalizeAgentAccessLeaseOptions(
 	if absoluteTTLHours < idleTimeoutHours {
 		absoluteTTLHours = idleTimeoutHours
 	}
+	tokenTTLHours = storageModels.NormalizeAgentAccessLeaseTokenTTLHours(idleTimeoutHours, absoluteTTLHours, tokenTTLHours)
 	normalizedScopes := append([]string(nil), scopes...)
 	sort.Strings(normalizedScopes)
 
@@ -1056,6 +1062,7 @@ func normalizeAgentAccessLeaseOptions(
 		DeviceLabel:       deviceLabel,
 		IdleTimeoutHours:  idleTimeoutHours,
 		AbsoluteTTLHours:  absoluteTTLHours,
+		TokenTTLHours:     tokenTTLHours,
 	}, nil
 }
 
@@ -1091,7 +1098,7 @@ func normalizeAgentAccessSessionPublicKey(raw string) (string, error) {
 
 func buildAgentAccessLeaseChallengeMessage(id string, opts agentAccessLeaseOptions, action string, nonce string, issuedAt, expiresAt time.Time) string {
 	return fmt.Sprintf(
-		"LESSER AGENT ACCESS LEASE\nid: %s\nlease_id: %s\naction: %s\ndomain: %s\nprincipal_username: %s\nagent_username: %s\nprincipal_wallet: %s\nagent_wallet: %s\nsession_public_key: %s\nscopes: %s\ndevice_label: %s\nidle_timeout_hours: %d\nabsolute_ttl_hours: %d\nnonce: %s\nissued_at: %s\nexpires_at: %s",
+		"LESSER AGENT ACCESS LEASE\nid: %s\nlease_id: %s\naction: %s\ndomain: %s\nprincipal_username: %s\nagent_username: %s\nprincipal_wallet: %s\nagent_wallet: %s\nsession_public_key: %s\nscopes: %s\ndevice_label: %s\nidle_timeout_hours: %d\nabsolute_ttl_hours: %d\ntoken_ttl_hours: %d\nnonce: %s\nissued_at: %s\nexpires_at: %s",
 		strings.TrimSpace(id),
 		strings.TrimSpace(opts.LeaseID),
 		strings.TrimSpace(action),
@@ -1105,6 +1112,7 @@ func buildAgentAccessLeaseChallengeMessage(id string, opts agentAccessLeaseOptio
 		strings.TrimSpace(opts.DeviceLabel),
 		opts.IdleTimeoutHours,
 		opts.AbsoluteTTLHours,
+		opts.TokenTTLHours,
 		strings.TrimSpace(nonce),
 		issuedAt.UTC().Format(time.RFC3339),
 		expiresAt.UTC().Format(time.RFC3339),
@@ -1145,6 +1153,7 @@ func buildAgentAccessLeaseTypedData(challenge *storageModels.AgentAccessLeaseCha
 		"deviceLabel":       strings.TrimSpace(challenge.DeviceLabel),
 		"idleTimeoutHours":  fmt.Sprintf("%d", challenge.IdleTimeoutHours),
 		"absoluteTTLHours":  fmt.Sprintf("%d", challenge.AbsoluteTTLHours),
+		"tokenTTLHours":     fmt.Sprintf("%d", challenge.EffectiveTokenTTLHours()),
 		"nonce":             strings.TrimSpace(challenge.Nonce),
 		"issuedAt":          challenge.IssuedAt.UTC().Format(time.RFC3339),
 		"expiresAt":         challenge.ExpiresAt.UTC().Format(time.RFC3339),
@@ -1169,6 +1178,7 @@ func buildAgentAccessLeaseTypedData(challenge *storageModels.AgentAccessLeaseCha
 				{Name: "deviceLabel", Type: "string"},
 				{Name: "idleTimeoutHours", Type: "string"},
 				{Name: "absoluteTTLHours", Type: "string"},
+				{Name: "tokenTTLHours", Type: "string"},
 				{Name: "nonce", Type: "string"},
 				{Name: "issuedAt", Type: "string"},
 				{Name: "expiresAt", Type: "string"},
@@ -1272,7 +1282,8 @@ func agentAccessLeaseChallengesMatch(a, b *storageModels.AgentAccessLeaseChallen
 		strings.EqualFold(strings.Join(a.Scopes, " "), strings.Join(b.Scopes, " ")) &&
 		a.DeviceLabel == b.DeviceLabel &&
 		a.IdleTimeoutHours == b.IdleTimeoutHours &&
-		a.AbsoluteTTLHours == b.AbsoluteTTLHours
+		a.AbsoluteTTLHours == b.AbsoluteTTLHours &&
+		a.EffectiveTokenTTLHours() == b.EffectiveTokenTTLHours()
 }
 
 func agentAccessLeaseResponse(model *storageModels.AgentAccessLease, now time.Time) apimodels.AgentAccessLease {
@@ -1306,6 +1317,7 @@ func agentAccessLeaseResponse(model *storageModels.AgentAccessLease, now time.Ti
 		DeviceLabel:          strings.TrimSpace(model.DeviceLabel),
 		Status:               effectiveAgentAccessLeaseStatus(model, now),
 		IdleTimeoutHours:     model.IdleTimeoutHours,
+		TokenTTLHours:        model.EffectiveTokenTTLHours(),
 		IdleExpiresAt:        model.IdleExpiresAt,
 		AbsoluteExpiresAt:    model.AbsoluteExpiresAt,
 		LastUsedAt:           model.LastUsedAt,
@@ -1341,6 +1353,7 @@ func agentAccessLeaseChallengeResponse(model *storageModels.AgentAccessLeaseChal
 		DeviceLabel:      strings.TrimSpace(model.DeviceLabel),
 		IdleTimeoutHours: model.IdleTimeoutHours,
 		AbsoluteTTLHours: model.AbsoluteTTLHours,
+		TokenTTLHours:    model.EffectiveTokenTTLHours(),
 		Message:          model.Message,
 		TypedData:        challengeTypedDataResponse(model),
 		IssuedAt:         model.IssuedAt,

@@ -956,6 +956,8 @@ components:
                     type: string
                 status:
                     type: string
+                token_ttl_hours:
+                    type: integer
                 updated_at:
                     $ref: '#/components/schemas/RFC3339DateTime'
                 username:
@@ -974,6 +976,7 @@ components:
                 - principal_wallet
                 - scopes
                 - status
+                - token_ttl_hours
                 - updated_at
                 - username
             type: object
@@ -998,6 +1001,8 @@ components:
                     type: array
                 session_public_key:
                     type: string
+                token_ttl_hours:
+                    type: integer
             required:
                 - agent_wallet
                 - device_label
@@ -1037,6 +1042,8 @@ components:
                     type: string
                 session_public_key:
                     type: string
+                token_ttl_hours:
+                    type: integer
                 typed_data: {}
                 username:
                     type: string
@@ -1055,6 +1062,7 @@ components:
                 - message
                 - principal_wallet
                 - scopes
+                - token_ttl_hours
                 - username
                 - wallet_address
             type: object

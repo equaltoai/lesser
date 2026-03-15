@@ -58,6 +58,7 @@ type graphAgentAccessLeaseOptions struct {
 	DeviceLabel       string
 	IdleTimeoutHours  int
 	AbsoluteTTLHours  int
+	TokenTTLHours     int
 }
 
 func (r *Resolver) agentAccessLeaseRepo() *storageRepos.AgentAccessLeaseRepository {
@@ -161,6 +162,7 @@ func (r *mutationResolver) CreateAgentAccessLease(ctx context.Context, username 
 		DeviceLabel:       principalChallenge.DeviceLabel,
 		Status:            graphAgentAccessLeaseStatusActive,
 		IdleTimeoutHours:  principalChallenge.IdleTimeoutHours,
+		TokenTTLHours:     principalChallenge.EffectiveTokenTTLHours(),
 		IdleExpiresAt:     idleExpiresAt,
 		AbsoluteExpiresAt: absoluteExpiresAt,
 		LastUsedAt:        now,
@@ -422,14 +424,12 @@ func (r *mutationResolver) ExchangeAgentAccessLeaseToken(ctx context.Context, us
 	if newIdleExpiresAt.After(lease.AbsoluteExpiresAt) {
 		newIdleExpiresAt = lease.AbsoluteExpiresAt
 	}
-	accessTTL := auth.AccessTokenDuration
-	remaining := time.Until(newIdleExpiresAt)
+	tokenExpiresAt := storageModels.AgentAccessLeaseTokenExpiresAt(now, lease, newIdleExpiresAt)
+	remaining := time.Until(tokenExpiresAt)
 	if remaining <= 0 {
 		return nil, apperrors.Unauthorized("lease expired")
 	}
-	if remaining < accessTTL {
-		accessTTL = remaining
-	}
+	accessTTL := remaining
 	if r.Config == nil || r.Config.JWTSecret == "" {
 		return nil, apperrors.Internal("jwt secret not configured")
 	}
@@ -494,6 +494,10 @@ func (r *mutationResolver) createGraphAgentAccessLeaseChallenge(ctx context.Cont
 	if input.AbsoluteTTLHours != nil {
 		absoluteTTLHours = *input.AbsoluteTTLHours
 	}
+	tokenTTLHours := 0
+	if input.TokenTTLHours != nil {
+		tokenTTLHours = *input.TokenTTLHours
+	}
 	opts, err := normalizeGraphAgentAccessLeaseOptions(
 		leaseID,
 		username,
@@ -505,6 +509,7 @@ func (r *mutationResolver) createGraphAgentAccessLeaseChallenge(ctx context.Cont
 		deviceLabel,
 		idleTimeoutHours,
 		absoluteTTLHours,
+		tokenTTLHours,
 		action == graphAgentAccessLeaseActionAgent,
 	)
 	if err != nil {
@@ -709,6 +714,7 @@ func (r *Resolver) createGraphAgentAccessLeaseChallengeRecord(ctx context.Contex
 		DeviceLabel:       opts.DeviceLabel,
 		IdleTimeoutHours:  opts.IdleTimeoutHours,
 		AbsoluteTTLHours:  opts.AbsoluteTTLHours,
+		TokenTTLHours:     opts.TokenTTLHours,
 		Nonce:             nonce,
 		Message:           message,
 		IssuedAt:          now,
@@ -762,6 +768,7 @@ func normalizeGraphAgentAccessLeaseOptions(
 	deviceLabel string,
 	idleTimeoutHours int,
 	absoluteTTLHours int,
+	tokenTTLHours int,
 	requireLeaseID bool,
 ) (graphAgentAccessLeaseOptions, error) {
 	leaseID = strings.TrimSpace(leaseID)
@@ -806,6 +813,7 @@ func normalizeGraphAgentAccessLeaseOptions(
 	if absoluteTTLHours < idleTimeoutHours {
 		absoluteTTLHours = idleTimeoutHours
 	}
+	tokenTTLHours = storageModels.NormalizeAgentAccessLeaseTokenTTLHours(idleTimeoutHours, absoluteTTLHours, tokenTTLHours)
 	normalizedScopes := append([]string(nil), scopes...)
 	sort.Strings(normalizedScopes)
 	return graphAgentAccessLeaseOptions{
@@ -820,6 +828,7 @@ func normalizeGraphAgentAccessLeaseOptions(
 		DeviceLabel:       deviceLabel,
 		IdleTimeoutHours:  idleTimeoutHours,
 		AbsoluteTTLHours:  absoluteTTLHours,
+		TokenTTLHours:     tokenTTLHours,
 	}, nil
 }
 
@@ -855,7 +864,7 @@ func normalizeGraphAgentAccessSessionPublicKey(raw string) (string, error) {
 
 func buildGraphAgentAccessLeaseChallengeMessage(id string, opts graphAgentAccessLeaseOptions, action string, nonce string, issuedAt time.Time, expiresAt time.Time) string {
 	return fmt.Sprintf(
-		"LESSER AGENT ACCESS LEASE\nid: %s\nlease_id: %s\naction: %s\ndomain: %s\nprincipal_username: %s\nagent_username: %s\nprincipal_wallet: %s\nagent_wallet: %s\nsession_public_key: %s\nscopes: %s\ndevice_label: %s\nidle_timeout_hours: %d\nabsolute_ttl_hours: %d\nnonce: %s\nissued_at: %s\nexpires_at: %s",
+		"LESSER AGENT ACCESS LEASE\nid: %s\nlease_id: %s\naction: %s\ndomain: %s\nprincipal_username: %s\nagent_username: %s\nprincipal_wallet: %s\nagent_wallet: %s\nsession_public_key: %s\nscopes: %s\ndevice_label: %s\nidle_timeout_hours: %d\nabsolute_ttl_hours: %d\ntoken_ttl_hours: %d\nnonce: %s\nissued_at: %s\nexpires_at: %s",
 		strings.TrimSpace(id),
 		strings.TrimSpace(opts.LeaseID),
 		strings.TrimSpace(action),
@@ -869,6 +878,7 @@ func buildGraphAgentAccessLeaseChallengeMessage(id string, opts graphAgentAccess
 		strings.TrimSpace(opts.DeviceLabel),
 		opts.IdleTimeoutHours,
 		opts.AbsoluteTTLHours,
+		opts.TokenTTLHours,
 		strings.TrimSpace(nonce),
 		issuedAt.UTC().Format(time.RFC3339),
 		expiresAt.UTC().Format(time.RFC3339),
@@ -928,7 +938,8 @@ func graphAgentAccessLeaseChallengesMatch(a, b *storageModels.AgentAccessLeaseCh
 		strings.EqualFold(strings.Join(a.Scopes, " "), strings.Join(b.Scopes, " ")) &&
 		a.DeviceLabel == b.DeviceLabel &&
 		a.IdleTimeoutHours == b.IdleTimeoutHours &&
-		a.AbsoluteTTLHours == b.AbsoluteTTLHours
+		a.AbsoluteTTLHours == b.AbsoluteTTLHours &&
+		a.EffectiveTokenTTLHours() == b.EffectiveTokenTTLHours()
 }
 
 func buildGraphAgentAccessLeaseTypedData(challenge *storageModels.AgentAccessLeaseChallenge) apitypes.TypedData {
@@ -952,6 +963,7 @@ func buildGraphAgentAccessLeaseTypedData(challenge *storageModels.AgentAccessLea
 				{Name: "deviceLabel", Type: "string"},
 				{Name: "idleTimeoutHours", Type: "string"},
 				{Name: "absoluteTTLHours", Type: "string"},
+				{Name: "tokenTTLHours", Type: "string"},
 				{Name: "nonce", Type: "string"},
 				{Name: "issuedAt", Type: "string"},
 				{Name: "expiresAt", Type: "string"},
@@ -976,6 +988,7 @@ func buildGraphAgentAccessLeaseTypedData(challenge *storageModels.AgentAccessLea
 			"deviceLabel":       strings.TrimSpace(challenge.DeviceLabel),
 			"idleTimeoutHours":  fmt.Sprintf("%d", challenge.IdleTimeoutHours),
 			"absoluteTTLHours":  fmt.Sprintf("%d", challenge.AbsoluteTTLHours),
+			"tokenTTLHours":     fmt.Sprintf("%d", challenge.EffectiveTokenTTLHours()),
 			"nonce":             strings.TrimSpace(challenge.Nonce),
 			"issuedAt":          challenge.IssuedAt.UTC().Format(time.RFC3339),
 			"expiresAt":         challenge.ExpiresAt.UTC().Format(time.RFC3339),
@@ -1082,6 +1095,7 @@ func graphAgentAccessLeaseModel(lease *storageModels.AgentAccessLease, now time.
 		DeviceLabel:          strings.TrimSpace(lease.DeviceLabel),
 		Status:               graphEffectiveAgentAccessLeaseStatus(lease, now),
 		IdleTimeoutHours:     lease.IdleTimeoutHours,
+		TokenTTLHours:        lease.EffectiveTokenTTLHours(),
 		IdleExpiresAt:        model.Time(lease.IdleExpiresAt),
 		AbsoluteExpiresAt:    model.Time(lease.AbsoluteExpiresAt),
 		LastUsedAt:           model.Time(lease.LastUsedAt),
@@ -1126,6 +1140,7 @@ func graphAgentAccessLeaseChallengeModel(challenge *storageModels.AgentAccessLea
 		DeviceLabel:      strings.TrimSpace(challenge.DeviceLabel),
 		IdleTimeoutHours: challenge.IdleTimeoutHours,
 		AbsoluteTTLHours: challenge.AbsoluteTTLHours,
+		TokenTTLHours:    challenge.EffectiveTokenTTLHours(),
 		Message:          challenge.Message,
 		TypedDataJSON:    typedDataJSON,
 		IssuedAt:         model.Time(challenge.IssuedAt),
