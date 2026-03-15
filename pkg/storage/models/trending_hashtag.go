@@ -14,8 +14,8 @@ type TrendingHashtag struct {
 	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI fields for trending queries
-	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"`
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"`
 
 	// Business fields from legacy
 	Hashtag   string    `theorydb:"attr:hashtag" json:"hashtag"`

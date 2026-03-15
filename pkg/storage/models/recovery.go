@@ -51,8 +51,8 @@ type RecoveryRequest struct {
 	SK string `theorydb:"sk,attr:SK"` // REQUEST
 
 	// GSI1 for querying by username
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // USER#username
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // RECOVERY#timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"` // USER#username
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"` // RECOVERY#timestamp
 
 	// Business fields
 	ID            string          `theorydb:"attr:id" json:"id"`

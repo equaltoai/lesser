@@ -15,10 +15,10 @@ type Flag struct {
 	PK string `theorydb:"pk,attr:PK"` // FLAG#objectID (first object if multiple)
 	SK string `theorydb:"sk,attr:SK"` // TIME#timestamp#flagID
 
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // ACTOR#actorID
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // FLAG#timestamp
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"` // FLAG_STATUS#status
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"` // TIME#timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"` // ACTOR#actorID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"` // FLAG#timestamp
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"` // FLAG_STATUS#status
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"` // TIME#timestamp
 
 	// Flag fields
 	ID         string     `theorydb:"attr:id" json:"id"`                  // The flag activity ID

@@ -14,8 +14,8 @@ type FederationInstance struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	Domain        string    `theorydb:"attr:domain" json:"domain"`
 	Software      string    `theorydb:"attr:software" json:"software"`            // mastodon, pleroma, etc.
@@ -51,8 +51,8 @@ type FederationCostActivity struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	ID           string    `theorydb:"attr:id" json:"id"`
 	Domain       string    `theorydb:"attr:domain" json:"domain"`
@@ -157,10 +157,10 @@ type FederationNode struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK"`
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty"`
 
 	Domain            string         `theorydb:"attr:domain" json:"domain"`
 	DisplayName       string         `theorydb:"attr:displayName" json:"display_name"`
@@ -207,10 +207,10 @@ type FederationEdge struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
-	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"`
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"`
 
 	SourceDomain   string    `theorydb:"attr:sourceDomain" json:"source_domain"`
 	TargetDomain   string    `theorydb:"attr:targetDomain" json:"target_domain"`
@@ -299,8 +299,8 @@ type InstanceCluster struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	ClusterID   string    `theorydb:"attr:clusterID" json:"cluster_id"`
 	Name        string    `theorydb:"attr:name" json:"name"`
@@ -333,8 +333,8 @@ type InstanceConnection struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
 
 	Domain         string    `theorydb:"attr:domain" json:"domain"`
 	TargetDomain   string    `theorydb:"attr:targetDomain" json:"target_domain"`

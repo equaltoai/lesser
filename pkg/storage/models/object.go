@@ -15,16 +15,16 @@ type Object struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "object#{id}"
 
 	// GSI1 - by actor
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "actor#{actor_id}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "object#{published}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "actor#{actor_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "object#{published}#{id}"
 
 	// GSI2 - by type
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "object#type#{type}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{published}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "object#type#{type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{published}#{id}"
 
 	// GSI6 - for replies (used when InReplyTo is set)
-	GSI6PK string `theorydb:"index:gsi6,pk,attr:gsi6PK" json:"gsi6_pk,omitempty"` // Format: "REPLIES#{parent_object_id}"
-	GSI6SK string `theorydb:"index:gsi6,sk,attr:gsi6SK" json:"gsi6_sk,omitempty"` // Format: "{timestamp}#{id}"
+	GSI6PK string `theorydb:"index:gsi6,pk,attr:gsi6PK,omitempty" json:"gsi6_pk,omitempty"` // Format: "REPLIES#{parent_object_id}"
+	GSI6SK string `theorydb:"index:gsi6,sk,attr:gsi6SK,omitempty" json:"gsi6_sk,omitempty"` // Format: "{timestamp}#{id}"
 
 	// Object data - stored as JSON
 	ID           string    `theorydb:"attr:id" json:"id"`

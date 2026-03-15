@@ -14,16 +14,16 @@ type Device struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // DEVICE#deviceID
 
 	// GSI for querying devices by last seen
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#username#DEVICES
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {lastSeenAt}#{deviceID}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // USER#username#DEVICES
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // {lastSeenAt}#{deviceID}
 
 	// GSI for trust level monitoring
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // TRUST_LEVEL#{trustLevel}
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // {lastSeenAt}#{deviceID}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"-"` // TRUST_LEVEL#{trustLevel}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"-"` // {lastSeenAt}#{deviceID}
 
 	// GSI for direct deviceID lookup (login/session flows)
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // DEVICEID#{deviceID}
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // USER#{username}
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"-"` // DEVICEID#{deviceID}
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"-"` // USER#{username}
 
 	// Device data
 	DeviceID      string    `theorydb:"attr:deviceID" json:"device_id"`

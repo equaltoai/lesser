@@ -14,8 +14,8 @@ type BackgroundFetchJob struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "JOB#{timestamp}"
 
 	// GSI for querying by status
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{status_id}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // FETCH#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // STATUS#{status_id}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // FETCH#{timestamp}
 
 	// Job identification
 	JobID    string `theorydb:"attr:jobID" json:"job_id"`       // Unique job identifier

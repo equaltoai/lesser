@@ -21,12 +21,12 @@ type Session struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "session#{sessionID}" (same as PK for simple key)
 
 	// GSI1 - User sessions lookup
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "USER_SESSIONS#{userID}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{created_at}#{sessionID}"
 
 	// GSI2 - Access token lookup
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{userID}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // Format: "TOKEN#{access_token_hash}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk,omitempty"` // Format: "{userID}"
 
 	// Core session data
 	SessionID    string   `theorydb:"attr:sessionID" json:"session_id"`

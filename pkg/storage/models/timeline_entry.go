@@ -16,8 +16,8 @@ type TimelineEntry struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // {timestamp}#{entryID}
 
 	// GSI for public timeline queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // TIMELINE#PUBLIC#{local/federated}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {timestamp}#{entryID}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // TIMELINE#PUBLIC#{local/federated}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // {timestamp}#{entryID}
 
 	// Entry data
 	TimelineType string    `theorydb:"attr:timelineType" json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT

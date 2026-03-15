@@ -77,3 +77,17 @@ func TestResolveToolJobs_FallsBackToRuntime(t *testing.T) {
 	require.GreaterOrEqual(t, jobs, 1)
 	require.LessOrEqual(t, jobs, defaultCLIMaxToolJobs)
 }
+
+func TestGoFlagsHasBuildParallelism(t *testing.T) {
+	t.Run("missing build parallelism", func(t *testing.T) {
+		require.False(t, goFlagsHasBuildParallelism("-trimpath -race"))
+	})
+
+	t.Run("inline build parallelism", func(t *testing.T) {
+		require.True(t, goFlagsHasBuildParallelism("-trimpath -p=4"))
+	})
+
+	t.Run("split build parallelism token", func(t *testing.T) {
+		require.True(t, goFlagsHasBuildParallelism("-trimpath -p 4"))
+	})
+}

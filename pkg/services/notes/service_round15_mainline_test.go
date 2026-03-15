@@ -818,6 +818,7 @@ func TestService_round15_create_note_generates_local_mention_tags_and_notificati
 	require.True(t, ok)
 	require.Len(t, federatedNote.Tag, 1)
 	assert.Equal(t, "Mention", federatedNote.Tag[0].Type)
+	assert.Equal(t, []string{"https://example.com/users/alice/followers", "https://example.com/users/bob"}, federatedNote.CC)
 }
 
 func TestService_round15_html_by_contract_is_sanitized_at_write_time(t *testing.T) {

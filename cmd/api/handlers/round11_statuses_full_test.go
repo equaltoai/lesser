@@ -105,7 +105,25 @@ func TestStatusesFullPermissions(t *testing.T) {
 	}
 	require.True(t, handler.isViewerMentioned(directStatus.Mentions, "alice"))
 	require.True(t, handler.isViewerMentioned([]string{"alice"}, "alice"))
+	require.True(t, handler.isViewerMentioned([]string{"https://remote.example/users/alice"}, "alice"))
 	require.False(t, handler.isViewerMentioned(directStatus.Mentions, ""))
 	require.True(t, handler.isViewerInRecipientLists(directStatus, "alice"))
+	require.True(t, handler.isViewerInRecipientLists(&storagemodels.Status{
+		CcRecipients: []string{cfg.ActorURL("alice")},
+	}, "alice"))
+	require.True(t, handler.isViewerInRecipientLists(&storagemodels.Status{
+		BtoRecipients: []string{cfg.ActorURL("alice")},
+	}, "alice"))
 	require.True(t, handler.checkDirectMessageVisibility(directStatus, "alice"))
+	require.False(t, handler.checkDirectMessageVisibility(&storagemodels.Status{
+		StatusID:   "dm-hidden",
+		Visibility: "direct",
+	}, "alice"))
+
+	allowed, err = handler.checkStatusViewPermission(context.Background(), &storagemodels.Status{
+		StatusID:   "mystery",
+		Visibility: "mystery",
+	}, "alice")
+	require.NoError(t, err)
+	require.False(t, allowed)
 }

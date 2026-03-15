@@ -42,8 +42,8 @@ type SeveredRelationship struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // INSTANCE#{remoteInstance}#{timestamp}
 
 	// GSI1 for filtering by status
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{status}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // TIMESTAMP#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // STATUS#{status}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // TIMESTAMP#{timestamp}
 
 	// Fields
 	ID                  string          `theorydb:"attr:id" json:"id"`
@@ -83,8 +83,8 @@ type AffectedRelationship struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // AFFECTED#{actorID}
 
 	// GSI1 for reverse lookup by actor
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // ACTOR#{actorID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // SEVERED#{severanceID}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // ACTOR#{actorID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // SEVERED#{severanceID}
 
 	// Fields
 	SeveranceID      string     `theorydb:"attr:severanceID" json:"severance_id"`

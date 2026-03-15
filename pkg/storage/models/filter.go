@@ -14,8 +14,8 @@ type Filter struct {
 	SK string `theorydb:"sk,attr:SK"` // FILTER#filterID
 
 	// GSI for lookup by filter ID without knowing username
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // FILTER#{filterID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // USER#{username}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // FILTER#{filterID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // USER#{username}
 
 	// Filter fields
 	ID            string     `theorydb:"attr:id" json:"id"`                        // Unique filter ID

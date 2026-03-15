@@ -113,8 +113,8 @@ type ConversationParticipantRecord struct {
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // timestamp#conversationID (for sorting by recent)
 
 	// GSI1 for reverse lookup (find participants by conversation)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // CONVERSATION#conversationID
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // PARTICIPANT#username
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK"` // CONVERSATION#conversationID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK"` // PARTICIPANT#username
 
 	// Per-participant DM metadata (folder/request lifecycle, deletion, unread).
 	RequestState DmRequestState `theorydb:"attr:requestState" json:"request_state,omitempty"`
@@ -171,7 +171,7 @@ type ConversationParticipantKey struct {
 
 	PK     string `theorydb:"pk,attr:PK" json:"PK"`
 	SK     string `theorydb:"sk,attr:SK" json:"SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK"`
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK,omitempty"`
 
 	ConversationID string `theorydb:"attr:conversationID" json:"conversation_id"`

@@ -22,20 +22,20 @@ type EmojiModel struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // EMOJI
 
 	// GSI keys - for querying all emojis
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // ALL_EMOJIS
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // EMOJI#shortcode
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // ALL_EMOJIS
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // EMOJI#shortcode
 
 	// GSI keys - for querying by category
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // CATEGORY#category
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // EMOJI#shortcode
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"-"` // CATEGORY#category
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"-"` // EMOJI#shortcode
 
 	// GSI keys - for search and domain queries
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // SEARCH#prefix or DOMAIN#domain
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // EMOJI#shortcode
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"-"` // SEARCH#prefix or DOMAIN#domain
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"-"` // EMOJI#shortcode
 
 	// GSI keys - for usage statistics and popularity
-	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"-"` // USAGE#domain
-	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"-"` // SCORE#usage_count#shortcode
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"-"` // USAGE#domain
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"-"` // SCORE#usage_count#shortcode
 
 	// Business fields
 	Shortcode           string    `theorydb:"attr:shortcode" json:"shortcode"`

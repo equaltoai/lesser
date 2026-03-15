@@ -16,8 +16,8 @@ type List struct {
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // METADATA
 
 	// GSI1 for user's lists index
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // USER_LISTS#username
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK,omitempty"` // USER_LISTS#username
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK,omitempty"` // listID
 
 	// Core fields from legacy
 	ID            string    `theorydb:"attr:id" json:"id"`

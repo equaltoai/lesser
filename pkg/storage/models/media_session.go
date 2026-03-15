@@ -14,8 +14,8 @@ type MediaSession struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // METADATA
 
 	// GSI keys for querying by user and media
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{userID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // SESSION#{startTime}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // USER#{userID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // SESSION#{startTime}
 
 	// Business fields
 	SessionID        string     `theorydb:"attr:sessionID" json:"session_id"`

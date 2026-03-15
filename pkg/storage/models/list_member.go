@@ -14,8 +14,8 @@ type ListMember struct {
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // accountID
 
 	// GSI1 for reverse lookup (what lists is an account in)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"` // ACCOUNT_LISTS#accountID
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"` // listID#username
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK,omitempty"` // ACCOUNT_LISTS#accountID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK,omitempty"` // listID#username
 
 	// Core fields
 	ListID       string    `theorydb:"attr:listID" json:"list_id"`

@@ -18,16 +18,16 @@ type Notification struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "notif#{timestamp}#{notificationID}"
 
 	// GSI1 - Notification type queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{created_at}#{userID}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "NOTIF_TYPE#{type}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{created_at}#{userID}#{id}"
 
 	// GSI2 - Actor notifications (who triggered notifications)
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "NOTIF_ACTOR#{actorID}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{created_at}#{userID}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "NOTIF_ACTOR#{actorID}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{created_at}#{userID}#{id}"
 
 	// GSI3 - Group key for notification consolidation
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{created_at}#{id}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"` // Format: "NOTIF_GROUP#{groupKey}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"` // Format: "{created_at}#{id}"
 
 	// Core notification data
 	ID     string `theorydb:"attr:id" json:"id"`

@@ -200,3 +200,25 @@ func TestListPackagesForAllCoverage_PropagatesCaptureError(t *testing.T) {
 	_, err := listPackagesForAllCoverage(repoRoot, t.TempDir(), false)
 	require.ErrorIs(t, err, errSentinel)
 }
+
+func TestRunTestSubcommands_ReportFlagParseErrors(t *testing.T) {
+	require.Error(t, runTestUnit([]string{"--badflag"}))
+	require.Error(t, runTestIntegration([]string{"--badflag"}))
+	require.Error(t, runTestRace([]string{"--badflag"}))
+	require.Error(t, runTestCoverage([]string{"--badflag"}))
+}
+
+func TestRunTestCoverage_PropagatesRepoRootAndCacheErrors(t *testing.T) {
+	previousRepoRoot := findRepoRootFn
+	t.Cleanup(func() { findRepoRootFn = previousRepoRoot })
+
+	findRepoRootFn = func() (string, error) { return "", errSentinel }
+	require.ErrorIs(t, runTestCoverage([]string{"--scope", "all"}), errSentinel)
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	goCacheFile := filepath.Join(repoRoot, "go-cache-file")
+	require.NoError(t, os.WriteFile(goCacheFile, []byte("x"), 0o644))
+	t.Setenv("GOCACHE", goCacheFile)
+	require.Error(t, runTestCoverage([]string{"--scope", "all"}))
+}

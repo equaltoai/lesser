@@ -40,16 +40,16 @@ type Media struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "version#{version}"
 
 	// GSI1 - User media lookup
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_MEDIA#{userID}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "USER_MEDIA#{userID}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// GSI2 - Status-based queries (pending, processing, ready, failed)
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_STATUS#{status}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "MEDIA_STATUS#{status}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// GSI3 - Content type queries
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "CONTENT_TYPE#{content_type}"
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{uploaded_at}#{mediaID}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"` // Format: "CONTENT_TYPE#{content_type}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"` // Format: "{uploaded_at}#{mediaID}"
 
 	// Core media data
 	MediaID     string `theorydb:"attr:mediaID" json:"media_id"`

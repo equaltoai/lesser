@@ -17,12 +17,12 @@ type MediaSpending struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "PERIOD#{year}-{month}" or "DAILY#{year}-{month}-{day}"
 
 	// GSI1 - Global spending queries across all users
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SPENDING#{period_type}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{year}-{month}-{day}#{userID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "SPENDING#{period_type}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{year}-{month}-{day}#{userID}"
 
 	// GSI2 - Cost category queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_CATEGORY#{category}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{userID}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "COST_CATEGORY#{category}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{userID}"
 
 	// Core spending data
 	UserID     string `theorydb:"attr:userID" json:"user_id"`
@@ -94,8 +94,8 @@ type MediaSpendingTransaction struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TXN#{timestamp}#{transactionID}"
 
 	// GSI1 - Time-based transaction queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "TXN_TIME#{date}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{userID}#{transactionID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "TXN_TIME#{date}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{userID}#{transactionID}"
 
 	// Core transaction data
 	TransactionID string `theorydb:"attr:transactionID" json:"transaction_id"`

@@ -16,12 +16,12 @@ type FederationAnalyticsTimeSeries struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // {timestamp}
 
 	// GSI1 - Domain-based queries: GSI1PK: DOMAIN#{domain}, GSI1SK: {period}#{timestamp}
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"`
 
 	// GSI2 - Period-based queries: GSI2PK: PERIOD#{period}, GSI2SK: {timestamp}#{domain}
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"`
 
 	// Core time series data
 	Domain    string    `theorydb:"attr:domain" json:"domain"`

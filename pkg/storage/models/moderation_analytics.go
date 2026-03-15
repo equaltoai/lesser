@@ -11,8 +11,8 @@ type ModerationAnalytics struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"`
 
 	// GSI fields for querying by type
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
 
 	// Business fields from legacy
 	Date                  string           `theorydb:"attr:date" json:"date"` // YYYY-MM-DD format

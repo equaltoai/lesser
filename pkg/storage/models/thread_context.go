@@ -16,8 +16,8 @@ type ThreadContext struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // CONTEXT#{statusID}
 
 	// GSI for querying by status
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // THREAD
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // STATUS#{statusID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // THREAD
 
 	// Thread data
 	RootStatusID   string     `theorydb:"attr:rootStatusID" json:"root_status_id"`              // The root/original status ID

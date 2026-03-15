@@ -14,8 +14,8 @@ type GraphQLStreamSubscription struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: CONN#<connectionID>#SUB#<subscriptionID>
 
 	// GSI1 - Query by connection to support cleanup
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // Format: CONN#<connectionID>
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // Format: SUB#<subscriptionID>#STREAM#<stream>
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // Format: CONN#<connectionID>
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // Format: SUB#<subscriptionID>#STREAM#<stream>
 
 	// Business fields
 	ConnectionID   string    `theorydb:"attr:connectionID" json:"connection_id"`

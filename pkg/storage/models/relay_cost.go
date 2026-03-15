@@ -16,12 +16,12 @@ type RelayCost struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying by relay URL
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk,omitempty"`
 
 	// GSI fields for querying by time period
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk,omitempty"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk,omitempty"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2pk,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2sk,omitempty"`
 
 	// Cost tracking fields
 	RelayURL      string `theorydb:"attr:relayURL" json:"relay_url"`
@@ -116,8 +116,8 @@ type RelayMetrics struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI fields for querying by relay URL
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk,omitempty"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk,omitempty"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk,omitempty"`
 
 	// Metrics details
 	RelayURL    string    `theorydb:"attr:relayURL" json:"relay_url"`

@@ -16,20 +16,20 @@ type Timeline struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI1 - Post timeline (all timeline entries for a specific post)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "POST#{post_id}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "POST#{post_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI2 - Actor timeline (all timeline entries by an actor)
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "ACTOR#{actor_id}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "ACTOR#{actor_id}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI3 - Visibility timeline (entries by visibility level)
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // Format: "VISIBILITY#{visibility}"
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk,omitempty"` // Format: "VISIBILITY#{visibility}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// GSI4 - Language timeline (entries by language)
-	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
-	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
 	// Core timeline data
 	TimelineType string `theorydb:"attr:timelineType" json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT, HASHTAG

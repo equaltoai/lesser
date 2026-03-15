@@ -349,6 +349,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	mentionTags, mentionedUsers := s.buildMentionTags(ctx, rawContent, author)
 	if len(mentionTags) > 0 {
 		note.Tag = append(note.Tag, mentionTags...)
+		s.addMentionAudience(note, mentionTags)
 	}
 
 	// Attach media if provided
@@ -1333,6 +1334,63 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 	}
 
 	return tags, usernames
+}
+
+func (s *Service) addMentionAudience(note *activitypub.Note, mentionTags []activitypub.Tag) {
+	if note == nil || len(mentionTags) == 0 {
+		return
+	}
+
+	recipients := mentionActorIDs(mentionTags)
+	if len(recipients) == 0 {
+		return
+	}
+
+	switch note.Visibility {
+	case models.VisibilityPublic, models.VisibilityUnlisted:
+		note.CC = appendUniqueAudience(note.CC, recipients...)
+	case models.VisibilityDirect:
+		note.To = appendUniqueAudience(note.To, recipients...)
+	}
+}
+
+func mentionActorIDs(tags []activitypub.Tag) []string {
+	recipients := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if tag.Type != "Mention" {
+			continue
+		}
+		href := strings.TrimSpace(tag.Href)
+		if href == "" {
+			continue
+		}
+		recipients = appendUniqueAudience(recipients, href)
+	}
+	return recipients
+}
+
+func appendUniqueAudience(existing []string, values ...string) []string {
+	for _, value := range values {
+		candidate := strings.TrimSpace(value)
+		if candidate == "" {
+			continue
+		}
+
+		duplicate := false
+		for _, current := range existing {
+			if strings.EqualFold(strings.TrimSpace(current), candidate) {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+
+		existing = append(existing, candidate)
+	}
+
+	return existing
 }
 
 // prepareMediaAttachments validates the provided media IDs, converts them to ActivityPub attachments,

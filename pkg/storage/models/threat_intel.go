@@ -14,10 +14,10 @@ type ThreatIntel struct {
 	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI keys for querying
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"`
 
 	// Threat data fields
 	ID          string    `theorydb:"attr:id" json:"id"`

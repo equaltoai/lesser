@@ -14,14 +14,14 @@ type Report struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // REPORT
 
 	// GSI fields
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#reporterID
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // REPORT#timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // USER#reporterID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // REPORT#timestamp
 
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // REPORTED#targetAccountID
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // REPORT#timestamp
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"-"` // REPORTED#targetAccountID
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"-"` // REPORT#timestamp
 
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // STATUS#status
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // REPORT#timestamp
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"-"` // STATUS#status
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"-"` // REPORT#timestamp
 
 	// Report fields
 	ID                string     `theorydb:"attr:id" json:"id"`

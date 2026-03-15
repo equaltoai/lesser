@@ -16,8 +16,8 @@ type AIAnalysis struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "ANALYSIS#{analysis_id}"
 
 	// GSI4 for temporal queries (reusing cost tracking GSI)
-	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
-	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{timestamp}"
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"gsi4_pk"` // Format: "AI#ANALYSIS#{date}"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"gsi4_sk"` // Format: "{timestamp}"
 
 	// Core fields
 	ID         string    `theorydb:"attr:id" json:"id"`

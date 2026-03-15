@@ -13,8 +13,8 @@ type HashtagTrend struct {
 
 	PK          string    `theorydb:"pk,attr:PK"`
 	SK          string    `theorydb:"sk,attr:SK"`
-	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"`
+	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"`
 	Name        string    `theorydb:"attr:name" json:"name"`
 	URL         string    `theorydb:"attr:url" json:"url"`
 	UsageCount  int64     `theorydb:"attr:usageCount" json:"usage_count"`
@@ -66,8 +66,8 @@ type StatusTrend struct {
 
 	PK          string    `theorydb:"pk,attr:PK"`
 	SK          string    `theorydb:"sk,attr:SK"`
-	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"`
+	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"`
 	ID          string    `theorydb:"attr:id" json:"id"`
 	URL         string    `theorydb:"attr:url" json:"url"`
 	AuthorID    string    `theorydb:"attr:authorID" json:"author_id"`
@@ -110,8 +110,8 @@ type LinkTrend struct {
 
 	PK          string    `theorydb:"pk,attr:PK"`
 	SK          string    `theorydb:"sk,attr:SK"`
-	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK"`
-	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK"`
+	GSI8PK      string    `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"`
+	GSI8SK      string    `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"`
 	URL         string    `theorydb:"attr:url" json:"url"`
 	Title       string    `theorydb:"attr:title" json:"title"`
 	Description string    `theorydb:"attr:description" json:"description"`
@@ -197,8 +197,8 @@ type PopularQueryCounter struct {
 	// Key fields for atomic counter operations
 	PK     string `theorydb:"pk,attr:PK"`                // POPULAR_QUERY#query_hash
 	SK     string `theorydb:"sk,attr:SK"`                // COUNTER#time_bucket (daily, weekly, monthly)
-	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"` // For time-based queries
-	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"` // For ranking by count
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"` // For time-based queries
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"` // For ranking by count
 
 	// Business fields
 	QueryHash    string    `theorydb:"attr:queryHash" json:"query_hash"`       // Hashed query for privacy

@@ -44,8 +44,8 @@ type InstanceDomainBlock struct {
 
 	PK             string    `theorydb:"pk,attr:PK"`
 	SK             string    `theorydb:"sk,attr:SK"`
-	GSI1PK         string    `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK         string    `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK         string    `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK         string    `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 	ID             string    `theorydb:"attr:id" json:"ID"`
 	Domain         string    `theorydb:"attr:domain" json:"Domain"`
 	Severity       string    `theorydb:"attr:severity" json:"Severity"` // "silence" or "suspend"
@@ -92,8 +92,8 @@ type EmailDomainBlock struct {
 
 	PK        string    `theorydb:"pk,attr:PK"`
 	SK        string    `theorydb:"sk,attr:SK"`
-	GSI1PK    string    `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK    string    `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK    string    `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK    string    `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 	ID        string    `theorydb:"attr:id" json:"ID"`
 	Domain    string    `theorydb:"attr:domain" json:"Domain"`
 	CreatedBy string    `theorydb:"attr:createdBy" json:"CreatedBy"`
@@ -140,8 +140,8 @@ type DomainAllow struct {
 
 	PK        string    `theorydb:"pk,attr:PK"`
 	SK        string    `theorydb:"sk,attr:SK"`
-	GSI1PK    string    `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK    string    `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK    string    `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK    string    `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 	ID        string    `theorydb:"attr:id" json:"ID"`
 	Domain    string    `theorydb:"attr:domain" json:"Domain"`
 	CreatedBy string    `theorydb:"attr:createdBy" json:"CreatedBy"`

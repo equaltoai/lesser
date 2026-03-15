@@ -14,8 +14,8 @@ type InstanceRule struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // RULE#{order}#{id}
 
 	// GSI for active rules
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // INSTANCE#ACTIVE_RULES
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {order}#{id}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // INSTANCE#ACTIVE_RULES
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // {order}#{id}
 
 	// Rule data
 	ID          string     `theorydb:"attr:id" json:"id"`

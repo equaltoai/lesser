@@ -36,8 +36,8 @@ type Bookmark struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // TIME#timestamp#objectID or OBJECT#objectID
 
 	// GSI8 (OBJECT records only) – reverse index to delete all bookmarks for an object without scans.
-	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK" json:"-"`
-	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK" json:"-"`
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty" json:"-"`
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty" json:"-"`
 
 	// Core fields
 	Username  string    `theorydb:"attr:username" json:"username"`

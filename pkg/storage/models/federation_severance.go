@@ -11,8 +11,8 @@ type FederationSeverance struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	UserID       string    `theorydb:"attr:userID" json:"user_id"`
 	Domain       string    `theorydb:"attr:domain" json:"domain"`
@@ -101,8 +101,8 @@ type FederationTimeSeries struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	Domain         string                 `theorydb:"attr:domain" json:"domain"`
 	Period         string                 `theorydb:"attr:period" json:"period"` // "hourly", "daily", "weekly"

@@ -17,16 +17,16 @@ type AICost struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for time-based queries - AI_COSTS#{YYYY-MM}, TS#{unix_millis}#{operation_id}
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"`
 
 	// GSI2 for operation type queries - AI_TYPE#{operation_type}, MODEL#{model}#{timestamp}
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"`
 
 	// GSI3 for cost analysis - AI_COST_RANGE#{cost_tier}, COST#{cost_microcents}#{timestamp}
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"`
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"`
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"`
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"`
 
 	// Core operation metadata
 	OperationID   string `theorydb:"attr:operationID" json:"operation_id"`
@@ -385,8 +385,8 @@ type AIAggregatedCost struct {
 	SK string `theorydb:"sk" json:"sk"`
 
 	// GSI1 for time-based aggregation queries
-	GSI1PK string `theorydb:"index:gsi1,pk" json:"gsi1_pk"`
-	GSI1SK string `theorydb:"index:gsi1,sk" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,omitempty" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,omitempty" json:"gsi1_sk"`
 
 	// Aggregation metadata
 	Period        string    `json:"period"` // hour, day, week, month

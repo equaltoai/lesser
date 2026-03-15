@@ -14,10 +14,10 @@ type StreamingPreferences struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // CURRENT or VERSION#{version}#{timestamp} or DEVICE#{deviceID}
 
 	// GSI keys for querying
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // USER#{username}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // STREAMING_PREFS#{timestamp}
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // DEVICE#{deviceID}
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // STREAMING_PREFS#{username}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // USER#{username}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // STREAMING_PREFS#{timestamp}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2pk"` // DEVICE#{deviceID}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2sk"` // STREAMING_PREFS#{username}
 
 	// Business fields
 	Username          string `theorydb:"attr:username" json:"username"`
