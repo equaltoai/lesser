@@ -127,6 +127,105 @@ func TestBuildMentionTagsSkipsWhenActorIDCannotBeResolved(t *testing.T) {
 	assert.Nil(t, usernames)
 }
 
+func TestAddMentionAudienceRespectsVisibility(t *testing.T) {
+	mentionTags := []activitypub.Tag{
+		{Type: "Mention", Href: "https://remote.example/users/bob", Name: "@bob"},
+		{Type: "Mention", Href: "https://remote.example/users/bob", Name: "@bob"},
+	}
+
+	t.Run("public adds mentions to cc", func(t *testing.T) {
+		note := &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				To: []string{activitypub.PublicAddress},
+				CC: []string{"https://example.com/users/alice/followers"},
+			},
+			Visibility: models.VisibilityPublic,
+		}
+
+		(&Service{}).addMentionAudience(note, mentionTags)
+
+		assert.Equal(t, []string{activitypub.PublicAddress}, note.To)
+		assert.Equal(t, []string{"https://example.com/users/alice/followers", "https://remote.example/users/bob"}, note.CC)
+	})
+
+	t.Run("unlisted adds mentions to cc", func(t *testing.T) {
+		note := &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				To: []string{"https://example.com/users/alice/followers"},
+				CC: []string{activitypub.PublicAddress},
+			},
+			Visibility: models.VisibilityUnlisted,
+		}
+
+		(&Service{}).addMentionAudience(note, mentionTags)
+
+		assert.Equal(t, []string{activitypub.PublicAddress, "https://remote.example/users/bob"}, note.CC)
+	})
+
+	t.Run("private leaves mentions out of audience", func(t *testing.T) {
+		note := &activitypub.Note{
+			BaseObject: activitypub.BaseObject{
+				To: []string{"https://example.com/users/alice/followers"},
+			},
+			Visibility: models.VisibilityPrivate,
+		}
+
+		(&Service{}).addMentionAudience(note, mentionTags)
+
+		assert.Equal(t, []string{"https://example.com/users/alice/followers"}, note.To)
+		assert.Empty(t, note.CC)
+	})
+
+	t.Run("direct adds mentions to to", func(t *testing.T) {
+		note := &activitypub.Note{
+			Visibility: models.VisibilityDirect,
+		}
+
+		(&Service{}).addMentionAudience(note, mentionTags)
+
+		assert.Equal(t, []string{"https://remote.example/users/bob"}, note.To)
+		assert.Empty(t, note.CC)
+	})
+}
+
+func TestMentionActorIDsAndAudienceHelpers(t *testing.T) {
+	t.Run("mention actor ids skip non-mentions blanks and duplicates", func(t *testing.T) {
+		recipients := mentionActorIDs([]activitypub.Tag{
+			{Type: "Hashtag", Href: "https://example.com/tags/go", Name: "#go"},
+			{Type: "Mention", Href: " https://remote.example/users/bob ", Name: "@bob"},
+			{Type: "Mention", Href: "", Name: "@missing"},
+			{Type: "Mention", Href: "https://remote.example/users/bob", Name: "@bob"},
+		})
+
+		assert.Equal(t, []string{"https://remote.example/users/bob"}, recipients)
+	})
+
+	t.Run("append unique audience trims and keeps first case-insensitive match", func(t *testing.T) {
+		audience := appendUniqueAudience(
+			[]string{"https://remote.example/users/alice"},
+			" https://remote.example/users/bob ",
+			"https://remote.example/users/BOB",
+			"",
+		)
+
+		assert.Equal(t, []string{
+			"https://remote.example/users/alice",
+			"https://remote.example/users/bob",
+		}, audience)
+	})
+
+	t.Run("add mention audience ignores nil note and empty mentions", func(t *testing.T) {
+		service := &Service{}
+		service.addMentionAudience(nil, []activitypub.Tag{{Type: "Mention", Href: "https://remote.example/users/bob"}})
+
+		note := &activitypub.Note{Visibility: models.VisibilityPublic}
+		service.addMentionAudience(note, nil)
+
+		assert.Empty(t, note.To)
+		assert.Empty(t, note.CC)
+	})
+}
+
 func TestMentionHelpersNormalizeURLsAndUsernames(t *testing.T) {
 	assert.Equal(t, "bob", extractMentionUsername("https://example.com/users/bob"))
 	assert.Equal(t, "carol", extractMentionUsername("https://example.com/@carol"))

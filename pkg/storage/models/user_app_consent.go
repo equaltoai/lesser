@@ -14,8 +14,8 @@ type UserAppConsent struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // CONSENT#appID
 
 	// GSI for querying by app
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // APP#appID
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // USER#userID
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // APP#appID
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // USER#userID
 
 	// Consent data
 	UserID    string     `theorydb:"attr:userID" json:"user_id"`

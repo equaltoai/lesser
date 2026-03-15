@@ -17,12 +17,12 @@ type ProviderAccount struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "provider#{provider}#{providerID}"
 
 	// GSI1 - Provider lookup (find user by provider account)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "PROVIDER#{provider}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{providerID}#{userID}"
 
 	// GSI2 - User's provider accounts
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "USER_PROVIDERS#{userID}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{provider}#{created_at}"
 
 	// Core provider data
 	UserID       string `theorydb:"attr:userID" json:"user_id"`

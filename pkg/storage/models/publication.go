@@ -71,8 +71,8 @@ type PublicationMember struct {
 	SK string `theorydb:"sk,attr:SK"` // USER#{user_id}
 
 	// GSI1: USER#{user_id}#PUBLICATION / PUBLICATION#{pub_id}
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`
 
 	PublicationID string `theorydb:"attr:publicationID" json:"publication_id"`
 	UserID        string `theorydb:"attr:userID" json:"user_id"`

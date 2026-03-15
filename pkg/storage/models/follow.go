@@ -14,12 +14,12 @@ type Follow struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "following#{followed_username}"
 
 	// GSI1 - followed's perspective (for listing followers)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "follow#{followed_username}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "follower#{follower_username}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "follow#{followed_username}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "follower#{follower_username}"
 
 	// GSI2 - by state and timestamp (for pending follows)
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "follow#state#{state}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{follower}#{followed}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "follow#state#{state}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{follower}#{followed}"
 
 	// Relationship data
 	FollowerUsername string     `theorydb:"attr:followerUsername" json:"follower_username"`

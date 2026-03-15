@@ -15,12 +15,12 @@ type StreamingEvent struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "EVENT"
 
 	// GSI1 - Query by target (user, stream, conversation, followers)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "STREAM_TARGET#{targetType}#{targetID}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{createdAt}#{eventID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "STREAM_TARGET#{targetType}#{targetID}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{createdAt}#{eventID}"
 
 	// GSI2 - Query by event type
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "STREAM_TYPE#{eventType}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{createdAt}#{eventID}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "STREAM_TYPE#{eventType}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{createdAt}#{eventID}"
 
 	// Core event data
 	EventID    string                 `theorydb:"attr:eventID" json:"event_id"`

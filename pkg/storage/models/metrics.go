@@ -18,12 +18,12 @@ type Metrics struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Service queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "METRICS_SVC#{service}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "METRICS_AGG#{period}#{type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core metrics data
 	ID        string    `theorydb:"attr:id" json:"id"`
@@ -70,8 +70,8 @@ type AggregatedMetrics struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// GSI2 - global queries by period (used for cleanup without table/index scans)
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "METRICS_AGG#{period}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "WINDOW#{windowStart}#TYPE#{type}#SERVICE#{service}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // Format: "METRICS_AGG#{period}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk,omitempty"` // Format: "WINDOW#{windowStart}#TYPE#{type}#SERVICE#{service}"
 
 	// Aggregation details
 	Period      string    `theorydb:"attr:period" json:"period"`            // minute, hour, day, week, month
@@ -502,20 +502,20 @@ type MetricRecord struct {
 	SK string `theorydb:"sk" json:"sk"` // timestamp ISO format
 
 	// GSI1: Service-based queries - SERVICE#<name> / TIMESTAMP#<iso>
-	GSI1PK string `theorydb:"index:gsi1,pk" json:"gsi1_pk"`
-	GSI1SK string `theorydb:"index:gsi1,sk" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,omitempty" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,omitempty" json:"gsi1_sk"`
 
 	// GSI2: Metric type queries - METRIC_TYPE#<type> / TIMESTAMP#<iso>
-	GSI2PK string `theorydb:"index:gsi2,pk" json:"gsi2_pk"`
-	GSI2SK string `theorydb:"index:gsi2,sk" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,omitempty" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,omitempty" json:"gsi2_sk"`
 
 	// GSI3: Date-based queries - DATE#<yyyy-mm-dd> / SERVICE#<name>#<timestamp>
-	GSI3PK string `theorydb:"index:gsi3,pk" json:"gsi3_pk"`
-	GSI3SK string `theorydb:"index:gsi3,sk" json:"gsi3_sk"`
+	GSI3PK string `theorydb:"index:gsi3,pk,omitempty" json:"gsi3_pk"`
+	GSI3SK string `theorydb:"index:gsi3,sk,omitempty" json:"gsi3_sk"`
 
 	// GSI4: Aggregation queries - AGGREGATION#<level> / TIMESTAMP#<iso>
-	GSI4PK string `theorydb:"index:gsi4,pk" json:"gsi4_pk"`
-	GSI4SK string `theorydb:"index:gsi4,sk" json:"gsi4_sk"`
+	GSI4PK string `theorydb:"index:gsi4,pk,omitempty" json:"gsi4_pk"`
+	GSI4SK string `theorydb:"index:gsi4,sk,omitempty" json:"gsi4_sk"`
 
 	// Core fields
 	MetricType  string    `json:"metric_type"`

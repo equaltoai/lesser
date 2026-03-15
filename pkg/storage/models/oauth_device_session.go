@@ -17,8 +17,8 @@ type OAuthDeviceSession struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // SESSION
 
 	// GSI1 - user_code lookup (web approval flow)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // OAUTH_DEVICE_USER_CODE#<userCode>
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // <createdAt>#<deviceCodeHash>
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // OAUTH_DEVICE_USER_CODE#<userCode>
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // <createdAt>#<deviceCodeHash>
 
 	// Core fields
 	DeviceCodeHash string   `theorydb:"attr:deviceCodeHash" json:"device_code_hash"`

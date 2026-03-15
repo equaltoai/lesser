@@ -14,8 +14,8 @@ type Move struct {
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // TARGET#{target}
 
 	// GSI1 for reverse lookups (moves to a target)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // MOVE#TARGET#{target}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // ACTOR#{actor}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK"` // MOVE#TARGET#{target}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK"` // ACTOR#{actor}
 
 	// Move data (nested in legacy)
 	ID        string    `theorydb:"attr:id" json:"ID"`               // The move activity ID

@@ -14,8 +14,8 @@ type Poll struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // METADATA
 
 	// GSI keys for querying by status
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{statusId}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // POLL
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // STATUS#{statusId}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // POLL
 
 	// Business fields
 	ID          string           `theorydb:"attr:id" json:"id"`

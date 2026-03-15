@@ -18,24 +18,24 @@ type Actor struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "PROFILE" - MUST match legacy exactly
 
 	// GSI1 - Username search with prefix partitioning for efficient queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USERNAME_SEARCH#{first_2_chars}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{lowercase_username}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "USERNAME_SEARCH#{first_2_chars}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{lowercase_username}"
 
 	// GSI2 - Display name search
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // Format: "NAME_SEARCH#{first_2_chars}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // Format: "{lowercase_name}#{username}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // Format: "NAME_SEARCH#{first_2_chars}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk,omitempty"` // Format: "{lowercase_name}#{username}"
 
 	// GSI3 - Domain-based queries for federation
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "DOMAIN#{domain}"
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{username}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"` // Format: "DOMAIN#{domain}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"` // Format: "{username}"
 
 	// GSI4 - Popularity ranking by follower count
-	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK" json:"gsi4_pk"` // Format: "ACTOR_RANK#{bucket}"
-	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK" json:"gsi4_sk"` // Format: "{padded_count}#{username}"
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"gsi4_pk"` // Format: "ACTOR_RANK#{bucket}"
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"gsi4_sk"` // Format: "{padded_count}#{username}"
 
 	// GSI5 - Recent activity tracking
-	GSI5PK string `theorydb:"index:gsi5,pk,attr:gsi5PK" json:"gsi5_pk"` // Format: "ACTIVE#{date}"
-	GSI5SK string `theorydb:"index:gsi5,sk,attr:gsi5SK" json:"gsi5_sk"` // Format: "{timestamp}#{username}"
+	GSI5PK string `theorydb:"index:gsi5,pk,attr:gsi5PK,omitempty" json:"gsi5_pk"` // Format: "ACTIVE#{date}"
+	GSI5SK string `theorydb:"index:gsi5,sk,attr:gsi5SK,omitempty" json:"gsi5_sk"` // Format: "{timestamp}#{username}"
 
 	// Core actor data
 	Actor      *activitypub.Actor `theorydb:"json,attr:actor" json:"actor"`

@@ -38,8 +38,8 @@ type PushSubscription struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // SUB#subscriptionID
 
 	// GSI for endpoint lookup (to prevent duplicates)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // PUSH_ENDPOINT#endpoint_hash
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // username
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // PUSH_ENDPOINT#endpoint_hash
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // username
 
 	// Core subscription data
 	ID        string                 `theorydb:"attr:id" json:"id"`

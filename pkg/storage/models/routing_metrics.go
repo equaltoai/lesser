@@ -71,8 +71,8 @@ type GlobalMetricsWindow struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // WINDOW#{windowStartUnix}
 
 	// GSI keys for time-based queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRICS#GLOBAL
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {windowStartUnix}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // METRICS#GLOBAL
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // {windowStartUnix}
 
 	// Time info
 	WindowStart time.Time `theorydb:"attr:windowStart" json:"window_start"`

@@ -11,8 +11,8 @@ type Category struct {
 	SK string `theorydb:"sk,attr:SK"` // ID#{category_id}
 
 	// GSI: Parent lookup - CATEGORY#{parent_id} / ID#{category_id}
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	ID          string  `theorydb:"attr:id" json:"id"`
 	Name        string  `theorydb:"attr:name" json:"name"`

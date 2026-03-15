@@ -30,10 +30,10 @@ type FederationRelationship struct {
 
 	PK     string `theorydb:"pk,attr:PK"`
 	SK     string `theorydb:"sk,attr:SK"`
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // State-based queries
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // Last activity timestamp
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"` // User-based queries
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"` // Target instance + timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"` // State-based queries
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"` // Last activity timestamp
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"` // User-based queries
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"` // Target instance + timestamp
 	TTL    int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Core relationship data
@@ -333,8 +333,8 @@ type FederationRelationshipAggregate struct {
 
 	PK     string `theorydb:"pk"`
 	SK     string `theorydb:"sk"`
-	GSI1PK string `theorydb:"index:gsi1,pk"` // Instance-based queries
-	GSI1SK string `theorydb:"index:gsi1,sk"` // Period + timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,omitempty"` // Instance-based queries
+	GSI1SK string `theorydb:"index:gsi1,sk,omitempty"` // Period + timestamp
 	TTL    int64  `theorydb:"ttl,attr:ttl" json:"ttl,omitempty"`
 
 	// Aggregate identification

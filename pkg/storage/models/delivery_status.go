@@ -21,8 +21,8 @@ type DeliveryStatus struct {
 	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI fields for failed delivery queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	// Business fields
 	ActivityID   string    `theorydb:"attr:activityID" json:"activity_id"`

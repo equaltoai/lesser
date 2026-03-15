@@ -45,12 +45,12 @@ type FederationInstanceConfigTracking struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"`
 
 	// GSI1 for tier queries - TIER#{tier}, DOMAIN#{domain}
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"`
 
 	// GSI2 for budget queries - BUDGET_OVERRIDE, BUDGET#{budget}#{domain}
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"`
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"`
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"`
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"`
 
 	// Instance identification
 	Domain string `theorydb:"attr:domain" json:"domain"` // Remote instance domain

@@ -14,8 +14,8 @@ type CircuitBreakerState struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // STATE
 
 	// GSI8 - Global state listing (monitoring/debug)
-	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK" json:"gsi8pk,omitempty"` // CIRCUIT_STATES
-	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK" json:"gsi8sk,omitempty"` // INSTANCE#<instance_id>
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty" json:"gsi8pk,omitempty"` // CIRCUIT_STATES
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty" json:"gsi8sk,omitempty"` // INSTANCE#<instance_id>
 
 	// Core circuit breaker state
 	InstanceID       string    `theorydb:"attr:instanceID" json:"instance_id"`

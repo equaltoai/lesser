@@ -14,8 +14,8 @@ type CollectionItem struct {
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // ITEM#{itemID}
 
 	// GSI1 for reverse lookups (what collections is an item in)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // ITEM#{itemID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // COLLECTION#{collection}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK"` // ITEM#{itemID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK"` // COLLECTION#{collection}
 
 	// Collection item data
 	Collection string    `theorydb:"attr:collection" json:"Collection"` // The collection ID (e.g., featured, likes, etc.)

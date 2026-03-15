@@ -16,16 +16,16 @@ type RelationshipRecord struct {
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // FOLLOWING#{followingUsername}
 
 	// GSI1 for reverse lookups (who follows me)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // FOLLOW#{followedUsername}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // FOLLOWER#{followerUsername}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK"` // FOLLOW#{followedUsername}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK"` // FOLLOWER#{followerUsername}
 
 	// GSI2 for follower domain queries (Phase 2.4 - severance detection)
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2SK,omitempty"` // FOLLOWING#{username}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2PK,omitempty"` // FOLLOWER_DOMAIN#{domain}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2SK,omitempty"` // FOLLOWING#{username}
 
 	// GSI3 for following domain queries (Phase 2.4 - severance detection)
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3SK,omitempty"` // FOLLOWER#{username}
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3PK,omitempty"` // FOLLOWING_DOMAIN#{domain}
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3SK,omitempty"` // FOLLOWER#{username}
 
 	// Core fields from legacy
 	ActivityID string    `theorydb:"attr:activityID" json:"ActivityID"`

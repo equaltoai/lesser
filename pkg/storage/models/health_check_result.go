@@ -11,8 +11,8 @@ type HealthCheckResult struct {
 
 	PK            string                 `theorydb:"pk,attr:PK" json:"pk"`                     // HEALTH_CHECK#timestamp
 	SK            string                 `theorydb:"sk,attr:SK" json:"sk"`                     // RESULT#component_type#identifier
-	GSI1PK        string                 `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // COMPONENT#component_type#identifier
-	GSI1SK        string                 `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // timestamp
+	GSI1PK        string                 `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // COMPONENT#component_type#identifier
+	GSI1SK        string                 `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // timestamp
 	Component     string                 `theorydb:"attr:component" json:"component"`          // component identifier
 	ComponentType string                 `theorydb:"attr:componentType" json:"component_type"` // "dynamodb", "lambda", "sqs"
 	Status        string                 `theorydb:"attr:status" json:"status"`                // "healthy", "warning", "critical", "unknown"
@@ -69,8 +69,8 @@ type HealthCheckSummaryResult struct {
 
 	PK             string    `theorydb:"pk,attr:PK" json:"pk"`                     // HEALTH_SUMMARY#date
 	SK             string    `theorydb:"sk,attr:SK" json:"sk"`                     // SUMMARY#hour
-	GSI1PK         string    `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // DATE#date
-	GSI1SK         string    `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // HOUR#hour
+	GSI1PK         string    `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // DATE#date
+	GSI1SK         string    `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // HOUR#hour
 	Date           string    `theorydb:"attr:date" json:"date"`                    // YYYY-MM-DD
 	Hour           int       `theorydb:"attr:hour" json:"hour"`                    // 0-23
 	TotalChecks    int       `theorydb:"attr:totalChecks" json:"total_checks"`

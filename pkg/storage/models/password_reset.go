@@ -13,8 +13,8 @@ type PasswordReset struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // RESET#{token}
 
 	// GSI1 for token lookup
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // RESET_TOKEN#{token}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // USERNAME#{username}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // RESET_TOKEN#{token}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // USERNAME#{username}
 
 	Username  string    `theorydb:"attr:username" json:"username"`
 	Token     string    `theorydb:"attr:token" json:"token"`

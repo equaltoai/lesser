@@ -16,12 +16,12 @@ type MediaAnalytics struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // {timestamp}#{mediaID} or {date}#{mediaID}
 
 	// GSI keys for querying
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // DATE#{date}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {format}#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // DATE#{date}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // {format}#{timestamp}
 
 	// GSI2 for variant-level queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2pk"` // VARIANT#{variant_key}
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2sk"` // COST#{timestamp}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2pk"` // VARIANT#{variant_key}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2sk"` // COST#{timestamp}
 
 	// Business fields
 	MediaID   string    `theorydb:"attr:mediaID" json:"media_id"`

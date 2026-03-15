@@ -15,8 +15,8 @@ type MissingReply struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // MISSING#{replyID}
 
 	// GSI for querying by parent status
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // STATUS#{parentStatusID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // MISSING_REPLY
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // STATUS#{parentStatusID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // MISSING_REPLY
 
 	// Missing reply data
 	RootStatusID   string     `theorydb:"attr:rootStatusID" json:"root_status_id"`             // Root of the thread

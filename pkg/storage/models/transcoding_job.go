@@ -17,12 +17,12 @@ type TranscodingJob struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "JOB_METRICS"
 
 	// GSI1 - User-based queries for transcoding jobs
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "USER_TRANSCODING#{userID}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{jobID}"
 
 	// GSI2 - Media-based queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "MEDIA_TRANSCODING#{mediaID}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{jobID}"
 
 	// Core job data
 	JobID    string `theorydb:"attr:jobID" json:"job_id"`

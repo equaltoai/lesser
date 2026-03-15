@@ -86,8 +86,8 @@ type EngagementMetrics struct {
 	// Key fields - EXACT pattern from legacy: PK=`METRICS#type#date`, SK=`target#targetID`
 	PK     string `theorydb:"pk,attr:PK"`                // METRICS#type#date or STATUS#statusID or ENGAGEMENT#bucket
 	SK     string `theorydb:"sk,attr:SK"`                // target#targetID or ENGAGEMENT#METRICS or STATUS#timestamp#statusID
-	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK"` // For date range queries
-	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK"` // For date range queries
+	GSI8PK string `theorydb:"index:gsi8,pk,attr:gsi8PK,omitempty"` // For date range queries
+	GSI8SK string `theorydb:"index:gsi8,sk,attr:gsi8SK,omitempty"` // For date range queries
 
 	// Business fields from legacy
 	MetricType  string    `theorydb:"attr:metricType" json:"metric_type,omitempty"`

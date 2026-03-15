@@ -17,12 +17,12 @@ type ScheduledJobCostRecord struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "RUN#{timestamp}#{id}"
 
 	// GSI1 - Job status and performance queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "SCHEDULED_JOB_STATUS#{status}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// GSI2 - Date range queries across all jobs
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "SCHEDULED_JOB_DATE#{dateStr}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{jobName}#{id}"
 
 	// Core job information
 	ID          string    `theorydb:"attr:id" json:"id"`                              // Unique execution ID

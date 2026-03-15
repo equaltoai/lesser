@@ -18,12 +18,12 @@ type FederationActivity struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "activity#{timestamp}#{id}"
 
 	// GSI1 - Activity type queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "FED_TYPE#{type}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{domain}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "FED_TYPE#{type}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{domain}#{id}"
 
 	// GSI2 - Actor queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "FED_ACTOR#{actorID}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "FED_ACTOR#{actorID}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core activity data
 	ID           string    `theorydb:"attr:id" json:"id"`

@@ -15,8 +15,8 @@ type Hashtag struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "METADATA"
 
 	// GSI3 - Hashtag search by prefix
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk"` // Format: "{hashtag_name}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk"` // Format: "HASHTAG_SEARCH#{first_2_chars}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk"` // Format: "{hashtag_name}"
 
 	// Core hashtag data
 	Name       string    `theorydb:"attr:name" json:"name"`              // Hashtag name (lowercase, no #)

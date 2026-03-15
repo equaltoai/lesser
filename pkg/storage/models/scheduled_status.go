@@ -14,8 +14,8 @@ type ScheduledStatus struct {
 	SK string `theorydb:"sk,attr:SK"` // ID#{id}
 
 	// GSI1 keys for time-based queries (due status queries)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // SCHEDULED#DUE
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // TIME#{scheduled_at_RFC3339Nano}#ID#{id}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"` // SCHEDULED#DUE
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"` // TIME#{scheduled_at_RFC3339Nano}#ID#{id}
 
 	// Business fields - embedded from storage.ScheduledStatus
 	ID            string         `theorydb:"attr:id" json:"id"`

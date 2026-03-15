@@ -18,12 +18,12 @@ type DynamoDBCostRecord struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Table queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "COST_TABLE#{table_name}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - Aggregation queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk"` // Format: "COST_AGG#{period}#{operation_type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk"` // Format: "{timestamp}#{id}"
 
 	// Core cost tracking data
 	ID            string    `theorydb:"attr:id" json:"id"`

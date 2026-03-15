@@ -14,8 +14,8 @@ type CloudWatchMetrics struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // METRICS#{timestamp}
 
 	// GSI keys for time-based queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // METRIC_DATE#{date}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {serviceName}#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // METRIC_DATE#{date}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // {serviceName}#{timestamp}
 
 	// Business fields
 	ServiceName string    `theorydb:"attr:serviceName" json:"service_name"`

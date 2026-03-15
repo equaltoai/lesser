@@ -14,16 +14,16 @@ type EnhancedModerationPattern struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // "METADATA"
 
 	// GSI1 - Active pattern queries with priority
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "ENHANCED_PATTERNS#ACTIVE" (when active)
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{priority}#{type}#{severity}#{pattern_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk,omitempty"` // "ENHANCED_PATTERNS#ACTIVE" (when active)
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk,omitempty"` // "{priority}#{type}#{severity}#{pattern_id}"
 
 	// GSI2 - Type-based queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "ENHANCED_PATTERNS#{type}"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{effectiveness}#{updated_at}#{pattern_id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // "ENHANCED_PATTERNS#{type}"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk,omitempty"` // "{effectiveness}#{updated_at}#{pattern_id}"
 
 	// GSI3 - Performance metric queries
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"gsi3_pk,omitempty"` // "PATTERN_METRICS#{category}"
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"gsi3_sk,omitempty"` // "{effectiveness}#{match_count}#{pattern_id}"
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"gsi3_pk,omitempty"` // "PATTERN_METRICS#{category}"
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"gsi3_sk,omitempty"` // "{effectiveness}#{match_count}#{pattern_id}"
 
 	// Type marker
 	Type string `theorydb:"attr:type" json:"type"` // "ENHANCED_PATTERN"
@@ -184,8 +184,8 @@ type PatternCache struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "COMPILED#{pattern_id}"
 
 	// GSI1 - Cache invalidation queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // "PATTERN_CACHE#ACTIVE"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // "{last_updated}#{pattern_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk,omitempty"` // "PATTERN_CACHE#ACTIVE"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk,omitempty"` // "{last_updated}#{pattern_id}"
 
 	// Type marker
 	Type string `theorydb:"attr:type" json:"type"` // "PATTERN_CACHE"
@@ -248,12 +248,12 @@ type PatternPerformanceMetric struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TIME#{date}#{hour}"
 
 	// GSI1 - Pattern performance queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "METRICS#{pattern_type}#{date}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{hour}#{pattern_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk,omitempty"` // Format: "METRICS#{pattern_type}#{date}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk,omitempty"` // Format: "{hour}#{pattern_id}"
 
 	// GSI2 - Aggregated metrics queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"gsi2_pk,omitempty"` // "PATTERN_PERFORMANCE"
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"gsi2_sk,omitempty"` // "{date}#{pattern_type}#{pattern_id}"
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // "PATTERN_PERFORMANCE"
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"gsi2_sk,omitempty"` // "{date}#{pattern_type}#{pattern_id}"
 
 	// Type marker
 	Type string `theorydb:"attr:type" json:"type"` // "PATTERN_METRIC"
@@ -350,8 +350,8 @@ type PatternTestResult struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "TEST#{test_id}"
 
 	// GSI1 - Test result queries by type
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk,omitempty"` // Format: "PATTERN_TESTS#{test_type}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk,omitempty"` // Format: "{score}#{timestamp}#{test_id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk,omitempty"` // Format: "PATTERN_TESTS#{test_type}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk,omitempty"` // Format: "{score}#{timestamp}#{test_id}"
 
 	// Type marker
 	Type string `theorydb:"attr:type" json:"type"` // "PATTERN_TEST"

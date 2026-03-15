@@ -42,12 +42,12 @@ type TrustRelationship struct {
 	SK string `theorydb:"sk,attr:SK"` // TRUSTEE#trusteeID
 
 	// GSI1 - for reverse lookups (who trusts this trustee)
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"` // TRUSTED#trusteeID#category
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"` // TRUSTER#trusterID
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"` // TRUSTED#trusteeID#category
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"` // TRUSTER#trusterID
 
 	// GSI2 - for domain-based queries
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK"` // DOMAIN#domain
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK"` // TRUST#category#score
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty"` // DOMAIN#domain
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty"` // TRUST#category#score
 
 	// Business fields
 	ID         string          `theorydb:"attr:id" json:"id"`

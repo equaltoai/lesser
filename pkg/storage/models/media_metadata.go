@@ -18,8 +18,8 @@ type MediaMetadata struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // METADATA
 
 	// GSI keys for queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // STATUS#{status}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // PROCESSED#{timestamp}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // STATUS#{status}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // PROCESSED#{timestamp}
 
 	// Media identification
 	MediaID string `theorydb:"attr:mediaID" json:"media_id"`

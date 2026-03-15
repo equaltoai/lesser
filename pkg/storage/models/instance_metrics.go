@@ -14,8 +14,8 @@ type InstanceMetrics struct {
 	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI fields for time-based queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	// Business fields from legacy
 	Date       string    `theorydb:"attr:date" json:"date"`              // YYYY-MM-DD format

@@ -16,8 +16,8 @@ type Mute struct {
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // MUTED#{muted_username}
 
 	// GSI1 for reverse lookup
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"` // MUTED#{muted_username}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK"` // MUTER#{username}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK"` // MUTED#{muted_username}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK"` // MUTER#{username}
 
 	// Core fields from legacy
 	Type              string    `theorydb:"attr:type" json:"Type"`                           // Always "Mute"

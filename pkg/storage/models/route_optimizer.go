@@ -14,8 +14,8 @@ type RouteDeliveryResult struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // RESULT#{timestampNano}
 
 	// GSI keys for time-based queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1pk"` // RESULTS
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1sk"` // {timestamp}#{routeID}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1pk"` // RESULTS
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1sk"` // {timestamp}#{routeID}
 
 	// Delivery data
 	MessageID    string    `theorydb:"attr:messageID" json:"message_id"`

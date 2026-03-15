@@ -12,8 +12,8 @@ type WebAuthnCredential struct {
 	PK string `theorydb:"pk,attr:PK" json:"-"` // USER#username
 	SK string `theorydb:"sk,attr:SK" json:"-"` // WEBAUTHN_CRED#credentialID
 	// GSI for credential lookup by ID
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"`
 
 	// Core fields from legacy storage.WebAuthnCredential
 	ID              string    `theorydb:"attr:id" json:"id"`

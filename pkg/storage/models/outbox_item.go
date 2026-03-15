@@ -16,8 +16,8 @@ type OutboxItem struct {
 	SK string `theorydb:"sk,attr:SK"`
 
 	// GSI fields for public outbox queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty"`
 
 	// Business fields
 	ActorID    string                `theorydb:"attr:actorID" json:"actor_id"`       // The actor who created the activity

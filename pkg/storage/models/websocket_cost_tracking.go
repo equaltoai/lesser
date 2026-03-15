@@ -21,8 +21,8 @@ type WebSocketCostRecord struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "ts#{timestamp}#{id}"
 
 	// GSI1 - Connection-based queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "WS_CONN#{connection_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}#{id}"
 
 	// GSI2 - User-based queries
 	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"gsi2_pk,omitempty"` // Format: "WS_USER#{user_id}"
@@ -102,8 +102,8 @@ type WebSocketCostBudget struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "BUDGET#{period}"
 
 	// GSI1 - User budget queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{period}#{status}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "WS_USER_BUDGET#{user_id}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{period}#{status}"
 
 	// Budget configuration
 	UserID           string    `theorydb:"attr:userID" json:"user_id"`
@@ -155,8 +155,8 @@ type WebSocketCostAggregation struct {
 	SK string `theorydb:"sk,attr:SK" json:"sk"` // Format: "window#{windowStart}"
 
 	// GSI1 - User aggregation queries
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1_pk"` // Format: "WS_USER_AGG#{user_id}#{period}"
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1_sk"` // Format: "{timestamp}#{operation_type}"
 
 	// Aggregation details
 	Period        string    `theorydb:"attr:period" json:"period"`                // minute, hour, day, week, month

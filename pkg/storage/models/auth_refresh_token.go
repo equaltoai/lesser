@@ -19,12 +19,12 @@ type AuthRefreshToken struct {
 	Family     string `theorydb:"attr:family" json:"family"`
 	UserFamily string `theorydb:"attr:userFamily" json:"user_family"`
 
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"-"` // USER#{userID}
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"-"` // {createdAt}
-	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK" json:"-"` // FAMILY#{family}
-	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK" json:"-"` // {createdAt}
-	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK" json:"-"` // USER_FAMILY#{userID}#{family}
-	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK" json:"-"` // {createdAt}
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // USER#{userID}
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // {createdAt}
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"-"` // FAMILY#{family}
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"-"` // {createdAt}
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"-"` // USER_FAMILY#{userID}#{family}
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"-"` // {createdAt}
 
 	// Core token data
 	Token      string `theorydb:"attr:token" json:"token"`             // The actual token value
