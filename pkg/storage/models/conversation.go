@@ -13,7 +13,7 @@ type DmRequestState string
 
 const (
 	// DmRequestStatePending indicates the participant has not yet accepted or declined the request.
-	DmRequestStatePending  DmRequestState = "PENDING"
+	DmRequestStatePending DmRequestState = "PENDING"
 	// DmRequestStateAccepted indicates the participant has accepted the request.
 	DmRequestStateAccepted DmRequestState = "ACCEPTED"
 	// DmRequestStateDeclined indicates the participant has declined the request.
@@ -30,8 +30,8 @@ type Conversation struct {
 
 	// GSI1 is used for participant records (additional records per participant)
 	// Note: The main conversation record doesn't use GSI1, only participant records do
-	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK,omitempty"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"`
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK,omitempty"`
 
 	// Core fields from legacy
 	ID           string    `theorydb:"attr:id" json:"id"`
@@ -172,7 +172,7 @@ type ConversationParticipantKey struct {
 	PK     string `theorydb:"pk,attr:PK" json:"PK"`
 	SK     string `theorydb:"sk,attr:SK" json:"SK"`
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK" json:"gsi1PK"`
-	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK" json:"gsi1SK,omitempty"`
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK,omitempty"`
 
 	ConversationID string `theorydb:"attr:conversationID" json:"conversation_id"`
 }
