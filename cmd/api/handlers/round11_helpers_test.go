@@ -298,6 +298,16 @@ func TestDescribeStoredMention(t *testing.T) {
 	require.Equal(t, "alice", username)
 	require.Equal(t, "alice", acct)
 	require.Equal(t, cfg.BaseURL()+"/@alice", profileURL)
+
+	username, acct, profileURL = handler.describeStoredMention(cfg.ActorURL("carol"))
+	require.Equal(t, "carol", username)
+	require.Equal(t, "carol", acct)
+	require.Equal(t, cfg.ActorURL("carol"), profileURL)
+
+	username, acct, profileURL = handler.describeStoredMention("")
+	require.Empty(t, username)
+	require.Empty(t, acct)
+	require.Empty(t, profileURL)
 }
 
 func TestHelperResponseHelpers(t *testing.T) {

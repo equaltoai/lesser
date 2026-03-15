@@ -104,6 +104,8 @@ func TestStatusesFullPermissions(t *testing.T) {
 		ToRecipients: []string{"https://example.com/users/alice"},
 	}
 	require.True(t, handler.isViewerMentioned(directStatus.Mentions, "alice"))
+	require.True(t, handler.isViewerMentioned([]string{"alice"}, "alice"))
+	require.False(t, handler.isViewerMentioned(directStatus.Mentions, ""))
 	require.True(t, handler.isViewerInRecipientLists(directStatus, "alice"))
 	require.True(t, handler.checkDirectMessageVisibility(directStatus, "alice"))
 }
