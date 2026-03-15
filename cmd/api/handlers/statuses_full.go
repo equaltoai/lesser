@@ -242,8 +242,21 @@ func (h *Handler) checkDirectMessageVisibility(status *storageModels.Status, vie
 //
 //nolint:unused // Used by tests and retained for visibility enforcement helpers.
 func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
+	viewer := strings.TrimSpace(viewerID)
+	if viewer == "" {
+		return false
+	}
+
+	viewerActorID := h.cfg.ActorURL(viewer)
 	for _, mention := range mentions {
-		if mention == viewerID {
+		candidate := strings.TrimSpace(mention)
+		if candidate == "" {
+			continue
+		}
+		if strings.EqualFold(candidate, viewer) || strings.EqualFold(candidate, viewerActorID) {
+			return true
+		}
+		if username, _, _ := h.describeStoredMention(candidate); strings.EqualFold(username, viewer) {
 			return true
 		}
 	}
