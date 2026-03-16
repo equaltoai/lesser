@@ -180,6 +180,7 @@ func TestNotificationHelpers(t *testing.T) {
 	require.True(t, shouldSendNotification(alerts, "favourite"))
 	require.True(t, shouldSendNotification(alerts, "reblog"))
 	require.True(t, shouldSendNotification(alerts, "mention"))
+	require.True(t, shouldSendNotification(alerts, "reply"))
 	require.True(t, shouldSendNotification(alerts, "poll"))
 	require.True(t, shouldSendNotification(alerts, "follow_request"))
 	require.True(t, shouldSendNotification(alerts, "status"))
@@ -392,6 +393,52 @@ func TestProcessMessage_Branches(t *testing.T) {
 
 	pdp.rateLimiter.limits["admin"] = &userLimit{count: 100, resetTime: time.Now().Add(time.Hour)}
 	require.NoError(t, pdp.processMessage(ctx, events.SQSMessage{Body: body, MessageId: "m5"}))
+}
+
+func TestProcessMessage_DeliversReplyWhenMentionAlertsEnabled(t *testing.T) {
+	p256dh, auth := mustGenerateClientKeys(t)
+	vapid := mustGenerateVAPIDKeys(t)
+
+	pushRepo := &fakePushSubscriptionRepo{
+		vapidKeys: vapid,
+		subscriptions: []*storage.PushSubscription{
+			{
+				Username: "admin",
+				ID:       "sub1",
+				Endpoint: "https://push.example.com/endpoint",
+				P256dh:   p256dh,
+				Auth:     auth,
+				Alerts: storage.PushSubscriptionAlerts{
+					Mention: true,
+				},
+			},
+		},
+	}
+	activityRepo := &fakeActivityRepo{}
+	requests := 0
+
+	pdp := &PushDeliveryProcessor{
+		repos:       &fakeRepos{pushRepo: pushRepo, activityRepo: activityRepo},
+		logger:      zap.NewNop(),
+		cfg:         &config.Config{Domain: "example.com"},
+		rateLimiter: &RateLimiter{limits: make(map[string]*userLimit)},
+		httpClient: &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				requests++
+				require.Equal(t, "POST", req.Method)
+				require.Equal(t, "https://push.example.com/endpoint", req.URL.String())
+				return &http.Response{
+					StatusCode: 201,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}),
+		},
+	}
+
+	body := `{"username":"admin","notification_type":"reply","title":"t","body":"b","notification_id":"n1","access_token":"tok"}`
+	require.NoError(t, pdp.processMessage(context.Background(), events.SQSMessage{Body: body, MessageId: "reply-1"}))
+	require.Equal(t, 1, requests)
+	require.Contains(t, activityRepo.calls, "push_delivery_reply_delivered")
 }
 
 func TestHandleSQSMessage_ReturnsErrorOnInvalidMessage(t *testing.T) {

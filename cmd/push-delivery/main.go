@@ -519,6 +519,8 @@ func shouldSendNotification(alerts storage.PushSubscriptionAlerts, notificationT
 		return alerts.Reblog
 	case "mention":
 		return alerts.Mention
+	case "reply":
+		return alerts.Mention
 	case "poll":
 		return alerts.Poll
 	case "follow_request":
