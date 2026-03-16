@@ -71,6 +71,11 @@ func TestCanViewDirectMessageMatchesMentionURLs(t *testing.T) {
 	assert.True(t, service.canViewDirectMessage(status, "bob"))
 }
 
+func TestExtractMentionHandlesSupportsRemoteMentions(t *testing.T) {
+	mentions := extractMentionHandles("hi @alice and @bob@remote.example, but not bob@example.com")
+	assert.Equal(t, []string{"alice", "bob@remote.example"}, mentions)
+}
+
 func TestBuildMentionTagsUsesActorFallbackAndSkipsUnresolved(t *testing.T) {
 	service := &Service{
 		domainName: "example.com",
@@ -125,6 +130,34 @@ func TestBuildMentionTagsSkipsWhenActorIDCannotBeResolved(t *testing.T) {
 
 	assert.Nil(t, tags)
 	assert.Nil(t, usernames)
+}
+
+func TestBuildMentionTagsResolvesRemoteMentionsViaFederation(t *testing.T) {
+	service := &Service{
+		domainName: "example.com",
+		accountRepo: &stubAccountRepo{
+			domain:  "example.com",
+			missing: map[string]bool{"carol@remote.example": true},
+		},
+		federation: &stubFederation{
+			resolved: map[string]*activitypub.Actor{
+				"carol@remote.example": {
+					BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol"},
+					PreferredUsername: "carol",
+				},
+			},
+		},
+		logger: zap.NewNop(),
+	}
+
+	tags, usernames := service.buildMentionTags(context.Background(), "hi @carol@remote.example", &storage.Account{
+		User: &storage.User{Username: "alice"},
+	})
+
+	require.Len(t, tags, 1)
+	assert.Equal(t, "https://remote.example/users/carol", tags[0].Href)
+	assert.Equal(t, "@carol@remote.example", tags[0].Name)
+	assert.Empty(t, usernames)
 }
 
 func TestAddMentionAudienceRespectsVisibility(t *testing.T) {
@@ -273,11 +306,23 @@ func (s *stubNotificationService) CreateNotification(_ context.Context, cmd *not
 
 type stubFederation struct {
 	activities []*activitypub.Activity
+	resolved   map[string]*activitypub.Actor
+	resolveErr map[string]error
 }
 
 func (s *stubFederation) QueueActivity(_ context.Context, activity *activitypub.Activity) error {
 	s.activities = append(s.activities, activity)
 	return nil
+}
+
+func (s *stubFederation) ResolveActor(_ context.Context, handle string) (*activitypub.Actor, error) {
+	if s.resolveErr != nil && s.resolveErr[handle] != nil {
+		return nil, s.resolveErr[handle]
+	}
+	if s.resolved != nil && s.resolved[handle] != nil {
+		return s.resolved[handle], nil
+	}
+	return nil, errors.New("not found")
 }
 
 func TestEmitReblogEventsPublishesBoostedEvents(t *testing.T) {

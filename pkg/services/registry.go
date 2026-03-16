@@ -73,6 +73,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/ai"
@@ -2597,6 +2598,23 @@ func (a *queueFederationAdapter) QueueActivity(ctx context.Context, activity *ac
 	// Use the main federation service's DeliverToFollowers method
 	// This provides the same functionality as queuing for background delivery
 	return a.federation.DeliverToFollowers(ctx, activity, actor)
+}
+
+// ResolveActor resolves a remote handle through the shared federation discovery path.
+func (a *queueFederationAdapter) ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	if a.storage == nil {
+		return nil, errors.New("remote actor resolution unavailable")
+	}
+
+	result, err := federation.NewRemoteSearchService(a.storage).ResolveActor(ctx, handle)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.Actor == nil {
+		return nil, errors.New("remote actor not found")
+	}
+
+	return result.Actor, nil
 }
 
 // extractUsernameFromActorURI extracts the username from an actor URI
