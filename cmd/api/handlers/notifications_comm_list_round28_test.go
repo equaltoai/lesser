@@ -8,6 +8,7 @@ import (
 	"time"
 
 	apiModels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -112,4 +113,86 @@ func TestNotifications_ListIncludesCommNotifications_Round28(t *testing.T) {
 	require.Equal(t, "comm-msg-001", out[0].Communication.MessageID)
 	require.Equal(t, "comm-msg-000", out[0].Communication.InReplyTo)
 	require.Equal(t, "comm-msg-000", out[0].Communication.ThreadID)
+}
+
+func TestNotifications_ListIncludesReplyNotifications_Round28(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Date(2026, time.March, 16, 23, 0, 0, 0, time.UTC)
+
+	state := &round10QueryState{
+		actorsByUser: map[string]storageModels.Actor{
+			"alice": {
+				Username: "alice",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+					PreferredUsername: "alice",
+					Name:              "Alice",
+				},
+			},
+			"bob": {
+				Username: "bob",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/bob", Type: "Person"},
+					PreferredUsername: "bob",
+					Name:              "Bob",
+				},
+			},
+		},
+		objectsByID: map[string]storageModels.Object{
+			"status-1": {
+				ID:           "status-1",
+				Type:         activitypub.NoteType,
+				Content:      "reply body",
+				Published:    now.Add(-1 * time.Minute),
+				AttributedTo: cfg.BaseURL() + "/users/bob",
+			},
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.registry = &RegistryStub{
+		NotificationsSvc: &NotificationsServiceStub{
+			ListNotificationsFunc: func(_ context.Context, query *notifications.ListNotificationsQuery) (*notifications.NotificationListResult, error) {
+				require.NotNil(t, query)
+				require.Equal(t, "alice", query.UserID)
+				require.Equal(t, []string{apiModels.NotificationTypeReply}, query.Types)
+
+				return &notifications.NotificationListResult{
+					Notifications: []*storageModels.Notification{
+						{
+							ID:         "notif-reply-1",
+							Type:       apiModels.NotificationTypeReply,
+							ActorID:    "bob",
+							UserID:     "alice",
+							TargetID:   "status-1",
+							TargetType: "status",
+							CreatedAt:  now,
+						},
+					},
+				}, nil
+			},
+		},
+	}
+
+	readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read:notifications", auth.ScopeRead})
+	headers := map[string]string{
+		"Authorization": "Bearer " + readToken,
+		"Host":          "example.com",
+	}
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications", headers, map[string]string{
+		"types[]": apiModels.NotificationTypeReply,
+	}, nil)
+	require.NoError(t, err)
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleGetNotificationsLift(ctx))
+
+	var out []apiModels.Notification
+	require.NoError(t, json.Unmarshal(resp.Body, &out))
+	require.Len(t, out, 1)
+	require.Equal(t, apiModels.NotificationTypeReply, out[0].Type)
+	require.Equal(t, "bob", out[0].Account.Username)
+	require.NotNil(t, out[0].Status)
+	require.NotEmpty(t, out[0].Status.ID)
+	require.Equal(t, "reply body", out[0].Status.Content)
 }

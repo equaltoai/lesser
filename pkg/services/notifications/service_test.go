@@ -492,6 +492,38 @@ func TestService_CreateNotification_Success(t *testing.T) {
 	mockAccountRepo.AssertExpectations(t)
 }
 
+func TestService_CreateNotification_ReplyType_Success(t *testing.T) {
+	service, mockNotificationRepo, mockAccountRepo, _, pushService := setupTestService()
+	ctx := context.Background()
+
+	user := createTestUser("testuser")
+	actor := createTestUser("actor")
+
+	mockAccountRepo.On("GetAccount", ctx, "testuser").Return(user, nil)
+	mockAccountRepo.On("GetAccount", ctx, "actor").Return(actor, nil)
+	mockNotificationRepo.On("CreateNotification", ctx, mock.AnythingOfType("*models.Notification")).Return(nil)
+
+	result, err := service.CreateNotification(ctx, &CreateNotificationCommand{
+		UserID:     "testuser",
+		Type:       "reply",
+		ActorID:    "actor",
+		ActorType:  "user",
+		TargetID:   "status123",
+		TargetType: "status",
+		Title:      "New reply",
+		Body:       "Someone replied to your post",
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, "reply", result.Notification.Type)
+	assert.Len(t, pushService.Messages(), 1)
+	assert.Equal(t, "reply", pushService.Messages()[0].NotificationType)
+
+	mockNotificationRepo.AssertExpectations(t)
+	mockAccountRepo.AssertExpectations(t)
+}
+
 func TestService_CreateNotification_ValidationError(t *testing.T) {
 	service, _, _, _, pushService := setupTestService()
 	ctx := context.Background()

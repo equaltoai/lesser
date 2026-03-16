@@ -249,6 +249,7 @@ func (n *Notification) IncrementGroupCount() {
 func isValidNotificationType(notifType string) bool {
 	validTypes := map[string]bool{
 		"mention":                true,
+		"reply":                  true,
 		"reblog":                 true,
 		"favourite":              true,
 		"follow":                 true,

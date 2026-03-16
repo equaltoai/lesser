@@ -19,6 +19,7 @@ type Notification struct {
 const (
 	NotificationTypeFollow    = "follow"
 	NotificationTypeMention   = "mention"
+	NotificationTypeReply     = "reply"
 	NotificationTypeFavourite = "favourite"
 	NotificationTypeReblog    = "reblog"
 )

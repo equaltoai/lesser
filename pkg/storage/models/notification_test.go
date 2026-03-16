@@ -230,6 +230,7 @@ func TestIsValidNotificationType(t *testing.T) {
 		expected  bool
 	}{
 		{"mention", true},
+		{"reply", true},
 		{"reblog", true},
 		{"favourite", true},
 		{"follow", true},

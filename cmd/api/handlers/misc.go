@@ -608,6 +608,9 @@ func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory
 			Username:  notification.UserID,
 			Data:      data,
 		}
+		if notification.TargetType == "status" {
+			storageNotif.StatusID = notification.TargetID
+		}
 		storageNotifications = append(storageNotifications, storageNotif)
 	}
 
@@ -731,6 +734,7 @@ func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
 		return false
 	}
 	return notif.Type == models.NotificationTypeMention ||
+		notif.Type == models.NotificationTypeReply ||
 		notif.Type == models.NotificationTypeFavourite ||
 		notif.Type == models.NotificationTypeReblog
 }
