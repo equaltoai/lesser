@@ -292,6 +292,19 @@ func TestNewMentionNotification(t *testing.T) {
 	assert.Equal(t, "You were mentioned in a post", notification.Body)
 }
 
+func TestNewReplyNotification(t *testing.T) {
+	notification := NewReplyNotification("user123", "actor456", "status789")
+
+	assert.Equal(t, "user123", notification.UserID)
+	assert.Equal(t, "reply", notification.Type)
+	assert.Equal(t, "actor456", notification.ActorID)
+	assert.Equal(t, "user", notification.ActorType)
+	assert.Equal(t, "status789", notification.TargetID)
+	assert.Equal(t, "status", notification.TargetType)
+	assert.Equal(t, "New reply", notification.Title)
+	assert.Equal(t, "Someone replied to your post", notification.Body)
+}
+
 func TestNewFollowNotification(t *testing.T) {
 	notification := NewFollowNotification("user123", "follower456")
 

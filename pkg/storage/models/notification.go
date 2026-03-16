@@ -338,6 +338,17 @@ func NewMentionNotification(userID, actorID, statusID string) *Notification {
 		Build()
 }
 
+// NewReplyNotification creates a reply notification
+func NewReplyNotification(userID, actorID, statusID string) *Notification {
+	return NewNotificationBuilder().
+		ForUser(userID).
+		OfType("reply").
+		FromActor(actorID, "user").
+		AboutTarget(statusID, "status").
+		WithContent("New reply", "Someone replied to your post").
+		Build()
+}
+
 // NewFollowNotification creates a follow notification
 func NewFollowNotification(userID, followerID string) *Notification {
 	return NewNotificationBuilder().
