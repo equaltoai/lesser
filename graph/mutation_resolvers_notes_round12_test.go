@@ -6,8 +6,15 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/agents"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	pkgtesting "github.com/equaltoai/lesser/pkg/testing"
+	"github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -99,4 +106,46 @@ func TestRound12MutationResolvers_Notes_CreateDeleteAndSchedule(t *testing.T) {
 
 	// Ensure status repo remains usable for other tests.
 	require.NotNil(t, storageRepo.Status())
+}
+
+func TestRound12MutationResolvers_Notes_BuildAgentPostAttribution(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepositoryInterface()
+	mockUserRepo.On("GetUser", mock.Anything, "agent").Return(&storage.User{
+		Username:     "agent",
+		IsAgent:      true,
+		AgentOwner:   "owner",
+		AgentVersion: "claude-3",
+		AgentCapabilities: &agents.Capabilities{
+			RequiresApproval: true,
+		},
+	}, nil).Once()
+
+	resolver := &mutationResolver{&Resolver{
+		Config:  &config.Config{Domain: "example.com"},
+		Storage: pkgtesting.NewMockRepositoryStorage(pkgtesting.WithUserRepository(mockUserRepo)),
+	}}
+
+	triggerType := "mention"
+	triggerDetails := "test"
+	got, err := resolver.buildAgentPostAttribution(context.Background(), &auth.Claims{
+		Username:    "agent",
+		IsAgent:     true,
+		DelegatedBy: "@owner",
+		Scopes:      []string{"write"},
+	}, &model.AgentPostAttributionInput{
+		TriggerType:     &triggerType,
+		TriggerDetails:  &triggerDetails,
+		MemoryCitations: []string{"status-1", "status-1"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "mention", got.TriggerType)
+	require.Equal(t, "test", got.TriggerDetails)
+	require.Equal(t, []string{"status-1"}, got.MemoryCitations)
+	require.Equal(t, "https://example.com/users/owner", got.DelegatedBy)
+	require.Equal(t, "1.0", got.SchemaVersion)
+	require.Equal(t, "claude-3", got.ModelID)
+	require.Equal(t, []string{"write"}, got.Scopes)
+	require.Contains(t, got.Constraints, "requires_approval")
+	mockUserRepo.AssertExpectations(t)
 }

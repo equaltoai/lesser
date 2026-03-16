@@ -100,6 +100,8 @@ var Context = ContextValue{
 		"schema":                    "http://schema.org#",
 		"PropertyValue":             "schema:PropertyValue",
 		"value":                     "schema:value",
+		"lessersoul":                "https://lessersoul.ai/ns/agent-attribution/v1#",
+		"agentAttribution":          "lessersoul:agentAttribution",
 		"agentManifest":             "https://lesser.social/ns/agentManifest",
 	},
 }
@@ -190,7 +192,30 @@ type Note struct {
 	QuoteContext       *QuoteContext `json:"_:quoteContext,omitempty"`
 
 	// Lesser extension: per-status attribution for agent-authored content.
-	AgentAttribution *AgentPostAttribution `json:"_:agentAttribution,omitempty"`
+	AgentAttribution *AgentPostAttribution `json:"agentAttribution,omitempty"`
+}
+
+type noteAlias Note
+
+type legacyNote struct {
+	noteAlias
+	LegacyAgentAttribution *AgentPostAttribution `json:"_:agentAttribution,omitempty"`
+}
+
+// UnmarshalJSON accepts both the new namespaced agentAttribution key and the legacy
+// _:agentAttribution key stored in older records.
+func (n *Note) UnmarshalJSON(data []byte) error {
+	var legacy legacyNote
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return err
+	}
+
+	*n = Note(legacy.noteAlias)
+	if n.AgentAttribution == nil && legacy.LegacyAgentAttribution != nil {
+		n.AgentAttribution = legacy.LegacyAgentAttribution
+	}
+
+	return nil
 }
 
 // QuoteNote is retained for backwards compatibility; it now simply aliases Note.

@@ -176,12 +176,13 @@ func buildAgentPostAttribution(actor *activitypub.Actor) *models.AgentPostAttrib
 	}
 
 	attribution := &models.AgentPostAttribution{
-		ModelVersion: "unknown",
+		SchemaVersion: activitypub.AgentAttributionSchemaVersion,
+		ModelID:       "unknown",
 	}
 
 	if actor.AgentManifest != nil {
 		if v := strings.TrimSpace(actor.AgentManifest.Version); v != "" {
-			attribution.ModelVersion = v
+			attribution.ModelID = v
 		}
 		if operatedBy := strings.TrimSpace(actor.AgentManifest.OperatedBy); operatedBy != "" {
 			attribution.DelegatedBy = operatedBy

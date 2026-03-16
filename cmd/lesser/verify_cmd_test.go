@@ -97,7 +97,10 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	})
 
 	ensureToolAvailableFn = func(string) error { return nil }
+	t.Setenv(lesserVerifyCIJobsEnv, "")
 	t.Setenv("LESSER_JOBS", "8")
+	t.Setenv(goMaxProcsEnvVar, "")
+	t.Setenv(goFlagsEnvVar, "")
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }

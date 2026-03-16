@@ -9,9 +9,11 @@ type AgentPostAttribution struct {
 
 	MemoryCitations []string `json:"memory_citations,omitempty"`
 
-	DelegatedBy string   `json:"delegated_by,omitempty"`
-	Scopes      []string `json:"scopes,omitempty"`
+	DelegatedBy    string   `json:"delegated_by,omitempty"`
+	DelegatedByDID string   `json:"delegated_by_did,omitempty"`
+	Scopes         []string `json:"scopes,omitempty"`
 
-	Constraints  []string `json:"constraints,omitempty"`
-	ModelVersion string   `json:"model_version,omitempty"`
+	Constraints   []string `json:"constraints,omitempty"`
+	SchemaVersion string   `json:"schema_version,omitempty"`
+	ModelID       string   `json:"model_id,omitempty"`
 }

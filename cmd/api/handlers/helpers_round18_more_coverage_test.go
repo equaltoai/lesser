@@ -87,6 +87,30 @@ func TestHelpersRound18_ResolveAccountID_InvalidURLBranches(t *testing.T) {
 	})
 }
 
+func TestHelpersRound18_NormalizeDelegatedByActorURI(t *testing.T) {
+	cfg := round11TestConfig()
+
+	t.Run("returns empty string unchanged", func(t *testing.T) {
+		var h *Handler
+		require.Empty(t, h.normalizeDelegatedByActorURI("   "))
+	})
+
+	t.Run("returns trimmed value when handler config missing", func(t *testing.T) {
+		h := &Handler{}
+		require.Equal(t, "owner", h.normalizeDelegatedByActorURI("  owner  "))
+	})
+
+	t.Run("passes through actor urls", func(t *testing.T) {
+		h := &Handler{cfg: cfg}
+		require.Equal(t, "HTTPS://remote.example/users/owner", h.normalizeDelegatedByActorURI("HTTPS://remote.example/users/owner"))
+	})
+
+	t.Run("normalizes local usernames to actor urls", func(t *testing.T) {
+		h := &Handler{cfg: cfg}
+		require.Equal(t, cfg.ActorURL("owner"), h.normalizeDelegatedByActorURI("@owner"))
+	})
+}
+
 func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 	cfg := round11TestConfig()
 	h := &Handler{cfg: cfg}
@@ -106,7 +130,8 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 					DelegatedBy:     "operator",
 					Scopes:          []string{"read"},
 					Constraints:     []string{"requires_approval"},
-					ModelVersion:    "v2",
+					SchemaVersion:   activitypub.AgentAttributionSchemaVersion,
+					ModelID:         "v2",
 				},
 			},
 		}
@@ -120,10 +145,11 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 		require.Equal(t, "mention", out.TriggerType)
 		require.Equal(t, "test", out.TriggerDetails)
 		require.Equal(t, []string{"m1"}, out.MemoryCitations)
-		require.Equal(t, "operator", out.DelegatedBy)
+		require.Equal(t, cfg.ActorURL("operator"), out.DelegatedBy)
 		require.Equal(t, []string{"read"}, out.Scopes)
 		require.Equal(t, []string{"requires_approval"}, out.Constraints)
-		require.Equal(t, "v2", out.ModelVersion)
+		require.Equal(t, activitypub.AgentAttributionSchemaVersion, out.SchemaVersion)
+		require.Equal(t, "v2", out.ModelID)
 	})
 
 	t.Run("agent falls back to stored delegation and constraints", func(t *testing.T) {
@@ -154,12 +180,43 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 
 		out := h.buildStatusAgentAttribution(account, &storagemodels.Status{Note: &activitypub.Note{}})
 		require.NotNil(t, out)
-		require.Equal(t, "manifest-owner", out.DelegatedBy)
+		require.Equal(t, cfg.ActorURL("manifest-owner"), out.DelegatedBy)
 		require.Equal(t, []string{"read", "write:statuses"}, out.Scopes)
 		require.Contains(t, out.Constraints, "max_posts_per_hour:5")
 		require.Contains(t, out.Constraints, "requires_approval")
 		require.Contains(t, out.Constraints, "restricted_domains:example.org")
-		require.Equal(t, "manifest-v1", out.ModelVersion)
+		require.Equal(t, activitypub.AgentAttributionSchemaVersion, out.SchemaVersion)
+		require.Equal(t, "manifest-v1", out.ModelID)
+	})
+
+	t.Run("agent keeps delegated did and falls back to account metadata", func(t *testing.T) {
+		account := &storage.Account{
+			User: &storage.User{
+				Username:     "bot",
+				IsAgent:      true,
+				AgentOwner:   "https://remote.example/users/owner",
+				AgentVersion: "user-v2",
+				Metadata: map[string]any{
+					"agent_delegated_scopes": []any{"read"},
+				},
+			},
+		}
+
+		status := &storagemodels.Status{
+			Note: &activitypub.Note{
+				AgentAttribution: &activitypub.AgentPostAttribution{
+					DelegatedByDID: "did:key:z6Mkexample",
+				},
+			},
+		}
+
+		out := h.buildStatusAgentAttribution(account, status)
+		require.NotNil(t, out)
+		require.Equal(t, "https://remote.example/users/owner", out.DelegatedBy)
+		require.Equal(t, "did:key:z6Mkexample", out.DelegatedByDID)
+		require.Equal(t, []string{"read"}, out.Scopes)
+		require.Equal(t, activitypub.AgentAttributionSchemaVersion, out.SchemaVersion)
+		require.Equal(t, "user-v2", out.ModelID)
 	})
 }
 
@@ -192,6 +249,49 @@ func TestHelpersRound18_StatusAccountUsesActorData(t *testing.T) {
 	require.Equal(t, "alice", account.Acct)
 	require.Equal(t, "Alice", account.DisplayName)
 	require.Equal(t, createdAt.Format(time.RFC3339), account.CreatedAt)
+}
+
+func TestHelpersRound18_StatusAccountFallbackBranches(t *testing.T) {
+	cfg := round11TestConfig()
+	h := &Handler{cfg: cfg}
+
+	t.Run("builds local fallback account when author account missing", func(t *testing.T) {
+		account := h.statusAccount(&storagemodels.Status{
+			StatusID:       "status-2",
+			AuthorUsername: "bot",
+			AuthorID:       cfg.ActorURL("bot"),
+		}, nil)
+
+		require.Equal(t, "bot", account.Username)
+		require.Equal(t, "bot", account.DisplayName)
+		require.Equal(t, "bot", account.Acct)
+	})
+
+	t.Run("returns remote actor account when actor is not local", func(t *testing.T) {
+		account := h.statusAccount(&storagemodels.Status{
+			StatusID:       "status-3",
+			AuthorUsername: "alice",
+			AuthorID:       "https://remote.example/users/alice",
+		}, &storage.Account{
+			User: &storage.User{
+				Username:    "alice",
+				DisplayName: "Alice Remote",
+			},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID:   "https://remote.example/users/alice",
+					Type: "Person",
+				},
+				PreferredUsername: "alice",
+				Name:              "Alice Remote",
+				URL:               "https://remote.example/@alice",
+			},
+		})
+
+		require.Equal(t, "alice", account.Username)
+		require.Equal(t, "alice", account.Acct)
+		require.Equal(t, "Alice Remote", account.DisplayName)
+	})
 }
 
 func TestHelpersRound18_StatusReblogTargetID(t *testing.T) {

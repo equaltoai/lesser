@@ -9,7 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+)
+
+const (
+	defaultCoverageBatchSize = 25
+	coverageBatchSizeEnvVar  = "LESSER_TEST_COVERAGE_BATCH_SIZE"
 )
 
 func runTest(argv []string) error {
@@ -192,10 +198,7 @@ func runTestCoverage(argv []string) error {
 	if verbose {
 		goArgs = append(goArgs, "-v")
 	}
-	goArgs = append(goArgs, "-coverprofile="+profileName)
-	goArgs = append(goArgs, pkgPaths...)
-
-	if err := runGoTests(args, goArgs, nil); err != nil {
+	if err := runGoCoverageTests(args, repoRoot, profileName, goArgs, pkgPaths); err != nil {
 		return err
 	}
 
@@ -214,6 +217,127 @@ func runTestCoverage(argv []string) error {
 			"GOCACHE": goCache,
 		},
 	})
+}
+
+func runGoCoverageTests(args testArgs, repoRoot, profileName string, baseGoArgs, pkgPaths []string) error {
+	batchSize := resolveCoverageBatchSize()
+	if batchSize <= 0 || len(pkgPaths) <= batchSize {
+		goArgs := append(append([]string{}, baseGoArgs...), "-coverprofile="+profileName)
+		goArgs = append(goArgs, pkgPaths...)
+		return runGoTests(args, goArgs, nil)
+	}
+
+	tmpProfiles := make([]string, 0, (len(pkgPaths)+batchSize-1)/batchSize)
+	for i := 0; i < len(pkgPaths); i += batchSize {
+		end := i + batchSize
+		if end > len(pkgPaths) {
+			end = len(pkgPaths)
+		}
+
+		tmpProfile, err := os.CreateTemp(repoRoot, filepath.Base(profileName)+".batch-*.out")
+		if err != nil {
+			return fmt.Errorf("create temp coverprofile: %w", err)
+		}
+		tmpPath := tmpProfile.Name()
+		if err := tmpProfile.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("close temp coverprofile: %w", err)
+		}
+		defer func(path string) { _ = os.Remove(path) }(tmpPath)
+
+		goArgs := append(append([]string{}, baseGoArgs...), "-coverprofile="+tmpPath)
+		goArgs = append(goArgs, pkgPaths[i:end]...)
+		if err := runGoTests(args, goArgs, nil); err != nil {
+			return err
+		}
+		tmpProfiles = append(tmpProfiles, tmpPath)
+	}
+
+	return mergeCoverageProfiles(profileName, tmpProfiles)
+}
+
+func resolveCoverageBatchSize() int {
+	if raw := strings.TrimSpace(os.Getenv(coverageBatchSizeEnvVar)); raw != "" {
+		if size, err := strconv.Atoi(raw); err == nil {
+			return size
+		}
+	}
+	return defaultCoverageBatchSize
+}
+
+func mergeCoverageProfiles(destPath string, profilePaths []string) error {
+	// #nosec G304 -- destination is a repo-owned coverage artifact path.
+	out, err := os.Create(filepath.Clean(destPath))
+	if err != nil {
+		return fmt.Errorf("create merged coverprofile: %w", err)
+	}
+	defer func() {
+		if err := out.Close(); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: close merged coverprofile:", err)
+		}
+	}()
+
+	writer := bufio.NewWriter(out)
+	defer func() {
+		if err := writer.Flush(); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: flush merged coverprofile:", err)
+		}
+	}()
+
+	mode := ""
+	for _, profilePath := range profilePaths {
+		if err := appendCoverageProfile(writer, profilePath, &mode); err != nil {
+			return err
+		}
+	}
+
+	if mode == "" {
+		if _, err := writer.WriteString("mode: set\n"); err != nil {
+			return fmt.Errorf("write default coverage mode: %w", err)
+		}
+	}
+
+	if err := writer.Flush(); err != nil {
+		return fmt.Errorf("flush merged coverprofile: %w", err)
+	}
+	return nil
+}
+
+func appendCoverageProfile(writer *bufio.Writer, profilePath string, mode *string) error {
+	in, err := os.Open(filepath.Clean(profilePath))
+	if err != nil {
+		return fmt.Errorf("open temp coverprofile: %w", err)
+	}
+	defer func() {
+		if err := in.Close(); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: close temp coverprofile:", err)
+		}
+	}()
+
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "mode:") {
+			if *mode == "" {
+				*mode = line
+				if _, err := writer.WriteString(line + "\n"); err != nil {
+					return fmt.Errorf("write coverage mode: %w", err)
+				}
+				continue
+			}
+			if line != *mode {
+				return fmt.Errorf("mismatched coverage mode %q (expected %q)", line, *mode)
+			}
+			continue
+		}
+		if _, err := writer.WriteString(line + "\n"); err != nil {
+			return fmt.Errorf("write merged coverprofile: %w", err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read temp coverprofile: %w", err)
+	}
+	return nil
 }
 
 func filterGeneratedFilesFromCoverProfile(repoRoot string, coverProfilePath string) error {

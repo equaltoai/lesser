@@ -62,6 +62,18 @@ func deriveUsernameFromIRI(iri string) string {
 	return candidate
 }
 
+func (r *Resolver) normalizeDelegatedByActorURI(value string) string {
+	delegatedBy := strings.TrimSpace(value)
+	if delegatedBy == "" || r == nil || r.Config == nil {
+		return delegatedBy
+	}
+	lowerValue := strings.ToLower(delegatedBy)
+	if strings.HasPrefix(lowerValue, "http://") || strings.HasPrefix(lowerValue, "https://") {
+		return delegatedBy
+	}
+	return r.Config.ActorURL(strings.TrimPrefix(delegatedBy, "@"))
+}
+
 // generateID generates a unique ID for objects
 func generateID() string {
 	b := make([]byte, 16)

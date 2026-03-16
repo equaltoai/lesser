@@ -8,6 +8,7 @@ import (
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/agents"
 	"github.com/equaltoai/lesser/pkg/auth"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
@@ -257,8 +258,9 @@ func TestAgentStatusMetadataRound18_BuildAgentStatusAttribution(t *testing.T) {
 		require.Nil(t, resp)
 		require.NotNil(t, attribution)
 		require.Equal(t, "manual", attribution.TriggerType)
-		require.Equal(t, "owner", attribution.DelegatedBy)
-		require.Equal(t, agentVersionUnknown, attribution.ModelVersion)
+		require.Equal(t, cfg.ActorURL("owner"), attribution.DelegatedBy)
+		require.Equal(t, activitypub.AgentAttributionSchemaVersion, attribution.SchemaVersion)
+		require.Equal(t, agentVersionUnknown, attribution.ModelID)
 		require.Equal(t, []string{"write:statuses"}, attribution.Scopes)
 	})
 }
