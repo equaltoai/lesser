@@ -655,8 +655,10 @@ type ComplexityRoot struct {
 	AgentPostAttribution struct {
 		Constraints     func(childComplexity int) int
 		DelegatedBy     func(childComplexity int) int
+		DelegatedByDID  func(childComplexity int) int
 		MemoryCitations func(childComplexity int) int
-		ModelVersion    func(childComplexity int) int
+		ModelID         func(childComplexity int) int
+		SchemaVersion   func(childComplexity int) int
 		Scopes          func(childComplexity int) int
 		TriggerDetails  func(childComplexity int) int
 		TriggerType     func(childComplexity int) int
@@ -6154,6 +6156,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.AgentPostAttribution.DelegatedBy(childComplexity), true
 
+	case "AgentPostAttribution.delegatedByDid":
+		if e.complexity.AgentPostAttribution.DelegatedByDID == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.DelegatedByDID(childComplexity), true
+
 	case "AgentPostAttribution.memoryCitations":
 		if e.complexity.AgentPostAttribution.MemoryCitations == nil {
 			break
@@ -6161,12 +6170,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.AgentPostAttribution.MemoryCitations(childComplexity), true
 
-	case "AgentPostAttribution.modelVersion":
-		if e.complexity.AgentPostAttribution.ModelVersion == nil {
+	case "AgentPostAttribution.modelId":
+		if e.complexity.AgentPostAttribution.ModelID == nil {
 			break
 		}
 
-		return e.complexity.AgentPostAttribution.ModelVersion(childComplexity), true
+		return e.complexity.AgentPostAttribution.ModelID(childComplexity), true
+
+	case "AgentPostAttribution.schemaVersion":
+		if e.complexity.AgentPostAttribution.SchemaVersion == nil {
+			break
+		}
+
+		return e.complexity.AgentPostAttribution.SchemaVersion(childComplexity), true
 
 	case "AgentPostAttribution.scopes":
 		if e.complexity.AgentPostAttribution.Scopes == nil {
@@ -42050,6 +42066,47 @@ func (ec *executionContext) fieldContext_AgentPostAttribution_delegatedBy(_ cont
 	return fc, nil
 }
 
+func (ec *executionContext) _AgentPostAttribution_delegatedByDid(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_delegatedByDid(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DelegatedByDID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_delegatedByDid(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _AgentPostAttribution_scopes(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_AgentPostAttribution_scopes(ctx, field)
 	if err != nil {
@@ -42132,8 +42189,8 @@ func (ec *executionContext) fieldContext_AgentPostAttribution_constraints(_ cont
 	return fc, nil
 }
 
-func (ec *executionContext) _AgentPostAttribution_modelVersion(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_AgentPostAttribution_modelVersion(ctx, field)
+func (ec *executionContext) _AgentPostAttribution_schemaVersion(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_schemaVersion(ctx, field)
 	if err != nil {
 		return graphql.Null
 	}
@@ -42146,7 +42203,7 @@ func (ec *executionContext) _AgentPostAttribution_modelVersion(ctx context.Conte
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return obj.ModelVersion, nil
+		return obj.SchemaVersion, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -42160,7 +42217,48 @@ func (ec *executionContext) _AgentPostAttribution_modelVersion(ctx context.Conte
 	return ec.marshalOString2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) fieldContext_AgentPostAttribution_modelVersion(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_AgentPostAttribution_schemaVersion(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentPostAttribution_modelId(ctx context.Context, field graphql.CollectedField, obj *activitypub.AgentPostAttribution) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentPostAttribution_modelId(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ModelID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalOString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentPostAttribution_modelId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AgentPostAttribution",
 		Field:      field,
@@ -91704,12 +91802,16 @@ func (ec *executionContext) fieldContext_Object_agentAttribution(_ context.Conte
 				return ec.fieldContext_AgentPostAttribution_memoryCitations(ctx, field)
 			case "delegatedBy":
 				return ec.fieldContext_AgentPostAttribution_delegatedBy(ctx, field)
+			case "delegatedByDid":
+				return ec.fieldContext_AgentPostAttribution_delegatedByDid(ctx, field)
 			case "scopes":
 				return ec.fieldContext_AgentPostAttribution_scopes(ctx, field)
 			case "constraints":
 				return ec.fieldContext_AgentPostAttribution_constraints(ctx, field)
-			case "modelVersion":
-				return ec.fieldContext_AgentPostAttribution_modelVersion(ctx, field)
+			case "schemaVersion":
+				return ec.fieldContext_AgentPostAttribution_schemaVersion(ctx, field)
+			case "modelId":
+				return ec.fieldContext_AgentPostAttribution_modelId(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type AgentPostAttribution", field.Name)
 		},
@@ -131060,7 +131162,7 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"triggerType", "triggerDetails", "memoryCitations", "delegatedBy", "scopes", "constraints", "modelVersion"}
+	fieldsInOrder := [...]string{"triggerType", "triggerDetails", "memoryCitations", "delegatedBy", "delegatedByDid", "scopes", "constraints", "schemaVersion", "modelId"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -131095,6 +131197,13 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 				return it, err
 			}
 			it.DelegatedBy = data
+		case "delegatedByDid":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("delegatedByDid"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DelegatedByDid = data
 		case "scopes":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("scopes"))
 			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
@@ -131109,13 +131218,20 @@ func (ec *executionContext) unmarshalInputAgentPostAttributionInput(ctx context.
 				return it, err
 			}
 			it.Constraints = data
-		case "modelVersion":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("modelVersion"))
+		case "schemaVersion":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("schemaVersion"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			it.ModelVersion = data
+			it.SchemaVersion = data
+		case "modelId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("modelId"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ModelID = data
 		}
 	}
 
@@ -139900,12 +140016,16 @@ func (ec *executionContext) _AgentPostAttribution(ctx context.Context, sel ast.S
 			out.Values[i] = ec._AgentPostAttribution_memoryCitations(ctx, field, obj)
 		case "delegatedBy":
 			out.Values[i] = ec._AgentPostAttribution_delegatedBy(ctx, field, obj)
+		case "delegatedByDid":
+			out.Values[i] = ec._AgentPostAttribution_delegatedByDid(ctx, field, obj)
 		case "scopes":
 			out.Values[i] = ec._AgentPostAttribution_scopes(ctx, field, obj)
 		case "constraints":
 			out.Values[i] = ec._AgentPostAttribution_constraints(ctx, field, obj)
-		case "modelVersion":
-			out.Values[i] = ec._AgentPostAttribution_modelVersion(ctx, field, obj)
+		case "schemaVersion":
+			out.Values[i] = ec._AgentPostAttribution_schemaVersion(ctx, field, obj)
+		case "modelId":
+			out.Values[i] = ec._AgentPostAttribution_modelId(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/golang-jwt/jwt/v5"
@@ -340,7 +341,8 @@ func TestAgentFeaturesRound12_StatusAttributionAndMemoryEvents(t *testing.T) {
 	require.Nil(t, resp)
 	require.NotNil(t, attribution)
 	require.Equal(t, "mention", attribution.TriggerType)
-	require.Equal(t, "@owner", attribution.DelegatedBy)
+	require.Equal(t, cfg.ActorURL("owner"), attribution.DelegatedBy)
+	require.Equal(t, activitypub.AgentAttributionSchemaVersion, attribution.SchemaVersion)
 	require.Len(t, attribution.MemoryCitations, 1)
 }
 

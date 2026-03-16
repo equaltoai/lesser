@@ -285,7 +285,8 @@ func TestBuildAgentPostAttribution_Branches(t *testing.T) {
 		BaseObject: activitypub.BaseObject{Type: activitypub.ServiceType},
 	})
 	require.NotNil(t, attribution)
-	require.Equal(t, "unknown", attribution.ModelVersion)
+	require.Equal(t, activitypub.AgentAttributionSchemaVersion, attribution.SchemaVersion)
+	require.Equal(t, "unknown", attribution.ModelID)
 	require.Nil(t, attribution.Constraints)
 
 	attribution = buildAgentPostAttribution(&activitypub.Actor{
@@ -299,7 +300,8 @@ func TestBuildAgentPostAttribution_Branches(t *testing.T) {
 		},
 	})
 	require.NotNil(t, attribution)
-	require.Equal(t, "m1", attribution.ModelVersion)
+	require.Equal(t, activitypub.AgentAttributionSchemaVersion, attribution.SchemaVersion)
+	require.Equal(t, "m1", attribution.ModelID)
 	require.Equal(t, "@delegator", attribution.DelegatedBy)
 	require.Contains(t, attribution.Constraints, "requires_approval")
 }

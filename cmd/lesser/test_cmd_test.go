@@ -222,3 +222,117 @@ func TestRunTestCoverage_PropagatesRepoRootAndCacheErrors(t *testing.T) {
 	t.Setenv("GOCACHE", goCacheFile)
 	require.Error(t, runTestCoverage([]string{"--scope", "all"}))
 }
+
+func TestRunGoCoverageTests_BatchesAndMergesProfiles(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousRepoRoot := findRepoRootFn
+	previousEnsureTool := ensureToolAvailableFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		findRepoRootFn = previousRepoRoot
+		ensureToolAvailableFn = previousEnsureTool
+	})
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	ensureToolAvailableFn = func(string) error { return nil }
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n"), 0o644))
+
+	t.Setenv(coverageBatchSizeEnvVar, "2")
+
+	var goTestCalls [][]string
+	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+		if name != "go" || len(args) == 0 || args[0] != "test" {
+			return nil
+		}
+		goTestCalls = append(goTestCalls, append([]string(nil), args...))
+
+		profileArg := ""
+		for _, arg := range args {
+			if strings.HasPrefix(arg, "-coverprofile=") {
+				profileArg = strings.TrimPrefix(arg, "-coverprofile=")
+				break
+			}
+		}
+		require.NotEmpty(t, profileArg)
+
+		lastPkg := args[len(args)-1]
+		content := "mode: set\n" + lastPkg + ".go:1.1,1.2 1 1\n"
+		return os.WriteFile(profileArg, []byte(content), 0o644)
+	}
+
+	err := runGoCoverageTests(testArgs{}, repoRoot, filepath.Join(repoRoot, "coverage.out"), []string{"test"}, []string{
+		"github.com/equaltoai/lesser/pkg/a",
+		"github.com/equaltoai/lesser/pkg/b",
+		"github.com/equaltoai/lesser/pkg/c",
+	})
+	require.NoError(t, err)
+	require.Len(t, goTestCalls, 2)
+
+	merged, err := os.ReadFile(filepath.Join(repoRoot, "coverage.out"))
+	require.NoError(t, err)
+	require.Equal(t, "mode: set\ngithub.com/equaltoai/lesser/pkg/b.go:1.1,1.2 1 1\ngithub.com/equaltoai/lesser/pkg/c.go:1.1,1.2 1 1\n", string(merged))
+}
+
+func TestRunGoCoverageTests_UsesSingleBatchProfileWhenWithinLimit(t *testing.T) {
+	previousRunCommand := runCommandFn
+	previousRepoRoot := findRepoRootFn
+	previousEnsureTool := ensureToolAvailableFn
+	t.Cleanup(func() {
+		runCommandFn = previousRunCommand
+		findRepoRootFn = previousRepoRoot
+		ensureToolAvailableFn = previousEnsureTool
+	})
+
+	repoRoot := t.TempDir()
+	findRepoRootFn = func() (string, error) { return repoRoot, nil }
+	ensureToolAvailableFn = func(string) error { return nil }
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n"), 0o644))
+
+	t.Setenv(coverageBatchSizeEnvVar, "10")
+
+	var profileArg string
+	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+		if name != "go" || len(args) == 0 || args[0] != "test" {
+			return nil
+		}
+		for _, arg := range args {
+			if strings.HasPrefix(arg, "-coverprofile=") {
+				profileArg = strings.TrimPrefix(arg, "-coverprofile=")
+				break
+			}
+		}
+		require.Equal(t, filepath.Join(repoRoot, "coverage.out"), profileArg)
+		return os.WriteFile(profileArg, []byte("mode: set\npkg.go:1.1,1.2 1 1\n"), 0o644)
+	}
+
+	err := runGoCoverageTests(testArgs{}, repoRoot, filepath.Join(repoRoot, "coverage.out"), []string{"test"}, []string{
+		"github.com/equaltoai/lesser/pkg/a",
+		"github.com/equaltoai/lesser/pkg/b",
+	})
+	require.NoError(t, err)
+}
+
+func TestMergeCoverageProfiles_RejectsMismatchedModes(t *testing.T) {
+	repoRoot := t.TempDir()
+	first := filepath.Join(repoRoot, "first.out")
+	second := filepath.Join(repoRoot, "second.out")
+
+	require.NoError(t, os.WriteFile(first, []byte("mode: set\none.go:1.1,1.2 1 1\n"), 0o644))
+	require.NoError(t, os.WriteFile(second, []byte("mode: count\ntwo.go:1.1,1.2 1 1\n"), 0o644))
+
+	err := mergeCoverageProfiles(filepath.Join(repoRoot, "merged.out"), []string{first, second})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "mismatched coverage mode")
+}
+
+func TestMergeCoverageProfiles_WritesDefaultModeWhenNoProfilesProvided(t *testing.T) {
+	repoRoot := t.TempDir()
+	mergedPath := filepath.Join(repoRoot, "merged.out")
+
+	require.NoError(t, mergeCoverageProfiles(mergedPath, nil))
+
+	merged, err := os.ReadFile(mergedPath)
+	require.NoError(t, err)
+	require.Equal(t, "mode: set\n", string(merged))
+}

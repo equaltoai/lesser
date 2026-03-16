@@ -90,3 +90,63 @@ func TestActor_MarshalJSON_UsesContextValue(t *testing.T) {
 	_, ok := decoded["@context"].([]any)
 	assert.True(t, ok)
 }
+
+func TestNoteAgentAttributionJSONCompatibility(t *testing.T) {
+	t.Run("legacy key unmarshals", func(t *testing.T) {
+		var note Note
+		err := json.Unmarshal([]byte(`{
+			"id":"https://example.com/notes/1",
+			"type":"Note",
+			"content":"hi",
+			"attributedTo":"https://example.com/users/alice",
+			"_:agentAttribution":{"delegated_by":"https://example.com/users/owner","model_version":"claude-3"}
+		}`), &note)
+		require.NoError(t, err)
+		require.NotNil(t, note.AgentAttribution)
+		require.Equal(t, "https://example.com/users/owner", note.AgentAttribution.DelegatedBy)
+		require.Equal(t, legacyAgentAttributionSchemaVersion, note.AgentAttribution.SchemaVersion)
+		require.Equal(t, "claude-3", note.AgentAttribution.ModelID)
+	})
+
+	t.Run("new key unmarshals", func(t *testing.T) {
+		var note Note
+		err := json.Unmarshal([]byte(`{
+			"id":"https://example.com/notes/1",
+			"type":"Note",
+			"content":"hi",
+			"attributedTo":"https://example.com/users/alice",
+			"agentAttribution":{"delegated_by":"https://example.com/users/owner","schema_version":"1.0","model_id":"claude-3"}
+		}`), &note)
+		require.NoError(t, err)
+		require.NotNil(t, note.AgentAttribution)
+		require.Equal(t, AgentAttributionSchemaVersion, note.AgentAttribution.SchemaVersion)
+		require.Equal(t, "claude-3", note.AgentAttribution.ModelID)
+	})
+
+	t.Run("marshal uses new key", func(t *testing.T) {
+		data, err := json.Marshal(Note{
+			BaseObject:   BaseObject{ID: "https://example.com/notes/1", Type: NoteType},
+			Content:      "hi",
+			AttributedTo: "https://example.com/users/alice",
+			AgentAttribution: &AgentPostAttribution{
+				SchemaVersion: AgentAttributionSchemaVersion,
+				ModelID:       "claude-3",
+			},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"agentAttribution"`)
+		assert.NotContains(t, string(data), `"_:agentAttribution"`)
+	})
+
+	t.Run("note without attribution still works", func(t *testing.T) {
+		var note Note
+		err := json.Unmarshal([]byte(`{
+			"id":"https://example.com/notes/1",
+			"type":"Note",
+			"content":"hi",
+			"attributedTo":"https://example.com/users/alice"
+		}`), &note)
+		require.NoError(t, err)
+		require.Nil(t, note.AgentAttribution)
+	})
+}

@@ -1311,11 +1311,15 @@ components:
                     type: array
                 delegated_by:
                     type: string
+                delegated_by_did:
+                    type: string
                 memory_citations:
                     items:
                         type: string
                     type: array
-                model_version:
+                model_id:
+                    type: string
+                schema_version:
                     type: string
                 scopes:
                     items:
@@ -6232,32 +6236,6 @@ components:
                     anyOf:
                         - additionalProperties: false
                           properties:
-                            _:agentAttribution:
-                                anyOf:
-                                    - additionalProperties: false
-                                      properties:
-                                        constraints:
-                                            items:
-                                                type: string
-                                            type: array
-                                        delegated_by:
-                                            type: string
-                                        memory_citations:
-                                            items:
-                                                type: string
-                                            type: array
-                                        model_version:
-                                            type: string
-                                        scopes:
-                                            items:
-                                                type: string
-                                            type: array
-                                        trigger_details:
-                                            type: string
-                                        trigger_type:
-                                            type: string
-                                      type: object
-                                    - type: "null"
                             _:quoteContext:
                                 anyOf:
                                     - additionalProperties: false
@@ -6334,6 +6312,36 @@ components:
                                     - id
                                     - type
                                 type: object
+                            agentAttribution:
+                                anyOf:
+                                    - additionalProperties: false
+                                      properties:
+                                        constraints:
+                                            items:
+                                                type: string
+                                            type: array
+                                        delegated_by:
+                                            type: string
+                                        delegated_by_did:
+                                            type: string
+                                        memory_citations:
+                                            items:
+                                                type: string
+                                            type: array
+                                        model_id:
+                                            type: string
+                                        schema_version:
+                                            type: string
+                                        scopes:
+                                            items:
+                                                type: string
+                                            type: array
+                                        trigger_details:
+                                            type: string
+                                        trigger_type:
+                                            type: string
+                                      type: object
+                                    - type: "null"
                             attachment:
                                 items:
                                     additionalProperties: false

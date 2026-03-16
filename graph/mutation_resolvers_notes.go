@@ -132,7 +132,7 @@ const (
 	agentAttributionMaxTriggerDetails  = 500
 
 	agentAttributionDefaultTriggerType = "manual"
-	agentAttributionUnknownVersion     = "unknown"
+	agentAttributionUnknownModelID     = "unknown"
 )
 
 var allowedAgentAttributionTriggerTypes = map[string]struct{}{
@@ -191,10 +191,11 @@ func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims
 	if delegatedBy == "" {
 		delegatedBy = strings.TrimSpace(agentUser.AgentOwner)
 	}
+	delegatedBy = r.normalizeDelegatedByActorURI(delegatedBy)
 
-	modelVersion := strings.TrimSpace(agentUser.AgentVersion)
-	if modelVersion == "" {
-		modelVersion = agentAttributionUnknownVersion
+	modelID := strings.TrimSpace(agentUser.AgentVersion)
+	if modelID == "" {
+		modelID = agentAttributionUnknownModelID
 	}
 
 	return &activitypub.AgentPostAttribution{
@@ -204,7 +205,8 @@ func (r *mutationResolver) buildAgentPostAttribution(ctx context.Context, claims
 		DelegatedBy:     delegatedBy,
 		Scopes:          append([]string(nil), claims.Scopes...),
 		Constraints:     buildAgentCapabilityConstraints(agentUser.AgentCapabilities),
-		ModelVersion:    modelVersion,
+		SchemaVersion:   activitypub.AgentAttributionSchemaVersion,
+		ModelID:         modelID,
 	}, nil
 }
 

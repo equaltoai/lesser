@@ -163,10 +163,11 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 	if delegatedBy == "" {
 		delegatedBy = strings.TrimSpace(agentUser.AgentOwner)
 	}
+	delegatedBy = h.normalizeDelegatedByActorURI(delegatedBy)
 
-	modelVersion := strings.TrimSpace(agentUser.AgentVersion)
-	if modelVersion == "" {
-		modelVersion = agentVersionUnknown
+	modelID := strings.TrimSpace(agentUser.AgentVersion)
+	if modelID == "" {
+		modelID = agentVersionUnknown
 	}
 
 	attribution := &activitypub.AgentPostAttribution{
@@ -176,7 +177,8 @@ func (h *Handler) buildAgentStatusAttribution(ctx *apptheory.Context, claims *au
 		DelegatedBy:     delegatedBy,
 		Scopes:          append([]string(nil), claims.Scopes...),
 		Constraints:     buildAgentCapabilityConstraints(agentUser.AgentCapabilities),
-		ModelVersion:    modelVersion,
+		SchemaVersion:   activitypub.AgentAttributionSchemaVersion,
+		ModelID:         modelID,
 	}
 
 	return attribution, nil, nil

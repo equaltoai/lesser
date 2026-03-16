@@ -41,6 +41,18 @@ const MaxPaginationLimit = 80
 
 // Legacy authentication function removed - use auth.RequireAuthWithScope() instead
 
+func (h *Handler) normalizeDelegatedByActorURI(value string) string {
+	delegatedBy := strings.TrimSpace(value)
+	if delegatedBy == "" || h == nil || h.cfg == nil {
+		return delegatedBy
+	}
+	lowerValue := strings.ToLower(delegatedBy)
+	if strings.HasPrefix(lowerValue, "http://") || strings.HasPrefix(lowerValue, "https://") {
+		return delegatedBy
+	}
+	return h.cfg.ActorURL(strings.TrimPrefix(delegatedBy, "@"))
+}
+
 // resolveAccountID resolves an account ID (which can be a username, numeric ID, or URL) to an actor
 func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
 	accountID = normalizeResolvedAccountID(accountID)
@@ -786,25 +798,30 @@ func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, st
 	}
 
 	out := &models.AgentPostAttribution{
-		ModelVersion: agentVersionUnknown,
+		SchemaVersion: activitypub.AgentAttributionSchemaVersion,
+		ModelID:       agentVersionUnknown,
 	}
 
 	if noteAttr != nil {
 		out.TriggerType = strings.TrimSpace(noteAttr.TriggerType)
 		out.TriggerDetails = strings.TrimSpace(noteAttr.TriggerDetails)
 		out.MemoryCitations = append([]string(nil), noteAttr.MemoryCitations...)
-		out.DelegatedBy = strings.TrimSpace(noteAttr.DelegatedBy)
+		out.DelegatedBy = h.normalizeDelegatedByActorURI(noteAttr.DelegatedBy)
+		out.DelegatedByDID = strings.TrimSpace(noteAttr.DelegatedByDID)
 		out.Scopes = append([]string(nil), noteAttr.Scopes...)
 		out.Constraints = append([]string(nil), noteAttr.Constraints...)
-		if v := strings.TrimSpace(noteAttr.ModelVersion); v != "" {
-			out.ModelVersion = v
+		if v := strings.TrimSpace(noteAttr.SchemaVersion); v != "" {
+			out.SchemaVersion = v
+		}
+		if v := strings.TrimSpace(noteAttr.ModelID); v != "" {
+			out.ModelID = v
 		}
 	}
 
 	if out.DelegatedBy == "" {
-		out.DelegatedBy = strings.TrimSpace(authorAccount.User.AgentOwner)
+		out.DelegatedBy = h.normalizeDelegatedByActorURI(authorAccount.User.AgentOwner)
 		if out.DelegatedBy == "" && authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
-			out.DelegatedBy = strings.TrimSpace(authorAccount.Actor.AgentManifest.OperatedBy)
+			out.DelegatedBy = h.normalizeDelegatedByActorURI(authorAccount.Actor.AgentManifest.OperatedBy)
 		}
 	}
 
@@ -816,12 +833,12 @@ func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, st
 		out.Constraints = buildAgentCapabilityConstraints(authorAccount.User.AgentCapabilities)
 	}
 
-	if out.ModelVersion == agentVersionUnknown {
+	if out.ModelID == agentVersionUnknown {
 		if v := strings.TrimSpace(authorAccount.User.AgentVersion); v != "" {
-			out.ModelVersion = v
+			out.ModelID = v
 		} else if authorAccount.Actor != nil && authorAccount.Actor.AgentManifest != nil {
 			if v := strings.TrimSpace(authorAccount.Actor.AgentManifest.Version); v != "" {
-				out.ModelVersion = v
+				out.ModelID = v
 			}
 		}
 	}

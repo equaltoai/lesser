@@ -624,9 +624,11 @@ type AgentPostAttributionInput struct {
 	TriggerDetails  *string  `json:"triggerDetails,omitempty"`
 	MemoryCitations []string `json:"memoryCitations,omitempty"`
 	DelegatedBy     *string  `json:"delegatedBy,omitempty"`
+	DelegatedByDid  *string  `json:"delegatedByDid,omitempty"`
 	Scopes          []string `json:"scopes,omitempty"`
 	Constraints     []string `json:"constraints,omitempty"`
-	ModelVersion    *string  `json:"modelVersion,omitempty"`
+	SchemaVersion   *string  `json:"schemaVersion,omitempty"`
+	ModelID         *string  `json:"modelId,omitempty"`
 }
 
 type Announcement struct {
