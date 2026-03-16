@@ -878,8 +878,9 @@ func TestRegistry_Adapters_And_JobQueueImplementations(t *testing.T) {
 		assert.Equal(t, "alice", adapter.extractUsernameFromActorURI("https://example.com/actor/alice"))
 		assert.Equal(t, "", adapter.extractUsernameFromActorURI("not-a-url"))
 		assert.Equal(t, "", adapter.extractUsernameFromActorURI("https://example.com/users/"+strings.Repeat("a", 101)))
-
-		assert.NotNil(t, adapter.convertStorageActorToActivityPub(struct{}{}))
+		assert.True(t, adapter.isPublicOrUnlisted(&activitypub.Activity{
+			BaseObject: activitypub.BaseObject{CC: []string{activitypub.PublicAddress}},
+		}))
 	})
 
 	t.Run("queueFederationAdapter_delivers_with_fallback_actor", func(t *testing.T) {

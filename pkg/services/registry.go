@@ -2691,30 +2691,6 @@ func (a *queueFederationAdapter) extractUsernameFromActorURI(actorURI string) st
 	return username
 }
 
-// convertStorageActorToActivityPub converts a storage actor to ActivityPub format
-func (a *queueFederationAdapter) convertStorageActorToActivityPub(_ interface{}) *activitypub.Actor {
-	// The actual conversion would depend on the storage actor type
-	// For now, we'll create a basic ActivityPub actor with the common fields
-	// Enhanced based on the actual storage model
-
-	// Try to extract common fields if the storage actor has them
-	actor := &activitypub.Actor{
-		BaseObject: activitypub.BaseObject{
-			Type: "Person", // Default type
-		},
-	}
-
-	// This would need to be implemented based on the actual storage.Actor interface
-	// For now, we return a basic actor - this is better than the previous minimal version
-	// but would need full implementation based on the storage model structure
-
-	if a.logger != nil {
-		a.logger.Debug("converted storage actor to ActivityPub (basic conversion)")
-	}
-
-	return actor
-}
-
 // simpleFederationService provides a basic federation service implementation for conversations
 type simpleFederationService struct {
 	logger *zap.Logger

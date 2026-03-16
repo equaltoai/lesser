@@ -1270,109 +1270,23 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 		return nil, nil
 	}
 
-	authorUsername := ""
 	localDomain := strings.TrimSpace(s.domainName)
-	if author != nil && author.User != nil {
-		authorUsername = strings.TrimSpace(author.User.Username)
-	}
-
-	var remoteResolver interface {
-		ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error)
-	}
-	if s.federation != nil {
-		remoteResolver, _ = s.federation.(interface {
-			ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error)
-		})
-	}
-
+	authorUsername := mentionAuthorUsername(author)
+	remoteResolver := s.mentionActorResolver()
 	seenActors := make(map[string]struct{}, len(extracted))
 	tags := make([]activitypub.Tag, 0, len(extracted))
 	usernames := make([]string, 0, len(extracted))
 
 	for _, rawMention := range extracted {
-		mention := strings.TrimSpace(rawMention)
-		if mention == "" {
+		tag, username, ok := s.resolveMentionTag(ctx, strings.TrimSpace(rawMention), localDomain, authorUsername, remoteResolver, seenActors)
+		if !ok {
 			continue
 		}
 
-		username, domain := splitMentionHandle(mention)
-		lookupID := mention
-		if domain != "" && strings.EqualFold(domain, localDomain) {
-			lookupID = username
+		tags = append(tags, tag)
+		if username != "" {
+			usernames = append(usernames, username)
 		}
-
-		account, err := s.accountRepo.GetAccount(ctx, lookupID)
-		if err == nil && account != nil && account.User != nil {
-			username, domain = normalizeMentionAccount(account, username, domain, localDomain)
-			if username == "" {
-				continue
-			}
-
-			actorID := ""
-			if account.Actor != nil {
-				actorID = strings.TrimSpace(account.Actor.ID)
-			}
-			if actorID == "" {
-				if localDomain == "" {
-					s.logger.Debug("skipping mention without actor id or domain",
-						zap.String("mention", mention),
-						zap.String("username", username))
-					continue
-				}
-				actorID = fmt.Sprintf("https://%s/users/%s", localDomain, username)
-			}
-
-			key := strings.ToLower(actorID)
-			if _, ok := seenActors[key]; ok {
-				continue
-			}
-			seenActors[key] = struct{}{}
-
-			tags = append(tags, activitypub.Tag{
-				Type: "Mention",
-				Href: actorID,
-				Name: formatMentionTagName(username, domain, localDomain),
-			})
-
-			if (domain == "" || strings.EqualFold(domain, localDomain)) && !strings.EqualFold(username, authorUsername) {
-				usernames = append(usernames, username)
-			}
-			continue
-		}
-
-		if domain == "" || remoteResolver == nil {
-			s.logger.Debug("skipping unresolved local mention",
-				zap.String("mention", mention),
-				zap.Error(err))
-			continue
-		}
-
-		actor, resolveErr := remoteResolver.ResolveActor(ctx, mention)
-		if resolveErr != nil || actor == nil {
-			s.logger.Debug("skipping unresolved remote mention",
-				zap.String("mention", mention),
-				zap.Error(resolveErr))
-			continue
-		}
-
-		actorID := strings.TrimSpace(actor.ID)
-		if actorID == "" {
-			s.logger.Debug("skipping remote mention without actor id",
-				zap.String("mention", mention))
-			continue
-		}
-
-		key := strings.ToLower(actorID)
-		if _, ok := seenActors[key]; ok {
-			continue
-		}
-		seenActors[key] = struct{}{}
-
-		tags = append(tags, activitypub.Tag{
-			Type: "Mention",
-			Href: actorID,
-			Name: formatMentionTagName(username, domain, localDomain),
-		})
 	}
 
 	if len(tags) == 0 {
@@ -1380,6 +1294,151 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 	}
 
 	return tags, usernames
+}
+
+type mentionActorResolver interface {
+	ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error)
+}
+
+func mentionAuthorUsername(author *storage.Account) string {
+	if author == nil || author.User == nil {
+		return ""
+	}
+	return strings.TrimSpace(author.User.Username)
+}
+
+func (s *Service) mentionActorResolver() mentionActorResolver {
+	if s.federation == nil {
+		return nil
+	}
+
+	resolver, _ := s.federation.(mentionActorResolver)
+	return resolver
+}
+
+func (s *Service) resolveMentionTag(
+	ctx context.Context,
+	mention, localDomain, authorUsername string,
+	remoteResolver mentionActorResolver,
+	seenActors map[string]struct{},
+) (activitypub.Tag, string, bool) {
+	if mention == "" {
+		return activitypub.Tag{}, "", false
+	}
+
+	username, domain := splitMentionHandle(mention)
+
+	tag, localUsername, ok, err := s.resolveStoredMentionTag(ctx, mention, username, domain, localDomain, authorUsername, seenActors)
+	if err == nil {
+		return tag, localUsername, ok
+	}
+
+	return s.resolveRemoteMentionTag(ctx, mention, username, domain, localDomain, remoteResolver, seenActors, err)
+}
+
+func (s *Service) resolveStoredMentionTag(
+	ctx context.Context,
+	mention, username, domain, localDomain, authorUsername string,
+	seenActors map[string]struct{},
+) (activitypub.Tag, string, bool, error) {
+	lookupID := mentionLookupID(mention, username, domain, localDomain)
+	account, err := s.accountRepo.GetAccount(ctx, lookupID)
+	if err != nil || account == nil || account.User == nil {
+		return activitypub.Tag{}, "", false, err
+	}
+
+	username, domain = normalizeMentionAccount(account, username, domain, localDomain)
+	actorID, ok := s.mentionActorID(mention, username, localDomain, account)
+	if !ok || !markSeenMentionActor(seenActors, actorID) {
+		return activitypub.Tag{}, "", false, nil
+	}
+
+	localUsername := ""
+	if (domain == "" || strings.EqualFold(domain, localDomain)) && !strings.EqualFold(username, authorUsername) {
+		localUsername = username
+	}
+
+	return newMentionTag(actorID, username, domain, localDomain), localUsername, true, nil
+}
+
+func (s *Service) resolveRemoteMentionTag(
+	ctx context.Context,
+	mention, username, domain, localDomain string,
+	remoteResolver mentionActorResolver,
+	seenActors map[string]struct{},
+	lookupErr error,
+) (activitypub.Tag, string, bool) {
+	if domain == "" || remoteResolver == nil {
+		s.logger.Debug("skipping unresolved local mention",
+			zap.String("mention", mention),
+			zap.Error(lookupErr))
+		return activitypub.Tag{}, "", false
+	}
+
+	actor, err := remoteResolver.ResolveActor(ctx, mention)
+	if err != nil || actor == nil {
+		s.logger.Debug("skipping unresolved remote mention",
+			zap.String("mention", mention),
+			zap.Error(err))
+		return activitypub.Tag{}, "", false
+	}
+
+	actorID := strings.TrimSpace(actor.ID)
+	if actorID == "" {
+		s.logger.Debug("skipping remote mention without actor id",
+			zap.String("mention", mention))
+		return activitypub.Tag{}, "", false
+	}
+
+	if !markSeenMentionActor(seenActors, actorID) {
+		return activitypub.Tag{}, "", false
+	}
+
+	return newMentionTag(actorID, username, domain, localDomain), "", true
+}
+
+func mentionLookupID(mention, username, domain, localDomain string) string {
+	if domain != "" && strings.EqualFold(domain, localDomain) {
+		return username
+	}
+	return mention
+}
+
+func (s *Service) mentionActorID(mention, username, localDomain string, account *storage.Account) (string, bool) {
+	actorID := ""
+	if account != nil && account.Actor != nil {
+		actorID = strings.TrimSpace(account.Actor.ID)
+	}
+	if actorID != "" {
+		return actorID, true
+	}
+	if localDomain == "" {
+		s.logger.Debug("skipping mention without actor id or domain",
+			zap.String("mention", mention),
+			zap.String("username", username))
+		return "", false
+	}
+	return fmt.Sprintf("https://%s/users/%s", localDomain, username), true
+}
+
+func markSeenMentionActor(seenActors map[string]struct{}, actorID string) bool {
+	key := strings.ToLower(strings.TrimSpace(actorID))
+	if key == "" {
+		return false
+	}
+	if _, ok := seenActors[key]; ok {
+		return false
+	}
+	seenActors[key] = struct{}{}
+	return true
+}
+
+func newMentionTag(actorID, username, domain, localDomain string) activitypub.Tag {
+	return activitypub.Tag{
+		Type: "Mention",
+		Href: actorID,
+		Name: formatMentionTagName(username, domain, localDomain),
+	}
 }
 
 func extractMentionHandles(content string) []string {
