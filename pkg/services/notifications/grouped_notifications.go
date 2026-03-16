@@ -160,6 +160,9 @@ func (gns *GroupedNotificationsService) generateGroupKey(
 	case "mention":
 		// Don't group mentions - each should be individual
 		keyParts = append(keyParts, "unique:"+notification.ID)
+	case "reply":
+		// Replies should remain individual so parent-thread context stays explicit
+		keyParts = append(keyParts, "unique:"+notification.ID)
 	}
 
 	return strings.Join(keyParts, "|")
@@ -325,6 +328,8 @@ func (gns *GroupedNotificationsService) GenerateGroupSummary(
 	case "mention":
 		// Mentions typically aren't grouped, but just in case
 		return fmt.Sprintf("%s mentioned you", group.SampleAccounts[0].DisplayName)
+	case "reply":
+		return fmt.Sprintf("%s replied to your post", group.SampleAccounts[0].DisplayName)
 
 	default:
 		if group.Count == 1 {

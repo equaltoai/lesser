@@ -322,6 +322,7 @@ type NotificationType string
 // Mastodon notification types as defined in the Mastodon API specification
 const (
 	NotificationMention       NotificationType = "mention"
+	NotificationReply         NotificationType = "reply"
 	NotificationStatus        NotificationType = "status"
 	NotificationReblog        NotificationType = "reblog"
 	NotificationFollow        NotificationType = "follow"
@@ -336,7 +337,7 @@ const (
 // ValidateNotificationType validates notification type
 func ValidateNotificationType(notificationType string) error {
 	validTypes := []NotificationType{
-		NotificationMention, NotificationStatus, NotificationReblog,
+		NotificationMention, NotificationReply, NotificationStatus, NotificationReblog,
 		NotificationFollow, NotificationFollowRequest, NotificationFavourite,
 		NotificationPoll, NotificationUpdate, NotificationAdminSignUp,
 		NotificationAdminReport,

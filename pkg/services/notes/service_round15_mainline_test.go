@@ -852,7 +852,7 @@ func TestService_round15_create_note_generates_reply_notifications(t *testing.T)
 		require.Len(t, notifier.cmds, 1)
 		assert.Equal(t, "bob", notifier.cmds[0].UserID)
 		assert.Equal(t, "alice", notifier.cmds[0].ActorID)
-		assert.Equal(t, common.NotificationTypeMention, notifier.cmds[0].Type)
+		assert.Equal(t, common.NotificationTypeReply, notifier.cmds[0].Type)
 		assert.Equal(t, reply.StatusID, notifier.cmds[0].TargetID)
 	})
 

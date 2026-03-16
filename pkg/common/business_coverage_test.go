@@ -100,7 +100,7 @@ func TestValidateMastodonFilterKeywordCoverage(t *testing.T) {
 }
 
 func TestValidateNotificationTypeCoverage(t *testing.T) {
-	valid := []string{"mention", "reblog", "favourite", "follow", "poll"}
+	valid := []string{"mention", "reply", "reblog", "favourite", "follow", "poll"}
 	for _, nt := range valid {
 		t.Run("valid_"+nt, func(t *testing.T) {
 			err := ValidateNotificationType(nt)

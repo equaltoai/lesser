@@ -651,6 +651,7 @@ func (s *Service) validateCreateCommand(_ context.Context, cmd *CreateNotificati
 	// Validate notification type
 	validTypes := map[string]bool{
 		"mention":                true,
+		"reply":                  true,
 		"reblog":                 true,
 		"favourite":              true,
 		"follow":                 true,

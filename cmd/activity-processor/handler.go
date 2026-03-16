@@ -378,17 +378,7 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 		return followRelationshipCreationFailed(err)
 	}
 
-	// Create follow notification for the target user
-	notification := models.NewNotificationBuilder().
-		ForUser(targetUsername).
-		OfType("follow").
-		FromActor(followerUsername, "remote_actor").
-		WithContent(
-			fmt.Sprintf("%s started following you", followerUsername),
-			fmt.Sprintf("You have a new follower: %s", followerUsername)).
-		Build()
-
-	if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
+	if err := h.createNotification(ctx, notifsvc.NewFollowNotificationCommand(targetUsername, followerUsername, targetUser, "remote_actor")); err != nil {
 		h.Logger.Error("Failed to create follow notification",
 			zap.String("target_user", targetUsername),
 			zap.String("follower", followerUsername),
@@ -590,17 +580,7 @@ func (h *ActivityHandler) createMentionNotifications(ctx context.Context, status
 		}
 		seen[recipient] = struct{}{}
 
-		notification := models.NewNotificationBuilder().
-			ForUser(recipient).
-			OfType(common.NotificationTypeMention).
-			FromActor(actorUsername, "remote_actor").
-			AboutTarget(status.StatusID, ObjectTypeStatus).
-			WithContent(
-				fmt.Sprintf("%s mentioned you", actorUsername),
-				fmt.Sprintf("You were mentioned by %s", actorUsername)).
-			Build()
-
-		if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
+		if err := h.createNotification(ctx, notifsvc.NewMentionNotificationCommand(recipient, actorUsername, status.StatusID, "", "remote_actor")); err != nil {
 			h.Logger.Error("failed to create mention notification",
 				zap.String("recipient", recipient),
 				zap.String("actor", actorUsername),
@@ -608,6 +588,45 @@ func (h *ActivityHandler) createMentionNotifications(ctx context.Context, status
 				zap.Error(err))
 		}
 	}
+}
+
+func (h *ActivityHandler) createNotification(ctx context.Context, cmd *notifsvc.CreateNotificationCommand) error {
+	if cmd == nil {
+		return nil
+	}
+
+	if h.NotificationSvc != nil {
+		_, err := h.NotificationSvc.CreateNotification(ctx, cmd)
+		return err
+	}
+
+	builder := models.NewNotificationBuilder().
+		ForUser(cmd.UserID).
+		OfType(cmd.Type).
+		FromActor(cmd.ActorID, cmd.ActorType)
+
+	if cmd.TargetID != "" && cmd.TargetType != "" {
+		builder = builder.AboutTarget(cmd.TargetID, cmd.TargetType)
+	}
+	if cmd.Title != "" || cmd.Body != "" {
+		builder = builder.WithContent(cmd.Title, cmd.Body)
+	}
+	if cmd.GroupKey != "" {
+		builder = builder.WithGroupKey(cmd.GroupKey)
+	}
+	for key, value := range cmd.Data {
+		builder = builder.WithData(key, value)
+	}
+
+	notification := builder.Build()
+	if cmd.ID != "" {
+		notification.ID = cmd.ID
+	}
+	if cmd.CreatedAt != nil && !cmd.CreatedAt.IsZero() {
+		notification.CreatedAt = cmd.CreatedAt.UTC()
+	}
+
+	return h.createNotificationRepo().CreateNotification(ctx, notification)
 }
 
 // mapToNote converts a map to a Note object
@@ -2875,18 +2894,26 @@ func (h *ActivityHandler) createObjectInteractionNotification(ctx context.Contex
 		actorUsername := h.extractUsernameFromActorURI(actorURI)
 
 		if authorUsername != "" && actorUsername != "" {
-			// Create notification for the object author
-			notification := models.NewNotificationBuilder().
-				ForUser(authorUsername).
-				OfType(notificationType).
-				FromActor(actorUsername, "remote_actor").
-				AboutTarget(objectID, "status").
-				WithContent(
-					fmt.Sprintf("%s %s your post", actorUsername, actionVerb),
-					fmt.Sprintf("Your post was %s by %s", actionVerb, actorUsername)).
-				Build()
+			var cmd *notifsvc.CreateNotificationCommand
+			switch notificationType {
+			case common.NotificationTypeFavourite:
+				cmd = notifsvc.NewFavouriteNotificationCommand(authorUsername, actorUsername, objectID, "", "remote_actor")
+			case common.NotificationTypeReblog:
+				cmd = notifsvc.NewReblogNotificationCommand(authorUsername, actorUsername, objectID, "", "remote_actor")
+			default:
+				cmd = &notifsvc.CreateNotificationCommand{
+					UserID:     authorUsername,
+					Type:       notificationType,
+					ActorID:    actorUsername,
+					ActorType:  "remote_actor",
+					TargetID:   objectID,
+					TargetType: ObjectTypeStatus,
+					Title:      fmt.Sprintf("%s %s your post", actorUsername, actionVerb),
+					Body:       fmt.Sprintf("Your post was %s by %s", actionVerb, actorUsername),
+				}
+			}
 
-			if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
+			if err := h.createNotification(ctx, cmd); err != nil {
 				h.Logger.Error(fmt.Sprintf("Failed to create %s notification", notificationType),
 					zap.String("author", authorUsername),
 					zap.String(actorRole, actorUsername),

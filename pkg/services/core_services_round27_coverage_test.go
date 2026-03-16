@@ -494,7 +494,7 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Len(t, captureRepo.created, 1)
-		assert.Equal(t, "mention", captureRepo.created[0].Type)
+		assert.Equal(t, "reply", captureRepo.created[0].Type)
 		assert.Equal(t, "alice", captureRepo.created[0].UserID)
 	})
 

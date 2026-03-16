@@ -56,6 +56,7 @@ func TestFormatNotificationTitle(t *testing.T) {
 		{"favourite", "alice", "alice favourited your post"},
 		{"reblog", "alice", "alice boosted your post"},
 		{"mention", "alice", "alice mentioned you"},
+		{"reply", "alice", "alice replied to your post"},
 		{"poll", "alice", "A poll you voted in has ended"},
 		{"follow_request", "alice", "alice requested to follow you"},
 		{"status", "alice", "alice posted"},
@@ -75,4 +76,8 @@ func TestFormatNotificationBody(t *testing.T) {
 	body := FormatNotificationBody("mention", long)
 	require.Len(t, body, 100)
 	require.True(t, strings.HasSuffix(body, "..."))
+
+	replyBody := FormatNotificationBody("reply", long)
+	require.Len(t, replyBody, 100)
+	require.True(t, strings.HasSuffix(replyBody, "..."))
 }

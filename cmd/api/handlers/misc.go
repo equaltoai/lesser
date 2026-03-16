@@ -731,6 +731,7 @@ func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
 		return false
 	}
 	return notif.Type == models.NotificationTypeMention ||
+		notif.Type == models.NotificationTypeReply ||
 		notif.Type == models.NotificationTypeFavourite ||
 		notif.Type == models.NotificationTypeReblog
 }
@@ -986,6 +987,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 
 	// Add status if applicable
 	if notification.TargetID != "" && notification.TargetType == "status" && (notification.Type == models.NotificationTypeMention ||
+		notification.Type == models.NotificationTypeReply ||
 		notification.Type == models.NotificationTypeFavourite ||
 		notification.Type == models.NotificationTypeReblog) {
 		statusModel, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{

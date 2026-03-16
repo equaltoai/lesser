@@ -3054,24 +3054,7 @@ func (s *Service) notifyBoost(ctx context.Context, status *models.Status, booste
 	}
 
 	statusURL := s.buildStatusURL(status)
-	title := fmt.Sprintf("%s boosted your post", boosterUsername)
-
-	cmd := &notifications.CreateNotificationCommand{
-		UserID:     recipient,
-		Type:       common.NotificationTypeReblog,
-		ActorID:    boosterUsername,
-		ActorType:  "user",
-		TargetID:   status.StatusID,
-		TargetType: "status",
-		Title:      title,
-		Body:       title,
-		GroupKey:   fmt.Sprintf("reblog:%s", status.StatusID),
-		Data: map[string]interface{}{
-			"status_id":  status.StatusID,
-			"status_url": statusURL,
-			"booster":    boosterUsername,
-		},
-	}
+	cmd := notifications.NewReblogNotificationCommand(recipient, boosterUsername, status.StatusID, statusURL, "user")
 
 	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
 		s.logger.Error("failed to create boost notification",
@@ -3093,24 +3076,7 @@ func (s *Service) notifyLike(ctx context.Context, status *models.Status, likerUs
 	}
 
 	statusURL := s.buildStatusURL(status)
-	title := fmt.Sprintf("%s favourited your post", likerUsername)
-
-	cmd := &notifications.CreateNotificationCommand{
-		UserID:     recipient,
-		Type:       common.NotificationTypeFavourite,
-		ActorID:    likerUsername,
-		ActorType:  "user",
-		TargetID:   status.StatusID,
-		TargetType: "status",
-		Title:      title,
-		Body:       title,
-		GroupKey:   fmt.Sprintf("favourite:%s", status.StatusID),
-		Data: map[string]interface{}{
-			"status_id":  status.StatusID,
-			"status_url": statusURL,
-			"liker":      likerUsername,
-		},
-	}
+	cmd := notifications.NewFavouriteNotificationCommand(recipient, likerUsername, status.StatusID, statusURL, "user")
 
 	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
 		s.logger.Error("failed to create like notification",
@@ -3152,25 +3118,7 @@ func (s *Service) notifyReply(ctx context.Context, status *models.Status, mentio
 	}
 
 	statusURL := s.buildStatusURL(status)
-	title := fmt.Sprintf("%s replied to your post", replierUsername)
-
-	cmd := &notifications.CreateNotificationCommand{
-		UserID:     recipient,
-		Type:       common.NotificationTypeMention,
-		ActorID:    replierUsername,
-		ActorType:  "user",
-		TargetID:   status.StatusID,
-		TargetType: "status",
-		Title:      title,
-		Body:       title,
-		GroupKey:   fmt.Sprintf("reply:%s", status.StatusID),
-		Data: map[string]interface{}{
-			"status_id":        status.StatusID,
-			"status_url":       statusURL,
-			"parent_status_id": status.InReplyToID,
-			"replier":          replierUsername,
-		},
-	}
+	cmd := notifications.NewReplyNotificationCommand(recipient, replierUsername, status.StatusID, status.InReplyToID, statusURL, "user")
 
 	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
 		s.logger.Error("failed to create reply notification",
@@ -3191,8 +3139,6 @@ func (s *Service) notifyMentions(ctx context.Context, status *models.Status, men
 		return
 	}
 
-	statusURL := s.buildStatusURL(status)
-	title := fmt.Sprintf("%s mentioned you", authorUsername)
 	seen := make(map[string]struct{}, len(mentionedUsers))
 
 	for _, rawRecipient := range mentionedUsers {
@@ -3207,22 +3153,8 @@ func (s *Service) notifyMentions(ctx context.Context, status *models.Status, men
 		}
 		seen[key] = struct{}{}
 
-		cmd := &notifications.CreateNotificationCommand{
-			UserID:     recipient,
-			Type:       common.NotificationTypeMention,
-			ActorID:    authorUsername,
-			ActorType:  "user",
-			TargetID:   status.StatusID,
-			TargetType: "status",
-			Title:      title,
-			Body:       title,
-			GroupKey:   fmt.Sprintf("mention:%s", status.StatusID),
-			Data: map[string]interface{}{
-				"status_id":  status.StatusID,
-				"status_url": statusURL,
-				"mentioner":  authorUsername,
-			},
-		}
+		statusURL := s.buildStatusURL(status)
+		cmd := notifications.NewMentionNotificationCommand(recipient, authorUsername, status.StatusID, statusURL, "user")
 
 		if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
 			s.logger.Error("failed to create mention notification",

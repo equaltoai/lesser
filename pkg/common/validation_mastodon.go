@@ -70,7 +70,7 @@ const (
 var ValidVisibilityLevels = []string{"public", "unlisted", "private", "direct"}
 
 // ValidNotificationTypes defines the valid Mastodon notification types
-var ValidNotificationTypes = []string{"mention", "status", "reblog", "follow", "follow_request", "favourite", "poll", "update", "admin.sign_up", "admin.report"}
+var ValidNotificationTypes = []string{"mention", "reply", "status", "reblog", "follow", "follow_request", "favourite", "poll", "update", "admin.sign_up", "admin.report"}
 
 // ValidFilterContexts defines the valid Mastodon filter contexts
 var ValidFilterContexts = []string{"home", "notifications", "public", "thread", "account"}

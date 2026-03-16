@@ -150,20 +150,7 @@ func (h *Handler) createFollowNotification(ctx context.Context, followerUsername
 		return
 	}
 
-	cmd := &notifications.CreateNotificationCommand{
-		UserID:     recipient,
-		Type:       common.NotificationTypeFollow,
-		ActorID:    followerUsername,
-		ActorType:  "user",
-		TargetID:   targetID,
-		TargetType: "account",
-		Title:      fmt.Sprintf("%s followed you", followerUsername),
-		Body:       fmt.Sprintf("%s started following you", followerUsername),
-		GroupKey:   fmt.Sprintf("follow:%s", followerUsername),
-		Data: map[string]interface{}{
-			"follower": followerUsername,
-		},
-	}
+	cmd := notifications.NewFollowNotificationCommand(recipient, followerUsername, targetID, "user")
 
 	if _, err := notificationService.CreateNotification(ctx, cmd); err != nil {
 		h.logger.Warn("failed to create follow notification",

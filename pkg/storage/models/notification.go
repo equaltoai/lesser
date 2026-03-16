@@ -249,6 +249,7 @@ func (n *Notification) IncrementGroupCount() {
 func isValidNotificationType(notifType string) bool {
 	validTypes := map[string]bool{
 		"mention":                true,
+		"reply":                  true,
 		"reblog":                 true,
 		"favourite":              true,
 		"follow":                 true,
@@ -334,6 +335,17 @@ func NewMentionNotification(userID, actorID, statusID string) *Notification {
 		FromActor(actorID, "user").
 		AboutTarget(statusID, "status").
 		WithContent("New mention", "You were mentioned in a post").
+		Build()
+}
+
+// NewReplyNotification creates a reply notification.
+func NewReplyNotification(userID, actorID, statusID string) *Notification {
+	return NewNotificationBuilder().
+		ForUser(userID).
+		OfType("reply").
+		FromActor(actorID, "user").
+		AboutTarget(statusID, "status").
+		WithContent("New reply", "Someone replied to your post").
 		Build()
 }
 

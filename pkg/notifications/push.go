@@ -109,6 +109,8 @@ func FormatNotificationTitle(notificationType string, actorName string) string {
 		return fmt.Sprintf("%s boosted your post", actorName)
 	case "mention":
 		return fmt.Sprintf("%s mentioned you", actorName)
+	case "reply":
+		return fmt.Sprintf("%s replied to your post", actorName)
 	case "poll":
 		return "A poll you voted in has ended"
 	case "follow_request":
@@ -124,7 +126,7 @@ func FormatNotificationTitle(notificationType string, actorName string) string {
 
 // FormatNotificationBody formats a notification body based on type and content
 func FormatNotificationBody(notificationType string, content string) string {
-	if notificationType == "mention" && content != "" {
+	if (notificationType == "mention" || notificationType == "reply") && content != "" {
 		// For mentions, include a preview of the content
 		if len(content) > 100 {
 			content = content[:97] + "..."
