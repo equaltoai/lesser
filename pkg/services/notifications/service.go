@@ -47,7 +47,7 @@ func NewService(
 		logger = zap.NewNop()
 	}
 
-	return &Service{
+	service := &Service{
 		notificationRepo: notificationRepo,
 		accountRepo:      accountRepo,
 		publisher:        publisher,
@@ -55,6 +55,12 @@ func NewService(
 		domainName:       domainName,
 		pushService:      pushService,
 	}
+
+	if notificationRepo != nil {
+		notificationRepo.SetDispatcher(service)
+	}
+
+	return service
 }
 
 // Command structs for operations
@@ -152,16 +158,13 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 	}
 
 	// Check if recipient user exists
-	recipientAccount, err := s.accountRepo.GetAccount(ctx, cmd.UserID)
-	if err != nil {
+	if _, err := s.accountRepo.GetAccount(ctx, cmd.UserID); err != nil {
 		return nil, common.WrapError(common.ErrNotFound("recipient user"), "failed to get recipient user")
 	}
 
 	// Check if actor exists (optional validation)
-	var actorAccount *storage.Account
 	if err := common.ValidateRequiredParam("actor_id_check", cmd.ActorID); err == nil && cmd.ActorID != "system" {
-		actorAccount, err = s.accountRepo.GetAccount(ctx, cmd.ActorID)
-		if err != nil {
+		if _, err := s.accountRepo.GetAccount(ctx, cmd.ActorID); err != nil {
 			s.logger.Warn("actor not found for notification",
 				zap.String("actor_id", cmd.ActorID),
 				zap.Error(err))
@@ -218,8 +221,6 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 		}
 		return nil, apperrors.FailedToCreate("notification", err)
 	}
-
-	s.queuePushNotification(ctx, recipientAccount, actorAccount, notification)
 
 	s.logger.Info("created notification successfully",
 		zap.String("notification_id", notification.ID),

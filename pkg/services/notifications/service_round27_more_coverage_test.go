@@ -267,8 +267,8 @@ func TestService_CreateNotification_round27_actor_optional_missing(t *testing.T)
 	ctx := context.Background()
 
 	recipient := &storage.Account{User: &storage.User{Username: "alice"}}
-	accountRepo.On("GetAccount", ctx, "alice").Return(recipient, nil).Once()
-	accountRepo.On("GetAccount", ctx, "missing-actor").Return(nil, assert.AnError).Once()
+	accountRepo.On("GetAccount", ctx, "alice").Return(recipient, nil).Twice()
+	accountRepo.On("GetAccount", ctx, "missing-actor").Return(nil, assert.AnError).Twice()
 	notificationRepo.On("CreateNotification", ctx, mock.AnythingOfType("*models.Notification")).Return(nil).Once()
 
 	result, err := service.CreateNotification(ctx, &CreateNotificationCommand{

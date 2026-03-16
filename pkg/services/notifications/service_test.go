@@ -27,10 +27,14 @@ type MockPublisher interface {
 // MockNotificationRepository implements interfaces.NotificationRepository for testing
 type MockNotificationRepository struct {
 	mock.Mock
+	dispatcher interfaces.NotificationDispatcher
 }
 
 func (m *MockNotificationRepository) CreateNotification(ctx context.Context, notification *models.Notification) error {
 	args := m.Called(ctx, notification)
+	if args.Error(0) == nil && m.dispatcher != nil {
+		m.dispatcher.DispatchPushForNotification(ctx, notification)
+	}
 	return args.Error(0)
 }
 
@@ -156,7 +160,7 @@ func (m *MockNotificationRepository) DeleteExpiredNotifications(ctx context.Cont
 }
 
 func (m *MockNotificationRepository) SetDispatcher(dispatcher interfaces.NotificationDispatcher) {
-	m.Called(dispatcher)
+	m.dispatcher = dispatcher
 }
 
 func (m *MockNotificationRepository) DeleteNotificationsByObject(ctx context.Context, objectID string) error {
@@ -487,6 +491,33 @@ func TestService_CreateNotification_Success(t *testing.T) {
 	assert.Equal(t, "You were mentioned", pushMsg.Title)
 	assert.Equal(t, "Someone mentioned you in a post", pushMsg.Body)
 	assert.Equal(t, result.Notification.ID, pushMsg.NotificationID)
+
+	mockNotificationRepo.AssertExpectations(t)
+	mockAccountRepo.AssertExpectations(t)
+}
+
+func TestService_CreateNotification_QueuesPushExactlyOnceViaRepositoryDispatcher(t *testing.T) {
+	service, mockNotificationRepo, mockAccountRepo, _, pushService := setupTestService()
+	ctx := context.Background()
+
+	user := createTestUser("testuser")
+	actor := createTestUser("actor")
+
+	mockAccountRepo.On("GetAccount", ctx, "testuser").Return(user, nil)
+	mockAccountRepo.On("GetAccount", ctx, "actor").Return(actor, nil)
+	mockNotificationRepo.On("CreateNotification", ctx, mock.AnythingOfType("*models.Notification")).Return(nil).Once()
+
+	result, err := service.CreateNotification(ctx, &CreateNotificationCommand{
+		UserID:    "testuser",
+		Type:      "follow",
+		ActorID:   "actor",
+		ActorType: "user",
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Len(t, pushService.Messages(), 1)
+	assert.Equal(t, "follow", pushService.Messages()[0].NotificationType)
 
 	mockNotificationRepo.AssertExpectations(t)
 	mockAccountRepo.AssertExpectations(t)
