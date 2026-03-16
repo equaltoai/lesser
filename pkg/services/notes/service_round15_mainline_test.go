@@ -294,6 +294,7 @@ func populateStructWithTime(target any, state *permissiveQueryState, at time.Tim
 type stubAccountRepo struct {
 	*repositories.AccountRepository
 	domain    string
+	accounts  map[string]*storage.Account
 	missing   map[string]bool
 	omitActor map[string]bool
 }
@@ -319,6 +320,12 @@ func (r *stubAccountRepo) GetAccount(_ context.Context, id string) (*storage.Acc
 
 	if r.missing != nil && r.missing[username] {
 		return nil, pkgerrors.ItemNotFound("account")
+	}
+
+	if r.accounts != nil {
+		if account, ok := r.accounts[username]; ok {
+			return account, nil
+		}
 	}
 
 	account := &storage.Account{

@@ -1303,7 +1303,7 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 
 		account, err := s.accountRepo.GetAccount(ctx, lookupID)
 		if err == nil && account != nil && account.User != nil {
-			username = strings.TrimSpace(account.User.Username)
+			username, domain = normalizeMentionAccount(account, username, domain, localDomain)
 			if username == "" {
 				continue
 			}
@@ -1402,6 +1402,68 @@ func splitMentionHandle(mention string) (string, string) {
 		return username, ""
 	}
 	return username, domain
+}
+
+func normalizeMentionAccount(account *storage.Account, username, domain, localDomain string) (string, string) {
+	resolvedUsername := strings.TrimSpace(username)
+	resolvedDomain := strings.TrimSpace(domain)
+	normalizedLocalDomain := normalizeMentionDomain(localDomain)
+
+	if account == nil {
+		return resolvedUsername, resolvedDomain
+	}
+
+	if account.User != nil {
+		storedUsername := strings.TrimSpace(account.User.Username)
+		if storedUsername != "" {
+			if parsedUsername, parsedDomain := splitMentionHandle(storedUsername); parsedDomain != "" {
+				if resolvedUsername == "" || strings.EqualFold(resolvedUsername, storedUsername) {
+					resolvedUsername = parsedUsername
+				}
+				if resolvedDomain == "" {
+					resolvedDomain = parsedDomain
+				}
+			} else if resolvedUsername == "" {
+				resolvedUsername = storedUsername
+			}
+		}
+	}
+
+	if account.Actor != nil {
+		if preferred := strings.TrimSpace(account.Actor.PreferredUsername); preferred != "" {
+			resolvedUsername = preferred
+		}
+		if actorDomain := mentionActorDomain(account.Actor.ID); actorDomain != "" && actorDomain != normalizedLocalDomain {
+			resolvedDomain = actorDomain
+		}
+	}
+
+	if normalizeMentionDomain(resolvedDomain) == normalizedLocalDomain {
+		resolvedDomain = ""
+	}
+
+	return strings.TrimSpace(resolvedUsername), strings.TrimSpace(resolvedDomain)
+}
+
+func mentionActorDomain(actorID string) string {
+	if strings.TrimSpace(actorID) == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(actorID)
+	if err != nil {
+		return ""
+	}
+
+	return normalizeMentionDomain(parsed.Host)
+}
+
+func normalizeMentionDomain(domain string) string {
+	normalized := strings.ToLower(strings.TrimSpace(domain))
+	normalized = strings.TrimPrefix(normalized, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimSuffix(normalized, "/")
+	return normalized
 }
 
 func formatMentionTagName(username, domain, localDomain string) string {

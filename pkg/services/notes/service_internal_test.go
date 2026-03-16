@@ -160,6 +160,34 @@ func TestBuildMentionTagsResolvesRemoteMentionsViaFederation(t *testing.T) {
 	assert.Empty(t, usernames)
 }
 
+func TestBuildMentionTagsUsesCanonicalRemoteHandleFromCachedAccount(t *testing.T) {
+	service := &Service{
+		domainName: "example.com",
+		accountRepo: &stubAccountRepo{
+			domain: "example.com",
+			accounts: map[string]*storage.Account{
+				"carol@remote.example": {
+					User: &storage.User{Username: "carol@remote.example"},
+					Actor: &activitypub.Actor{
+						BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/carol"},
+						PreferredUsername: "carol",
+					},
+				},
+			},
+		},
+		logger: zap.NewNop(),
+	}
+
+	tags, usernames := service.buildMentionTags(context.Background(), "hi @carol@remote.example", &storage.Account{
+		User: &storage.User{Username: "alice"},
+	})
+
+	require.Len(t, tags, 1)
+	assert.Equal(t, "https://remote.example/users/carol", tags[0].Href)
+	assert.Equal(t, "@carol@remote.example", tags[0].Name)
+	assert.Empty(t, usernames)
+}
+
 func TestAddMentionAudienceRespectsVisibility(t *testing.T) {
 	mentionTags := []activitypub.Tag{
 		{Type: "Mention", Href: "https://remote.example/users/bob", Name: "@bob"},

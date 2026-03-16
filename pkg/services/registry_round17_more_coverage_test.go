@@ -892,17 +892,45 @@ func TestRegistry_Adapters_And_JobQueueImplementations(t *testing.T) {
 		}
 
 		activity := &activitypub.Activity{
-			BaseObject: activitypub.BaseObject{Type: "Create"},
-			Actor:      "https://example.com/users/alice",
+			BaseObject: activitypub.BaseObject{
+				Type: "Create",
+				To:   []string{activitypub.PublicAddress, "https://remote.example/users/bob"},
+			},
+			Actor: "https://example.com/users/alice",
 		}
 		require.NoError(t, adapter.QueueActivity(context.Background(), activity))
 
 		assert.Equal(t, 1, fed.deliverFollowersCalls)
+		assert.Equal(t, 1, fed.deliverRecipientsCalls)
 		require.NotNil(t, fed.lastActor)
 		assert.Equal(t, activity.Actor, fed.lastActor.ID)
+		assert.Equal(t, "alice", fed.lastActor.PreferredUsername)
 
 		require.NoError(t, adapter.QueueActivity(context.Background(), &activitypub.Activity{BaseObject: activitypub.BaseObject{Type: "Create"}}))
-		assert.Equal(t, 2, fed.deliverFollowersCalls)
+		assert.Equal(t, 1, fed.deliverFollowersCalls)
+		assert.Equal(t, 1, fed.deliverRecipientsCalls)
+	})
+
+	t.Run("queueFederationAdapter_delivers_direct_mentions_to_recipients_only", func(t *testing.T) {
+		fed := &stubFederationService{}
+		storage := newPermissiveRegistryStorage(t, "example.com", logger)
+		adapter := &queueFederationAdapter{
+			federation: fed,
+			storage:    storage,
+			logger:     logger,
+		}
+
+		activity := &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				Type: "Create",
+				To:   []string{"https://remote.example/users/bob"},
+			},
+			Actor: "https://example.com/users/alice",
+		}
+
+		require.NoError(t, adapter.QueueActivity(context.Background(), activity))
+		assert.Equal(t, 0, fed.deliverFollowersCalls)
+		assert.Equal(t, 1, fed.deliverRecipientsCalls)
 	})
 
 	t.Run("simpleFederationService_queue_activity_noop", func(t *testing.T) {
@@ -941,9 +969,10 @@ func (q *captureJobQueue) QueueActivityJob(_ context.Context, msg ActivityJobMes
 }
 
 type stubFederationService struct {
-	deliverFollowersCalls int
-	lastActivity          *activitypub.Activity
-	lastActor             *activitypub.Actor
+	deliverFollowersCalls  int
+	deliverRecipientsCalls int
+	lastActivity           *activitypub.Activity
+	lastActor              *activitypub.Actor
 }
 
 func (s *stubFederationService) DeliverToFollowers(_ context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
@@ -952,7 +981,10 @@ func (s *stubFederationService) DeliverToFollowers(_ context.Context, activity *
 	s.lastActor = actor
 	return nil
 }
-func (s *stubFederationService) DeliverToRecipients(context.Context, *activitypub.Activity, *activitypub.Actor) error {
+func (s *stubFederationService) DeliverToRecipients(_ context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
+	s.deliverRecipientsCalls++
+	s.lastActivity = activity
+	s.lastActor = actor
 	return nil
 }
 func (s *stubFederationService) DetermineRecipients(context.Context, *activitypub.Activity, string) ([]string, error) {
