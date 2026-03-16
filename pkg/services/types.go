@@ -203,6 +203,7 @@ type AuthenticationService interface {
 type NotificationService interface {
 	CreateFollowNotification(ctx context.Context, followActivity *activitypub.Activity) error
 	CreateLikeNotification(ctx context.Context, likeActivity *activitypub.Activity) error
+	CreateReblogNotification(ctx context.Context, announceActivity *activitypub.Activity) error
 	CreateReplyNotification(ctx context.Context, replyActivity *activitypub.Activity) error
 	CreateMentionNotification(ctx context.Context, mentions []string, activity *activitypub.Activity) error
 }

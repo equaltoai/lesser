@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -22,6 +23,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 type interactionsRound19Repos struct {
@@ -172,6 +174,46 @@ func TestInteractionsRound19_followResolvesNumericAndEncodedTargets(t *testing.T
 
 	require.Equal(t, 2, followCalls)
 	actorRepo.AssertExpectations(t)
+}
+
+func TestInteractionsRound19_createFollowNotification_LocalOnly(t *testing.T) {
+	cfg := round11TestConfig()
+
+	var seen []*notifications.CreateNotificationCommand
+	h := &Handler{
+		cfg:    cfg,
+		logger: zap.NewNop(),
+		registry: &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					seen = append(seen, cmd)
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		},
+	}
+
+	h.createFollowNotification(context.Background(), "alice", cfg.ActorURL("bob"), &storage.Account{
+		User: &storage.User{Username: "bob"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: cfg.ActorURL("bob"), Type: "Person"},
+			PreferredUsername: "bob",
+		},
+	})
+	require.Len(t, seen, 1)
+	require.Equal(t, "bob", seen[0].UserID)
+	require.Equal(t, "alice", seen[0].ActorID)
+	require.Equal(t, common.NotificationTypeFollow, seen[0].Type)
+
+	seen = nil
+	h.createFollowNotification(context.Background(), "alice", "https://remote.example/users/bob", &storage.Account{
+		User: &storage.User{Username: "bob@remote.example"},
+		Actor: &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://remote.example/users/bob", Type: "Person"},
+			PreferredUsername: "bob@remote.example",
+		},
+	})
+	require.Empty(t, seen)
 }
 
 func TestInteractionsRound19_statusInteraction_ErrorBranches(t *testing.T) {

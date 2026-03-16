@@ -970,6 +970,9 @@ func (noopNotificationService) CreateFollowNotification(context.Context, *activi
 func (noopNotificationService) CreateLikeNotification(context.Context, *activitypub.Activity) error {
 	return nil
 }
+func (noopNotificationService) CreateReblogNotification(context.Context, *activitypub.Activity) error {
+	return nil
+}
 func (noopNotificationService) CreateReplyNotification(context.Context, *activitypub.Activity) error {
 	return nil
 }

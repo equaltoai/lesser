@@ -380,6 +380,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Ensure AuthorUsername is populated before emitting events
 	s.ensureAuthorUsername(ctx, status)
+	s.notifyReply(ctx, status, mentionedUsers)
 	s.notifyMentions(ctx, status, mentionedUsers)
 
 	// Emit events and queue federation
@@ -2469,6 +2470,9 @@ func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResu
 		return nil, errors.Join(ErrExecuteAction, err)
 	}
 
+	result.Status = s.refreshStatus(ctx, cmd.StatusID, result.Status)
+	s.notifyLike(ctx, result.Status, cmd.LikerID)
+
 	return result, nil
 }
 
@@ -3071,6 +3075,105 @@ func (s *Service) notifyBoost(ctx context.Context, status *models.Status, booste
 
 	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
 		s.logger.Error("failed to create boost notification",
+			zap.String("status_id", status.StatusID),
+			zap.String("recipient", recipient),
+			zap.Error(err))
+	}
+}
+
+func (s *Service) notifyLike(ctx context.Context, status *models.Status, likerUsername string) {
+	if s.notifications == nil || status == nil {
+		return
+	}
+
+	s.ensureAuthorUsername(ctx, status)
+	recipient := strings.TrimSpace(status.AuthorUsername)
+	if recipient == "" || recipient == likerUsername {
+		return
+	}
+
+	statusURL := s.buildStatusURL(status)
+	title := fmt.Sprintf("%s favourited your post", likerUsername)
+
+	cmd := &notifications.CreateNotificationCommand{
+		UserID:     recipient,
+		Type:       common.NotificationTypeFavourite,
+		ActorID:    likerUsername,
+		ActorType:  "user",
+		TargetID:   status.StatusID,
+		TargetType: "status",
+		Title:      title,
+		Body:       title,
+		GroupKey:   fmt.Sprintf("favourite:%s", status.StatusID),
+		Data: map[string]interface{}{
+			"status_id":  status.StatusID,
+			"status_url": statusURL,
+			"liker":      likerUsername,
+		},
+	}
+
+	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
+		s.logger.Error("failed to create like notification",
+			zap.String("status_id", status.StatusID),
+			zap.String("recipient", recipient),
+			zap.Error(err))
+	}
+}
+
+func (s *Service) notifyReply(ctx context.Context, status *models.Status, mentionedUsers []string) {
+	if s.notifications == nil || status == nil || strings.TrimSpace(status.InReplyToID) == "" {
+		return
+	}
+
+	parentStatus, err := s.lookupParentStatus(ctx, status.InReplyToID)
+	if err != nil || parentStatus == nil {
+		if err != nil {
+			s.logger.Warn("failed to load parent status for reply notification",
+				zap.String("status_id", status.StatusID),
+				zap.String("parent_status_id", status.InReplyToID),
+				zap.Error(err))
+		}
+		return
+	}
+
+	s.ensureAuthorUsername(ctx, status)
+	s.ensureAuthorUsername(ctx, parentStatus)
+
+	replierUsername := strings.TrimSpace(status.AuthorUsername)
+	recipient := strings.TrimSpace(parentStatus.AuthorUsername)
+	if recipient == "" || recipient == replierUsername {
+		return
+	}
+
+	for _, mentionedUser := range mentionedUsers {
+		if mentionMatchesViewer(mentionedUser, recipient, parentStatus.AuthorID) {
+			return
+		}
+	}
+
+	statusURL := s.buildStatusURL(status)
+	title := fmt.Sprintf("%s replied to your post", replierUsername)
+
+	cmd := &notifications.CreateNotificationCommand{
+		UserID:     recipient,
+		Type:       common.NotificationTypeMention,
+		ActorID:    replierUsername,
+		ActorType:  "user",
+		TargetID:   status.StatusID,
+		TargetType: "status",
+		Title:      title,
+		Body:       title,
+		GroupKey:   fmt.Sprintf("reply:%s", status.StatusID),
+		Data: map[string]interface{}{
+			"status_id":        status.StatusID,
+			"status_url":       statusURL,
+			"parent_status_id": status.InReplyToID,
+			"replier":          replierUsername,
+		},
+	}
+
+	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
+		s.logger.Error("failed to create reply notification",
 			zap.String("status_id", status.StatusID),
 			zap.String("recipient", recipient),
 			zap.Error(err))

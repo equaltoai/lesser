@@ -548,6 +548,8 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		return objectStorageFailed(err)
 	}
 
+	h.createMentionNotifications(ctx, status, note, activity.Actor)
+
 	// Add to appropriate timelines based on visibility
 	if err := h.processStatusForTimelines(ctx, status, visibility, username); err != nil {
 		h.Logger.Error("failed to process status for timelines",
@@ -561,6 +563,51 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		zap.String("visibility", visibility))
 
 	return nil
+}
+
+func (h *ActivityHandler) createMentionNotifications(ctx context.Context, status *models.Status, note *activitypub.Note, actorURI string) {
+	if status == nil || note == nil {
+		return
+	}
+
+	actorUsername := h.extractUsernameFromActorURI(actorURI)
+	if actorUsername == "" {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(note.Tag))
+	for _, tag := range note.Tag {
+		if tag.Type != "Mention" || tag.Href == "" || !h.isLocalActor(tag.Href) {
+			continue
+		}
+
+		recipient := h.extractUsernameFromActorURI(tag.Href)
+		if recipient == "" || recipient == actorUsername {
+			continue
+		}
+		if _, ok := seen[recipient]; ok {
+			continue
+		}
+		seen[recipient] = struct{}{}
+
+		notification := models.NewNotificationBuilder().
+			ForUser(recipient).
+			OfType(common.NotificationTypeMention).
+			FromActor(actorUsername, "remote_actor").
+			AboutTarget(status.StatusID, ObjectTypeStatus).
+			WithContent(
+				fmt.Sprintf("%s mentioned you", actorUsername),
+				fmt.Sprintf("You were mentioned by %s", actorUsername)).
+			Build()
+
+		if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
+			h.Logger.Error("failed to create mention notification",
+				zap.String("recipient", recipient),
+				zap.String("actor", actorUsername),
+				zap.String("status_id", status.StatusID),
+				zap.Error(err))
+		}
+	}
 }
 
 // mapToNote converts a map to a Note object
@@ -604,6 +651,9 @@ func (h *ActivityHandler) mapToNote(objMap map[string]interface{}) (*activitypub
 	if inReplyTo, ok := objMap["inReplyTo"].(string); ok {
 		note.InReplyTo = inReplyTo
 	}
+	if rawTags, ok := objMap["tag"].([]interface{}); ok {
+		note.Tag = h.interfaceSliceToTags(rawTags)
+	}
 
 	return note, nil
 }
@@ -634,6 +684,33 @@ func (h *ActivityHandler) interfaceSliceToStringSlice(slice []interface{}) []str
 		}
 	}
 	return result
+}
+
+func (h *ActivityHandler) interfaceSliceToTags(slice []interface{}) []activitypub.Tag {
+	tags := make([]activitypub.Tag, 0, len(slice))
+	for _, value := range slice {
+		tagMap, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		tag := activitypub.Tag{}
+		if tagType, ok := tagMap["type"].(string); ok {
+			tag.Type = tagType
+		}
+		if href, ok := tagMap["href"].(string); ok {
+			tag.Href = href
+		}
+		if name, ok := tagMap["name"].(string); ok {
+			tag.Name = name
+		}
+		if tag.Type == "" && tag.Href == "" && tag.Name == "" {
+			continue
+		}
+		tags = append(tags, tag)
+	}
+
+	return tags
 }
 
 // createStatusFromNote creates a Status model from a Note and activity

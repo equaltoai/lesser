@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -299,5 +300,66 @@ func TestActivityHandler_ProcessFollowAcceptCreateLikeAnnounceDeleteBlockFlagMov
 	actorRepo.AssertExpectations(t)
 	listRepo.AssertExpectations(t)
 	activityRepo.AssertExpectations(t)
+	notificationRepo.AssertExpectations(t)
+}
+
+func TestActivityHandler_ProcessCreateActivity_CreatesMentionNotifications(t *testing.T) {
+	t.Setenv("DOMAIN", "example.com")
+	config.ResetForTests()
+
+	ctx := context.Background()
+
+	objectRepo := testmocks.NewMockObjectRepository()
+	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
+	notificationRepo := testmocks.NewMockNotificationRepository()
+
+	objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(nil).Once()
+	timelineRepo.On("CreateTimelineEntries", mock.Anything, mock.Anything).Return(nil).Once()
+	notificationRepo.On("CreateNotification", mock.Anything, mock.MatchedBy(func(notification *models.Notification) bool {
+		return notification != nil &&
+			notification.Type == common.NotificationTypeMention &&
+			notification.UserID == "alice" &&
+			notification.ActorID == "bob" &&
+			notification.TargetID == "1"
+	})).Return(nil).Once()
+
+	h := &ActivityHandler{
+		Logger:           zap.NewNop(),
+		ObjectRepo:       objectRepo,
+		TimelineRepo:     timelineRepo,
+		NotificationRepo: notificationRepo,
+	}
+
+	create := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:   "create-mention",
+			Type: ActivityTypeCreate,
+			To:   []string{activitypub.PublicAddress},
+		},
+		Actor: "https://remote.example/users/bob",
+		Object: map[string]any{
+			"id":           "https://remote.example/users/bob/statuses/1",
+			"type":         ObjectTypeNote,
+			"content":      "<p>hi @alice</p>",
+			"attributedTo": "https://remote.example/users/bob",
+			"tag": []any{
+				map[string]any{
+					"type": "Mention",
+					"href": "https://example.com/users/alice",
+					"name": "@alice",
+				},
+				map[string]any{
+					"type": "Mention",
+					"href": "https://remote.example/users/carol",
+					"name": "@carol",
+				},
+			},
+		},
+	}
+
+	require.NoError(t, h.processCreateActivity(ctx, create, "alice"))
+
+	objectRepo.AssertExpectations(t)
+	timelineRepo.AssertExpectations(t)
 	notificationRepo.AssertExpectations(t)
 }

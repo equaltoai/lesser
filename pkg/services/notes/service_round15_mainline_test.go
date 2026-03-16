@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -819,6 +821,92 @@ func TestService_round15_create_note_generates_local_mention_tags_and_notificati
 	require.Len(t, federatedNote.Tag, 1)
 	assert.Equal(t, "Mention", federatedNote.Tag[0].Type)
 	assert.Equal(t, []string{"https://example.com/users/alice/followers", "https://example.com/users/bob"}, federatedNote.CC)
+}
+
+func TestService_round15_create_note_generates_reply_notifications(t *testing.T) {
+	t.Run("local parent", func(t *testing.T) {
+		notifier := &stubNotificationService{}
+		repo := inmemory.NewStatusRepository()
+		service := &Service{
+			domainName:    "example.com",
+			notifications: notifier,
+			noteRepo:      repo,
+			logger:        zap.NewNop(),
+		}
+
+		require.NoError(t, repo.CreateStatus(context.Background(), &models.Status{
+			StatusID:       "parent-1",
+			AuthorID:       "https://example.com/users/bob",
+			AuthorUsername: "bob",
+		}))
+
+		reply := &models.Status{
+			StatusID:       "reply-1",
+			AuthorID:       "https://example.com/users/alice",
+			AuthorUsername: "alice",
+			InReplyToID:    "parent-1",
+		}
+
+		service.notifyReply(context.Background(), reply, nil)
+
+		require.Len(t, notifier.cmds, 1)
+		assert.Equal(t, "bob", notifier.cmds[0].UserID)
+		assert.Equal(t, "alice", notifier.cmds[0].ActorID)
+		assert.Equal(t, common.NotificationTypeMention, notifier.cmds[0].Type)
+		assert.Equal(t, reply.StatusID, notifier.cmds[0].TargetID)
+	})
+
+	t.Run("federated parent", func(t *testing.T) {
+		notifier := &stubNotificationService{}
+		repo := inmemory.NewStatusRepository()
+		service := &Service{
+			domainName:    "example.com",
+			notifications: notifier,
+			noteRepo:      repo,
+			logger:        zap.NewNop(),
+		}
+
+		require.NoError(t, repo.CreateStatus(context.Background(), &models.Status{
+			StatusID:       "remote-parent",
+			AuthorID:       "https://remote.example/users/bob",
+			AuthorUsername: "bob@remote.example",
+		}))
+
+		reply := &models.Status{
+			StatusID:       "reply-remote-1",
+			AuthorID:       "https://example.com/users/alice",
+			AuthorUsername: "alice",
+			InReplyToID:    "remote-parent",
+		}
+
+		service.notifyReply(context.Background(), reply, nil)
+
+		require.Len(t, notifier.cmds, 1)
+		assert.Equal(t, "bob@remote.example", notifier.cmds[0].UserID)
+		assert.Equal(t, "alice", notifier.cmds[0].ActorID)
+		assert.Equal(t, reply.StatusID, notifier.cmds[0].TargetID)
+	})
+}
+
+func TestService_round15_like_note_generates_notification(t *testing.T) {
+	notifier := &stubNotificationService{}
+	service := &Service{
+		domainName:    "example.com",
+		notifications: notifier,
+		logger:        zap.NewNop(),
+	}
+
+	service.notifyLike(context.Background(), &models.Status{
+		StatusID:       "status-1",
+		AuthorID:       "https://example.com/users/bob",
+		AuthorUsername: "bob",
+	}, "alice")
+
+	require.Len(t, notifier.cmds, 1)
+	assert.Equal(t, "bob", notifier.cmds[0].UserID)
+	assert.Equal(t, "alice", notifier.cmds[0].ActorID)
+	assert.Equal(t, common.NotificationTypeFavourite, notifier.cmds[0].Type)
+	assert.Equal(t, "status-1", notifier.cmds[0].TargetID)
 }
 
 func TestService_round15_html_by_contract_is_sanitized_at_write_time(t *testing.T) {

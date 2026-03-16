@@ -442,6 +442,27 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		assert.Equal(t, "alice", captureRepo.created[0].UserID)
 	})
 
+	t.Run("CreateReblogNotification_success", func(t *testing.T) {
+		captureRepo := &capturingNotificationRepo{}
+		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
+			object:       fakeObjectRepo{getValue: map[string]any{"attributedTo": "https://local.example/users/alice"}},
+			notification: captureRepo,
+			logger:       zap.NewNop(),
+			table:        "tbl",
+		}}
+		svc := &notificationService{storage: storage, logger: zap.NewNop()}
+
+		err := svc.CreateReblogNotification(ctx, &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "announce-1"},
+			Actor:      "https://remote.example/users/bob",
+			Object:     "https://local.example/objects/n1",
+		})
+		require.NoError(t, err)
+		require.Len(t, captureRepo.created, 1)
+		assert.Equal(t, "reblog", captureRepo.created[0].Type)
+		assert.Equal(t, "alice", captureRepo.created[0].UserID)
+	})
+
 	t.Run("CreateReplyNotification_requires_in_reply_to", func(t *testing.T) {
 		captureRepo := &capturingNotificationRepo{}
 		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{

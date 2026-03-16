@@ -11,7 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
+	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -68,8 +70,10 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
+	var targetAccount *storage.Account
 	targetPublicID := ""
-	if targetAccount, lookupErr := h.lookupStorageAccountByID(ctx.Context(), accountID); lookupErr == nil && targetAccount != nil {
+	if resolvedAccount, lookupErr := h.lookupStorageAccountByID(ctx.Context(), accountID); lookupErr == nil && resolvedAccount != nil {
+		targetAccount = resolvedAccount
 		targetPublicID = h.publicAccountFromStorageAccount(targetAccount).ID
 	}
 
@@ -93,6 +97,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
+		h.createFollowNotification(ctx.Context(), claims.Username, targetID, targetAccount)
 		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	case relationshipOpUnfollow:
 		r, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
@@ -123,6 +128,48 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	default:
 		return common.RespondBadRequest(ctx, "invalid operation")
+	}
+}
+
+func (h *Handler) createFollowNotification(ctx context.Context, followerUsername, targetID string, targetAccount *storage.Account) {
+	if h == nil || h.registry == nil {
+		return
+	}
+
+	notificationService := h.registry.Notifications()
+	if notificationService == nil || targetAccount == nil || targetAccount.User == nil {
+		return
+	}
+
+	if targetAccount.Actor != nil && !h.actorAppearsLocal(targetAccount.Actor) {
+		return
+	}
+
+	recipient := strings.TrimSpace(targetAccount.User.Username)
+	if recipient == "" || recipient == followerUsername {
+		return
+	}
+
+	cmd := &notifications.CreateNotificationCommand{
+		UserID:     recipient,
+		Type:       common.NotificationTypeFollow,
+		ActorID:    followerUsername,
+		ActorType:  "user",
+		TargetID:   targetID,
+		TargetType: "account",
+		Title:      fmt.Sprintf("%s followed you", followerUsername),
+		Body:       fmt.Sprintf("%s started following you", followerUsername),
+		GroupKey:   fmt.Sprintf("follow:%s", followerUsername),
+		Data: map[string]interface{}{
+			"follower": followerUsername,
+		},
+	}
+
+	if _, err := notificationService.CreateNotification(ctx, cmd); err != nil {
+		h.logger.Warn("failed to create follow notification",
+			zap.String("recipient", recipient),
+			zap.String("follower", followerUsername),
+			zap.Error(err))
 	}
 }
 

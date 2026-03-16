@@ -77,6 +77,34 @@ func (n *notificationService) CreateLikeNotification(ctx context.Context, likeAc
 	return n.createNotification(ctx, authorActorID, likerActorID, "favourite", likeActivity.ID)
 }
 
+// CreateReblogNotification creates a notification when someone reblogs a post
+func (n *notificationService) CreateReblogNotification(ctx context.Context, announceActivity *activitypub.Activity) error {
+	objectID, ok := announceActivity.Object.(string)
+	if !ok {
+		n.logger.Warn("invalid announce activity: object is not string")
+		return nil
+	}
+
+	object, err := n.storage.GetObject(ctx, objectID)
+	if err != nil {
+		n.logger.Warn("failed to get object for reblog notification", zap.Error(err))
+		return nil
+	}
+
+	authorActorID := n.extractAttributedTo(object)
+	if err := common.ValidateRequiredParam("authorActorID", authorActorID); err != nil {
+		n.logger.Warn("no attributed author found for reblogged object")
+		return nil
+	}
+
+	rebloggerActorID := announceActivity.Actor
+	if authorActorID == rebloggerActorID {
+		return nil
+	}
+
+	return n.createNotification(ctx, authorActorID, rebloggerActorID, "reblog", announceActivity.ID)
+}
+
 // CreateReplyNotification creates a notification when someone replies to a post
 func (n *notificationService) CreateReplyNotification(ctx context.Context, replyActivity *activitypub.Activity) error {
 	// Extract reply note
