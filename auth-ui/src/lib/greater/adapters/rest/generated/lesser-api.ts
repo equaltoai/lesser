@@ -4578,6 +4578,7 @@ export interface components {
             session_key_type?: string;
             session_public_key?: string;
             status: string;
+            token_ttl_hours: number;
             updated_at: components["schemas"]["RFC3339DateTime"];
             username: string;
         };
@@ -4590,6 +4591,7 @@ export interface components {
             principal_wallet: string;
             scopes: string[];
             session_public_key?: string;
+            token_ttl_hours?: number;
         };
         AgentAccessLeaseChallengeResponse: {
             absolute_ttl_hours: number;
@@ -4606,6 +4608,7 @@ export interface components {
             scopes: string[];
             session_key_type?: string;
             session_public_key?: string;
+            token_ttl_hours: number;
             typed_data?: unknown;
             username: string;
             wallet_address: string;
@@ -4700,8 +4703,10 @@ export interface components {
         AgentPostAttribution: {
             constraints?: string[];
             delegated_by?: string;
+            delegated_by_did?: string;
             memory_citations?: string[];
-            model_version?: string;
+            model_id?: string;
+            schema_version?: string;
             scopes?: string[];
             trigger_details?: string;
             trigger_type?: string;
@@ -6432,15 +6437,6 @@ export interface components {
             mentions?: string[];
             modified_at: components["schemas"]["RFC3339DateTime"];
             note?: {
-                "_:agentAttribution"?: {
-                    constraints?: string[];
-                    delegated_by?: string;
-                    memory_citations?: string[];
-                    model_version?: string;
-                    scopes?: string[];
-                    trigger_details?: string;
-                    trigger_type?: string;
-                } | null;
                 "_:quoteContext"?: {
                     allowWithdrawal: boolean;
                     originalAuthor: string;
@@ -6467,6 +6463,17 @@ export interface components {
                     type: string;
                     updated?: components["schemas"]["RFC3339DateTime"] | null;
                 };
+                agentAttribution?: {
+                    constraints?: string[];
+                    delegated_by?: string;
+                    delegated_by_did?: string;
+                    memory_citations?: string[];
+                    model_id?: string;
+                    schema_version?: string;
+                    scopes?: string[];
+                    trigger_details?: string;
+                    trigger_type?: string;
+                } | null;
                 attachment?: {
                     height?: number;
                     mediaType: string;
