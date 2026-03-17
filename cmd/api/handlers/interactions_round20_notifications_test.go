@@ -181,3 +181,67 @@ func TestInteractionsRound20_RelationshipMutationHelpers(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestInteractionsRound20_InteractionHelperCoverage(t *testing.T) {
+	t.Run("resolve relationship target id falls back to preferred username", func(t *testing.T) {
+		cfg := round11TestConfig()
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"bob": {PK: "USER#bob", SK: storagemodels.SKMetadata, Username: "bob", Role: "user", Approved: true, Version: 1, CreatedAt: time.Now().Add(-time.Hour)},
+			},
+			actorsByUser: map[string]storagemodels.Actor{
+				"bob": {Username: "bob", Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{Type: "Person"}, PreferredUsername: "bob"}},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		targetID, err := h.resolveRelationshipTargetID(context.Background(), "bob")
+		require.NoError(t, err)
+		require.Equal(t, "bob", targetID)
+	})
+
+	t.Run("relationship target not found detection covers not found variants", func(t *testing.T) {
+		require.False(t, relationshipTargetNotFound(nil))
+		require.True(t, relationshipTargetNotFound(common.ActorNotFoundError{Username: "bob"}))
+		require.True(t, relationshipTargetNotFound(errors.New("actor not found: bob")))
+	})
+
+	t.Run("status interaction failure messages cover all operations", func(t *testing.T) {
+		require.Equal(t, "failed to like status", statusInteractionFailureMessage(statusOpFavorite))
+		require.Equal(t, "failed to unlike status", statusInteractionFailureMessage(statusOpUnfavorite))
+		require.Equal(t, "failed to reblog status", statusInteractionFailureMessage(statusOpReblog))
+		require.Equal(t, "failed to unreblog status", statusInteractionFailureMessage(statusOpUnreblog))
+		require.Equal(t, "failed to update status", statusInteractionFailureMessage("unknown"))
+	})
+
+	t.Run("extract username from actor id supports supported formats", func(t *testing.T) {
+		require.Equal(t, "alice", extractUsernameFromActorID("https://example.com/users/alice"))
+		require.Equal(t, "bob", extractUsernameFromActorID("https://example.com/@bob"))
+		require.Equal(t, "carol", extractUsernameFromActorID("carol"))
+		require.Equal(t, "", extractUsernameFromActorID("  "))
+	})
+
+	t.Run("favorite notification falls back to author id username", func(t *testing.T) {
+		var created *notifications.CreateNotificationCommand
+		h := &Handler{
+			registry: &RegistryStub{
+				NotificationsSvc: &NotificationsServiceStub{
+					CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+						created = cmd
+						return &notifications.NotificationResult{}, nil
+					},
+				},
+			},
+		}
+
+		h.createStatusInteractionNotification(context.Background(), statusOpFavorite, "alice", &storagemodels.Status{
+			StatusID: "status-2",
+			AuthorID: "https://example.com/users/bob",
+		})
+
+		require.NotNil(t, created)
+		require.Equal(t, "bob", created.UserID)
+		require.Equal(t, common.NotificationTypeFavourite, created.Type)
+		require.Equal(t, "status-2", created.TargetID)
+	})
+}
