@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -100,4 +101,83 @@ func TestInteractionsRound20_HandleFavoriteLift_CreatesNotification(t *testing.T
 	require.Equal(t, "alice", created.ActorID)
 	require.Equal(t, common.NotificationTypeFavourite, created.Type)
 	require.Equal(t, "status-1", created.TargetID)
+}
+
+func TestInteractionsRound20_ResolveRelationshipTarget_PopulatesDerivedFields(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Now()
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"bob": {PK: "USER#bob", SK: storagemodels.SKMetadata, Username: "bob", Role: "user", Approved: true, Version: 1, CreatedAt: now.Add(-time.Hour)},
+		},
+		actorsByUser: map[string]storagemodels.Actor{
+			"bob": {Username: "bob", Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.ActorURL("bob"), Type: "Person"}, PreferredUsername: "bob"}},
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	targetID, publicID, username, err := h.resolveRelationshipTarget(context.Background(), "bob")
+	require.NoError(t, err)
+	require.Equal(t, cfg.ActorURL("bob"), targetID)
+	require.Equal(t, common.GenerateNumericID("bob"), publicID)
+	require.Equal(t, "bob", username)
+}
+
+func TestInteractionsRound20_RelationshipMutationHelpers(t *testing.T) {
+	t.Run("success paths", func(t *testing.T) {
+		h := &Handler{
+			registry: &RegistryStub{
+				RelationshipsSvc: &RelationshipsServiceStub{
+					UnfollowFunc: func(_ context.Context, cmd *relationships.UnfollowCommand) (*relationships.RelationshipResult, error) {
+						return &relationships.RelationshipResult{Relationship: &relationships.RelationshipData{ID: cmd.FollowingID}}, nil
+					},
+					BlockFunc: func(_ context.Context, cmd *relationships.BlockCommand) (*relationships.RelationshipResult, error) {
+						return &relationships.RelationshipResult{Relationship: &relationships.RelationshipData{ID: cmd.BlockedID, Blocking: true}}, nil
+					},
+					UnblockFunc: func(_ context.Context, cmd *relationships.UnblockCommand) (*relationships.RelationshipResult, error) {
+						return &relationships.RelationshipResult{Relationship: &relationships.RelationshipData{ID: cmd.BlockedID}}, nil
+					},
+				},
+			},
+		}
+
+		relationship, err := h.handleUnfollow(context.Background(), "alice", "bob")
+		require.NoError(t, err)
+		require.Equal(t, "bob", relationship.ID)
+
+		relationship, err = h.handleBlock(context.Background(), "alice", "bob")
+		require.NoError(t, err)
+		require.True(t, relationship.Blocking)
+
+		relationship, err = h.handleUnblock(context.Background(), "alice", "bob")
+		require.NoError(t, err)
+		require.Equal(t, "bob", relationship.ID)
+	})
+
+	t.Run("error paths", func(t *testing.T) {
+		h := &Handler{
+			registry: &RegistryStub{
+				RelationshipsSvc: &RelationshipsServiceStub{
+					UnfollowFunc: func(context.Context, *relationships.UnfollowCommand) (*relationships.RelationshipResult, error) {
+						return nil, errors.New("unfollow failed")
+					},
+					BlockFunc: func(context.Context, *relationships.BlockCommand) (*relationships.RelationshipResult, error) {
+						return nil, errors.New("boom")
+					},
+					UnblockFunc: func(context.Context, *relationships.UnblockCommand) (*relationships.RelationshipResult, error) {
+						return nil, errors.New("boom")
+					},
+				},
+			},
+		}
+
+		_, err := h.handleUnfollow(context.Background(), "alice", "bob")
+		require.Error(t, err)
+
+		_, err = h.handleBlock(context.Background(), "alice", "bob")
+		require.Error(t, err)
+
+		_, err = h.handleUnblock(context.Background(), "alice", "bob")
+		require.Error(t, err)
+	})
 }
