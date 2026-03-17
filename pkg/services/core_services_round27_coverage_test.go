@@ -456,6 +456,58 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		assert.Empty(t, captureRepo.created)
 	})
 
+	t.Run("CreateReplyNotification_ignores_non_note_objects", func(t *testing.T) {
+		captureRepo := &capturingNotificationRepo{}
+		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
+			notification: captureRepo,
+			logger:       zap.NewNop(),
+			table:        "tbl",
+		}}
+		svc := &notificationService{storage: storage, logger: zap.NewNop()}
+
+		err := svc.CreateReplyNotification(ctx, &activitypub.Activity{Object: "https://local.example/objects/n1"})
+		require.NoError(t, err)
+		assert.Empty(t, captureRepo.created)
+	})
+
+	t.Run("CreateReplyNotification_swallows_parent_lookup_errors", func(t *testing.T) {
+		captureRepo := &capturingNotificationRepo{}
+		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
+			object:       fakeObjectRepo{getErr: stderrors.New("boom")},
+			notification: captureRepo,
+			logger:       zap.NewNop(),
+			table:        "tbl",
+		}}
+		svc := &notificationService{storage: storage, logger: zap.NewNop()}
+
+		err := svc.CreateReplyNotification(ctx, &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "reply-err"},
+			Actor:      "https://remote.example/users/bob",
+			Object:     &activitypub.Note{BaseObject: activitypub.BaseObject{InReplyTo: "https://local.example/objects/n1"}},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, captureRepo.created)
+	})
+
+	t.Run("CreateReplyNotification_ignores_self_reply", func(t *testing.T) {
+		captureRepo := &capturingNotificationRepo{}
+		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
+			object:       fakeObjectRepo{getValue: &activitypub.Note{AttributedTo: "https://remote.example/users/bob"}},
+			notification: captureRepo,
+			logger:       zap.NewNop(),
+			table:        "tbl",
+		}}
+		svc := &notificationService{storage: storage, logger: zap.NewNop()}
+
+		err := svc.CreateReplyNotification(ctx, &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{ID: "reply-self"},
+			Actor:      "https://remote.example/users/bob",
+			Object:     &activitypub.Note{BaseObject: activitypub.BaseObject{InReplyTo: "https://local.example/objects/n1"}},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, captureRepo.created)
+	})
+
 	t.Run("CreateReplyNotification_success", func(t *testing.T) {
 		captureRepo := &capturingNotificationRepo{}
 		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
@@ -507,6 +559,27 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		require.Len(t, captureRepo.created, 2)
 		assert.Equal(t, "reblog", captureRepo.created[0].Type)
 		assert.Equal(t, "custom.type", captureRepo.created[1].Type)
+	})
+
+	t.Run("createNotification_skips_invalid_actor_ids", func(t *testing.T) {
+		captureRepo := &capturingNotificationRepo{}
+		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
+			notification: captureRepo,
+			logger:       zap.NewNop(),
+			table:        "tbl",
+		}}
+		svc := &notificationService{storage: storage, logger: zap.NewNop()}
+
+		require.NoError(t, svc.createNotification(ctx, "alice", "https://remote.example/users/bob", "follow", "obj-1"))
+		require.NoError(t, svc.createNotification(ctx, "https://local.example/users/alice", "bob", "follow", "obj-1"))
+		assert.Empty(t, captureRepo.created)
+	})
+
+	t.Run("extractUsernameFromActorID_supports_at_form_and_invalid_values", func(t *testing.T) {
+		svc := &notificationService{}
+
+		assert.Equal(t, "carol", svc.extractUsernameFromActorID("https://example.com/@carol"))
+		assert.Equal(t, "", svc.extractUsernameFromActorID("https://example.com/actors/carol"))
 	})
 }
 
