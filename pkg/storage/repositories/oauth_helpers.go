@@ -592,9 +592,27 @@ func (h *OAuthHelper) UpdateRefreshTokenGeneric(ctx context.Context, token *stor
 		return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, "preparation")
 	}
 
+	if model.Version == 0 {
+		seedBuilder := h.db.WithContext(ctx).
+			Model(&models.RefreshToken{}).
+			Where("PK", "=", model.PK).
+			Where("SK", "=", model.SK).
+			UpdateBuilder()
+
+		if err := seedBuilder.SetIfNotExists("Version", nil, 0).Execute(); err != nil && !strings.Contains(strings.ToLower(err.Error()), "conditionalcheckfailed") {
+			h.logger.Error("failed to seed refresh token version", zap.Error(err))
+			return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, "token")
+		}
+	}
+
 	if err := h.db.WithContext(ctx).Model(model).Update(); err != nil {
 		h.logger.Error("failed to update refresh token", zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, "token")
+	}
+
+	token.Version = model.Version + 1
+	if token.Version == 0 {
+		token.Version = 1
 	}
 
 	return nil

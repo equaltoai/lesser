@@ -167,6 +167,7 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 
 	mockDB := new(dynamormmocks.MockDB)
 	mockQuery := new(dynamormmocks.MockQuery)
+	mockUpdate := new(dynamormmocks.MockUpdateBuilder)
 	var currentModel any
 	var lastPK string
 	var lastGSI1PK string
@@ -196,6 +197,11 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 	}).Return(mockQuery).Maybe()
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
+	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()
+	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Execute").Return(nil).Maybe()
 	if state.createConflictOnce {
 		mockQuery.On("Create").Return(dynamormerrors.ErrConditionFailed).Once()
 	}
