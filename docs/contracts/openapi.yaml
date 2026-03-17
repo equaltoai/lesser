@@ -1154,6 +1154,8 @@ components:
                     type: string
                 bio:
                     type: string
+                device_label:
+                    type: string
                 display_name:
                     type: string
                 expires_in:
@@ -1347,10 +1349,54 @@ components:
                 - public_key
                 - signature
             type: object
+        AgentRuntimeSession:
+            additionalProperties: false
+            properties:
+                absolute_expires_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                client_id:
+                    type: string
+                created_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                device_label:
+                    type: string
+                idle_expires_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                last_used_at:
+                    $ref: '#/components/schemas/RFC3339DateTime'
+                revoked:
+                    type: boolean
+                revoked_at:
+                    anyOf:
+                        - $ref: '#/components/schemas/RFC3339DateTime'
+                        - type: "null"
+                revoked_reason:
+                    type: string
+                scope:
+                    type: string
+                session_id:
+                    type: string
+            required:
+                - absolute_expires_at
+                - client_id
+                - created_at
+                - device_label
+                - idle_expires_at
+                - last_used_at
+                - revoked
+                - scope
+                - session_id
+            type: object
+        AgentRuntimeSessionList:
+            items:
+                $ref: '#/components/schemas/AgentRuntimeSession'
+            type: array
         AgentSelfAuthTokenRequest:
             additionalProperties: false
             properties:
                 challenge_id:
+                    type: string
+                device_label:
                     type: string
                 signature:
                     type: string
@@ -1368,6 +1414,8 @@ components:
                 bio:
                     type: string
                 challenge_id:
+                    type: string
+                device_label:
                     type: string
                 display_name:
                     type: string
@@ -4643,6 +4691,12 @@ components:
                 - severity
             type: object
         RevokeAgentAccessLeaseRequest:
+            additionalProperties: false
+            properties:
+                reason:
+                    type: string
+            type: object
+        RevokeAgentRuntimeSessionRequest:
             additionalProperties: false
             properties:
                 reason:
@@ -11262,6 +11316,74 @@ paths:
                 - cmd/api/routes.go
             x-oauth-scopes:
                 - read
+    /api/v1/agents/{username}/runtime-sessions:
+        get:
+            operationId: get_api_v1_agents_by_username_runtime_sessions
+            tags:
+                - agents
+            parameters:
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentRuntimeSessionList'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleListAgentRuntimeSessionsLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
+    /api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke:
+        post:
+            operationId: post_api_v1_agents_by_username_runtime_sessions_by_sessionID_revoke
+            tags:
+                - agents
+            parameters:
+                - name: sessionID
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: username
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RevokeAgentRuntimeSessionRequest'
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentRuntimeSession'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "404":
+                    $ref: '#/components/responses/NotFound'
+                "422":
+                    $ref: '#/components/responses/UnprocessableEntity'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleRevokeAgentRuntimeSessionLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /api/v1/agents/{username}/suspend:
         post:
             operationId: post_api_v1_agents_by_username_suspend
