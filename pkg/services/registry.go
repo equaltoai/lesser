@@ -73,6 +73,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/federation"
 	notifpush "github.com/equaltoai/lesser/pkg/notifications"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/ai"
@@ -2572,8 +2573,7 @@ func (a *queueFederationAdapter) QueueActivity(ctx context.Context, activity *ac
 				if actorRepo := a.storage.Actor(); actorRepo != nil {
 					storedActor, err := actorRepo.GetActor(ctx, username)
 					if err == nil && storedActor != nil {
-						// Convert storage actor to ActivityPub actor
-						actor = a.convertStorageActorToActivityPub(storedActor)
+						actor = storedActor
 					} else {
 						a.logger.Debug("failed to fetch actor from storage, using minimal representation",
 							zap.String("username", username),
@@ -2586,17 +2586,83 @@ func (a *queueFederationAdapter) QueueActivity(ctx context.Context, activity *ac
 
 		// Fall back to minimal actor representation if storage fetch failed
 		if actor == nil {
+			username := a.extractUsernameFromActorURI(activity.Actor)
 			actor = &activitypub.Actor{
 				BaseObject: activitypub.BaseObject{
-					ID: activity.Actor,
+					ID:   activity.Actor,
+					Type: activitypub.PersonType,
+				},
+				PreferredUsername: username,
+				PublicKey: &activitypub.PublicKey{
+					ID:    strings.TrimSuffix(activity.Actor, "/") + "#main-key",
+					Owner: activity.Actor,
 				},
 			}
 		}
 	}
 
-	// Use the main federation service's DeliverToFollowers method
-	// This provides the same functionality as queuing for background delivery
-	return a.federation.DeliverToFollowers(ctx, activity, actor)
+	if actor == nil {
+		a.logger.Warn("activity missing actor, skipping federation delivery",
+			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activity.Type))
+		return nil
+	}
+
+	if a.isPublicOrUnlisted(activity) {
+		if err := a.federation.DeliverToFollowers(ctx, activity, actor); err != nil {
+			a.logger.Error("failed to deliver activity to followers",
+				zap.String("activity_id", activity.ID),
+				zap.String("activity_type", activity.Type),
+				zap.Error(err))
+		}
+	}
+
+	if err := a.federation.DeliverToRecipients(ctx, activity, actor); err != nil {
+		a.logger.Error("failed to deliver activity to explicit recipients",
+			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activity.Type),
+			zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+// ResolveActor resolves a remote handle through the shared federation discovery path.
+func (a *queueFederationAdapter) ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
+	if a.storage == nil {
+		return nil, errors.New("remote actor resolution unavailable")
+	}
+
+	result, err := federation.NewRemoteSearchService(a.storage).ResolveActor(ctx, handle)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.Actor == nil {
+		return nil, errors.New("remote actor not found")
+	}
+
+	return result.Actor, nil
+}
+
+func (a *queueFederationAdapter) isPublicOrUnlisted(activity *activitypub.Activity) bool {
+	if activity == nil {
+		return false
+	}
+
+	for _, recipient := range activity.To {
+		if recipient == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	for _, recipient := range activity.CC {
+		if recipient == activitypub.PublicAddress {
+			return true
+		}
+	}
+
+	return false
 }
 
 // extractUsernameFromActorURI extracts the username from an actor URI
@@ -2623,30 +2689,6 @@ func (a *queueFederationAdapter) extractUsernameFromActorURI(actorURI string) st
 	}
 
 	return username
-}
-
-// convertStorageActorToActivityPub converts a storage actor to ActivityPub format
-func (a *queueFederationAdapter) convertStorageActorToActivityPub(_ interface{}) *activitypub.Actor {
-	// The actual conversion would depend on the storage actor type
-	// For now, we'll create a basic ActivityPub actor with the common fields
-	// Enhanced based on the actual storage model
-
-	// Try to extract common fields if the storage actor has them
-	actor := &activitypub.Actor{
-		BaseObject: activitypub.BaseObject{
-			Type: "Person", // Default type
-		},
-	}
-
-	// This would need to be implemented based on the actual storage.Actor interface
-	// For now, we return a basic actor - this is better than the previous minimal version
-	// but would need full implementation based on the storage model structure
-
-	if a.logger != nil {
-		a.logger.Debug("converted storage actor to ActivityPub (basic conversion)")
-	}
-
-	return actor
 }
 
 // simpleFederationService provides a basic federation service implementation for conversations

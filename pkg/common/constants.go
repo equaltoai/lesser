@@ -131,6 +131,7 @@ const (
 // Notification types
 const (
 	NotificationTypeMention       = "mention"
+	NotificationTypeReply         = "reply"
 	NotificationTypeReblog        = "reblog"
 	NotificationTypeFavourite     = "favourite"
 	NotificationTypeFollow        = "follow"

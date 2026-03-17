@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -1264,67 +1265,26 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 		return nil, nil
 	}
 
-	extracted := common.ExtractMentions(content)
+	extracted := extractMentionHandles(content)
 	if len(extracted) == 0 {
 		return nil, nil
 	}
 
-	authorUsername := ""
-	if author != nil && author.User != nil {
-		authorUsername = strings.TrimSpace(author.User.Username)
-	}
-
+	localDomain := strings.TrimSpace(s.domainName)
+	authorUsername := mentionAuthorUsername(author)
+	remoteResolver := s.mentionActorResolver()
 	seenActors := make(map[string]struct{}, len(extracted))
 	tags := make([]activitypub.Tag, 0, len(extracted))
 	usernames := make([]string, 0, len(extracted))
 
 	for _, rawMention := range extracted {
-		mention := strings.TrimSpace(rawMention)
-		if mention == "" {
+		tag, username, ok := s.resolveMentionTag(ctx, strings.TrimSpace(rawMention), localDomain, authorUsername, remoteResolver, seenActors)
+		if !ok {
 			continue
 		}
 
-		account, err := s.accountRepo.GetAccount(ctx, mention)
-		if err != nil || account == nil || account.User == nil {
-			s.logger.Debug("skipping unresolved local mention",
-				zap.String("mention", mention),
-				zap.Error(err))
-			continue
-		}
-
-		username := strings.TrimSpace(account.User.Username)
-		if username == "" {
-			continue
-		}
-
-		actorID := ""
-		if account.Actor != nil {
-			actorID = strings.TrimSpace(account.Actor.ID)
-		}
-		if actorID == "" {
-			domain := strings.TrimSpace(s.domainName)
-			if domain == "" {
-				s.logger.Debug("skipping mention without actor id or domain",
-					zap.String("mention", mention),
-					zap.String("username", username))
-				continue
-			}
-			actorID = fmt.Sprintf("https://%s/users/%s", domain, username)
-		}
-
-		key := strings.ToLower(actorID)
-		if _, ok := seenActors[key]; ok {
-			continue
-		}
-		seenActors[key] = struct{}{}
-
-		tags = append(tags, activitypub.Tag{
-			Type: "Mention",
-			Href: actorID,
-			Name: "@" + username,
-		})
-
-		if !strings.EqualFold(username, authorUsername) {
+		tags = append(tags, tag)
+		if username != "" {
 			usernames = append(usernames, username)
 		}
 	}
@@ -1334,6 +1294,247 @@ func (s *Service) buildMentionTags(ctx context.Context, content string, author *
 	}
 
 	return tags, usernames
+}
+
+type mentionActorResolver interface {
+	ResolveActor(ctx context.Context, handle string) (*activitypub.Actor, error)
+}
+
+func mentionAuthorUsername(author *storage.Account) string {
+	if author == nil || author.User == nil {
+		return ""
+	}
+	return strings.TrimSpace(author.User.Username)
+}
+
+func (s *Service) mentionActorResolver() mentionActorResolver {
+	if s.federation == nil {
+		return nil
+	}
+
+	resolver, _ := s.federation.(mentionActorResolver)
+	return resolver
+}
+
+func (s *Service) resolveMentionTag(
+	ctx context.Context,
+	mention, localDomain, authorUsername string,
+	remoteResolver mentionActorResolver,
+	seenActors map[string]struct{},
+) (activitypub.Tag, string, bool) {
+	if mention == "" {
+		return activitypub.Tag{}, "", false
+	}
+
+	username, domain := splitMentionHandle(mention)
+
+	tag, localUsername, ok, err := s.resolveStoredMentionTag(ctx, mention, username, domain, localDomain, authorUsername, seenActors)
+	if err == nil {
+		return tag, localUsername, ok
+	}
+
+	return s.resolveRemoteMentionTag(ctx, mention, username, domain, localDomain, remoteResolver, seenActors, err)
+}
+
+func (s *Service) resolveStoredMentionTag(
+	ctx context.Context,
+	mention, username, domain, localDomain, authorUsername string,
+	seenActors map[string]struct{},
+) (activitypub.Tag, string, bool, error) {
+	lookupID := mentionLookupID(mention, username, domain, localDomain)
+	account, err := s.accountRepo.GetAccount(ctx, lookupID)
+	if err != nil || account == nil || account.User == nil {
+		return activitypub.Tag{}, "", false, err
+	}
+
+	username, domain = normalizeMentionAccount(account, username, domain, localDomain)
+	actorID, ok := s.mentionActorID(mention, username, localDomain, account)
+	if !ok || !markSeenMentionActor(seenActors, actorID) {
+		return activitypub.Tag{}, "", false, nil
+	}
+
+	localUsername := ""
+	if (domain == "" || strings.EqualFold(domain, localDomain)) && !strings.EqualFold(username, authorUsername) {
+		localUsername = username
+	}
+
+	return newMentionTag(actorID, username, domain, localDomain), localUsername, true, nil
+}
+
+func (s *Service) resolveRemoteMentionTag(
+	ctx context.Context,
+	mention, username, domain, localDomain string,
+	remoteResolver mentionActorResolver,
+	seenActors map[string]struct{},
+	lookupErr error,
+) (activitypub.Tag, string, bool) {
+	if domain == "" || remoteResolver == nil {
+		s.logger.Debug("skipping unresolved local mention",
+			zap.String("mention", mention),
+			zap.Error(lookupErr))
+		return activitypub.Tag{}, "", false
+	}
+
+	actor, err := remoteResolver.ResolveActor(ctx, mention)
+	if err != nil || actor == nil {
+		s.logger.Debug("skipping unresolved remote mention",
+			zap.String("mention", mention),
+			zap.Error(err))
+		return activitypub.Tag{}, "", false
+	}
+
+	actorID := strings.TrimSpace(actor.ID)
+	if actorID == "" {
+		s.logger.Debug("skipping remote mention without actor id",
+			zap.String("mention", mention))
+		return activitypub.Tag{}, "", false
+	}
+
+	if !markSeenMentionActor(seenActors, actorID) {
+		return activitypub.Tag{}, "", false
+	}
+
+	return newMentionTag(actorID, username, domain, localDomain), "", true
+}
+
+func mentionLookupID(mention, username, domain, localDomain string) string {
+	if domain != "" && strings.EqualFold(domain, localDomain) {
+		return username
+	}
+	return mention
+}
+
+func (s *Service) mentionActorID(mention, username, localDomain string, account *storage.Account) (string, bool) {
+	actorID := ""
+	if account != nil && account.Actor != nil {
+		actorID = strings.TrimSpace(account.Actor.ID)
+	}
+	if actorID != "" {
+		return actorID, true
+	}
+	if localDomain == "" {
+		s.logger.Debug("skipping mention without actor id or domain",
+			zap.String("mention", mention),
+			zap.String("username", username))
+		return "", false
+	}
+	return fmt.Sprintf("https://%s/users/%s", localDomain, username), true
+}
+
+func markSeenMentionActor(seenActors map[string]struct{}, actorID string) bool {
+	key := strings.ToLower(strings.TrimSpace(actorID))
+	if key == "" {
+		return false
+	}
+	if _, ok := seenActors[key]; ok {
+		return false
+	}
+	seenActors[key] = struct{}{}
+	return true
+}
+
+func newMentionTag(actorID, username, domain, localDomain string) activitypub.Tag {
+	return activitypub.Tag{
+		Type: "Mention",
+		Href: actorID,
+		Name: formatMentionTagName(username, domain, localDomain),
+	}
+}
+
+func extractMentionHandles(content string) []string {
+	mentionRegex := regexp.MustCompile(`(?:^|[^a-zA-Z0-9_])@([a-zA-Z0-9_]+(?:@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?)?)`)
+	matches := mentionRegex.FindAllStringSubmatch(content, -1)
+
+	mentions := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) > 1 {
+			mentions = append(mentions, match[1])
+		}
+	}
+
+	return mentions
+}
+
+func splitMentionHandle(mention string) (string, string) {
+	username, domain, found := strings.Cut(strings.TrimSpace(mention), "@")
+	if !found {
+		return username, ""
+	}
+	return username, domain
+}
+
+func normalizeMentionAccount(account *storage.Account, username, domain, localDomain string) (string, string) {
+	resolvedUsername := strings.TrimSpace(username)
+	resolvedDomain := strings.TrimSpace(domain)
+	normalizedLocalDomain := normalizeMentionDomain(localDomain)
+
+	if account == nil {
+		return resolvedUsername, resolvedDomain
+	}
+
+	if account.User != nil {
+		storedUsername := strings.TrimSpace(account.User.Username)
+		if storedUsername != "" {
+			if parsedUsername, parsedDomain := splitMentionHandle(storedUsername); parsedDomain != "" {
+				if resolvedUsername == "" || strings.EqualFold(resolvedUsername, storedUsername) {
+					resolvedUsername = parsedUsername
+				}
+				if resolvedDomain == "" {
+					resolvedDomain = parsedDomain
+				}
+			} else if resolvedUsername == "" {
+				resolvedUsername = storedUsername
+			}
+		}
+	}
+
+	if account.Actor != nil {
+		if preferred := strings.TrimSpace(account.Actor.PreferredUsername); preferred != "" {
+			resolvedUsername = preferred
+		}
+		if actorDomain := mentionActorDomain(account.Actor.ID); actorDomain != "" && actorDomain != normalizedLocalDomain {
+			resolvedDomain = actorDomain
+		}
+	}
+
+	if normalizeMentionDomain(resolvedDomain) == normalizedLocalDomain {
+		resolvedDomain = ""
+	}
+
+	return strings.TrimSpace(resolvedUsername), strings.TrimSpace(resolvedDomain)
+}
+
+func mentionActorDomain(actorID string) string {
+	if strings.TrimSpace(actorID) == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(actorID)
+	if err != nil {
+		return ""
+	}
+
+	return normalizeMentionDomain(parsed.Host)
+}
+
+func normalizeMentionDomain(domain string) string {
+	normalized := strings.ToLower(strings.TrimSpace(domain))
+	normalized = strings.TrimPrefix(normalized, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimSuffix(normalized, "/")
+	return normalized
+}
+
+func formatMentionTagName(username, domain, localDomain string) string {
+	username = strings.TrimSpace(username)
+	domain = strings.TrimSpace(domain)
+	if username == "" {
+		return ""
+	}
+	if domain == "" || strings.EqualFold(domain, strings.TrimSpace(localDomain)) {
+		return "@" + username
+	}
+	return "@" + username + "@" + domain
 }
 
 func (s *Service) addMentionAudience(note *activitypub.Note, mentionTags []activitypub.Tag) {

@@ -114,7 +114,7 @@ func (n *notificationService) CreateReplyNotification(ctx context.Context, reply
 	}
 
 	// Create reply notification
-	return n.createNotification(ctx, parentAuthorActorID, replierActorID, "mention", replyActivity.ID)
+	return n.createNotification(ctx, parentAuthorActorID, replierActorID, "reply", replyActivity.ID)
 }
 
 // CreateMentionNotification creates notifications for mentioned users
@@ -157,6 +157,8 @@ func (n *notificationService) createNotification(ctx context.Context, recipientA
 	switch notificationType {
 	case "mention":
 		notification = models.NewMentionNotification(recipientUsername, fromUsername, activityID)
+	case "reply":
+		notification = models.NewReplyNotification(recipientUsername, fromUsername, activityID)
 	case "follow":
 		notification = models.NewFollowNotification(recipientUsername, fromUsername)
 	case "favourite":

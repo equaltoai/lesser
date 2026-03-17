@@ -31,7 +31,8 @@ const (
 	searchTypeStatuses = "statuses"
 
 	// Common status constants
-	statusCompleted = "completed"
+	statusCompleted              = "completed"
+	notificationTargetTypeStatus = "status"
 
 	// Moderation category constants
 	moderationCategoryOther   = "other"
@@ -608,6 +609,9 @@ func (h *Handler) HandleGetNotificationsLift(ctx *apptheory.Context) (*apptheory
 			Username:  notification.UserID,
 			Data:      data,
 		}
+		if notification.TargetType == notificationTargetTypeStatus {
+			storageNotif.StatusID = notification.TargetID
+		}
 		storageNotifications = append(storageNotifications, storageNotif)
 	}
 
@@ -731,6 +735,7 @@ func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
 		return false
 	}
 	return notif.Type == models.NotificationTypeMention ||
+		notif.Type == models.NotificationTypeReply ||
 		notif.Type == models.NotificationTypeFavourite ||
 		notif.Type == models.NotificationTypeReblog
 }
@@ -985,7 +990,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *apptheory.Context) (*apptheory.
 	}
 
 	// Add status if applicable
-	if notification.TargetID != "" && notification.TargetType == "status" && (notification.Type == models.NotificationTypeMention ||
+	if notification.TargetID != "" && notification.TargetType == notificationTargetTypeStatus && (notification.Type == models.NotificationTypeMention ||
 		notification.Type == models.NotificationTypeFavourite ||
 		notification.Type == models.NotificationTypeReblog) {
 		statusModel, err := h.registry.Notes().GetNoteWithViewer(ctx.Context(), &notes.GetNoteQuery{
