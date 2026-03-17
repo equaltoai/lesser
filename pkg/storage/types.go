@@ -260,14 +260,30 @@ type AuthorizationCode struct {
 
 // RefreshToken represents an OAuth refresh token
 type RefreshToken struct {
-	Token       string    `json:"token"`
-	Username    string    `json:"username"`
-	ClientID    string    `json:"client_id"`
-	Scopes      []string  `json:"scopes"`
-	CreatedAt   time.Time `json:"created_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	ClientClass string    `json:"client_class,omitempty"`
-	SessionID   string    `json:"session_id,omitempty"`
+	Token               string    `json:"token"`
+	Username            string    `json:"username"`
+	ClientID            string    `json:"client_id"`
+	Scopes              []string  `json:"scopes"`
+	CreatedAt           time.Time `json:"created_at"`
+	ExpiresAt           time.Time `json:"expires_at"`
+	ClientClass         string    `json:"client_class,omitempty"`
+	SessionID           string    `json:"session_id,omitempty"`
+	FamilyID            string    `json:"family_id,omitempty"`
+	Generation          int       `json:"generation,omitempty"`
+	Current             bool      `json:"current,omitempty"`
+	Revoked             bool      `json:"revoked,omitempty"`
+	RevokedAt           time.Time `json:"revoked_at,omitempty"`
+	RevokedReason       string    `json:"revoked_reason,omitempty"`
+	DeviceLabel         string    `json:"device_label,omitempty"`
+	LastUsedAt          time.Time `json:"last_used_at,omitempty"`
+	IdleExpiresAt       time.Time `json:"idle_expires_at,omitempty"`
+	AbsoluteExpiresAt   time.Time `json:"absolute_expires_at,omitempty"`
+	SessionCreatedAt    time.Time `json:"session_created_at,omitempty"`
+	AccessTTLSeconds    int       `json:"access_ttl_seconds,omitempty"`
+	ReuseDetectedAt     time.Time `json:"reuse_detected_at,omitempty"`
+	ReuseDetectedFromIP string    `json:"reuse_detected_from_ip,omitempty"`
+	ReuseDetectedFromUA string    `json:"reuse_detected_from_user_agent,omitempty"`
+	Version             int       `json:"version,omitempty"`
 }
 
 // WebAuthnChallenge represents a WebAuthn challenge

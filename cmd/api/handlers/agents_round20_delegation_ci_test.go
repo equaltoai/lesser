@@ -183,7 +183,7 @@ func TestAgentsRound20_ResolveDelegatedAgentAccount_Branches(t *testing.T) {
 	})
 }
 
-func TestAgentsRound20_MintDelegatedAgentTokens_IgnoresRefreshTokenPersistenceFailures(t *testing.T) {
+func TestAgentsRound20_MintDelegatedAgentTokens_RequiresRefreshTokenPersistence(t *testing.T) {
 	cfg := round10TestConfig()
 	cfg.AllowAgents = true
 
@@ -195,13 +195,10 @@ func TestAgentsRound20_MintDelegatedAgentTokens_IgnoresRefreshTokenPersistenceFa
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/delegate", nil, nil, nil)
 	require.NoError(t, err)
 
-	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, 5*time.Minute)
-	require.NoError(t, mintErr)
-	require.NotEmpty(t, token.AccessToken)
-	require.NotEmpty(t, token.RefreshToken)
-	require.Equal(t, "Bearer", token.TokenType)
-	require.Equal(t, "read", token.Scope)
-	require.Equal(t, 300, token.ExpiresIn)
+	token, mintErr := h.mintDelegatedAgentTokens(ctx, "agent1", []string{"read"}, 5*time.Minute, "", "")
+	require.Error(t, mintErr)
+	require.Empty(t, token.AccessToken)
+	require.Empty(t, token.RefreshToken)
 }
 
 func TestAgentsRound20_AgentDelegationEnvelope_EmptyMetadataCases(t *testing.T) {

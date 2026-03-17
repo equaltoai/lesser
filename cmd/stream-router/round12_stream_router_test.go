@@ -16,9 +16,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/apptheory/pkg/streamer"
 	dynamormCore "github.com/theory-cloud/tabletheory/pkg/core"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -210,6 +212,51 @@ func newConversationParticipantRecord(username, conversationID, requestState str
 			},
 		},
 	}
+}
+
+func TestAppendStreamEvent_Round12(t *testing.T) {
+	t.Run("ignores disabled and incomplete inputs", func(t *testing.T) {
+		h := &StreamRouterHandler{logger: zap.NewNop()}
+
+		h.appendStreamEvent(context.Background(), "req", "home", "update", "{}")
+
+		t.Setenv("STREAM_EVENTS_TABLE_NAME", "stream-events")
+		h.streamEventLog = streaming.NewStreamEventLog(nil, time.Minute)
+		h.appendStreamEvent(context.Background(), "req", "", "update", "{}")
+		h.appendStreamEvent(context.Background(), "req", "home", "", "{}")
+	})
+
+	t.Run("attempts append when configured", func(t *testing.T) {
+		t.Setenv("STREAM_EVENTS_TABLE_NAME", "stream-events")
+
+		db := new(dynamormmocks.MockDB)
+		query := new(dynamormmocks.MockQuery)
+		db.On("WithContext", mock.Anything).Return(db).Once()
+		db.On("Model", mock.Anything).Return(query).Once()
+		query.On("Create").Return(stdErrors.New("boom")).Once()
+
+		h := &StreamRouterHandler{
+			logger:         zap.NewNop(),
+			streamEventLog: streaming.NewStreamEventLog(db, time.Minute),
+		}
+
+		h.appendStreamEvent(context.Background(), "req", "home", "update", `{"id":"1"}`)
+		db.AssertExpectations(t)
+		query.AssertExpectations(t)
+	})
+}
+
+func TestHandleStreamRouterStreamRecord_Round12(t *testing.T) {
+	origHandler := handler
+	t.Cleanup(func() { handler = origHandler })
+
+	handler = nil
+	err := handleStreamRouterStreamRecord(nil, events.DynamoDBEventRecord{EventID: "evt-1", EventName: eventNameInsert})
+	require.Error(t, err)
+
+	handler = &StreamRouterHandler{logger: zap.NewNop()}
+	err = handleStreamRouterStreamRecord(nil, events.DynamoDBEventRecord{EventID: "evt-2", EventName: "REMOVE"})
+	require.NoError(t, err)
 }
 
 func newStatusInsertRecord(eventName string) events.DynamoDBEventRecord {

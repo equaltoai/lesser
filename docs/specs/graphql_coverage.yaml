@@ -620,6 +620,12 @@ routes:
       status: covered
       graphql:
         - Query.agentActivity
+    - method: GET
+      path: /api/v1/agents/{username}/runtime-sessions
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.agentRuntimeSessions
     - method: POST
       path: /api/v1/agents/{username}/rotate-key
       policy: rest_only
@@ -628,6 +634,12 @@ routes:
       path: /api/v1/agents/{username}/rotate-key/challenge
       policy: rest_only
       exemptedBy: agents
+    - method: POST
+      path: /api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Mutation.revokeAgentRuntimeSession
     - method: POST
       path: /api/v1/agents/{username}/suspend
       policy: graphql_required
@@ -1660,4 +1672,3 @@ routes:
       path: /setup/status
       policy: rest_only
       exemptedBy: auth_setup
-

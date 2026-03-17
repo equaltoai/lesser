@@ -209,7 +209,7 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 		requireStatus(t, http.StatusOK)(h.HandleDelegateAgentLift(ctx))
 	})
 
-	t.Run("existing agent delegation ignores create failures", func(t *testing.T) {
+	t.Run("existing agent delegation requires runtime session persistence", func(t *testing.T) {
 		stateConflict := &round10QueryState{
 			agentInstanceConfig: policy,
 			usersByUsername: map[string]storagemodels.User{
@@ -227,7 +227,7 @@ func TestAgentsRound13_DelegateAgent_ErrorBranches(t *testing.T) {
 			Scopes:        []string{"read"},
 		})
 		require.NoError(t, err)
-		resp := requireStatus(t, http.StatusOK)(hConflict.HandleDelegateAgentLift(ctx))
+		resp := requireStatus(t, http.StatusInternalServerError)(hConflict.HandleDelegateAgentLift(ctx))
 		require.NotEmpty(t, resp.Body)
 	})
 

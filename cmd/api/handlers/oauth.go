@@ -467,7 +467,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 	case oauthGrantTypeAuthorizationCode:
 		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req)
 	case oauthGrantTypeRefreshToken:
-		return h.handleOAuthRefreshTokenGrant(ctx.Context(), oauthSvc, req)
+		return h.handleOAuthRefreshTokenGrant(ctx, oauthSvc, req)
 	case oauthDeviceCodeGrantType:
 		return h.handleOAuthDeviceCodeGrant(ctx.Context(), oauthSvc, req)
 	default:
@@ -527,7 +527,7 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 	})
 }
 
-func (h *Handler) handleOAuthRefreshTokenGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
 	if err := common.ValidateMultipleRequiredParams(map[string]string{
 		"refresh_token": req.refreshToken,
 		"client_id":     req.clientID,
@@ -538,7 +538,8 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx context.Context, oauthSvc *au
 		})
 	}
 
-	accessToken, newRefreshToken, grantedScopes, err := h.exchangeRefreshToken(ctx, oauthSvc, req.refreshToken, req.clientID, req.clientSecret)
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	accessToken, newRefreshToken, grantedScopes, err := h.exchangeRefreshToken(ctx.Context(), oauthSvc, req.refreshToken, req.clientID, req.clientSecret, ipAddress, userAgent)
 	if err != nil {
 		h.logger.Error("failed to refresh tokens", zap.Error(err))
 		switch err {
@@ -887,27 +888,29 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 }
 
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
-func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (string, string, []string, error) {
+func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret, ipAddress, userAgent string) (string, string, []string, error) {
 	refreshToken = strings.TrimSpace(refreshToken)
 	clientID = strings.TrimSpace(clientID)
 	clientSecret = strings.TrimSpace(clientSecret)
 
-	if clientID != delegatedAgentClientID {
-		client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
-		if err != nil || client == nil {
-			return "", "", nil, auth.ErrInvalidClient
-		}
+	if auth.IsAgentRuntimeClientID(clientID) {
+		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
+	}
 
-		// Enforce confidential client authentication.
-		if client.Confidential && clientSecret == "" {
-			return "", "", nil, auth.ErrInvalidClient
-		}
+	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
+	if err != nil || client == nil {
+		return "", "", nil, auth.ErrInvalidClient
+	}
 
-		// Validate client credentials if provided (or required).
-		if clientSecret != "" {
-			if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-				return "", "", nil, err
-			}
+	// Enforce confidential client authentication.
+	if client.Confidential && clientSecret == "" {
+		return "", "", nil, auth.ErrInvalidClient
+	}
+
+	// Validate client credentials if provided (or required).
+	if clientSecret != "" {
+		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
+			return "", "", nil, err
 		}
 	}
 

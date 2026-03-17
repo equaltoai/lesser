@@ -14,6 +14,7 @@ import (
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
@@ -429,6 +430,45 @@ func TestAIProcessor_HandleDynamoDBRecord_Round12(t *testing.T) {
 	}
 
 	require.NoError(t, ap.HandleDynamoDBRecord(nil, record))
+}
+
+func TestAIProcessor_HandleDynamoDBRecord_PanicRecovery_Round12(t *testing.T) {
+	origUnmarshal := unmarshalItemFn
+	t.Cleanup(func() { unmarshalItemFn = origUnmarshal })
+
+	ap := &AIProcessor{}
+
+	unmarshalItemFn = func(_ events.DynamoDBEventRecord, target any) error {
+		switch v := target.(type) {
+		case *analyzableStreamItem:
+			v.PK = "OBJECT#123"
+			v.Type = "Note"
+			return nil
+		case *contentStreamItem:
+			v.PK = "OBJECT#123"
+			v.Type = "Note"
+			v.Content = "hello"
+			v.ActorID = "alice"
+			return nil
+		default:
+			return errors.New("unexpected target")
+		}
+	}
+
+	record := events.DynamoDBEventRecord{
+		EventID:   "evt-panic",
+		EventName: "INSERT",
+		Change: events.DynamoDBStreamRecord{
+			NewImage: map[string]events.DynamoDBAttributeValue{
+				"PK": events.NewStringAttribute("OBJECT#123"),
+			},
+		},
+	}
+
+	err := ap.HandleDynamoDBRecord(&apptheory.EventContext{RequestID: "req-panic"}, record)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "panic recovered")
+	require.NotNil(t, ap.logger)
 }
 
 func TestAIProcessor_Entrypoint_Round12(t *testing.T) {

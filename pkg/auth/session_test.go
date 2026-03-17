@@ -285,6 +285,18 @@ func TestSessionManager_DetectAnomalousSession(t *testing.T) {
 	isAnomalous, reason = sm.DetectAnomalousSession(context.Background(), session, "192.168.1.2")
 	require.True(t, isAnomalous)
 	require.NotEmpty(t, reason)
+
+	session.LastActivity = time.Now()
+	isAnomalous, reason = sm.DetectAnomalousSession(context.Background(), session, "192.0.2.1")
+	require.False(t, isAnomalous)
+	require.Empty(t, reason)
+}
+
+func TestSessionManager_CleanupInactiveSessions(t *testing.T) {
+	t.Parallel()
+
+	sm := newSessionManager(nil)
+	require.NoError(t, sm.CleanupInactiveSessions(context.Background()))
 }
 
 func TestSessionManager_TokenVersioningHelpers(t *testing.T) {

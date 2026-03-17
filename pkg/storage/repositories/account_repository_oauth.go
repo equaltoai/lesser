@@ -197,6 +197,30 @@ func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string
 	return helper.DeleteRefreshTokenGeneric(ctx, token)
 }
 
+// UpdateRefreshToken updates an OAuth refresh token record.
+func (r *AccountRepository) UpdateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.UpdateRefreshTokenGeneric(ctx, token)
+}
+
+// ListRefreshTokensByUserClient returns runtime refresh tokens for a user/client pair.
+func (r *AccountRepository) ListRefreshTokensByUserClient(ctx context.Context, username, clientID string) ([]storage.RefreshToken, error) {
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.ListRefreshTokensByUserClientGeneric(ctx, username, clientID)
+}
+
+// ListRefreshTokensByFamily returns runtime refresh tokens in the same family.
+func (r *AccountRepository) ListRefreshTokensByFamily(ctx context.Context, familyID string) ([]storage.RefreshToken, error) {
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.ListRefreshTokensByFamilyGeneric(ctx, familyID)
+}
+
+// ListRefreshTokensBySession returns runtime refresh tokens for a specific session.
+func (r *AccountRepository) ListRefreshTokensBySession(ctx context.Context, sessionID string) ([]storage.RefreshToken, error) {
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.ListRefreshTokensBySessionGeneric(ctx, sessionID)
+}
+
 // RevokeAccessToken stores the JWT ID (JTI) of an access token as revoked.
 func (r *AccountRepository) RevokeAccessToken(ctx context.Context, jti string, expiresAt time.Time) error {
 	helper := NewOAuthHelper(r.db, r.logger)

@@ -647,29 +647,24 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	if r.Config.JWTSecret == "" {
 		return nil, apperrors.Internal("jwt secret not configured")
 	}
-	oauthSvc := auth.NewOAuthService(r.Config.JWTSecret, r.Config, r.Storage, nil)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx, agentUsername, delegatedAgentClientID, "", requestedScopes, accessTTL)
+	bundle, err := auth.IssueAgentRuntimeTokens(ctx, r.Config, r.Storage, auth.AgentRuntimeTokenIssueParams{
+		Username:    agentUsername,
+		ClientID:    delegatedAgentClientID,
+		Scopes:      requestedScopes,
+		AccessTTL:   accessTTL,
+		DeviceLabel: auth.DefaultAgentRuntimeDeviceLabel,
+	})
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to mint delegated agent tokens")
 	}
 
-	refreshExpiry := now.Add(auth.RefreshTokenDuration)
-	_ = r.Storage.Account().CreateRefreshToken(ctx, &storage.RefreshToken{
-		Token:     refreshToken,
-		Username:  agentUsername,
-		ClientID:  delegatedAgentClientID,
-		Scopes:    requestedScopes,
-		CreatedAt: now,
-		ExpiresAt: refreshExpiry,
-	})
-
 	return &model.DelegationPayload{
 		Agent:        r.convertStorageUserToAgent(ctx, account.User),
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		AccessToken:  bundle.AccessToken,
+		RefreshToken: bundle.RefreshToken,
 		TokenType:    "Bearer",
 		Scope:        strings.Join(requestedScopes, " "),
-		CreatedAt:    model.Time(now),
+		CreatedAt:    model.Time(bundle.Session.CreatedAt),
 		ExpiresIn:    int(accessTTL.Seconds()),
 	}, nil
 }
@@ -862,8 +857,14 @@ func (r *mutationResolver) RevokeAgentToken(ctx context.Context, username string
 		return false, apperrors.Forbidden("not authorized to revoke agent tokens")
 	}
 
-	_, err = r.Storage.Account().DeleteRefreshTokensByUsernameAndClientID(ctx, username, delegatedAgentClientID)
-	if err != nil {
+	if err = auth.RevokeAllAgentRuntimeSessions(
+		ctx,
+		r.Storage,
+		username,
+		"manual_runtime_session_revocation",
+		"",
+		"",
+	); err != nil {
 		return false, apperrors.InternalWithCause(err, "failed to revoke agent tokens")
 	}
 

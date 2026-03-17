@@ -24,6 +24,28 @@ func TestRound09_OAuthHelpers_AuthorizationCodesAndRefreshTokens(t *testing.T) {
 	{
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
+		mockUpdate := new(mocks.MockUpdateBuilder)
+		setupPermissiveRound08Mocks(mockDB, mockQuery, mockUpdate, baseTime)
+
+		helper := NewOAuthHelper(mockDB, zap.NewNop())
+		rt := &storage.RefreshToken{
+			Token:     "legacy-token",
+			ClientID:  "client-1",
+			Username:  "user-1",
+			ExpiresAt: time.Now().Add(10 * time.Minute),
+			Scopes:    []string{"read"},
+		}
+
+		require.NoError(t, helper.UpdateRefreshTokenGeneric(ctx, rt))
+		require.Equal(t, 1, rt.Version)
+		mockQuery.AssertCalled(t, "UpdateBuilder")
+		mockUpdate.AssertCalled(t, "SetIfNotExists", "Version", nil, 0)
+		mockUpdate.AssertCalled(t, "Execute")
+	}
+
+	{
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
 		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
 
 		helper := NewOAuthHelper(mockDB, zap.NewNop())

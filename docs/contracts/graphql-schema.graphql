@@ -4276,6 +4276,20 @@ type AgentAccessLeaseTokenPayload {
   expiresIn: Int!
 }
 
+type AgentRuntimeSession {
+  sessionID: ID!
+  clientID: String!
+  deviceLabel: String!
+  scope: String!
+  createdAt: Time!
+  lastUsedAt: Time!
+  idleExpiresAt: Time!
+  absoluteExpiresAt: Time!
+  revoked: Boolean!
+  revokedAt: Time
+  revokedReason: String
+}
+
 input AgentAccessLeaseChallengeInput {
   principalWallet: String!
   agentWallet: String!
@@ -4414,6 +4428,7 @@ extend type Query {
   myAgents: [Agent!]!
   agentActivity(username: String!, first: Int = 20, after: Cursor): AgentActivityConnection!
   agentAccessLeases(username: String!): [AgentAccessLease!]!
+  agentRuntimeSessions(username: String!): [AgentRuntimeSession!]!
   adminAgentPolicy: AdminAgentPolicy!
   agentMemorySearch(query: String!, tags: [String!], dateRange: DateRangeInput, first: Int = 20, after: Cursor): ObjectConnection!
   mySouls: [SoulInventoryItem!]!
@@ -4425,6 +4440,7 @@ extend type Mutation {
   deleteAgent(username: String!): Agent!
   delegateToAgent(input: DelegateToAgentInput!): DelegationPayload!
   revokeAgentToken(username: String!): Boolean!
+  revokeAgentRuntimeSession(username: String!, sessionID: ID!, reason: String): AgentRuntimeSession!
   createAgentAccessLeasePrincipalChallenge(username: String!, input: AgentAccessLeaseChallengeInput!): AgentAccessLeaseChallenge!
   createAgentAccessLeaseAgentChallenge(username: String!, input: AgentAccessLeaseChallengeInput!): AgentAccessLeaseChallenge!
   createAgentAccessLease(username: String!, input: CreateAgentAccessLeaseInput!): AgentAccessLease!

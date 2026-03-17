@@ -24,6 +24,7 @@ type AgentSelfRegistrationRequest struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
 	Bio         string `json:"bio,omitempty"`
+	DeviceLabel string `json:"device_label,omitempty"`
 
 	PublicKey string `json:"public_key"`
 	KeyType   string `json:"key_type"`
@@ -46,6 +47,7 @@ type AgentSelfAuthTokenRequest struct {
 	Username    string `json:"username"`
 	ChallengeID string `json:"challenge_id"`
 	Signature   string `json:"signature"`
+	DeviceLabel string `json:"device_label,omitempty"`
 }
 
 // AgentRotateKeyRequest is the request payload for POST /api/v1/agents/{username}/rotate-key.

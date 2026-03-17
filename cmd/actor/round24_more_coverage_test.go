@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
 func TestActorActivityJSON_Round24_MarshalError(t *testing.T) {
@@ -18,4 +19,29 @@ func TestConvertAppTheoryRequest_Round24_NilContext(t *testing.T) {
 	req, err := h.convertAppTheoryRequest(nil)
 	require.Nil(t, req)
 	require.Error(t, err)
+}
+
+func TestConvertAppTheoryRequest_Round24_SetsHostAndQuery(t *testing.T) {
+	h := &Handler{}
+	ctx := &apptheory.Context{
+		Request: apptheory.Request{
+			Method: http.MethodGet,
+			Path:   "/users/alice",
+			Query: map[string][]string{
+				"foo": {"bar"},
+			},
+			Headers: map[string][]string{
+				"host":           {"example.com"},
+				"x-extra-header": {"value"},
+				"x-empty":        {},
+			},
+		},
+	}
+
+	req, err := h.convertAppTheoryRequest(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "example.com", req.Host)
+	require.Equal(t, "bar", req.URL.Query().Get("foo"))
+	require.Equal(t, "value", req.Header.Get("x-extra-header"))
+	require.Empty(t, req.Header.Values("x-empty"))
 }

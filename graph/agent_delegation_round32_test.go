@@ -51,6 +51,7 @@ func (passthroughEncryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 type delegationGraphState struct {
 	users              map[string]*storageModels.User
 	actors             map[string]*storageModels.Actor
+	refreshTokens      map[string]*storageModels.RefreshToken
 	createConflictOnce bool
 }
 
@@ -106,6 +107,34 @@ func (s *delegationGraphState) actor(username string) *storageModels.Actor {
 	return s.actors[username]
 }
 
+func (s *delegationGraphState) refreshTokensForUserClient(username, clientID string) []storageModels.RefreshToken {
+	if s == nil || s.refreshTokens == nil {
+		return nil
+	}
+	items := make([]storageModels.RefreshToken, 0)
+	targetPK := "RUNTIME_USER#" + username + "#" + clientID
+	for _, token := range s.refreshTokens {
+		if token != nil && token.GSI1PK == targetPK {
+			items = append(items, *token)
+		}
+	}
+	return items
+}
+
+func (s *delegationGraphState) refreshTokensForFamily(familyID string) []storageModels.RefreshToken {
+	if s == nil || s.refreshTokens == nil {
+		return nil
+	}
+	items := make([]storageModels.RefreshToken, 0)
+	targetPK := "RUNTIME_FAMILY#" + familyID
+	for _, token := range s.refreshTokens {
+		if token != nil && token.GSI2PK == targetPK {
+			items = append(items, *token)
+		}
+	}
+	return items
+}
+
 func (s *delegationGraphState) storeCreate(model any) {
 	switch v := model.(type) {
 	case *storageModels.User:
@@ -120,6 +149,12 @@ func (s *delegationGraphState) storeCreate(model any) {
 		}
 		copyActor := *v
 		s.actors[v.Username] = &copyActor
+	case *storageModels.RefreshToken:
+		if s.refreshTokens == nil {
+			s.refreshTokens = map[string]*storageModels.RefreshToken{}
+		}
+		copyToken := *v
+		s.refreshTokens[v.Token] = &copyToken
 	}
 }
 
@@ -132,12 +167,18 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 
 	mockDB := new(dynamormmocks.MockDB)
 	mockQuery := new(dynamormmocks.MockQuery)
+	mockUpdate := new(dynamormmocks.MockUpdateBuilder)
 	var currentModel any
 	var lastPK string
+	var lastGSI1PK string
+	var lastGSI2PK string
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Run(func(args mock.Arguments) {
 		currentModel = args.Get(0)
+		lastPK = ""
+		lastGSI1PK = ""
+		lastGSI2PK = ""
 	}).Return(mockQuery).Maybe()
 
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
@@ -147,14 +188,47 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 		if field == "PK" {
 			lastPK = value
 		}
+		if field == "gsi1PK" {
+			lastGSI1PK = value
+		}
+		if field == "gsi2PK" {
+			lastGSI2PK = value
+		}
 	}).Return(mockQuery).Maybe()
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
+	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()
+	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("ConditionVersion", mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Execute").Return(nil).Maybe()
 	if state.createConflictOnce {
 		mockQuery.On("Create").Return(dynamormerrors.ErrConditionFailed).Once()
 	}
 	mockQuery.On("Create").Run(func(mock.Arguments) {
 		state.storeCreate(currentModel)
+	}).Return(nil).Maybe()
+	mockQuery.On("Update", mock.Anything).Run(func(mock.Arguments) {
+		state.storeCreate(currentModel)
+	}).Return(nil).Maybe()
+	mockQuery.On("All", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*[]storageModels.RefreshToken)
+		return ok
+	})).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]storageModels.RefreshToken)
+		switch {
+		case strings.HasPrefix(lastGSI1PK, "RUNTIME_USER#"):
+			parts := strings.SplitN(lastGSI1PK, "#", 3)
+			if len(parts) == 3 {
+				*dest = state.refreshTokensForUserClient(parts[1], parts[2])
+				return
+			}
+			*dest = nil
+		case strings.HasPrefix(lastGSI2PK, "RUNTIME_FAMILY#"):
+			*dest = state.refreshTokensForFamily(strings.TrimPrefix(lastGSI2PK, "RUNTIME_FAMILY#"))
+		default:
+			*dest = nil
+		}
 	}).Return(nil).Maybe()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
@@ -301,7 +375,6 @@ func TestDelegateToAgent_CreateConflictFallsBackToExistingAgent(t *testing.T) {
 				},
 			},
 		},
-		createConflictOnce: true,
 	}
 
 	resolver := newDelegationResolver(t, state, true)
@@ -332,4 +405,120 @@ func TestDelegateToAgent_EnforcesStoredAgentScopeEnvelope(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, apperrors.HasCode(err, apperrors.CodeForbidden))
+}
+
+func TestRevokeAgentToken_UsesRuntimeSessionRevocationSemantics(t *testing.T) {
+	now := time.Now().UTC()
+	state := newDelegationGraphState("agent1", []string{"read"})
+
+	parent := &storageModels.RefreshToken{
+		Token:             "rt-parent",
+		ClientID:          delegatedAgentClientID,
+		Username:          "agent1",
+		Scopes:            []string{auth.ScopeRead},
+		CreatedAt:         now.Add(-2 * time.Hour),
+		ExpiresAt:         now.Add(24 * time.Hour),
+		ClientClass:       auth.ClientClassAgent,
+		SessionID:         "sid-runtime-1",
+		FamilyID:          "family-runtime-1",
+		Generation:        1,
+		Current:           false,
+		DeviceLabel:       "sim-runtime",
+		LastUsedAt:        now.Add(-time.Hour),
+		IdleExpiresAt:     now.Add(24 * time.Hour),
+		AbsoluteExpiresAt: now.Add(7 * 24 * time.Hour),
+		SessionCreatedAt:  now.Add(-48 * time.Hour),
+		AccessTTLSeconds:  1800,
+	}
+	require.NoError(t, parent.BeforeCreate())
+
+	current := &storageModels.RefreshToken{
+		Token:             "rt-current",
+		ClientID:          delegatedAgentClientID,
+		Username:          "agent1",
+		Scopes:            []string{auth.ScopeRead},
+		CreatedAt:         now.Add(-30 * time.Minute),
+		ExpiresAt:         now.Add(24 * time.Hour),
+		ClientClass:       auth.ClientClassAgent,
+		SessionID:         "sid-runtime-1",
+		FamilyID:          "family-runtime-1",
+		Generation:        2,
+		Current:           true,
+		DeviceLabel:       "sim-runtime",
+		LastUsedAt:        now.Add(-5 * time.Minute),
+		IdleExpiresAt:     now.Add(24 * time.Hour),
+		AbsoluteExpiresAt: now.Add(7 * 24 * time.Hour),
+		SessionCreatedAt:  now.Add(-48 * time.Hour),
+		AccessTTLSeconds:  1800,
+	}
+	require.NoError(t, current.BeforeCreate())
+
+	state.refreshTokens = map[string]*storageModels.RefreshToken{
+		parent.Token:  parent,
+		current.Token: current,
+	}
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("owner", "write:accounts")
+
+	ok, err := resolver.Mutation().RevokeAgentToken(ctx, "agent1")
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	require.Contains(t, state.refreshTokens, "rt-parent")
+	require.Contains(t, state.refreshTokens, "rt-current")
+	require.True(t, state.refreshTokens["rt-parent"].Revoked)
+	require.True(t, state.refreshTokens["rt-current"].Revoked)
+	require.Equal(t, "manual_runtime_session_revocation", state.refreshTokens["rt-parent"].RevokedReason)
+	require.Equal(t, "manual_runtime_session_revocation", state.refreshTokens["rt-current"].RevokedReason)
+}
+
+func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
+	now := time.Now().UTC()
+	state := newDelegationGraphState("agent1", []string{"read"})
+
+	current := &storageModels.RefreshToken{
+		Token:             "rt-current",
+		ClientID:          delegatedAgentClientID,
+		Username:          "agent1",
+		Scopes:            []string{auth.ScopeRead, "write:statuses"},
+		CreatedAt:         now.Add(-30 * time.Minute),
+		ExpiresAt:         now.Add(24 * time.Hour),
+		ClientClass:       auth.ClientClassAgent,
+		SessionID:         "sid-runtime-1",
+		FamilyID:          "family-runtime-1",
+		Generation:        2,
+		Current:           true,
+		DeviceLabel:       "sim-runtime",
+		LastUsedAt:        now.Add(-5 * time.Minute),
+		IdleExpiresAt:     now.Add(24 * time.Hour),
+		AbsoluteExpiresAt: now.Add(7 * 24 * time.Hour),
+		SessionCreatedAt:  now.Add(-48 * time.Hour),
+		AccessTTLSeconds:  1800,
+	}
+	require.NoError(t, current.BeforeCreate())
+
+	state.refreshTokens = map[string]*storageModels.RefreshToken{
+		current.Token: current,
+	}
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("owner", "write:accounts")
+
+	sessions, err := resolver.Query().AgentRuntimeSessions(ctx, "agent1")
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	require.Equal(t, "sid-runtime-1", sessions[0].SessionID)
+	require.Equal(t, "sim-runtime", sessions[0].DeviceLabel)
+	require.Equal(t, "read write:statuses", sessions[0].Scope)
+
+	reason := "operator_retired_runtime"
+	revoked, err := resolver.Mutation().RevokeAgentRuntimeSession(ctx, "agent1", "sid-runtime-1", &reason)
+	require.NoError(t, err)
+	require.NotNil(t, revoked)
+	require.True(t, revoked.Revoked)
+	require.Equal(t, "operator_retired_runtime", derefString(revoked.RevokedReason))
+
+	require.True(t, state.refreshTokens["rt-current"].Revoked)
+	require.Equal(t, "operator_retired_runtime", state.refreshTokens["rt-current"].RevokedReason)
 }

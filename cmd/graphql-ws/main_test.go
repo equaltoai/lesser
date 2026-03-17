@@ -149,3 +149,39 @@ func TestHandleDefault_SendsExpectedMessages(t *testing.T) {
 	require.Equal(t, 400, resp.StatusCode)
 	require.Len(t, bodies, 3)
 }
+
+func TestHandleDefault_SubscribeWithoutInstanceRepo_SendsErrorAndComplete(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+	t.Setenv("AWS_SESSION_TOKEN", "dummy")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+
+	var bodies [][]byte
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
+	s.connections["c1"] = &connectionState{
+		username:      "user",
+		claims:        &auth.Claims{Username: "user"},
+		subscriptions: map[string]*subscriptionState{},
+	}
+	s.sendJSONMessage = func(_ *apptheory.WebSocketContext, payload any) error {
+		b, err := json.Marshal(payload)
+		require.NoError(t, err)
+		bodies = append(bodies, b)
+		return nil
+	}
+
+	app := newWebSocketApp(s)
+	resp := app.ServeWebSocket(context.Background(), newWebSocketEvent("$default", "c1", `{"id":"sub1","type":"subscribe","payload":{"query":"subscription { ping }"}}`, nil, nil))
+	require.Equal(t, 200, resp.StatusCode)
+	require.Len(t, bodies, 2)
+
+	var env responseEnvelope
+	require.NoError(t, json.Unmarshal(bodies[0], &env))
+	require.Equal(t, "error", env.Type)
+	require.Equal(t, "sub1", env.ID)
+
+	require.NoError(t, json.Unmarshal(bodies[1], &env))
+	require.Equal(t, "complete", env.Type)
+	require.Equal(t, "sub1", env.ID)
+}

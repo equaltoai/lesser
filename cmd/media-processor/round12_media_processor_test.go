@@ -24,10 +24,13 @@ import (
 	"go.uber.org/zap/zaptest"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/observability"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
 )
 
 type fakeS3Client struct {
@@ -1317,4 +1320,41 @@ func TestNewMediaProcessor_BadContextReturnsEmptyProcessor(t *testing.T) {
 	}
 	mp = NewMediaProcessor(ctx)
 	require.NotNil(t, mp)
+}
+
+func TestNewMediaProcessor_UsesLambdaContextDependencies(t *testing.T) {
+	db := dynamormmocks.NewMockExtendedDB()
+	repoStorage, err := factory.NewRepositoryFactory(db, "media-table", zaptest.NewLogger(t))
+	require.NoError(t, err)
+
+	start := time.Date(2026, time.March, 17, 12, 0, 0, 0, time.UTC)
+	ctx := &common.LambdaContext{
+		DynamoDB: db,
+		Repos:    repoStorage,
+		Config: &config.Config{
+			DynamoTableName:       "media-table",
+			S3MediaBucket:         "media-bucket",
+			CloudFrontDomain:      "cdn.example.com",
+			MediaConvertEndpoint:  "https://mediaconvert.example.com",
+			MediaConvertRoleArn:   "arn:aws:iam::123456789012:role/media",
+			MediaProcessorQueueURL: "https://sqs.example.com/media",
+		},
+		StartTime: start,
+		Logger:    zaptest.NewLogger(t),
+	}
+
+	mp := NewMediaProcessor(ctx)
+	require.Equal(t, db, mp.db)
+	require.Equal(t, repoStorage, mp.repos)
+	require.NotNil(t, mp.mediaRepo)
+	require.NotNil(t, mp.mediaAnalyticsRepo)
+	require.NotNil(t, mp.mediaMetadataRepo)
+	require.Equal(t, "media-table", mp.tableName)
+	require.Equal(t, "media-bucket", mp.bucketName)
+	require.Equal(t, "cdn.example.com", mp.cdnDomain)
+	require.Equal(t, "https://mediaconvert.example.com", mp.mediaConvertEndpoint)
+	require.Equal(t, "arn:aws:iam::123456789012:role/media", mp.mediaConvertRole)
+	require.Equal(t, "https://sqs.example.com/media", mp.mediaConvertQueue)
+	require.Equal(t, start, mp.startTime)
+	require.Equal(t, ctx.Logger, mp.logger)
 }

@@ -631,6 +631,20 @@ type AgentPostAttributionInput struct {
 	ModelID         *string  `json:"modelId,omitempty"`
 }
 
+type AgentRuntimeSession struct {
+	SessionID         string  `json:"sessionID"`
+	ClientID          string  `json:"clientID"`
+	DeviceLabel       string  `json:"deviceLabel"`
+	Scope             string  `json:"scope"`
+	CreatedAt         Time    `json:"createdAt"`
+	LastUsedAt        Time    `json:"lastUsedAt"`
+	IdleExpiresAt     Time    `json:"idleExpiresAt"`
+	AbsoluteExpiresAt Time    `json:"absoluteExpiresAt"`
+	Revoked           bool    `json:"revoked"`
+	RevokedAt         *Time   `json:"revokedAt,omitempty"`
+	RevokedReason     *string `json:"revokedReason,omitempty"`
+}
+
 type Announcement struct {
 	ID          string                  `json:"id"`
 	Content     string                  `json:"content"`
