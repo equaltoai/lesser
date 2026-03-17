@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
@@ -72,6 +73,61 @@ func TestActivityHandler_CreateObjectInteractionNotification_Branches(t *testing
 		objectRepo.AssertExpectations(t)
 		notificationRepo.AssertExpectations(t)
 	})
+}
+
+func TestActivityHandler_ProcessCreateActivity_CreatesInboundMentionNotifications(t *testing.T) {
+	t.Setenv("DOMAIN", "example.com")
+	config.ResetForTests()
+
+	ctx := context.Background()
+
+	objectRepo := testmocks.NewMockObjectRepository()
+	objectRepo.On("CreateObject", mock.Anything, mock.Anything).Return(nil).Once()
+
+	notificationRepo := testmocks.NewMockNotificationRepository()
+	notificationRepo.On("CreateNotification", mock.Anything, mock.MatchedBy(func(notification *models.Notification) bool {
+		return notification != nil &&
+			notification.UserID == "alice" &&
+			notification.Type == "mention" &&
+			notification.ActorID == "bob"
+	})).Return(nil).Once()
+
+	timelineRepo := testmocks.NewMockTimelineRepositoryInterface()
+	timelineRepo.On("CreateTimelineEntries", mock.Anything, mock.Anything).Return(nil).Once()
+
+	h := &ActivityHandler{
+		Logger:           zap.NewNop(),
+		ObjectRepo:       objectRepo,
+		NotificationRepo: notificationRepo,
+		TimelineRepo:     timelineRepo,
+	}
+
+	activity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			ID:   "create-mention-1",
+			Type: ActivityTypeCreate,
+			To:   []string{activitypub.PublicAddress},
+		},
+		Actor: "https://remote.example/users/bob",
+		Object: map[string]any{
+			"id":           "https://remote.example/users/bob/statuses/remote-status-1",
+			"type":         ObjectTypeNote,
+			"content":      "<p>hello @alice</p>",
+			"attributedTo": "https://remote.example/users/bob",
+			"tag": []interface{}{
+				map[string]interface{}{
+					"type": "Mention",
+					"href": "https://example.com/users/alice",
+					"name": "@alice",
+				},
+			},
+		},
+	}
+
+	require.NoError(t, h.processCreateActivity(ctx, activity, "alice"))
+	objectRepo.AssertExpectations(t)
+	notificationRepo.AssertExpectations(t)
+	timelineRepo.AssertExpectations(t)
 }
 
 func TestActivityHandler_DistributeToFollowersTimeline_Branches(t *testing.T) {

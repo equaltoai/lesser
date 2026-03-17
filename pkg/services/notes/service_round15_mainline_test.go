@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -826,6 +827,34 @@ func TestService_round15_create_note_generates_local_mention_tags_and_notificati
 	require.Len(t, federatedNote.Tag, 1)
 	assert.Equal(t, "Mention", federatedNote.Tag[0].Type)
 	assert.Equal(t, []string{"https://example.com/users/alice/followers", "https://example.com/users/bob"}, federatedNote.CC)
+}
+
+func TestService_round15_create_note_reply_creates_notification_for_parent_author(t *testing.T) {
+	service, _, _, notifier, _ := newNotesServiceHarness(t)
+
+	created, err := service.CreateNote(context.Background(), &CreateNoteCommand{
+		AuthorID:     "bob",
+		Content:      "replying now",
+		Visibility:   VisibilityPublic,
+		InReplyToID:  "status-1",
+		ToRecipients: []string{activitypub.PublicAddress},
+		CcRecipients: []string{"https://example.com/users/bob/followers"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+
+	var replyNotification *notifications.CreateNotificationCommand
+	for _, cmd := range notifier.cmds {
+		if cmd.Type == "reply" {
+			replyNotification = cmd
+			break
+		}
+	}
+
+	require.NotNil(t, replyNotification)
+	assert.Equal(t, "alice", replyNotification.UserID)
+	assert.Equal(t, "bob", replyNotification.ActorID)
+	assert.Equal(t, created.Note.StatusID, replyNotification.TargetID)
 }
 
 func TestService_round15_create_note_resolves_remote_mentions_for_federation(t *testing.T) {
