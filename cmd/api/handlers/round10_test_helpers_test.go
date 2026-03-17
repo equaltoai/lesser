@@ -292,6 +292,14 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.RefreshToken:
+			if m == nil {
+				return
+			}
+			if state.refreshTokensByToken == nil {
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{}
+			}
+			state.refreshTokensByToken[m.Token] = *m
 		case *storagemodels.RevokedAccessToken:
 			if m == nil {
 				return
@@ -334,12 +342,30 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	if state.deleteErrorOnce != nil {
 		mockQuery.On("Delete").Return(state.deleteErrorOnce).Once()
 	}
-	mockQuery.On("Delete").Return(nil).Maybe()
+	mockQuery.On("Delete").Return(nil).Run(func(_ mock.Arguments) {
+		if state.refreshTokensByToken == nil {
+			return
+		}
+		if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "REFRESHTOKEN#") {
+			delete(state.refreshTokensByToken, strings.TrimPrefix(pk, "REFRESHTOKEN#"))
+		}
+	}).Maybe()
 
 	if state.updateErrorOnce != nil {
 		mockQuery.On("Update", mock.Anything).Return(state.updateErrorOnce).Once()
 	}
-	mockQuery.On("Update", mock.Anything).Return(nil).Maybe()
+	mockQuery.On("Update", mock.Anything).Return(nil).Run(func(_ mock.Arguments) {
+		switch m := state.model.(type) {
+		case *storagemodels.RefreshToken:
+			if m == nil {
+				return
+			}
+			if state.refreshTokensByToken == nil {
+				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{}
+			}
+			state.refreshTokensByToken[m.Token] = *m
+		}
+	}).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()
 
 	// Query executions
@@ -1975,6 +2001,26 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			} else {
 				for _, lease := range state.agentAccessLeasesByKey {
 					items = append(items, lease)
+				}
+			}
+			*d = items
+		case *[]storagemodels.RefreshToken:
+			items := make([]storagemodels.RefreshToken, 0)
+			if state.refreshTokensByToken == nil {
+				*d = items
+				return
+			}
+			gsi1pk, hasGSI1 := state.whereString("gsi1PK")
+			gsi2pk, hasGSI2 := state.whereString("gsi2PK")
+			gsi3pk, hasGSI3 := state.whereString("gsi3PK")
+			for _, token := range state.refreshTokensByToken {
+				switch {
+				case hasGSI1 && token.GSI1PK == gsi1pk:
+					items = append(items, token)
+				case hasGSI2 && token.GSI2PK == gsi2pk:
+					items = append(items, token)
+				case hasGSI3 && token.GSI3PK == gsi3pk:
+					items = append(items, token)
 				}
 			}
 			*d = items

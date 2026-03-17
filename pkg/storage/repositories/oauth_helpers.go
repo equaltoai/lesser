@@ -522,16 +522,7 @@ func (h *OAuthHelper) DeleteAuthorizationCodeGeneric(ctx context.Context, code s
 // CreateRefreshTokenGeneric creates a new OAuth refresh token
 func (h *OAuthHelper) CreateRefreshTokenGeneric(ctx context.Context, token *storage.RefreshToken) error {
 	// Create DynamORM model
-	model := &models.RefreshToken{
-		Token:       token.Token,
-		ClientID:    token.ClientID,
-		Username:    token.Username,
-		ExpiresAt:   token.ExpiresAt,
-		Scopes:      token.Scopes,
-		ClientClass: token.ClientClass,
-		SessionID:   token.SessionID,
-		CreatedAt:   time.Now(),
-	}
+	model := refreshTokenModelFromStorage(token)
 
 	// BeforeCreate will set up keys and TTL
 	if err := model.BeforeCreate(); err != nil {
@@ -585,22 +576,76 @@ func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) 
 		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRefreshToken, "token")
 	}
 
-	// Convert to storage model
-	result := &storage.RefreshToken{
-		Token:       model.Token,
-		ClientID:    model.ClientID,
-		Username:    model.Username,
-		ExpiresAt:   model.ExpiresAt,
-		Scopes:      model.Scopes,
-		ClientClass: model.ClientClass,
-		SessionID:   model.SessionID,
-	}
+	result := refreshTokenStorageFromModel(model)
 
 	h.logger.Debug("retrieved refresh token",
 		zap.String("client_id", result.ClientID),
 		zap.String("username", result.Username))
 
 	return result, nil
+}
+
+// UpdateRefreshTokenGeneric updates an existing OAuth refresh token.
+func (h *OAuthHelper) UpdateRefreshTokenGeneric(ctx context.Context, token *storage.RefreshToken) error {
+	model := refreshTokenModelFromStorage(token)
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, "preparation")
+	}
+
+	if err := h.db.WithContext(ctx).Model(model).Update(); err != nil {
+		h.logger.Error("failed to update refresh token", zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, "token")
+	}
+
+	return nil
+}
+
+// ListRefreshTokensByUserClientGeneric returns all refresh tokens for a username and client ID.
+func (h *OAuthHelper) ListRefreshTokensByUserClientGeneric(ctx context.Context, username, clientID string) ([]storage.RefreshToken, error) {
+	var modelsOut []models.RefreshToken
+	if err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
+		Index("gsi1").
+		Where("gsi1PK", "=", fmt.Sprintf("RUNTIME_USER#%s#%s", username, clientID)).
+		All(&modelsOut); err != nil {
+		if errors.IsNotFound(err) {
+			return []storage.RefreshToken{}, nil
+		}
+		return nil, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "runtime user/client")
+	}
+
+	return refreshTokenStorageSliceFromModels(modelsOut), nil
+}
+
+// ListRefreshTokensByFamilyGeneric returns all refresh tokens for a runtime token family.
+func (h *OAuthHelper) ListRefreshTokensByFamilyGeneric(ctx context.Context, familyID string) ([]storage.RefreshToken, error) {
+	var modelsOut []models.RefreshToken
+	if err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
+		Index("gsi2").
+		Where("gsi2PK", "=", "RUNTIME_FAMILY#"+familyID).
+		All(&modelsOut); err != nil {
+		if errors.IsNotFound(err) {
+			return []storage.RefreshToken{}, nil
+		}
+		return nil, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "runtime family")
+	}
+
+	return refreshTokenStorageSliceFromModels(modelsOut), nil
+}
+
+// ListRefreshTokensBySessionGeneric returns all refresh tokens for a runtime session.
+func (h *OAuthHelper) ListRefreshTokensBySessionGeneric(ctx context.Context, sessionID string) ([]storage.RefreshToken, error) {
+	var modelsOut []models.RefreshToken
+	if err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
+		Index("gsi3").
+		Where("gsi3PK", "=", "RUNTIME_SESSION#"+sessionID).
+		All(&modelsOut); err != nil {
+		if errors.IsNotFound(err) {
+			return []storage.RefreshToken{}, nil
+		}
+		return nil, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "runtime session")
+	}
+
+	return refreshTokenStorageSliceFromModels(modelsOut), nil
 }
 
 // DeleteRefreshTokenGeneric deletes an OAuth refresh token
@@ -622,6 +667,74 @@ func (h *OAuthHelper) DeleteRefreshTokenGeneric(ctx context.Context, token strin
 
 	h.logger.Debug("deleted refresh token", zap.String("token", token))
 	return nil
+}
+
+func refreshTokenModelFromStorage(token *storage.RefreshToken) *models.RefreshToken {
+	model := &models.RefreshToken{
+		Token:               token.Token,
+		ClientID:            token.ClientID,
+		Username:            token.Username,
+		ExpiresAt:           token.ExpiresAt,
+		Scopes:              token.Scopes,
+		ClientClass:         token.ClientClass,
+		SessionID:           token.SessionID,
+		FamilyID:            token.FamilyID,
+		Generation:          token.Generation,
+		Current:             token.Current,
+		Revoked:             token.Revoked,
+		RevokedAt:           token.RevokedAt,
+		RevokedReason:       token.RevokedReason,
+		DeviceLabel:         token.DeviceLabel,
+		LastUsedAt:          token.LastUsedAt,
+		IdleExpiresAt:       token.IdleExpiresAt,
+		AbsoluteExpiresAt:   token.AbsoluteExpiresAt,
+		SessionCreatedAt:    token.SessionCreatedAt,
+		AccessTTLSeconds:    token.AccessTTLSeconds,
+		ReuseDetectedAt:     token.ReuseDetectedAt,
+		ReuseDetectedFromIP: token.ReuseDetectedFromIP,
+		ReuseDetectedFromUA: token.ReuseDetectedFromUA,
+		CreatedAt:           token.CreatedAt,
+	}
+	if model.CreatedAt.IsZero() {
+		model.CreatedAt = time.Now()
+	}
+	return model
+}
+
+func refreshTokenStorageFromModel(model models.RefreshToken) *storage.RefreshToken {
+	return &storage.RefreshToken{
+		Token:               model.Token,
+		ClientID:            model.ClientID,
+		Username:            model.Username,
+		ExpiresAt:           model.ExpiresAt,
+		Scopes:              model.Scopes,
+		ClientClass:         model.ClientClass,
+		SessionID:           model.SessionID,
+		FamilyID:            model.FamilyID,
+		Generation:          model.Generation,
+		Current:             model.Current,
+		Revoked:             model.Revoked,
+		RevokedAt:           model.RevokedAt,
+		RevokedReason:       model.RevokedReason,
+		DeviceLabel:         model.DeviceLabel,
+		LastUsedAt:          model.LastUsedAt,
+		IdleExpiresAt:       model.IdleExpiresAt,
+		AbsoluteExpiresAt:   model.AbsoluteExpiresAt,
+		SessionCreatedAt:    model.SessionCreatedAt,
+		AccessTTLSeconds:    model.AccessTTLSeconds,
+		ReuseDetectedAt:     model.ReuseDetectedAt,
+		ReuseDetectedFromIP: model.ReuseDetectedFromIP,
+		ReuseDetectedFromUA: model.ReuseDetectedFromUA,
+		CreatedAt:           model.CreatedAt,
+	}
+}
+
+func refreshTokenStorageSliceFromModels(modelsOut []models.RefreshToken) []storage.RefreshToken {
+	out := make([]storage.RefreshToken, 0, len(modelsOut))
+	for _, model := range modelsOut {
+		out = append(out, *refreshTokenStorageFromModel(model))
+	}
+	return out
 }
 
 // RevokeAccessTokenGeneric stores the JWT ID (JTI) of an access token as revoked.

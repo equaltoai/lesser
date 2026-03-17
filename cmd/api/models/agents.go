@@ -40,6 +40,7 @@ type AgentDelegationRequest struct {
 	Bio           string   `json:"bio,omitempty"`
 	Scopes        []string `json:"scopes"`
 	ExpiresIn     int      `json:"expires_in,omitempty"`
+	DeviceLabel   string   `json:"device_label,omitempty"`
 	AgentInfo     any      `json:"agent_info,omitempty"`
 }
 

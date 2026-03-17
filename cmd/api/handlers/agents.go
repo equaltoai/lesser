@@ -111,7 +111,8 @@ func (h *Handler) HandleDelegateAgentLift(ctx *apptheory.Context) (*apptheory.Re
 		return resp, err
 	}
 
-	token, err := h.mintDelegatedAgentTokens(ctx, req.AgentUsername, requestedScopes, accessTTL)
+	userAgent, _ := h.getDeviceInfo(ctx)
+	token, err := h.mintDelegatedAgentTokens(ctx, req.AgentUsername, requestedScopes, accessTTL, req.DeviceLabel, userAgent)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
@@ -141,6 +142,7 @@ func parseAgentDelegationRequest(ctx *apptheory.Context) (*apimodels.AgentDelega
 
 	req.AgentUsername = strings.TrimSpace(req.AgentUsername)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	req.DeviceLabel = strings.TrimSpace(req.DeviceLabel)
 
 	return &req, nil, nil
 }
@@ -380,32 +382,30 @@ func (h *Handler) createDelegatedAgentAccount(
 	return account, nil, nil
 }
 
-func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername string, requestedScopes []string, accessTTL time.Duration) (apimodels.OAuthTokenResponse, error) {
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx.Context(), agentUsername, delegatedAgentClientID, "", requestedScopes, accessTTL)
+func (h *Handler) mintDelegatedAgentTokens(ctx *apptheory.Context, agentUsername string, requestedScopes []string, accessTTL time.Duration, deviceLabel, userAgent string) (apimodels.OAuthTokenResponse, error) {
+	if strings.TrimSpace(deviceLabel) == "" {
+		deviceLabel = userAgent
+	}
+	bundle, err := auth.IssueAgentRuntimeTokens(ctx.Context(), h.cfg, h.repos, auth.AgentRuntimeTokenIssueParams{
+		Username:    agentUsername,
+		ClientID:    delegatedAgentClientID,
+		Scopes:      requestedScopes,
+		AccessTTL:   accessTTL,
+		DeviceLabel: deviceLabel,
+	})
 	if err != nil {
 		return apimodels.OAuthTokenResponse{}, err
 	}
 
-	now := time.Now()
-	refreshExpiry := now.Add(auth.RefreshTokenDuration)
-	oauthRefreshToken := &storage.RefreshToken{
-		Token:     refreshToken,
-		Username:  agentUsername,
-		ClientID:  delegatedAgentClientID,
-		Scopes:    requestedScopes,
-		CreatedAt: now,
-		ExpiresAt: refreshExpiry,
-	}
-	_ = h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken)
+	now := bundle.Session.CreatedAt
 
 	return apimodels.OAuthTokenResponse{
-		AccessToken:  accessToken,
+		AccessToken:  bundle.AccessToken,
 		TokenType:    "Bearer",
 		Scope:        strings.Join(requestedScopes, " "),
 		CreatedAt:    now.Unix(),
 		ExpiresIn:    int(accessTTL.Seconds()),
-		RefreshToken: refreshToken,
+		RefreshToken: bundle.RefreshToken,
 	}, nil
 }
 

@@ -301,7 +301,6 @@ func TestDelegateToAgent_CreateConflictFallsBackToExistingAgent(t *testing.T) {
 				},
 			},
 		},
-		createConflictOnce: true,
 	}
 
 	resolver := newDelegationResolver(t, state, true)

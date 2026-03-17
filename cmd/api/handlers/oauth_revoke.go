@@ -114,6 +114,13 @@ func (h *Handler) revokeRefreshTokenBestEffort(ctx context.Context, token, clien
 		return
 	}
 
+	if isAgentRuntimeClientID(stored.ClientID) {
+		if err := h.revokeAgentRuntimeFamily(ctx, stored, "oauth_revoke", "", ""); err != nil {
+			h.logger.Warn("failed to revoke runtime refresh session", zap.Error(err), zap.String("client_id", stored.ClientID))
+		}
+		return
+	}
+
 	if err := h.repos.Account().DeleteRefreshToken(ctx, token); err != nil {
 		h.logger.Warn("failed to revoke refresh token", zap.Error(err), zap.String("client_id", stored.ClientID))
 	}

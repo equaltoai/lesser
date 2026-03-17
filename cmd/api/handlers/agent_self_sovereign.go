@@ -94,7 +94,8 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 		return resp, err
 	}
 
-	token, err := h.mintSelfSovereignTokens(ctx, req.Username, requestedScopes)
+	userAgent, _ := h.getDeviceInfo(ctx)
+	token, err := h.mintSelfSovereignTokens(ctx, req.Username, requestedScopes, req.DeviceLabel, userAgent)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
@@ -121,6 +122,7 @@ func parseAgentSelfRegistrationRequest(ctx *apptheory.Context) (*apimodels.Agent
 	req.KeyType = strings.TrimSpace(req.KeyType)
 	req.ChallengeID = strings.TrimSpace(req.ChallengeID)
 	req.Signature = strings.TrimSpace(req.Signature)
+	req.DeviceLabel = strings.TrimSpace(req.DeviceLabel)
 
 	return &req, nil, nil
 }
@@ -312,33 +314,31 @@ func (h *Handler) createSelfSovereignAgentAccount(ctx *apptheory.Context, user *
 	return account, nil, nil
 }
 
-func (h *Handler) mintSelfSovereignTokens(ctx *apptheory.Context, username string, requestedScopes []string) (apimodels.OAuthTokenResponse, error) {
+func (h *Handler) mintSelfSovereignTokens(ctx *apptheory.Context, username string, requestedScopes []string, deviceLabel, userAgent string) (apimodels.OAuthTokenResponse, error) {
 	accessTTL := auth.AgentAccessTokenTTL(h.cfg)
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx.Context(), username, selfSovereignAgentClientID, "", requestedScopes, accessTTL)
+	if strings.TrimSpace(deviceLabel) == "" {
+		deviceLabel = userAgent
+	}
+	bundle, err := auth.IssueAgentRuntimeTokens(ctx.Context(), h.cfg, h.repos, auth.AgentRuntimeTokenIssueParams{
+		Username:    username,
+		ClientID:    selfSovereignAgentClientID,
+		Scopes:      requestedScopes,
+		AccessTTL:   accessTTL,
+		DeviceLabel: deviceLabel,
+	})
 	if err != nil {
 		return apimodels.OAuthTokenResponse{}, err
 	}
 
-	now := time.Now()
-	refreshExpiry := now.Add(auth.RefreshTokenDuration)
-	oauthRefreshToken := &storage.RefreshToken{
-		Token:     refreshToken,
-		Username:  username,
-		ClientID:  selfSovereignAgentClientID,
-		Scopes:    requestedScopes,
-		CreatedAt: now,
-		ExpiresAt: refreshExpiry,
-	}
-	_ = h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken)
+	now := bundle.Session.CreatedAt
 
 	return apimodels.OAuthTokenResponse{
-		AccessToken:  accessToken,
+		AccessToken:  bundle.AccessToken,
 		TokenType:    "Bearer",
 		Scope:        strings.Join(requestedScopes, " "),
 		CreatedAt:    now.Unix(),
 		ExpiresIn:    int(accessTTL.Seconds()),
-		RefreshToken: refreshToken,
+		RefreshToken: bundle.RefreshToken,
 	}, nil
 }
 
@@ -388,6 +388,7 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 	req.Username = strings.TrimSpace(req.Username)
 	req.ChallengeID = strings.TrimSpace(req.ChallengeID)
 	req.Signature = strings.TrimSpace(req.Signature)
+	req.DeviceLabel = strings.TrimSpace(req.DeviceLabel)
 
 	if err := common.ValidateUsernameParamID(req.Username); err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -430,32 +431,25 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 	}
 
 	scopes := agentSelfSovereignScopes(agentUser)
-	accessTTL := auth.AgentAccessTokenTTL(h.cfg)
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTL(ctx.Context(), req.Username, selfSovereignAgentClientID, "", scopes, accessTTL)
+	userAgent, _ := h.getDeviceInfo(ctx)
+	tokenBundle, err := auth.IssueAgentRuntimeTokens(ctx.Context(), h.cfg, h.repos, auth.AgentRuntimeTokenIssueParams{
+		Username:    req.Username,
+		ClientID:    selfSovereignAgentClientID,
+		Scopes:      scopes,
+		AccessTTL:   auth.AgentAccessTokenTTL(h.cfg),
+		DeviceLabel: coalesceAgentRuntimeLabel(req.DeviceLabel, userAgent),
+	})
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	now := time.Now()
-	refreshExpiry := now.Add(auth.RefreshTokenDuration)
-	oauthRefreshToken := &storage.RefreshToken{
-		Token:     refreshToken,
-		Username:  req.Username,
-		ClientID:  selfSovereignAgentClientID,
-		Scopes:    scopes,
-		CreatedAt: now,
-		ExpiresAt: refreshExpiry,
-	}
-	_ = h.repos.Account().CreateRefreshToken(ctx.Context(), oauthRefreshToken)
-
 	return okJSON(apimodels.OAuthTokenResponse{
-		AccessToken:  accessToken,
+		AccessToken:  tokenBundle.AccessToken,
 		TokenType:    "Bearer",
 		Scope:        strings.Join(scopes, " "),
-		CreatedAt:    now.Unix(),
-		ExpiresIn:    int(accessTTL.Seconds()),
-		RefreshToken: refreshToken,
+		CreatedAt:    tokenBundle.Session.CreatedAt.Unix(),
+		ExpiresIn:    tokenBundle.Session.AccessTTLSeconds,
+		RefreshToken: tokenBundle.RefreshToken,
 	})
 }
 
