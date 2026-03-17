@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -76,7 +77,7 @@ func (r *mutationResolver) RevokeAgentRuntimeSession(ctx context.Context, userna
 		revokeReason = "manual_runtime_session_revocation"
 	}
 	if err := auth.RevokeAgentRuntimeSession(ctx, r.Storage, username, sessionID, revokeReason, "", ""); err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent runtime session not found")
 		}
 		return nil, apperrors.InternalWithCause(err, "failed to revoke agent runtime session")

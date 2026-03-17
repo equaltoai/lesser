@@ -53,7 +53,12 @@ func TestUnifiedAuthMiddleware_RequiredAuth_InvalidTokenBranch(t *testing.T) {
 func TestUnifiedAuthMiddleware_WrappersAndTestMode(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	stub := oauthServiceStub{
-		claims: testClaims{username: "alice", scopes: map[string]bool{common.ScopeWrite: true, common.AdminRead: true}},
+		claims: testClaims{username: "alice", scopes: map[string]bool{
+			common.ScopeRead:   true,
+			common.ScopeWrite:  true,
+			common.AdminRead:   true,
+			common.ScopeFollow: true,
+		}},
 	}
 
 	ctx := newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
@@ -63,8 +68,18 @@ func TestUnifiedAuthMiddleware_WrappersAndTestMode(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx = newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
+	read := ReadAuth(MiddlewareConfig{OAuthService: stub, Logger: logger, ServiceName: "api"})
+	_, err = read(func(*apptheory.Context) (*apptheory.Response, error) { return &apptheory.Response{Status: 200}, nil })(ctx)
+	require.NoError(t, err)
+
+	ctx = newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
 	admin := AdminAuth(MiddlewareConfig{OAuthService: stub, Logger: logger, ServiceName: "api"})
 	_, err = admin(func(*apptheory.Context) (*apptheory.Response, error) { return &apptheory.Response{Status: 200}, nil })(ctx)
+	require.NoError(t, err)
+
+	ctx = newTestContext("GET", "/test", withHeaders(map[string]string{"Authorization": "Bearer token"}))
+	follow := FollowAuth(MiddlewareConfig{OAuthService: stub, Logger: logger, ServiceName: "api"})
+	_, err = follow(func(*apptheory.Context) (*apptheory.Response, error) { return &apptheory.Response{Status: 200}, nil })(ctx)
 	require.NoError(t, err)
 
 	// IsTestMode environment variable switch.

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -219,7 +220,7 @@ func (h *Handler) HandleRevokeAgentRuntimeSessionLift(ctx *apptheory.Context) (*
 		reason = "manual_runtime_session_revocation"
 	}
 	if err := auth.RevokeAgentRuntimeSession(ctx.Context(), h.repos, username, sessionID, reason, ipAddress, userAgent); err != nil {
-		if err == storage.ErrNotFound {
+		if errors.Is(err, storage.ErrNotFound) {
 			return common.RespondNotFound(ctx, "runtime session")
 		}
 		return common.RespondInternalServerError(ctx)

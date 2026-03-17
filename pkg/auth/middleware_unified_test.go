@@ -61,6 +61,24 @@ func TestUnifiedAuthMiddleware_RequiredAuth_SetsContextAndCallsNext(t *testing.T
 	assert.True(t, called)
 }
 
+func TestNewUnifiedAuthMiddleware(t *testing.T) {
+	t.Parallel()
+
+	logger := zaptest.NewLogger(t)
+	stub := oauthServiceStub{}
+
+	mw := NewUnifiedAuthMiddleware(MiddlewareConfig{
+		OAuthService: stub,
+		Logger:       logger,
+		ServiceName:  "api",
+	})
+
+	require.NotNil(t, mw)
+	require.Equal(t, "api", mw.serviceName)
+	require.Equal(t, logger, mw.logger)
+	require.Equal(t, stub, mw.oauthService)
+}
+
 func TestUnifiedAuthMiddleware_RequiredAuth_RespondsOnMissingHeader(t *testing.T) {
 	stub := oauthServiceStub{claims: testClaims{username: "alice", scopes: map[string]bool{common.ScopeRead: true}}}
 	ctx := newTestContext("GET", "/test")

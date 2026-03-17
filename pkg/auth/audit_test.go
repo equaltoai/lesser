@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/privacy"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -116,6 +117,188 @@ func TestAuditLogger_LogWebAuthn_LogSession_AndStoreFallbacks(t *testing.T) {
 	al.config.StoreToDB = false
 	al.config.StoreToFile = true
 	al.LogSession(context.Background(), "alice", "sid-2", "192.0.2.10", AuditSessionRefreshed)
+}
+
+func TestAuditLogger_LogLogin_AndSecurityEvent(t *testing.T) {
+	t.Parallel()
+
+	repo := newInMemoryAuditRepo()
+	al := &AuditLogger{
+		auditRepo: repo,
+		logger:    zap.NewNop(),
+		config: &AuditConfig{
+			Enabled:         true,
+			StoreToDB:       true,
+			StoreToFile:     false,
+			StoreToSIEM:     false,
+			RedactSensitive: false,
+		},
+	}
+
+	al.LogLogin(context.Background(), "alice", "192.0.2.10", "ua", "laptop", true, "")
+	require.Equal(t, string(AuditLoginSuccess), repo.lastStore.eventType)
+	require.Equal(t, "alice", repo.lastStore.username)
+	require.Equal(t, "192.0.2.10", repo.lastStore.ipAddress)
+	require.Equal(t, "ua", repo.lastStore.userAgent)
+	require.Equal(t, "laptop", repo.lastStore.deviceName)
+	require.True(t, repo.lastStore.success)
+	require.Equal(t, "password", repo.lastStore.metadata["authentication_method"])
+
+	al.LogLogin(context.Background(), "alice", "192.0.2.10", "ua", "laptop", false, "bad password")
+	require.Equal(t, string(AuditLoginFailed), repo.lastStore.eventType)
+	require.False(t, repo.lastStore.success)
+	require.Equal(t, "bad password", repo.lastStore.failureReason)
+
+	al.LogSecurityEvent(context.Background(), AuditAccountLocked, "alice", "192.0.2.10", map[string]interface{}{"source": "policy"})
+	require.Equal(t, string(AuditAccountLocked), repo.lastStore.eventType)
+	require.False(t, repo.lastStore.success)
+	require.Equal(t, string(SeverityCritical), repo.lastStore.severity)
+	require.Equal(t, "policy", repo.lastStore.metadata["source"])
+}
+
+func TestNewAuditLogger_PrivacyHasherBranches(t *testing.T) {
+	lesserconfig.SetupTestEnvironment(t)
+
+	t.Run("privacy hasher initializes when config is valid", func(t *testing.T) {
+		lesserconfig.ResetForTests()
+		t.Cleanup(lesserconfig.ResetForTests)
+
+		masterKey, err := privacy.GenerateMasterKeyBase64()
+		require.NoError(t, err)
+
+		t.Setenv("ENABLE_PRIVACY_HASHING", "true")
+		t.Setenv("PRIVACY_MASTER_KEY", masterKey)
+
+		al := NewAuditLogger(nil, zap.NewNop(), DefaultAuditConfig())
+		require.NotNil(t, al.privacyHasher)
+	})
+
+	t.Run("privacy hasher stays nil for invalid master key", func(t *testing.T) {
+		lesserconfig.ResetForTests()
+		t.Cleanup(lesserconfig.ResetForTests)
+
+		t.Setenv("ENABLE_PRIVACY_HASHING", "true")
+		t.Setenv("PRIVACY_MASTER_KEY", "not-a-valid-master-key")
+
+		al := NewAuditLogger(nil, zap.NewNop(), DefaultAuditConfig())
+		require.Nil(t, al.privacyHasher)
+	})
+}
+
+func TestAuditLogger_CalculateRiskScore_AndSecureHashIP(t *testing.T) {
+	t.Parallel()
+
+	masterKey, err := privacy.GenerateMasterKeyBase64()
+	require.NoError(t, err)
+	hasher, err := privacy.NewHasherFromMasterKey(masterKey)
+	require.NoError(t, err)
+
+	al := &AuditLogger{
+		logger:        zap.NewNop(),
+		privacyHasher: hasher,
+		config:        DefaultAuditConfig(),
+	}
+
+	require.Equal(t, 70.0, al.calculateRiskScore(context.Background(), &AuditEvent{
+		EventType: AuditBruteForceDetected,
+		Success:   false,
+	}))
+	require.Equal(t, 30.0, al.calculateRiskScore(context.Background(), &AuditEvent{
+		EventType: AuditAnomalousLocation,
+		Success:   true,
+	}))
+	require.Equal(t, 35.0, al.calculateRiskScore(context.Background(), &AuditEvent{
+		EventType: AuditDeviceNotRecognized,
+		Success:   false,
+	}))
+
+	hashed := al.hashIPSecure("192.0.2.10")
+	require.NotEqual(t, "192.0.xxx.xxx", hashed)
+	require.NotEmpty(t, hashed)
+}
+
+func TestGenerateEventID(t *testing.T) {
+	t.Parallel()
+
+	id := generateEventID()
+	require.NotEmpty(t, id)
+	require.Contains(t, id, "=")
+}
+
+func TestAuditLogger_LogEvent_Disabled(t *testing.T) {
+	t.Parallel()
+
+	al := &AuditLogger{
+		logger: zap.NewNop(),
+		config: &AuditConfig{Enabled: false},
+	}
+
+	require.NoError(t, al.LogEvent(context.Background(), &AuditEvent{EventType: AuditLoginSuccess}))
+}
+
+func TestAuditLogger_LogEvent_AssignsDefaults(t *testing.T) {
+	t.Parallel()
+
+	al := &AuditLogger{
+		logger: zap.NewNop(),
+		config: &AuditConfig{
+			Enabled:         true,
+			StoreToDB:       false,
+			StoreToFile:     false,
+			StoreToSIEM:     false,
+			RedactSensitive: false,
+		},
+	}
+
+	event := &AuditEvent{EventType: AuditLoginSuccess, Success: true}
+	require.NoError(t, al.LogEvent(context.Background(), event))
+	require.NotEmpty(t, event.ID)
+	require.False(t, event.Timestamp.IsZero())
+	require.Equal(t, SeverityInfo, event.Severity)
+}
+
+func TestAuditLogger_LogEvent_HashesIPWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	masterKey, err := privacy.GenerateMasterKeyBase64()
+	require.NoError(t, err)
+	hasher, err := privacy.NewHasherFromMasterKey(masterKey)
+	require.NoError(t, err)
+
+	al := &AuditLogger{
+		logger:        zap.NewNop(),
+		privacyHasher: hasher,
+		config: &AuditConfig{
+			Enabled:         true,
+			StoreToDB:       false,
+			StoreToFile:     false,
+			StoreToSIEM:     false,
+			HashIPAddresses: true,
+			RedactSensitive: false,
+		},
+	}
+
+	event := &AuditEvent{EventType: AuditLoginFailed, Success: false, IPAddress: "192.0.2.10"}
+	require.NoError(t, al.LogEvent(context.Background(), event))
+	require.NotEqual(t, "192.0.2.10", event.IPAddress)
+}
+
+func TestAuditLogger_LogEvent_SIEMFailure(t *testing.T) {
+	t.Parallel()
+
+	al := &AuditLogger{
+		logger: zap.NewNop(),
+		config: &AuditConfig{
+			Enabled:      true,
+			StoreToDB:    false,
+			StoreToFile:  false,
+			StoreToSIEM:  true,
+			SIEMEndpoint: "http://127.0.0.1:1",
+		},
+	}
+
+	err := al.LogEvent(context.Background(), &AuditEvent{EventType: AuditLoginFailed, Success: false})
+	require.Error(t, err)
 }
 
 func TestAuditLogger_SendToSIEM_AndMarshalFailures(t *testing.T) {
