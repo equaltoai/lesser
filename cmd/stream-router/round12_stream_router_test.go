@@ -246,6 +246,19 @@ func TestAppendStreamEvent_Round12(t *testing.T) {
 	})
 }
 
+func TestHandleStreamRouterStreamRecord_Round12(t *testing.T) {
+	origHandler := handler
+	t.Cleanup(func() { handler = origHandler })
+
+	handler = nil
+	err := handleStreamRouterStreamRecord(nil, events.DynamoDBEventRecord{EventID: "evt-1", EventName: eventNameInsert})
+	require.Error(t, err)
+
+	handler = &StreamRouterHandler{logger: zap.NewNop()}
+	err = handleStreamRouterStreamRecord(nil, events.DynamoDBEventRecord{EventID: "evt-2", EventName: "REMOVE"})
+	require.NoError(t, err)
+}
+
 func newStatusInsertRecord(eventName string) events.DynamoDBEventRecord {
 	now := time.Now().UTC()
 	noteMap := map[string]events.DynamoDBAttributeValue{

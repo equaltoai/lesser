@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"testing"
 
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/99designs/gqlgen/graphql/executor"
 	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/stretchr/testify/require"
@@ -13,6 +16,15 @@ import (
 func TestSendJSON_NilWebSocketContext_ReturnsError(t *testing.T) {
 	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
 	require.Error(t, s.sendJSON(nil, responseEnvelope{Type: "ping"}))
+}
+
+func TestSendJSON_UsesWebSocketContextFallback(t *testing.T) {
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
+	s.sendJSONMessage = nil
+
+	err := s.sendJSON(&apptheory.WebSocketContext{}, responseEnvelope{Type: "ping"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "connection id is empty")
 }
 
 func TestRememberWebSocketContext_IgnoresEmptyInputs(t *testing.T) {
@@ -31,6 +43,43 @@ func TestWebSocketContextFromEvent_NilContext_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, wsCtx)
 	require.Equal(t, "", connectionID)
+}
+
+func TestWebSocketContextFromEvent_NonWebSocketContext_ReturnsError(t *testing.T) {
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
+
+	wsCtx, connectionID, err := s.webSocketContextFromEvent(&apptheory.Context{})
+	require.Error(t, err)
+	require.Nil(t, wsCtx)
+	require.Equal(t, "", connectionID)
+}
+
+func TestBuildRequestContext_AddsClaimsAndConnectionID(t *testing.T) {
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
+	claims := &auth.Claims{Username: "alice"}
+
+	ctxWithClaims := s.buildRequestContext(nil, &connectionState{claims: claims}, "")
+	require.Equal(t, claims, ctxWithClaims.Value(common.ContextKeyClaims))
+
+	baseCtx := context.Background()
+	ctxWithConnectionID := s.buildRequestContext(baseCtx, nil, "conn-1")
+	require.NotEqual(t, baseCtx, ctxWithConnectionID)
+}
+
+func TestHandleComplete_CancelsTrackedSubscription(t *testing.T) {
+	s := newServer(nil, nil, nil, zap.NewNop(), nil, nil, nil)
+
+	cancelled := 0
+	s.connections["c1"] = &connectionState{
+		subscriptions: map[string]*subscriptionState{
+			"sub-1": {cancel: func() { cancelled++ }},
+		},
+	}
+
+	resp, err := s.handleComplete(context.Background(), &apptheory.WebSocketContext{ConnectionID: "c1"}, "c1", wsMessage{ID: "sub-1"})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 1, cancelled)
 }
 
 func TestConfigureGraphQLExecutor_ExercisesConfigBranches(t *testing.T) {
