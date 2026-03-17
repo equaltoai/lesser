@@ -38,18 +38,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	var (
-		claims *auth.Claims
-		err    error
-	)
-	switch operation {
-	case relationshipOpFollow, relationshipOpUnfollow:
-		claims, err = h.authenticateWithAnyScope(ctx, relationshipOpFollow, "write:follows", auth.ScopeWrite)
-	case "block", "unblock":
-		claims, err = h.authenticateWithAnyScope(ctx, "write:blocks", auth.ScopeWrite)
-	default:
-		claims, err = h.authenticateWithScope(ctx, auth.ScopeWrite)
-	}
+	claims, err := h.authenticateRelationshipOperation(ctx, operation)
 	if err != nil {
 		if isInsufficientScopeError(err) {
 			return common.RespondForbidden(ctx, err.Error())
@@ -62,21 +51,12 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		return common.RespondServiceUnavailable(ctx, "service unavailable")
 	}
 
-	targetID, err := h.resolveRelationshipTargetID(ctx.Context(), accountID)
+	targetID, targetPublicID, targetUsername, err := h.resolveRelationshipTarget(ctx.Context(), accountID)
 	if err != nil {
 		if relationshipTargetNotFound(err) {
 			return common.RespondAccountNotFound(ctx)
 		}
 		return common.RespondInternalServerError(ctx, err.Error())
-	}
-
-	targetPublicID := ""
-	targetUsername := ""
-	if targetAccount, lookupErr := h.lookupStorageAccountByID(ctx.Context(), accountID); lookupErr == nil && targetAccount != nil {
-		targetPublicID = h.publicAccountFromStorageAccount(targetAccount).ID
-		if targetAccount.User != nil {
-			targetUsername = strings.TrimSpace(targetAccount.User.Username)
-		}
 	}
 
 	switch operation {
@@ -102,35 +82,89 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		h.createFollowNotification(ctx.Context(), claims.Username, targetUsername, r)
 		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	case relationshipOpUnfollow:
-		r, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
-			FollowerID:  claims.Username,
-			FollowingID: targetID,
-		})
+		relationship, err := h.handleUnfollow(ctx.Context(), claims.Username, targetID)
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
+		return okJSON(h.relationshipFromServiceWithPublicID(relationship, targetPublicID))
 	case "block":
-		r, err := h.registry.Relationships().Block(ctx.Context(), &relationships.BlockCommand{
-			BlockerID: claims.Username,
-			BlockedID: targetID,
-		})
+		relationship, err := h.handleBlock(ctx.Context(), claims.Username, targetID)
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
+		return okJSON(h.relationshipFromServiceWithPublicID(relationship, targetPublicID))
 	case "unblock":
-		r, err := h.registry.Relationships().Unblock(ctx.Context(), &relationships.UnblockCommand{
-			BlockerID: claims.Username,
-			BlockedID: targetID,
-		})
+		relationship, err := h.handleUnblock(ctx.Context(), claims.Username, targetID)
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
-		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
+		return okJSON(h.relationshipFromServiceWithPublicID(relationship, targetPublicID))
 	default:
 		return common.RespondBadRequest(ctx, "invalid operation")
 	}
+}
+
+func (h *Handler) authenticateRelationshipOperation(ctx *apptheory.Context, operation string) (*auth.Claims, error) {
+	switch operation {
+	case relationshipOpFollow, relationshipOpUnfollow:
+		return h.authenticateWithAnyScope(ctx, relationshipOpFollow, "write:follows", auth.ScopeWrite)
+	case "block", "unblock":
+		return h.authenticateWithAnyScope(ctx, "write:blocks", auth.ScopeWrite)
+	default:
+		return h.authenticateWithScope(ctx, auth.ScopeWrite)
+	}
+}
+
+func (h *Handler) resolveRelationshipTarget(ctx context.Context, accountID string) (targetID, targetPublicID, targetUsername string, err error) {
+	targetID, err = h.resolveRelationshipTargetID(ctx, accountID)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	targetAccount, lookupErr := h.lookupStorageAccountByID(ctx, accountID)
+	if lookupErr != nil || targetAccount == nil {
+		return targetID, "", "", nil
+	}
+
+	targetPublicID = h.publicAccountFromStorageAccount(targetAccount).ID
+	if targetAccount.User != nil {
+		targetUsername = strings.TrimSpace(targetAccount.User.Username)
+	}
+
+	return targetID, targetPublicID, targetUsername, nil
+}
+
+func (h *Handler) handleUnfollow(ctx context.Context, username, targetID string) (*relationships.RelationshipData, error) {
+	r, err := h.registry.Relationships().Unfollow(ctx, &relationships.UnfollowCommand{
+		FollowerID:  username,
+		FollowingID: targetID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.Relationship, nil
+}
+
+func (h *Handler) handleBlock(ctx context.Context, username, targetID string) (*relationships.RelationshipData, error) {
+	r, err := h.registry.Relationships().Block(ctx, &relationships.BlockCommand{
+		BlockerID: username,
+		BlockedID: targetID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.Relationship, nil
+}
+
+func (h *Handler) handleUnblock(ctx context.Context, username, targetID string) (*relationships.RelationshipData, error) {
+	r, err := h.registry.Relationships().Unblock(ctx, &relationships.UnblockCommand{
+		BlockerID: username,
+		BlockedID: targetID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.Relationship, nil
 }
 
 func (h *Handler) resolveRelationshipTargetID(ctx context.Context, accountID string) (string, error) {

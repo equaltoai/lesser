@@ -641,6 +641,7 @@ func (h *ActivityHandler) interfaceSliceToStringSlice(slice []interface{}) []str
 	return result
 }
 
+//nolint:unused // false positive - called from mapToNote in Create activity parsing
 func (h *ActivityHandler) interfaceSliceToTags(slice []interface{}) []activitypub.Tag {
 	tags := make([]activitypub.Tag, 0, len(slice))
 	for _, item := range slice {
@@ -2852,6 +2853,7 @@ func (h *ActivityHandler) createObjectInteractionNotification(ctx context.Contex
 	}
 }
 
+//nolint:unused // false positive - called from processCreateActivity for inbound federation mentions
 func (h *ActivityHandler) createInboundMentionNotifications(ctx context.Context, status *models.Status, note *activitypub.Note, activity *activitypub.Activity) {
 	if h == nil || note == nil || activity == nil || len(note.Tag) == 0 {
 		return
