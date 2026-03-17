@@ -472,3 +472,53 @@ func TestRevokeAgentToken_UsesRuntimeSessionRevocationSemantics(t *testing.T) {
 	require.Equal(t, "manual_runtime_session_revocation", state.refreshTokens["rt-parent"].RevokedReason)
 	require.Equal(t, "manual_runtime_session_revocation", state.refreshTokens["rt-current"].RevokedReason)
 }
+
+func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
+	now := time.Now().UTC()
+	state := newDelegationGraphState("agent1", []string{"read"})
+
+	current := &storageModels.RefreshToken{
+		Token:             "rt-current",
+		ClientID:          delegatedAgentClientID,
+		Username:          "agent1",
+		Scopes:            []string{auth.ScopeRead, "write:statuses"},
+		CreatedAt:         now.Add(-30 * time.Minute),
+		ExpiresAt:         now.Add(24 * time.Hour),
+		ClientClass:       auth.ClientClassAgent,
+		SessionID:         "sid-runtime-1",
+		FamilyID:          "family-runtime-1",
+		Generation:        2,
+		Current:           true,
+		DeviceLabel:       "sim-runtime",
+		LastUsedAt:        now.Add(-5 * time.Minute),
+		IdleExpiresAt:     now.Add(24 * time.Hour),
+		AbsoluteExpiresAt: now.Add(7 * 24 * time.Hour),
+		SessionCreatedAt:  now.Add(-48 * time.Hour),
+		AccessTTLSeconds:  1800,
+	}
+	require.NoError(t, current.BeforeCreate())
+
+	state.refreshTokens = map[string]*storageModels.RefreshToken{
+		current.Token: current,
+	}
+
+	resolver := newDelegationResolver(t, state, true)
+	ctx := delegatedAgentAuthContext("owner", "write:accounts")
+
+	sessions, err := resolver.Query().AgentRuntimeSessions(ctx, "agent1")
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	require.Equal(t, "sid-runtime-1", sessions[0].SessionID)
+	require.Equal(t, "sim-runtime", sessions[0].DeviceLabel)
+	require.Equal(t, "read write:statuses", sessions[0].Scope)
+
+	reason := "operator_retired_runtime"
+	revoked, err := resolver.Mutation().RevokeAgentRuntimeSession(ctx, "agent1", "sid-runtime-1", &reason)
+	require.NoError(t, err)
+	require.NotNil(t, revoked)
+	require.True(t, revoked.Revoked)
+	require.Equal(t, "operator_retired_runtime", derefString(revoked.RevokedReason))
+
+	require.True(t, state.refreshTokens["rt-current"].Revoked)
+	require.Equal(t, "operator_retired_runtime", state.refreshTokens["rt-current"].RevokedReason)
+}

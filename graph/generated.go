@@ -664,6 +664,20 @@ type ComplexityRoot struct {
 		TriggerType     func(childComplexity int) int
 	}
 
+	AgentRuntimeSession struct {
+		AbsoluteExpiresAt func(childComplexity int) int
+		ClientID          func(childComplexity int) int
+		CreatedAt         func(childComplexity int) int
+		DeviceLabel       func(childComplexity int) int
+		IdleExpiresAt     func(childComplexity int) int
+		LastUsedAt        func(childComplexity int) int
+		Revoked           func(childComplexity int) int
+		RevokedAt         func(childComplexity int) int
+		RevokedReason     func(childComplexity int) int
+		Scope             func(childComplexity int) int
+		SessionID         func(childComplexity int) int
+	}
+
 	Announcement struct {
 		AllDay      func(childComplexity int) int
 		Content     func(childComplexity int) int
@@ -1897,6 +1911,7 @@ type ComplexityRoot struct {
 		RestoreRevision                           func(childComplexity int, objectID string, version int) int
 		ResumeFederation                          func(childComplexity int, domain string) int
 		RevokeAgentAccessLease                    func(childComplexity int, username string, leaseID string, input *model.RevokeAgentAccessLeaseInput) int
+		RevokeAgentRuntimeSession                 func(childComplexity int, username string, sessionID string, reason *string) int
 		RevokeAgentToken                          func(childComplexity int, username string) int
 		RevokeVouch                               func(childComplexity int, id string) int
 		SaveMarkers                               func(childComplexity int, input []*model.SaveMarkerInput) int
@@ -2249,6 +2264,7 @@ type ComplexityRoot struct {
 		AgentAccessLeases         func(childComplexity int, username string) int
 		AgentActivity             func(childComplexity int, username string, first *int, after *model.Cursor) int
 		AgentMemorySearch         func(childComplexity int, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) int
+		AgentRuntimeSessions      func(childComplexity int, username string) int
 		Agents                    func(childComplexity int, first *int, after *model.Cursor, typeArg *model.AgentType, query *string, verified *bool, ownerUsername *string) int
 		AiAnalysis                func(childComplexity int, objectID string) int
 		AiCapabilities            func(childComplexity int) int
@@ -3225,6 +3241,7 @@ type MutationResolver interface {
 	DeleteAgent(ctx context.Context, username string) (*model.Agent, error)
 	DelegateToAgent(ctx context.Context, input model.DelegateToAgentInput) (*model.DelegationPayload, error)
 	RevokeAgentToken(ctx context.Context, username string) (bool, error)
+	RevokeAgentRuntimeSession(ctx context.Context, username string, sessionID string, reason *string) (*model.AgentRuntimeSession, error)
 	CreateAgentAccessLeasePrincipalChallenge(ctx context.Context, username string, input model.AgentAccessLeaseChallengeInput) (*model.AgentAccessLeaseChallenge, error)
 	CreateAgentAccessLeaseAgentChallenge(ctx context.Context, username string, input model.AgentAccessLeaseChallengeInput) (*model.AgentAccessLeaseChallenge, error)
 	CreateAgentAccessLease(ctx context.Context, username string, input model.CreateAgentAccessLeaseInput) (*model.AgentAccessLease, error)
@@ -3388,6 +3405,7 @@ type QueryResolver interface {
 	MyAgents(ctx context.Context) ([]*model.Agent, error)
 	AgentActivity(ctx context.Context, username string, first *int, after *model.Cursor) (*model.AgentActivityConnection, error)
 	AgentAccessLeases(ctx context.Context, username string) ([]*model.AgentAccessLease, error)
+	AgentRuntimeSessions(ctx context.Context, username string) ([]*model.AgentRuntimeSession, error)
 	AdminAgentPolicy(ctx context.Context) (*model.AdminAgentPolicy, error)
 	AgentMemorySearch(ctx context.Context, query string, tags []string, dateRange *model.DateRangeInput, first *int, after *model.Cursor) (*model.ObjectConnection, error)
 	MySouls(ctx context.Context) ([]*model.SoulInventoryItem, error)
@@ -6204,6 +6222,83 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AgentPostAttribution.TriggerType(childComplexity), true
+
+	case "AgentRuntimeSession.absoluteExpiresAt":
+		if e.complexity.AgentRuntimeSession.AbsoluteExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.AbsoluteExpiresAt(childComplexity), true
+
+	case "AgentRuntimeSession.clientID":
+		if e.complexity.AgentRuntimeSession.ClientID == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.ClientID(childComplexity), true
+
+	case "AgentRuntimeSession.createdAt":
+		if e.complexity.AgentRuntimeSession.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.CreatedAt(childComplexity), true
+
+	case "AgentRuntimeSession.deviceLabel":
+		if e.complexity.AgentRuntimeSession.DeviceLabel == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.DeviceLabel(childComplexity), true
+
+	case "AgentRuntimeSession.idleExpiresAt":
+		if e.complexity.AgentRuntimeSession.IdleExpiresAt == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.IdleExpiresAt(childComplexity), true
+
+	case "AgentRuntimeSession.lastUsedAt":
+		if e.complexity.AgentRuntimeSession.LastUsedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.LastUsedAt(childComplexity), true
+
+	case "AgentRuntimeSession.revoked":
+		if e.complexity.AgentRuntimeSession.Revoked == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.Revoked(childComplexity), true
+
+	case "AgentRuntimeSession.revokedAt":
+		if e.complexity.AgentRuntimeSession.RevokedAt == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.RevokedAt(childComplexity), true
+
+	case "AgentRuntimeSession.revokedReason":
+		if e.complexity.AgentRuntimeSession.RevokedReason == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.RevokedReason(childComplexity), true
+
+	case "AgentRuntimeSession.scope":
+		if e.complexity.AgentRuntimeSession.Scope == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.Scope(childComplexity), true
+
+	case "AgentRuntimeSession.sessionID":
+		if e.complexity.AgentRuntimeSession.SessionID == nil {
+			break
+		}
+
+		return e.complexity.AgentRuntimeSession.SessionID(childComplexity), true
 
 	case "Announcement.allDay":
 		if e.complexity.Announcement.AllDay == nil {
@@ -12737,6 +12832,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Mutation.RevokeAgentAccessLease(childComplexity, args["username"].(string), args["leaseID"].(string), args["input"].(*model.RevokeAgentAccessLeaseInput)), true
 
+	case "Mutation.revokeAgentRuntimeSession":
+		if e.complexity.Mutation.RevokeAgentRuntimeSession == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_revokeAgentRuntimeSession_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.RevokeAgentRuntimeSession(childComplexity, args["username"].(string), args["sessionID"].(string), args["reason"].(*string)), true
+
 	case "Mutation.revokeAgentToken":
 		if e.complexity.Mutation.RevokeAgentToken == nil {
 			break
@@ -14913,6 +15020,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.AgentMemorySearch(childComplexity, args["query"].(string), args["tags"].([]string), args["dateRange"].(*model.DateRangeInput), args["first"].(*int), args["after"].(*model.Cursor)), true
+
+	case "Query.agentRuntimeSessions":
+		if e.complexity.Query.AgentRuntimeSessions == nil {
+			break
+		}
+
+		args, err := ec.field_Query_agentRuntimeSessions_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.AgentRuntimeSessions(childComplexity, args["username"].(string)), true
 
 	case "Query.agents":
 		if e.complexity.Query.Agents == nil {
@@ -20858,6 +20977,27 @@ func (ec *executionContext) field_Mutation_revokeAgentAccessLease_args(ctx conte
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_revokeAgentRuntimeSession_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "sessionID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["sessionID"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "reason", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["reason"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_revokeAgentToken_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -21952,6 +22092,17 @@ func (ec *executionContext) field_Query_agentMemorySearch_args(ctx context.Conte
 		return nil, err
 	}
 	args["after"] = arg4
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_agentRuntimeSessions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "username", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["username"] = arg0
 	return args, nil
 }
 
@@ -42261,6 +42412,484 @@ func (ec *executionContext) _AgentPostAttribution_modelId(ctx context.Context, f
 func (ec *executionContext) fieldContext_AgentPostAttribution_modelId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AgentPostAttribution",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_sessionID(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_sessionID(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.SessionID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNID2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_sessionID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_clientID(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_clientID(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ClientID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_clientID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_deviceLabel(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_deviceLabel(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.DeviceLabel, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_deviceLabel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_scope(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_scope(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Scope, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	fc.Result = res
+	return ec.marshalNString2string(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_scope(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_createdAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.CreatedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_lastUsedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_lastUsedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.LastUsedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_lastUsedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_idleExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_idleExpiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.IdleExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_idleExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_absoluteExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_absoluteExpiresAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.AbsoluteExpiresAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(model.Time)
+	fc.Result = res
+	return ec.marshalNTime2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_absoluteExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_revoked(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_revoked(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Revoked, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(bool)
+	fc.Result = res
+	return ec.marshalNBoolean2bool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_revoked(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_revokedAt(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_revokedAt(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RevokedAt, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_revokedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AgentRuntimeSession_revokedReason(ctx context.Context, field graphql.CollectedField, obj *model.AgentRuntimeSession) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_AgentRuntimeSession_revokedReason(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.RevokedReason, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_AgentRuntimeSession_revokedReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AgentRuntimeSession",
 		Field:      field,
 		IsMethod:   false,
 		IsResolver: false,
@@ -87979,6 +88608,85 @@ func (ec *executionContext) fieldContext_Mutation_revokeAgentToken(ctx context.C
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_revokeAgentRuntimeSession(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Mutation_revokeAgentRuntimeSession(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().RevokeAgentRuntimeSession(rctx, fc.Args["username"].(string), fc.Args["sessionID"].(string), fc.Args["reason"].(*string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.AgentRuntimeSession)
+	fc.Result = res
+	return ec.marshalNAgentRuntimeSession2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentRuntimeSession(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Mutation_revokeAgentRuntimeSession(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "sessionID":
+				return ec.fieldContext_AgentRuntimeSession_sessionID(ctx, field)
+			case "clientID":
+				return ec.fieldContext_AgentRuntimeSession_clientID(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentRuntimeSession_deviceLabel(ctx, field)
+			case "scope":
+				return ec.fieldContext_AgentRuntimeSession_scope(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_AgentRuntimeSession_createdAt(ctx, field)
+			case "lastUsedAt":
+				return ec.fieldContext_AgentRuntimeSession_lastUsedAt(ctx, field)
+			case "idleExpiresAt":
+				return ec.fieldContext_AgentRuntimeSession_idleExpiresAt(ctx, field)
+			case "absoluteExpiresAt":
+				return ec.fieldContext_AgentRuntimeSession_absoluteExpiresAt(ctx, field)
+			case "revoked":
+				return ec.fieldContext_AgentRuntimeSession_revoked(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_AgentRuntimeSession_revokedAt(ctx, field)
+			case "revokedReason":
+				return ec.fieldContext_AgentRuntimeSession_revokedReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentRuntimeSession", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_revokeAgentRuntimeSession_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_createAgentAccessLeasePrincipalChallenge(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Mutation_createAgentAccessLeasePrincipalChallenge(ctx, field)
 	if err != nil {
@@ -107862,6 +108570,85 @@ func (ec *executionContext) fieldContext_Query_agentAccessLeases(ctx context.Con
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_agentAccessLeases_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_agentRuntimeSessions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_agentRuntimeSessions(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().AgentRuntimeSessions(rctx, fc.Args["username"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]*model.AgentRuntimeSession)
+	fc.Result = res
+	return ec.marshalNAgentRuntimeSession2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentRuntimeSessionᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_agentRuntimeSessions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "sessionID":
+				return ec.fieldContext_AgentRuntimeSession_sessionID(ctx, field)
+			case "clientID":
+				return ec.fieldContext_AgentRuntimeSession_clientID(ctx, field)
+			case "deviceLabel":
+				return ec.fieldContext_AgentRuntimeSession_deviceLabel(ctx, field)
+			case "scope":
+				return ec.fieldContext_AgentRuntimeSession_scope(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_AgentRuntimeSession_createdAt(ctx, field)
+			case "lastUsedAt":
+				return ec.fieldContext_AgentRuntimeSession_lastUsedAt(ctx, field)
+			case "idleExpiresAt":
+				return ec.fieldContext_AgentRuntimeSession_idleExpiresAt(ctx, field)
+			case "absoluteExpiresAt":
+				return ec.fieldContext_AgentRuntimeSession_absoluteExpiresAt(ctx, field)
+			case "revoked":
+				return ec.fieldContext_AgentRuntimeSession_revoked(ctx, field)
+			case "revokedAt":
+				return ec.fieldContext_AgentRuntimeSession_revokedAt(ctx, field)
+			case "revokedReason":
+				return ec.fieldContext_AgentRuntimeSession_revokedReason(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AgentRuntimeSession", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_agentRuntimeSessions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -140049,6 +140836,89 @@ func (ec *executionContext) _AgentPostAttribution(ctx context.Context, sel ast.S
 	return out
 }
 
+var agentRuntimeSessionImplementors = []string{"AgentRuntimeSession"}
+
+func (ec *executionContext) _AgentRuntimeSession(ctx context.Context, sel ast.SelectionSet, obj *model.AgentRuntimeSession) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, agentRuntimeSessionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AgentRuntimeSession")
+		case "sessionID":
+			out.Values[i] = ec._AgentRuntimeSession_sessionID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "clientID":
+			out.Values[i] = ec._AgentRuntimeSession_clientID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deviceLabel":
+			out.Values[i] = ec._AgentRuntimeSession_deviceLabel(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "scope":
+			out.Values[i] = ec._AgentRuntimeSession_scope(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._AgentRuntimeSession_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastUsedAt":
+			out.Values[i] = ec._AgentRuntimeSession_lastUsedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "idleExpiresAt":
+			out.Values[i] = ec._AgentRuntimeSession_idleExpiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "absoluteExpiresAt":
+			out.Values[i] = ec._AgentRuntimeSession_absoluteExpiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revoked":
+			out.Values[i] = ec._AgentRuntimeSession_revoked(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokedAt":
+			out.Values[i] = ec._AgentRuntimeSession_revokedAt(ctx, field, obj)
+		case "revokedReason":
+			out.Values[i] = ec._AgentRuntimeSession_revokedReason(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var announcementImplementors = []string{"Announcement"}
 
 func (ec *executionContext) _Announcement(ctx context.Context, sel ast.SelectionSet, obj *model.Announcement) graphql.Marshaler {
@@ -149787,6 +150657,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "revokeAgentRuntimeSession":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_revokeAgentRuntimeSession(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "createAgentAccessLeasePrincipalChallenge":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_createAgentAccessLeasePrincipalChallenge(ctx, field)
@@ -154915,6 +155792,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_agentAccessLeases(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "agentRuntimeSessions":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_agentRuntimeSessions(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -161777,6 +162676,64 @@ func (ec *executionContext) marshalNAgentEdge2ᚖgithubᚗcomᚋequaltoaiᚋless
 		return graphql.Null
 	}
 	return ec._AgentEdge(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAgentRuntimeSession2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentRuntimeSession(ctx context.Context, sel ast.SelectionSet, v model.AgentRuntimeSession) graphql.Marshaler {
+	return ec._AgentRuntimeSession(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAgentRuntimeSession2ᚕᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentRuntimeSessionᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.AgentRuntimeSession) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNAgentRuntimeSession2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentRuntimeSession(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNAgentRuntimeSession2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentRuntimeSession(ctx context.Context, sel ast.SelectionSet, v *model.AgentRuntimeSession) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AgentRuntimeSession(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNAgentType2githubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentType(ctx context.Context, v any) (model.AgentType, error) {
