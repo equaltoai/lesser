@@ -105,9 +105,13 @@ const (
 	dmSendTotalWindow           = time.Minute
 	dmRequestTotalLimit         = 20
 	dmRequestTotalWindow        = time.Hour
-	dmRequestPerRecipientLimit  = 1
+	dmRequestPerRecipientLimit  = 3
 	dmRequestPerRecipientWindow = 24 * time.Hour
 )
+
+type apiRateLimitInfoReader interface {
+	GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error)
+}
 
 // SendDirectMessageCommand contains all data needed to send a direct message
 type SendDirectMessageCommand struct {
@@ -377,7 +381,7 @@ func (s *Service) enforceDirectMessageNotBlocked(ctx context.Context, cmd *SendD
 }
 
 func (s *Service) enforceDirectMessageTotalRateLimit(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) error {
-	if s.rateLimitRepo == nil || config.Get().DisableRateLimiting {
+	if s.rateLimitRepo == nil || directMessageRateLimitingDisabled() {
 		return nil
 	}
 
@@ -464,7 +468,7 @@ func (s *Service) directMessageRecipientRequestState(ctx context.Context, conver
 }
 
 func (s *Service) enforceDirectMessageRequestRateLimit(ctx context.Context, cmd *SendDirectMessageCommand, conversationID, recipientID string) error {
-	if s.rateLimitRepo == nil || config.Get().DisableRateLimiting {
+	if s.rateLimitRepo == nil || directMessageRateLimitingDisabled() {
 		return nil
 	}
 
@@ -513,13 +517,53 @@ func (s *Service) evaluateDirectMessageRequestPolicy(ctx context.Context, cmd *S
 		return false, deliversToInbox, recipientRequestState, ErrMessageRequestMediaNotAllowed
 	}
 
-	if willBeRequest {
-		if err := s.enforceDirectMessageRequestRateLimit(ctx, cmd, conversationID, recipientID); err != nil {
-			return false, deliversToInbox, recipientRequestState, err
-		}
+	return willBeRequest, deliversToInbox, recipientRequestState, nil
+}
+
+func directMessageRateLimitingDisabled() bool {
+	cfg := config.Get()
+	return cfg != nil && cfg.DisableRateLimiting
+}
+
+func (s *Service) previewDirectMessageRateLimit(ctx context.Context, cmd *SendDirectMessageCommand, conversationID, recipientID, endpoint string, limit int, window time.Duration, auditReason string) error {
+	if s.rateLimitRepo == nil || directMessageRateLimitingDisabled() {
+		return nil
 	}
 
-	return willBeRequest, deliversToInbox, recipientRequestState, nil
+	reader, ok := s.rateLimitRepo.(apiRateLimitInfoReader)
+	if !ok {
+		return nil
+	}
+
+	remaining, _, err := reader.GetAPIRateLimitInfo(ctx, fmt.Sprintf("dm:%s", cmd.SenderID), endpoint, limit, window)
+	if err != nil {
+		s.logger.Warn("failed to preview direct message rate limit",
+			zap.String("sender_id", cmd.SenderID),
+			zap.String("recipient_id", recipientID),
+			zap.String("endpoint", endpoint),
+			zap.Error(err))
+		return nil
+	}
+
+	if remaining <= 0 {
+		s.auditDMEvent(ctx, cmd, conversationID, false, auditReason, map[string]any{
+			"recipient_id": recipientID,
+		})
+		return storage.ErrRateLimited
+	}
+
+	return nil
+}
+
+func (s *Service) previewDirectMessageTotalRateLimit(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) error {
+	return s.previewDirectMessageRateLimit(ctx, cmd, "", recipientID, "dm_send_total", dmSendTotalLimit, dmSendTotalWindow, "rate_limited_send_total")
+}
+
+func (s *Service) previewDirectMessageRequestRateLimit(ctx context.Context, cmd *SendDirectMessageCommand, conversationID, recipientID string) error {
+	if err := s.previewDirectMessageRateLimit(ctx, cmd, conversationID, recipientID, "dm_request_total", dmRequestTotalLimit, dmRequestTotalWindow, "rate_limited_request_total"); err != nil {
+		return err
+	}
+	return s.previewDirectMessageRateLimit(ctx, cmd, conversationID, recipientID, fmt.Sprintf("dm_request_to:%s", recipientID), dmRequestPerRecipientLimit, dmRequestPerRecipientWindow, "rate_limited_request_to_recipient")
 }
 
 func (s *Service) createDirectMessageStatus(ctx context.Context, cmd *SendDirectMessageCommand, sender *storage.Account, recipientAccounts map[string]*storage.Account, conversationID, recipientID string) (*models.Status, string, error) {
@@ -670,7 +714,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		return nil, err
 	}
 
-	if err := s.enforceDirectMessageTotalRateLimit(ctx, cmd, recipientID); err != nil {
+	if err := s.previewDirectMessageTotalRateLimit(ctx, cmd, recipientID); err != nil {
 		return nil, err
 	}
 
@@ -687,6 +731,11 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	willBeRequest, deliversToInbox, _, err := s.evaluateDirectMessageRequestPolicy(ctx, cmd, conversation.ID, recipientID)
 	if err != nil {
 		return nil, err
+	}
+	if willBeRequest {
+		if err := s.previewDirectMessageRequestRateLimit(ctx, cmd, conversation.ID, recipientID); err != nil {
+			return nil, err
+		}
 	}
 
 	status, messageID, err := s.createDirectMessageStatus(ctx, cmd, sender, recipientAccounts, conversation.ID, recipientID)
@@ -705,6 +754,21 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	// Emit events and queue federation
 	events := s.emitMessageSentEvents(ctx, status, conversation)
 	s.queueFederationDelivery(ctx, status)
+
+	if err := s.enforceDirectMessageTotalRateLimit(ctx, cmd, recipientID); err != nil {
+		s.logger.Warn("failed to record direct message total rate limit after successful send",
+			zap.String("conversation_id", conversation.ID),
+			zap.String("recipient_id", recipientID),
+			zap.Error(err))
+	}
+	if willBeRequest {
+		if err := s.enforceDirectMessageRequestRateLimit(ctx, cmd, conversation.ID, recipientID); err != nil {
+			s.logger.Warn("failed to record direct message request rate limit after successful send",
+				zap.String("conversation_id", conversation.ID),
+				zap.String("recipient_id", recipientID),
+				zap.Error(err))
+		}
+	}
 
 	s.auditDMEvent(ctx, cmd, conversation.ID, true, "", map[string]any{
 		"recipient_id":    recipientID,

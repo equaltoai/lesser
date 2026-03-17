@@ -381,6 +381,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Ensure AuthorUsername is populated before emitting events
 	s.ensureAuthorUsername(ctx, status)
+	s.notifyReply(ctx, status)
 	s.notifyMentions(ctx, status, mentionedUsers)
 
 	// Emit events and queue federation
@@ -3273,6 +3274,60 @@ func (s *Service) notifyBoost(ctx context.Context, status *models.Status, booste
 	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
 		s.logger.Error("failed to create boost notification",
 			zap.String("status_id", status.StatusID),
+			zap.String("recipient", recipient),
+			zap.Error(err))
+	}
+}
+
+func (s *Service) notifyReply(ctx context.Context, status *models.Status) {
+	if s.notifications == nil || status == nil {
+		return
+	}
+
+	parentID := strings.TrimSpace(status.InReplyToID)
+	if parentID == "" {
+		return
+	}
+
+	parent, err := s.lookupParentStatus(ctx, parentID)
+	if err != nil || parent == nil {
+		return
+	}
+
+	s.ensureAuthorUsername(ctx, status)
+	s.ensureAuthorUsername(ctx, parent)
+
+	recipient := strings.TrimSpace(parent.AuthorUsername)
+	replier := strings.TrimSpace(status.AuthorUsername)
+	if recipient == "" || replier == "" || recipient == replier {
+		return
+	}
+
+	statusURL := s.buildStatusURL(status)
+	title := fmt.Sprintf("%s replied to your post", replier)
+
+	cmd := &notifications.CreateNotificationCommand{
+		UserID:     recipient,
+		Type:       common.NotificationTypeReply,
+		ActorID:    replier,
+		ActorType:  "user",
+		TargetID:   status.StatusID,
+		TargetType: "status",
+		Title:      title,
+		Body:       title,
+		GroupKey:   fmt.Sprintf("reply:%s", parentID),
+		Data: map[string]interface{}{
+			"parent_status_id": parentID,
+			"replier":          replier,
+			"status_id":        status.StatusID,
+			"status_url":       statusURL,
+		},
+	}
+
+	if _, err := s.notifications.CreateNotification(ctx, cmd); err != nil {
+		s.logger.Error("failed to create reply notification",
+			zap.String("status_id", status.StatusID),
+			zap.String("parent_status_id", parentID),
 			zap.String("recipient", recipient),
 			zap.Error(err))
 	}

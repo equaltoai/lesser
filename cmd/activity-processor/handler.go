@@ -548,6 +548,8 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		return objectStorageFailed(err)
 	}
 
+	h.createInboundMentionNotifications(ctx, status, note, activity)
+
 	// Add to appropriate timelines based on visibility
 	if err := h.processStatusForTimelines(ctx, status, visibility, username); err != nil {
 		h.Logger.Error("failed to process status for timelines",
@@ -604,6 +606,9 @@ func (h *ActivityHandler) mapToNote(objMap map[string]interface{}) (*activitypub
 	if inReplyTo, ok := objMap["inReplyTo"].(string); ok {
 		note.InReplyTo = inReplyTo
 	}
+	if tags, ok := objMap["tag"].([]interface{}); ok {
+		note.Tag = h.interfaceSliceToTags(tags)
+	}
 
 	return note, nil
 }
@@ -634,6 +639,32 @@ func (h *ActivityHandler) interfaceSliceToStringSlice(slice []interface{}) []str
 		}
 	}
 	return result
+}
+
+func (h *ActivityHandler) interfaceSliceToTags(slice []interface{}) []activitypub.Tag {
+	tags := make([]activitypub.Tag, 0, len(slice))
+	for _, item := range slice {
+		tagMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		tag := activitypub.Tag{}
+		if tagType, ok := tagMap["type"].(string); ok {
+			tag.Type = tagType
+		}
+		if href, ok := tagMap["href"].(string); ok {
+			tag.Href = href
+		}
+		if name, ok := tagMap["name"].(string); ok {
+			tag.Name = name
+		}
+		if tag.Type == "" && tag.Href == "" && tag.Name == "" {
+			continue
+		}
+		tags = append(tags, tag)
+	}
+	return tags
 }
 
 // createStatusFromNote creates a Status model from a Note and activity
@@ -2817,6 +2848,69 @@ func (h *ActivityHandler) createObjectInteractionNotification(ctx context.Contex
 					zap.Error(err))
 				// Don't return error - the action was created successfully
 			}
+		}
+	}
+}
+
+func (h *ActivityHandler) createInboundMentionNotifications(ctx context.Context, status *models.Status, note *activitypub.Note, activity *activitypub.Activity) {
+	if h == nil || note == nil || activity == nil || len(note.Tag) == 0 {
+		return
+	}
+	if h.NotificationRepo == nil && h.DB == nil {
+		return
+	}
+
+	actorUsername := h.extractUsernameFromActorURI(activity.Actor)
+	if actorUsername == "" {
+		return
+	}
+
+	targetID := ""
+	if status != nil {
+		targetID = strings.TrimSpace(status.StatusID)
+	}
+	if targetID == "" {
+		targetID = strings.TrimSpace(note.ID)
+	}
+
+	seen := make(map[string]struct{}, len(note.Tag))
+	for _, tag := range note.Tag {
+		if tag.Type != "Mention" {
+			continue
+		}
+
+		mentionedActorID := strings.TrimSpace(tag.Href)
+		if mentionedActorID == "" || !h.isLocalActor(mentionedActorID) {
+			continue
+		}
+
+		recipient := h.extractUsernameFromActorURI(mentionedActorID)
+		if recipient == "" || recipient == actorUsername {
+			continue
+		}
+
+		key := strings.ToLower(recipient)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		notification := models.NewNotificationBuilder().
+			ForUser(recipient).
+			OfType(common.NotificationTypeMention).
+			FromActor(actorUsername, "remote_actor").
+			AboutTarget(targetID, "status").
+			WithContent(
+				fmt.Sprintf("%s mentioned you", actorUsername),
+				fmt.Sprintf("You were mentioned by %s", actorUsername)).
+			Build()
+
+		if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
+			h.Logger.Error("failed to create inbound mention notification",
+				zap.String("recipient", recipient),
+				zap.String("actor", actorUsername),
+				zap.String("target_id", targetID),
+				zap.Error(err))
 		}
 	}
 }

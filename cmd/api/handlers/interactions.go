@@ -11,7 +11,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	notificationservice "github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -69,8 +71,12 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 	}
 
 	targetPublicID := ""
+	targetUsername := ""
 	if targetAccount, lookupErr := h.lookupStorageAccountByID(ctx.Context(), accountID); lookupErr == nil && targetAccount != nil {
 		targetPublicID = h.publicAccountFromStorageAccount(targetAccount).ID
+		if targetAccount.User != nil {
+			targetUsername = strings.TrimSpace(targetAccount.User.Username)
+		}
 	}
 
 	switch operation {
@@ -93,6 +99,7 @@ func (h *Handler) relationshipOperation(ctx *apptheory.Context, operation string
 		if err != nil {
 			return common.RespondInternalServerError(ctx, err.Error())
 		}
+		h.createFollowNotification(ctx.Context(), claims.Username, targetUsername, r)
 		return okJSON(h.relationshipFromServiceWithPublicID(r.Relationship, targetPublicID))
 	case relationshipOpUnfollow:
 		r, err := h.registry.Relationships().Unfollow(ctx.Context(), &relationships.UnfollowCommand{
@@ -291,6 +298,7 @@ func (h *Handler) statusInteraction(ctx *apptheory.Context, operation string) (*
 		}
 		return common.RespondInternalServerError(ctx, statusInteractionFailureMessage(operation))
 	}
+	h.createStatusInteractionNotification(ctx.Context(), operation, claims.Username, result.Status)
 
 	mastodonStatus, convErr := h.convertStorageStatusToAPI(result.Status, claims.Username)
 	if convErr != nil {
@@ -368,6 +376,115 @@ func applyStatusInteractionState(status *models.Status, operation string) {
 	case statusOpUnreblog:
 		status.Reblogged = false
 	}
+}
+
+func (h *Handler) createFollowNotification(ctx context.Context, followerUsername, targetUsername string, result *relationships.FollowResult) {
+	if h == nil || h.registry == nil || result == nil {
+		return
+	}
+
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return
+	}
+
+	if !result.IsFollowing && (result.Relationship == nil || !result.Relationship.Following) {
+		return
+	}
+
+	recipient := strings.TrimSpace(targetUsername)
+	actor := strings.TrimSpace(followerUsername)
+	if recipient == "" || actor == "" || strings.EqualFold(recipient, actor) {
+		return
+	}
+
+	title := fmt.Sprintf("%s started following you", actor)
+	cmd := &notificationservice.CreateNotificationCommand{
+		UserID:     recipient,
+		Type:       common.NotificationTypeFollow,
+		ActorID:    actor,
+		ActorType:  "user",
+		TargetID:   recipient,
+		TargetType: "account",
+		Title:      title,
+		Body:       title,
+		GroupKey:   fmt.Sprintf("follow:%s", actor),
+		Data: map[string]interface{}{
+			"follower": actor,
+		},
+	}
+
+	if _, err := notificationService.CreateNotification(ctx, cmd); err != nil {
+		h.logger.Warn("failed to create follow notification",
+			zap.String("recipient", recipient),
+			zap.String("follower", actor),
+			zap.Error(err))
+	}
+}
+
+func (h *Handler) createStatusInteractionNotification(ctx context.Context, operation, actorUsername string, status *storagemodels.Status) {
+	if operation != statusOpFavorite || h == nil || h.registry == nil || status == nil {
+		return
+	}
+
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return
+	}
+
+	recipient := strings.TrimSpace(status.AuthorUsername)
+	if recipient == "" {
+		recipient = extractUsernameFromActorID(status.AuthorID)
+	}
+	actor := strings.TrimSpace(actorUsername)
+	if recipient == "" || actor == "" || strings.EqualFold(recipient, actor) {
+		return
+	}
+
+	title := fmt.Sprintf("%s favourited your post", actor)
+	cmd := &notificationservice.CreateNotificationCommand{
+		UserID:     recipient,
+		Type:       common.NotificationTypeFavourite,
+		ActorID:    actor,
+		ActorType:  "user",
+		TargetID:   strings.TrimSpace(status.StatusID),
+		TargetType: "status",
+		Title:      title,
+		Body:       title,
+		GroupKey:   fmt.Sprintf("favourite:%s", strings.TrimSpace(status.StatusID)),
+		Data: map[string]interface{}{
+			"status_id": strings.TrimSpace(status.StatusID),
+			"liker":     actor,
+		},
+	}
+
+	if _, err := notificationService.CreateNotification(ctx, cmd); err != nil {
+		h.logger.Warn("failed to create favourite notification",
+			zap.String("recipient", recipient),
+			zap.String("actor", actor),
+			zap.String("status_id", strings.TrimSpace(status.StatusID)),
+			zap.Error(err))
+	}
+}
+
+func extractUsernameFromActorID(actorID string) string {
+	trimmed := strings.TrimSpace(strings.TrimSuffix(actorID, "/"))
+	if trimmed == "" {
+		return ""
+	}
+
+	if parts := strings.Split(trimmed, "/users/"); len(parts) == 2 {
+		return strings.Split(parts[1], "/")[0]
+	}
+	if parts := strings.Split(trimmed, "/@"); len(parts) == 2 {
+		return strings.Split(parts[1], "/")[0]
+	}
+
+	parts := strings.Split(trimmed, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
 }
 
 // HandleFavoriteLift handles POST /api/v1/statuses/:id/favourite
