@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -16,26 +15,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func isAgentRuntimeClientID(clientID string) bool {
-	switch strings.TrimSpace(clientID) {
-	case delegatedAgentClientID, selfSovereignAgentClientID:
-		return true
-	default:
-		return false
-	}
-}
-
-func coalesceAgentRuntimeLabel(primary, fallback string) string {
-	label := strings.TrimSpace(primary)
-	if label == "" {
-		label = strings.TrimSpace(fallback)
-	}
-	if label == "" {
-		label = auth.DefaultAgentRuntimeDeviceLabel
-	}
-	return label
-}
-
 func agentRuntimeSessionFromToken(token storage.RefreshToken) apimodels.AgentRuntimeSession {
 	var revokedAt *time.Time
 	if !token.RevokedAt.IsZero() {
@@ -46,7 +25,7 @@ func agentRuntimeSessionFromToken(token storage.RefreshToken) apimodels.AgentRun
 	return apimodels.AgentRuntimeSession{
 		SessionID:         token.SessionID,
 		ClientID:          token.ClientID,
-		DeviceLabel:       coalesceAgentRuntimeLabel(token.DeviceLabel, ""),
+		DeviceLabel:       auth.CoalesceAgentRuntimeLabel(token.DeviceLabel, ""),
 		Scope:             strings.Join(token.Scopes, " "),
 		CreatedAt:         token.SessionCreatedAt,
 		LastUsedAt:        token.LastUsedAt,
@@ -56,89 +35,6 @@ func agentRuntimeSessionFromToken(token storage.RefreshToken) apimodels.AgentRun
 		RevokedAt:         revokedAt,
 		RevokedReason:     token.RevokedReason,
 	}
-}
-
-func (h *Handler) listAgentRuntimeSessions(ctx context.Context, username string) ([]storage.RefreshToken, error) {
-	if h == nil || h.repos == nil || h.repos.Account() == nil {
-		return nil, auth.ErrSessionStorage
-	}
-
-	currentBySessionID := map[string]storage.RefreshToken{}
-	for _, clientID := range []string{delegatedAgentClientID, selfSovereignAgentClientID} {
-		tokens, err := h.repos.Account().ListRefreshTokensByUserClient(ctx, username, clientID)
-		if err != nil {
-			return nil, err
-		}
-		for _, token := range tokens {
-			if strings.TrimSpace(token.SessionID) == "" || !token.Current {
-				continue
-			}
-			existing, ok := currentBySessionID[token.SessionID]
-			if !ok || token.Generation >= existing.Generation {
-				currentBySessionID[token.SessionID] = token
-			}
-		}
-	}
-
-	out := make([]storage.RefreshToken, 0, len(currentBySessionID))
-	for _, token := range currentBySessionID {
-		out = append(out, token)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].LastUsedAt.After(out[j].LastUsedAt)
-	})
-	return out, nil
-}
-
-func (h *Handler) revokeAgentRuntimeFamily(ctx context.Context, token *storage.RefreshToken, reason, ipAddress, userAgent string) error {
-	if token == nil || strings.TrimSpace(token.FamilyID) == "" {
-		return nil
-	}
-
-	familyTokens, err := h.repos.Account().ListRefreshTokensByFamily(ctx, token.FamilyID)
-	if err != nil {
-		return err
-	}
-
-	now := time.Now().UTC()
-	for i := range familyTokens {
-		familyToken := familyTokens[i]
-		if familyToken.Revoked {
-			if familyToken.ReuseDetectedAt.IsZero() {
-				familyToken.ReuseDetectedAt = now
-				familyToken.ReuseDetectedFromIP = ipAddress
-				familyToken.ReuseDetectedFromUA = userAgent
-				if err := h.repos.Account().UpdateRefreshToken(ctx, &familyToken); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		familyToken.Revoked = true
-		familyToken.RevokedAt = now
-		familyToken.RevokedReason = reason
-		familyToken.ReuseDetectedAt = now
-		familyToken.ReuseDetectedFromIP = ipAddress
-		familyToken.ReuseDetectedFromUA = userAgent
-		if err := h.repos.Account().UpdateRefreshToken(ctx, &familyToken); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (h *Handler) revokeAgentRuntimeSession(ctx context.Context, username, sessionID, reason, ipAddress, userAgent string) error {
-	sessions, err := h.listAgentRuntimeSessions(ctx, username)
-	if err != nil {
-		return err
-	}
-	for i := range sessions {
-		if sessions[i].SessionID == sessionID {
-			return h.revokeAgentRuntimeFamily(ctx, &sessions[i], reason, ipAddress, userAgent)
-		}
-	}
-	return storage.ErrNotFound
 }
 
 func runtimeRefreshAccessTTL(cfg *config.Config, token *storage.RefreshToken) time.Duration {
@@ -180,13 +76,13 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 
 	now := time.Now().UTC()
 	if storedToken.Revoked {
-		if err := h.revokeAgentRuntimeFamily(ctx, storedToken, "refresh_token_reuse_detected", ipAddress, userAgent); err != nil {
+		if err := auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "refresh_token_reuse_detected", ipAddress, userAgent); err != nil {
 			h.logger.Warn("failed to revoke runtime session family after refresh reuse", zap.Error(err))
 		}
 		return "", "", nil, auth.ErrInvalidToken
 	}
 	if now.After(storedToken.IdleExpiresAt) || now.After(storedToken.AbsoluteExpiresAt) {
-		_ = h.revokeAgentRuntimeFamily(ctx, storedToken, "runtime_session_expired", ipAddress, userAgent)
+		_ = auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "runtime_session_expired", ipAddress, userAgent)
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
@@ -211,6 +107,12 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 	storedToken.RevokedReason = "rotated"
 	storedToken.LastUsedAt = now
 	if err := h.repos.Account().UpdateRefreshToken(ctx, storedToken); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "condition") {
+			if revokeErr := auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "refresh_token_reuse_detected", ipAddress, userAgent); revokeErr != nil {
+				h.logger.Warn("failed to revoke runtime session family after concurrent refresh", zap.Error(revokeErr))
+			}
+			return "", "", nil, auth.ErrInvalidToken
+		}
 		return "", "", nil, err
 	}
 
@@ -234,6 +136,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		AccessTTLSeconds:  storedToken.AccessTTLSeconds,
 	}
 	if err := h.repos.Account().CreateRefreshToken(ctx, newToken); err != nil {
+		_ = auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "runtime_session_rotation_failed", ipAddress, userAgent)
 		return "", "", nil, err
 	}
 
@@ -264,7 +167,7 @@ func (h *Handler) HandleListAgentRuntimeSessionsLift(ctx *apptheory.Context) (*a
 		return common.RespondForbidden(ctx, "not authorized to manage this agent")
 	}
 
-	sessions, err := h.listAgentRuntimeSessions(ctx.Context(), username)
+	sessions, err := auth.ListAgentRuntimeSessions(ctx.Context(), h.repos, username)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
@@ -315,14 +218,14 @@ func (h *Handler) HandleRevokeAgentRuntimeSessionLift(ctx *apptheory.Context) (*
 	if reason == "" {
 		reason = "manual_runtime_session_revocation"
 	}
-	if err := h.revokeAgentRuntimeSession(ctx.Context(), username, sessionID, reason, ipAddress, userAgent); err != nil {
+	if err := auth.RevokeAgentRuntimeSession(ctx.Context(), h.repos, username, sessionID, reason, ipAddress, userAgent); err != nil {
 		if err == storage.ErrNotFound {
 			return common.RespondNotFound(ctx, "runtime session")
 		}
 		return common.RespondInternalServerError(ctx)
 	}
 
-	sessions, err := h.listAgentRuntimeSessions(ctx.Context(), username)
+	sessions, err := auth.ListAgentRuntimeSessions(ctx.Context(), h.repos, username)
 	if err != nil {
 		return common.RespondInternalServerError(ctx)
 	}

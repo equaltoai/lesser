@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
@@ -114,8 +115,8 @@ func (h *Handler) revokeRefreshTokenBestEffort(ctx context.Context, token, clien
 		return
 	}
 
-	if isAgentRuntimeClientID(stored.ClientID) {
-		if err := h.revokeAgentRuntimeFamily(ctx, stored, "oauth_revoke", "", ""); err != nil {
+	if auth.IsAgentRuntimeClientID(stored.ClientID) {
+		if err := auth.RevokeAgentRuntimeFamily(ctx, h.repos, stored, "oauth_revoke", "", ""); err != nil {
 			h.logger.Warn("failed to revoke runtime refresh session", zap.Error(err), zap.String("client_id", stored.ClientID))
 		}
 		return

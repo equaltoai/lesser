@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,6 +34,28 @@ type AgentRuntimeTokenBundle struct {
 	AccessToken  string
 	RefreshToken string
 	Session      storage.RefreshToken
+}
+
+// IsAgentRuntimeClientID reports whether a client ID belongs to Lesser's long-lived agent runtime flows.
+func IsAgentRuntimeClientID(clientID string) bool {
+	switch strings.TrimSpace(clientID) {
+	case "lesser-agent-delegation", "lesser-agent-self-sovereign":
+		return true
+	default:
+		return false
+	}
+}
+
+// CoalesceAgentRuntimeLabel returns a stable label for operator-visible runtime sessions.
+func CoalesceAgentRuntimeLabel(primary, fallback string) string {
+	label := strings.TrimSpace(primary)
+	if label == "" {
+		label = strings.TrimSpace(fallback)
+	}
+	if label == "" {
+		label = DefaultAgentRuntimeDeviceLabel
+	}
+	return label
 }
 
 // IssueAgentRuntimeTokens mints an access + refresh pair backed by refresh-session metadata that can
@@ -104,4 +127,107 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 		RefreshToken: refreshToken,
 		Session:      refreshRecord,
 	}, nil
+}
+
+// ListAgentRuntimeSessions returns the current runtime refresh session records for an agent.
+func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, username string) ([]storage.RefreshToken, error) {
+	if repos == nil || repos.Account() == nil {
+		return nil, ErrSessionStorage
+	}
+
+	currentBySessionID := map[string]storage.RefreshToken{}
+	for _, clientID := range []string{"lesser-agent-delegation", "lesser-agent-self-sovereign"} {
+		tokens, err := repos.Account().ListRefreshTokensByUserClient(ctx, username, clientID)
+		if err != nil {
+			return nil, err
+		}
+		for _, token := range tokens {
+			if strings.TrimSpace(token.SessionID) == "" || !token.Current {
+				continue
+			}
+			existing, ok := currentBySessionID[token.SessionID]
+			if !ok || token.Generation >= existing.Generation {
+				currentBySessionID[token.SessionID] = token
+			}
+		}
+	}
+
+	out := make([]storage.RefreshToken, 0, len(currentBySessionID))
+	for _, token := range currentBySessionID {
+		out = append(out, token)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].LastUsedAt.After(out[j].LastUsedAt)
+	})
+	return out, nil
+}
+
+// RevokeAgentRuntimeFamily revokes all refresh tokens in a runtime session family.
+func RevokeAgentRuntimeFamily(ctx context.Context, repos StorageProvider, token *storage.RefreshToken, reason, ipAddress, userAgent string) error {
+	if repos == nil || repos.Account() == nil {
+		return ErrSessionStorage
+	}
+	if token == nil || strings.TrimSpace(token.FamilyID) == "" {
+		return nil
+	}
+
+	familyTokens, err := repos.Account().ListRefreshTokensByFamily(ctx, token.FamilyID)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	for i := range familyTokens {
+		familyToken := familyTokens[i]
+		if familyToken.Revoked {
+			if familyToken.ReuseDetectedAt.IsZero() {
+				familyToken.ReuseDetectedAt = now
+				familyToken.ReuseDetectedFromIP = ipAddress
+				familyToken.ReuseDetectedFromUA = userAgent
+				if err := repos.Account().UpdateRefreshToken(ctx, &familyToken); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		familyToken.Revoked = true
+		familyToken.RevokedAt = now
+		familyToken.RevokedReason = reason
+		familyToken.ReuseDetectedAt = now
+		familyToken.ReuseDetectedFromIP = ipAddress
+		familyToken.ReuseDetectedFromUA = userAgent
+		if err := repos.Account().UpdateRefreshToken(ctx, &familyToken); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// RevokeAgentRuntimeSession revokes one runtime session without affecting unrelated sessions.
+func RevokeAgentRuntimeSession(ctx context.Context, repos StorageProvider, username, sessionID, reason, ipAddress, userAgent string) error {
+	sessions, err := ListAgentRuntimeSessions(ctx, repos, username)
+	if err != nil {
+		return err
+	}
+	for i := range sessions {
+		if sessions[i].SessionID == sessionID {
+			return RevokeAgentRuntimeFamily(ctx, repos, &sessions[i], reason, ipAddress, userAgent)
+		}
+	}
+	return storage.ErrNotFound
+}
+
+// RevokeAllAgentRuntimeSessions revokes all current runtime sessions for an agent.
+func RevokeAllAgentRuntimeSessions(ctx context.Context, repos StorageProvider, username, reason, ipAddress, userAgent string) error {
+	sessions, err := ListAgentRuntimeSessions(ctx, repos, username)
+	if err != nil {
+		return err
+	}
+	for i := range sessions {
+		if err := RevokeAgentRuntimeFamily(ctx, repos, &sessions[i], reason, ipAddress, userAgent); err != nil {
+			return err
+		}
+	}
+	return nil
 }

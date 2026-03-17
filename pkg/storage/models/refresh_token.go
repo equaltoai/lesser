@@ -54,6 +54,9 @@ type RefreshToken struct {
 
 	// TTL field for automatic expiration
 	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
+
+	// Version enables optimistic locking so refresh rotation can use compare-and-swap semantics.
+	Version int `theorydb:"version,attr:version" json:"Version,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

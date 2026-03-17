@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -105,6 +106,30 @@ func TestOAuthRuntimeRefreshGrant_ReusedTokenRevokesFamily(t *testing.T) {
 	require.True(t, updatedCurrent.Revoked)
 	require.Equal(t, "refresh_token_reuse_detected", updatedCurrent.RevokedReason)
 	require.False(t, updatedCurrent.ReuseDetectedAt.IsZero())
+}
+
+func TestOAuthRuntimeRefreshGrant_ConcurrentRefreshConflictReturnsInvalidGrant(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	parentToken := buildRuntimeRefreshToken(t, "rt-agent-parent", "agent1", delegatedAgentClientID, "sid-agent-3", "family-agent-3", "local-agent", 1, true, false, now)
+	childToken := buildRuntimeRefreshToken(t, "rt-agent-child", "agent1", delegatedAgentClientID, "sid-agent-3", "family-agent-3", "local-agent", 2, true, false, now)
+	state := &round10QueryState{
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			parentToken.Token: parentToken,
+			childToken.Token:  childToken,
+		},
+		updateErrorOnce: errors.New("ConditionalCheckFailedException"),
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-parent&client_id="+delegatedAgentClientID))
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "invalid_grant", body["error"])
 }
 
 func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {

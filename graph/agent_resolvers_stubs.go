@@ -24,7 +24,6 @@ import (
 var errAgentSupportNotImplemented = apperrors.Internal("agent support is not implemented")
 
 const delegatedAgentClientID = "lesser-agent-delegation"
-const selfSovereignAgentClientID = "lesser-agent-self-sovereign"
 
 const (
 	oauthScopeAdmin  = "admin"
@@ -858,10 +857,15 @@ func (r *mutationResolver) RevokeAgentToken(ctx context.Context, username string
 		return false, apperrors.Forbidden("not authorized to revoke agent tokens")
 	}
 
-	for _, clientID := range []string{delegatedAgentClientID, selfSovereignAgentClientID} {
-		if _, err = r.Storage.Account().DeleteRefreshTokensByUsernameAndClientID(ctx, username, clientID); err != nil {
-			return false, apperrors.InternalWithCause(err, "failed to revoke agent tokens")
-		}
+	if err = auth.RevokeAllAgentRuntimeSessions(
+		ctx,
+		r.Storage,
+		username,
+		"manual_runtime_session_revocation",
+		"",
+		"",
+	); err != nil {
+		return false, apperrors.InternalWithCause(err, "failed to revoke agent tokens")
 	}
 
 	return true, nil

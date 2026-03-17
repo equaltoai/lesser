@@ -437,7 +437,7 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 		ClientID:    selfSovereignAgentClientID,
 		Scopes:      scopes,
 		AccessTTL:   auth.AgentAccessTokenTTL(h.cfg),
-		DeviceLabel: coalesceAgentRuntimeLabel(req.DeviceLabel, userAgent),
+		DeviceLabel: auth.CoalesceAgentRuntimeLabel(req.DeviceLabel, userAgent),
 	})
 	if err != nil {
 		return common.RespondInternalServerError(ctx)

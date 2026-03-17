@@ -283,6 +283,7 @@ type RefreshToken struct {
 	ReuseDetectedAt     time.Time `json:"reuse_detected_at,omitempty"`
 	ReuseDetectedFromIP string    `json:"reuse_detected_from_ip,omitempty"`
 	ReuseDetectedFromUA string    `json:"reuse_detected_from_user_agent,omitempty"`
+	Version             int       `json:"version,omitempty"`
 }
 
 // WebAuthnChallenge represents a WebAuthn challenge

@@ -893,7 +893,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	clientID = strings.TrimSpace(clientID)
 	clientSecret = strings.TrimSpace(clientSecret)
 
-	if isAgentRuntimeClientID(clientID) {
+	if auth.IsAgentRuntimeClientID(clientID) {
 		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 

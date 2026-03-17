@@ -694,6 +694,7 @@ func refreshTokenModelFromStorage(token *storage.RefreshToken) *models.RefreshTo
 		ReuseDetectedFromIP: token.ReuseDetectedFromIP,
 		ReuseDetectedFromUA: token.ReuseDetectedFromUA,
 		CreatedAt:           token.CreatedAt,
+		Version:             token.Version,
 	}
 	if model.CreatedAt.IsZero() {
 		model.CreatedAt = time.Now()
@@ -726,6 +727,7 @@ func refreshTokenStorageFromModel(model models.RefreshToken) *storage.RefreshTok
 		ReuseDetectedFromIP: model.ReuseDetectedFromIP,
 		ReuseDetectedFromUA: model.ReuseDetectedFromUA,
 		CreatedAt:           model.CreatedAt,
+		Version:             model.Version,
 	}
 }
 
