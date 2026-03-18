@@ -216,3 +216,28 @@ func TestNoteAgentAttributionJSONCompatibility(t *testing.T) {
 		require.Nil(t, note.AgentAttribution)
 	})
 }
+
+func TestNormalizeAgentPostAttributionHelpers(t *testing.T) {
+	t.Run("normalize delegated_by keeps full URI unchanged", func(t *testing.T) {
+		value := "HTTPS://remote.example/users/owner"
+		require.Equal(t, value, normalizeDelegatedByActorURI(value, "https://example.com/users/alice"))
+	})
+
+	t.Run("normalize attribution returns nil for nil input", func(t *testing.T) {
+		require.Nil(t, normalizeAgentPostAttributionForActor(nil, "https://example.com/users/alice"))
+	})
+
+	t.Run("normalize attribution returns copy without mutating original", func(t *testing.T) {
+		original := &AgentPostAttribution{
+			DelegatedBy:   "@owner",
+			SchemaVersion: AgentAttributionSchemaVersion,
+			ModelID:       "claude-3",
+		}
+
+		normalized := normalizeAgentPostAttributionForActor(original, "https://example.com/users/simulacrum")
+		require.NotNil(t, normalized)
+		require.NotSame(t, original, normalized)
+		require.Equal(t, "@owner", original.DelegatedBy)
+		require.Equal(t, "https://example.com/users/owner", normalized.DelegatedBy)
+	})
+}
