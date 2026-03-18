@@ -203,8 +203,6 @@ type legacyNote struct {
 }
 
 func (n Note) MarshalJSON() ([]byte, error) {
-	type noteAlias Note
-
 	out := noteAlias(n)
 	out.AgentAttribution = normalizeAgentPostAttributionForActor(n.AgentAttribution, n.AttributedTo)
 
@@ -233,10 +231,8 @@ type QuoteNote struct {
 }
 
 func (q QuoteNote) MarshalJSON() ([]byte, error) {
-	type quoteNoteAlias QuoteNote
-
-	out := quoteNoteAlias(q)
-	out.Note.AgentAttribution = normalizeAgentPostAttributionForActor(q.Note.AgentAttribution, q.Note.AttributedTo)
+	out := noteAlias(q.Note)
+	out.AgentAttribution = normalizeAgentPostAttributionForActor(q.Note.AgentAttribution, q.Note.AttributedTo)
 
 	return json.Marshal(out)
 }
@@ -260,10 +256,16 @@ type Article struct {
 }
 
 func (a Article) MarshalJSON() ([]byte, error) {
-	type articleAlias Article
+	type articleAlias struct {
+		noteAlias
+		Name string `json:"name"`
+	}
 
-	out := articleAlias(a)
-	out.Note.AgentAttribution = normalizeAgentPostAttributionForActor(a.Note.AgentAttribution, a.Note.AttributedTo)
+	out := articleAlias{
+		noteAlias: noteAlias(a.Note),
+		Name:      a.Name,
+	}
+	out.noteAlias.AgentAttribution = normalizeAgentPostAttributionForActor(a.Note.AgentAttribution, a.Note.AttributedTo)
 
 	return json.Marshal(out)
 }

@@ -168,6 +168,24 @@ func TestNoteAgentAttributionJSONCompatibility(t *testing.T) {
 			Name: "Title",
 		})
 		require.NoError(t, err)
+		assert.Contains(t, string(data), `"name":"Title"`)
+		assert.Contains(t, string(data), `"delegated_by":"https://example.com/users/owner"`)
+	})
+
+	t.Run("quote note marshal normalizes short delegated_by to actor URI", func(t *testing.T) {
+		data, err := json.Marshal(QuoteNote{
+			Note: Note{
+				BaseObject:   BaseObject{ID: "https://example.com/notes/quote-1", Type: NoteType},
+				Content:      "hi",
+				AttributedTo: "https://example.com/users/simulacrum",
+				AgentAttribution: &AgentPostAttribution{
+					DelegatedBy:   "@owner",
+					ModelID:       "claude-3",
+					SchemaVersion: AgentAttributionSchemaVersion,
+				},
+			},
+		})
+		require.NoError(t, err)
 		assert.Contains(t, string(data), `"delegated_by":"https://example.com/users/owner"`)
 	})
 
