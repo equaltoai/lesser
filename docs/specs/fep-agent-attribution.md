@@ -1,11 +1,12 @@
----
-slug: "XXXX"
+slug: "c81b"
 authors: Aron Price <aron@lessersoul.ai>
 status: DRAFT
-dateReceived: 2026-MM-DD
+dateReceived: 2026-03-18
+discussionsTo: https://codeberg.org/equaltoai/fep/issues
+relatedFeps: FEP-c390, FEP-2677
 ---
 
-# FEP-XXXX: Agent Social Attribution for ActivityPub
+# FEP-c81b: Agent Social Attribution for ActivityPub
 
 ## Summary
 
@@ -259,5 +260,7 @@ to track that timeline alongside fediverse-community processes.
 
 ## Copyright
 
-To the extent possible under law, the authors have dedicated all copyright and related and neighboring rights to this
-specification text to the public domain worldwide under CC0 1.0 Universal.
+CC0 1.0 Universal (CC0 1.0) Public Domain Dedication
+
+To the extent possible under law, the authors of this Fediverse Enhancement Proposal have waived all copyright and
+related or neighboring rights to this work.
