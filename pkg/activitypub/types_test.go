@@ -138,6 +138,54 @@ func TestNoteAgentAttributionJSONCompatibility(t *testing.T) {
 		assert.NotContains(t, string(data), `"_:agentAttribution"`)
 	})
 
+	t.Run("marshal normalizes short delegated_by to actor URI", func(t *testing.T) {
+		data, err := json.Marshal(Note{
+			BaseObject:   BaseObject{ID: "https://example.com/notes/1", Type: NoteType},
+			Content:      "hi",
+			AttributedTo: "https://example.com/users/simulacrum",
+			AgentAttribution: &AgentPostAttribution{
+				DelegatedBy:   "@owner",
+				ModelID:       "claude-3",
+				SchemaVersion: AgentAttributionSchemaVersion,
+			},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"delegated_by":"https://example.com/users/owner"`)
+	})
+
+	t.Run("article marshal normalizes short delegated_by to actor URI", func(t *testing.T) {
+		data, err := json.Marshal(Article{
+			Note: Note{
+				BaseObject:   BaseObject{ID: "https://example.com/articles/1", Type: ArticleType},
+				Content:      "hi",
+				AttributedTo: "https://example.com/users/simulacrum",
+				AgentAttribution: &AgentPostAttribution{
+					DelegatedBy:   "owner",
+					ModelID:       "claude-3",
+					SchemaVersion: AgentAttributionSchemaVersion,
+				},
+			},
+			Name: "Title",
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"delegated_by":"https://example.com/users/owner"`)
+	})
+
+	t.Run("marshal leaves delegated_by unchanged when actor URI is unavailable", func(t *testing.T) {
+		data, err := json.Marshal(Note{
+			BaseObject:   BaseObject{ID: "https://example.com/notes/1", Type: NoteType},
+			Content:      "hi",
+			AttributedTo: "not-a-uri",
+			AgentAttribution: &AgentPostAttribution{
+				DelegatedBy:   "@owner",
+				ModelID:       "claude-3",
+				SchemaVersion: AgentAttributionSchemaVersion,
+			},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"delegated_by":"@owner"`)
+	})
+
 	t.Run("note without attribution still works", func(t *testing.T) {
 		var note Note
 		err := json.Unmarshal([]byte(`{
