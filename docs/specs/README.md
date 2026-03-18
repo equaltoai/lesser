@@ -11,6 +11,7 @@ If you’re looking for **operator** documentation (deploy/run), start at `docs/
 - `01-lambda-inventory-matrix.md` — Generated lambda inventory matrix (from CDK inventory).
 - `graphql-coverage.md` — The GraphQL coverage contract and verifier semantics.
 - `openapi-client-generation.md` — Recommended REST client generation workflow.
+- `fep-agent-attribution.md` — Draft FEP text for the ActivityPub agent attribution extension.
 
 Client-facing API contract files live under `docs/contracts/`:
 

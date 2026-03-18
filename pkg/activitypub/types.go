@@ -100,7 +100,7 @@ var Context = ContextValue{
 		"schema":                    "http://schema.org#",
 		"PropertyValue":             "schema:PropertyValue",
 		"value":                     "schema:value",
-		"lessersoul":                "https://lessersoul.ai/ns/agent-attribution/v1#",
+		"lessersoul":                "https://spec.lessersoul.ai/ns/agent-attribution/v1#",
 		"agentAttribution":          "lessersoul:agentAttribution",
 		"agentManifest":             "https://lesser.social/ns/agentManifest",
 	},

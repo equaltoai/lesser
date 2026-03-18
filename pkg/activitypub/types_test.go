@@ -89,6 +89,14 @@ func TestActor_MarshalJSON_UsesContextValue(t *testing.T) {
 	require.Contains(t, decoded, "@context")
 	_, ok := decoded["@context"].([]any)
 	assert.True(t, ok)
+
+	contextEntries, ok := decoded["@context"].([]any)
+	require.True(t, ok)
+	require.Len(t, contextEntries, 2)
+
+	contextMap, ok := contextEntries[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "https://spec.lessersoul.ai/ns/agent-attribution/v1#", contextMap["lessersoul"])
 }
 
 func TestNoteAgentAttributionJSONCompatibility(t *testing.T) {
