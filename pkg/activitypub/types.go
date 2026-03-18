@@ -202,6 +202,7 @@ type legacyNote struct {
 	LegacyAgentAttribution *AgentPostAttribution `json:"_:agentAttribution,omitempty"`
 }
 
+// MarshalJSON normalizes agent attribution before emitting a Note.
 func (n Note) MarshalJSON() ([]byte, error) {
 	out := noteAlias(n)
 	out.AgentAttribution = normalizeAgentPostAttributionForActor(n.AgentAttribution, n.AttributedTo)
@@ -230,9 +231,10 @@ type QuoteNote struct {
 	Note
 }
 
+// MarshalJSON preserves QuoteNote compatibility while normalizing agent attribution.
 func (q QuoteNote) MarshalJSON() ([]byte, error) {
 	out := noteAlias(q.Note)
-	out.AgentAttribution = normalizeAgentPostAttributionForActor(q.Note.AgentAttribution, q.Note.AttributedTo)
+	out.AgentAttribution = normalizeAgentPostAttributionForActor(q.AgentAttribution, q.AttributedTo)
 
 	return json.Marshal(out)
 }
@@ -255,6 +257,7 @@ type Article struct {
 	Name string `json:"name"` // Title
 }
 
+// MarshalJSON preserves Article fields while normalizing embedded agent attribution.
 func (a Article) MarshalJSON() ([]byte, error) {
 	type articleAlias struct {
 		noteAlias
@@ -265,7 +268,7 @@ func (a Article) MarshalJSON() ([]byte, error) {
 		noteAlias: noteAlias(a.Note),
 		Name:      a.Name,
 	}
-	out.noteAlias.AgentAttribution = normalizeAgentPostAttributionForActor(a.Note.AgentAttribution, a.Note.AttributedTo)
+	out.AgentAttribution = normalizeAgentPostAttributionForActor(a.AgentAttribution, a.AttributedTo)
 
 	return json.Marshal(out)
 }
