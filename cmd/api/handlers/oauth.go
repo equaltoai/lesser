@@ -30,10 +30,13 @@ type authorizeRequest struct {
 }
 
 type authorizeFlow struct {
-	request  *authorizeRequest
-	oauthSvc *auth.OAuthService
-	username string
-	scopes   []string
+	request           *authorizeRequest
+	oauthSvc          *auth.OAuthService
+	client            *storage.OAuthClient
+	principalUsername string
+	username          string
+	agentUsername     string
+	scopes            []string
 }
 
 const oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
@@ -105,11 +108,41 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 		return nil, resp, respErr
 	}
 
-	username, resp, err := h.resolveAuthorizeUser(ctx, req)
+	client, err := h.repos.Account().GetOAuthClient(ctx.Context(), req.clientID)
+	if err != nil || client == nil {
+		resp, respErr := h.oauthErrorLift(ctx, "invalid_client", "Invalid client", req.redirectURI, req.state)
+		return nil, resp, respErr
+	}
+	flow.client = client
+
+	principalUsername, resp, err := h.resolveAuthorizeUser(ctx, req)
 	if resp != nil || err != nil {
 		return nil, resp, err
 	}
-	flow.username = username
+	flow.principalUsername = principalUsername
+	flow.username = principalUsername
+
+	if strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
+		agentUser, agentErr := h.getAgentUserForOAuthClient(ctx.Context(), client, principalUsername)
+		switch agentErr {
+		case nil:
+			flow.username = agentUser.Username
+			flow.agentUsername = agentUser.Username
+		case errOAuthAgentUsernameRequired:
+			resp, respErr := h.oauthErrorLift(ctx, "invalid_client", agentErr.Error(), req.redirectURI, req.state)
+			return nil, resp, respErr
+		case errOAuthAgentNotFound:
+			resp, respErr := h.oauthErrorLift(ctx, "invalid_client", agentErr.Error(), req.redirectURI, req.state)
+			return nil, resp, respErr
+		case errOAuthAgentForbidden:
+			resp, respErr := h.oauthErrorLift(ctx, "access_denied", "Principal is not authorized for this agent connector", req.redirectURI, req.state)
+			return nil, resp, respErr
+		default:
+			h.logger.Error("failed to resolve OAuth agent connector binding", zap.Error(agentErr))
+			resp, respErr := h.oauthErrorLift(ctx, "server_error", "Failed to resolve agent connector", req.redirectURI, req.state)
+			return nil, resp, respErr
+		}
+	}
 
 	scopes, err := h.normalizeAuthorizeScopes(req.scope)
 	if err != nil {
@@ -226,7 +259,7 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		return h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
 	}
 
-	if h.hasUserConsentedToApp(ctx.Context(), flow.username, flow.request.clientID, flow.scopes) {
+	if h.hasUserConsentedToApp(ctx.Context(), flow.principalUsername, flow.request.clientID, flow.scopes) {
 		return nil, nil
 	}
 
@@ -234,6 +267,8 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		State:               flow.request.state,
 		ClientID:            flow.request.clientID,
 		Username:            flow.username,
+		PrincipalUsername:   flow.principalUsername,
+		AgentUsername:       flow.agentUsername,
 		Scopes:              flow.scopes,
 		RedirectURI:         flow.request.redirectURI,
 		CodeChallenge:       flow.request.codeChallenge,
@@ -264,13 +299,15 @@ func (h *Handler) completeAuthorizationFlow(ctx *apptheory.Context, flow *author
 	}
 
 	authCode := &storage.AuthorizationCode{
-		Code:          code,
-		ClientID:      flow.request.clientID,
-		RedirectURI:   flow.request.redirectURI,
-		Username:      flow.username,
-		CodeChallenge: flow.request.codeChallenge,
-		ExpiresAt:     time.Now().Add(10 * time.Minute),
-		Scopes:        flow.scopes,
+		Code:              code,
+		ClientID:          flow.request.clientID,
+		RedirectURI:       flow.request.redirectURI,
+		Username:          flow.username,
+		PrincipalUsername: flow.principalUsername,
+		AgentUsername:     flow.agentUsername,
+		CodeChallenge:     flow.request.codeChallenge,
+		ExpiresAt:         time.Now().Add(10 * time.Minute),
+		Scopes:            flow.scopes,
 	}
 
 	if _, err := h.registry.Accounts().CreateAuthorizationCode(ctx.Context(), &accounts.CreateAuthorizationCodeCommand{
@@ -382,6 +419,10 @@ func (h *Handler) redirectToConsentUI(ctx *apptheory.Context, authState *storage
 		url.QueryEscape(app.Website),
 		url.QueryEscape(strings.Join(authState.Scopes, " ")),
 		url.QueryEscape(authState.RedirectURI))
+	if strings.TrimSpace(authState.AgentUsername) != "" {
+		consentURL += "&agent_username=" + url.QueryEscape(authState.AgentUsername)
+		consentURL += "&principal_username=" + url.QueryEscape(authState.PrincipalUsername)
+	}
 	return h.writeOAuthAuthorizeRedirect(ctx, consentURL)
 }
 
@@ -852,15 +893,21 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", nil, auth.ErrInvalidGrant
 	}
 
-	clientClass := ""
+	clientClass := strings.ToLower(strings.TrimSpace(client.ClientClass))
 	sessionID := ""
-	clientClass = strings.ToLower(strings.TrimSpace(client.ClientClass))
-	if clientClass == auth.ClientClassCLI {
+	accessTTL := auth.AccessTokenDuration
+	if clientClass == auth.ClientClassCLI || clientClass == auth.ClientClassAgent {
 		sessionID = common.GenerateSessionIDULID()
+	}
+	if clientClass == auth.ClientClassAgent {
+		if authCode.AgentUsername == "" || authCode.AgentUsername != authCode.Username || authCode.AgentUsername != client.AgentUsername {
+			return "", "", nil, auth.ErrInvalidGrant
+		}
+		accessTTL = auth.AgentAccessTokenTTL(h.cfg)
 	}
 
 	// Generate tokens
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, auth.AccessTokenDuration, clientClass, sessionID)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID)
 	if err != nil {
 		return "", "", nil, errors.Join(failedToGenerateTokens(), err)
 	}
@@ -877,6 +924,23 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		ExpiresAt:   now.Add(auth.RefreshTokenDuration),
 		ClientClass: clientClass,
 		SessionID:   sessionID,
+	}
+	if clientClass == auth.ClientClassAgent {
+		absoluteExpiry := now.Add(auth.AgentRuntimeRefreshAbsoluteTTL)
+		idleExpiry := now.Add(auth.AgentRuntimeRefreshIdleTTL)
+		if idleExpiry.After(absoluteExpiry) {
+			idleExpiry = absoluteExpiry
+		}
+		oauthRefreshToken.ExpiresAt = idleExpiry
+		oauthRefreshToken.FamilyID = common.GenerateSessionIDULID()
+		oauthRefreshToken.Generation = 1
+		oauthRefreshToken.Current = true
+		oauthRefreshToken.DeviceLabel = auth.CoalesceAgentRuntimeLabel(client.Name, authCode.AgentUsername)
+		oauthRefreshToken.LastUsedAt = now
+		oauthRefreshToken.IdleExpiresAt = idleExpiry
+		oauthRefreshToken.AbsoluteExpiresAt = absoluteExpiry
+		oauthRefreshToken.SessionCreatedAt = now
+		oauthRefreshToken.AccessTTLSeconds = int(accessTTL.Seconds())
 	}
 
 	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
@@ -912,6 +976,9 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
 			return "", "", nil, err
 		}
+	}
+	if strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
+		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 
 	// Get refresh token from storage

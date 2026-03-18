@@ -45,6 +45,8 @@ func (h *OAuthHelper) StoreOAuthStateGeneric(ctx context.Context, state string, 
 		Provider:            data.Provider,
 		RedirectURI:         data.RedirectURI,
 		Username:            data.Username,
+		PrincipalUsername:   data.PrincipalUsername,
+		AgentUsername:       data.AgentUsername,
 		ClientID:            data.ClientID,
 		Scopes:              data.Scopes,
 		CodeChallenge:       data.CodeChallenge,
@@ -100,6 +102,8 @@ func (h *OAuthHelper) GetOAuthStateGeneric(ctx context.Context, state string) (*
 		Provider:            model.Provider,
 		RedirectURI:         model.RedirectURI,
 		Username:            model.Username,
+		PrincipalUsername:   model.PrincipalUsername,
+		AgentUsername:       model.AgentUsername,
 		ClientID:            model.ClientID,
 		Scopes:              model.Scopes,
 		CodeChallenge:       model.CodeChallenge,
@@ -152,19 +156,20 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 
 	// Create DynamORM model
 	model := &models.OAuthClient{
-		ClientID:     client.ClientID,
-		ClientSecret: storedSecret,
-		Name:         client.Name,
-		Description:  client.Description,
-		RedirectURIs: client.RedirectURIs,
-		GrantTypes:   client.GrantTypes,
-		Scopes:       client.Scopes,
-		ClientClass:  client.ClientClass,
-		Website:      client.Website,
-		OwnerID:      client.OwnerID,
-		Confidential: client.Confidential,
-		CreatedAt:    client.CreatedAt,
-		UpdatedAt:    client.UpdatedAt,
+		ClientID:      client.ClientID,
+		ClientSecret:  storedSecret,
+		Name:          client.Name,
+		Description:   client.Description,
+		RedirectURIs:  client.RedirectURIs,
+		GrantTypes:    client.GrantTypes,
+		Scopes:        client.Scopes,
+		ClientClass:   client.ClientClass,
+		AgentUsername: client.AgentUsername,
+		Website:       client.Website,
+		OwnerID:       client.OwnerID,
+		Confidential:  client.Confidential,
+		CreatedAt:     client.CreatedAt,
+		UpdatedAt:     client.UpdatedAt,
 	}
 
 	// Update keys
@@ -211,6 +216,7 @@ func (h *OAuthHelper) GetOAuthClientGeneric(ctx context.Context, clientID string
 		GrantTypes:       model.GrantTypes,
 		Scopes:           model.Scopes,
 		ClientClass:      model.ClientClass,
+		AgentUsername:    model.AgentUsername,
 		Website:          model.Website,
 		OwnerID:          model.OwnerID,
 		Confidential:     model.Confidential,
@@ -257,6 +263,10 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 			if v, ok := value.(string); ok {
 				existing.Website = v
 			}
+		case "agent_username":
+			if v, ok := value.(string); ok {
+				existing.AgentUsername = v
+			}
 		case "confidential":
 			if v, ok := value.(bool); ok {
 				existing.Confidential = v
@@ -268,18 +278,20 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 
 	// Create updated model
 	model := &models.OAuthClient{
-		ClientID:     existing.ClientID,
-		ClientSecret: existing.ClientSecretHash,
-		Name:         existing.Name,
-		Description:  existing.Description,
-		RedirectURIs: existing.RedirectURIs,
-		GrantTypes:   existing.GrantTypes,
-		Scopes:       existing.Scopes,
-		Website:      existing.Website,
-		OwnerID:      existing.OwnerID,
-		Confidential: existing.Confidential,
-		CreatedAt:    existing.CreatedAt,
-		UpdatedAt:    existing.UpdatedAt,
+		ClientID:      existing.ClientID,
+		ClientSecret:  existing.ClientSecretHash,
+		Name:          existing.Name,
+		Description:   existing.Description,
+		RedirectURIs:  existing.RedirectURIs,
+		GrantTypes:    existing.GrantTypes,
+		Scopes:        existing.Scopes,
+		ClientClass:   existing.ClientClass,
+		AgentUsername: existing.AgentUsername,
+		Website:       existing.Website,
+		OwnerID:       existing.OwnerID,
+		Confidential:  existing.Confidential,
+		CreatedAt:     existing.CreatedAt,
+		UpdatedAt:     existing.UpdatedAt,
 	}
 
 	// Update keys
@@ -349,6 +361,8 @@ func (h *OAuthHelper) ListOAuthClientsGeneric(ctx context.Context, ownerID strin
 			RedirectURIs:     model.RedirectURIs,
 			GrantTypes:       model.GrantTypes,
 			Scopes:           model.Scopes,
+			ClientClass:      model.ClientClass,
+			AgentUsername:    model.AgentUsername,
 			Website:          model.Website,
 			OwnerID:          model.OwnerID,
 			Confidential:     model.Confidential,
@@ -417,14 +431,16 @@ func ValidateRedirectURI(registeredURIs []string, redirectURI string) bool {
 func (h *OAuthHelper) CreateAuthorizationCodeGeneric(ctx context.Context, code *storage.AuthorizationCode) error {
 	// Create DynamORM model
 	model := &models.AuthorizationCode{
-		Code:          code.Code,
-		ClientID:      code.ClientID,
-		RedirectURI:   code.RedirectURI,
-		Username:      code.Username,
-		CodeChallenge: code.CodeChallenge,
-		ExpiresAt:     code.ExpiresAt,
-		Scopes:        code.Scopes,
-		CreatedAt:     time.Now(),
+		Code:              code.Code,
+		ClientID:          code.ClientID,
+		RedirectURI:       code.RedirectURI,
+		Username:          code.Username,
+		PrincipalUsername: code.PrincipalUsername,
+		AgentUsername:     code.AgentUsername,
+		CodeChallenge:     code.CodeChallenge,
+		ExpiresAt:         code.ExpiresAt,
+		Scopes:            code.Scopes,
+		CreatedAt:         time.Now(),
 	}
 
 	// BeforeCreate will set up keys and TTL
@@ -481,13 +497,15 @@ func (h *OAuthHelper) GetAuthorizationCodeGeneric(ctx context.Context, code stri
 
 	// Convert to storage model
 	result := &storage.AuthorizationCode{
-		Code:          model.Code,
-		ClientID:      model.ClientID,
-		RedirectURI:   model.RedirectURI,
-		Username:      model.Username,
-		CodeChallenge: model.CodeChallenge,
-		ExpiresAt:     model.ExpiresAt,
-		Scopes:        model.Scopes,
+		Code:              model.Code,
+		ClientID:          model.ClientID,
+		RedirectURI:       model.RedirectURI,
+		Username:          model.Username,
+		PrincipalUsername: model.PrincipalUsername,
+		AgentUsername:     model.AgentUsername,
+		CodeChallenge:     model.CodeChallenge,
+		ExpiresAt:         model.ExpiresAt,
+		Scopes:            model.Scopes,
 	}
 
 	h.logger.Debug("retrieved authorization code",

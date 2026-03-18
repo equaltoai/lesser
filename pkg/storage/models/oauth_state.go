@@ -18,6 +18,8 @@ type OAuthState struct {
 	Provider            string    `theorydb:"attr:provider" json:"provider"`
 	RedirectURI         string    `theorydb:"attr:redirectURI" json:"redirect_uri"`
 	Username            string    `theorydb:"attr:username" json:"username,omitempty"`
+	PrincipalUsername   string    `theorydb:"attr:principalUsername,omitempty" json:"principal_username,omitempty"`
+	AgentUsername       string    `theorydb:"attr:agentUsername,omitempty" json:"agent_username,omitempty"`
 	ClientID            string    `theorydb:"attr:clientID" json:"client_id,omitempty"`
 	Scopes              []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
 	CodeChallenge       string    `theorydb:"attr:codeChallenge" json:"code_challenge,omitempty"`

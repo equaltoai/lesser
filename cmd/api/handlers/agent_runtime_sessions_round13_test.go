@@ -146,6 +146,7 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 		AgentOwner: "@owner",
 	}
 	runtimeToken := buildRuntimeRefreshToken(t, "rt-runtime-1", "agent1", delegatedAgentClientID, "sid-runtime-1", "family-runtime-1", "sim-runtime", 1, true, false, now)
+	connectorToken := buildRuntimeRefreshToken(t, "rt-connector-1", "agent1", "client-agent-1", "sid-connector-1", "family-connector-1", "connector-app", 1, true, false, now.Add(-1*time.Minute))
 	state := &round10QueryState{
 		agentInstanceConfig: &storagemodels.AgentInstanceConfig{
 			AllowAgents:            true,
@@ -168,7 +169,17 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 			},
 		},
 		refreshTokensByToken: map[string]storagemodels.RefreshToken{
-			runtimeToken.Token: runtimeToken,
+			runtimeToken.Token:   runtimeToken,
+			connectorToken.Token: connectorToken,
+		},
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			"client-agent-1": {
+				ClientID:      "client-agent-1",
+				Name:          "connector-app",
+				ClientClass:   auth.ClientClassAgent,
+				AgentUsername: "agent1",
+				CreatedAt:     now.Add(-24 * time.Hour),
+			},
 		},
 	}
 
@@ -185,9 +196,11 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 
 	var sessions []apimodels.AgentRuntimeSession
 	require.NoError(t, json.Unmarshal(listResp.Body, &sessions))
-	require.Len(t, sessions, 1)
+	require.Len(t, sessions, 2)
 	require.Equal(t, "sid-runtime-1", sessions[0].SessionID)
 	require.Equal(t, "sim-runtime", sessions[0].DeviceLabel)
+	require.Equal(t, "sid-connector-1", sessions[1].SessionID)
+	require.Equal(t, "connector-app", sessions[1].DeviceLabel)
 
 	revokeCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1/runtime-sessions/sid-runtime-1/revoke", headers, nil, apimodels.RevokeAgentRuntimeSessionRequest{
 		Reason: "operator_retired_runtime",

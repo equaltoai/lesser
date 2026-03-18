@@ -136,20 +136,55 @@ func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, userna
 	}
 
 	currentBySessionID := map[string]storage.RefreshToken{}
+	recordCurrent := func(token storage.RefreshToken) {
+		if strings.TrimSpace(token.SessionID) == "" || !token.Current {
+			return
+		}
+		existing, ok := currentBySessionID[token.SessionID]
+		if !ok || token.Generation >= existing.Generation {
+			currentBySessionID[token.SessionID] = token
+		}
+	}
+
 	for _, clientID := range []string{"lesser-agent-delegation", "lesser-agent-self-sovereign"} {
 		tokens, err := repos.Account().ListRefreshTokensByUserClient(ctx, username, clientID)
 		if err != nil {
 			return nil, err
 		}
 		for _, token := range tokens {
-			if strings.TrimSpace(token.SessionID) == "" || !token.Current {
+			recordCurrent(token)
+		}
+	}
+
+	cursor := ""
+	for {
+		clients, nextCursor, err := repos.Account().ListOAuthClients(ctx, 100, cursor)
+		if err != nil {
+			return nil, err
+		}
+		for _, client := range clients {
+			if client == nil {
 				continue
 			}
-			existing, ok := currentBySessionID[token.SessionID]
-			if !ok || token.Generation >= existing.Generation {
-				currentBySessionID[token.SessionID] = token
+			if !strings.EqualFold(strings.TrimSpace(client.ClientClass), ClientClassAgent) {
+				continue
+			}
+			if !strings.EqualFold(strings.TrimSpace(client.AgentUsername), username) {
+				continue
+			}
+
+			tokens, err := repos.Account().ListRefreshTokensByUserClient(ctx, username, client.ClientID)
+			if err != nil {
+				return nil, err
+			}
+			for _, token := range tokens {
+				recordCurrent(token)
 			}
 		}
+		if strings.TrimSpace(nextCursor) == "" {
+			break
+		}
+		cursor = nextCursor
 	}
 
 	out := make([]storage.RefreshToken, 0, len(currentBySessionID))

@@ -55,11 +55,12 @@ type VerifyCredentialsResponse struct {
 
 // AppRegistrationRequest represents a Mastodon-compatible client registration request
 type AppRegistrationRequest struct {
-	ClientName   string `json:"client_name"`
-	RedirectURIs string `json:"redirect_uris"`
-	Scopes       string `json:"scopes"`
-	Website      string `json:"website,omitempty"`
-	ClientClass  string `json:"client_class,omitempty"`
+	ClientName    string `json:"client_name"`
+	RedirectURIs  string `json:"redirect_uris"`
+	Scopes        string `json:"scopes"`
+	Website       string `json:"website,omitempty"`
+	ClientClass   string `json:"client_class,omitempty"`
+	AgentUsername string `json:"agent_username,omitempty"`
 }
 
 // AppRegistrationResponse represents the response after successful app registration

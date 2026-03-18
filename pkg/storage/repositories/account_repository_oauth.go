@@ -47,6 +47,8 @@ func (r *AccountRepository) StoreOAuthState(ctx context.Context, state string, d
 		Provider:            data.Provider,
 		RedirectURI:         data.RedirectURI,
 		Username:            data.Username,
+		PrincipalUsername:   data.PrincipalUsername,
+		AgentUsername:       data.AgentUsername,
 		ClientID:            data.ClientID,
 		Scopes:              data.Scopes,
 		CodeChallenge:       data.CodeChallenge,
@@ -109,6 +111,8 @@ func (r *AccountRepository) GetOAuthState(ctx context.Context, state string) (*s
 		Provider:            model.Provider,
 		RedirectURI:         model.RedirectURI,
 		Username:            model.Username,
+		PrincipalUsername:   model.PrincipalUsername,
+		AgentUsername:       model.AgentUsername,
 		ClientID:            model.ClientID,
 		Scopes:              model.Scopes,
 		CodeChallenge:       model.CodeChallenge,
@@ -311,15 +315,16 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 
 	// Create DynamORM model
 	model := &models.OAuthClient{
-		ClientID:     client.ClientID,
-		ClientSecret: storedSecret,
-		Name:         client.Name,
-		Website:      client.Website,
-		RedirectURIs: client.RedirectURIs,
-		Scopes:       client.Scopes,
-		ClientClass:  client.ClientClass,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ClientID:      client.ClientID,
+		ClientSecret:  storedSecret,
+		Name:          client.Name,
+		Website:       client.Website,
+		RedirectURIs:  client.RedirectURIs,
+		Scopes:        client.Scopes,
+		ClientClass:   client.ClientClass,
+		AgentUsername: client.AgentUsername,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
 	}
 
 	// BeforeCreate will set up keys
@@ -382,6 +387,7 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 		GrantTypes:       model.GrantTypes,
 		Scopes:           model.Scopes,
 		ClientClass:      model.ClientClass,
+		AgentUsername:    model.AgentUsername,
 		OwnerID:          model.OwnerID,
 		Confidential:     model.Confidential,
 		CreatedAt:        model.CreatedAt,
@@ -457,6 +463,7 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 		FieldWebsite:      true,
 		FieldRedirectURIs: true,
 		FieldScopes:       true,
+		"agent_username":  true,
 	}
 
 	// Apply updates to the model
@@ -478,6 +485,10 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 			case FieldScopes:
 				if v, ok := value.([]string); ok {
 					existingClient.Scopes = v
+				}
+			case "agent_username":
+				if v, ok := value.(string); ok {
+					existingClient.AgentUsername = v
 				}
 			}
 		}
@@ -595,6 +606,9 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, cur
 			Website:          model.Website,
 			RedirectURIs:     model.RedirectURIs,
 			Scopes:           model.Scopes,
+			ClientClass:      model.ClientClass,
+			AgentUsername:    model.AgentUsername,
+			OwnerID:          model.OwnerID,
 			CreatedAt:        model.CreatedAt,
 			UpdatedAt:        model.UpdatedAt,
 		}
@@ -623,8 +637,11 @@ func (r *AccountRepository) GetOAuthApp(ctx context.Context, clientID string) (*
 		ClientID:         client.ClientID,
 		ClientSecretHash: client.ClientSecretHash,
 		Name:             client.Name,
+		Website:          client.Website,
 		RedirectURIs:     client.RedirectURIs,
 		Scopes:           client.Scopes,
+		ClientClass:      client.ClientClass,
+		AgentUsername:    client.AgentUsername,
 		CreatedAt:        client.CreatedAt,
 	}, nil
 }

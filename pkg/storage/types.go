@@ -249,13 +249,15 @@ type Session struct {
 
 // AuthorizationCode represents an OAuth authorization code
 type AuthorizationCode struct {
-	Code          string    `json:"code"`
-	ClientID      string    `json:"client_id"`
-	RedirectURI   string    `json:"redirect_uri"`
-	Username      string    `json:"username"`
-	CodeChallenge string    `json:"code_challenge"`
-	ExpiresAt     time.Time `json:"expires_at"`
-	Scopes        []string  `json:"scopes"`
+	Code              string    `json:"code"`
+	ClientID          string    `json:"client_id"`
+	RedirectURI       string    `json:"redirect_uri"`
+	Username          string    `json:"username"`
+	PrincipalUsername string    `json:"principal_username,omitempty"`
+	AgentUsername     string    `json:"agent_username,omitempty"`
+	CodeChallenge     string    `json:"code_challenge"`
+	ExpiresAt         time.Time `json:"expires_at"`
+	Scopes            []string  `json:"scopes"`
 }
 
 // RefreshToken represents an OAuth refresh token
@@ -322,6 +324,8 @@ type OAuthState struct {
 	State               string    `json:"state"`
 	Provider            string    `json:"provider"`
 	Username            string    `json:"username,omitempty"`
+	PrincipalUsername   string    `json:"principal_username,omitempty"`
+	AgentUsername       string    `json:"agent_username,omitempty"`
 	Scopes              []string  `json:"scopes,omitempty"`
 	CodeChallenge       string    `json:"code_challenge"`
 	CodeChallengeMethod string    `json:"code_challenge_method"`
@@ -368,6 +372,7 @@ type OAuthClient struct {
 	GrantTypes       []string  `json:"grant_types,omitempty"`
 	Scopes           []string  `json:"scopes"`
 	ClientClass      string    `json:"client_class,omitempty"`
+	AgentUsername    string    `json:"agent_username,omitempty"`
 	OwnerID          string    `json:"owner_id,omitempty"`
 	Confidential     bool      `json:"confidential"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -387,6 +392,8 @@ type OAuthApp struct {
 	RedirectURI      string    `json:"redirect_uri"`
 	RedirectURIs     []string  `json:"redirect_uris,omitempty"`
 	Scopes           []string  `json:"scopes,omitempty"`
+	ClientClass      string    `json:"client_class,omitempty"`
+	AgentUsername    string    `json:"agent_username,omitempty"`
 	VapidKey         string    `json:"vapid_key,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }

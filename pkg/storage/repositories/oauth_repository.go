@@ -114,19 +114,20 @@ func (r *OAuthRepository) CreateOAuthClient(ctx context.Context, client *storage
 
 	// Convert storage model to DynamORM model
 	model := &models.OAuthClient{
-		ClientID:     client.ClientID,
-		ClientSecret: storedSecret,
-		Name:         client.Name,
-		Description:  client.Description,
-		RedirectURIs: client.RedirectURIs,
-		GrantTypes:   client.GrantTypes,
-		Scopes:       client.Scopes,
-		ClientClass:  client.ClientClass,
-		Website:      client.Website,
-		OwnerID:      client.OwnerID,
-		Confidential: client.Confidential,
-		CreatedAt:    client.CreatedAt,
-		UpdatedAt:    client.UpdatedAt,
+		ClientID:      client.ClientID,
+		ClientSecret:  storedSecret,
+		Name:          client.Name,
+		Description:   client.Description,
+		RedirectURIs:  client.RedirectURIs,
+		GrantTypes:    client.GrantTypes,
+		Scopes:        client.Scopes,
+		ClientClass:   client.ClientClass,
+		AgentUsername: client.AgentUsername,
+		Website:       client.Website,
+		OwnerID:       client.OwnerID,
+		Confidential:  client.Confidential,
+		CreatedAt:     client.CreatedAt,
+		UpdatedAt:     client.UpdatedAt,
 	}
 
 	// Use BaseRepository Create method
@@ -159,6 +160,7 @@ func (r *OAuthRepository) GetOAuthClient(ctx context.Context, clientID string) (
 		GrantTypes:       model.GrantTypes,
 		Scopes:           model.Scopes,
 		ClientClass:      model.ClientClass,
+		AgentUsername:    model.AgentUsername,
 		Website:          model.Website,
 		OwnerID:          model.OwnerID,
 		Confidential:     model.Confidential,
@@ -224,6 +226,10 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 			if v, ok := value.(string); ok {
 				existing.Website = v
 			}
+		case "agent_username":
+			if v, ok := value.(string); ok {
+				existing.AgentUsername = v
+			}
 		case "confidential":
 			if v, ok := value.(bool); ok {
 				existing.Confidential = v
@@ -233,19 +239,20 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 
 	// Convert to DynamORM model
 	model := &models.OAuthClient{
-		ClientID:     existing.ClientID,
-		ClientSecret: existing.ClientSecretHash,
-		Name:         existing.Name,
-		Description:  existing.Description,
-		RedirectURIs: existing.RedirectURIs,
-		GrantTypes:   existing.GrantTypes,
-		Scopes:       existing.Scopes,
-		ClientClass:  existing.ClientClass,
-		Website:      existing.Website,
-		OwnerID:      existing.OwnerID,
-		Confidential: existing.Confidential,
-		CreatedAt:    existing.CreatedAt,
-		UpdatedAt:    existing.UpdatedAt,
+		ClientID:      existing.ClientID,
+		ClientSecret:  existing.ClientSecretHash,
+		Name:          existing.Name,
+		Description:   existing.Description,
+		RedirectURIs:  existing.RedirectURIs,
+		GrantTypes:    existing.GrantTypes,
+		Scopes:        existing.Scopes,
+		ClientClass:   existing.ClientClass,
+		AgentUsername: existing.AgentUsername,
+		Website:       existing.Website,
+		OwnerID:       existing.OwnerID,
+		Confidential:  existing.Confidential,
+		CreatedAt:     existing.CreatedAt,
+		UpdatedAt:     existing.UpdatedAt,
 	}
 
 	// Use BaseRepository Update method

@@ -235,11 +235,12 @@ func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRe
 	}
 
 	req := models.AppRegistrationRequest{
-		ClientName:   params["client_name"],
-		RedirectURIs: params["redirect_uris"],
-		Scopes:       params["scopes"],
-		Website:      params["website"],
-		ClientClass:  params["client_class"],
+		ClientName:    params["client_name"],
+		RedirectURIs:  params["redirect_uris"],
+		Scopes:        params["scopes"],
+		Website:       params["website"],
+		ClientClass:   params["client_class"],
+		AgentUsername: params["agent_username"],
 	}
 
 	return req, nil
@@ -356,15 +357,40 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 	// Try to extract authenticated user (optional - public registration allowed for initial OAuth flow)
 	// But if authenticated, set OwnerID for security and proper ownership
 	ownerID := h.getOptionalAuthenticatedUser(ctx)
+	agentUsername := strings.TrimSpace(req.AgentUsername)
+
+	if clientClass == auth.ClientClassAgent {
+		if strings.TrimSpace(ownerID) == "" {
+			return h.respondUnauthorized(ctx)
+		}
+		agentUser, agentErr := h.getAgentUserForOAuthClient(ctx.Context(), &storage.OAuthClient{
+			ClientClass:   clientClass,
+			AgentUsername: agentUsername,
+		}, ownerID)
+		switch agentErr {
+		case nil:
+			agentUsername = agentUser.Username
+		case errOAuthAgentUsernameRequired:
+			return h.respondUnprocessableEntity(ctx, agentErr.Error())
+		case errOAuthAgentNotFound:
+			return h.respondUnprocessableEntity(ctx, agentErr.Error())
+		case errOAuthAgentForbidden:
+			return h.respondForbidden(ctx, agentErr.Error())
+		default:
+			h.logger.Error("failed to resolve agent binding for oauth client", zap.Error(agentErr))
+			return common.RespondInternalServerError(ctx)
+		}
+	}
 
 	// Create OAuth client
 	client := &storage.OAuthClient{
-		Name:         req.ClientName,
-		Website:      req.Website,
-		RedirectURIs: redirectURIs,
-		Scopes:       scopes,
-		ClientClass:  clientClass,
-		OwnerID:      ownerID, // Set owner if authenticated
+		Name:          req.ClientName,
+		Website:       req.Website,
+		RedirectURIs:  redirectURIs,
+		Scopes:        scopes,
+		ClientClass:   clientClass,
+		AgentUsername: agentUsername,
+		OwnerID:       ownerID, // Set owner if authenticated
 	}
 
 	h.logger.Info("creating OAuth client",

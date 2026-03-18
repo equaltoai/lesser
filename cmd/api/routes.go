@@ -95,6 +95,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/oauth/revoke", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthRevokeLift,
 		10, time.Minute, logger))
+	app.Get("/.well-known/oauth-authorization-server", apiHandler.HandleOAuthAuthorizationServerMetadataLift)
 
 	// OPTIONS handlers for OAuth endpoints (CORS preflight)
 	app.Handle("OPTIONS", "/oauth/authorize", optionsHandler)
@@ -104,6 +105,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("OPTIONS", "/oauth/device/consent", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/token", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/revoke", optionsHandler)
+	app.Handle("OPTIONS", "/.well-known/oauth-authorization-server", optionsHandler)
 
 	// NodeInfo endpoints with native Lift implementation
 	app.Get("/.well-known/nodeinfo", apiHandler.HandleNodeInfoWellKnownLift)

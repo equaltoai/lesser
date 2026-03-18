@@ -227,6 +227,65 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.NotNil(t, storedState)
 	})
 
+	t.Run("agent connector consent stores principal and agent identities", func(t *testing.T) {
+		var storedState *storage.OAuthState
+		accountsSvc := &AccountsServiceStub{
+			GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
+				return &accounts.GetUserAppConsentResult{}, errors.New("no consent")
+			},
+			StoreOAuthStateFunc: func(_ context.Context, cmd *accounts.StoreOAuthStateCommand) (*accounts.StoreOAuthStateResult, error) {
+				storedState = cmd.OAuthState
+				return &accounts.StoreOAuthStateResult{}, nil
+			},
+			GetOAuthAppFunc: func(_ context.Context, query *accounts.GetOAuthAppQuery) (*accounts.GetOAuthAppResult, error) {
+				return &accounts.GetOAuthAppResult{
+					App: &storage.OAuthApp{
+						ClientID:      query.ClientID,
+						Name:          "Agent Connector",
+						Website:       "https://connector.example",
+						ClientClass:   auth.ClientClassAgent,
+						AgentUsername: "agent1",
+					},
+				}, nil
+			},
+		}
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					Name:          "Agent Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state, &RegistryStub{AccountsSvc: accountsSvc})
+		ctx, err := round10NewLiftContext(http.MethodGet, "/oauth/authorize", map[string]string{"Accept": "text/html"}, map[string]string{
+			"response_type": "code",
+			"client_id":     "client-agent",
+			"redirect_uri":  "https://example.com/callback",
+			"scope":         "read write",
+			"state":         "state-agent-consent",
+		}, nil)
+		require.NoError(t, err)
+		ctx.Set("username", "owner")
+
+		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
+		require.Contains(t, firstStringValue(resp.Headers, "location"), "agent_username=agent1")
+		require.Contains(t, firstStringValue(resp.Headers, "location"), "principal_username=owner")
+		require.NotNil(t, storedState)
+		require.Equal(t, "agent1", storedState.Username)
+		require.Equal(t, "owner", storedState.PrincipalUsername)
+		require.Equal(t, "agent1", storedState.AgentUsername)
+	})
+
 	t.Run("consent already granted issues authorization code and redirects", func(t *testing.T) {
 		var issuedCode string
 		accountsSvc := &AccountsServiceStub{
@@ -553,6 +612,108 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		claims := round12DecodeJWTClaims(t, body.AccessToken)
 		require.Equal(t, auth.ClientClassCLI, claims.ClientClass)
 		require.NotEmpty(t, claims.SessionID)
+	})
+
+	t.Run("authorization_code agent client issues agent runtime-style session", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Connector App",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			authorizationCodesByCode: map[string]storagemodels.AuthorizationCode{
+				"agent-code": {
+					Code:              "agent-code",
+					ClientID:          "client-agent",
+					RedirectURI:       "https://example.com/callback",
+					Username:          "agent1",
+					PrincipalUsername: "owner",
+					AgentUsername:     "agent1",
+					ExpiresAt:         time.Now().Add(5 * time.Minute),
+					Scopes:            []string{auth.ScopeRead, auth.ScopeWrite},
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentType: "counsel", AgentOwner: "@owner"},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=authorization_code&code=agent-code&client_id=client-agent&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, "agent1", claims.Username)
+		require.True(t, claims.IsAgent)
+		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
+		require.Equal(t, "@owner", claims.DelegatedBy)
+		require.NotEmpty(t, claims.SessionID)
+
+		storedRefresh, ok := state.refreshTokensByToken[body.RefreshToken]
+		require.True(t, ok)
+		require.Equal(t, auth.ClientClassAgent, storedRefresh.ClientClass)
+		require.Equal(t, "agent1", storedRefresh.Username)
+		require.NotEmpty(t, storedRefresh.SessionID)
+		require.NotEmpty(t, storedRefresh.FamilyID)
+		require.True(t, storedRefresh.Current)
+		require.Equal(t, 1, storedRefresh.Generation)
+		require.Equal(t, "Connector App", storedRefresh.DeviceLabel)
+		require.Equal(t, int(auth.AgentAccessTokenTTL(cfg).Seconds()), storedRefresh.AccessTTLSeconds)
+	})
+
+	t.Run("refresh_token agent client uses runtime rotation", func(t *testing.T) {
+		now := time.Now().UTC()
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Connector App",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     now.Add(-24 * time.Hour),
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-agent-connector": buildRuntimeRefreshToken(t, "rt-agent-connector", "agent1", "client-agent", "sid-agent-connector", "family-agent-connector", "Connector App", 1, true, false, now),
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-connector&client_id=client-agent"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.RefreshToken)
+		require.NotEqual(t, "rt-agent-connector", body.RefreshToken)
+
+		oldToken := state.refreshTokensByToken["rt-agent-connector"]
+		require.True(t, oldToken.Revoked)
+		require.False(t, oldToken.Current)
+
+		newToken, ok := state.refreshTokensByToken[body.RefreshToken]
+		require.True(t, ok)
+		require.Equal(t, auth.ClientClassAgent, newToken.ClientClass)
+		require.Equal(t, oldToken.SessionID, newToken.SessionID)
+		require.Equal(t, oldToken.FamilyID, newToken.FamilyID)
+		require.Equal(t, oldToken.Generation+1, newToken.Generation)
+		require.True(t, newToken.Current)
 	})
 
 	t.Run("authorization_code invalid_grant when code consumption fails", func(t *testing.T) {
