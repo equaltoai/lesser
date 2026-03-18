@@ -15,10 +15,11 @@ import (
 
 // OAuth field constants
 const (
-	FieldName         = "name"
-	FieldWebsite      = "website"
-	FieldRedirectURIs = "redirect_uris"
-	FieldScopes       = "scopes"
+	FieldName          = "name"
+	FieldWebsite       = "website"
+	FieldRedirectURIs  = "redirect_uris"
+	FieldScopes        = "scopes"
+	FieldAgentUsername = "agent_username"
 )
 
 const (
@@ -459,39 +460,19 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 
 	// Only allow specific fields to be updated
 	allowedFields := map[string]bool{
-		FieldName:         true,
-		FieldWebsite:      true,
-		FieldRedirectURIs: true,
-		FieldScopes:       true,
-		"agent_username":  true,
+		FieldName:          true,
+		FieldWebsite:       true,
+		FieldRedirectURIs:  true,
+		FieldScopes:        true,
+		FieldAgentUsername: true,
 	}
 
 	// Apply updates to the model
 	for key, value := range updates {
-		if allowedFields[key] {
-			switch key {
-			case FieldName:
-				if v, ok := value.(string); ok {
-					existingClient.Name = v
-				}
-			case FieldWebsite:
-				if v, ok := value.(string); ok {
-					existingClient.Website = v
-				}
-			case FieldRedirectURIs:
-				if v, ok := value.([]string); ok {
-					existingClient.RedirectURIs = v
-				}
-			case FieldScopes:
-				if v, ok := value.([]string); ok {
-					existingClient.Scopes = v
-				}
-			case "agent_username":
-				if v, ok := value.(string); ok {
-					existingClient.AgentUsername = v
-				}
-			}
+		if !allowedFields[key] {
+			continue
 		}
+		applyOAuthClientModelUpdate(&existingClient, key, value)
 	}
 
 	// Update timestamp
@@ -515,6 +496,35 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 		zap.Any("updates", updates))
 
 	return nil
+}
+
+func applyOAuthClientModelUpdate(client *models.OAuthClient, key string, value any) {
+	if client == nil {
+		return
+	}
+
+	switch key {
+	case FieldName:
+		if v, ok := value.(string); ok {
+			client.Name = v
+		}
+	case FieldWebsite:
+		if v, ok := value.(string); ok {
+			client.Website = v
+		}
+	case FieldRedirectURIs:
+		if v, ok := value.([]string); ok {
+			client.RedirectURIs = v
+		}
+	case FieldScopes:
+		if v, ok := value.([]string); ok {
+			client.Scopes = v
+		}
+	case FieldAgentUsername:
+		if v, ok := value.(string); ok {
+			client.AgentUsername = v
+		}
+	}
 }
 
 // DeleteOAuthClient deletes an OAuth client

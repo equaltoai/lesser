@@ -238,40 +238,7 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 
 	// Apply updates
 	for key, value := range updates {
-		switch key {
-		case "name":
-			if v, ok := value.(string); ok {
-				existing.Name = v
-			}
-		case "description":
-			if v, ok := value.(string); ok {
-				existing.Description = v
-			}
-		case "redirect_uris":
-			if v, ok := value.([]string); ok {
-				existing.RedirectURIs = v
-			}
-		case "grant_types":
-			if v, ok := value.([]string); ok {
-				existing.GrantTypes = v
-			}
-		case "scopes":
-			if v, ok := value.([]string); ok {
-				existing.Scopes = v
-			}
-		case "website":
-			if v, ok := value.(string); ok {
-				existing.Website = v
-			}
-		case "agent_username":
-			if v, ok := value.(string); ok {
-				existing.AgentUsername = v
-			}
-		case "confidential":
-			if v, ok := value.(bool); ok {
-				existing.Confidential = v
-			}
-		}
+		applyOAuthClientStorageUpdate(existing, key, value)
 	}
 
 	existing.UpdatedAt = time.Now()
@@ -307,6 +274,47 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 	}
 
 	return nil
+}
+
+func applyOAuthClientStorageUpdate(client *storage.OAuthClient, key string, value any) {
+	if client == nil {
+		return
+	}
+
+	switch key {
+	case FieldName:
+		if v, ok := value.(string); ok {
+			client.Name = v
+		}
+	case "description":
+		if v, ok := value.(string); ok {
+			client.Description = v
+		}
+	case FieldRedirectURIs:
+		if v, ok := value.([]string); ok {
+			client.RedirectURIs = v
+		}
+	case "grant_types":
+		if v, ok := value.([]string); ok {
+			client.GrantTypes = v
+		}
+	case FieldScopes:
+		if v, ok := value.([]string); ok {
+			client.Scopes = v
+		}
+	case FieldWebsite:
+		if v, ok := value.(string); ok {
+			client.Website = v
+		}
+	case FieldAgentUsername:
+		if v, ok := value.(string); ok {
+			client.AgentUsername = v
+		}
+	case "confidential":
+		if v, ok := value.(bool); ok {
+			client.Confidential = v
+		}
+	}
 }
 
 // DeleteOAuthClientGeneric deletes an OAuth client
