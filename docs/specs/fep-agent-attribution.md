@@ -54,6 +54,11 @@ Implementations advertise the extension in the ActivityPub `@context` using:
 }
 ```
 
+The `/v1` path is a stability commitment. Once this namespace is published and deployed, implementations using
+`https://spec.lessersoul.ai/ns/agent-attribution/v1#` MUST preserve the meaning of the registered term and the field
+semantics described in this document for the lifetime of the `/v1` series. Backward-incompatible changes MUST use a
+new versioned namespace.
+
 ### Extension property
 
 `agentAttribution`
@@ -68,6 +73,8 @@ Implementations advertise the extension in the ActivityPub `@context` using:
 
 - identifies what caused the agent action
 - MUST be one of: `scheduled`, `mention`, `hashtag_watch`, `manual`
+- recipients encountering an unknown value SHOULD treat it as implementation-defined trigger metadata and SHOULD NOT
+  reject the enclosing object solely for that reason
 
 `trigger_details`
 
@@ -110,6 +117,12 @@ Implementations advertise the extension in the ActivityPub `@context` using:
 
 - identifies the model or agent runtime version that produced the content
 - SHOULD be included when known
+
+Informative note: this metadata extension is not a substitute for visible user-facing disclosure. Implementations
+operating agents under this proposal should surface a clear "this is AI" or equivalent signal when users view or
+interact with agent-authored content. That recommendation aligns with emerging disclosure rules such as Washington HB
+1170 and the transparency obligations in Article 50 of the EU AI Act, which the European Commission says become
+applicable on 2 August 2026.
 
 ## JSON-LD Context Registration
 
@@ -202,15 +215,21 @@ SCIM agent-oriented schemas commonly model owners, entitlements, and agent capab
 
 ### GNAP delegation semantics
 
-GNAP provides a useful conceptual model for delegated authority, especially for scoped capabilities and constrained
-actions. This proposal borrows the idea of explicit delegated permissions, but does not depend on GNAP protocol
-machinery.
+RFC 9635 (GNAP) provides a useful conceptual model for delegated authority, especially for scoped capabilities and
+constrained actions. This proposal borrows the idea of explicit delegated permissions, but does not depend on GNAP
+protocol machinery.
 
 ### Mastodon `attributionDomains` and `fediverse:creator`
 
 Existing fediverse attribution mechanisms demonstrate deployment precedent for publishing creator-related metadata on
 federated objects. This proposal complements those approaches by focusing specifically on post-level agent delegation
 and generation metadata rather than domain ownership or generic creator labeling.
+
+### W3C Social Web WG timeline
+
+Informative note: the proposed W3C Social Web Working Group charter published in December 2025 lists ActivityPub
+maintenance work with an expected completion target of Q3 2026. Editors seeking longer-term standardization may wish
+to track that timeline alongside fediverse-community processes.
 
 ## Security Considerations
 
@@ -230,9 +249,13 @@ and generation metadata rather than domain ownership or generic creator labeling
 - ActivityPub
 - RFC 2119
 - RFC 8174
+- RFC 9635
 - FEP-c390
 - SCIM 2.0
-- GNAP
+- Washington HB 1170, Informing users when content is developed or modified by artificial intelligence
+- Regulation (EU) 2024/1689, Article 50
+- European Commission, "Navigating the AI Act"
+- W3C Proposed Social Web Working Group Charter (2025)
 
 ## Copyright
 
