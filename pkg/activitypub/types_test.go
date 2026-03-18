@@ -138,6 +138,72 @@ func TestNoteAgentAttributionJSONCompatibility(t *testing.T) {
 		assert.NotContains(t, string(data), `"_:agentAttribution"`)
 	})
 
+	t.Run("marshal normalizes short delegated_by to actor URI", func(t *testing.T) {
+		data, err := json.Marshal(Note{
+			BaseObject:   BaseObject{ID: "https://example.com/notes/1", Type: NoteType},
+			Content:      "hi",
+			AttributedTo: "https://example.com/users/simulacrum",
+			AgentAttribution: &AgentPostAttribution{
+				DelegatedBy:   "@owner",
+				ModelID:       "claude-3",
+				SchemaVersion: AgentAttributionSchemaVersion,
+			},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"delegated_by":"https://example.com/users/owner"`)
+	})
+
+	t.Run("article marshal normalizes short delegated_by to actor URI", func(t *testing.T) {
+		data, err := json.Marshal(Article{
+			Note: Note{
+				BaseObject:   BaseObject{ID: "https://example.com/articles/1", Type: ArticleType},
+				Content:      "hi",
+				AttributedTo: "https://example.com/users/simulacrum",
+				AgentAttribution: &AgentPostAttribution{
+					DelegatedBy:   "owner",
+					ModelID:       "claude-3",
+					SchemaVersion: AgentAttributionSchemaVersion,
+				},
+			},
+			Name: "Title",
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"name":"Title"`)
+		assert.Contains(t, string(data), `"delegated_by":"https://example.com/users/owner"`)
+	})
+
+	t.Run("quote note marshal normalizes short delegated_by to actor URI", func(t *testing.T) {
+		data, err := json.Marshal(QuoteNote{
+			Note: Note{
+				BaseObject:   BaseObject{ID: "https://example.com/notes/quote-1", Type: NoteType},
+				Content:      "hi",
+				AttributedTo: "https://example.com/users/simulacrum",
+				AgentAttribution: &AgentPostAttribution{
+					DelegatedBy:   "@owner",
+					ModelID:       "claude-3",
+					SchemaVersion: AgentAttributionSchemaVersion,
+				},
+			},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"delegated_by":"https://example.com/users/owner"`)
+	})
+
+	t.Run("marshal leaves delegated_by unchanged when actor URI is unavailable", func(t *testing.T) {
+		data, err := json.Marshal(Note{
+			BaseObject:   BaseObject{ID: "https://example.com/notes/1", Type: NoteType},
+			Content:      "hi",
+			AttributedTo: "not-a-uri",
+			AgentAttribution: &AgentPostAttribution{
+				DelegatedBy:   "@owner",
+				ModelID:       "claude-3",
+				SchemaVersion: AgentAttributionSchemaVersion,
+			},
+		})
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"delegated_by":"@owner"`)
+	})
+
 	t.Run("note without attribution still works", func(t *testing.T) {
 		var note Note
 		err := json.Unmarshal([]byte(`{
@@ -148,5 +214,30 @@ func TestNoteAgentAttributionJSONCompatibility(t *testing.T) {
 		}`), &note)
 		require.NoError(t, err)
 		require.Nil(t, note.AgentAttribution)
+	})
+}
+
+func TestNormalizeAgentPostAttributionHelpers(t *testing.T) {
+	t.Run("normalize delegated_by keeps full URI unchanged", func(t *testing.T) {
+		value := "HTTPS://remote.example/users/owner"
+		require.Equal(t, value, normalizeDelegatedByActorURI(value, "https://example.com/users/alice"))
+	})
+
+	t.Run("normalize attribution returns nil for nil input", func(t *testing.T) {
+		require.Nil(t, normalizeAgentPostAttributionForActor(nil, "https://example.com/users/alice"))
+	})
+
+	t.Run("normalize attribution returns copy without mutating original", func(t *testing.T) {
+		original := &AgentPostAttribution{
+			DelegatedBy:   "@owner",
+			SchemaVersion: AgentAttributionSchemaVersion,
+			ModelID:       "claude-3",
+		}
+
+		normalized := normalizeAgentPostAttributionForActor(original, "https://example.com/users/simulacrum")
+		require.NotNil(t, normalized)
+		require.NotSame(t, original, normalized)
+		require.Equal(t, "@owner", original.DelegatedBy)
+		require.Equal(t, "https://example.com/users/owner", normalized.DelegatedBy)
 	})
 }

@@ -202,6 +202,14 @@ type legacyNote struct {
 	LegacyAgentAttribution *AgentPostAttribution `json:"_:agentAttribution,omitempty"`
 }
 
+// MarshalJSON normalizes agent attribution before emitting a Note.
+func (n Note) MarshalJSON() ([]byte, error) {
+	out := noteAlias(n)
+	out.AgentAttribution = normalizeAgentPostAttributionForActor(n.AgentAttribution, n.AttributedTo)
+
+	return json.Marshal(out)
+}
+
 // UnmarshalJSON accepts both the new namespaced agentAttribution key and the legacy
 // _:agentAttribution key stored in older records.
 func (n *Note) UnmarshalJSON(data []byte) error {
@@ -223,6 +231,14 @@ type QuoteNote struct {
 	Note
 }
 
+// MarshalJSON preserves QuoteNote compatibility while normalizing agent attribution.
+func (q QuoteNote) MarshalJSON() ([]byte, error) {
+	out := noteAlias(q.Note)
+	out.AgentAttribution = normalizeAgentPostAttributionForActor(q.AgentAttribution, q.AttributedTo)
+
+	return json.Marshal(out)
+}
+
 // QuoteContext provides metadata about a quoted note
 type QuoteContext struct {
 	OriginalNoteID         string `json:"originalNoteId,omitempty"`
@@ -239,6 +255,22 @@ type QuoteContext struct {
 type Article struct {
 	Note
 	Name string `json:"name"` // Title
+}
+
+// MarshalJSON preserves Article fields while normalizing embedded agent attribution.
+func (a Article) MarshalJSON() ([]byte, error) {
+	type articleAlias struct {
+		noteAlias
+		Name string `json:"name"`
+	}
+
+	out := articleAlias{
+		noteAlias: noteAlias(a.Note),
+		Name:      a.Name,
+	}
+	out.AgentAttribution = normalizeAgentPostAttributionForActor(a.AgentAttribution, a.AttributedTo)
+
+	return json.Marshal(out)
 }
 
 // Image represents an image object

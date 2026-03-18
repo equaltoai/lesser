@@ -2,6 +2,7 @@ package activitypub
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 )
 
@@ -55,4 +56,38 @@ func (a *AgentPostAttribution) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+func normalizeDelegatedByActorURI(value, actorIRI string) string {
+	delegatedBy := strings.TrimSpace(value)
+	if delegatedBy == "" {
+		return ""
+	}
+
+	lowerValue := strings.ToLower(delegatedBy)
+	if strings.HasPrefix(lowerValue, "http://") || strings.HasPrefix(lowerValue, "https://") {
+		return delegatedBy
+	}
+
+	actorURL, err := url.Parse(strings.TrimSpace(actorIRI))
+	if err != nil || actorURL.Scheme == "" || actorURL.Host == "" {
+		return delegatedBy
+	}
+
+	actorURL.Path = "/users/" + strings.TrimPrefix(delegatedBy, "@")
+	actorURL.RawPath = ""
+	actorURL.RawQuery = ""
+	actorURL.Fragment = ""
+
+	return actorURL.String()
+}
+
+func normalizeAgentPostAttributionForActor(attr *AgentPostAttribution, actorIRI string) *AgentPostAttribution {
+	if attr == nil {
+		return nil
+	}
+
+	normalized := *attr
+	normalized.DelegatedBy = normalizeDelegatedByActorURI(normalized.DelegatedBy, actorIRI)
+	return &normalized
 }

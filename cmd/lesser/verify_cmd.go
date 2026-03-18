@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	defaultVerifyCIJobs   = 2
-	lesserVerifyCIJobsEnv = "LESSER_VERIFY_CI_JOBS"
+	defaultVerifyCIJobs              = 2
+	defaultVerifyCICoverageBatchSize = 10
+	lesserVerifyCIJobsEnv            = "LESSER_VERIFY_CI_JOBS"
 )
 
 func runVerify(argv []string) error {
@@ -171,7 +172,16 @@ func runVerifyCI(argv []string) error {
 	}
 	cmdPrefix := modulePath + "/cmd"
 	pkgPrefix := modulePath + "/pkg"
-	run := func() error { return runVerifyCIWorkflow(includeSecurity, cmdPrefix, pkgPrefix) }
+	run := func() error {
+		if strings.TrimSpace(os.Getenv(coverageBatchSizeEnvVar)) != "" {
+			return runVerifyCIWorkflow(includeSecurity, cmdPrefix, pkgPrefix)
+		}
+		return withTemporaryEnv(map[string]string{
+			coverageBatchSizeEnvVar: fmt.Sprintf("%d", defaultVerifyCICoverageBatchSize),
+		}, func() error {
+			return runVerifyCIWorkflow(includeSecurity, cmdPrefix, pkgPrefix)
+		})
+	}
 
 	if jobs := resolveVerifyCIJobs(); jobs > 0 {
 		return withTemporaryEnv(map[string]string{

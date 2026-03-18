@@ -168,6 +168,7 @@ func TestRunVerifyCI_Round20_UsesVerifyCIJobsOverride(t *testing.T) {
 	t.Setenv(lesserToolJobsEnvVar, "8")
 	t.Setenv(goMaxProcsEnvVar, "")
 	t.Setenv(goFlagsEnvVar, "-trimpath")
+	t.Setenv(coverageBatchSizeEnvVar, "")
 
 	var lintCall string
 	var coverageEnv map[string]string
@@ -179,9 +180,10 @@ func TestRunVerifyCI_Round20_UsesVerifyCIJobsOverride(t *testing.T) {
 			lintCall = name + " " + joinedArgs
 		case name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(joinedArgs, "-coverprofile=coverage_overall.out"):
 			coverageEnv = map[string]string{
-				lesserToolJobsEnvVar: os.Getenv(lesserToolJobsEnvVar),
-				goMaxProcsEnvVar:     os.Getenv(goMaxProcsEnvVar),
-				goFlagsEnvVar:        os.Getenv(goFlagsEnvVar),
+				lesserToolJobsEnvVar:    os.Getenv(lesserToolJobsEnvVar),
+				goMaxProcsEnvVar:        os.Getenv(goMaxProcsEnvVar),
+				goFlagsEnvVar:           os.Getenv(goFlagsEnvVar),
+				coverageBatchSizeEnvVar: os.Getenv(coverageBatchSizeEnvVar),
 			}
 			coveragePath := filepath.Join(repoRoot, "coverage_overall.out")
 			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
@@ -195,10 +197,39 @@ func TestRunVerifyCI_Round20_UsesVerifyCIJobsOverride(t *testing.T) {
 	require.Equal(t, "2", coverageEnv[lesserToolJobsEnvVar])
 	require.Equal(t, "2", coverageEnv[goMaxProcsEnvVar])
 	require.Equal(t, "-trimpath -p=2", coverageEnv[goFlagsEnvVar])
+	require.Equal(t, "10", coverageEnv[coverageBatchSizeEnvVar])
 
 	require.Equal(t, "8", os.Getenv(lesserToolJobsEnvVar))
 	require.Equal(t, "", os.Getenv(goMaxProcsEnvVar))
 	require.Equal(t, "-trimpath", os.Getenv(goFlagsEnvVar))
+	require.Equal(t, "", os.Getenv(coverageBatchSizeEnvVar))
+}
+
+func TestRunVerifyCI_Round20_PreservesExplicitCoverageBatchSize(t *testing.T) {
+	repoRoot := setupVerifyCIRound20Harness(t)
+
+	t.Setenv(lesserVerifyCIJobsEnv, "2")
+	t.Setenv(lesserToolJobsEnvVar, "8")
+	t.Setenv(goMaxProcsEnvVar, "")
+	t.Setenv(goFlagsEnvVar, "-trimpath")
+	t.Setenv(coverageBatchSizeEnvVar, "3")
+
+	var coverageBatchSize string
+
+	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+		joinedArgs := strings.Join(args, " ")
+		if name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(joinedArgs, "-coverprofile=coverage_overall.out") {
+			coverageBatchSize = os.Getenv(coverageBatchSizeEnvVar)
+			coveragePath := filepath.Join(repoRoot, "coverage_overall.out")
+			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
+			return os.WriteFile(coveragePath, []byte(coverageData), 0o644)
+		}
+		return nil
+	}
+
+	require.NoError(t, runVerifyCI(nil))
+	require.Equal(t, "3", coverageBatchSize)
+	require.Equal(t, "3", os.Getenv(coverageBatchSizeEnvVar))
 }
 
 func TestRunVerifyCI_Round20_SkipsSecurityWhenDisabled(t *testing.T) {
