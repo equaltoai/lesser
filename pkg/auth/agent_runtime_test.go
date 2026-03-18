@@ -76,6 +76,61 @@ func TestAgentRuntimeHelpers(t *testing.T) {
 	require.ErrorIs(t, err, ErrSessionStorage)
 }
 
+func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
+	t.Parallel()
+
+	currentBySessionID := map[string]storage.RefreshToken{}
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{})
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID: "sess-1",
+		Current:   false,
+	})
+	require.Empty(t, currentBySessionID)
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID:   "sess-1",
+		Current:     true,
+		Generation:  1,
+		DeviceLabel: "first",
+	})
+	require.Equal(t, "first", currentBySessionID["sess-1"].DeviceLabel)
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID:   "sess-1",
+		Current:     true,
+		Generation:  0,
+		DeviceLabel: "older",
+	})
+	require.Equal(t, "first", currentBySessionID["sess-1"].DeviceLabel)
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID:   "sess-1",
+		Current:     true,
+		Generation:  2,
+		DeviceLabel: "newer",
+	})
+	require.Equal(t, "newer", currentBySessionID["sess-1"].DeviceLabel)
+}
+
+func TestIsAgentConnectorClientForUsername(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isAgentConnectorClientForUsername(nil, "alice"))
+	require.False(t, isAgentConnectorClientForUsername(&storage.OAuthClient{
+		ClientClass:   "web",
+		AgentUsername: "alice",
+	}, "alice"))
+	require.False(t, isAgentConnectorClientForUsername(&storage.OAuthClient{
+		ClientClass:   ClientClassAgent,
+		AgentUsername: "bob",
+	}, "alice"))
+	require.True(t, isAgentConnectorClientForUsername(&storage.OAuthClient{
+		ClientClass:   " agent ",
+		AgentUsername: " Alice ",
+	}, "alice"))
+}
+
 func TestIssueAgentRuntimeTokens(t *testing.T) {
 	t.Parallel()
 
