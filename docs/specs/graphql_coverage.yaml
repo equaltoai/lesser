@@ -73,6 +73,10 @@ routes:
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
+      path: /.well-known/oauth-authorization-server
+      policy: rest_only
+      exemptedBy: protocol_infra
+    - method: GET
       path: /.well-known/nodeinfo
       policy: rest_only
       exemptedBy: protocol_infra
