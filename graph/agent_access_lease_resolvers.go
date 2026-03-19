@@ -276,7 +276,7 @@ func (r *mutationResolver) CreateAgentAccessLeaseSessionKeyChallenge(ctx context
 		Scopes:            append([]string(nil), lease.Scopes...),
 		DeviceLabel:       lease.DeviceLabel,
 		IdleTimeoutHours:  lease.IdleTimeoutHours,
-		AbsoluteTTLHours:  max(1, int(time.Until(lease.AbsoluteExpiresAt).Hours())),
+		AbsoluteTTLHours:  graphLeaseRemainingAbsoluteTTLHours(now, lease.AbsoluteExpiresAt),
 	}, graphAgentAccessLeaseActionSessionKeyAuth)
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to create session key challenge")
@@ -372,7 +372,7 @@ func (r *mutationResolver) CreateAgentAccessLeaseRenewChallenge(ctx context.Cont
 		Scopes:            append([]string(nil), lease.Scopes...),
 		DeviceLabel:       lease.DeviceLabel,
 		IdleTimeoutHours:  lease.IdleTimeoutHours,
-		AbsoluteTTLHours:  max(1, int(time.Until(lease.AbsoluteExpiresAt).Hours())),
+		AbsoluteTTLHours:  graphLeaseRemainingAbsoluteTTLHours(now, lease.AbsoluteExpiresAt),
 	}, action)
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to create renewal challenge")
@@ -907,6 +907,13 @@ func computeGraphAgentLeaseExpiries(now time.Time, idleTimeoutHours int, absolut
 		idle = absolute
 	}
 	return idle, absolute
+}
+
+func graphLeaseRemainingAbsoluteTTLHours(now, absoluteExpiry time.Time) int {
+	if absoluteExpiry.IsZero() {
+		return graphAgentAccessLeaseDefaultAbsHrs
+	}
+	return max(1, int(absoluteExpiry.Sub(now).Hours()))
 }
 
 func graphEffectiveAgentAccessLeaseStatus(lease *storageModels.AgentAccessLease, now time.Time) string {
