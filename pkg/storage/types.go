@@ -364,19 +364,23 @@ type OAuthClient struct {
 	ClientSecret string `json:"client_secret,omitempty"`
 	// ClientSecretHash is the stored representation used for verification (e.g., bcrypt hash).
 	// It is never serialized in API responses.
-	ClientSecretHash string    `json:"-"`
-	Name             string    `json:"name"`
-	Description      string    `json:"description,omitempty"`
-	Website          string    `json:"website,omitempty"`
-	RedirectURIs     []string  `json:"redirect_uris"`
-	GrantTypes       []string  `json:"grant_types,omitempty"`
-	Scopes           []string  `json:"scopes"`
-	ClientClass      string    `json:"client_class,omitempty"`
-	AgentUsername    string    `json:"agent_username,omitempty"`
-	OwnerID          string    `json:"owner_id,omitempty"`
-	Confidential     bool      `json:"confidential"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ClientSecretHash   string    `json:"-"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description,omitempty"`
+	Website            string    `json:"website,omitempty"`
+	ClientURI          string    `json:"client_uri,omitempty"`
+	SoftwareID         string    `json:"software_id,omitempty"`
+	SoftwareVersion    string    `json:"software_version,omitempty"`
+	RedirectURIs       []string  `json:"redirect_uris"`
+	GrantTypes         []string  `json:"grant_types,omitempty"`
+	Scopes             []string  `json:"scopes"`
+	ClientClass        string    `json:"client_class,omitempty"`
+	AgentUsername      string    `json:"agent_username,omitempty"`
+	OwnerID            string    `json:"owner_id,omitempty"`
+	RegistrationSource string    `json:"registration_source,omitempty"`
+	Confidential       bool      `json:"confidential"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // OAuthApp represents a registered OAuth application
@@ -384,18 +388,24 @@ type OAuthApp struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Website      string `json:"website,omitempty"`
+	ClientURI    string `json:"client_uri,omitempty"`
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret,omitempty"`
 	// ClientSecretHash is the stored representation used for verification (e.g., bcrypt hash).
 	// It is never serialized in API responses.
-	ClientSecretHash string    `json:"-"`
-	RedirectURI      string    `json:"redirect_uri"`
-	RedirectURIs     []string  `json:"redirect_uris,omitempty"`
-	Scopes           []string  `json:"scopes,omitempty"`
-	ClientClass      string    `json:"client_class,omitempty"`
-	AgentUsername    string    `json:"agent_username,omitempty"`
-	VapidKey         string    `json:"vapid_key,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ClientSecretHash   string    `json:"-"`
+	RedirectURI        string    `json:"redirect_uri"`
+	RedirectURIs       []string  `json:"redirect_uris,omitempty"`
+	GrantTypes         []string  `json:"grant_types,omitempty"`
+	Scopes             []string  `json:"scopes,omitempty"`
+	ClientClass        string    `json:"client_class,omitempty"`
+	AgentUsername      string    `json:"agent_username,omitempty"`
+	SoftwareID         string    `json:"software_id,omitempty"`
+	SoftwareVersion    string    `json:"software_version,omitempty"`
+	RegistrationSource string    `json:"registration_source,omitempty"`
+	Confidential       bool      `json:"confidential"`
+	VapidKey           string    `json:"vapid_key,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // UserAppConsent represents user consent for an OAuth application

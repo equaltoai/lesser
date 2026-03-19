@@ -418,15 +418,16 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 
 	// Create OAuth client
 	client := &storage.OAuthClient{
-		Name:          req.ClientName,
-		Website:       req.Website,
-		RedirectURIs:  redirectURIs,
-		GrantTypes:    grantTypes,
-		Scopes:        scopes,
-		ClientClass:   clientClass,
-		AgentUsername: agentUsername,
-		OwnerID:       ownerID, // Set owner if authenticated
-		Confidential:  confidential,
+		Name:               req.ClientName,
+		Website:            req.Website,
+		RedirectURIs:       redirectURIs,
+		GrantTypes:         grantTypes,
+		Scopes:             scopes,
+		ClientClass:        clientClass,
+		AgentUsername:      agentUsername,
+		OwnerID:            ownerID, // Set owner if authenticated
+		RegistrationSource: oauthRegistrationSourceManual,
+		Confidential:       confidential,
 	}
 
 	h.logger.Info("creating OAuth client",
