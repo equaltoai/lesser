@@ -553,3 +553,26 @@ func TestApplyOAuthRegistrationRateLimit_ReturnsOAuthFriendly429(t *testing.T) {
 	require.Contains(t, string(resp.Body), "\"error\":\"slow_down\"")
 	require.Contains(t, string(resp.Body), "dynamic client registration")
 }
+
+func TestApplyOAuthRegistrationRateLimit_FailOpenOnLimiterCreationError(t *testing.T) {
+	orig := newLimiterFunc
+	t.Cleanup(func() { newLimiterFunc = orig })
+
+	newLimiterFunc = func(string, int, time.Duration, *zap.Logger) (atomicLimiter, error) {
+		return nil, context.Canceled
+	}
+
+	called := 0
+	out := ApplyOAuthRegistrationRateLimit(func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "ok"), nil
+	}, 5, time.Minute, zap.NewNop())
+
+	resp, err := out(&apptheory.Context{Request: apptheory.Request{
+		Method: http.MethodPost,
+		Path:   "/oauth/register",
+	}})
+	require.NoError(t, err)
+	require.Equal(t, 1, called)
+	require.Equal(t, http.StatusOK, resp.Status)
+}

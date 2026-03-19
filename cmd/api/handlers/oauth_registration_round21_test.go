@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -153,6 +154,22 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 
 		resp := requireStatus(t, http.StatusBadRequest)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
 		require.Contains(t, string(resp.Body), "\"error\":\"invalid_client_metadata\"")
+	})
+
+	t.Run("returns server error when client persistence fails", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{createErrorOnce: errors.New("create failed")})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/oauth/register", map[string]string{
+			"Content-Type": "application/json",
+		}, nil, apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:              "Claude Code",
+			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusInternalServerError)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		require.Contains(t, string(resp.Body), "\"error\":\"server_error\"")
 	})
 }
 

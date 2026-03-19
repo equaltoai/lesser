@@ -148,7 +148,7 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		}
 	}
 
-	tokenEndpointAuthMethod, confidential, err := normalizeOAuthTokenEndpointAuthMethod(req.TokenEndpointAuthMethod, req.ClientClass)
+	tokenEndpointAuthMethod, _, err := normalizeOAuthTokenEndpointAuthMethod(req.TokenEndpointAuthMethod, req.ClientClass)
 	if err != nil {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
 		return nil, resp, respErr
@@ -160,7 +160,7 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		return nil, resp, respErr
 	}
 
-	tokenEndpointAuthMethod, confidential, err = normalizeOAuthTokenEndpointAuthMethod(req.TokenEndpointAuthMethod, clientClass)
+	tokenEndpointAuthMethod, confidential, err := normalizeOAuthTokenEndpointAuthMethod(req.TokenEndpointAuthMethod, clientClass)
 	if err != nil {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
 		return nil, resp, respErr
