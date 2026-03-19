@@ -238,9 +238,9 @@ func (h *Handler) redirectUserToLogin(ctx *apptheory.Context, req *authorizeRequ
 }
 
 func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
-	scopes := []string{"read", "write"}
+	scopes := auth.DefaultScopes()
 	if strings.TrimSpace(scope) != "" {
-		scopes = strings.Fields(scope)
+		scopes = splitOAuthSpaceDelimited(scope)
 	}
 
 	scopesStr := strings.Join(scopes, " ")
@@ -248,7 +248,7 @@ func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
 		return nil, fmt.Errorf("invalid scopes: %v", err)
 	}
 
-	if err := auth.ValidateScopes(scopes); err != nil {
+	if err := auth.ValidatePublicOAuthScopes(scopes); err != nil {
 		return nil, errors.New("one or more requested scopes are invalid")
 	}
 
@@ -818,21 +818,15 @@ func resolveOAuthClientRequestedScopes(client *storage.OAuthClient, requestedSco
 			requested = auth.DefaultScopes()
 		}
 	}
-	if err := auth.ValidateScopes(requested); err != nil {
+	if err := auth.ValidatePublicOAuthScopes(requested); err != nil {
 		return nil, err
 	}
 	if len(client.Scopes) == 0 {
 		return requested, nil
 	}
 
-	allowedScopes := make(map[string]struct{}, len(client.Scopes))
-	for _, scope := range client.Scopes {
-		allowedScopes[scope] = struct{}{}
-	}
-	for _, scope := range requested {
-		if _, ok := allowedScopes[scope]; !ok {
-			return nil, auth.ErrInvalidScope
-		}
+	if !auth.ScopeSetAllows(client.Scopes, requested) {
+		return nil, auth.ErrInvalidScope
 	}
 	return requested, nil
 }
