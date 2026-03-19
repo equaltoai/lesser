@@ -196,6 +196,8 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 		}
 	}).Return(mockQuery).Maybe()
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()
 	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
@@ -229,6 +231,13 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 		default:
 			*dest = nil
 		}
+	}).Return(nil).Maybe()
+	mockQuery.On("All", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*[]*storageModels.OAuthClient)
+		return ok
+	})).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*storageModels.OAuthClient)
+		*dest = nil
 	}).Return(nil).Maybe()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {

@@ -108,6 +108,9 @@ func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *stora
 		Scopes:    authState.Scopes,
 		GrantedAt: time.Now(),
 	}
+	if strings.TrimSpace(authState.PrincipalUsername) != "" {
+		consent.Username = authState.PrincipalUsername
+	}
 
 	if err := h.repos.OAuth().SaveUserAppConsent(ctx.Context(), consent); err != nil {
 		h.logger.Warn("failed to store user consent", zap.Error(err))
@@ -127,13 +130,15 @@ func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *stora
 
 	// Store authorization code
 	authCode := &storage.AuthorizationCode{
-		Code:          code,
-		ClientID:      authState.ClientID,
-		RedirectURI:   authState.RedirectURI,
-		Username:      authState.Username,
-		CodeChallenge: authState.CodeChallenge,
-		ExpiresAt:     time.Now().Add(10 * time.Minute),
-		Scopes:        authState.Scopes,
+		Code:              code,
+		ClientID:          authState.ClientID,
+		RedirectURI:       authState.RedirectURI,
+		Username:          authState.Username,
+		PrincipalUsername: authState.PrincipalUsername,
+		AgentUsername:     authState.AgentUsername,
+		CodeChallenge:     authState.CodeChallenge,
+		ExpiresAt:         time.Now().Add(10 * time.Minute),
+		Scopes:            authState.Scopes,
 	}
 
 	if err := h.repos.OAuth().CreateAuthorizationCode(ctx.Context(), authCode); err != nil {

@@ -136,20 +136,15 @@ func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, userna
 	}
 
 	currentBySessionID := map[string]storage.RefreshToken{}
+
 	for _, clientID := range []string{"lesser-agent-delegation", "lesser-agent-self-sovereign"} {
-		tokens, err := repos.Account().ListRefreshTokensByUserClient(ctx, username, clientID)
-		if err != nil {
+		if err := collectCurrentAgentSessionsForClient(ctx, repos, username, clientID, currentBySessionID); err != nil {
 			return nil, err
 		}
-		for _, token := range tokens {
-			if strings.TrimSpace(token.SessionID) == "" || !token.Current {
-				continue
-			}
-			existing, ok := currentBySessionID[token.SessionID]
-			if !ok || token.Generation >= existing.Generation {
-				currentBySessionID[token.SessionID] = token
-			}
-		}
+	}
+
+	if err := collectCurrentAgentConnectorSessions(ctx, repos, username, currentBySessionID); err != nil {
+		return nil, err
 	}
 
 	out := make([]storage.RefreshToken, 0, len(currentBySessionID))
@@ -160,6 +155,59 @@ func ListAgentRuntimeSessions(ctx context.Context, repos StorageProvider, userna
 		return out[i].LastUsedAt.After(out[j].LastUsedAt)
 	})
 	return out, nil
+}
+
+func recordCurrentAgentSession(currentBySessionID map[string]storage.RefreshToken, token storage.RefreshToken) {
+	if strings.TrimSpace(token.SessionID) == "" || !token.Current {
+		return
+	}
+	existing, ok := currentBySessionID[token.SessionID]
+	if !ok || token.Generation >= existing.Generation {
+		currentBySessionID[token.SessionID] = token
+	}
+}
+
+func collectCurrentAgentSessionsForClient(ctx context.Context, repos StorageProvider, username, clientID string, currentBySessionID map[string]storage.RefreshToken) error {
+	tokens, err := repos.Account().ListRefreshTokensByUserClient(ctx, username, clientID)
+	if err != nil {
+		return err
+	}
+	for _, token := range tokens {
+		recordCurrentAgentSession(currentBySessionID, token)
+	}
+	return nil
+}
+
+func collectCurrentAgentConnectorSessions(ctx context.Context, repos StorageProvider, username string, currentBySessionID map[string]storage.RefreshToken) error {
+	cursor := ""
+	for {
+		clients, nextCursor, err := repos.Account().ListOAuthClients(ctx, 100, cursor)
+		if err != nil {
+			return err
+		}
+		for _, client := range clients {
+			if !isAgentConnectorClientForUsername(client, username) {
+				continue
+			}
+			if err := collectCurrentAgentSessionsForClient(ctx, repos, username, client.ClientID, currentBySessionID); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(nextCursor) == "" {
+			return nil
+		}
+		cursor = nextCursor
+	}
+}
+
+func isAgentConnectorClientForUsername(client *storage.OAuthClient, username string) bool {
+	if client == nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(client.ClientClass), ClientClassAgent) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(client.AgentUsername), username)
 }
 
 // RevokeAgentRuntimeFamily revokes all refresh tokens in a runtime session family.

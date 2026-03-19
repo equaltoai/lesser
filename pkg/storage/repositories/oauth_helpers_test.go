@@ -434,6 +434,30 @@ func TestGetOAuthStateGeneric_ExpiredTriggersDelete(t *testing.T) {
 	deleteQuery.AssertExpectations(t)
 }
 
+func TestGetOAuthStateGeneric_QueryError(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	helper := NewOAuthHelper(mockDB, logger)
+
+	ctx := context.Background()
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.OAuthState")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "OAUTH_STATE#broken-state").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", "STATE").Return(mockQuery)
+	mockQuery.On("First", mock.AnythingOfType("*models.OAuthState")).Return(ErrTestMockError)
+
+	result, err := helper.GetOAuthStateGeneric(ctx, "broken-state")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "OAuth state")
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 // ============================================================================
 // DB Flow Tests: CreateOAuthClientGeneric
 // ============================================================================
@@ -565,6 +589,30 @@ func TestCreateOAuthClientGeneric_CreateError(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestGetOAuthClientGeneric_QueryError(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	helper := NewOAuthHelper(mockDB, logger)
+
+	ctx := context.Background()
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.OAuthClient")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "OAUTH_CLIENT#broken-client").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", "CLIENT").Return(mockQuery)
+	mockQuery.On("First", mock.AnythingOfType("*models.OAuthClient")).Return(ErrTestMockError)
+
+	result, err := helper.GetOAuthClientGeneric(ctx, "broken-client")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "OAuth client")
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 // ============================================================================
 // DB Flow Tests: UpdateOAuthClientGeneric
 // ============================================================================
@@ -634,6 +682,78 @@ func TestUpdateOAuthClientGeneric_ClientNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.ErrorIs(t, err, storage.ErrNotFound)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestListRefreshTokensByUserClientGeneric_QueryError(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	helper := NewOAuthHelper(mockDB, logger)
+
+	ctx := context.Background()
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.RefreshToken")).Return(mockQuery)
+	mockQuery.On("Index", "gsi1").Return(mockQuery)
+	mockQuery.On("Where", "gsi1PK", "=", "RUNTIME_USER#alice#client-1").Return(mockQuery)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.RefreshToken")).Return(ErrTestMockError)
+
+	tokens, err := helper.ListRefreshTokensByUserClientGeneric(ctx, "alice", "client-1")
+
+	require.Error(t, err)
+	assert.Nil(t, tokens)
+	assert.Contains(t, err.Error(), "refresh token")
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestListRefreshTokensByFamilyGeneric_QueryError(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	helper := NewOAuthHelper(mockDB, logger)
+
+	ctx := context.Background()
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.RefreshToken")).Return(mockQuery)
+	mockQuery.On("Index", "gsi2").Return(mockQuery)
+	mockQuery.On("Where", "gsi2PK", "=", "RUNTIME_FAMILY#family-1").Return(mockQuery)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.RefreshToken")).Return(ErrTestMockError)
+
+	tokens, err := helper.ListRefreshTokensByFamilyGeneric(ctx, "family-1")
+
+	require.Error(t, err)
+	assert.Nil(t, tokens)
+	assert.Contains(t, err.Error(), "refresh token")
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestListRefreshTokensBySessionGeneric_QueryError(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	helper := NewOAuthHelper(mockDB, logger)
+
+	ctx := context.Background()
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.RefreshToken")).Return(mockQuery)
+	mockQuery.On("Index", "gsi3").Return(mockQuery)
+	mockQuery.On("Where", "gsi3PK", "=", "RUNTIME_SESSION#session-1").Return(mockQuery)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.RefreshToken")).Return(ErrTestMockError)
+
+	tokens, err := helper.ListRefreshTokensBySessionGeneric(ctx, "session-1")
+
+	require.Error(t, err)
+	assert.Nil(t, tokens)
+	assert.Contains(t, err.Error(), "refresh token")
 
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)

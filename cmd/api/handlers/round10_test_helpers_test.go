@@ -292,6 +292,30 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	}
 	mockQuery.On("Create").Return(nil).Run(func(_ mock.Arguments) {
 		switch m := state.model.(type) {
+		case *storagemodels.OAuthClient:
+			if m == nil {
+				return
+			}
+			if state.oauthClientsByID == nil {
+				state.oauthClientsByID = map[string]storagemodels.OAuthClient{}
+			}
+			state.oauthClientsByID[m.ClientID] = *m
+		case *storagemodels.OAuthState:
+			if m == nil {
+				return
+			}
+			if state.oauthStates == nil {
+				state.oauthStates = map[string]storagemodels.OAuthState{}
+			}
+			state.oauthStates[m.State] = *m
+		case *storagemodels.AuthorizationCode:
+			if m == nil {
+				return
+			}
+			if state.authorizationCodesByCode == nil {
+				state.authorizationCodesByCode = map[string]storagemodels.AuthorizationCode{}
+			}
+			state.authorizationCodesByCode[m.Code] = *m
 		case *storagemodels.RefreshToken:
 			if m == nil {
 				return
@@ -1374,6 +1398,13 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				}
 			}
 			*d = []storagemodels.OAuthDeviceSession{}
+		case *[]*storagemodels.OAuthClient:
+			items := make([]*storagemodels.OAuthClient, 0, len(state.oauthClientsByID))
+			for _, client := range state.oauthClientsByID {
+				clientCopy := client
+				items = append(items, &clientCopy)
+			}
+			*d = items
 		case *[]storagemodels.User:
 			role, _ := state.whereString("gsi3PK")
 			switch role {

@@ -24,6 +24,7 @@ DELETE /auth/wallet/unlink/{address}
 GET /
 GET /.well-known/lesser-soul-agent
 GET /.well-known/nodeinfo
+GET /.well-known/oauth-authorization-server
 GET /.well-known/reputation-keys
 GET /api/oembed
 GET /api/v1/accounts/relationships
@@ -149,6 +150,7 @@ GET /oauth/authorize
 GET /robots.txt
 GET /setup/status
 HEAD /
+OPTIONS /.well-known/oauth-authorization-server
 OPTIONS /api/v1/accounts
 OPTIONS /api/v1/accounts/update_credentials
 OPTIONS /api/v1/accounts/verify_credentials

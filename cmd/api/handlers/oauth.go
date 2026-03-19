@@ -13,6 +13,7 @@ import (
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -30,10 +31,13 @@ type authorizeRequest struct {
 }
 
 type authorizeFlow struct {
-	request  *authorizeRequest
-	oauthSvc *auth.OAuthService
-	username string
-	scopes   []string
+	request           *authorizeRequest
+	oauthSvc          *auth.OAuthService
+	client            *storage.OAuthClient
+	principalUsername string
+	username          string
+	agentUsername     string
+	scopes            []string
 }
 
 const oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
@@ -105,11 +109,41 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 		return nil, resp, respErr
 	}
 
-	username, resp, err := h.resolveAuthorizeUser(ctx, req)
+	client, err := h.repos.Account().GetOAuthClient(ctx.Context(), req.clientID)
+	if err != nil || client == nil {
+		resp, respErr := h.oauthErrorLift(ctx, "invalid_client", "Invalid client", req.redirectURI, req.state)
+		return nil, resp, respErr
+	}
+	flow.client = client
+
+	principalUsername, resp, err := h.resolveAuthorizeUser(ctx, req)
 	if resp != nil || err != nil {
 		return nil, resp, err
 	}
-	flow.username = username
+	flow.principalUsername = principalUsername
+	flow.username = principalUsername
+
+	if strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
+		agentUser, agentErr := h.getAgentUserForOAuthClient(ctx.Context(), client, principalUsername)
+		switch agentErr {
+		case nil:
+			flow.username = agentUser.Username
+			flow.agentUsername = agentUser.Username
+		case errOAuthAgentUsernameRequired:
+			resp, respErr := h.oauthErrorLift(ctx, "invalid_client", agentErr.Error(), req.redirectURI, req.state)
+			return nil, resp, respErr
+		case errOAuthAgentNotFound:
+			resp, respErr := h.oauthErrorLift(ctx, "invalid_client", agentErr.Error(), req.redirectURI, req.state)
+			return nil, resp, respErr
+		case errOAuthAgentForbidden:
+			resp, respErr := h.oauthErrorLift(ctx, "access_denied", "Principal is not authorized for this agent connector", req.redirectURI, req.state)
+			return nil, resp, respErr
+		default:
+			h.logger.Error("failed to resolve OAuth agent connector binding", zap.Error(agentErr))
+			resp, respErr := h.oauthErrorLift(ctx, "server_error", "Failed to resolve agent connector", req.redirectURI, req.state)
+			return nil, resp, respErr
+		}
+	}
 
 	scopes, err := h.normalizeAuthorizeScopes(req.scope)
 	if err != nil {
@@ -226,7 +260,7 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		return h.oauthErrorLift(ctx, "server_error", "Service unavailable", flow.request.redirectURI, flow.request.state)
 	}
 
-	if h.hasUserConsentedToApp(ctx.Context(), flow.username, flow.request.clientID, flow.scopes) {
+	if h.hasUserConsentedToApp(ctx.Context(), flow.principalUsername, flow.request.clientID, flow.scopes) {
 		return nil, nil
 	}
 
@@ -234,6 +268,8 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		State:               flow.request.state,
 		ClientID:            flow.request.clientID,
 		Username:            flow.username,
+		PrincipalUsername:   flow.principalUsername,
+		AgentUsername:       flow.agentUsername,
 		Scopes:              flow.scopes,
 		RedirectURI:         flow.request.redirectURI,
 		CodeChallenge:       flow.request.codeChallenge,
@@ -264,13 +300,15 @@ func (h *Handler) completeAuthorizationFlow(ctx *apptheory.Context, flow *author
 	}
 
 	authCode := &storage.AuthorizationCode{
-		Code:          code,
-		ClientID:      flow.request.clientID,
-		RedirectURI:   flow.request.redirectURI,
-		Username:      flow.username,
-		CodeChallenge: flow.request.codeChallenge,
-		ExpiresAt:     time.Now().Add(10 * time.Minute),
-		Scopes:        flow.scopes,
+		Code:              code,
+		ClientID:          flow.request.clientID,
+		RedirectURI:       flow.request.redirectURI,
+		Username:          flow.username,
+		PrincipalUsername: flow.principalUsername,
+		AgentUsername:     flow.agentUsername,
+		CodeChallenge:     flow.request.codeChallenge,
+		ExpiresAt:         time.Now().Add(10 * time.Minute),
+		Scopes:            flow.scopes,
 	}
 
 	if _, err := h.registry.Accounts().CreateAuthorizationCode(ctx.Context(), &accounts.CreateAuthorizationCodeCommand{
@@ -382,6 +420,10 @@ func (h *Handler) redirectToConsentUI(ctx *apptheory.Context, authState *storage
 		url.QueryEscape(app.Website),
 		url.QueryEscape(strings.Join(authState.Scopes, " ")),
 		url.QueryEscape(authState.RedirectURI))
+	if strings.TrimSpace(authState.AgentUsername) != "" {
+		consentURL += "&agent_username=" + url.QueryEscape(authState.AgentUsername)
+		consentURL += "&principal_username=" + url.QueryEscape(authState.PrincipalUsername)
+	}
 	return h.writeOAuthAuthorizeRedirect(ctx, consentURL)
 }
 
@@ -781,68 +823,14 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	redirectURI = strings.TrimSpace(redirectURI)
 	clientSecret = strings.TrimSpace(clientSecret)
 
-	// Load OAuth client once to enforce confidential client authentication and avoid repeated DB calls.
-	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
-	if err != nil || client == nil {
-		return "", "", nil, auth.ErrInvalidClient
-	}
-
-	// Validate redirect URI for this client (exact match required).
-	if err := common.ValidateMultipleRequiredParams(map[string]string{
-		"clientID":    clientID,
-		"redirectURI": redirectURI,
-		"authCode":    code,
-	}); err != nil {
-		return "", "", nil, auth.ErrInvalidRequest
-	}
-
-	redirectAllowed := false
-	for _, registeredURI := range client.RedirectURIs {
-		if registeredURI == redirectURI {
-			redirectAllowed = true
-			break
-		}
-	}
-	if !redirectAllowed {
-		return "", "", nil, auth.ErrInvalidRequest
-	}
-
-	// Enforce confidential client authentication.
-	if client.Confidential {
-		if clientSecret == "" {
-			return "", "", nil, auth.ErrInvalidClient
-		}
-		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-			return "", "", nil, err
-		}
-	} else if clientSecret != "" {
-		// If the client provided a secret anyway, validate it.
-		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-			return "", "", nil, err
-		}
-	}
-
-	// Get authorization code from storage
-	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
+	client, err := h.validateAuthorizationCodeExchangeClient(ctx, oauthSvc, clientID, redirectURI, clientSecret, code)
 	if err != nil {
-		return "", "", nil, auth.ErrInvalidGrant
+		return "", "", nil, err
 	}
 
-	// Validate authorization code
-	if authCode.ClientID != clientID {
-		return "", "", nil, auth.ErrInvalidGrant
-	}
-
-	// Validate redirect_uri binding per RFC 6749 Section 4.1.3.
-	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
-		return "", "", nil, auth.ErrInvalidGrant
-	}
-
-	// Verify PKCE if used
-	if authCode.CodeChallenge != "" || codeVerifier != "" {
-		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
-			return "", "", nil, err
-		}
+	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code, clientID, redirectURI, codeVerifier)
+	if err != nil {
+		return "", "", nil, err
 	}
 
 	// Consume the authorization code before issuing tokens. This prevents code reuse via
@@ -852,22 +840,107 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", nil, auth.ErrInvalidGrant
 	}
 
-	clientClass := ""
-	sessionID := ""
-	clientClass = strings.ToLower(strings.TrimSpace(client.ClientClass))
-	if clientClass == auth.ClientClassCLI {
-		sessionID = common.GenerateSessionIDULID()
+	clientClass, sessionID, accessTTL, err := authorizationCodeExchangeTokenContext(h.cfg, client, authCode)
+	if err != nil {
+		return "", "", nil, err
 	}
 
 	// Generate tokens
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, auth.AccessTokenDuration, clientClass, sessionID)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID)
 	if err != nil {
 		return "", "", nil, errors.Join(failedToGenerateTokens(), err)
 	}
 
 	now := time.Now().UTC()
+	oauthRefreshToken := buildAuthorizationCodeRefreshToken(now, refreshToken, clientID, client, authCode, clientClass, sessionID, accessTTL)
 
-	// Store refresh token in storage for later validation
+	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
+		h.logger.Error("failed to store refresh token", zap.Error(err))
+		// Continue - access token is still valid
+	}
+
+	return accessToken, refreshToken, authCode.Scopes, nil
+}
+
+func (h *Handler) validateAuthorizationCodeExchangeClient(ctx context.Context, oauthSvc *auth.OAuthService, clientID, redirectURI, clientSecret, code string) (*storage.OAuthClient, error) {
+	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
+	if err != nil || client == nil {
+		return nil, auth.ErrInvalidClient
+	}
+	if err := validateAuthorizationCodeExchangeRedirect(client, clientID, redirectURI, code); err != nil {
+		return nil, err
+	}
+	if err := validateAuthorizationCodeExchangeClientSecret(ctx, oauthSvc, client, clientID, clientSecret); err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func validateAuthorizationCodeExchangeRedirect(client *storage.OAuthClient, clientID, redirectURI, code string) error {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"clientID":    clientID,
+		"redirectURI": redirectURI,
+		"authCode":    code,
+	}); err != nil {
+		return auth.ErrInvalidRequest
+	}
+	for _, registeredURI := range client.RedirectURIs {
+		if registeredURI == redirectURI {
+			return nil
+		}
+	}
+	return auth.ErrInvalidRequest
+}
+
+func validateAuthorizationCodeExchangeClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientID, clientSecret string) error {
+	if client.Confidential {
+		if clientSecret == "" {
+			return auth.ErrInvalidClient
+		}
+		return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
+	}
+	if clientSecret == "" {
+		return nil
+	}
+	return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
+}
+
+func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier string) (*storage.AuthorizationCode, error) {
+	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
+	if err != nil {
+		return nil, auth.ErrInvalidGrant
+	}
+	if authCode.ClientID != clientID {
+		return nil, auth.ErrInvalidGrant
+	}
+	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
+		return nil, auth.ErrInvalidGrant
+	}
+	if authCode.CodeChallenge != "" || codeVerifier != "" {
+		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
+			return nil, err
+		}
+	}
+	return authCode, nil
+}
+
+func authorizationCodeExchangeTokenContext(cfg *config.Config, client *storage.OAuthClient, authCode *storage.AuthorizationCode) (string, string, time.Duration, error) {
+	clientClass := strings.ToLower(strings.TrimSpace(client.ClientClass))
+	sessionID := ""
+	accessTTL := auth.AccessTokenDuration
+	if clientClass == auth.ClientClassCLI || clientClass == auth.ClientClassAgent {
+		sessionID = common.GenerateSessionIDULID()
+	}
+	if clientClass != auth.ClientClassAgent {
+		return clientClass, sessionID, accessTTL, nil
+	}
+	if authCode.AgentUsername == "" || authCode.AgentUsername != authCode.Username || authCode.AgentUsername != client.AgentUsername {
+		return "", "", 0, auth.ErrInvalidGrant
+	}
+	return clientClass, sessionID, auth.AgentAccessTokenTTL(cfg), nil
+}
+
+func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID string, client *storage.OAuthClient, authCode *storage.AuthorizationCode, clientClass, sessionID string, accessTTL time.Duration) *storage.RefreshToken {
 	oauthRefreshToken := &storage.RefreshToken{
 		Token:       refreshToken,
 		Username:    authCode.Username,
@@ -878,13 +951,27 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		ClientClass: clientClass,
 		SessionID:   sessionID,
 	}
-
-	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
-		h.logger.Error("failed to store refresh token", zap.Error(err))
-		// Continue - access token is still valid
+	if clientClass != auth.ClientClassAgent {
+		return oauthRefreshToken
 	}
 
-	return accessToken, refreshToken, authCode.Scopes, nil
+	absoluteExpiry := now.Add(auth.AgentRuntimeRefreshAbsoluteTTL)
+	idleExpiry := now.Add(auth.AgentRuntimeRefreshIdleTTL)
+	if idleExpiry.After(absoluteExpiry) {
+		idleExpiry = absoluteExpiry
+	}
+
+	oauthRefreshToken.ExpiresAt = idleExpiry
+	oauthRefreshToken.FamilyID = common.GenerateSessionIDULID()
+	oauthRefreshToken.Generation = 1
+	oauthRefreshToken.Current = true
+	oauthRefreshToken.DeviceLabel = auth.CoalesceAgentRuntimeLabel(client.Name, authCode.AgentUsername)
+	oauthRefreshToken.LastUsedAt = now
+	oauthRefreshToken.IdleExpiresAt = idleExpiry
+	oauthRefreshToken.AbsoluteExpiresAt = absoluteExpiry
+	oauthRefreshToken.SessionCreatedAt = now
+	oauthRefreshToken.AccessTTLSeconds = int(accessTTL.Seconds())
+	return oauthRefreshToken
 }
 
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
@@ -912,6 +999,9 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
 			return "", "", nil, err
 		}
+	}
+	if strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
+		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 
 	// Get refresh token from storage

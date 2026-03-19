@@ -1579,6 +1579,8 @@ components:
         AppRegistrationRequest:
             additionalProperties: false
             properties:
+                agent_username:
+                    type: string
                 client_class:
                     type: string
                 client_name:
@@ -7864,6 +7866,26 @@ paths:
             x-lesser-routeSources:
                 - cmd/api/routes.go
                 - infra/cdk/inventory/lambdas.go:api
+    /.well-known/oauth-authorization-server:
+        get:
+            operationId: get_well_known_oauth_authorization_server
+            tags:
+                - well-known
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Map7d31df2b'
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthAuthorizationServerMetadataLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /.well-known/reputation-keys:
         get:
             operationId: get_well_known_reputation_keys

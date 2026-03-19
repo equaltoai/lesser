@@ -13,13 +13,15 @@ type AuthorizationCode struct {
 	SK string `theorydb:"sk,attr:SK" json:"-"` // CODE
 
 	// Core fields from legacy storage.AuthorizationCode
-	Code          string    `theorydb:"attr:code" json:"Code"`
-	ClientID      string    `theorydb:"attr:clientID" json:"ClientID"`
-	RedirectURI   string    `theorydb:"attr:redirectURI" json:"RedirectURI"`
-	Username      string    `theorydb:"attr:username" json:"Username"`
-	CodeChallenge string    `theorydb:"attr:codeChallenge" json:"CodeChallenge"`
-	ExpiresAt     time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
-	Scopes        []string  `theorydb:"attr:scopes" json:"Scopes"`
+	Code              string    `theorydb:"attr:code" json:"Code"`
+	ClientID          string    `theorydb:"attr:clientID" json:"ClientID"`
+	RedirectURI       string    `theorydb:"attr:redirectURI" json:"RedirectURI"`
+	Username          string    `theorydb:"attr:username" json:"Username"`
+	PrincipalUsername string    `theorydb:"attr:principalUsername,omitempty" json:"PrincipalUsername,omitempty"`
+	AgentUsername     string    `theorydb:"attr:agentUsername,omitempty" json:"AgentUsername,omitempty"`
+	CodeChallenge     string    `theorydb:"attr:codeChallenge" json:"CodeChallenge"`
+	ExpiresAt         time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
+	Scopes            []string  `theorydb:"attr:scopes" json:"Scopes"`
 
 	// Tracking fields
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`

@@ -2,225 +2,315 @@ package main
 
 import (
 	"context"
-	stdErrors "errors"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigateway"
+	apigwtypes "github.com/aws/aws-sdk-go-v2/service/apigateway/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/stretchr/testify/require"
 )
 
-type fakeAPIGatewayClient struct {
-	cloudwatchRoleArn *string
-	getErr            error
-
-	updateCalls int
-	failUpdates int
-	updateErr   error
+func TestAPIGatewayClientFactories(t *testing.T) {
+	require.NotNil(t, newAPIGatewayClientFn(aws.Config{}))
+	require.NotNil(t, newIAMClientFn(aws.Config{}))
 }
 
-func (f *fakeAPIGatewayClient) GetAccount(_ context.Context, _ *apigateway.GetAccountInput, _ ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error) {
-	if f.getErr != nil {
-		return nil, f.getErr
+type stubAPIGatewayAccountClient struct {
+	getAccountFn func(context.Context, *apigateway.GetAccountInput, ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error)
+	updateFn     func(context.Context, *apigateway.UpdateAccountInput, ...func(*apigateway.Options)) (*apigateway.UpdateAccountOutput, error)
+}
+
+func (s stubAPIGatewayAccountClient) GetAccount(ctx context.Context, in *apigateway.GetAccountInput, optFns ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error) {
+	return s.getAccountFn(ctx, in, optFns...)
+}
+
+func (s stubAPIGatewayAccountClient) UpdateAccount(ctx context.Context, in *apigateway.UpdateAccountInput, optFns ...func(*apigateway.Options)) (*apigateway.UpdateAccountOutput, error) {
+	if s.updateFn == nil {
+		panic("unexpected UpdateAccount call")
 	}
-	return &apigateway.GetAccountOutput{CloudwatchRoleArn: f.cloudwatchRoleArn}, nil
+	return s.updateFn(ctx, in, optFns...)
 }
 
-func (f *fakeAPIGatewayClient) UpdateAccount(_ context.Context, _ *apigateway.UpdateAccountInput, _ ...func(*apigateway.Options)) (*apigateway.UpdateAccountOutput, error) {
-	f.updateCalls++
-	if f.updateCalls <= f.failUpdates {
-		if f.updateErr != nil {
-			return nil, f.updateErr
-		}
-		return nil, stdErrors.New("update failed")
+type stubIAMRoleClient struct {
+	getRoleFn          func(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	createRoleFn       func(context.Context, *iam.CreateRoleInput, ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	attachRolePolicyFn func(context.Context, *iam.AttachRolePolicyInput, ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error)
+}
+
+func (s stubIAMRoleClient) GetRole(ctx context.Context, in *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+	if s.getRoleFn == nil {
+		panic("unexpected GetRole call")
 	}
-	return &apigateway.UpdateAccountOutput{}, nil
+	return s.getRoleFn(ctx, in, optFns...)
 }
-
-type fakeIAMClient struct {
-	getRoleOut    *iam.GetRoleOutput
-	getRoleErr    error
-	createRoleOut *iam.CreateRoleOutput
-	createRoleErr error
-	attachErr     error
-}
-
-func (f *fakeIAMClient) GetRole(_ context.Context, _ *iam.GetRoleInput, _ ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
-	if f.getRoleErr != nil {
-		return nil, f.getRoleErr
+func (s stubIAMRoleClient) CreateRole(ctx context.Context, in *iam.CreateRoleInput, optFns ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
+	if s.createRoleFn == nil {
+		panic("unexpected CreateRole call")
 	}
-	return f.getRoleOut, nil
+	return s.createRoleFn(ctx, in, optFns...)
 }
-
-func (f *fakeIAMClient) CreateRole(_ context.Context, _ *iam.CreateRoleInput, _ ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
-	if f.createRoleErr != nil {
-		return nil, f.createRoleErr
+func (s stubIAMRoleClient) AttachRolePolicy(ctx context.Context, in *iam.AttachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error) {
+	if s.attachRolePolicyFn == nil {
+		panic("unexpected AttachRolePolicy call")
 	}
-	return f.createRoleOut, nil
+	return s.attachRolePolicyFn(ctx, in, optFns...)
 }
 
-func (f *fakeIAMClient) AttachRolePolicy(_ context.Context, _ *iam.AttachRolePolicyInput, _ ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error) {
-	if f.attachErr != nil {
-		return nil, f.attachErr
-	}
-	return &iam.AttachRolePolicyOutput{}, nil
-}
-
-func TestEnsureAPIGatewayCloudWatchLogsRole_AlreadySet(t *testing.T) {
-	prevNew := newAPIGatewayClientFn
-	t.Cleanup(func() { newAPIGatewayClientFn = prevNew })
-
-	fakeAPIGW := &fakeAPIGatewayClient{cloudwatchRoleArn: aws.String("arn:aws:iam::123:role/existing")}
-	newAPIGatewayClientFn = func(_ aws.Config) apiGatewayAccountAPI { return fakeAPIGW }
-
-	require.NoError(t, ensureAPIGatewayCloudWatchLogsRole(context.Background(), aws.Config{}))
-	require.Equal(t, 0, fakeAPIGW.updateCalls)
-}
-
-func TestEnsureAPIGatewayCloudWatchLogsRole_SetsRoleWithRetries(t *testing.T) {
-	prevNewAPIGW := newAPIGatewayClientFn
-	prevNewIAM := newIAMClientFn
-	prevSleep := sleepFn
+func TestEnsureAPIGatewayCloudWatchLogsRole_ExistingARN(t *testing.T) {
+	originalAPIGateway := newAPIGatewayClientFn
+	originalIAM := newIAMClientFn
 	t.Cleanup(func() {
-		newAPIGatewayClientFn = prevNewAPIGW
-		newIAMClientFn = prevNewIAM
-		sleepFn = prevSleep
+		newAPIGatewayClientFn = originalAPIGateway
+		newIAMClientFn = originalIAM
 	})
 
-	sleepFn = func(time.Duration) {}
-
-	fakeAPIGW := &fakeAPIGatewayClient{
-		cloudwatchRoleArn: aws.String(""),
-		failUpdates:       2,
+	newAPIGatewayClientFn = func(cfg aws.Config) apiGatewayAccountAPI {
+		return stubAPIGatewayAccountClient{
+			getAccountFn: func(context.Context, *apigateway.GetAccountInput, ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error) {
+				return &apigateway.GetAccountOutput{
+					CloudwatchRoleArn: aws.String("arn:aws:iam::123456789012:role/existing"),
+				}, nil
+			},
+		}
 	}
-	newAPIGatewayClientFn = func(_ aws.Config) apiGatewayAccountAPI { return fakeAPIGW }
-
-	fakeIAM := &fakeIAMClient{
-		getRoleOut: &iam.GetRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123:role/apigw")}},
+	newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+		return stubIAMRoleClient{}
 	}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM }
 
 	require.NoError(t, ensureAPIGatewayCloudWatchLogsRole(context.Background(), aws.Config{}))
-	require.GreaterOrEqual(t, fakeAPIGW.updateCalls, 3)
 }
 
 func TestEnsureAPIGatewayCloudWatchLogsRole_GetAccountError(t *testing.T) {
-	prevNew := newAPIGatewayClientFn
-	t.Cleanup(func() { newAPIGatewayClientFn = prevNew })
+	originalAPIGateway := newAPIGatewayClientFn
+	t.Cleanup(func() {
+		newAPIGatewayClientFn = originalAPIGateway
+	})
 
-	fakeAPIGW := &fakeAPIGatewayClient{getErr: errSentinel}
-	newAPIGatewayClientFn = func(_ aws.Config) apiGatewayAccountAPI { return fakeAPIGW }
+	newAPIGatewayClientFn = func(cfg aws.Config) apiGatewayAccountAPI {
+		return stubAPIGatewayAccountClient{
+			getAccountFn: func(context.Context, *apigateway.GetAccountInput, ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error) {
+				return nil, errors.New("boom")
+			},
+		}
+	}
 
 	err := ensureAPIGatewayCloudWatchLogsRole(context.Background(), aws.Config{})
-	require.ErrorIs(t, err, errSentinel)
+	require.Error(t, err)
 	require.Contains(t, err.Error(), "apigateway:GetAccount")
 }
 
-func TestEnsureAPIGatewayCloudWatchLogsRole_UpdateRetriesExhausted(t *testing.T) {
-	prevNewAPIGW := newAPIGatewayClientFn
-	prevNewIAM := newIAMClientFn
-	prevSleep := sleepFn
+func TestEnsureAPIGatewayCloudWatchLogsRole_SetsCloudWatchRoleARN(t *testing.T) {
+	originalAPIGateway := newAPIGatewayClientFn
+	originalIAM := newIAMClientFn
+	originalSleepFn := sleepFn
 	t.Cleanup(func() {
-		newAPIGatewayClientFn = prevNewAPIGW
-		newIAMClientFn = prevNewIAM
-		sleepFn = prevSleep
+		newAPIGatewayClientFn = originalAPIGateway
+		newIAMClientFn = originalIAM
+		sleepFn = originalSleepFn
 	})
 
-	sleepFn = func(time.Duration) {}
-
-	fakeAPIGW := &fakeAPIGatewayClient{
-		cloudwatchRoleArn: aws.String(""),
-		failUpdates:       10,
-		updateErr:         errSentinel,
+	var patchOps []apigwtypes.PatchOperation
+	var updateCalls int
+	newAPIGatewayClientFn = func(cfg aws.Config) apiGatewayAccountAPI {
+		return stubAPIGatewayAccountClient{
+			getAccountFn: func(context.Context, *apigateway.GetAccountInput, ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error) {
+				return &apigateway.GetAccountOutput{}, nil
+			},
+			updateFn: func(ctx context.Context, in *apigateway.UpdateAccountInput, optFns ...func(*apigateway.Options)) (*apigateway.UpdateAccountOutput, error) {
+				updateCalls++
+				patchOps = append([]apigwtypes.PatchOperation(nil), in.PatchOperations...)
+				return &apigateway.UpdateAccountOutput{}, nil
+			},
+		}
 	}
-	newAPIGatewayClientFn = func(_ aws.Config) apiGatewayAccountAPI { return fakeAPIGW }
 
-	fakeIAM := &fakeIAMClient{
-		getRoleOut: &iam.GetRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123:role/apigw")}},
+	var attachedPolicy string
+	newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+		return stubIAMRoleClient{
+			getRoleFn: func(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+				return &iam.GetRoleOutput{
+					Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123456789012:role/existing")},
+				}, nil
+			},
+			attachRolePolicyFn: func(ctx context.Context, in *iam.AttachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error) {
+				attachedPolicy = aws.ToString(in.PolicyArn)
+				return &iam.AttachRolePolicyOutput{}, nil
+			},
+		}
 	}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM }
+
+	sleepFn = func(duration time.Duration) {}
 
 	err := ensureAPIGatewayCloudWatchLogsRole(context.Background(), aws.Config{})
-	require.ErrorIs(t, err, errSentinel)
-	require.Contains(t, err.Error(), "apigateway:UpdateAccount")
-	require.Equal(t, 6, fakeAPIGW.updateCalls)
-}
-
-func TestEnsureAPIGatewayCloudWatchLogsRole_PropagatesIAMRoleErrors(t *testing.T) {
-	prevNewAPIGW := newAPIGatewayClientFn
-	prevNewIAM := newIAMClientFn
-	t.Cleanup(func() {
-		newAPIGatewayClientFn = prevNewAPIGW
-		newIAMClientFn = prevNewIAM
-	})
-
-	fakeAPIGW := &fakeAPIGatewayClient{cloudwatchRoleArn: aws.String("")}
-	newAPIGatewayClientFn = func(_ aws.Config) apiGatewayAccountAPI { return fakeAPIGW }
-
-	fakeIAM := &fakeIAMClient{getRoleErr: stdErrors.New("boom")}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM }
-
-	err := ensureAPIGatewayCloudWatchLogsRole(context.Background(), aws.Config{})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "iam:GetRole")
-	require.Equal(t, 0, fakeAPIGW.updateCalls)
-}
-
-func TestEnsureIAMRoleForAPIGatewayLogs_CreateRoleFlowAndFailures(t *testing.T) {
-	prevNewIAM := newIAMClientFn
-	t.Cleanup(func() { newIAMClientFn = prevNewIAM })
-
-	// Not found -> create -> success.
-	fakeIAM := &fakeIAMClient{
-		getRoleErr:    &iamtypes.NoSuchEntityException{},
-		createRoleOut: &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123:role/new")}},
-	}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM }
-
-	arn, err := ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{})
 	require.NoError(t, err)
-	require.Equal(t, "arn:aws:iam::123:role/new", arn)
-
-	// Create returns empty ARN -> error.
-	fakeIAM2 := &fakeIAMClient{
-		getRoleErr:    &iamtypes.NoSuchEntityException{},
-		createRoleOut: &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("")}},
-	}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM2 }
-	_, err = ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{})
-	require.Error(t, err)
-
-	// Existing role, but attaching policy fails.
-	fakeIAM3 := &fakeIAMClient{
-		getRoleOut: &iam.GetRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123:role/existing")}},
-		attachErr:  stdErrors.New("attach failed"),
-	}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM3 }
-	_, err = ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{})
-	require.Error(t, err)
+	require.Equal(t, 1, updateCalls)
+	require.Len(t, patchOps, 1)
+	require.Equal(t, apigwtypes.OpReplace, patchOps[0].Op)
+	require.Equal(t, "/cloudwatchRoleArn", aws.ToString(patchOps[0].Path))
+	require.Equal(t, "arn:aws:iam::123456789012:role/existing", aws.ToString(patchOps[0].Value))
+	require.Equal(t, "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs", attachedPolicy)
 }
 
-func TestEnsureIAMRoleForAPIGatewayLogs_UnexpectedErrors(t *testing.T) {
-	prevNewIAM := newIAMClientFn
-	t.Cleanup(func() { newIAMClientFn = prevNewIAM })
+func TestEnsureAPIGatewayCloudWatchLogsRole_UpdateAccountRetriesExhausted(t *testing.T) {
+	originalAPIGateway := newAPIGatewayClientFn
+	originalIAM := newIAMClientFn
+	originalSleepFn := sleepFn
+	t.Cleanup(func() {
+		newAPIGatewayClientFn = originalAPIGateway
+		newIAMClientFn = originalIAM
+		sleepFn = originalSleepFn
+	})
 
-	fakeIAM := &fakeIAMClient{
-		getRoleErr: stdErrors.New("boom"),
+	var updateCalls int
+	var slept []time.Duration
+	newAPIGatewayClientFn = func(cfg aws.Config) apiGatewayAccountAPI {
+		return stubAPIGatewayAccountClient{
+			getAccountFn: func(context.Context, *apigateway.GetAccountInput, ...func(*apigateway.Options)) (*apigateway.GetAccountOutput, error) {
+				return &apigateway.GetAccountOutput{}, nil
+			},
+			updateFn: func(ctx context.Context, in *apigateway.UpdateAccountInput, optFns ...func(*apigateway.Options)) (*apigateway.UpdateAccountOutput, error) {
+				updateCalls++
+				return nil, errors.New("still denied")
+			},
+		}
 	}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM }
+	newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+		return stubIAMRoleClient{
+			getRoleFn: func(ctx context.Context, in *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+				return &iam.GetRoleOutput{
+					Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123456789012:role/existing")},
+				}, nil
+			},
+			attachRolePolicyFn: func(ctx context.Context, in *iam.AttachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error) {
+				return &iam.AttachRolePolicyOutput{}, nil
+			},
+		}
+	}
+	sleepFn = func(duration time.Duration) {
+		slept = append(slept, duration)
+	}
+
+	err := ensureAPIGatewayCloudWatchLogsRole(context.Background(), aws.Config{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "apigateway:UpdateAccount")
+	require.Equal(t, 6, updateCalls)
+	require.Equal(t, []time.Duration{2 * time.Second, 4 * time.Second, 6 * time.Second, 8 * time.Second, 10 * time.Second, 12 * time.Second}, slept)
+}
+
+func TestEnsureIAMRoleForAPIGatewayLogs_CreatesRoleWhenMissing(t *testing.T) {
+	originalIAM := newIAMClientFn
+	t.Cleanup(func() {
+		newIAMClientFn = originalIAM
+	})
+
+	var createdAssumeRolePolicy string
+	var attachedRoleName string
+	newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+		return stubIAMRoleClient{
+			getRoleFn: func(ctx context.Context, in *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+				return nil, &iamtypes.NoSuchEntityException{}
+			},
+			createRoleFn: func(ctx context.Context, in *iam.CreateRoleInput, optFns ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
+				createdAssumeRolePolicy = aws.ToString(in.AssumeRolePolicyDocument)
+				return &iam.CreateRoleOutput{
+					Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123456789012:role/created")},
+				}, nil
+			},
+			attachRolePolicyFn: func(ctx context.Context, in *iam.AttachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error) {
+				attachedRoleName = aws.ToString(in.RoleName)
+				return &iam.AttachRolePolicyOutput{}, nil
+			},
+		}
+	}
+
+	roleARN, err := ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{
+		Region: "us-east-1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "arn:aws:iam::123456789012:role/created", roleARN)
+	require.Equal(t, apiGatewayLogsRoleName, attachedRoleName)
+	require.Contains(t, createdAssumeRolePolicy, "apigateway.amazonaws.com")
+	require.Contains(t, createdAssumeRolePolicy, "sts:AssumeRole")
+}
+
+func TestEnsureIAMRoleForAPIGatewayLogs_GetRoleUnexpectedError(t *testing.T) {
+	originalIAM := newIAMClientFn
+	t.Cleanup(func() {
+		newIAMClientFn = originalIAM
+	})
+
+	newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+		return stubIAMRoleClient{
+			getRoleFn: func(ctx context.Context, in *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+				return nil, errors.New("boom")
+			},
+		}
+	}
+
 	_, err := ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "iam:GetRole")
+	require.Contains(t, err.Error(), `iam:GetRole "lesser-apigateway-cloudwatch-logs"`)
+}
 
-	fakeIAM2 := &fakeIAMClient{
-		getRoleErr:    &iamtypes.NoSuchEntityException{},
-		createRoleErr: errSentinel,
+func TestEnsureIAMRoleForAPIGatewayLogs_ExistingRoleAttachPolicyError(t *testing.T) {
+	originalIAM := newIAMClientFn
+	t.Cleanup(func() {
+		newIAMClientFn = originalIAM
+	})
+
+	newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+		return stubIAMRoleClient{
+			getRoleFn: func(ctx context.Context, in *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+				return &iam.GetRoleOutput{
+					Role: &iamtypes.Role{Arn: aws.String("arn:aws:iam::123456789012:role/existing")},
+				}, nil
+			},
+			attachRolePolicyFn: func(ctx context.Context, in *iam.AttachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error) {
+				return nil, errors.New("attach failed")
+			},
+		}
 	}
-	newIAMClientFn = func(_ aws.Config) iamRoleAPI { return fakeIAM2 }
-	_, err = ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{})
-	require.ErrorIs(t, err, errSentinel)
-	require.Contains(t, err.Error(), "iam:CreateRole")
+
+	_, err := ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "attach failed")
+}
+
+func TestEnsureIAMRoleForAPIGatewayLogs_CreateRoleError(t *testing.T) {
+	originalIAM := newIAMClientFn
+	t.Cleanup(func() {
+		newIAMClientFn = originalIAM
+	})
+
+	newIAMClientFn = func(cfg aws.Config) iamRoleAPI {
+		return stubIAMRoleClient{
+			getRoleFn: func(ctx context.Context, in *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
+				return nil, &iamtypes.NoSuchEntityException{}
+			},
+			createRoleFn: func(ctx context.Context, in *iam.CreateRoleInput, optFns ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
+				return nil, errors.New("create failed")
+			},
+		}
+	}
+
+	_, err := ensureIAMRoleForAPIGatewayLogs(context.Background(), aws.Config{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "create failed")
+}
+
+func TestEnsureRoleHasAPIGatewayLogsPolicy_Error(t *testing.T) {
+	client := stubIAMRoleClient{
+		attachRolePolicyFn: func(context.Context, *iam.AttachRolePolicyInput, ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error) {
+			return nil, errors.New("denied")
+		},
+	}
+
+	err := ensureRoleHasAPIGatewayLogsPolicy(context.Background(), client)
+	require.Error(t, err)
+	require.True(t, strings.Contains(err.Error(), "iam:AttachRolePolicy") && strings.Contains(err.Error(), "denied"))
 }

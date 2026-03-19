@@ -38,6 +38,8 @@ func newAgentRuntimeAccountRepo() (*repositories.AccountRepository, *mocks.MockD
 
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("First", mock.Anything).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
 	return repositories.NewAccountRepository(mockDB, "test-table", "example.com", zap.NewNop()), mockDB, mockQuery
@@ -72,6 +74,61 @@ func TestAgentRuntimeHelpers(t *testing.T) {
 
 	err = RevokeAllAgentRuntimeSessions(context.Background(), nil, "alice", "reason", "", "")
 	require.ErrorIs(t, err, ErrSessionStorage)
+}
+
+func TestAgentRuntimeSessionHelperBranches(t *testing.T) {
+	t.Parallel()
+
+	currentBySessionID := map[string]storage.RefreshToken{}
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{})
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID: "sess-1",
+		Current:   false,
+	})
+	require.Empty(t, currentBySessionID)
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID:   "sess-1",
+		Current:     true,
+		Generation:  1,
+		DeviceLabel: "first",
+	})
+	require.Equal(t, "first", currentBySessionID["sess-1"].DeviceLabel)
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID:   "sess-1",
+		Current:     true,
+		Generation:  0,
+		DeviceLabel: "older",
+	})
+	require.Equal(t, "first", currentBySessionID["sess-1"].DeviceLabel)
+
+	recordCurrentAgentSession(currentBySessionID, storage.RefreshToken{
+		SessionID:   "sess-1",
+		Current:     true,
+		Generation:  2,
+		DeviceLabel: "newer",
+	})
+	require.Equal(t, "newer", currentBySessionID["sess-1"].DeviceLabel)
+}
+
+func TestIsAgentConnectorClientForUsername(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isAgentConnectorClientForUsername(nil, "alice"))
+	require.False(t, isAgentConnectorClientForUsername(&storage.OAuthClient{
+		ClientClass:   "web",
+		AgentUsername: "alice",
+	}, "alice"))
+	require.False(t, isAgentConnectorClientForUsername(&storage.OAuthClient{
+		ClientClass:   ClientClassAgent,
+		AgentUsername: "bob",
+	}, "alice"))
+	require.True(t, isAgentConnectorClientForUsername(&storage.OAuthClient{
+		ClientClass:   " agent ",
+		AgentUsername: " Alice ",
+	}, "alice"))
 }
 
 func TestIssueAgentRuntimeTokens(t *testing.T) {
@@ -146,31 +203,42 @@ func TestListAgentRuntimeSessions(t *testing.T) {
 	repo, _, query := newAgentRuntimeAccountRepo()
 
 	allCalls := 0
-	query.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
+	query.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
 		allCalls++
-		target := args.Get(0).(*[]models.RefreshToken)
-		switch allCalls {
-		case 1:
-			*target = []models.RefreshToken{
-				{Token: "old", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", Current: true, Generation: 1, LastUsedAt: baseTime.Add(-2 * time.Hour), Version: 1},
-				{Token: "new", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", Current: true, Generation: 2, LastUsedAt: baseTime.Add(-1 * time.Hour), DeviceLabel: "desktop", Version: 1},
-				{Token: "skip-noncurrent", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-2", Current: false, Generation: 1, LastUsedAt: baseTime, Version: 1},
-				{Token: "skip-blank", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: " ", Current: true, Generation: 1, LastUsedAt: baseTime, Version: 1},
+		switch target := args.Get(0).(type) {
+		case *[]models.RefreshToken:
+			switch allCalls {
+			case 1:
+				*target = []models.RefreshToken{
+					{Token: "old", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", Current: true, Generation: 1, LastUsedAt: baseTime.Add(-2 * time.Hour), Version: 1},
+					{Token: "new", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-1", Current: true, Generation: 2, LastUsedAt: baseTime.Add(-1 * time.Hour), DeviceLabel: "desktop", Version: 1},
+					{Token: "skip-noncurrent", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: "sid-2", Current: false, Generation: 1, LastUsedAt: baseTime, Version: 1},
+					{Token: "skip-blank", ClientID: "lesser-agent-delegation", Username: "alice", SessionID: " ", Current: true, Generation: 1, LastUsedAt: baseTime, Version: 1},
+				}
+			case 2:
+				*target = []models.RefreshToken{
+					{Token: "other", ClientID: "lesser-agent-self-sovereign", Username: "alice", SessionID: "sid-3", Current: true, Generation: 1, LastUsedAt: baseTime, DeviceLabel: "cloud", Version: 1},
+				}
+			case 4:
+				*target = []models.RefreshToken{
+					{Token: "connector", ClientID: "client-agent", Username: "alice", SessionID: "sid-4", Current: true, Generation: 1, LastUsedAt: baseTime.Add(-30 * time.Minute), DeviceLabel: "connector", Version: 1},
+				}
 			}
-		case 2:
-			*target = []models.RefreshToken{
-				{Token: "other", ClientID: "lesser-agent-self-sovereign", Username: "alice", SessionID: "sid-3", Current: true, Generation: 1, LastUsedAt: baseTime, DeviceLabel: "cloud", Version: 1},
+		case *[]*models.OAuthClient:
+			*target = []*models.OAuthClient{
+				{ClientID: "client-agent", ClientClass: ClientClassAgent, AgentUsername: "alice"},
 			}
 		}
 	})
 
 	sessions, err := ListAgentRuntimeSessions(context.Background(), agentRuntimeRepos{account: repo}, "alice")
 	require.NoError(t, err)
-	require.Len(t, sessions, 2)
+	require.Len(t, sessions, 3)
 	require.Equal(t, "sid-3", sessions[0].SessionID)
-	require.Equal(t, "sid-1", sessions[1].SessionID)
-	require.Equal(t, 2, sessions[1].Generation)
-	require.Equal(t, "desktop", sessions[1].DeviceLabel)
+	require.Equal(t, "sid-4", sessions[1].SessionID)
+	require.Equal(t, "sid-1", sessions[2].SessionID)
+	require.Equal(t, 2, sessions[2].Generation)
+	require.Equal(t, "desktop", sessions[2].DeviceLabel)
 
 	repoErr, _, queryErr := newAgentRuntimeAccountRepo()
 	queryErr.On("All", mock.Anything).Return(errors.New("boom")).Once()
@@ -256,20 +324,24 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		repo, _, query := newAgentRuntimeAccountRepo()
 
 		allCalls := 0
-		query.On("All", mock.Anything).Return(nil).Times(3).Run(func(args mock.Arguments) {
+		query.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
 			allCalls++
-			target := args.Get(0).(*[]models.RefreshToken)
-			switch allCalls {
-			case 1:
-				*target = []models.RefreshToken{
-					{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), Version: 1},
+			switch target := args.Get(0).(type) {
+			case *[]models.RefreshToken:
+				switch allCalls {
+				case 1:
+					*target = []models.RefreshToken{
+						{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), Version: 1},
+					}
+				case 2:
+					*target = []models.RefreshToken{}
+				case 4:
+					*target = []models.RefreshToken{
+						{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+					}
 				}
-			case 2:
-				*target = []models.RefreshToken{}
-			case 3:
-				*target = []models.RefreshToken{
-					{Token: "rt-current", FamilyID: "fam-1", SessionID: "sid-1", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
-				}
+			case *[]*models.OAuthClient:
+				*target = []*models.OAuthClient{}
 			}
 		})
 		query.On("Update", mock.Anything).Return(nil).Once()
@@ -278,9 +350,13 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		repoMissing, _, queryMissing := newAgentRuntimeAccountRepo()
-		queryMissing.On("All", mock.Anything).Return(nil).Twice().Run(func(args mock.Arguments) {
-			target := args.Get(0).(*[]models.RefreshToken)
-			*target = []models.RefreshToken{}
+		queryMissing.On("All", mock.Anything).Return(nil).Times(3).Run(func(args mock.Arguments) {
+			switch target := args.Get(0).(type) {
+			case *[]models.RefreshToken:
+				*target = []models.RefreshToken{}
+			case *[]*models.OAuthClient:
+				*target = []*models.OAuthClient{}
+			}
 		})
 
 		err = RevokeAgentRuntimeSession(context.Background(), agentRuntimeRepos{account: repoMissing}, "alice", "missing", "manual", "", "")
@@ -299,26 +375,30 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		repo, _, query := newAgentRuntimeAccountRepo()
 
 		allCalls := 0
-		query.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
+		query.On("All", mock.Anything).Return(nil).Times(5).Run(func(args mock.Arguments) {
 			allCalls++
-			target := args.Get(0).(*[]models.RefreshToken)
-			switch allCalls {
-			case 1:
-				*target = []models.RefreshToken{
-					{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), Version: 1},
+			switch target := args.Get(0).(type) {
+			case *[]models.RefreshToken:
+				switch allCalls {
+				case 1:
+					*target = []models.RefreshToken{
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, LastUsedAt: time.Now().UTC(), Version: 1},
+					}
+				case 2:
+					*target = []models.RefreshToken{
+						{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, LastUsedAt: time.Now().Add(-1 * time.Minute).UTC(), Version: 1},
+					}
+				case 4:
+					*target = []models.RefreshToken{
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+					}
+				case 5:
+					*target = []models.RefreshToken{
+						{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, Version: 1},
+					}
 				}
-			case 2:
-				*target = []models.RefreshToken{
-					{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, LastUsedAt: time.Now().Add(-1 * time.Minute).UTC(), Version: 1},
-				}
-			case 3:
-				*target = []models.RefreshToken{
-					{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
-				}
-			case 4:
-				*target = []models.RefreshToken{
-					{Token: "self", FamilyID: "fam-self", SessionID: "sid-self", ClientID: "lesser-agent-self-sovereign", Current: true, Generation: 1, Version: 1},
-				}
+			case *[]*models.OAuthClient:
+				*target = []*models.OAuthClient{}
 			}
 		})
 		query.On("Update", mock.Anything).Return(nil).Twice()
@@ -330,20 +410,24 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 	t.Run("revoke all surfaces family failures", func(t *testing.T) {
 		repoErr, _, queryErr := newAgentRuntimeAccountRepo()
 		allCalls := 0
-		queryErr.On("All", mock.Anything).Return(nil).Times(3).Run(func(args mock.Arguments) {
+		queryErr.On("All", mock.Anything).Return(nil).Times(4).Run(func(args mock.Arguments) {
 			allCalls++
-			target := args.Get(0).(*[]models.RefreshToken)
-			switch allCalls {
-			case 1:
-				*target = []models.RefreshToken{
-					{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+			switch target := args.Get(0).(type) {
+			case *[]models.RefreshToken:
+				switch allCalls {
+				case 1:
+					*target = []models.RefreshToken{
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+					}
+				case 2:
+					*target = []models.RefreshToken{}
+				case 4:
+					*target = []models.RefreshToken{
+						{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
+					}
 				}
-			case 2:
-				*target = []models.RefreshToken{}
-			case 3:
-				*target = []models.RefreshToken{
-					{Token: "delegation", FamilyID: "fam-delegation", SessionID: "sid-delegation", ClientID: "lesser-agent-delegation", Current: true, Generation: 1, Version: 1},
-				}
+			case *[]*models.OAuthClient:
+				*target = []*models.OAuthClient{}
 			}
 		})
 		queryErr.On("Update", mock.Anything).Return(errors.New("update failed")).Once()

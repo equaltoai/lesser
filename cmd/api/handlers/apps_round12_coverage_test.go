@@ -170,6 +170,76 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 	})
 
+	t.Run("agent_client_requires_authenticated_owner", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:    "Agent Connector",
+			RedirectURIs:  "https://example.com/callback",
+			Scopes:        "read write",
+			ClientClass:   auth.ClientClassAgent,
+			AgentUsername: "agent1",
+		}
+		requireStatus(t, http.StatusUnauthorized)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+	})
+
+	t.Run("agent_client_rejects_unowned_agent", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@someone-else"},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ownerToken := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", map[string]string{
+			"Authorization": "Bearer " + ownerToken,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:    "Agent Connector",
+			RedirectURIs:  "https://example.com/callback",
+			Scopes:        "read write",
+			ClientClass:   auth.ClientClassAgent,
+			AgentUsername: "agent1",
+		}
+		requireStatus(t, http.StatusForbidden)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+	})
+
+	t.Run("agent_client_stores_bound_agent_username", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ownerToken := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", map[string]string{
+			"Authorization": "Bearer " + ownerToken,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:    "Agent Connector",
+			RedirectURIs:  "https://example.com/callback",
+			Scopes:        "read write",
+			ClientClass:   auth.ClientClassAgent,
+			AgentUsername: "agent1",
+		}
+		requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+
+		require.Len(t, state.oauthClientsByID, 1)
+		for _, client := range state.oauthClientsByID {
+			require.Equal(t, auth.ClientClassAgent, client.ClientClass)
+			require.Equal(t, "agent1", client.AgentUsername)
+		}
+	})
+
 	t.Run("create_oauth_client_repo_error", func(t *testing.T) {
 		state := &round10QueryState{createErrorOnce: stdErrors.New("create failed")}
 		handler, _, _ := round11NewHandler(t, cfg, state)
