@@ -150,8 +150,9 @@ func TestApps_Round12_FallbackAndValidationHelpers_Coverage(t *testing.T) {
 	})
 
 	t.Run("parse_scopes_default_and_explicit", func(t *testing.T) {
-		require.Equal(t, []string{"read", "write"}, handler.parseScopes(""))
+		require.Equal(t, auth.DefaultScopes(), handler.parseScopes(""))
 		require.Equal(t, []string{"read", "write:accounts"}, handler.parseScopes("read write:accounts"))
+		require.Equal(t, []string{"read", "write:accounts"}, handler.parseScopes("read,write:accounts"))
 	})
 }
 
@@ -263,6 +264,40 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 			TokenEndpointAuthMethod: "none",
 		}
 		requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+	})
+
+	t.Run("registration_rejects_internal_admin_scope", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:   "Admin App",
+			RedirectURIs: "https://example.com/callback",
+			Scopes:       "admin",
+		}
+		requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+	})
+
+	t.Run("registration_preserves_compatibility_aliases", func(t *testing.T) {
+		state := &round10QueryState{}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:   "Compat App",
+			RedirectURIs: "https://example.com/callback",
+			Scopes:       "write:follows",
+		}
+		requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
+
+		require.Len(t, state.oauthClientsByID, 1)
+		for _, client := range state.oauthClientsByID {
+			require.Equal(t, []string{"write:follows"}, client.Scopes)
+		}
 	})
 
 	t.Run("create_oauth_client_repo_error", func(t *testing.T) {

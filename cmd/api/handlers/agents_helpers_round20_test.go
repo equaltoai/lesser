@@ -103,7 +103,8 @@ func TestAgentHelpersRound20(t *testing.T) {
 		require.Nil(t, scopes)
 
 		require.NoError(t, validateDelegationAgainstAgentEnvelope(user, []string{"read"}))
-		require.Error(t, validateDelegationAgainstAgentEnvelope(user, []string{"follow"}))
+		require.NoError(t, validateDelegationAgainstAgentEnvelope(user, []string{"follow"}))
+		require.Error(t, validateDelegationAgainstAgentEnvelope(user, []string{"push"}))
 	})
 
 	t.Run("deriveAgentCapabilitiesFromScopes", func(t *testing.T) {

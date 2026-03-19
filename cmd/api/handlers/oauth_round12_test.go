@@ -137,15 +137,10 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 		require.Contains(t, body.NextURL, "error=invalid_scope")
 	})
 
-	t.Run("admin:read/admin:write scopes are accepted", func(t *testing.T) {
-		var issuedCode string
+	t.Run("admin scopes are rejected from public oauth requests", func(t *testing.T) {
 		accountsSvc := &AccountsServiceStub{
 			GetUserAppConsentFunc: func(context.Context, *accounts.GetUserAppConsentQuery) (*accounts.GetUserAppConsentResult, error) {
 				return &accounts.GetUserAppConsentResult{Consent: &storage.UserAppConsent{Scopes: []string{"read", "write", "follow", "admin", "admin:read", "admin:write"}}}, nil
-			},
-			CreateAuthorizationCodeFunc: func(_ context.Context, cmd *accounts.CreateAuthorizationCodeCommand) (*accounts.CreateAuthorizationCodeResult, error) {
-				issuedCode = cmd.AuthCode.Code
-				return &accounts.CreateAuthorizationCodeResult{}, nil
 			},
 		}
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{AccountsSvc: accountsSvc})
@@ -165,10 +160,9 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 
 		parsed, parseErr := url.Parse(redirectURL)
 		require.NoError(t, parseErr)
-		require.NotEmpty(t, parsed.Query().Get("code"))
-		require.Empty(t, parsed.Query().Get("error"))
+		require.Empty(t, parsed.Query().Get("code"))
+		require.Equal(t, "invalid_scope", parsed.Query().Get("error"))
 		require.Equal(t, "state-admin", parsed.Query().Get("state"))
-		require.NotEmpty(t, issuedCode)
 	})
 
 	t.Run("service registry missing returns server_error redirect (handled)", func(t *testing.T) {

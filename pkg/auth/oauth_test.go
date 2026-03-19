@@ -312,8 +312,8 @@ func TestValidateScopes(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name:    "valid hierarchical scopes",
-			scopes:  []string{"admin:read", "admin:write"},
+			name:    "valid compatibility scopes",
+			scopes:  []string{"read:notifications", "write:statuses"},
 			wantErr: nil,
 		},
 		{

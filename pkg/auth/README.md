@@ -160,6 +160,13 @@ Access tokens include:
 
 - `read`: Read access to user data
 - `write`: Write access to create/update activities
+- `follow`: Canonical relationship-management scope
+- `push`: Canonical push-subscription scope
+
+Public OAuth metadata and app registration advertise the canonical scope catalog `read`, `write`, `follow`, `push`.
+Compatibility aliases in the `read:*` and `write:*` families remain accepted for legacy clients, while `admin` is
+internal-only and is not requestable on public OAuth surfaces. See
+`docs/specs/oauth-scope-model.md` for the full contract.
 
 ## Storage
 
