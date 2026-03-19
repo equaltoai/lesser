@@ -55,23 +55,27 @@ type VerifyCredentialsResponse struct {
 
 // AppRegistrationRequest represents a Mastodon-compatible client registration request
 type AppRegistrationRequest struct {
-	ClientName    string `json:"client_name"`
-	RedirectURIs  string `json:"redirect_uris"`
-	Scopes        string `json:"scopes"`
-	Website       string `json:"website,omitempty"`
-	ClientClass   string `json:"client_class,omitempty"`
-	AgentUsername string `json:"agent_username,omitempty"`
+	ClientName              string `json:"client_name"`
+	RedirectURIs            string `json:"redirect_uris"`
+	Scopes                  string `json:"scopes"`
+	Website                 string `json:"website,omitempty"`
+	ClientClass             string `json:"client_class,omitempty"`
+	AgentUsername           string `json:"agent_username,omitempty"`
+	GrantTypes              string `json:"grant_types,omitempty"`
+	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method,omitempty"`
 }
 
 // AppRegistrationResponse represents the response after successful app registration
 type AppRegistrationResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Website      string `json:"website,omitempty"`
-	RedirectURI  string `json:"redirect_uri"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret,omitempty"`
-	VapidKey     string `json:"vapid_key,omitempty"` // For push notifications
+	ID                      string   `json:"id"`
+	Name                    string   `json:"name"`
+	Website                 string   `json:"website,omitempty"`
+	RedirectURI             string   `json:"redirect_uri"`
+	ClientID                string   `json:"client_id"`
+	ClientSecret            string   `json:"client_secret,omitempty"`
+	VapidKey                string   `json:"vapid_key,omitempty"` // For push notifications
+	GrantTypes              []string `json:"grant_types,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 }
 
 // CreateStatusRequest represents a Mastodon-compatible status creation request

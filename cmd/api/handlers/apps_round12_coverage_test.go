@@ -225,11 +225,13 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		require.NoError(t, err)
 
 		req := &apimodels.AppRegistrationRequest{
-			ClientName:    "Agent Connector",
-			RedirectURIs:  "https://example.com/callback",
-			Scopes:        "read write",
-			ClientClass:   auth.ClientClassAgent,
-			AgentUsername: "agent1",
+			ClientName:              "Agent Connector",
+			RedirectURIs:            "https://example.com/callback",
+			Scopes:                  "read write",
+			ClientClass:             auth.ClientClassAgent,
+			AgentUsername:           "agent1",
+			GrantTypes:              auth.GrantTypeClientCredentials + " " + auth.GrantTypeAuthorizationCode,
+			TokenEndpointAuthMethod: "client_secret_post",
 		}
 		requireStatus(t, http.StatusOK)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 
@@ -237,7 +239,27 @@ func TestApps_Round12_CreateOAuthClientAndVapidHelpers_Coverage(t *testing.T) {
 		for _, client := range state.oauthClientsByID {
 			require.Equal(t, auth.ClientClassAgent, client.ClientClass)
 			require.Equal(t, "agent1", client.AgentUsername)
+			require.Equal(t, []string{auth.GrantTypeClientCredentials, auth.GrantTypeAuthorizationCode}, client.GrantTypes)
+			require.True(t, client.Confidential)
 		}
+	})
+
+	t.Run("client_credentials_requires_confidential_auth_method", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", nil, nil, nil)
+		require.NoError(t, err)
+
+		req := &apimodels.AppRegistrationRequest{
+			ClientName:              "Public Agent Connector",
+			RedirectURIs:            "https://example.com/callback",
+			Scopes:                  "read write",
+			ClientClass:             auth.ClientClassAgent,
+			AgentUsername:           "agent1",
+			GrantTypes:              auth.GrantTypeClientCredentials,
+			TokenEndpointAuthMethod: "none",
+		}
+		requireStatus(t, http.StatusUnprocessableEntity)(handler.createOAuthClientAndRespond(ctx, req, []string{"https://example.com/callback"}))
 	})
 
 	t.Run("create_oauth_client_repo_error", func(t *testing.T) {
