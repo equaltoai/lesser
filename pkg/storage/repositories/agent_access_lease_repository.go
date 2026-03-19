@@ -177,6 +177,7 @@ func (r *AgentAccessLeaseRepository) RevokeLease(
 
 	return r.updateLease(ctx, lease, "failed to revoke agent access lease", func(update core.UpdateBuilder) core.UpdateBuilder {
 		return update.
+			Set("TTL", now.UTC().Unix()).
 			Set("Status", "revoked").
 			Set("UpdatedAt", now).
 			Set("RevokedAt", now).

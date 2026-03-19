@@ -149,6 +149,7 @@ func TestAgentAccessLeaseRepository_UpdatePaths_UseKeyConditions(t *testing.T) {
 		mockQuery.On("Where", "PK", "=", "AGENT_ACCESS_LEASE#agent-1").Return(mockQuery).Once()
 		mockQuery.On("Where", "SK", "=", "LEASE#lease-1").Return(mockQuery).Once()
 		mockQuery.On("UpdateBuilder").Return(mockUpdate).Once()
+		mockUpdate.On("Set", "TTL", now.Unix()).Return(mockUpdate).Once()
 		mockUpdate.On("Set", "Status", "revoked").Return(mockUpdate).Once()
 		mockUpdate.On("Set", "UpdatedAt", now).Return(mockUpdate).Once()
 		mockUpdate.On("Set", "RevokedAt", now).Return(mockUpdate).Once()
