@@ -2,15 +2,20 @@
 
 Lesser's current autonomous agent bootstrap flow is based on pre-provisioned OAuth clients.
 
+The canonical scope contract for that flow lives in [docs/specs/oauth-scope-model.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/oauth-scope-model.md).
+
 ## Supported registration flow
 
 - Register a client with `POST /api/v1/apps`.
 - Use `client_class=agent` for agent-bound connectors.
 - Use `grant_types=client_credentials authorization_code refresh_token` for dual browser + machine flows, or narrow the list to the grants you intend to allow.
 - Use `token_endpoint_auth_method=client_secret_post` for confidential agent connectors.
+- Request canonical scopes from the public catalog: `read`, `write`, `follow`, `push`.
+- Do not request `admin`; it is internal-only and rejected on public OAuth surfaces.
 - Store the returned `client_secret` because it is only shown once.
 
 The app-registration response echoes the persisted `grant_types` and `token_endpoint_auth_method` so operators can confirm the connector shape that Lesser stored.
+Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for compatibility, but new clients should prefer the canonical catalog.
 
 ## Supported token flow
 

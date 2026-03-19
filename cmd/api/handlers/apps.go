@@ -363,6 +363,9 @@ func (h *Handler) validateSingleRedirectURI(_ *apptheory.Context, uri string) er
 func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *models.AppRegistrationRequest, redirectURIs []string) (*apptheory.Response, error) {
 	// Parse scopes
 	scopes := h.parseScopes(req.Scopes)
+	if err := auth.ValidatePublicOAuthScopes(scopes); err != nil {
+		return h.respondUnprocessableEntity(ctx, "invalid scopes")
+	}
 	clientClass, err := normalizeOAuthClientClass(req.ClientClass)
 	if err != nil {
 		return h.respondUnprocessableEntity(ctx, err.Error())
@@ -461,11 +464,10 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 
 // parseScopes parses the scopes string into a slice
 func (h *Handler) parseScopes(scopesString string) []string {
-	if scopesString != "" {
-		return strings.Fields(scopesString)
+	if strings.TrimSpace(scopesString) != "" {
+		return splitOAuthSpaceDelimited(scopesString)
 	}
-	// Default scopes
-	return []string{"read", "write"}
+	return auth.DefaultScopes()
 }
 
 func normalizeOAuthClientClass(value string) (string, error) {
