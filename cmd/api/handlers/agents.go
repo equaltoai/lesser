@@ -937,33 +937,7 @@ func deriveAgentCapabilitiesFromScopes(scopes []string) agents.Capabilities {
 }
 
 func scopesAreSubset(ownerScopes, requested []string) bool {
-	owned := map[string]struct{}{}
-	for _, s := range ownerScopes {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		owned[s] = struct{}{}
-	}
-
-	for _, scope := range requested {
-		scope = strings.TrimSpace(scope)
-		if scope == "" {
-			continue
-		}
-		if _, ok := owned[scope]; ok {
-			continue
-		}
-		parts := strings.Split(scope, ":")
-		if len(parts) == 2 {
-			if _, ok := owned[parts[0]]; ok {
-				continue
-			}
-		}
-		return false
-	}
-
-	return true
+	return auth.ScopeSetAllows(ownerScopes, requested)
 }
 
 //nolint:unused // Retained as the config-free helper for callers and tests that do not inject runtime config.

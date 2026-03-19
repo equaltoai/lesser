@@ -76,4 +76,18 @@ func TestAgentsRound18_ValidateDelegationScopes(t *testing.T) {
 		require.Nil(t, resp)
 		require.Equal(t, []string{"read"}, scopes)
 	})
+
+	t.Run("broad write may delegate canonical follow", func(t *testing.T) {
+		scopes, resp, respErr := h.validateDelegationScopes(ctx, []string{"write"}, []string{"follow"})
+		require.NoError(t, respErr)
+		require.Nil(t, resp)
+		require.Equal(t, []string{"follow"}, scopes)
+	})
+
+	t.Run("canonical follow may delegate legacy write_follows alias", func(t *testing.T) {
+		scopes, resp, respErr := h.validateDelegationScopes(ctx, []string{"follow"}, []string{"write:follows"})
+		require.NoError(t, respErr)
+		require.Nil(t, resp)
+		require.Equal(t, []string{"write:follows"}, scopes)
+	})
 }
