@@ -210,6 +210,7 @@ OPTIONS /oauth/consent
 OPTIONS /oauth/device/code
 OPTIONS /oauth/device/consent
 OPTIONS /oauth/device/verify
+OPTIONS /oauth/register
 OPTIONS /oauth/revoke
 OPTIONS /oauth/token
 OPTIONS /setup/admin
@@ -332,6 +333,7 @@ POST /oauth/consent
 POST /oauth/device/code
 POST /oauth/device/consent
 POST /oauth/device/verify
+POST /oauth/register
 POST /oauth/revoke
 POST /oauth/token
 POST /setup/admin

@@ -519,3 +519,37 @@ func TestNewLimiterFunc_FloorsGranularityAtOneSecond(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, limiter)
 }
+
+func TestApplyOAuthRegistrationRateLimit_ReturnsOAuthFriendly429(t *testing.T) {
+	orig := newLimiterFunc
+	t.Cleanup(func() { newLimiterFunc = orig })
+
+	retryAfter := 20 * time.Second
+	newLimiterFunc = func(string, int, time.Duration, *zap.Logger) (atomicLimiter, error) {
+		return stubLimiter{decision: &apptheoryLimited.LimitDecision{
+			Allowed:      false,
+			CurrentCount: 5,
+			Limit:        5,
+			ResetsAt:     time.Unix(1700000020, 0),
+			RetryAfter:   &retryAfter,
+		}}, nil
+	}
+
+	called := 0
+	out := ApplyOAuthRegistrationRateLimit(func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "ok"), nil
+	}, 5, time.Minute, zap.NewNop())
+
+	resp, err := out(&apptheory.Context{Request: apptheory.Request{
+		Method:  http.MethodPost,
+		Path:    "/oauth/register",
+		Headers: map[string][]string{"x-forwarded-for": {"203.0.113.10"}},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, 0, called)
+	require.Equal(t, http.StatusTooManyRequests, resp.Status)
+	require.Equal(t, []string{"20"}, resp.Headers["retry-after"])
+	require.Contains(t, string(resp.Body), "\"error\":\"slow_down\"")
+	require.Contains(t, string(resp.Body), "dynamic client registration")
+}

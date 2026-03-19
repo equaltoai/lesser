@@ -90,6 +90,9 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/oauth/device/consent", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthDeviceConsentLift,
 		20, 5*time.Minute, logger))
+	app.Post("/oauth/register", ratelimit.ApplyOAuthRegistrationRateLimit(
+		apiHandler.HandleOAuthDynamicClientRegistrationLift,
+		5, time.Minute, logger))
 	app.Post("/oauth/token", ratelimit.ApplyOAuthTokenRateLimit(
 		apiHandler.HandleOAuthTokenLift,
 		10, time.Minute, logger))
@@ -104,6 +107,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("OPTIONS", "/oauth/device/code", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/device/verify", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/device/consent", optionsHandler)
+	app.Handle("OPTIONS", "/oauth/register", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/token", optionsHandler)
 	app.Handle("OPTIONS", "/oauth/revoke", optionsHandler)
 	app.Handle("OPTIONS", "/.well-known/oauth-authorization-server", optionsHandler)

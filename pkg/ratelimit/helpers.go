@@ -167,6 +167,50 @@ func ApplyOAuthTokenRateLimit(handler apptheory.Handler, limit int, window time.
 	}
 }
 
+// ApplyOAuthRegistrationRateLimit wraps /oauth/register with a tighter unauthenticated limit and
+// an OAuth-friendly 429 payload for discovery clients.
+func ApplyOAuthRegistrationRateLimit(handler apptheory.Handler, limit int, window time.Duration, logger *zap.Logger) apptheory.Handler {
+	if handler == nil {
+		return handler
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	region := rateLimitRegion()
+	limiter, err := newLimiterFunc(region, limit, window, logger)
+	if err != nil || limiter == nil {
+		logger.Error("failed to create oauth registration rate limiter - allowing request",
+			zap.Error(err),
+			zap.Int("limit", limit),
+			zap.Duration("window", window),
+			zap.String("region", region),
+		)
+		return handler
+	}
+
+	return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		resp, allowed := enforceRateLimit(ctx, limiter, rateLimitKey(ctx), logger, func(decision *apptheoryLimited.LimitDecision) map[string]any {
+			retryAfter := retryAfterSeconds(decision)
+			return map[string]any{
+				"error":             "slow_down",
+				"error_description": "Too many dynamic client registration requests",
+				"limit":             decision.Limit,
+				"remaining":         maxInt(0, decision.Limit-decision.CurrentCount),
+				"reset_at":          decision.ResetsAt.Unix(),
+				"retry_after":       retryAfter,
+			}
+		})
+		if !allowed {
+			return resp, nil
+		}
+
+		resp, handlerErr := handler(ctx)
+		attachStoredRateLimitHeaders(ctx, resp)
+		return resp, handlerErr
+	}
+}
+
 func rateLimitRegion() string {
 	region := os.Getenv("AWS_REGION")
 	if region == "" {
