@@ -20,6 +20,7 @@ func configureRoutes(app *apptheory.App) {
 
 	// OAuth app registration (public, no auth required)
 	app.Post("/api/v1/apps", apiHandler.HandleAppRegistrationLift)
+	app.Post("/api/v1/apps/{id}/rotate_secret", apiHandler.HandleAppRotateSecretLift)
 
 	// Wallet authentication endpoints (public, for passwordless login)
 	app.Post("/auth/wallet/challenge", ratelimit.ApplyRateLimit(
@@ -89,7 +90,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/oauth/device/consent", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthDeviceConsentLift,
 		20, 5*time.Minute, logger))
-	app.Post("/oauth/token", ratelimit.ApplyRateLimit(
+	app.Post("/oauth/token", ratelimit.ApplyOAuthTokenRateLimit(
 		apiHandler.HandleOAuthTokenLift,
 		10, time.Minute, logger))
 	app.Post("/oauth/revoke", ratelimit.ApplyRateLimit(
@@ -153,6 +154,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Handle("OPTIONS", "/api/v1/accounts", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/accounts/verify_credentials", optionsHandler)
 	app.Handle("OPTIONS", "/api/v1/accounts/update_credentials", optionsHandler)
+	app.Handle("OPTIONS", "/api/v1/apps/{id}/rotate_secret", optionsHandler)
 
 	// Agent endpoints (LLM agent support)
 	app.Get("/api/v1/agents", apiHandler.HandleListAgentsLift)

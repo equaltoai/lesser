@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"testing"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -14,16 +16,22 @@ func TestHandleAppRegistrationLift(t *testing.T) {
 	h, _, _ := round11NewHandlerSliceC(t, nil)
 
 	body := map[string]string{
-		"client_name":   "Test App",
-		"redirect_uris": "https://example.com/callback",
-		"scopes":        "read",
-		"website":       "https://example.com",
+		"client_name":                "Test App",
+		"redirect_uris":              "https://example.com/callback",
+		"scopes":                     "read",
+		"website":                    "https://example.com",
+		"grant_types":                "authorization_code refresh_token",
+		"token_endpoint_auth_method": "none",
 	}
 
 	ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps", map[string]string{"Content-Type": "application/json"}, nil, body)
 	require.NoError(t, err)
 
-	requireStatus(t, http.StatusOK)(h.HandleAppRegistrationLift(ctx))
+	resp := requireStatus(t, http.StatusOK)(h.HandleAppRegistrationLift(ctx))
+	var parsed apimodels.AppRegistrationResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &parsed))
+	require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, parsed.GrantTypes)
+	require.Equal(t, "none", parsed.TokenEndpointAuthMethod)
 }
 
 func TestHandleAppVerifyCredentialsLift(t *testing.T) {

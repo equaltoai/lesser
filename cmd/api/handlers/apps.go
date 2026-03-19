@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -13,6 +14,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
+)
+
+const (
+	oauthTokenEndpointAuthMethodNone             = "none"
+	oauthTokenEndpointAuthMethodClientSecretPost = "client_secret_post"
 )
 
 // HandleAppRegistrationLift handles OAuth app registration requests
@@ -74,12 +80,14 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *apptheory.Context) (*appth
 		}
 
 		resp := models.AppRegistrationResponse{
-			ID:          client.ClientID,
-			Name:        client.Name,
-			Website:     client.Website,
-			RedirectURI: client.RedirectURIs[0], // Return first redirect URI for compatibility
-			ClientID:    client.ClientID,
-			VapidKey:    vapidKey,
+			ID:                      client.ClientID,
+			Name:                    client.Name,
+			Website:                 client.Website,
+			RedirectURI:             client.RedirectURIs[0], // Return first redirect URI for compatibility
+			ClientID:                client.ClientID,
+			VapidKey:                vapidKey,
+			GrantTypes:              append([]string(nil), client.GrantTypes...),
+			TokenEndpointAuthMethod: oauthClientTokenEndpointAuthMethod(client),
 		}
 
 		return okJSON(resp)
@@ -120,12 +128,14 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *apptheory.Context) (*appth
 	}
 
 	resp := models.AppRegistrationResponse{
-		ID:          client.ClientID,
-		Name:        client.Name,
-		Website:     client.Website,
-		RedirectURI: client.RedirectURIs[0], // Return first redirect URI for compatibility
-		ClientID:    client.ClientID,
-		VapidKey:    vapidKey,
+		ID:                      client.ClientID,
+		Name:                    client.Name,
+		Website:                 client.Website,
+		RedirectURI:             client.RedirectURIs[0], // Return first redirect URI for compatibility
+		ClientID:                client.ClientID,
+		VapidKey:                vapidKey,
+		GrantTypes:              append([]string(nil), client.GrantTypes...),
+		TokenEndpointAuthMethod: oauthClientTokenEndpointAuthMethod(client),
 	}
 
 	return okJSON(resp)
@@ -235,12 +245,14 @@ func (h *Handler) buildRequestFromParams(params map[string]string) (models.AppRe
 	}
 
 	req := models.AppRegistrationRequest{
-		ClientName:    params["client_name"],
-		RedirectURIs:  params["redirect_uris"],
-		Scopes:        params["scopes"],
-		Website:       params["website"],
-		ClientClass:   params["client_class"],
-		AgentUsername: params["agent_username"],
+		ClientName:              params["client_name"],
+		RedirectURIs:            params["redirect_uris"],
+		Scopes:                  params["scopes"],
+		Website:                 params["website"],
+		ClientClass:             params["client_class"],
+		AgentUsername:           params["agent_username"],
+		GrantTypes:              params["grant_types"],
+		TokenEndpointAuthMethod: params["token_endpoint_auth_method"],
 	}
 
 	return req, nil
@@ -257,6 +269,14 @@ func (h *Handler) validateAppRegistrationParams(ctx *apptheory.Context, req *mod
 	if strings.TrimSpace(req.ClientClass) != "" {
 		h.logger.Info("app registration request includes client_class",
 			zap.String("client_class", req.ClientClass))
+	}
+	if strings.TrimSpace(req.GrantTypes) != "" {
+		h.logger.Info("app registration request includes grant_types",
+			zap.String("grant_types", req.GrantTypes))
+	}
+	if strings.TrimSpace(req.TokenEndpointAuthMethod) != "" {
+		h.logger.Info("app registration request includes token_endpoint_auth_method",
+			zap.String("token_endpoint_auth_method", req.TokenEndpointAuthMethod))
 	}
 
 	// Validate application registration parameters
@@ -347,6 +367,17 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 	if err != nil {
 		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
+	grantTypes, err := normalizeOAuthClientGrantTypes(req.GrantTypes, clientClass, h.cfg != nil && h.cfg.AllowDeviceFlow)
+	if err != nil {
+		return h.respondUnprocessableEntity(ctx, err.Error())
+	}
+	tokenEndpointAuthMethod, confidential, err := normalizeOAuthTokenEndpointAuthMethod(req.TokenEndpointAuthMethod, clientClass)
+	if err != nil {
+		return h.respondUnprocessableEntity(ctx, err.Error())
+	}
+	if slices.Contains(grantTypes, auth.GrantTypeClientCredentials) && !confidential {
+		return h.respondUnprocessableEntity(ctx, "client_credentials requires token_endpoint_auth_method=client_secret_post")
+	}
 	if clientClass == auth.ClientClassCLI && (h.cfg == nil || !h.cfg.AllowDeviceFlow) {
 		return apptheory.JSON(http.StatusForbidden, map[string]string{
 			"error":             "access_denied",
@@ -387,10 +418,12 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 		Name:          req.ClientName,
 		Website:       req.Website,
 		RedirectURIs:  redirectURIs,
+		GrantTypes:    grantTypes,
 		Scopes:        scopes,
 		ClientClass:   clientClass,
 		AgentUsername: agentUsername,
 		OwnerID:       ownerID, // Set owner if authenticated
+		Confidential:  confidential,
 	}
 
 	h.logger.Info("creating OAuth client",
@@ -409,13 +442,15 @@ func (h *Handler) createOAuthClientAndRespond(ctx *apptheory.Context, req *model
 
 	// Return response
 	resp := models.AppRegistrationResponse{
-		ID:           client.ClientID,
-		Name:         client.Name,
-		Website:      client.Website,
-		RedirectURI:  redirectURIs[0], // Return first redirect URI for compatibility
-		ClientID:     client.ClientID,
-		ClientSecret: client.ClientSecret,
-		VapidKey:     vapidKey,
+		ID:                      client.ClientID,
+		Name:                    client.Name,
+		Website:                 client.Website,
+		RedirectURI:             redirectURIs[0], // Return first redirect URI for compatibility
+		ClientID:                client.ClientID,
+		ClientSecret:            client.ClientSecret,
+		VapidKey:                vapidKey,
+		GrantTypes:              append([]string(nil), client.GrantTypes...),
+		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
 	}
 
 	h.logger.Info("returning app registration response",
@@ -445,6 +480,105 @@ func normalizeOAuthClientClass(value string) (string, error) {
 	default:
 		return "", errors.New("invalid client_class")
 	}
+}
+
+func splitOAuthSpaceDelimited(value string) []string {
+	raw := strings.FieldsFunc(strings.TrimSpace(value), func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t' || r == '\r'
+	})
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func normalizeOAuthClientGrantTypes(value, clientClass string, allowDeviceFlow bool) ([]string, error) {
+	grantTypes := splitOAuthSpaceDelimited(value)
+	if len(grantTypes) == 0 {
+		switch clientClass {
+		case auth.ClientClassAgent:
+			return []string{
+				auth.GrantTypeAuthorizationCode,
+				auth.GrantTypeRefreshToken,
+				auth.GrantTypeClientCredentials,
+			}, nil
+		case auth.ClientClassCLI:
+			if allowDeviceFlow {
+				return []string{
+					auth.GrantTypeAuthorizationCode,
+					auth.GrantTypeRefreshToken,
+					oauthDeviceCodeGrantType,
+				}, nil
+			}
+			return []string{
+				auth.GrantTypeAuthorizationCode,
+				auth.GrantTypeRefreshToken,
+			}, nil
+		default:
+			return []string{
+				auth.GrantTypeAuthorizationCode,
+				auth.GrantTypeRefreshToken,
+			}, nil
+		}
+	}
+
+	allowed := map[string]struct{}{
+		auth.GrantTypeAuthorizationCode: {},
+		auth.GrantTypeRefreshToken:      {},
+		auth.GrantTypeClientCredentials: {},
+		oauthDeviceCodeGrantType:        {},
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(grantTypes))
+	for _, grantType := range grantTypes {
+		grantType = strings.ToLower(strings.TrimSpace(grantType))
+		if _, ok := allowed[grantType]; !ok {
+			return nil, errors.New("invalid grant_types")
+		}
+		if grantType == auth.GrantTypeClientCredentials && clientClass != auth.ClientClassAgent {
+			return nil, errors.New("client_credentials is only allowed for agent clients")
+		}
+		if grantType == oauthDeviceCodeGrantType && !allowDeviceFlow {
+			return nil, errors.New("device_code grant is disabled")
+		}
+		if _, dup := seen[grantType]; dup {
+			continue
+		}
+		seen[grantType] = struct{}{}
+		out = append(out, grantType)
+	}
+	return out, nil
+}
+
+func normalizeOAuthTokenEndpointAuthMethod(value, clientClass string) (string, bool, error) {
+	method := strings.ToLower(strings.TrimSpace(value))
+	if method == "" {
+		if clientClass == auth.ClientClassAgent {
+			return oauthTokenEndpointAuthMethodClientSecretPost, true, nil
+		}
+		return oauthTokenEndpointAuthMethodNone, false, nil
+	}
+
+	switch method {
+	case oauthTokenEndpointAuthMethodNone:
+		return method, false, nil
+	case oauthTokenEndpointAuthMethodClientSecretPost:
+		return method, true, nil
+	default:
+		return "", false, errors.New("invalid token_endpoint_auth_method")
+	}
+}
+
+func oauthClientTokenEndpointAuthMethod(client *storage.OAuthClient) string {
+	if client != nil && client.Confidential {
+		return oauthTokenEndpointAuthMethodClientSecretPost
+	}
+	return oauthTokenEndpointAuthMethodNone
 }
 
 // getVAPIDKey retrieves the VAPID public key

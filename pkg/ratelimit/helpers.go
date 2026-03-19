@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	apptheoryLimited "github.com/theory-cloud/apptheory/pkg/limited"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"github.com/theory-cloud/tabletheory"
@@ -22,6 +23,8 @@ import (
 type atomicLimiter interface {
 	CheckAndIncrement(ctx context.Context, key apptheoryLimited.RateLimitKey) (*apptheoryLimited.LimitDecision, error)
 }
+
+const oauthGrantTypeClientCredentials = "client_credentials"
 
 var (
 	dbOnce sync.Once
@@ -76,13 +79,7 @@ func ApplyRateLimit(handler apptheory.Handler, limit int, window time.Duration, 
 		logger = zap.NewNop()
 	}
 
-	region := os.Getenv("AWS_REGION")
-	if region == "" {
-		region = os.Getenv("AWS_DEFAULT_REGION")
-	}
-	if region == "" {
-		region = "us-east-1"
-	}
+	region := rateLimitRegion()
 
 	limiter, err := newLimiterFunc(region, limit, window, logger)
 	if err != nil || limiter == nil {
@@ -96,62 +93,205 @@ func ApplyRateLimit(handler apptheory.Handler, limit int, window time.Duration, 
 	}
 
 	return func(ctx *apptheory.Context) (*apptheory.Response, error) {
-		decision, err := limiter.CheckAndIncrement(ctx.Context(), rateLimitKey(ctx))
-		if err != nil {
-			logger.Error("rate limit check failed - allowing request",
-				zap.Error(err),
-				zap.String("path", ctx.Request.Path),
-				zap.String("method", ctx.Request.Method),
-			)
-			return handler(ctx)
+		resp, allowed := enforceRateLimit(ctx, limiter, rateLimitKey(ctx), logger, nil)
+		if !allowed {
+			return resp, nil
+		}
+		resp, handlerErr := handler(ctx)
+		attachStoredRateLimitHeaders(ctx, resp)
+		return resp, handlerErr
+	}
+}
+
+// ApplyOAuthTokenRateLimit wraps /oauth/token with the standard path/IP limiter plus a
+// client-ID keyed limiter for automated client_credentials traffic.
+func ApplyOAuthTokenRateLimit(handler apptheory.Handler, limit int, window time.Duration, logger *zap.Logger) apptheory.Handler {
+	if handler == nil {
+		return handler
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	region := rateLimitRegion()
+	baseLimiter, err := newLimiterFunc(region, limit, window, logger)
+	if err != nil || baseLimiter == nil {
+		logger.Error("failed to create base oauth token rate limiter - allowing request",
+			zap.Error(err),
+			zap.Int("limit", limit),
+			zap.Duration("window", window),
+			zap.String("region", region),
+		)
+		return handler
+	}
+
+	clientCredentialsLimiter, clientLimiterErr := newLimiterFunc(region, 30, time.Minute, logger)
+	if clientLimiterErr != nil || clientCredentialsLimiter == nil {
+		logger.Error("failed to create client_credentials limiter - continuing with base oauth token limiter",
+			zap.Error(clientLimiterErr),
+			zap.String("region", region),
+		)
+		clientCredentialsLimiter = nil
+	}
+
+	return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+		resp, allowed := enforceRateLimit(ctx, baseLimiter, rateLimitKey(ctx), logger, nil)
+		if !allowed {
+			return resp, nil
 		}
 
-		headers := rateLimitHeaders(decision)
-
-		if decision != nil && !decision.Allowed {
-			retryAfter := 60
-			if decision.RetryAfter != nil {
-				retryAfter = int(decision.RetryAfter.Seconds())
+		if clientCredentialsLimiter != nil {
+			if key, ok := oauthClientCredentialsRateLimitKey(ctx); ok {
+				resp, allowed = enforceRateLimit(ctx, clientCredentialsLimiter, key, logger, func(decision *apptheoryLimited.LimitDecision) map[string]any {
+					retryAfter := retryAfterSeconds(decision)
+					return map[string]any{
+						"error":             "slow_down",
+						"error_description": "Too many client_credentials token requests",
+						"grant_type":        oauthGrantTypeClientCredentials,
+						"client_id":         key.Metadata["client_id"],
+						"limit":             decision.Limit,
+						"remaining":         maxInt(0, decision.Limit-decision.CurrentCount),
+						"reset_at":          decision.ResetsAt.Unix(),
+						"retry_after":       retryAfter,
+					}
+				})
+				if !allowed {
+					return resp, nil
+				}
 			}
+		}
 
-			body := map[string]any{
+		resp, err := handler(ctx)
+		attachStoredRateLimitHeaders(ctx, resp)
+		return resp, err
+	}
+}
+
+func rateLimitRegion() string {
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = os.Getenv("AWS_DEFAULT_REGION")
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+	return region
+}
+
+func enforceRateLimit(
+	ctx *apptheory.Context,
+	limiter atomicLimiter,
+	key apptheoryLimited.RateLimitKey,
+	logger *zap.Logger,
+	bodyBuilder func(decision *apptheoryLimited.LimitDecision) map[string]any,
+) (*apptheory.Response, bool) {
+	decision, err := limiter.CheckAndIncrement(ctx.Context(), key)
+	if err != nil {
+		logger.Error("rate limit check failed - allowing request",
+			zap.Error(err),
+			zap.String("path", ctx.Request.Path),
+			zap.String("method", ctx.Request.Method),
+		)
+		return nil, true
+	}
+
+	headers := rateLimitHeaders(decision)
+	if decision != nil && !decision.Allowed {
+		return rateLimitedResponse(headers, decision, bodyBuilder), false
+	}
+
+	if ctx != nil && headers != nil {
+		existing, _ := ctx.Get("rate_limit_headers").(map[string][]string)
+		if existing == nil {
+			existing = map[string][]string{}
+		}
+		for k, v := range headers {
+			existing[k] = append([]string(nil), v...)
+		}
+		ctx.Set("rate_limit_headers", existing)
+	}
+
+	return nil, true
+}
+
+func oauthClientCredentialsRateLimitKey(ctx *apptheory.Context) (apptheoryLimited.RateLimitKey, bool) {
+	key := apptheoryLimited.RateLimitKey{
+		Resource:  "/oauth/token",
+		Operation: http.MethodPost,
+		Metadata:  map[string]string{},
+	}
+	if ctx == nil || ctx.Request.Path != "/oauth/token" || ctx.Request.Method != http.MethodPost {
+		return key, false
+	}
+	params, err := common.ParseFormURLEncoded(string(ctx.Request.Body))
+	if err != nil {
+		return key, false
+	}
+	if !strings.EqualFold(strings.TrimSpace(params["grant_type"]), oauthGrantTypeClientCredentials) {
+		return key, false
+	}
+	clientID := strings.TrimSpace(params["client_id"])
+	if clientID == "" {
+		return key, false
+	}
+	key.Identifier = "oauth-client:" + clientID
+	key.Metadata["client_id"] = clientID
+	key.Metadata["grant_type"] = oauthGrantTypeClientCredentials
+	return key, true
+}
+
+func rateLimitedResponse(headers map[string][]string, decision *apptheoryLimited.LimitDecision, bodyBuilder func(decision *apptheoryLimited.LimitDecision) map[string]any) *apptheory.Response {
+	retryAfter := retryAfterSeconds(decision)
+	if bodyBuilder == nil {
+		bodyBuilder = func(decision *apptheoryLimited.LimitDecision) map[string]any {
+			return map[string]any{
 				"error":       "Rate limit exceeded",
 				"limit":       decision.Limit,
 				"remaining":   maxInt(0, decision.Limit-decision.CurrentCount),
 				"reset_at":    decision.ResetsAt.Unix(),
 				"retry_after": retryAfter,
 			}
-
-			raw, marshalErr := json.Marshal(body)
-			if marshalErr != nil {
-				return &apptheory.Response{
-					Status:  http.StatusTooManyRequests,
-					Headers: headers,
-				}, nil
-			}
-
-			if headers == nil {
-				headers = map[string][]string{}
-			}
-			headers["retry-after"] = []string{strconvItoa(retryAfter)}
-
-			return &apptheory.Response{
-				Status:  http.StatusTooManyRequests,
-				Headers: headers,
-				Body:    raw,
-			}, nil
 		}
+	}
 
-		resp, handlerErr := handler(ctx)
-		if resp != nil {
-			if resp.Headers == nil {
-				resp.Headers = map[string][]string{}
-			}
-			for k, v := range headers {
-				resp.Headers[k] = append([]string(nil), v...)
-			}
+	raw, marshalErr := json.Marshal(bodyBuilder(decision))
+	if headers == nil {
+		headers = map[string][]string{}
+	}
+	headers["retry-after"] = []string{strconvItoa(retryAfter)}
+	if marshalErr != nil {
+		return &apptheory.Response{
+			Status:  http.StatusTooManyRequests,
+			Headers: headers,
 		}
-		return resp, handlerErr
+	}
+	return &apptheory.Response{
+		Status:  http.StatusTooManyRequests,
+		Headers: headers,
+		Body:    raw,
+	}
+}
+
+func retryAfterSeconds(decision *apptheoryLimited.LimitDecision) int {
+	if decision != nil && decision.RetryAfter != nil {
+		return int(decision.RetryAfter.Seconds())
+	}
+	return 60
+}
+
+func attachStoredRateLimitHeaders(ctx *apptheory.Context, resp *apptheory.Response) {
+	if ctx == nil || resp == nil {
+		return
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string][]string{}
+	}
+	headers, _ := ctx.Get("rate_limit_headers").(map[string][]string)
+	if headers == nil {
+		return
+	}
+	for k, v := range headers {
+		resp.Headers[k] = append([]string(nil), v...)
 	}
 }
 

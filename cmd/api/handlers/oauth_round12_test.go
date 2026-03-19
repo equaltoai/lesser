@@ -895,6 +895,113 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "read", body.Scope)
 	})
 
+	t.Run("client_credentials issues access-only agent token with delegated claims", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Agent Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					GrantTypes:    []string{auth.GrantTypeClientCredentials},
+					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					OwnerID:       "owner",
+					Confidential:  true,
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentType:  "assistant",
+					AgentOwner: "@owner",
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.Empty(t, body.RefreshToken)
+		require.Equal(t, "read write", body.Scope)
+		require.Equal(t, int(auth.AgentAccessTokenTTL(cfg).Seconds()), body.ExpiresIn)
+
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, "agent1", claims.Username)
+		require.Equal(t, "client-agent", claims.ClientID)
+		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
+		require.True(t, claims.IsAgent)
+		require.Equal(t, "assistant", claims.AgentType)
+		require.Equal(t, "@owner", claims.DelegatedBy)
+		require.NotEmpty(t, claims.SessionID)
+		require.Equal(t, claims.SessionID, claims.AgentSessionID)
+	})
+
+	t.Run("client_credentials rejects non-agent clients", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-web": {
+					ClientID:     "client-web",
+					ClientSecret: "secret",
+					Name:         "Web App",
+					RedirectURIs: []string{"https://example.com/callback"},
+					GrantTypes:   []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:  auth.ClientClassWeb,
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-web&client_secret=secret"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "unauthorized_client", body["error"])
+	})
+
+	t.Run("client_credentials rejects requested scopes outside the client scope set", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Agent Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					GrantTypes:    []string{auth.GrantTypeClientCredentials},
+					Scopes:        []string{auth.ScopeRead},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					OwnerID:       "owner",
+					Confidential:  true,
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentOwner: "@owner",
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret&scope=write"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_scope", body["error"])
+	})
+
 	t.Run("device_code grant disabled returns access_denied", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code=dc-1&client_id=client-1"))

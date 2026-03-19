@@ -5,6 +5,7 @@ exemptions:
       match:
         exact:
             - /api/v1/apps
+            - /api/v1/apps/{id}/rotate_secret
         prefixes:
             - /oauth
     - id: auth_setup
@@ -676,6 +677,10 @@ routes:
         - Mutation.addAnnouncementReaction
     - method: POST
       path: /api/v1/apps
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
+      path: /api/v1/apps/{id}/rotate_secret
       policy: rest_only
       exemptedBy: oauth_oidc
     - method: GET

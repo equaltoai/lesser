@@ -176,6 +176,7 @@ OPTIONS /api/v1/agents/{username}/rotate-key/challenge
 OPTIONS /api/v1/agents/{username}/runtime-sessions
 OPTIONS /api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke
 OPTIONS /api/v1/agents/{username}/suspend
+OPTIONS /api/v1/apps/{id}/rotate_secret
 OPTIONS /api/v1/auth/webauthn/credentials
 OPTIONS /api/v1/auth/webauthn/credentials/{credentialId}
 OPTIONS /api/v1/auth/webauthn/login/begin
@@ -271,6 +272,7 @@ POST /api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke
 POST /api/v1/agents/{username}/suspend
 POST /api/v1/announcements/{id}/dismiss
 POST /api/v1/apps
+POST /api/v1/apps/{id}/rotate_secret
 POST /api/v1/auth/webauthn/login/begin
 POST /api/v1/auth/webauthn/login/finish
 POST /api/v1/auth/webauthn/register/begin

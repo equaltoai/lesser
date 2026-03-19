@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,19 @@ type stubLimiter struct {
 
 func (s stubLimiter) CheckAndIncrement(_ context.Context, _ apptheoryLimited.RateLimitKey) (*apptheoryLimited.LimitDecision, error) {
 	return s.decision, s.err
+}
+
+type trackingLimiter struct {
+	decision *apptheoryLimited.LimitDecision
+	err      error
+	calls    int
+	lastKey  apptheoryLimited.RateLimitKey
+}
+
+func (t *trackingLimiter) CheckAndIncrement(_ context.Context, key apptheoryLimited.RateLimitKey) (*apptheoryLimited.LimitDecision, error) {
+	t.calls++
+	t.lastKey = key
+	return t.decision, t.err
 }
 
 type noopDB struct{}
@@ -247,6 +261,28 @@ func TestRateLimitKey_PriorityAndFallbacks(t *testing.T) {
 	})
 }
 
+func TestOAuthClientCredentialsRateLimitKey(t *testing.T) {
+	ctx := &apptheory.Context{Request: apptheory.Request{
+		Method: http.MethodPost,
+		Path:   "/oauth/token",
+		Body:   []byte("grant_type=client_credentials&client_id=client-1"),
+	}}
+
+	key, ok := oauthClientCredentialsRateLimitKey(ctx)
+	require.True(t, ok)
+	require.Equal(t, "oauth-client:client-1", key.Identifier)
+	require.Equal(t, "client-1", key.Metadata["client_id"])
+	require.Equal(t, "client_credentials", key.Metadata["grant_type"])
+
+	key, ok = oauthClientCredentialsRateLimitKey(&apptheory.Context{Request: apptheory.Request{
+		Method: http.MethodPost,
+		Path:   "/oauth/token",
+		Body:   []byte("grant_type=urn:ietf:params:oauth:grant-type:device_code&client_id=client-1"),
+	}})
+	require.False(t, ok)
+	require.Empty(t, key.Identifier)
+}
+
 func TestRateLimitHeaders_NilAndRemainingFloor(t *testing.T) {
 	require.Nil(t, rateLimitHeaders(nil))
 
@@ -290,6 +326,99 @@ func TestApplyRateLimit_SetsResponseHeadersMapWhenNil(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, resp.Headers)
+}
+
+func TestApplyOAuthTokenRateLimit_ReturnsGrantAware429ForClientCredentials(t *testing.T) {
+	orig := newLimiterFunc
+	t.Cleanup(func() { newLimiterFunc = orig })
+
+	base := &trackingLimiter{decision: &apptheoryLimited.LimitDecision{
+		Allowed:      true,
+		CurrentCount: 1,
+		Limit:        10,
+		ResetsAt:     time.Unix(1700000000, 0),
+	}}
+	retryAfter := 15 * time.Second
+	client := &trackingLimiter{decision: &apptheoryLimited.LimitDecision{
+		Allowed:      false,
+		CurrentCount: 30,
+		Limit:        30,
+		ResetsAt:     time.Unix(1700000015, 0),
+		RetryAfter:   &retryAfter,
+	}}
+
+	call := 0
+	newLimiterFunc = func(string, int, time.Duration, *zap.Logger) (atomicLimiter, error) {
+		call++
+		if call == 1 {
+			return base, nil
+		}
+		return client, nil
+	}
+
+	called := 0
+	out := ApplyOAuthTokenRateLimit(func(*apptheory.Context) (*apptheory.Response, error) {
+		called++
+		return apptheory.Text(200, "ok"), nil
+	}, 10, time.Minute, zap.NewNop())
+
+	resp, err := out(&apptheory.Context{Request: apptheory.Request{
+		Method:  http.MethodPost,
+		Path:    "/oauth/token",
+		Body:    []byte("grant_type=client_credentials&client_id=agent-client&client_secret=secret"),
+		Headers: map[string][]string{"x-forwarded-for": {"203.0.113.7"}},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, 0, called)
+	require.Equal(t, http.StatusTooManyRequests, resp.Status)
+	require.Equal(t, []string{"15"}, resp.Headers["retry-after"])
+	require.Contains(t, string(resp.Body), "\"error\":\"slow_down\"")
+	require.Contains(t, string(resp.Body), "\"client_id\":\"agent-client\"")
+	require.Equal(t, 1, base.calls)
+	require.Equal(t, 1, client.calls)
+	require.Equal(t, "oauth-client:agent-client", client.lastKey.Identifier)
+}
+
+func TestApplyOAuthTokenRateLimit_SkipsClientLimiterForOtherGrants(t *testing.T) {
+	orig := newLimiterFunc
+	t.Cleanup(func() { newLimiterFunc = orig })
+
+	base := &trackingLimiter{decision: &apptheoryLimited.LimitDecision{
+		Allowed:      true,
+		CurrentCount: 1,
+		Limit:        10,
+		ResetsAt:     time.Unix(1700000000, 0),
+	}}
+	client := &trackingLimiter{decision: &apptheoryLimited.LimitDecision{
+		Allowed:      true,
+		CurrentCount: 1,
+		Limit:        30,
+		ResetsAt:     time.Unix(1700000000, 0),
+	}}
+
+	call := 0
+	newLimiterFunc = func(string, int, time.Duration, *zap.Logger) (atomicLimiter, error) {
+		call++
+		if call == 1 {
+			return base, nil
+		}
+		return client, nil
+	}
+
+	out := ApplyOAuthTokenRateLimit(func(*apptheory.Context) (*apptheory.Response, error) {
+		return &apptheory.Response{Status: 200}, nil
+	}, 10, time.Minute, zap.NewNop())
+
+	resp, err := out(&apptheory.Context{Request: apptheory.Request{
+		Method: http.MethodPost,
+		Path:   "/oauth/token",
+		Body:   []byte("grant_type=refresh_token&client_id=client-1&refresh_token=rt-1"),
+	}})
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.Status)
+	require.Equal(t, 1, base.calls)
+	require.Equal(t, 0, client.calls)
+	require.Equal(t, []string{"10"}, resp.Headers["x-ratelimit-limit"])
 }
 
 func TestNewLimiterFunc_EmptyRegionReturnsSentinel(t *testing.T) {

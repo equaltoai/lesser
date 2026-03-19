@@ -48,6 +48,7 @@ const (
 const (
 	GrantTypeAuthorizationCode = "authorization_code"
 	GrantTypeRefreshToken      = "refresh_token"
+	GrantTypeClientCredentials = "client_credentials"
 )
 
 // Token expiration times

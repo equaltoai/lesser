@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -1080,6 +1081,12 @@ func (h *Handler) handleAuthServiceError(ctx *apptheory.Context, err error, oper
 
 	case errors.Is(err, auth.ErrUserNotApproved):
 		return h.respondForbidden(ctx, "user account is not approved")
+
+	case apperrors.HasCode(err, apperrors.CodeUnauthorized):
+		return h.respondUnauthorized(ctx)
+
+	case apperrors.HasCode(err, apperrors.CodeInsufficientScope):
+		return h.respondForbidden(ctx, err.Error())
 
 	default:
 		h.logger.Error(fmt.Sprintf("failed to %s", operation), zap.Error(err))

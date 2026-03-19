@@ -45,6 +45,7 @@ const oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 const (
 	oauthGrantTypeAuthorizationCode = "authorization_code"
 	oauthGrantTypeRefreshToken      = "refresh_token"
+	oauthGrantTypeClientCredentials = "client_credentials"
 
 	oauthTokenTypeBearer       = "Bearer"
 	oauthTokenExpiresInSeconds = 3600
@@ -462,6 +463,7 @@ type oauthTokenRequest struct {
 	codeVerifier string
 	refreshToken string
 	deviceCode   string
+	scope        string
 }
 
 func parseOAuthTokenRequest(ctx *apptheory.Context) (*oauthTokenRequest, *apptheory.Response, error) {
@@ -491,6 +493,7 @@ func parseOAuthTokenRequest(ctx *apptheory.Context) (*oauthTokenRequest, *appthe
 		codeVerifier: params["code_verifier"],
 		refreshToken: params["refresh_token"],
 		deviceCode:   params["device_code"],
+		scope:        params["scope"],
 	}, nil, nil
 }
 
@@ -510,12 +513,14 @@ func (h *Handler) HandleOAuthTokenLift(ctx *apptheory.Context) (*apptheory.Respo
 		return h.handleOAuthAuthorizationCodeGrant(ctx.Context(), oauthSvc, req)
 	case oauthGrantTypeRefreshToken:
 		return h.handleOAuthRefreshTokenGrant(ctx, oauthSvc, req)
+	case oauthGrantTypeClientCredentials:
+		return h.handleOAuthClientCredentialsGrant(ctx.Context(), oauthSvc, req)
 	case oauthDeviceCodeGrantType:
 		return h.handleOAuthDeviceCodeGrant(ctx.Context(), oauthSvc, req)
 	default:
 		return apptheory.JSON(http.StatusBadRequest, map[string]string{
 			"error":             "unsupported_grant_type",
-			"error_description": "Only authorization_code, refresh_token, and device_code grant types are supported",
+			"error_description": "Only authorization_code, refresh_token, client_credentials, and device_code grant types are supported",
 		})
 	}
 }
@@ -545,6 +550,11 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_client",
 				"error_description": "Invalid client credentials",
+			})
+		case auth.ErrUnauthorizedClient:
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "unauthorized_client",
+				"error_description": "This client is not allowed to use authorization_code",
 			})
 		case auth.ErrInvalidCodeChallenge:
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
@@ -595,6 +605,11 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc 
 				"error":             "invalid_client",
 				"error_description": "Invalid client credentials",
 			})
+		case auth.ErrUnauthorizedClient:
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "unauthorized_client",
+				"error_description": "This client is not allowed to use refresh_token",
+			})
 		default:
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
@@ -610,6 +625,100 @@ func (h *Handler) handleOAuthRefreshTokenGrant(ctx *apptheory.Context, oauthSvc 
 		CreatedAt:    time.Now().Unix(),
 		ExpiresIn:    oauthTokenExpiresInSeconds,
 		RefreshToken: newRefreshToken,
+	})
+}
+
+func (h *Handler) handleOAuthClientCredentialsGrant(ctx context.Context, oauthSvc *auth.OAuthService, req *oauthTokenRequest) (*apptheory.Response, error) {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"client_id":     req.clientID,
+		"client_secret": req.clientSecret,
+	}); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
+		})
+	}
+
+	client, err := h.repos.Account().GetOAuthClient(ctx, strings.TrimSpace(req.clientID))
+	if err != nil || client == nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	}
+	if err := oauthSvc.ValidateClient(ctx, req.clientID, req.clientSecret); err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	}
+	if !oauthClientSupportsGrantType(client, oauthGrantTypeClientCredentials) {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "unauthorized_client",
+			"error_description": "client_credentials is not allowed for this client",
+		})
+	}
+	if !strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "unauthorized_client",
+			"error_description": "Only agent clients may use client_credentials",
+		})
+	}
+
+	agentUser, agentErr := h.getAgentUserForOAuthClient(ctx, client, client.OwnerID)
+	switch agentErr {
+	case nil:
+	case errOAuthAgentUsernameRequired, errOAuthAgentNotFound:
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": agentErr.Error(),
+		})
+	case errOAuthAgentForbidden:
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Client ownership no longer matches the bound agent",
+		})
+	default:
+		h.logger.Error("failed to resolve OAuth agent client_credentials binding", zap.Error(agentErr))
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Failed to resolve agent connector",
+		})
+	}
+
+	scopes, err := resolveOAuthClientRequestedScopes(client, req.scope)
+	if err != nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_scope",
+			"error_description": "requested scopes exceed the client scope set",
+		})
+	}
+
+	accessTTL := auth.AgentAccessTokenTTL(h.cfg)
+	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
+		ctx,
+		agentUser.Username,
+		client.ClientID,
+		"",
+		scopes,
+		accessTTL,
+		auth.ClientClassAgent,
+		common.GenerateSessionIDULID(),
+	)
+	if err != nil {
+		h.logger.Error("failed to generate client_credentials access token", zap.Error(err))
+		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+			"error":             "server_error",
+			"error_description": "Failed to generate tokens",
+		})
+	}
+
+	return okJSON(apimodels.OAuthTokenResponse{
+		AccessToken: accessToken,
+		TokenType:   oauthTokenTypeBearer,
+		Scope:       strings.Join(scopes, " "),
+		CreatedAt:   time.Now().Unix(),
+		ExpiresIn:   int(accessTTL.Seconds()),
 	})
 }
 
@@ -634,6 +743,19 @@ func (h *Handler) handleOAuthDeviceCodeGrant(ctx context.Context, oauthSvc *auth
 	resp, err := h.validateOAuthClientSecretIfProvided(ctx, oauthSvc, req.clientID, req.clientSecret)
 	if resp != nil || err != nil {
 		return resp, err
+	}
+	client, err := h.repos.Account().GetOAuthClient(ctx, strings.TrimSpace(req.clientID))
+	if err != nil || client == nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+	}
+	if !oauthClientSupportsGrantType(client, oauthDeviceCodeGrantType) {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "unauthorized_client",
+			"error_description": "device_code is not allowed for this client",
+		})
 	}
 
 	session, resp, err := h.loadOAuthDeviceSessionForTokenGrant(ctx, req.deviceCode, req.clientID)
@@ -663,6 +785,56 @@ func (h *Handler) validateOAuthClientSecretIfProvided(ctx context.Context, oauth
 	}
 
 	return nil, nil
+}
+
+func oauthClientSupportsGrantType(client *storage.OAuthClient, grantType string) bool {
+	if client == nil {
+		return false
+	}
+	if len(client.GrantTypes) == 0 {
+		switch strings.ToLower(strings.TrimSpace(grantType)) {
+		case oauthGrantTypeAuthorizationCode, oauthGrantTypeRefreshToken, oauthDeviceCodeGrantType:
+			return true
+		case oauthGrantTypeClientCredentials:
+			return strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent)
+		default:
+			return false
+		}
+	}
+	for _, allowedGrant := range client.GrantTypes {
+		if strings.EqualFold(strings.TrimSpace(allowedGrant), grantType) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveOAuthClientRequestedScopes(client *storage.OAuthClient, requestedScope string) ([]string, error) {
+	requested := splitOAuthSpaceDelimited(requestedScope)
+	if len(requested) == 0 {
+		if len(client.Scopes) > 0 {
+			requested = append([]string(nil), client.Scopes...)
+		} else {
+			requested = auth.DefaultScopes()
+		}
+	}
+	if err := auth.ValidateScopes(requested); err != nil {
+		return nil, err
+	}
+	if len(client.Scopes) == 0 {
+		return requested, nil
+	}
+
+	allowedScopes := make(map[string]struct{}, len(client.Scopes))
+	for _, scope := range client.Scopes {
+		allowedScopes[scope] = struct{}{}
+	}
+	for _, scope := range requested {
+		if _, ok := allowedScopes[scope]; !ok {
+			return nil, auth.ErrInvalidScope
+		}
+	}
+	return requested, nil
 }
 
 func (h *Handler) loadOAuthDeviceSessionForTokenGrant(ctx context.Context, deviceCode, clientID string) (*storage.OAuthDeviceSession, *apptheory.Response, error) {
@@ -867,6 +1039,9 @@ func (h *Handler) validateAuthorizationCodeExchangeClient(ctx context.Context, o
 	if err != nil || client == nil {
 		return nil, auth.ErrInvalidClient
 	}
+	if !oauthClientSupportsGrantType(client, oauthGrantTypeAuthorizationCode) {
+		return nil, auth.ErrUnauthorizedClient
+	}
 	if err := validateAuthorizationCodeExchangeRedirect(client, clientID, redirectURI, code); err != nil {
 		return nil, err
 	}
@@ -987,6 +1162,9 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
 	if err != nil || client == nil {
 		return "", "", nil, auth.ErrInvalidClient
+	}
+	if !oauthClientSupportsGrantType(client, oauthGrantTypeRefreshToken) {
+		return "", "", nil, auth.ErrUnauthorizedClient
 	}
 
 	// Enforce confidential client authentication.
