@@ -47,15 +47,31 @@ func runtimeRefreshAccessTTL(cfg *config.Config, token *storage.RefreshToken) ti
 	if ttl <= 0 {
 		ttl = auth.AgentAccessTokenTTL(cfg)
 	}
+	now := time.Now().UTC()
 	for _, bound := range []time.Duration{
-		time.Until(token.IdleExpiresAt),
-		time.Until(token.AbsoluteExpiresAt),
+		runtimePositiveRemaining(now, token.IdleExpiresAt),
+		runtimePositiveRemaining(now, token.AbsoluteExpiresAt),
 	} {
 		if bound > 0 && bound < ttl {
 			ttl = bound
 		}
 	}
 	return ttl
+}
+
+func runtimeExpiryExceeded(now, expiry time.Time) bool {
+	return !expiry.IsZero() && now.After(expiry)
+}
+
+func runtimePositiveRemaining(now, expiry time.Time) time.Duration {
+	if expiry.IsZero() {
+		return 0
+	}
+	remaining := expiry.Sub(now)
+	if remaining <= 0 {
+		return 0
+	}
+	return remaining
 }
 
 func nextRuntimeIdleExpiry(now, absoluteExpiry time.Time) time.Time {
@@ -82,7 +98,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		}
 		return "", "", nil, auth.ErrInvalidToken
 	}
-	if now.After(storedToken.IdleExpiresAt) || now.After(storedToken.AbsoluteExpiresAt) {
+	if runtimeExpiryExceeded(now, storedToken.IdleExpiresAt) || runtimeExpiryExceeded(now, storedToken.AbsoluteExpiresAt) {
 		_ = auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "runtime_session_expired", ipAddress, userAgent)
 		return "", "", nil, auth.ErrInvalidToken
 	}
