@@ -16,6 +16,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	oauthTokenEndpointAuthMethodNone             = "none"
+	oauthTokenEndpointAuthMethodClientSecretPost = "client_secret_post"
+)
+
 // HandleAppRegistrationLift handles OAuth app registration requests
 func (h *Handler) HandleAppRegistrationLift(ctx *apptheory.Context) (*apptheory.Response, error) {
 	// Parse and validate request
@@ -554,15 +559,15 @@ func normalizeOAuthTokenEndpointAuthMethod(value, clientClass string) (string, b
 	method := strings.ToLower(strings.TrimSpace(value))
 	if method == "" {
 		if clientClass == auth.ClientClassAgent {
-			return "client_secret_post", true, nil
+			return oauthTokenEndpointAuthMethodClientSecretPost, true, nil
 		}
-		return "none", false, nil
+		return oauthTokenEndpointAuthMethodNone, false, nil
 	}
 
 	switch method {
-	case "none":
+	case oauthTokenEndpointAuthMethodNone:
 		return method, false, nil
-	case "client_secret_post":
+	case oauthTokenEndpointAuthMethodClientSecretPost:
 		return method, true, nil
 	default:
 		return "", false, errors.New("invalid token_endpoint_auth_method")
@@ -571,9 +576,9 @@ func normalizeOAuthTokenEndpointAuthMethod(value, clientClass string) (string, b
 
 func oauthClientTokenEndpointAuthMethod(client *storage.OAuthClient) string {
 	if client != nil && client.Confidential {
-		return "client_secret_post"
+		return oauthTokenEndpointAuthMethodClientSecretPost
 	}
-	return "none"
+	return oauthTokenEndpointAuthMethodNone
 }
 
 // getVAPIDKey retrieves the VAPID public key

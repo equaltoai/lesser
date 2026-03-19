@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
@@ -36,6 +37,8 @@ func TestHandler_handleAuthServiceError_CoversBranches(t *testing.T) {
 		{"user_not_found", auth.ErrUserNotFound, http.StatusBadRequest},
 		{"user_suspended", auth.ErrUserSuspended, http.StatusForbidden},
 		{"user_not_approved", auth.ErrUserNotApproved, http.StatusForbidden},
+		{"app_error_unauthorized", apperrors.Unauthorized("auth required"), http.StatusUnauthorized},
+		{"app_error_insufficient_scope", apperrors.InsufficientScope("write"), http.StatusForbidden},
 		{"default", assertError("some other error"), http.StatusInternalServerError},
 	}
 

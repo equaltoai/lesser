@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,6 +47,17 @@ func TestNormalizeOAuthClientGrantTypes(t *testing.T) {
 
 	_, err = normalizeOAuthClientGrantTypes(oauthDeviceCodeGrantType, auth.ClientClassCLI, false)
 	require.Error(t, err)
+
+	out, err = normalizeOAuthClientGrantTypes("", auth.ClientClassCLI, false)
+	require.NoError(t, err)
+	require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, out)
+
+	out, err = normalizeOAuthClientGrantTypes("AUTHORIZATION_CODE refresh_token authorization_code", auth.ClientClassWeb, false)
+	require.NoError(t, err)
+	require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, out)
+
+	_, err = normalizeOAuthClientGrantTypes("password", auth.ClientClassWeb, false)
+	require.Error(t, err)
 }
 
 func TestNormalizeOAuthTokenEndpointAuthMethod(t *testing.T) {
@@ -66,4 +78,10 @@ func TestNormalizeOAuthTokenEndpointAuthMethod(t *testing.T) {
 
 	_, _, err = normalizeOAuthTokenEndpointAuthMethod("client_secret_basic", auth.ClientClassCLI)
 	require.Error(t, err)
+}
+
+func TestOAuthClientTokenEndpointAuthMethod(t *testing.T) {
+	require.Equal(t, oauthTokenEndpointAuthMethodNone, oauthClientTokenEndpointAuthMethod(nil))
+	require.Equal(t, oauthTokenEndpointAuthMethodNone, oauthClientTokenEndpointAuthMethod(&storage.OAuthClient{}))
+	require.Equal(t, oauthTokenEndpointAuthMethodClientSecretPost, oauthClientTokenEndpointAuthMethod(&storage.OAuthClient{Confidential: true}))
 }
