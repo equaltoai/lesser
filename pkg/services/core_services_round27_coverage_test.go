@@ -42,6 +42,10 @@ type capturingNotificationRepo struct {
 	err     error
 }
 
+func ptrTime(t time.Time) *time.Time {
+	return &t
+}
+
 func (r *capturingNotificationRepo) CreateNotification(_ context.Context, notification *models.Notification) error {
 	r.created = append(r.created, notification)
 	return r.err
@@ -381,6 +385,7 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		assert.Equal(t, "follow", captureRepo.created[0].Type)
 		assert.Equal(t, "alice", captureRepo.created[0].UserID)
 		assert.Equal(t, "bob", captureRepo.created[0].ActorID)
+		assert.Nil(t, captureRepo.created[0].Data)
 	})
 
 	t.Run("CreateLikeNotification_swallows_storage_errors", func(t *testing.T) {
@@ -423,8 +428,16 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 
 	t.Run("CreateLikeNotification_success", func(t *testing.T) {
 		captureRepo := &capturingNotificationRepo{}
+		publishedAt := time.Date(2026, time.March, 19, 10, 0, 0, 0, time.UTC)
 		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
-			object:       fakeObjectRepo{getValue: map[string]any{"attributedTo": "https://local.example/users/alice"}},
+			object: fakeObjectRepo{getValue: map[string]any{
+				"id":           "https://local.example/objects/n1",
+				"url":          "https://local.example/@alice/n1",
+				"content":      "<p>liked post</p>",
+				"published":    publishedAt,
+				"visibility":   "unlisted",
+				"attributedTo": "https://local.example/users/alice",
+			}},
 			notification: captureRepo,
 			logger:       zap.NewNop(),
 			table:        "tbl",
@@ -440,6 +453,13 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		require.Len(t, captureRepo.created, 1)
 		assert.Equal(t, "favourite", captureRepo.created[0].Type)
 		assert.Equal(t, "alice", captureRepo.created[0].UserID)
+		snapshot, ok := captureRepo.created[0].Data[notificationPostSnapshotKey].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "https://local.example/objects/n1", snapshot["id"])
+		assert.Equal(t, "https://local.example/@alice/n1", snapshot["url"])
+		assert.Equal(t, "<p>liked post</p>", snapshot["content"])
+		assert.Equal(t, publishedAt.Format(time.RFC3339), snapshot["createdAt"])
+		assert.Equal(t, "unlisted", snapshot["visibility"])
 	})
 
 	t.Run("CreateReplyNotification_requires_in_reply_to", func(t *testing.T) {
@@ -521,12 +541,27 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		err := svc.CreateReplyNotification(ctx, &activitypub.Activity{
 			BaseObject: activitypub.BaseObject{ID: "reply-1"},
 			Actor:      "https://remote.example/users/bob",
-			Object:     &activitypub.Note{BaseObject: activitypub.BaseObject{InReplyTo: "https://local.example/objects/n1"}},
+			Object: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://local.example/objects/reply-1",
+					Published: ptrTime(time.Date(2026, time.March, 19, 12, 30, 0, 0, time.UTC)),
+					InReplyTo: "https://local.example/objects/n1",
+					To:        []string{activitypub.PublicAddress},
+				},
+				Content:      "<p>reply content</p>",
+				AttributedTo: "https://remote.example/users/bob",
+			},
 		})
 		require.NoError(t, err)
 		require.Len(t, captureRepo.created, 1)
 		assert.Equal(t, "reply", captureRepo.created[0].Type)
 		assert.Equal(t, "alice", captureRepo.created[0].UserID)
+		snapshot, ok := captureRepo.created[0].Data[notificationPostSnapshotKey].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "https://local.example/objects/reply-1", snapshot["id"])
+		assert.Equal(t, "<p>reply content</p>", snapshot["content"])
+		assert.Equal(t, "public", snapshot["visibility"])
+		assert.Equal(t, "https://local.example/objects/n1", snapshot["inReplyToId"])
 	})
 
 	t.Run("CreateMentionNotification_skips_self_and_continues_on_error", func(t *testing.T) {
@@ -544,6 +579,43 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		assert.Equal(t, "bob", captureRepo.created[0].UserID)
 	})
 
+	t.Run("CreateMentionNotification_embeds_post_snapshot", func(t *testing.T) {
+		captureRepo := &capturingNotificationRepo{}
+		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
+			notification: captureRepo,
+			logger:       zap.NewNop(),
+			table:        "tbl",
+		}}
+		svc := &notificationService{storage: storage, logger: zap.NewNop()}
+
+		publishedAt := time.Date(2026, time.March, 19, 13, 0, 0, 0, time.UTC)
+		err := svc.CreateMentionNotification(ctx, []string{"https://remote.example/users/bob"}, &activitypub.Activity{
+			BaseObject: activitypub.BaseObject{
+				ID:        "https://local.example/activities/create-1",
+				Published: ptrTime(publishedAt),
+				To:        []string{"https://www.w3.org/ns/activitystreams#Public"},
+			},
+			Actor: "https://local.example/users/alice",
+			Object: &activitypub.Note{
+				BaseObject: activitypub.BaseObject{
+					ID:        "https://local.example/objects/n1",
+					Published: ptrTime(publishedAt),
+					To:        []string{"https://www.w3.org/ns/activitystreams#Public"},
+				},
+				Content:      "<p>@bob hi</p>",
+				AttributedTo: "https://local.example/users/alice",
+			},
+		})
+		require.NoError(t, err)
+		require.Len(t, captureRepo.created, 1)
+		snapshot, ok := captureRepo.created[0].Data[notificationPostSnapshotKey].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "https://local.example/objects/n1", snapshot["id"])
+		assert.Equal(t, "<p>@bob hi</p>", snapshot["content"])
+		assert.Equal(t, publishedAt.Format(time.RFC3339), snapshot["createdAt"])
+		assert.Equal(t, "public", snapshot["visibility"])
+	})
+
 	t.Run("createNotification_handles_reblog_and_custom_types", func(t *testing.T) {
 		captureRepo := &capturingNotificationRepo{}
 		storage := &repositoryStorageAdapter{repos: fakeStorageAdapterRepos{
@@ -554,8 +626,8 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 
 		svc := &notificationService{storage: storage, logger: zap.NewNop()}
 
-		require.NoError(t, svc.createNotification(ctx, "https://local.example/users/alice", "https://remote.example/users/bob", "reblog", "obj-1"))
-		require.NoError(t, svc.createNotification(ctx, "https://local.example/users/alice", "https://remote.example/users/bob", "custom.type", "obj-1"))
+		require.NoError(t, svc.createNotification(ctx, "https://local.example/users/alice", "https://remote.example/users/bob", "reblog", "obj-1", nil))
+		require.NoError(t, svc.createNotification(ctx, "https://local.example/users/alice", "https://remote.example/users/bob", "custom.type", "obj-1", nil))
 		require.Len(t, captureRepo.created, 2)
 		assert.Equal(t, "reblog", captureRepo.created[0].Type)
 		assert.Equal(t, "custom.type", captureRepo.created[1].Type)
@@ -570,8 +642,8 @@ func TestNotificationService_round27_coverage(t *testing.T) {
 		}}
 		svc := &notificationService{storage: storage, logger: zap.NewNop()}
 
-		require.NoError(t, svc.createNotification(ctx, "alice", "https://remote.example/users/bob", "follow", "obj-1"))
-		require.NoError(t, svc.createNotification(ctx, "https://local.example/users/alice", "bob", "follow", "obj-1"))
+		require.NoError(t, svc.createNotification(ctx, "alice", "https://remote.example/users/bob", "follow", "obj-1", nil))
+		require.NoError(t, svc.createNotification(ctx, "https://local.example/users/alice", "bob", "follow", "obj-1", nil))
 		assert.Empty(t, captureRepo.created)
 	})
 

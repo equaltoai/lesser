@@ -186,7 +186,7 @@ func (fv *FileValidationService) detectContentType(data []byte, result *FileVali
 		case strings.Contains(contentType, "text"):
 			result.DetectedFormat = "text"
 		default:
-			result.DetectedFormat = "unknown"
+			result.DetectedFormat = unknownValue
 		}
 	}
 

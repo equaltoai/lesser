@@ -233,6 +233,40 @@ func TestMisc_Notifications_AttachStatusAndAuthor_Round12(t *testing.T) {
 		require.Nil(t, apiNotif.Status)
 	})
 
+	t.Run("snapshot attaches status without object fetch", func(t *testing.T) {
+		errState := &round10QueryState{
+			actorsByUser: state.actorsByUser,
+			firstErrorPK: map[string]error{
+				"object#status-snapshot": errors.New("unexpected object fetch"),
+			},
+		}
+		snapshotHandler, _, _ := round11NewHandler(t, cfg, errState)
+
+		apiNotif := snapshotHandler.convertSingleNotification(ctx, &storage.Notification{
+			ID:        "n-snapshot",
+			Type:      models.NotificationTypeMention,
+			AccountID: "alice",
+			StatusID:  "status-snapshot",
+			CreatedAt: now,
+			Data: map[string]interface{}{
+				"postSnapshot": map[string]interface{}{
+					"id":           "https://example.com/objects/status-snapshot",
+					"url":          "https://example.com/@bob/status-snapshot",
+					"content":      "<p>snapshot body</p>",
+					"createdAt":    now.Add(-30 * time.Minute).Format(time.RFC3339),
+					"visibility":   "private",
+					"inReplyToId":  "https://example.com/objects/root",
+					"attributedTo": cfg.BaseURL() + "/users/bob",
+				},
+			},
+		})
+		require.NotNil(t, apiNotif)
+		require.NotNil(t, apiNotif.Status)
+		require.Equal(t, "<p>snapshot body</p>", apiNotif.Status.Content)
+		require.Equal(t, "https://example.com/@bob/status-snapshot", apiNotif.Status.URL)
+		require.Equal(t, "private", apiNotif.Status.Visibility)
+	})
+
 	t.Run("object fetch error leaves status unset", func(t *testing.T) {
 		errState := &round10QueryState{
 			actorsByUser: map[string]storagemodels.Actor{
