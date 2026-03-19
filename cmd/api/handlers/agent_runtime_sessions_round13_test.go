@@ -132,6 +132,119 @@ func TestOAuthRuntimeRefreshGrant_ConcurrentRefreshConflictReturnsInvalidGrant(t
 	require.Equal(t, "invalid_grant", body["error"])
 }
 
+func TestOAuthRuntimeRefreshGrant_ZeroIdleExpiryDoesNotRevokeFamily(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	token := buildRuntimeRefreshToken(t, "rt-agent-zero-idle", "agent1", delegatedAgentClientID, "sid-agent-zero-idle", "family-agent-zero-idle", "local-agent", 1, true, false, now)
+	token.IdleExpiresAt = time.Time{}
+	state := &round10QueryState{
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			token.Token: token,
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-zero-idle&client_id="+delegatedAgentClientID))
+	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+
+	var body apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.NotEmpty(t, body.RefreshToken)
+
+	oldToken := state.refreshTokensByToken["rt-agent-zero-idle"]
+	require.True(t, oldToken.Revoked)
+	require.Equal(t, "rotated", oldToken.RevokedReason)
+
+	newToken, ok := state.refreshTokensByToken[body.RefreshToken]
+	require.True(t, ok)
+	require.False(t, newToken.Revoked)
+	require.Equal(t, token.AbsoluteExpiresAt, newToken.AbsoluteExpiresAt)
+}
+
+func TestOAuthRuntimeRefreshGrant_ZeroAbsoluteExpiryDoesNotRevokeFamily(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	token := buildRuntimeRefreshToken(t, "rt-agent-zero-absolute", "agent1", delegatedAgentClientID, "sid-agent-zero-absolute", "family-agent-zero-absolute", "local-agent", 1, true, false, now)
+	token.AbsoluteExpiresAt = time.Time{}
+	state := &round10QueryState{
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			token.Token: token,
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-zero-absolute&client_id="+delegatedAgentClientID))
+	resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+
+	var body apimodels.OAuthTokenResponse
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.NotEmpty(t, body.RefreshToken)
+
+	oldToken := state.refreshTokensByToken["rt-agent-zero-absolute"]
+	require.True(t, oldToken.Revoked)
+	require.Equal(t, "rotated", oldToken.RevokedReason)
+
+	newToken, ok := state.refreshTokensByToken[body.RefreshToken]
+	require.True(t, ok)
+	require.False(t, newToken.Revoked)
+	require.False(t, newToken.AbsoluteExpiresAt.IsZero())
+}
+
+func TestOAuthRuntimeRefreshGrant_ExpiredBoundsStillRevokeFamily(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+
+	t.Run("expired idle", func(t *testing.T) {
+		token := buildRuntimeRefreshToken(t, "rt-agent-expired-idle", "agent1", delegatedAgentClientID, "sid-agent-expired-idle", "family-agent-expired-idle", "local-agent", 1, true, false, now)
+		token.IdleExpiresAt = now.Add(-1 * time.Minute)
+		state := &round10QueryState{
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		h.repos.Account().SetEncryptor(noopEncryptor{})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-expired-idle&client_id="+delegatedAgentClientID))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_grant", body["error"])
+
+		updated := state.refreshTokensByToken["rt-agent-expired-idle"]
+		require.True(t, updated.Revoked)
+		require.Equal(t, "runtime_session_expired", updated.RevokedReason)
+	})
+
+	t.Run("expired absolute", func(t *testing.T) {
+		token := buildRuntimeRefreshToken(t, "rt-agent-expired-absolute", "agent1", delegatedAgentClientID, "sid-agent-expired-absolute", "family-agent-expired-absolute", "local-agent", 1, true, false, now)
+		token.AbsoluteExpiresAt = now.Add(-1 * time.Minute)
+		state := &round10QueryState{
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		h.repos.Account().SetEncryptor(noopEncryptor{})
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-expired-absolute&client_id="+delegatedAgentClientID))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_grant", body["error"])
+
+		updated := state.refreshTokensByToken["rt-agent-expired-absolute"]
+		require.True(t, updated.Revoked)
+		require.Equal(t, "runtime_session_expired", updated.RevokedReason)
+	})
+}
+
 func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 	cfg := round10TestConfig()
 	cfg.AllowAgents = true
@@ -231,4 +344,41 @@ func TestRuntimeRefreshAccessTTL_UsesStoredBounds(t *testing.T) {
 	ttl := runtimeRefreshAccessTTL(round10TestConfig(), token)
 	require.Greater(t, ttl, 0*time.Second)
 	require.LessOrEqual(t, ttl, 30*time.Minute)
+}
+
+func TestRuntimeRefreshAccessTTL_IgnoresZeroBounds(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("zero idle", func(t *testing.T) {
+		token := &storagetypes.RefreshToken{
+			AccessTTLSeconds:  3600,
+			IdleExpiresAt:     time.Time{},
+			AbsoluteExpiresAt: now.Add(45 * time.Minute),
+		}
+		ttl := runtimeRefreshAccessTTL(round10TestConfig(), token)
+		require.Greater(t, ttl, 0*time.Second)
+		require.LessOrEqual(t, ttl, 45*time.Minute)
+	})
+
+	t.Run("zero absolute", func(t *testing.T) {
+		token := &storagetypes.RefreshToken{
+			AccessTTLSeconds:  3600,
+			IdleExpiresAt:     now.Add(30 * time.Minute),
+			AbsoluteExpiresAt: time.Time{},
+		}
+		ttl := runtimeRefreshAccessTTL(round10TestConfig(), token)
+		require.Greater(t, ttl, 0*time.Second)
+		require.LessOrEqual(t, ttl, 30*time.Minute)
+	})
+
+	t.Run("both zero", func(t *testing.T) {
+		token := &storagetypes.RefreshToken{
+			AccessTTLSeconds:  1800,
+			IdleExpiresAt:     time.Time{},
+			AbsoluteExpiresAt: time.Time{},
+		}
+		ttl := runtimeRefreshAccessTTL(round10TestConfig(), token)
+		require.Greater(t, ttl, 29*time.Minute)
+		require.LessOrEqual(t, ttl, 30*time.Minute)
+	})
 }

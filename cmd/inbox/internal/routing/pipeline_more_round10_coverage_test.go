@@ -350,15 +350,17 @@ func TestInboxHandler_Round10_AuthenticateInboxRequest_Branches(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("token too old triggers auth failure branch", func(t *testing.T) {
+	t.Run("long-lived unexpired token older than 24h still authenticates", func(t *testing.T) {
 		oldToken := makeToken("alice", time.Now().Add(-48*time.Hour))
 		liftCtx := newAppTheoryContext("GET", "/users/alice/inbox", map[string]string{
 			"Host":          "localhost",
 			"Authorization": "Bearer " + oldToken,
 		}, nil, nil)
 
-		_, err := env.handler.authenticateInboxRequest(liftCtx, "alice")
-		require.Error(t, err)
+		claims, err := env.handler.authenticateInboxRequest(liftCtx, "alice")
+		require.NoError(t, err)
+		require.NotNil(t, claims)
+		require.Equal(t, "alice", claims.PreferredUsername)
 	})
 
 	t.Run("username mismatch is forbidden", func(t *testing.T) {

@@ -549,12 +549,15 @@ func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID,
 		return ErrTokenVersionMismatch
 	}
 
-	// Check if token is too old (additional security check)
-	if claims.IssuedAt != nil {
-		maxAge := 24 * time.Hour // Maximum token age regardless of expiry
-		if time.Since(claims.IssuedAt.Time) > maxAge {
-			return ErrTokenTooOld
-		}
+	return s.validateAccessTokenAgePolicy(claims)
+}
+
+// validateAccessTokenAgePolicy keeps age-policy decisions in one place.
+// Standard OAuth access tokens are bounded by explicit JWT expiry (`exp`) and
+// revocation/session checks rather than a second hidden max-age wall.
+func (s *OAuthService) validateAccessTokenAgePolicy(claims *Claims) error {
+	if claims == nil || claims.IssuedAt == nil || claims.IssuedAt.IsZero() {
+		return nil
 	}
 
 	return nil

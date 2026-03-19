@@ -11,11 +11,13 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	repoMocks "github.com/equaltoai/lesser/pkg/testing/mocks"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -232,6 +234,50 @@ func TestAccountsRound12_HandleVerifyCredentialsLift(t *testing.T) {
 		require.Equal(t, "alice", got.Username)
 		require.Equal(t, "alice", got.Acct)
 		require.NotEmpty(t, got.ID)
+	})
+
+	t.Run("long_lived_agent_token_older_than_24h_still_returns_200", func(t *testing.T) {
+		account := &storage.Account{
+			User:  &storage.User{Username: "alice"},
+			Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice"}, PreferredUsername: "alice"},
+		}
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(_ context.Context, username string) (*storage.Account, error) {
+					require.Equal(t, "alice", username)
+					return account, nil
+				},
+			},
+		})
+
+		now := time.Now().UTC()
+		claims := auth.Claims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Subject:   "alice",
+				IssuedAt:  jwt.NewNumericDate(now.Add(-48 * time.Hour)),
+				NotBefore: jwt.NewNumericDate(now.Add(-48 * time.Hour)),
+				ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+			},
+			Username:    "alice",
+			ClientID:    "client-agent",
+			ClientClass: auth.ClientClassAgent,
+			Scopes:      []string{auth.ScopeRead},
+			SessionID:   "sid-agent-long-lived",
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(cfg.JWTSecret))
+		require.NoError(t, err)
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/verify_credentials", map[string]string{
+			"Authorization": "Bearer " + tokenString,
+		}, nil, nil)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleVerifyCredentialsLift(ctx))
+
+		var got apimodels.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &got))
+		require.Equal(t, "alice", got.Username)
 	})
 }
 

@@ -716,6 +716,63 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.True(t, newToken.Current)
 	})
 
+	t.Run("refresh_token agent client survives long-lived session age", func(t *testing.T) {
+		now := time.Now().UTC()
+		token := buildRuntimeRefreshToken(t, "rt-agent-aged", "agent1", "client-agent", "sid-agent-aged", "family-agent-aged", "Connector App", 1, true, false, now)
+		token.SessionCreatedAt = now.Add(-72 * time.Hour)
+		token.LastUsedAt = now.Add(-2 * time.Hour)
+		token.IdleExpiresAt = now.Add(36 * time.Hour)
+		token.AbsoluteExpiresAt = now.Add(72 * time.Hour)
+		token.ExpiresAt = token.IdleExpiresAt
+		token.AccessTTLSeconds = int((30 * time.Hour).Seconds())
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Connector App",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     now.Add(-96 * time.Hour),
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {Username: "agent1", IsAgent: true, AgentOwner: "@owner"},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-aged&client_id=client-agent"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
+		require.Equal(t, "sid-agent-aged", claims.SessionID)
+		require.NotNil(t, claims.IssuedAt)
+		require.NotNil(t, claims.ExpiresAt)
+		require.Greater(t, claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time), 24*time.Hour)
+
+		oldToken := state.refreshTokensByToken["rt-agent-aged"]
+		require.True(t, oldToken.Revoked)
+		require.Equal(t, "rotated", oldToken.RevokedReason)
+
+		newToken, ok := state.refreshTokensByToken[body.RefreshToken]
+		require.True(t, ok)
+		require.Equal(t, token.FamilyID, newToken.FamilyID)
+		require.Equal(t, token.Generation+1, newToken.Generation)
+		require.Equal(t, token.SessionID, newToken.SessionID)
+	})
+
 	t.Run("authorization_code invalid_grant when code consumption fails", func(t *testing.T) {
 		state := &round10QueryState{
 			deleteErrorOnce: errors.New("delete failed"),
