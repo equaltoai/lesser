@@ -75,12 +75,14 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *apptheory.Context) (*appth
 		}
 
 		resp := models.AppRegistrationResponse{
-			ID:          client.ClientID,
-			Name:        client.Name,
-			Website:     client.Website,
-			RedirectURI: client.RedirectURIs[0], // Return first redirect URI for compatibility
-			ClientID:    client.ClientID,
-			VapidKey:    vapidKey,
+			ID:                      client.ClientID,
+			Name:                    client.Name,
+			Website:                 client.Website,
+			RedirectURI:             client.RedirectURIs[0], // Return first redirect URI for compatibility
+			ClientID:                client.ClientID,
+			VapidKey:                vapidKey,
+			GrantTypes:              append([]string(nil), client.GrantTypes...),
+			TokenEndpointAuthMethod: oauthClientTokenEndpointAuthMethod(client),
 		}
 
 		return okJSON(resp)
@@ -121,12 +123,14 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *apptheory.Context) (*appth
 	}
 
 	resp := models.AppRegistrationResponse{
-		ID:          client.ClientID,
-		Name:        client.Name,
-		Website:     client.Website,
-		RedirectURI: client.RedirectURIs[0], // Return first redirect URI for compatibility
-		ClientID:    client.ClientID,
-		VapidKey:    vapidKey,
+		ID:                      client.ClientID,
+		Name:                    client.Name,
+		Website:                 client.Website,
+		RedirectURI:             client.RedirectURIs[0], // Return first redirect URI for compatibility
+		ClientID:                client.ClientID,
+		VapidKey:                vapidKey,
+		GrantTypes:              append([]string(nil), client.GrantTypes...),
+		TokenEndpointAuthMethod: oauthClientTokenEndpointAuthMethod(client),
 	}
 
 	return okJSON(resp)
@@ -563,6 +567,13 @@ func normalizeOAuthTokenEndpointAuthMethod(value, clientClass string) (string, b
 	default:
 		return "", false, errors.New("invalid token_endpoint_auth_method")
 	}
+}
+
+func oauthClientTokenEndpointAuthMethod(client *storage.OAuthClient) string {
+	if client != nil && client.Confidential {
+		return "client_secret_post"
+	}
+	return "none"
 }
 
 // getVAPIDKey retrieves the VAPID public key
