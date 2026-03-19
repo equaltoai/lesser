@@ -128,7 +128,7 @@ func TestOAuthService_GenerateTokensWithContext_AndEnhancedValidation(t *testing
 	_, err = svc.ValidateAccessTokenWithContext(access, "sid-1", "192.0.2.10", 9)
 	require.ErrorIs(t, err, ErrTokenVersionMismatch)
 
-	// Token too old.
+	// Unexpired tokens are validated by explicit expiry and context, not a hidden age wall.
 	old := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "alice",
@@ -144,8 +144,17 @@ func TestOAuthService_GenerateTokensWithContext_AndEnhancedValidation(t *testing
 	oldToken := jwt.NewWithClaims(jwt.SigningMethodHS256, old)
 	oldTokenString, err := oldToken.SignedString(svc.jwtSecret)
 	require.NoError(t, err)
-	_, err = svc.ValidateAccessTokenWithContext(oldTokenString, "", "", 0)
-	require.ErrorIs(t, err, ErrTokenTooOld)
+	oldClaims, err := svc.ValidateAccessTokenWithContext(oldTokenString, "", "", 0)
+	require.NoError(t, err)
+	require.Equal(t, "alice", oldClaims.Username)
+
+	expired := old
+	expired.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-1 * time.Minute))
+	expiredToken := jwt.NewWithClaims(jwt.SigningMethodHS256, expired)
+	expiredTokenString, err := expiredToken.SignedString(svc.jwtSecret)
+	require.NoError(t, err)
+	_, err = svc.ValidateAccessTokenWithContext(expiredTokenString, "", "", 0)
+	require.ErrorIs(t, err, ErrInvalidToken)
 
 	// Unexpected signing method returns ErrInvalidToken.
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
