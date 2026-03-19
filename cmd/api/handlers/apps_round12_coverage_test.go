@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"testing"
+	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -377,5 +380,82 @@ func TestApps_Round12_HandleAppVerifyCredentialsLift_Coverage(t *testing.T) {
 		require.NoError(t, err)
 
 		requireStatus(t, http.StatusOK)(handler.HandleAppVerifyCredentialsLift(ctx))
+	})
+}
+
+func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
+	cfg := round11TestConfig()
+
+	t.Run("owner can rotate client secret and old secret stops working", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:      "client-1",
+					ClientSecret:  "secret",
+					Name:          "Agent Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					OwnerID:       "owner",
+					Confidential:  true,
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentOwner: "@owner",
+				},
+			},
+		}
+		handler, _, repos := round11NewHandlerSliceC(t, state)
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeWrite})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps/client-1/rotate_secret", map[string]string{
+			"Authorization": "Bearer " + token,
+		}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "client-1"
+
+		resp := requireStatus(t, http.StatusOK)(handler.HandleAppRotateSecretLift(ctx))
+		var body apimodels.AppSecretRotationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "client-1", body.ClientID)
+		require.NotEmpty(t, body.ClientSecret)
+		require.NotEqual(t, "secret", body.ClientSecret)
+		require.Equal(t, "client_secret_post", body.TokenEndpointAuthMethod)
+
+		oauthSvc := auth.NewOAuthService(handler.cfg.JWTSecret, handler.cfg, repos, nil)
+		require.Equal(t, auth.ErrInvalidClient, oauthSvc.ValidateClient(context.Background(), "client-1", "secret"))
+		require.NoError(t, oauthSvc.ValidateClient(context.Background(), "client-1", body.ClientSecret))
+	})
+
+	t.Run("non-owner cannot rotate client secret", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "Agent Connector",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					OwnerID:      "owner",
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "other-user", []string{auth.ScopeWrite})
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps/client-1/rotate_secret", map[string]string{
+			"Authorization": "Bearer " + token,
+		}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "client-1"
+
+		requireStatus(t, http.StatusForbidden)(handler.HandleAppRotateSecretLift(ctx))
 	})
 }

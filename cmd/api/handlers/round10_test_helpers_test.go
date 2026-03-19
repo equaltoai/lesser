@@ -30,6 +30,7 @@ type round10Where struct {
 type round10QueryState struct {
 	wheres []round10Where
 	model  any
+	sets   map[string]any
 
 	usersByUsername               map[string]storagemodels.User
 	actorsByUser                  map[string]storagemodels.Actor
@@ -140,6 +141,7 @@ type round10QueryState struct {
 
 func (s *round10QueryState) reset() {
 	s.wheres = nil
+	s.sets = nil
 }
 
 func (s *round10QueryState) whereValue(field string) (any, bool) {
@@ -276,7 +278,12 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 
 	// UpdateBuilder support
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()
-	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
+	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Run(func(args mock.Arguments) {
+		if state.sets == nil {
+			state.sets = map[string]any{}
+		}
+		state.sets[args.String(0)] = args.Get(1)
+	}).Maybe()
 	mockUpdate.On("Add", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
@@ -284,7 +291,27 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 	if state.executeErrorOnce != nil {
 		mockUpdate.On("Execute").Return(state.executeErrorOnce).Once()
 	}
-	mockUpdate.On("Execute").Return(nil).Maybe()
+	mockUpdate.On("Execute").Return(nil).Run(func(_ mock.Arguments) {
+		switch state.model.(type) {
+		case *storagemodels.OAuthClient:
+			pk, ok := state.whereString("PK")
+			if !ok || !strings.HasPrefix(pk, "OAUTH_CLIENT#") {
+				return
+			}
+			clientID := strings.TrimPrefix(pk, "OAUTH_CLIENT#")
+			client, exists := state.oauthClientsByID[clientID]
+			if !exists {
+				return
+			}
+			if secret, ok := state.sets["ClientSecret"].(string); ok {
+				client.ClientSecret = secret
+			}
+			if updatedAt, ok := state.sets["UpdatedAt"].(time.Time); ok {
+				client.UpdatedAt = updatedAt
+			}
+			state.oauthClientsByID[clientID] = client
+		}
+	}).Maybe()
 
 	// Mutations
 	if state.createErrorOnce != nil {

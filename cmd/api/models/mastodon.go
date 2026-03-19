@@ -78,6 +78,13 @@ type AppRegistrationResponse struct {
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 }
 
+// AppSecretRotationResponse represents the response after rotating an OAuth client secret.
+type AppSecretRotationResponse struct {
+	ClientID                string `json:"client_id"`
+	ClientSecret            string `json:"client_secret"`
+	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method,omitempty"`
+}
+
 // CreateStatusRequest represents a Mastodon-compatible status creation request
 type CreateStatusRequest struct {
 	Status      string   `json:"status"`                   // Text content of the status
