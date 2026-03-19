@@ -3,8 +3,10 @@ package auth
 import "strings"
 
 const (
+	// ScopeFollow grants relationship-management capability on public OAuth surfaces.
 	ScopeFollow = "follow"
-	ScopePush   = "push"
+	// ScopePush grants push-subscription capability on public OAuth surfaces.
+	ScopePush = "push"
 
 	scopeWriteFollowsAlias = "write:follows"
 )
