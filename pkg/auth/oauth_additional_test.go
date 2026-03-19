@@ -84,8 +84,9 @@ func TestOAuthService_ValidateClientRedirectURIAndScopes(t *testing.T) {
 	require.NoError(t, svc.ValidateScopes(context.Background(), "client-1", []string{ScopeWrite}))
 	require.Equal(t, ErrInvalidScope, svc.ValidateScopes(context.Background(), "client-1", []string{"admin"}))
 
-	// If client has no registered scopes, allow default Mastodon scopes (e.g. push).
+	// If client has no registered scopes, keep the canonical external catalog available.
 	require.NoError(t, svc.ValidateScopes(context.Background(), "client-empty-scopes", []string{"push"}))
+	require.NoError(t, svc.ValidateScopes(context.Background(), "client-empty-scopes", []string{"write:follows"}))
 
 	// Missing account repo is treated as invalid client.
 	svcNil := &OAuthService{jwtSecret: []byte("test-secret")}

@@ -596,27 +596,18 @@ func (s *OAuthService) ValidateScopes(ctx context.Context, clientID string, requ
 		requestedScopes = []string{ScopeRead}
 	}
 
-	// Create map of client's registered scopes for efficient lookup
-	registeredScopes := make(map[string]bool)
-	for _, scope := range client.Scopes {
-		registeredScopes[scope] = true
+	if err := ValidatePublicOAuthScopes(requestedScopes); err != nil {
+		return err
 	}
 
 	// If client has no registered scopes, allow default Mastodon scopes
 	if err := common.ValidateSliceNotEmpty("client.Scopes", client.Scopes); err != nil {
-		registeredScopes = map[string]bool{
-			ScopeRead:  true,
-			ScopeWrite: true,
-			"follow":   true,
-			"push":     true,
-		}
+		return nil
 	}
 
 	// Validate that all requested scopes are subset of registered scopes
-	for _, requestedScope := range requestedScopes {
-		if !registeredScopes[requestedScope] {
-			return ErrInvalidScope
-		}
+	if !ScopeSetAllows(client.Scopes, requestedScopes) {
+		return ErrInvalidScope
 	}
 
 	return nil
@@ -624,17 +615,8 @@ func (s *OAuthService) ValidateScopes(ctx context.Context, clientID string, requ
 
 // ValidateScopes checks if the requested scopes are valid globally
 func ValidateScopes(scopes []string) error {
-	validScopes := map[string]bool{
-		ScopeRead:  true,
-		ScopeWrite: true,
-		"follow":   true, // Mastodon-specific
-		"push":     true, // Mastodon-specific for push notifications
-		"admin":    true, // Admin access
-	}
-
 	for _, scope := range scopes {
-		baseScope := strings.Split(scope, ":")[0]
-		if !validScopes[baseScope] {
+		if !isRecognizedOAuthScope(scope) {
 			return ErrInvalidScope
 		}
 	}
@@ -659,7 +641,7 @@ func (c *Claims) GetUsername() string {
 
 // DefaultScopes returns the default scopes for a user
 func DefaultScopes() []string {
-	return []string{ScopeRead, ScopeWrite}
+	return append([]string(nil), defaultOAuthScopes...)
 }
 
 // generateSecureJTI generates a unique JWT ID for token tracking
