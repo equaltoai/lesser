@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 )
 
@@ -18,7 +19,7 @@ func (h *Handler) HandleOAuthAuthorizationServerMetadataLift(_ *apptheory.Contex
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "client_credentials", oauthDeviceCodeGrantType},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "none"},
 		"code_challenge_methods_supported":      []string{"S256"},
-		"scopes_supported":                      []string{"read", "write", "follow", "push"},
+		"scopes_supported":                      auth.CanonicalOAuthScopes(),
 	})
 	if err != nil {
 		return apptheory.JSON(http.StatusInternalServerError, map[string]string{
