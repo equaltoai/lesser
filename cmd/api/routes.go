@@ -89,7 +89,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/oauth/device/consent", ratelimit.ApplyRateLimit(
 		apiHandler.HandleOAuthDeviceConsentLift,
 		20, 5*time.Minute, logger))
-	app.Post("/oauth/token", ratelimit.ApplyRateLimit(
+	app.Post("/oauth/token", ratelimit.ApplyOAuthTokenRateLimit(
 		apiHandler.HandleOAuthTokenLift,
 		10, time.Minute, logger))
 	app.Post("/oauth/revoke", ratelimit.ApplyRateLimit(
