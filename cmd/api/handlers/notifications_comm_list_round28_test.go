@@ -196,3 +196,104 @@ func TestNotifications_ListIncludesReplyNotifications_Round28(t *testing.T) {
 	require.NotEmpty(t, out[0].Status.ID)
 	require.Equal(t, "reply body", out[0].Status.Content)
 }
+
+func TestNotifications_ListHandlesSnapshotAndLegacyStatuses_Round28(t *testing.T) {
+	cfg := round11TestConfig()
+	now := time.Date(2026, time.March, 17, 9, 0, 0, 0, time.UTC)
+
+	state := &round10QueryState{
+		actorsByUser: map[string]storageModels.Actor{
+			"alice": {
+				Username: "alice",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/alice", Type: "Person"},
+					PreferredUsername: "alice",
+					Name:              "Alice",
+				},
+			},
+			"bob": {
+				Username: "bob",
+				Actor: &activitypub.Actor{
+					BaseObject:        activitypub.BaseObject{ID: cfg.BaseURL() + "/users/bob", Type: "Person"},
+					PreferredUsername: "bob",
+					Name:              "Bob",
+				},
+			},
+		},
+		objectsByID: map[string]storageModels.Object{
+			"status-legacy": {
+				ID:           "status-legacy",
+				Type:         activitypub.NoteType,
+				Content:      "legacy body",
+				Published:    now.Add(-2 * time.Minute),
+				AttributedTo: cfg.BaseURL() + "/users/bob",
+			},
+		},
+		firstErrorPK: map[string]error{
+			"object#status-snapshot": context.DeadlineExceeded,
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.registry = &RegistryStub{
+		NotificationsSvc: &NotificationsServiceStub{
+			ListNotificationsFunc: func(_ context.Context, query *notifications.ListNotificationsQuery) (*notifications.NotificationListResult, error) {
+				require.NotNil(t, query)
+				require.Equal(t, "alice", query.UserID)
+
+				return &notifications.NotificationListResult{
+					Notifications: []*storageModels.Notification{
+						{
+							ID:         "notif-snapshot-1",
+							Type:       apiModels.NotificationTypeReply,
+							ActorID:    "bob",
+							UserID:     "alice",
+							TargetID:   "status-snapshot",
+							TargetType: "status",
+							CreatedAt:  now,
+							Data: map[string]interface{}{
+								"postSnapshot": map[string]interface{}{
+									"id":           "https://example.com/objects/status-snapshot",
+									"url":          "https://example.com/@bob/status-snapshot",
+									"content":      "snapshot body",
+									"createdAt":    now.Add(-1 * time.Minute).Format(time.RFC3339),
+									"visibility":   "unlisted",
+									"attributedTo": cfg.BaseURL() + "/users/bob",
+								},
+							},
+						},
+						{
+							ID:         "notif-legacy-1",
+							Type:       apiModels.NotificationTypeReply,
+							ActorID:    "bob",
+							UserID:     "alice",
+							TargetID:   "status-legacy",
+							TargetType: "status",
+							CreatedAt:  now.Add(-3 * time.Minute),
+						},
+					},
+				}, nil
+			},
+		},
+	}
+
+	readToken := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read:notifications", auth.ScopeRead})
+	headers := map[string]string{
+		"Authorization": "Bearer " + readToken,
+		"Host":          "example.com",
+	}
+
+	ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/notifications", headers, nil, nil)
+	require.NoError(t, err)
+
+	resp := requireStatus(t, http.StatusOK)(h.HandleGetNotificationsLift(ctx))
+
+	var out []apiModels.Notification
+	require.NoError(t, json.Unmarshal(resp.Body, &out))
+	require.Len(t, out, 2)
+	require.NotNil(t, out[0].Status)
+	require.Equal(t, "snapshot body", out[0].Status.Content)
+	require.Equal(t, "https://example.com/@bob/status-snapshot", out[0].Status.URL)
+	require.NotNil(t, out[1].Status)
+	require.Equal(t, "legacy body", out[1].Status.Content)
+}

@@ -40,6 +40,8 @@ const (
 
 	// API path components
 	pathComponentStatuses = "statuses"
+
+	notificationPostSnapshotKey = "postSnapshot"
 )
 
 // SearchParams holds search request parameters
@@ -731,17 +733,31 @@ func (h *Handler) convertSingleNotification(ctx *apptheory.Context, notif *stora
 
 // shouldIncludeStatus checks if a status should be included in the notification
 func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
-	if err := common.ValidateMastodonStatusID(notif.StatusID); err != nil {
+	if notif == nil {
 		return false
 	}
-	return notif.Type == models.NotificationTypeMention ||
-		notif.Type == models.NotificationTypeReply ||
-		notif.Type == models.NotificationTypeFavourite ||
-		notif.Type == models.NotificationTypeReblog
+
+	if notif.Type != models.NotificationTypeMention &&
+		notif.Type != models.NotificationTypeReply &&
+		notif.Type != models.NotificationTypeFavourite &&
+		notif.Type != models.NotificationTypeReblog {
+		return false
+	}
+
+	if _, ok := h.notificationPostSnapshot(notif); ok {
+		return true
+	}
+
+	return common.ValidateMastodonStatusID(notif.StatusID) == nil
 }
 
 // attachStatusToNotification attaches status information to a notification
 func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, notif *storage.Notification, apiNotif *models.Notification) {
+	if snapshotStatus := h.statusFromNotificationSnapshot(ctx, notif); snapshotStatus != nil {
+		apiNotif.Status = snapshotStatus
+		return
+	}
+
 	// Get the status
 	obj, err := h.repos.Object().GetObject(ctx.Context(), notif.StatusID)
 	if err != nil {
@@ -764,6 +780,94 @@ func (h *Handler) attachStatusToNotification(ctx *apptheory.Context, notif *stor
 		status := transformations.ObjectToStatusAny(obj, statusActor, h.cfg.BaseURL())
 		apiNotif.Status = &status
 	}
+}
+
+func (h *Handler) notificationPostSnapshot(notif *storage.Notification) (map[string]interface{}, bool) {
+	if notif == nil || len(notif.Data) == 0 {
+		return nil, false
+	}
+
+	rawSnapshot, ok := notif.Data[notificationPostSnapshotKey]
+	if !ok {
+		return nil, false
+	}
+
+	snapshot, ok := rawSnapshot.(map[string]interface{})
+	if !ok || len(snapshot) == 0 {
+		return nil, false
+	}
+
+	return snapshot, true
+}
+
+func (h *Handler) statusFromNotificationSnapshot(ctx *apptheory.Context, notif *storage.Notification) *models.Status {
+	snapshot, ok := h.notificationPostSnapshot(notif)
+	if !ok {
+		return nil
+	}
+
+	statusActor := h.notificationSnapshotActor(ctx, snapshot)
+	status := transformations.ObjectToStatusBase(notificationSnapshotObjectMap(snapshot), statusActor, h.cfg.BaseURL())
+	if status.ID == "" {
+		return nil
+	}
+
+	if url := strings.TrimSpace(notificationSnapshotString(snapshot, "url")); url != "" {
+		status.URL = url
+	}
+	if visibility := strings.TrimSpace(notificationSnapshotString(snapshot, "visibility")); visibility != "" {
+		status.Visibility = visibility
+	}
+
+	return &status
+}
+
+func (h *Handler) notificationSnapshotActor(ctx *apptheory.Context, snapshot map[string]interface{}) *activitypub.Actor {
+	attributedTo := strings.TrimSpace(notificationSnapshotString(snapshot, "attributedTo"))
+	if attributedTo == "" {
+		return nil
+	}
+
+	fallbackActor := h.fallbackNotificationActor(attributedTo)
+	username := extractUsernameFromNotificationActorID(attributedTo)
+	if username == "" {
+		return fallbackActor
+	}
+
+	statusActor, err := h.repos.Actor().GetActor(ctx.Context(), username)
+	if err != nil {
+		return fallbackActor
+	}
+
+	return statusActor
+}
+
+func notificationSnapshotObjectMap(snapshot map[string]interface{}) map[string]interface{} {
+	objectMap := map[string]interface{}{
+		"id":        notificationSnapshotString(snapshot, "id"),
+		"content":   notificationSnapshotString(snapshot, "content"),
+		"published": notificationSnapshotString(snapshot, "createdAt"),
+	}
+
+	if inReplyToID := strings.TrimSpace(notificationSnapshotString(snapshot, "inReplyToId")); inReplyToID != "" {
+		objectMap["inReplyTo"] = inReplyToID
+	}
+
+	return objectMap
+}
+
+func notificationSnapshotString(snapshot map[string]interface{}, key string) string {
+	rawValue, ok := snapshot[key]
+	if !ok {
+		return ""
+	}
+
+	value, ok := rawValue.(string)
+	if !ok {
+		return ""
+	}
+
+	return value
 }
 
 // extractStatusAuthor extracts the author actor from a status object
