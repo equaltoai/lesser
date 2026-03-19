@@ -556,7 +556,7 @@ func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID,
 // Standard OAuth access tokens are bounded by explicit JWT expiry (`exp`) and
 // revocation/session checks rather than a second hidden max-age wall.
 func (s *OAuthService) validateAccessTokenAgePolicy(claims *Claims) error {
-	if claims == nil || claims.IssuedAt == nil || claims.IssuedAt.Time.IsZero() {
+	if claims == nil || claims.IssuedAt == nil || claims.IssuedAt.IsZero() {
 		return nil
 	}
 
