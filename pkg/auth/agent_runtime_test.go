@@ -436,3 +436,84 @@ func TestRevokeAgentRuntimeFlows(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestAgentRuntimeAuthDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("status reflects latest auth event and lifecycle state", func(t *testing.T) {
+		now := time.Date(2026, time.March, 20, 16, 0, 0, 0, time.UTC)
+
+		healthy := RuntimeSessionAuthDiagnostic(now, storage.RefreshToken{
+			LastAuthSuccessAt: now.Add(-5 * time.Minute),
+		})
+		require.Equal(t, AgentRuntimeAuthStatusHealthy, healthy.Status)
+
+		failed := RuntimeSessionAuthDiagnostic(now, storage.RefreshToken{
+			LastAuthSuccessAt:   now.Add(-10 * time.Minute),
+			LastAuthFailureCode: "invalid_client",
+			LastAuthFailureMsg:  "Invalid client credentials",
+			LastAuthFailureAt:   now.Add(-1 * time.Minute),
+		})
+		require.Equal(t, AgentRuntimeAuthStatusFailed, failed.Status)
+		require.Equal(t, "invalid_client", failed.FailureCode)
+
+		expired := RuntimeSessionAuthDiagnostic(now, storage.RefreshToken{
+			IdleExpiresAt: now.Add(-1 * time.Minute),
+		})
+		require.Equal(t, AgentRuntimeAuthStatusExpired, expired.Status)
+
+		revoked := RuntimeSessionAuthDiagnostic(now, storage.RefreshToken{
+			Revoked:       true,
+			RevokedReason: "manual_runtime_session_revocation",
+		})
+		require.Equal(t, AgentRuntimeAuthStatusRevoked, revoked.Status)
+	})
+
+	t.Run("record failure and success across runtime session storage targets", func(t *testing.T) {
+		repo, db, query := newAgentRuntimeAccountRepo()
+
+		var updated []models.RefreshToken
+		db.ExpectedCalls = nil
+		db.On("WithContext", mock.Anything).Return(db).Maybe()
+		db.On("Model", mock.Anything).Return(query).Maybe().Run(func(args mock.Arguments) {
+			model, ok := args.Get(0).(*models.RefreshToken)
+			if ok && model.Token != "" {
+				updated = append(updated, *model)
+			}
+		})
+
+		query.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			target := args.Get(0).(*[]models.RefreshToken)
+			*target = []models.RefreshToken{
+				{Token: "rt-1", FamilyID: "fam-1", Version: 1},
+				{Token: "rt-2", FamilyID: "fam-1", Version: 1},
+			}
+		})
+		query.On("All", mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			target := args.Get(0).(*[]models.RefreshToken)
+			*target = []models.RefreshToken{
+				{Token: "rt-session", SessionID: "sid-1", Version: 1},
+			}
+		})
+		query.On("Update", mock.Anything).Return(nil).Times(3)
+
+		familyToken := &storage.RefreshToken{Token: "rt-1", FamilyID: "fam-1"}
+		failureAt := time.Date(2026, time.March, 20, 16, 5, 0, 0, time.UTC)
+		err := RecordAgentRuntimeAuthFailure(context.Background(), agentRuntimeRepos{account: repo}, familyToken, "invalid_client", "Invalid client credentials", failureAt)
+		require.NoError(t, err)
+		require.Equal(t, "invalid_client", familyToken.LastAuthFailureCode)
+		require.Equal(t, failureAt, familyToken.LastAuthFailureAt)
+
+		sessionToken := &storage.RefreshToken{Token: "rt-session", SessionID: "sid-1"}
+		successAt := failureAt.Add(2 * time.Minute)
+		err = RecordAgentRuntimeAuthSuccess(context.Background(), agentRuntimeRepos{account: repo}, sessionToken, successAt)
+		require.NoError(t, err)
+		require.Equal(t, successAt, sessionToken.LastAuthSuccessAt)
+
+		require.Len(t, updated, 3)
+		require.Equal(t, "invalid_client", updated[0].LastAuthFailureCode)
+		require.Equal(t, "Invalid client credentials", updated[0].LastAuthFailureMsg)
+		require.Equal(t, failureAt, updated[1].LastAuthFailureAt)
+		require.Equal(t, successAt, updated[2].LastAuthSuccessAt)
+	})
+}

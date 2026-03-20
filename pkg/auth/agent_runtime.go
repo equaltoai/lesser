@@ -20,6 +20,26 @@ const AgentRuntimeRefreshIdleTTL = RefreshTokenDuration
 // AgentRuntimeRefreshAbsoluteTTL caps the total lifetime of an agent runtime refresh session.
 const AgentRuntimeRefreshAbsoluteTTL = RefreshTokenFamilyExpiry
 
+// AgentRuntimeAuthStatus summarizes the latest persisted auth state for a runtime session.
+type AgentRuntimeAuthStatus string
+
+// Runtime session auth status values exposed through operator diagnostics.
+const (
+	AgentRuntimeAuthStatusHealthy AgentRuntimeAuthStatus = "HEALTHY"
+	AgentRuntimeAuthStatusFailed  AgentRuntimeAuthStatus = "FAILED"
+	AgentRuntimeAuthStatusExpired AgentRuntimeAuthStatus = "EXPIRED"
+	AgentRuntimeAuthStatusRevoked AgentRuntimeAuthStatus = "REVOKED"
+)
+
+// AgentRuntimeAuthDiagnostic carries the latest persisted auth result for operator diagnostics.
+type AgentRuntimeAuthDiagnostic struct {
+	Status         AgentRuntimeAuthStatus
+	FailureCode    string
+	FailureMessage string
+	FailureAt      time.Time
+	LastSuccessAt  time.Time
+}
+
 // AgentRuntimeTokenIssueParams describes a first-class bearer + refresh runtime session.
 type AgentRuntimeTokenIssueParams struct {
 	Username    string
@@ -117,6 +137,7 @@ func IssueAgentRuntimeTokens(ctx context.Context, cfg *config.Config, repos Stor
 		AbsoluteExpiresAt: absoluteExpiry,
 		SessionCreatedAt:  now,
 		AccessTTLSeconds:  int(accessTTL.Seconds()),
+		LastAuthSuccessAt: now,
 	}
 	if err := repos.Account().CreateRefreshToken(ctx, &refreshRecord); err != nil {
 		return nil, err
@@ -208,6 +229,102 @@ func isAgentConnectorClientForUsername(client *storage.OAuthClient, username str
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(client.AgentUsername), username)
+}
+
+// RuntimeSessionAuthDiagnostic builds the operator-facing auth diagnostic for a runtime session.
+func RuntimeSessionAuthDiagnostic(now time.Time, token storage.RefreshToken) AgentRuntimeAuthDiagnostic {
+	diagnostic := AgentRuntimeAuthDiagnostic{
+		Status:         AgentRuntimeAuthStatusHealthy,
+		FailureCode:    strings.TrimSpace(token.LastAuthFailureCode),
+		FailureMessage: strings.TrimSpace(token.LastAuthFailureMsg),
+		FailureAt:      token.LastAuthFailureAt,
+		LastSuccessAt:  token.LastAuthSuccessAt,
+	}
+
+	switch {
+	case token.Revoked && token.RevokedReason == "runtime_session_expired":
+		diagnostic.Status = AgentRuntimeAuthStatusExpired
+	case token.Revoked:
+		diagnostic.Status = AgentRuntimeAuthStatusRevoked
+	case runtimeSessionExpired(now, token):
+		diagnostic.Status = AgentRuntimeAuthStatusExpired
+	case !diagnostic.FailureAt.IsZero() && (diagnostic.LastSuccessAt.IsZero() || diagnostic.FailureAt.After(diagnostic.LastSuccessAt)):
+		diagnostic.Status = AgentRuntimeAuthStatusFailed
+	}
+
+	return diagnostic
+}
+
+// RecordAgentRuntimeAuthFailure persists the latest auth failure across a runtime session family.
+func RecordAgentRuntimeAuthFailure(ctx context.Context, repos StorageProvider, token *storage.RefreshToken, code, message string, eventAt time.Time) error {
+	return recordAgentRuntimeAuthEvent(ctx, repos, token, false, eventAt, code, message)
+}
+
+// RecordAgentRuntimeAuthSuccess persists the latest successful token exchange/refresh for a runtime session family.
+func RecordAgentRuntimeAuthSuccess(ctx context.Context, repos StorageProvider, token *storage.RefreshToken, eventAt time.Time) error {
+	return recordAgentRuntimeAuthEvent(ctx, repos, token, true, eventAt, "", "")
+}
+
+func recordAgentRuntimeAuthEvent(ctx context.Context, repos StorageProvider, token *storage.RefreshToken, success bool, eventAt time.Time, code, message string) error {
+	if repos == nil || repos.Account() == nil {
+		return ErrSessionStorage
+	}
+	if token == nil {
+		return nil
+	}
+	if eventAt.IsZero() {
+		eventAt = time.Now().UTC()
+	}
+
+	targets, err := listAgentRuntimeEventTargets(ctx, repos, token)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		targets = []storage.RefreshToken{*token}
+	}
+
+	for i := range targets {
+		target := targets[i]
+		if success {
+			target.LastAuthSuccessAt = eventAt
+		} else {
+			target.LastAuthFailureCode = strings.TrimSpace(code)
+			target.LastAuthFailureMsg = strings.TrimSpace(message)
+			target.LastAuthFailureAt = eventAt
+		}
+		if err := repos.Account().UpdateRefreshToken(ctx, &target); err != nil {
+			return err
+		}
+	}
+
+	if success {
+		token.LastAuthSuccessAt = eventAt
+		return nil
+	}
+
+	token.LastAuthFailureCode = strings.TrimSpace(code)
+	token.LastAuthFailureMsg = strings.TrimSpace(message)
+	token.LastAuthFailureAt = eventAt
+	return nil
+}
+
+func listAgentRuntimeEventTargets(ctx context.Context, repos StorageProvider, token *storage.RefreshToken) ([]storage.RefreshToken, error) {
+	switch {
+	case token == nil:
+		return nil, nil
+	case strings.TrimSpace(token.FamilyID) != "":
+		return repos.Account().ListRefreshTokensByFamily(ctx, token.FamilyID)
+	case strings.TrimSpace(token.SessionID) != "":
+		return repos.Account().ListRefreshTokensBySession(ctx, token.SessionID)
+	default:
+		return nil, nil
+	}
+}
+
+func runtimeSessionExpired(now time.Time, token storage.RefreshToken) bool {
+	return (!token.IdleExpiresAt.IsZero() && now.After(token.IdleExpiresAt)) ||
+		(!token.AbsoluteExpiresAt.IsZero() && now.After(token.AbsoluteExpiresAt))
 }
 
 // RevokeAgentRuntimeFamily revokes all refresh tokens in a runtime session family.

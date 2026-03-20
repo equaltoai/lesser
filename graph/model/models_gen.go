@@ -632,17 +632,26 @@ type AgentPostAttributionInput struct {
 }
 
 type AgentRuntimeSession struct {
-	SessionID         string  `json:"sessionID"`
-	ClientID          string  `json:"clientID"`
-	DeviceLabel       string  `json:"deviceLabel"`
-	Scope             string  `json:"scope"`
-	CreatedAt         Time    `json:"createdAt"`
-	LastUsedAt        Time    `json:"lastUsedAt"`
-	IdleExpiresAt     Time    `json:"idleExpiresAt"`
-	AbsoluteExpiresAt Time    `json:"absoluteExpiresAt"`
-	Revoked           bool    `json:"revoked"`
-	RevokedAt         *Time   `json:"revokedAt,omitempty"`
-	RevokedReason     *string `json:"revokedReason,omitempty"`
+	SessionID         string                             `json:"sessionID"`
+	ClientID          string                             `json:"clientID"`
+	DeviceLabel       string                             `json:"deviceLabel"`
+	Scope             string                             `json:"scope"`
+	CreatedAt         Time                               `json:"createdAt"`
+	LastUsedAt        Time                               `json:"lastUsedAt"`
+	IdleExpiresAt     Time                               `json:"idleExpiresAt"`
+	AbsoluteExpiresAt Time                               `json:"absoluteExpiresAt"`
+	Revoked           bool                               `json:"revoked"`
+	RevokedAt         *Time                              `json:"revokedAt,omitempty"`
+	RevokedReason     *string                            `json:"revokedReason,omitempty"`
+	AuthDiagnostic    *AgentRuntimeSessionAuthDiagnostic `json:"authDiagnostic"`
+}
+
+type AgentRuntimeSessionAuthDiagnostic struct {
+	Status         AgentRuntimeSessionAuthStatus `json:"status"`
+	FailureCode    *string                       `json:"failureCode,omitempty"`
+	FailureMessage *string                       `json:"failureMessage,omitempty"`
+	FailureAt      *Time                         `json:"failureAt,omitempty"`
+	LastSuccessAt  *Time                         `json:"lastSuccessAt,omitempty"`
 }
 
 type Announcement struct {
@@ -3041,6 +3050,65 @@ func (e *AdminReportStatus) UnmarshalJSON(b []byte) error {
 }
 
 func (e AdminReportStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type AgentRuntimeSessionAuthStatus string
+
+const (
+	AgentRuntimeSessionAuthStatusHealthy AgentRuntimeSessionAuthStatus = "HEALTHY"
+	AgentRuntimeSessionAuthStatusFailed  AgentRuntimeSessionAuthStatus = "FAILED"
+	AgentRuntimeSessionAuthStatusExpired AgentRuntimeSessionAuthStatus = "EXPIRED"
+	AgentRuntimeSessionAuthStatusRevoked AgentRuntimeSessionAuthStatus = "REVOKED"
+)
+
+var AllAgentRuntimeSessionAuthStatus = []AgentRuntimeSessionAuthStatus{
+	AgentRuntimeSessionAuthStatusHealthy,
+	AgentRuntimeSessionAuthStatusFailed,
+	AgentRuntimeSessionAuthStatusExpired,
+	AgentRuntimeSessionAuthStatusRevoked,
+}
+
+func (e AgentRuntimeSessionAuthStatus) IsValid() bool {
+	switch e {
+	case AgentRuntimeSessionAuthStatusHealthy, AgentRuntimeSessionAuthStatusFailed, AgentRuntimeSessionAuthStatusExpired, AgentRuntimeSessionAuthStatusRevoked:
+		return true
+	}
+	return false
+}
+
+func (e AgentRuntimeSessionAuthStatus) String() string {
+	return string(e)
+}
+
+func (e *AgentRuntimeSessionAuthStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = AgentRuntimeSessionAuthStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid AgentRuntimeSessionAuthStatus", str)
+	}
+	return nil
+}
+
+func (e AgentRuntimeSessionAuthStatus) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *AgentRuntimeSessionAuthStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e AgentRuntimeSessionAuthStatus) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

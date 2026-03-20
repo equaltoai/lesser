@@ -116,5 +116,30 @@ func graphAgentRuntimeSessionModel(token storage.RefreshToken) *model.AgentRunti
 		Revoked:           token.Revoked,
 		RevokedAt:         modelTimePtr(revokedAt),
 		RevokedReason:     optionalString(token.RevokedReason),
+		AuthDiagnostic:    graphAgentRuntimeSessionAuthDiagnosticModel(token),
+	}
+}
+
+func graphAgentRuntimeSessionAuthDiagnosticModel(token storage.RefreshToken) *model.AgentRuntimeSessionAuthDiagnostic {
+	diagnostic := auth.RuntimeSessionAuthDiagnostic(time.Now().UTC(), token)
+
+	var failureAt *time.Time
+	if !diagnostic.FailureAt.IsZero() {
+		value := diagnostic.FailureAt
+		failureAt = &value
+	}
+
+	var lastSuccessAt *time.Time
+	if !diagnostic.LastSuccessAt.IsZero() {
+		value := diagnostic.LastSuccessAt
+		lastSuccessAt = &value
+	}
+
+	return &model.AgentRuntimeSessionAuthDiagnostic{
+		Status:         model.AgentRuntimeSessionAuthStatus(diagnostic.Status),
+		FailureCode:    optionalString(diagnostic.FailureCode),
+		FailureMessage: optionalString(diagnostic.FailureMessage),
+		FailureAt:      modelTimePtr(failureAt),
+		LastSuccessAt:  modelTimePtr(lastSuccessAt),
 	}
 }

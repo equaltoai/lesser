@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	storagepkg "github.com/equaltoai/lesser/pkg/storage"
@@ -72,5 +73,97 @@ func TestOAuthClientHelperCoverage(t *testing.T) {
 		require.False(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{ClientClass: auth.ClientClassWeb}, auth.GrantTypeClientCredentials))
 		require.True(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{GrantTypes: []string{auth.GrantTypeRefreshToken}}, auth.GrantTypeRefreshToken))
 		require.False(t, oauthClientSupportsGrantType(&storagepkg.OAuthClient{GrantTypes: []string{auth.GrantTypeRefreshToken}}, auth.GrantTypeAuthorizationCode))
+	})
+
+	t.Run("agent refresh validation rejects missing confidential secret and records diagnostics", func(t *testing.T) {
+		now := time.Now().UTC()
+		token := buildRuntimeRefreshToken(t, "rt-agent-1", "agent1", "client-agent-1", "sid-agent-1", "family-agent-1", "connector-app", 1, true, false, now)
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent-1": {
+					ClientID:      "client-agent-1",
+					ClientSecret:  "secret",
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					Confidential:  true,
+					GrantTypes:    []string{auth.GrantTypeRefreshToken},
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		h.repos.Account().SetEncryptor(noopEncryptor{})
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
+
+		_, err := h.validateRefreshGrantClient(context.Background(), oauthSvc, "rt-agent-1", "client-agent-1", "")
+		require.ErrorIs(t, err, auth.ErrInvalidClient)
+
+		updated := state.refreshTokensByToken["rt-agent-1"]
+		require.Equal(t, "invalid_client", updated.LastAuthFailureCode)
+		require.Equal(t, "Invalid client credentials", updated.LastAuthFailureMsg)
+	})
+
+	t.Run("agent refresh validation rejects unsupported grant and records diagnostics", func(t *testing.T) {
+		now := time.Now().UTC()
+		token := buildRuntimeRefreshToken(t, "rt-agent-2", "agent1", "client-agent-2", "sid-agent-2", "family-agent-2", "connector-app", 1, true, false, now)
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent-2": {
+					ClientID:      "client-agent-2",
+					ClientSecret:  "secret",
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					GrantTypes:    []string{auth.GrantTypeAuthorizationCode},
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				token.Token: token,
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		h.repos.Account().SetEncryptor(noopEncryptor{})
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
+
+		_, err := h.validateRefreshGrantClient(context.Background(), oauthSvc, "rt-agent-2", "client-agent-2", "secret")
+		require.ErrorIs(t, err, auth.ErrUnauthorizedClient)
+
+		updated := state.refreshTokensByToken["rt-agent-2"]
+		require.Equal(t, "unauthorized_client", updated.LastAuthFailureCode)
+		require.Equal(t, "refresh_token is not allowed for this client", updated.LastAuthFailureMsg)
+	})
+
+	t.Run("agent oauth client helper recognizes agent class", func(t *testing.T) {
+		require.True(t, isAgentOAuthClient(&storagepkg.OAuthClient{ClientClass: " agent "}))
+		require.False(t, isAgentOAuthClient(&storagepkg.OAuthClient{ClientClass: auth.ClientClassWeb}))
+		require.False(t, isAgentOAuthClient(nil))
+	})
+
+	t.Run("refresh grant secret validation helper handles public and valid confidential clients", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"confidential-client": {
+					ClientID:     "confidential-client",
+					ClientSecret: "top-secret",
+					Confidential: true,
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
+
+		err := validateRefreshGrantClientSecret(context.Background(), oauthSvc, &storagepkg.OAuthClient{
+			ClientID:     "public-client",
+			Confidential: false,
+		}, "public-client", "")
+		require.NoError(t, err)
+
+		err = validateRefreshGrantClientSecret(context.Background(), oauthSvc, &storagepkg.OAuthClient{
+			ClientID:     "confidential-client",
+			Confidential: true,
+			ClientSecret: "top-secret",
+		}, "confidential-client", "top-secret")
+		require.NoError(t, err)
 	})
 }

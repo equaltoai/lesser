@@ -285,6 +285,10 @@ type RefreshToken struct {
 	ReuseDetectedAt     time.Time `json:"reuse_detected_at,omitempty"`
 	ReuseDetectedFromIP string    `json:"reuse_detected_from_ip,omitempty"`
 	ReuseDetectedFromUA string    `json:"reuse_detected_from_user_agent,omitempty"`
+	LastAuthFailureCode string    `json:"last_auth_failure_code,omitempty"`
+	LastAuthFailureAt   time.Time `json:"last_auth_failure_at,omitempty"`
+	LastAuthFailureMsg  string    `json:"last_auth_failure_message,omitempty"`
+	LastAuthSuccessAt   time.Time `json:"last_auth_success_at,omitempty"`
 	Version             int       `json:"version,omitempty"`
 }
 

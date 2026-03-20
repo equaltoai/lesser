@@ -167,6 +167,7 @@ func addMcpRoute(scope constructs.Construct, api apptheorycdk.AppTheoryRestApiRo
 	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("GET")}, mcpLambda, options)
 	api.AddLambdaIntegration(jsii.String("/mcp"), &[]*string{jsii.String("DELETE")}, mcpLambda, nil)
 	api.AddLambdaIntegration(jsii.String("/.well-known/mcp.json"), &[]*string{jsii.String("GET")}, mcpLambda, nil)
+	api.AddLambdaIntegration(jsii.String("/.well-known/oauth-protected-resource"), &[]*string{jsii.String("GET")}, mcpLambda, nil)
 }
 
 func addRestApiGatewayResponses(scope constructs.Construct, api awsapigateway.RestApi) {

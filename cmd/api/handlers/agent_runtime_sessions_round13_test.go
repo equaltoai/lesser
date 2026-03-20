@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -78,6 +79,7 @@ func TestOAuthRuntimeRefreshGrant_SelfSovereignRotatesSession(t *testing.T) {
 	require.Equal(t, oldToken.SessionID, newToken.SessionID)
 	require.Equal(t, oldToken.FamilyID, newToken.FamilyID)
 	require.Equal(t, oldToken.Generation+1, newToken.Generation)
+	require.False(t, newToken.LastAuthSuccessAt.IsZero())
 }
 
 func TestOAuthRuntimeRefreshGrant_ReusedTokenRevokesFamily(t *testing.T) {
@@ -106,6 +108,9 @@ func TestOAuthRuntimeRefreshGrant_ReusedTokenRevokesFamily(t *testing.T) {
 	require.True(t, updatedCurrent.Revoked)
 	require.Equal(t, "refresh_token_reuse_detected", updatedCurrent.RevokedReason)
 	require.False(t, updatedCurrent.ReuseDetectedAt.IsZero())
+	require.Equal(t, "invalid_grant", updatedCurrent.LastAuthFailureCode)
+	require.Equal(t, "Refresh token reuse detected; runtime session revoked", updatedCurrent.LastAuthFailureMsg)
+	require.False(t, updatedCurrent.LastAuthFailureAt.IsZero())
 }
 
 func TestOAuthRuntimeRefreshGrant_ConcurrentRefreshConflictReturnsInvalidGrant(t *testing.T) {
@@ -130,6 +135,11 @@ func TestOAuthRuntimeRefreshGrant_ConcurrentRefreshConflictReturnsInvalidGrant(t
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	require.Equal(t, "invalid_grant", body["error"])
+
+	updatedChild := state.refreshTokensByToken["rt-agent-child"]
+	require.Equal(t, "invalid_grant", updatedChild.LastAuthFailureCode)
+	require.Equal(t, "Concurrent refresh detected; runtime session revoked", updatedChild.LastAuthFailureMsg)
+	require.False(t, updatedChild.LastAuthFailureAt.IsZero())
 }
 
 func TestOAuthRuntimeRefreshGrant_ZeroIdleExpiryDoesNotRevokeFamily(t *testing.T) {
@@ -219,6 +229,9 @@ func TestOAuthRuntimeRefreshGrant_ExpiredBoundsStillRevokeFamily(t *testing.T) {
 		updated := state.refreshTokensByToken["rt-agent-expired-idle"]
 		require.True(t, updated.Revoked)
 		require.Equal(t, "runtime_session_expired", updated.RevokedReason)
+		require.Equal(t, "invalid_grant", updated.LastAuthFailureCode)
+		require.Equal(t, "Runtime session expired", updated.LastAuthFailureMsg)
+		require.False(t, updated.LastAuthFailureAt.IsZero())
 	})
 
 	t.Run("expired absolute", func(t *testing.T) {
@@ -242,7 +255,50 @@ func TestOAuthRuntimeRefreshGrant_ExpiredBoundsStillRevokeFamily(t *testing.T) {
 		updated := state.refreshTokensByToken["rt-agent-expired-absolute"]
 		require.True(t, updated.Revoked)
 		require.Equal(t, "runtime_session_expired", updated.RevokedReason)
+		require.Equal(t, "invalid_grant", updated.LastAuthFailureCode)
+		require.Equal(t, "Runtime session expired", updated.LastAuthFailureMsg)
+		require.False(t, updated.LastAuthFailureAt.IsZero())
 	})
+}
+
+func TestOAuthRuntimeRefreshGrant_InvalidClientPersistsRuntimeDiagnostic(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	token := buildRuntimeRefreshToken(t, "rt-agent-secret", "agent1", "client-agent-secret", "sid-agent-secret", "family-agent-secret", "connector-app", 1, true, false, now)
+	activeHash, err := auth.HashOAuthClientSecret("secret-good")
+	require.NoError(t, err)
+
+	state := &round10QueryState{
+		oauthClientsByID: map[string]storagemodels.OAuthClient{
+			"client-agent-secret": {
+				ClientID:      "client-agent-secret",
+				ClientSecret:  activeHash,
+				Name:          "connector-app",
+				ClientClass:   auth.ClientClassAgent,
+				AgentUsername: "agent1",
+				Confidential:  true,
+				CreatedAt:     now.Add(-24 * time.Hour),
+			},
+		},
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			token.Token: token,
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-agent-secret&client_id=client-agent-secret&client_secret=secret-bad"))
+	resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	require.Equal(t, "invalid_client", body["error"])
+
+	updated := state.refreshTokensByToken["rt-agent-secret"]
+	require.Equal(t, "invalid_client", updated.LastAuthFailureCode)
+	require.Equal(t, "Invalid client credentials", updated.LastAuthFailureMsg)
+	require.False(t, updated.LastAuthFailureAt.IsZero())
 }
 
 func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
@@ -381,4 +437,25 @@ func TestRuntimeRefreshAccessTTL_IgnoresZeroBounds(t *testing.T) {
 		require.Greater(t, ttl, 29*time.Minute)
 		require.LessOrEqual(t, ttl, 30*time.Minute)
 	})
+}
+
+func TestNoteAgentRuntimeRefreshFailure_NoOpBranches(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	token := buildRuntimeRefreshToken(t, "rt-agent-note", "agent1", "client-agent-note", "sid-agent-note", "family-agent-note", "connector-app", 1, true, false, now)
+	state := &round10QueryState{
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			token.Token: token,
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+
+	h.noteAgentRuntimeRefreshFailure(context.Background(), "", token.ClientID, "invalid_client", "Invalid client credentials")
+	h.noteAgentRuntimeRefreshFailure(context.Background(), token.Token, "different-client", "invalid_client", "Invalid client credentials")
+
+	updated := state.refreshTokensByToken[token.Token]
+	require.Empty(t, updated.LastAuthFailureCode)
+	require.True(t, updated.LastAuthFailureAt.IsZero())
 }
