@@ -15,8 +15,11 @@ import (
 )
 
 type oauthAccountRepoStub struct {
-	clients map[string]*storage.OAuthClient
-	err     error
+	clients             map[string]*storage.OAuthClient
+	err                 error
+	updatedClientID     string
+	updatedSecretHash   string
+	updateSecretHashErr error
 }
 
 func (s *oauthAccountRepoStub) GetOAuthClient(_ context.Context, clientID string) (*storage.OAuthClient, error) {
@@ -27,6 +30,15 @@ func (s *oauthAccountRepoStub) GetOAuthClient(_ context.Context, clientID string
 		return c, nil
 	}
 	return nil, errNotFound
+}
+
+func (s *oauthAccountRepoStub) UpdateOAuthClientSecretHash(_ context.Context, clientID, clientSecretHash string) error {
+	if s.updateSecretHashErr != nil {
+		return s.updateSecretHashErr
+	}
+	s.updatedClientID = clientID
+	s.updatedSecretHash = clientSecretHash
+	return nil
 }
 
 type errSentinel string
@@ -217,5 +229,56 @@ func TestOAuthService_ValidateAccessTokenAgePolicy(t *testing.T) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt: jwt.NewNumericDate(time.Now()),
 		},
+	}))
+}
+
+func TestOAuthService_ValidateClient_LegacySecretMigratesHash(t *testing.T) {
+	t.Parallel()
+
+	repo := &oauthAccountRepoStub{
+		clients: map[string]*storage.OAuthClient{
+			"client-1": {
+				ClientID:     "client-1",
+				ClientSecret: "legacy-secret",
+			},
+		},
+	}
+
+	svc := &OAuthService{
+		jwtSecret:   []byte("test-secret"),
+		accountRepo: repo,
+	}
+
+	require.NoError(t, svc.ValidateClient(context.Background(), "client-1", "legacy-secret"))
+	require.Equal(t, "client-1", repo.updatedClientID)
+	require.NotEmpty(t, repo.updatedSecretHash)
+
+	ok, needsMigration, err := VerifyOAuthClientSecret("legacy-secret", repo.updatedSecretHash)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.False(t, needsMigration)
+}
+
+func TestOAuthClientPreviousSecretGraceActive(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.March, 20, 12, 0, 0, 0, time.UTC)
+
+	require.False(t, oauthClientPreviousSecretGraceActive(now, nil))
+	require.False(t, oauthClientPreviousSecretGraceActive(now, &storage.OAuthClient{}))
+	require.False(t, oauthClientPreviousSecretGraceActive(now, &storage.OAuthClient{
+		PreviousClientSecretHash: "hash",
+	}))
+	require.False(t, oauthClientPreviousSecretGraceActive(now, &storage.OAuthClient{
+		PreviousClientSecretHash:           "hash",
+		PreviousClientSecretGraceExpiresAt: now.Add(-1 * time.Second),
+	}))
+	require.True(t, oauthClientPreviousSecretGraceActive(now, &storage.OAuthClient{
+		PreviousClientSecretHash:           "hash",
+		PreviousClientSecretGraceExpiresAt: now,
+	}))
+	require.True(t, oauthClientPreviousSecretGraceActive(now, &storage.OAuthClient{
+		PreviousClientSecretHash:           "hash",
+		PreviousClientSecretGraceExpiresAt: now.Add(1 * time.Minute),
 	}))
 }
