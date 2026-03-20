@@ -568,6 +568,42 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		require.NoError(t, oauthSvc.ValidateClient(context.Background(), "client-1", body.ClientSecret))
 	})
 
+	t.Run("existing bearer app token remains valid after routine rotation", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"test-client": {
+					ClientID:     "test-client",
+					ClientSecret: "secret",
+					Name:         "Agent Connector",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					OwnerID:      "owner",
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		rotateCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps/test-client/rotate_secret", map[string]string{
+			"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeWrite}),
+		}, nil, nil)
+		require.NoError(t, err)
+		rotateCtx.Params["id"] = "test-client"
+		requireStatus(t, http.StatusOK)(handler.HandleAppRotateSecretLift(rotateCtx))
+
+		verifyCtx, err := round10NewLiftContext(http.MethodGet, "/api/v1/apps/verify_credentials", map[string]string{
+			"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeRead}),
+		}, nil, nil)
+		require.NoError(t, err)
+		resp := requireStatus(t, http.StatusOK)(handler.HandleAppVerifyCredentialsLift(verifyCtx))
+
+		var body apimodels.AppRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "test-client", body.ClientID)
+		require.Equal(t, "Agent Connector", body.Name)
+	})
+
 	t.Run("agent ownership drift returns forbidden", func(t *testing.T) {
 		state := &round10QueryState{
 			oauthClientsByID: map[string]storagemodels.OAuthClient{
