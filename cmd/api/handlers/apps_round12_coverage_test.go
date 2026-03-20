@@ -692,6 +692,75 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusBadRequest)(handler.HandleAppRotateSecretLift(ctx))
 	})
 
+	t.Run("rotation emits success audit metadata", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "Agent Connector",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					OwnerID:      "owner",
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps/client-1/rotate_secret", map[string]string{
+			"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "owner", []string{auth.ScopeWrite}),
+		}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "client-1"
+
+		requireStatus(t, http.StatusOK)(handler.HandleAppRotateSecretLift(ctx))
+		require.Len(t, state.auditLogsByUser["owner"], 1)
+		entry := state.auditLogsByUser["owner"][0]
+		require.Equal(t, string(auth.AuditOAuthClientSecretRotated), entry.EventType)
+		require.True(t, entry.Success)
+
+		var metadata map[string]any
+		require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &metadata))
+		require.Equal(t, "client-1", metadata["client_id"])
+		require.Equal(t, false, metadata["forced_invalidation"])
+		require.Equal(t, float64(86400), metadata["grace_period_seconds"])
+		require.Equal(t, "client_secret_post", metadata["client_auth_method"])
+		require.NotEmpty(t, metadata["previous_secret_valid_until"])
+	})
+
+	t.Run("rotation emits failure audit metadata", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					ClientSecret: "secret",
+					Name:         "Agent Connector",
+					RedirectURIs: []string{"https://example.com/callback"},
+					Scopes:       []string{auth.ScopeRead, auth.ScopeWrite},
+					OwnerID:      "owner",
+					Confidential: true,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/apps/client-1/rotate_secret", map[string]string{
+			"Authorization": "Bearer " + round11SignAccessToken(t, cfg.JWTSecret, "other-user", []string{auth.ScopeWrite}),
+		}, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "client-1"
+
+		requireStatus(t, http.StatusForbidden)(handler.HandleAppRotateSecretLift(ctx))
+		require.Len(t, state.auditLogsByUser["other-user"], 1)
+		entry := state.auditLogsByUser["other-user"][0]
+		require.Equal(t, string(auth.AuditOAuthClientSecretRotationFailed), entry.EventType)
+		require.False(t, entry.Success)
+		require.Contains(t, entry.FailureReason, "not authorized")
+	})
+
 	t.Run("generate oauth client secret helper returns value", func(t *testing.T) {
 		secret, err := generateOAuthClientSecret()
 		require.NoError(t, err)

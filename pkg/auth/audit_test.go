@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -154,6 +155,42 @@ func TestAuditLogger_LogLogin_AndSecurityEvent(t *testing.T) {
 	require.False(t, repo.lastStore.success)
 	require.Equal(t, string(SeverityCritical), repo.lastStore.severity)
 	require.Equal(t, "policy", repo.lastStore.metadata["source"])
+}
+
+func TestAuditLogger_LogOAuthClientSecretRotation(t *testing.T) {
+	t.Parallel()
+
+	repo := newInMemoryAuditRepo()
+	al := &AuditLogger{
+		auditRepo: repo,
+		logger:    zap.NewNop(),
+		config: &AuditConfig{
+			Enabled:         true,
+			StoreToDB:       true,
+			StoreToFile:     false,
+			StoreToSIEM:     false,
+			RedactSensitive: false,
+		},
+	}
+
+	al.LogOAuthClientSecretRotation(context.Background(), "owner", "192.0.2.10", "ua", "req-1", map[string]interface{}{
+		"client_id":                   "client-1",
+		"forced_invalidation":         false,
+		"grace_period_seconds":        86400,
+		"previous_secret_valid_until": "2026-03-20T15:04:00Z",
+	}, true, nil)
+	require.Equal(t, string(AuditOAuthClientSecretRotated), repo.lastStore.eventType)
+	require.Equal(t, "owner", repo.lastStore.username)
+	require.Equal(t, "req-1", repo.lastStore.requestID)
+	require.True(t, repo.lastStore.success)
+	require.Equal(t, "client-1", repo.lastStore.metadata["client_id"])
+
+	al.LogOAuthClientSecretRotation(context.Background(), "owner", "192.0.2.10", "ua", "req-2", map[string]interface{}{
+		"client_id": "client-1",
+	}, false, errors.New("not authorized"))
+	require.Equal(t, string(AuditOAuthClientSecretRotationFailed), repo.lastStore.eventType)
+	require.Equal(t, "not authorized", repo.lastStore.failureReason)
+	require.False(t, repo.lastStore.success)
 }
 
 func TestNewAuditLogger_PrivacyHasherBranches(t *testing.T) {

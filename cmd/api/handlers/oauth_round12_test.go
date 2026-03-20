@@ -897,7 +897,8 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{
 				"rt-3": {Token: "rt-3", ClientID: "client-1", Username: "alice", ExpiresAt: time.Now().Add(1 * time.Hour), Scopes: []string{auth.ScopeRead}},
 			},
-			createErrorOnce: errors.New("create failed"),
+			createErrorOnce:  errors.New("create failed"),
+			disableAuditRepo: true,
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-3&client_id=client-1"))

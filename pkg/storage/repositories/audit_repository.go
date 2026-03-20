@@ -317,12 +317,14 @@ func (r *AuditRepository) StoreAuditEvent(ctx context.Context, eventType, severi
 		}
 	}
 
+	now := time.Now().UTC()
+
 	// Generate unique ID
-	id := fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateAuditID(8))
+	id := fmt.Sprintf("%d-%s", now.UnixNano(), generateAuditID(8))
 
 	log := &models.AuthAuditLog{
 		ID:                id,
-		Timestamp:         time.Now().UTC(),
+		Timestamp:         now,
 		EventType:         eventType,
 		Severity:          severity,
 		Username:          username,
@@ -336,6 +338,7 @@ func (r *AuditRepository) StoreAuditEvent(ctx context.Context, eventType, severi
 		FailureReason:     failureReason,
 		Metadata:          metadataStr,
 		DataRetentionDays: 90, // Default retention
+		CreatedAt:         now,
 	}
 
 	return r.StoreAuditLog(ctx, log)

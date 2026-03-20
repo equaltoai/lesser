@@ -99,7 +99,10 @@ func round11NewHandler(t *testing.T, args ...any) (*Handler, *MockRepositoryStor
 	emojiRepo := repositories.NewEmojiRepository(harness.db, cfg.DynamoTableName, logger, nil)
 	notificationRepo := repositories.NewNotificationRepository(harness.db, cfg.DynamoTableName, logger, nil)
 	trendingRepo := repositories.NewTrendingRepository(harness.db, logger, nil)
-	auditRepo := repositories.NewAuditRepository(harness.db, cfg.DynamoTableName, logger, nil)
+	var auditRepo *repositories.AuditRepository
+	if !state.disableAuditRepo {
+		auditRepo = repositories.NewAuditRepository(harness.db, cfg.DynamoTableName, logger, nil)
+	}
 	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(harness.db, cfg.DynamoTableName, logger, nil, nil, "", "mailto:push@example.com")
 	searchRepo := repositories.NewSearchRepository(harness.db, cfg.DynamoTableName, logger, nil)
 	importRepo := repositories.NewImportRepository(harness.db, cfg.DynamoTableName, logger)
