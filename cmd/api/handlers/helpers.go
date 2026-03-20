@@ -896,7 +896,7 @@ func (h *Handler) respondNotFound(ctx *apptheory.Context, resourceType string) (
 
 // respondUnauthorized sends a standardized 401 response
 func (h *Handler) respondUnauthorized(ctx *apptheory.Context) (*apptheory.Response, error) {
-	return h.respondWithError(ctx, 401, "unauthorized")
+	return common.RespondUnauthorized(ctx)
 }
 
 // respondForbidden sends a standardized 403 response
@@ -1086,7 +1086,7 @@ func (h *Handler) handleAuthServiceError(ctx *apptheory.Context, err error, oper
 		return h.respondUnauthorized(ctx)
 
 	case apperrors.HasCode(err, apperrors.CodeInsufficientScope):
-		return h.respondForbidden(ctx, err.Error())
+		return common.RespondInsufficientScope(ctx)
 
 	default:
 		h.logger.Error(fmt.Sprintf("failed to %s", operation), zap.Error(err))

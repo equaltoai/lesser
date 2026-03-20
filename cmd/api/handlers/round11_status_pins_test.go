@@ -64,7 +64,9 @@ func TestStatusPins_PinsAndUnpins(t *testing.T) {
 	require.NoError(t, err)
 	respMissing := handleWithAPIMiddleware(t, handler.HandlePinStatusLift, ctxMissing)
 	require.Equal(t, http.StatusUnauthorized, respMissing.Status)
-	require.Equal(t, "UNAUTHORIZED", decodeStandardErrorResponse(t, respMissing).Code)
+	var missingBody common.BearerAuthErrorResponse
+	require.NoError(t, json.Unmarshal(respMissing.Body, &missingBody))
+	require.Equal(t, common.BearerErrorInvalidToken, missingBody.Error)
 
 	ctxInvalid, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses/bad id/pin", headers, nil, nil)
 	require.NoError(t, err)

@@ -2,6 +2,7 @@
 
 The canonical scope contract for that flow lives in [docs/specs/oauth-scope-model.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/oauth-scope-model.md).
 The grant-selection guidance for browser, headless-approved, and fully autonomous agents lives in [docs/device-code-agent-auth.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/device-code-agent-auth.md).
+The MCP-facing auth error contract for refresh, re-auth, and scope failures lives in [docs/architecture/auth/auth-error-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/architecture/auth/auth-error-contract.md).
 
 ## Supported registration flow
 

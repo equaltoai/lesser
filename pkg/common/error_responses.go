@@ -4,6 +4,7 @@ package common
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/equaltoai/lesser/pkg/errors"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
@@ -20,10 +21,17 @@ type StandardErrorResponse struct {
 // This consolidates the 400+ occurrences of apptheory.JSON(4XX, map[string]string{"error": "..."})
 
 // RespondUnauthorized handles authentication errors (401) - now using centralized errors
-func RespondUnauthorized(_ *apptheory.Context, message ...string) (*apptheory.Response, error) {
+func RespondUnauthorized(ctx *apptheory.Context, message ...string) (*apptheory.Response, error) {
 	msg := "Unauthorized"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
+	}
+	if isBearerAPIAuthPath(ctx) {
+		desc := strings.TrimSpace(msg)
+		if desc == "" || strings.EqualFold(desc, "unauthorized") {
+			desc = "authentication required"
+		}
+		return RespondBearerInvalidToken(ctx, desc)
 	}
 	appErr := errors.Unauthorized(msg)
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
@@ -33,7 +41,10 @@ func RespondUnauthorized(_ *apptheory.Context, message ...string) (*apptheory.Re
 }
 
 // RespondUnauthorizedWithDescription handles authentication errors (401) with additional description
-func RespondUnauthorizedWithDescription(_ *apptheory.Context, description string) (*apptheory.Response, error) {
+func RespondUnauthorizedWithDescription(ctx *apptheory.Context, description string) (*apptheory.Response, error) {
+	if isBearerAPIAuthPath(ctx) {
+		return RespondBearerInvalidToken(ctx, description)
+	}
 	appErr := errors.Unauthorized("Unauthorized")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error:       appErr.Message,
@@ -44,11 +55,17 @@ func RespondUnauthorizedWithDescription(_ *apptheory.Context, description string
 
 // RespondMissingAuth handles authentication required errors by returning a 401 unauthorized response
 func RespondMissingAuth(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if isBearerAPIAuthPath(ctx) {
+		return RespondBearerMissingAuth(ctx)
+	}
 	return RespondUnauthorized(ctx, "authentication required")
 }
 
 // RespondInvalidToken handles invalid token errors by returning a 401 unauthorized response
-func RespondInvalidToken(_ *apptheory.Context) (*apptheory.Response, error) {
+func RespondInvalidToken(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if isBearerAPIAuthPath(ctx) {
+		return RespondBearerInvalidToken(ctx, "invalid token")
+	}
 	appErr := errors.NewAuthError(errors.CodeTokenInvalid, "invalid token")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
@@ -57,7 +74,10 @@ func RespondInvalidToken(_ *apptheory.Context) (*apptheory.Response, error) {
 }
 
 // RespondExpiredToken handles expired token errors by returning a 401 unauthorized response
-func RespondExpiredToken(_ *apptheory.Context) (*apptheory.Response, error) {
+func RespondExpiredToken(ctx *apptheory.Context) (*apptheory.Response, error) {
+	if isBearerAPIAuthPath(ctx) {
+		return RespondBearerExpiredToken(ctx, "token expired")
+	}
 	appErr := errors.NewAuthError(errors.CodeTokenExpired, "token expired")
 	return apptheory.JSON(appErr.HTTPStatusCode, StandardErrorResponse{
 		Error: appErr.Message,
@@ -79,7 +99,10 @@ func RespondForbidden(_ *apptheory.Context, message ...string) (*apptheory.Respo
 }
 
 // RespondInsufficientScope handles insufficient OAuth scope errors by returning a 403 forbidden response
-func RespondInsufficientScope(_ *apptheory.Context, requiredScope ...string) (*apptheory.Response, error) {
+func RespondInsufficientScope(ctx *apptheory.Context, requiredScope ...string) (*apptheory.Response, error) {
+	if isBearerAPIAuthPath(ctx) {
+		return RespondBearerInsufficientScope(ctx, requiredScope...)
+	}
 	msg := "insufficient scope"
 	if len(requiredScope) > 0 {
 		msg = fmt.Sprintf("insufficient scope: requires %s", requiredScope[0])

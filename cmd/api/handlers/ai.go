@@ -19,18 +19,14 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *apptheory.Context) (*apptheory.Re
 	// Auth - require read scope
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	_, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondInvalidToken(ctx)
 	}
 
 	// Get object ID from path parameters
@@ -71,25 +67,19 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *apptheory.Context) (*apptheor
 	// Auth - require moderation scope
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondInvalidToken(ctx)
 	}
 
 	// Check moderation scope
 	if !claims.HasScope("moderation") {
-		return apptheory.JSON(http.StatusForbidden, map[string]string{
-			"error": "moderation scope required",
-		})
+		return common.RespondInsufficientScope(ctx, "moderation")
 	}
 
 	if h.repos != nil && h.repos.Instance() != nil {

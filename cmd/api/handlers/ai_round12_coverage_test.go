@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	stdErrors "errors"
 	"net/http"
 	"testing"
@@ -43,7 +44,10 @@ func TestAI_Round12_GetAIAnalysis_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		ctx.Params["object_id"] = "abc"
 
-		requireStatus(t, http.StatusUnauthorized)(handler.HandleGetAIAnalysisLift(ctx))
+		resp := requireStatus(t, http.StatusUnauthorized)(handler.HandleGetAIAnalysisLift(ctx))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_token", body["error"])
 	})
 
 	t.Run("extracts_object_id_from_path_when_param_missing", func(t *testing.T) {
@@ -117,7 +121,10 @@ func TestAI_Round12_RequestAIAnalysis_Coverage(t *testing.T) {
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/ai/analyze", map[string]string{"Authorization": "Bearer " + readToken}, nil, map[string]any{"object_id": "abc"})
 		require.NoError(t, err)
 
-		requireStatus(t, http.StatusForbidden)(handler.HandleRequestAIAnalysisLift(ctx))
+		resp := requireStatus(t, http.StatusForbidden)(handler.HandleRequestAIAnalysisLift(ctx))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "insufficient_scope", body["error"])
 	})
 
 	t.Run("invalid_body", func(t *testing.T) {

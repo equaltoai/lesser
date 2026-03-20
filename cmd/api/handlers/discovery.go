@@ -200,18 +200,14 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *apptheory.Context) (*apptheory
 	// Extract token from Authorization header
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondInvalidToken(ctx)
 	}
 
 	// Get limit from query params
@@ -279,18 +275,14 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *apptheory.Context) (*apptheory
 	// Extract token from Authorization header
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondInvalidToken(ctx)
 	}
 
 	// Get limit from query params
@@ -361,18 +353,14 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *apptheory.Context) (*apptheory
 	// Extract token from Authorization header
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "authentication required",
-		})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return apptheory.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "invalid token",
-		})
+		return common.RespondInvalidToken(ctx)
 	}
 
 	// Get account ID from path
