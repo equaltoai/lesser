@@ -2,6 +2,21 @@
 
 Lesser supports in-place OAuth client secret rotation for owned connectors without changing the `client_id`.
 
+## Continuity contract
+
+Routine rotation is intentionally no-downtime:
+
+- existing bearer access tokens remain valid until their normal expiry
+- refresh-token exchanges remain anchored to `client_id` and continue to accept the previous secret only while the grace window is still active
+- `client_credentials` token acquisition also continues to accept the previous secret only while the grace window is still active
+- once the grace window expires, new client-authenticated exchanges must use the replacement secret
+
+Forced invalidation is narrower than token revocation:
+
+- Lesser immediately rejects the previous secret for refresh-token and `client_credentials` requests
+- Lesser does not retroactively revoke already-issued bearer access tokens as part of secret rotation alone
+- operators should treat refresh-token or session revocation as a separate incident-response action when they need to cut off already-issued tokens
+
 ## Audit events
 
 Secret rotation emits explicit auth-audit events:
