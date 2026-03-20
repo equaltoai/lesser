@@ -147,6 +147,58 @@ func (s *OAuthService) account() oauthAccountRepository {
 	return getOAuthAccountRepo(s.repos)
 }
 
+type oauthClientSecretValidationResult struct {
+	matchedCurrent        bool
+	matchedPrevious       bool
+	currentNeedsMigration bool
+}
+
+func oauthClientActiveSecretValue(client *storage.OAuthClient) string {
+	if client == nil {
+		return ""
+	}
+	if client.ClientSecretHash != "" {
+		return client.ClientSecretHash
+	}
+	return client.ClientSecret
+}
+
+func oauthClientPreviousSecretGraceActive(now time.Time, client *storage.OAuthClient) bool {
+	if client == nil || client.PreviousClientSecretHash == "" {
+		return false
+	}
+	if client.PreviousClientSecretGraceExpiresAt.IsZero() {
+		return false
+	}
+	return !now.After(client.PreviousClientSecretGraceExpiresAt)
+}
+
+func validateOAuthClientSecretAt(now time.Time, client *storage.OAuthClient, clientSecret string) (oauthClientSecretValidationResult, error) {
+	currentSecret := oauthClientActiveSecretValue(client)
+	ok, needsMigration, verifyErr := VerifyOAuthClientSecret(clientSecret, currentSecret)
+	if verifyErr != nil {
+		return oauthClientSecretValidationResult{}, verifyErr
+	}
+	if ok {
+		return oauthClientSecretValidationResult{
+			matchedCurrent:        true,
+			currentNeedsMigration: needsMigration,
+		}, nil
+	}
+
+	if oauthClientPreviousSecretGraceActive(now, client) {
+		previousOK, _, previousErr := VerifyOAuthClientSecret(clientSecret, client.PreviousClientSecretHash)
+		if previousErr != nil {
+			return oauthClientSecretValidationResult{}, previousErr
+		}
+		if previousOK {
+			return oauthClientSecretValidationResult{matchedPrevious: true}, nil
+		}
+	}
+
+	return oauthClientSecretValidationResult{}, nil
+}
+
 // ValidateClient validates client credentials according to Mastodon OAuth rules
 func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) error {
 	if err := common.ValidateRequiredParam("clientID", clientID); err != nil {
@@ -169,18 +221,12 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		return ErrInvalidClient
 	}
 
-	storedSecret := client.ClientSecretHash
-	if storedSecret == "" {
-		// Backwards compatibility for stubs/older storage codepaths.
-		storedSecret = client.ClientSecret
-	}
-
-	ok, needsMigration, verifyErr := VerifyOAuthClientSecret(clientSecret, storedSecret)
-	if verifyErr != nil || !ok {
+	result, verifyErr := validateOAuthClientSecretAt(time.Now().UTC(), client, clientSecret)
+	if verifyErr != nil || (!result.matchedCurrent && !result.matchedPrevious) {
 		return ErrInvalidClient
 	}
 
-	if needsMigration {
+	if result.currentNeedsMigration {
 		// Best-effort lazy migration: convert legacy plaintext secrets to hashes on first successful use.
 		type secretUpdater interface {
 			UpdateOAuthClientSecretHash(ctx context.Context, clientID, clientSecretHash string) error
