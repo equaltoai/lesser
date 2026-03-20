@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -50,6 +51,16 @@ func TestHandler_handleAuthServiceError_CoversBranches(t *testing.T) {
 			requireStatus(t, tc.wantStatus)(h.handleAuthServiceError(ctx, tc.inputErr, "test-operation"))
 		})
 	}
+
+	t.Run("api insufficient scope uses canonical bearer contract", func(t *testing.T) {
+		ctx, err := round10NewLiftContext("POST", "/api/v1/apps/test/rotate_secret", nil, nil, nil)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusForbidden)(h.handleAuthServiceError(ctx, apperrors.InsufficientScope("write"), "rotate oauth client secret"))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "insufficient_scope", body["error"])
+	})
 }
 
 type assertError string

@@ -440,7 +440,7 @@ func (h *Handler) authenticateDebugRequest(ctx *apptheory.Context, _ string) (*a
 	// Extract and validate JWT token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		resp, err := apptheory.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		resp, err := common.RespondMissingAuth(ctx)
 		return nil, resp, err
 	}
 
@@ -448,7 +448,7 @@ func (h *Handler) authenticateDebugRequest(ctx *apptheory.Context, _ string) (*a
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		resp, respErr := apptheory.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		resp, respErr := common.RespondInvalidToken(ctx)
 		if respErr != nil {
 			return nil, nil, respErr
 		}
@@ -457,7 +457,7 @@ func (h *Handler) authenticateDebugRequest(ctx *apptheory.Context, _ string) (*a
 
 	// Check admin scope
 	if !claims.HasScope("admin") && !claims.HasScope("debug") {
-		resp, err := apptheory.JSON(http.StatusForbidden, map[string]string{"error": "admin or debug scope required"})
+		resp, err := common.RespondInsufficientScope(ctx, "admin debug")
 		return nil, resp, err
 	}
 

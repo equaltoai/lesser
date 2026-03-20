@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -105,11 +106,16 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 
 		ctxMissing, err := round10NewLiftContext(http.MethodGet, "/api/v1/suggestions", nil, nil, nil)
 		require.NoError(t, err)
-		requireStatus(t, http.StatusUnauthorized)(h.HandleGetSuggestionsV1Lift(ctxMissing))
+		resp := requireStatus(t, http.StatusUnauthorized)(h.HandleGetSuggestionsV1Lift(ctxMissing))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_token", body["error"])
 
 		ctxInvalid, err := round10NewLiftContext(http.MethodGet, "/api/v1/suggestions", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 		require.NoError(t, err)
-		requireStatus(t, http.StatusUnauthorized)(h.HandleGetSuggestionsV1Lift(ctxInvalid))
+		resp = requireStatus(t, http.StatusUnauthorized)(h.HandleGetSuggestionsV1Lift(ctxInvalid))
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_token", body["error"])
 
 		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{"read"})
 		headers := map[string]string{"Authorization": "Bearer " + token}
@@ -160,7 +166,10 @@ func TestDiscoveryRound12_Coverage(t *testing.T) {
 		ctxMissing, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", nil, nil, nil)
 		require.NoError(t, err)
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{SearchSvc: &SearchServiceStub{}})
-		requireStatus(t, http.StatusUnauthorized)(h.HandleRemoveSuggestionLift(ctxMissing))
+		resp := requireStatus(t, http.StatusUnauthorized)(h.HandleRemoveSuggestionLift(ctxMissing))
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_token", body["error"])
 
 		ctxInvalid, err := round10NewLiftContext(http.MethodDelete, "/api/v1/suggestions/bob", map[string]string{"Authorization": "Bearer invalid"}, nil, nil)
 		require.NoError(t, err)
