@@ -18091,6 +18091,22 @@ paths:
             x-lesser-lambda: api
             x-lesser-routeSources:
                 - cmd/api/routes.go
+    /auth/device:
+        get:
+            operationId: get_auth_device
+            tags:
+                - auth
+            responses:
+                "200":
+                    description: OK
+                "400":
+                    $ref: '#/components/responses/BadRequest'
+                "500":
+                    $ref: '#/components/responses/InternalServerError'
+            x-lesser-handler: HandleOAuthDevicePageLift
+            x-lesser-lambda: api
+            x-lesser-routeSources:
+                - cmd/api/routes.go
     /auth/wallet/challenge:
         post:
             operationId: post_auth_wallet_challenge

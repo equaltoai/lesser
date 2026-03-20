@@ -351,6 +351,18 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{}
 			}
 			state.refreshTokensByToken[m.Token] = *m
+		case *storagemodels.OAuthDeviceSession:
+			if m == nil {
+				return
+			}
+			if state.oauthDeviceSessionsByHash == nil {
+				state.oauthDeviceSessionsByHash = map[string]storagemodels.OAuthDeviceSession{}
+			}
+			if state.oauthDeviceSessionsByUserCode == nil {
+				state.oauthDeviceSessionsByUserCode = map[string]storagemodels.OAuthDeviceSession{}
+			}
+			state.oauthDeviceSessionsByHash[m.DeviceCodeHash] = *m
+			state.oauthDeviceSessionsByUserCode[m.UserCode] = *m
 		case *storagemodels.RevokedAccessToken:
 			if m == nil {
 				return
@@ -415,6 +427,18 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 				state.refreshTokensByToken = map[string]storagemodels.RefreshToken{}
 			}
 			state.refreshTokensByToken[m.Token] = *m
+		case *storagemodels.OAuthDeviceSession:
+			if m == nil {
+				return
+			}
+			if state.oauthDeviceSessionsByHash == nil {
+				state.oauthDeviceSessionsByHash = map[string]storagemodels.OAuthDeviceSession{}
+			}
+			if state.oauthDeviceSessionsByUserCode == nil {
+				state.oauthDeviceSessionsByUserCode = map[string]storagemodels.OAuthDeviceSession{}
+			}
+			state.oauthDeviceSessionsByHash[m.DeviceCodeHash] = *m
+			state.oauthDeviceSessionsByUserCode[m.UserCode] = *m
 		}
 	}).Maybe()
 	mockQuery.On("Count").Return(int64(2), nil).Maybe()

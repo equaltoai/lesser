@@ -4,6 +4,9 @@ Lesser’s CLI authenticates via an OAuth **device authorization** flow so it wo
 does not need to handle wallets locally. Wallet login + consent happen in the web UI, and the CLI polls until
 the user approves (prefers an SSE completion stream when available; falls back to polling).
 
+For the broader agent-auth positioning of `authorization_code` vs `device_code` vs `client_credentials`, see
+[docs/device-code-agent-auth.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/device-code-agent-auth.md).
+
 ## Quickstart
 
 Build the CLI:

@@ -11,6 +11,8 @@ exemptions:
     - id: auth_setup
       reason: Wallet auth, WebAuthn, and setup bootstrap flows are REST-only.
       match:
+        exact:
+            - /auth/device
         prefixes:
             - /auth/wallet
             - /api/v1/auth/webauthn
@@ -74,11 +76,11 @@ routes:
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
-      path: /.well-known/oauth-authorization-server
+      path: /.well-known/nodeinfo
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
-      path: /.well-known/nodeinfo
+      path: /.well-known/oauth-authorization-server
       policy: rest_only
       exemptedBy: protocol_infra
     - method: GET
@@ -625,12 +627,6 @@ routes:
       status: covered
       graphql:
         - Query.agentActivity
-    - method: GET
-      path: /api/v1/agents/{username}/runtime-sessions
-      policy: graphql_required
-      status: covered
-      graphql:
-        - Query.agentRuntimeSessions
     - method: POST
       path: /api/v1/agents/{username}/rotate-key
       policy: rest_only
@@ -639,6 +635,12 @@ routes:
       path: /api/v1/agents/{username}/rotate-key/challenge
       policy: rest_only
       exemptedBy: agents
+    - method: GET
+      path: /api/v1/agents/{username}/runtime-sessions
+      policy: graphql_required
+      status: covered
+      graphql:
+        - Query.agentRuntimeSessions
     - method: POST
       path: /api/v1/agents/{username}/runtime-sessions/{sessionID}/revoke
       policy: graphql_required
@@ -1581,6 +1583,10 @@ routes:
       status: covered
       graphql:
         - Query.trendingTags
+    - method: GET
+      path: /auth/device
+      policy: rest_only
+      exemptedBy: auth_setup
     - method: POST
       path: /auth/wallet/challenge
       policy: rest_only

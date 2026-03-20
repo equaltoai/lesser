@@ -940,16 +940,28 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 		})
 	}
 
-	cliSessionID := common.GenerateSessionIDULID()
+	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
+	if err != nil || client == nil {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Device authorization is no longer valid",
+		})
+	}
+
+	tokenUsername, clientClass, sessionID, accessTTL, err := h.oauthDeviceApprovedTokenContext(ctx, client, username)
+	if err != nil {
+		return h.oauthDeviceApprovedTokenContextErrorResponse(err)
+	}
+
 	accessToken, refreshTokenOut, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
 		ctx,
-		username,
+		tokenUsername,
 		clientID,
 		"",
 		session.Scopes,
-		auth.AccessTokenDuration,
-		auth.ClientClassCLI,
-		cliSessionID,
+		accessTTL,
+		clientClass,
+		sessionID,
 	)
 	if err != nil {
 		h.logger.Error("failed to generate tokens for device flow", zap.Error(err))
@@ -959,16 +971,11 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 		})
 	}
 
-	oauthRefreshToken := &storage.RefreshToken{
-		Token:       refreshTokenOut,
-		Username:    username,
-		ClientID:    clientID,
-		Scopes:      session.Scopes,
-		CreatedAt:   now,
-		ExpiresAt:   now.Add(auth.RefreshTokenDuration),
-		ClientClass: auth.ClientClassCLI,
-		SessionID:   cliSessionID,
-	}
+	oauthRefreshToken := buildAuthorizationCodeRefreshToken(now, refreshTokenOut, clientID, client, &storage.AuthorizationCode{
+		Username:      tokenUsername,
+		AgentUsername: tokenUsername,
+		Scopes:        session.Scopes,
+	}, clientClass, sessionID, accessTTL)
 	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
 		h.logger.Error("failed to store refresh token for device flow", zap.Error(err))
 	}
@@ -984,8 +991,47 @@ func (h *Handler) oauthDeviceSessionApprovedTokenResponse(ctx context.Context, o
 		TokenType:    oauthTokenTypeBearer,
 		Scope:        strings.Join(session.Scopes, " "),
 		CreatedAt:    now.Unix(),
-		ExpiresIn:    oauthTokenExpiresInSeconds,
+		ExpiresIn:    int(accessTTL.Seconds()),
 		RefreshToken: refreshTokenOut,
+	})
+}
+
+func (h *Handler) oauthDeviceApprovedTokenContext(ctx context.Context, client *storage.OAuthClient, approvedUsername string) (string, string, string, time.Duration, error) {
+	clientClass := strings.ToLower(strings.TrimSpace(client.ClientClass))
+	if clientClass == "" {
+		clientClass = auth.ClientClassCLI
+	}
+
+	tokenUsername := strings.TrimSpace(approvedUsername)
+	sessionID := ""
+	accessTTL := auth.AccessTokenDuration
+	if clientClass == auth.ClientClassCLI || clientClass == auth.ClientClassAgent {
+		sessionID = common.GenerateSessionIDULID()
+	}
+
+	if clientClass != auth.ClientClassAgent {
+		return tokenUsername, clientClass, sessionID, accessTTL, nil
+	}
+
+	agentUser, err := h.getAgentUserForOAuthClient(ctx, client, approvedUsername)
+	if err != nil || agentUser == nil {
+		return "", "", "", 0, auth.ErrInvalidGrant
+	}
+
+	return agentUser.Username, clientClass, sessionID, auth.AgentAccessTokenTTL(h.cfg), nil
+}
+
+func (h *Handler) oauthDeviceApprovedTokenContextErrorResponse(err error) (*apptheory.Response, error) {
+	if errors.Is(err, auth.ErrInvalidGrant) {
+		return apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": "Device authorization is no longer valid",
+		})
+	}
+
+	return apptheory.JSON(http.StatusInternalServerError, map[string]string{
+		"error":             "server_error",
+		"error_description": "Device authorization is in an invalid state",
 	})
 }
 

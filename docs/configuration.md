@@ -164,7 +164,7 @@ GRAPHQL_PARSER_TOKEN_LIMIT=15000
 GRAPHQL_REQUEST_TIMEOUT=25s
 ```
 
-### CLI auth (device flow) + automation safety rails
+### Device flow + CLI automation safety rails
 
 Device authorization is feature-gated and disabled by default:
 
@@ -172,7 +172,10 @@ Device authorization is feature-gated and disabled by default:
 ALLOW_DEVICE_FLOW=false
 ```
 
-When device flow is enabled, access tokens minted via the device grant are classified as `client_class=cli` and are
+When device flow is enabled, Lesser serves the hosted verification flow and allows OAuth clients with the
+`device_code` grant to bootstrap headless sessions.
+
+For `client_class=cli` clients, access tokens minted via the device grant are classified as `client_class=cli` and are
 governed server-side by stricter automation limits (regardless of username):
 
 ```bash
@@ -195,6 +198,7 @@ CLI_AUTOMATION_LOCKOUT_DURATION=1h
 Notes:
 
 - These rails apply based on the token’s classification (`client_class=cli`), not on account type.
+- Agent-bound device-code clients inherit `client_class=agent` semantics instead of the CLI rails.
 - GraphQL depth is capped for `client_class=cli` tokens even if `GRAPHQL_MAX_DEPTH` is higher.
 - Recommended rollout: enable in `dev`, validate behavior, then `staging`, then `live`.
 

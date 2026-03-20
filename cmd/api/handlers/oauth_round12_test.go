@@ -1190,6 +1190,15 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		deviceHash := oauthDeviceCodeHash(deviceCode)
 
 		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:     "client-1",
+					Name:         "CLI App",
+					RedirectURIs: []string{"https://example.com/callback"},
+					ClientClass:  auth.ClientClassCLI,
+					CreatedAt:    time.Now().Add(-24 * time.Hour),
+				},
+			},
 			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
 				deviceHash: {
 					DeviceCodeHash:   deviceHash,
@@ -1244,5 +1253,132 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		refreshClaims := round12DecodeJWTClaims(t, refreshBody.AccessToken)
 		require.Equal(t, auth.ClientClassCLI, refreshClaims.ClientClass)
 		require.Equal(t, claims1.SessionID, refreshClaims.SessionID)
+	})
+
+	t.Run("device_code approved agent client issues agent runtime-style session", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		cfgDevice.AgentAccessTokenDuration = 12 * time.Hour
+		deviceCode := "agent-approved"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					Name:          "Agent Device Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					GrantTypes:    []string{oauthDeviceCodeGrantType, auth.GrantTypeRefreshToken},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:   deviceHash,
+					UserCode:         "WXYZ-1234",
+					ClientID:         "client-agent",
+					Scopes:           []string{auth.ScopeRead, auth.ScopeFollow},
+					Status:           oauthDeviceSessionStatusApproved,
+					IntervalSeconds:  oauthDevicePollIntervalSeconds,
+					ApprovedUsername: "owner",
+					CreatedAt:        time.Now().Add(-2 * time.Minute),
+					UpdatedAt:        time.Now().Add(-2 * time.Minute),
+					ExpiresAt:        time.Now().Add(5 * time.Minute),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentType:  "assistant",
+					AgentOwner: "@owner",
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-agent"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+		require.Equal(t, "read follow", body.Scope)
+		require.Equal(t, int((12 * time.Hour).Seconds()), body.ExpiresIn)
+
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, "agent1", claims.Username)
+		require.True(t, claims.IsAgent)
+		require.Equal(t, auth.ClientClassAgent, claims.ClientClass)
+		require.Equal(t, "assistant", claims.AgentType)
+		require.Equal(t, "@owner", claims.DelegatedBy)
+		require.NotEmpty(t, claims.SessionID)
+		require.Equal(t, claims.SessionID, claims.AgentSessionID)
+
+		storedRefresh, ok := state.refreshTokensByToken[body.RefreshToken]
+		require.True(t, ok)
+		require.Equal(t, auth.ClientClassAgent, storedRefresh.ClientClass)
+		require.Equal(t, "agent1", storedRefresh.Username)
+		require.Equal(t, []string{auth.ScopeRead, auth.ScopeFollow}, storedRefresh.Scopes)
+		require.NotEmpty(t, storedRefresh.SessionID)
+		require.NotEmpty(t, storedRefresh.FamilyID)
+		require.True(t, storedRefresh.Current)
+		require.Equal(t, 1, storedRefresh.Generation)
+		require.Equal(t, "Agent Device Connector", storedRefresh.DeviceLabel)
+		require.Equal(t, int((12 * time.Hour).Seconds()), storedRefresh.AccessTTLSeconds)
+	})
+
+	t.Run("device_code approved agent client rejects non-owner approval", func(t *testing.T) {
+		cfgDevice := round11TestConfig()
+		cfgDevice.AllowDeviceFlow = true
+		deviceCode := "agent-forbidden"
+		deviceHash := oauthDeviceCodeHash(deviceCode)
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					Name:          "Agent Device Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					GrantTypes:    []string{oauthDeviceCodeGrantType, auth.GrantTypeRefreshToken},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			oauthDeviceSessionsByHash: map[string]storagemodels.OAuthDeviceSession{
+				deviceHash: {
+					DeviceCodeHash:   deviceHash,
+					UserCode:         "ZXCV-9876",
+					ClientID:         "client-agent",
+					Scopes:           []string{auth.ScopeRead},
+					Status:           oauthDeviceSessionStatusApproved,
+					IntervalSeconds:  oauthDevicePollIntervalSeconds,
+					ApprovedUsername: "intruder",
+					CreatedAt:        time.Now().Add(-2 * time.Minute),
+					UpdatedAt:        time.Now().Add(-2 * time.Minute),
+					ExpiresAt:        time.Now().Add(5 * time.Minute),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentOwner: "@owner",
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfgDevice, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type="+oauthDeviceCodeGrantType+"&device_code="+deviceCode+"&client_id=client-agent"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_grant", body["error"])
+		require.Empty(t, state.refreshTokensByToken)
 	})
 }
