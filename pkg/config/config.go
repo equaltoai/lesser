@@ -33,6 +33,11 @@ const (
 	InstanceModeHybrid InstanceMode = "hybrid"
 )
 
+const (
+	// DefaultOAuthClientSecretRotationGracePeriod is the product default for in-place secret rotation grace windows.
+	DefaultOAuthClientSecretRotationGracePeriod = 24 * time.Hour
+)
+
 // Config holds the application configuration
 type Config struct {
 	// Instance configuration
@@ -101,13 +106,14 @@ type Config struct {
 	FollowingURL string // Following URL pattern
 
 	// Features
-	MaxUploadSize            int64         // Maximum file upload size in bytes
-	PageSize                 int           // Default pagination size
-	AllowRegistration        bool          // Whether new users can register
-	AllowAgents              bool          // Whether agent accounts are enabled
-	AllowAgentRegistration   bool          // Whether new agent accounts can be registered/delegated
-	AllowDeviceFlow          bool          // Whether OAuth device authorization is enabled
-	AgentAccessTokenDuration time.Duration // Default lifetime for agent-minted access tokens
+	MaxUploadSize                        int64         // Maximum file upload size in bytes
+	PageSize                             int           // Default pagination size
+	AllowRegistration                    bool          // Whether new users can register
+	AllowAgents                          bool          // Whether agent accounts are enabled
+	AllowAgentRegistration               bool          // Whether new agent accounts can be registered/delegated
+	AllowDeviceFlow                      bool          // Whether OAuth device authorization is enabled
+	AgentAccessTokenDuration             time.Duration // Default lifetime for agent-minted access tokens
+	OAuthClientSecretRotationGracePeriod time.Duration // Default grace window for in-place OAuth client secret rotation
 
 	// CLI automation safety rails (device-flow tokens classified as client_class=cli)
 	CLIAutomationConcurrencyLimit   int           // Max concurrent in-flight requests per CLI session (sid)
@@ -366,22 +372,23 @@ func loadConfig() *Config {
 		Argon2Threads: getEnvAsUint8OrDefault("ARGON2_THREADS", 4),
 		Argon2KeyLen:  getEnvAsUint32OrDefault("ARGON2_KEY_LENGTH", 32),
 
-		MaxUploadSize:                   getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
-		PageSize:                        getEnvAsIntOrDefault("PAGE_SIZE", 20),
-		AllowRegistration:               getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
-		AllowAgents:                     getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
-		AllowAgentRegistration:          getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
-		AllowDeviceFlow:                 getEnvAsBoolOrDefault("ALLOW_DEVICE_FLOW", false),
-		AgentAccessTokenDuration:        getEnvAsDurationOrDefault("AGENT_ACCESS_TOKEN_DURATION", time.Hour),
-		CLIAutomationConcurrencyLimit:   getEnvAsIntOrDefault("CLI_AUTOMATION_CONCURRENCY_LIMIT", 2),
-		CLIAutomationBurstLimit:         getEnvAsIntOrDefault("CLI_AUTOMATION_BURST_LIMIT", 20),
-		CLIAutomationBurstWindow:        getEnvAsDurationOrDefault("CLI_AUTOMATION_BURST_WINDOW", 10*time.Second),
-		CLIAutomationSustainedLimit:     getEnvAsIntOrDefault("CLI_AUTOMATION_SUSTAINED_LIMIT", 60),
-		CLIAutomationSustainedWindow:    getEnvAsDurationOrDefault("CLI_AUTOMATION_SUSTAINED_WINDOW", time.Minute),
-		CLIAutomationErrorRateThreshold: getEnvAsFloat64OrDefault("CLI_AUTOMATION_ERROR_RATE_THRESHOLD", 0.10),
-		CLIAutomationErrorRateMin:       getEnvAsIntOrDefault("CLI_AUTOMATION_ERROR_RATE_MIN_REQUESTS", 10),
-		CLIAutomationErrorRateWindow:    getEnvAsDurationOrDefault("CLI_AUTOMATION_ERROR_RATE_WINDOW", time.Minute),
-		CLIAutomationLockoutDuration:    getEnvAsDurationOrDefault("CLI_AUTOMATION_LOCKOUT_DURATION", time.Hour),
+		MaxUploadSize:                        getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
+		PageSize:                             getEnvAsIntOrDefault("PAGE_SIZE", 20),
+		AllowRegistration:                    getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
+		AllowAgents:                          getEnvAsBoolOrDefault("ALLOW_AGENTS", false),
+		AllowAgentRegistration:               getEnvAsBoolOrDefault("ALLOW_AGENT_REGISTRATION", false),
+		AllowDeviceFlow:                      getEnvAsBoolOrDefault("ALLOW_DEVICE_FLOW", false),
+		AgentAccessTokenDuration:             getEnvAsDurationOrDefault("AGENT_ACCESS_TOKEN_DURATION", time.Hour),
+		OAuthClientSecretRotationGracePeriod: getEnvAsDurationOrDefault("OAUTH_CLIENT_SECRET_ROTATION_GRACE_PERIOD", DefaultOAuthClientSecretRotationGracePeriod),
+		CLIAutomationConcurrencyLimit:        getEnvAsIntOrDefault("CLI_AUTOMATION_CONCURRENCY_LIMIT", 2),
+		CLIAutomationBurstLimit:              getEnvAsIntOrDefault("CLI_AUTOMATION_BURST_LIMIT", 20),
+		CLIAutomationBurstWindow:             getEnvAsDurationOrDefault("CLI_AUTOMATION_BURST_WINDOW", 10*time.Second),
+		CLIAutomationSustainedLimit:          getEnvAsIntOrDefault("CLI_AUTOMATION_SUSTAINED_LIMIT", 60),
+		CLIAutomationSustainedWindow:         getEnvAsDurationOrDefault("CLI_AUTOMATION_SUSTAINED_WINDOW", time.Minute),
+		CLIAutomationErrorRateThreshold:      getEnvAsFloat64OrDefault("CLI_AUTOMATION_ERROR_RATE_THRESHOLD", 0.10),
+		CLIAutomationErrorRateMin:            getEnvAsIntOrDefault("CLI_AUTOMATION_ERROR_RATE_MIN_REQUESTS", 10),
+		CLIAutomationErrorRateWindow:         getEnvAsDurationOrDefault("CLI_AUTOMATION_ERROR_RATE_WINDOW", time.Minute),
+		CLIAutomationLockoutDuration:         getEnvAsDurationOrDefault("CLI_AUTOMATION_LOCKOUT_DURATION", time.Hour),
 
 		// CMS Configuration
 		CMSLongFormPublishingEnabled:  getEnvAsBoolOrDefault("CMS_LONG_FORM_PUBLISHING_ENABLED", cmsEnabledByMode),
