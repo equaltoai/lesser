@@ -11,6 +11,7 @@ import (
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/storage"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
@@ -802,5 +803,63 @@ func TestApps_Round12_RotateSecret_Coverage(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, secret)
 		require.Len(t, secret, 44)
+	})
+}
+
+func TestApps_Round12_RotateSecret_HelperCoverage(t *testing.T) {
+	t.Run("parse form rotation request", func(t *testing.T) {
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/apps/client-1/rotate_secret", map[string]string{
+			"Content-Type": "application/x-www-form-urlencoded",
+		}, nil, []byte("grace_period_seconds=120&force_invalidate=false"))
+
+		req, err := parseAppSecretRotationRequest(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 120, req.GracePeriodSeconds)
+		require.False(t, req.ForceInvalidate)
+	})
+
+	t.Run("build request from params validates integer and boolean", func(t *testing.T) {
+		req, err := buildAppSecretRotationRequestFromParams(map[string]string{
+			"grace_period_seconds": "60",
+			"force_invalidate":     "true",
+		})
+		require.NoError(t, err)
+		require.Equal(t, 60, req.GracePeriodSeconds)
+		require.True(t, req.ForceInvalidate)
+
+		_, err = buildAppSecretRotationRequestFromParams(map[string]string{"grace_period_seconds": "abc"})
+		require.ErrorContains(t, err, "grace_period_seconds must be an integer")
+
+		_, err = buildAppSecretRotationRequestFromParams(map[string]string{"force_invalidate": "nope"})
+		require.ErrorContains(t, err, "force_invalidate must be a boolean")
+	})
+
+	t.Run("grace period helper rejects negatives and falls back to default", func(t *testing.T) {
+		_, err := oauthClientSecretRotationGracePeriod(nil, apimodels.AppSecretRotationRequest{GracePeriodSeconds: -1})
+		require.ErrorContains(t, err, "grace_period_seconds must be zero or greater")
+
+		grace, err := oauthClientSecretRotationGracePeriod(nil, apimodels.AppSecretRotationRequest{})
+		require.NoError(t, err)
+		require.Equal(t, 24*time.Hour, grace)
+	})
+
+	t.Run("normalize stored secret hash handles hash, plaintext, and missing cases", func(t *testing.T) {
+		_, err := normalizeStoredOAuthClientSecretHash(nil)
+		require.ErrorContains(t, err, "oauth client is required")
+
+		hashed, err := auth.HashOAuthClientSecret("secret")
+		require.NoError(t, err)
+
+		out, err := normalizeStoredOAuthClientSecretHash(&storage.OAuthClient{ClientSecretHash: hashed})
+		require.NoError(t, err)
+		require.Equal(t, hashed, out)
+
+		out, err = normalizeStoredOAuthClientSecretHash(&storage.OAuthClient{ClientSecret: "secret"})
+		require.NoError(t, err)
+		require.NotEmpty(t, out)
+		require.NotEqual(t, "secret", out)
+
+		_, err = normalizeStoredOAuthClientSecretHash(&storage.OAuthClient{})
+		require.ErrorContains(t, err, "stored client secret missing")
 	})
 }

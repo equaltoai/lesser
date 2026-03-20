@@ -1629,12 +1629,28 @@ components:
                 - name
                 - redirect_uri
             type: object
+        AppSecretRotationRequest:
+            additionalProperties: false
+            properties:
+                force_invalidate:
+                    type: boolean
+                grace_period_seconds:
+                    type: integer
+            type: object
         AppSecretRotationResponse:
             additionalProperties: false
             properties:
                 client_id:
                     type: string
                 client_secret:
+                    type: string
+                forced_invalidation:
+                    type: boolean
+                grace_period_seconds:
+                    type: integer
+                previous_secret_valid_until:
+                    type: string
+                rotated_at:
                     type: string
                 token_endpoint_auth_method:
                     type: string

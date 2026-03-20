@@ -10,6 +10,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type oauthAccountRepoStub struct {
@@ -165,4 +167,55 @@ func TestOAuthService_GenerateTokensWithContext_AndEnhancedValidation(t *testing
 	require.NoError(t, err)
 	_, err = svc.ValidateAccessTokenWithContext(rsTokenString, "", "", 0)
 	require.ErrorIs(t, err, ErrInvalidToken)
+}
+
+func TestOAuthService_LogJWTValidationFailed(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+	svc := &OAuthService{
+		auditLogger: &AuditLogger{logger: logger},
+	}
+
+	svc.logJWTValidationFailed(nil)
+	svc.logJWTValidationFailed(&jwt.Token{
+		Valid:  true,
+		Claims: &Claims{Username: "alice"},
+	})
+
+	entries := observed.All()
+	require.Len(t, entries, 2)
+	require.Equal(t, "JWT token validation failed", entries[0].Message)
+	require.Equal(t, false, entries[0].ContextMap()["token_valid"])
+	require.Equal(t, false, entries[0].ContextMap()["claims_ok"])
+	require.Equal(t, true, entries[1].ContextMap()["token_valid"])
+	require.Equal(t, true, entries[1].ContextMap()["claims_ok"])
+}
+
+func TestOAuthService_GeneratesAuthorizationAndRefreshTokens(t *testing.T) {
+	t.Parallel()
+
+	svc := &OAuthService{}
+
+	code, err := svc.GenerateAuthorizationCode()
+	require.NoError(t, err)
+	require.NotEmpty(t, code)
+
+	refresh, err := svc.generateRefreshToken()
+	require.NoError(t, err)
+	require.NotEmpty(t, refresh)
+}
+
+func TestOAuthService_ValidateAccessTokenAgePolicy(t *testing.T) {
+	t.Parallel()
+
+	svc := &OAuthService{}
+
+	require.NoError(t, svc.validateAccessTokenAgePolicy(nil))
+	require.NoError(t, svc.validateAccessTokenAgePolicy(&Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+		},
+	}))
 }

@@ -70,3 +70,42 @@ func TestValidateOAuthClientSecretAt_RejectsExpiredOrForcedPreviousSecret(t *tes
 		require.False(t, result.matchedPrevious)
 	})
 }
+
+func TestValidateOAuthClientSecretAt_CoversMigrationAndMalformedPreviousHash(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.March, 19, 16, 0, 0, 0, time.UTC)
+
+	t.Run("active secret helper prefers hashed then plaintext values", func(t *testing.T) {
+		require.Empty(t, oauthClientActiveSecretValue(nil))
+		require.Equal(t, "hash-value", oauthClientActiveSecretValue(&storage.OAuthClient{
+			ClientSecretHash: "hash-value",
+			ClientSecret:     "plaintext-value",
+		}))
+		require.Equal(t, "plaintext-value", oauthClientActiveSecretValue(&storage.OAuthClient{
+			ClientSecret: "plaintext-value",
+		}))
+	})
+
+	t.Run("legacy plaintext active secret marks migration needed", func(t *testing.T) {
+		result, err := validateOAuthClientSecretAt(now, &storage.OAuthClient{
+			ClientSecret: "secret-current",
+		}, "secret-current")
+		require.NoError(t, err)
+		require.True(t, result.matchedCurrent)
+		require.False(t, result.matchedPrevious)
+		require.True(t, result.currentNeedsMigration)
+	})
+
+	t.Run("malformed previous hash returns verifier error", func(t *testing.T) {
+		activeHash, err := HashOAuthClientSecret("secret-new")
+		require.NoError(t, err)
+
+		_, err = validateOAuthClientSecretAt(now, &storage.OAuthClient{
+			ClientSecretHash:                   activeHash,
+			PreviousClientSecretHash:           "bcrypt:not-a-valid-bcrypt-hash",
+			PreviousClientSecretGraceExpiresAt: now.Add(1 * time.Hour),
+		}, "secret-old")
+		require.Error(t, err)
+	})
+}

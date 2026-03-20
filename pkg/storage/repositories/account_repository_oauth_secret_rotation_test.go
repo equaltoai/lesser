@@ -99,3 +99,43 @@ func TestAccountRepository_GetOAuthClient_MapsSecretRotationState(t *testing.T) 
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
 }
+
+func TestAccountRepository_RotateOAuthClientSecret_NormalizesZeroRotationState(t *testing.T) {
+	t.Parallel()
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockUpdate := new(mocks.MockUpdateBuilder)
+
+	repo := &AccountRepository{
+		db:     mockDB,
+		logger: zap.NewNop(),
+	}
+
+	ctx := context.Background()
+
+	mockDB.On("WithContext", ctx).Return(mockDB)
+	mockDB.On("Model", mock.AnythingOfType("*models.OAuthClient")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", "OAUTH_CLIENT#client-1").Return(mockQuery)
+	mockQuery.On("Where", "SK", "=", oauthClientSortKey).Return(mockQuery)
+	mockQuery.On("UpdateBuilder").Return(mockUpdate)
+
+	mockUpdate.On("Set", "ClientSecret", "hash-new").Return(mockUpdate)
+	mockUpdate.On("Set", "PreviousClientSecret", "").Return(mockUpdate)
+	mockUpdate.On("Set", "PreviousClientSecretGraceExpiresAt", time.Time{}).Return(mockUpdate)
+	mockUpdate.On("Set", "SecretRotatedAt", mock.AnythingOfType("time.Time")).Return(mockUpdate)
+	mockUpdate.On("Set", "SecretRotatedBy", "owner").Return(mockUpdate)
+	mockUpdate.On("Set", "UpdatedAt", mock.AnythingOfType("time.Time")).Return(mockUpdate)
+	mockUpdate.On("Execute").Return(nil)
+
+	err := repo.RotateOAuthClientSecret(ctx, "client-1", storage.OAuthClientSecretRotation{
+		ActiveClientSecretHash:             "hash-new",
+		PreviousClientSecretGraceExpiresAt: time.Now().Add(24 * time.Hour),
+		RotatedBy:                          " owner ",
+	})
+	require.NoError(t, err)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+	mockUpdate.AssertExpectations(t)
+}
