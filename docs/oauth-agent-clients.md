@@ -1,8 +1,7 @@
 # OAuth Agent Client Compatibility
 
-Lesser's current autonomous agent bootstrap flow is based on pre-provisioned OAuth clients.
-
 The canonical scope contract for that flow lives in [docs/specs/oauth-scope-model.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/oauth-scope-model.md).
+The dynamic-registration policy contract lives in [docs/specs/oauth-dynamic-client-registration.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/specs/oauth-dynamic-client-registration.md).
 
 ## Supported registration flow
 
@@ -31,15 +30,15 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 - The old client secret stops working immediately after rotation.
 - The replacement secret is returned once in the rotation response and must be redistributed to the connector.
 
-## Current RFC 7591 position
+## RFC 7591 dynamic registration
 
-Lesser does not yet expose a dedicated RFC 7591 dynamic client registration endpoint.
+Lesser now exposes `POST /oauth/register` and advertises it through RFC 8414 metadata.
 
-The current compatibility story for MCP clients is:
+The current compatibility story is:
 
-- pre-provision the OAuth client with `POST /api/v1/apps`
-- bind the client to the intended agent identity
-- use discovery metadata to learn the token endpoint and supported grant/auth-method set
-- authenticate with `client_credentials` using the returned confidential secret
+- native or CLI discovery clients can dynamically register a public client with `token_endpoint_auth_method=none`
+- dynamically registered public clients use PKCE for the authorization-code flow
+- if device flow is enabled, dynamic `cli` clients also receive `device_code`
+- agent-bound dynamic clients still require the existing ownership check before Lesser will bind them to an agent identity
 
-Dynamic registration remains a separate follow-up track.
+Manual `POST /api/v1/apps` registration remains available as an operator-controlled alternative.

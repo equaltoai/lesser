@@ -22,6 +22,7 @@ func TestHandleOAuthAuthorizationServerMetadataLift(t *testing.T) {
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	require.Equal(t, "https://example.com", body["issuer"])
 	require.Equal(t, "https://example.com/oauth/authorize", body["authorization_endpoint"])
+	require.Equal(t, "https://example.com/oauth/register", body["registration_endpoint"])
 	require.Equal(t, "https://example.com/oauth/token", body["token_endpoint"])
 	require.Equal(t, "https://example.com/oauth/revoke", body["revocation_endpoint"])
 	require.ElementsMatch(t, []any{"code"}, body["response_types_supported"].([]any))

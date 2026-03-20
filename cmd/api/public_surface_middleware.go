@@ -52,6 +52,7 @@ func apiRequestIsPublic(method, path string) bool {
 		switch path {
 		case "/",
 			"/robots.txt",
+			"/.well-known/oauth-authorization-server",
 			"/.well-known/nodeinfo",
 			"/.well-known/lesser-soul-agent",
 			"/nodeinfo/2.0",
@@ -123,6 +124,7 @@ func apiRequestIsPublic(method, path string) bool {
 	case http.MethodPost:
 		switch path {
 		case "/api/v1/apps",
+			"/oauth/register",
 			"/api/v1/accounts",
 			"/api/v1/notifications/deliver",
 			"/oauth/token",
