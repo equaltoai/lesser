@@ -306,6 +306,18 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			if secret, ok := state.sets["ClientSecret"].(string); ok {
 				client.ClientSecret = secret
 			}
+			if previousSecret, ok := state.sets["PreviousClientSecret"].(string); ok {
+				client.PreviousClientSecret = previousSecret
+			}
+			if graceExpiresAt, ok := state.sets["PreviousClientSecretGraceExpiresAt"].(time.Time); ok {
+				client.PreviousClientSecretGraceExpiresAt = graceExpiresAt
+			}
+			if rotatedAt, ok := state.sets["SecretRotatedAt"].(time.Time); ok {
+				client.SecretRotatedAt = rotatedAt
+			}
+			if rotatedBy, ok := state.sets["SecretRotatedBy"].(string); ok {
+				client.SecretRotatedBy = rotatedBy
+			}
 			if updatedAt, ok := state.sets["UpdatedAt"].(time.Time); ok {
 				client.UpdatedAt = updatedAt
 			}

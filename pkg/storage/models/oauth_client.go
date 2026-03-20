@@ -19,25 +19,29 @@ type OAuthClient struct {
 	OAuthClientsSK string  `theorydb:"index:oauth-clients-index,sk,attr:oauthClientsSK" json:"-"` // CREATED_AT#{ts_desc}#CLIENT#{clientID}
 
 	// Core fields
-	ID                 string    `theorydb:"attr:id" json:"id,omitempty"`
-	ClientID           string    `theorydb:"attr:clientID" json:"client_id"`
-	ClientSecret       string    `theorydb:"attr:clientSecret" json:"client_secret"`
-	Name               string    `theorydb:"attr:name" json:"name"`
-	Description        string    `theorydb:"attr:description" json:"description,omitempty"`
-	Website            string    `theorydb:"attr:website" json:"website,omitempty"`
-	ClientURI          string    `theorydb:"attr:clientURI" json:"client_uri,omitempty"`
-	SoftwareID         string    `theorydb:"attr:softwareID" json:"software_id,omitempty"`
-	SoftwareVersion    string    `theorydb:"attr:softwareVersion" json:"software_version,omitempty"`
-	RedirectURIs       []string  `theorydb:"attr:redirectURIs" json:"redirect_uris"`
-	GrantTypes         []string  `theorydb:"attr:grantTypes" json:"grant_types,omitempty"`
-	Scopes             []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
-	ClientClass        string    `theorydb:"attr:clientClass,omitempty" json:"client_class,omitempty"`
-	AgentUsername      string    `theorydb:"attr:agentUsername,omitempty" json:"agent_username,omitempty"`
-	OwnerID            string    `theorydb:"attr:ownerID,omitempty" json:"owner_id,omitempty"`
-	RegistrationSource string    `theorydb:"attr:registrationSource,omitempty" json:"registration_source,omitempty"`
-	Confidential       bool      `theorydb:"attr:confidential" json:"confidential"`
-	CreatedAt          time.Time `theorydb:"attr:createdAt" json:"created_at"`
-	UpdatedAt          time.Time `theorydb:"attr:updatedAt" json:"updated_at,omitempty"`
+	ID                                 string    `theorydb:"attr:id" json:"id,omitempty"`
+	ClientID                           string    `theorydb:"attr:clientID" json:"client_id"`
+	ClientSecret                       string    `theorydb:"attr:clientSecret" json:"client_secret"`
+	PreviousClientSecret               string    `theorydb:"attr:previousClientSecret,omitempty" json:"-"`
+	PreviousClientSecretGraceExpiresAt time.Time `theorydb:"attr:previousClientSecretGraceExpiresAt,omitempty" json:"-"`
+	SecretRotatedAt                    time.Time `theorydb:"attr:secretRotatedAt,omitempty" json:"-"`
+	SecretRotatedBy                    string    `theorydb:"attr:secretRotatedBy,omitempty" json:"-"`
+	Name                               string    `theorydb:"attr:name" json:"name"`
+	Description                        string    `theorydb:"attr:description" json:"description,omitempty"`
+	Website                            string    `theorydb:"attr:website" json:"website,omitempty"`
+	ClientURI                          string    `theorydb:"attr:clientURI" json:"client_uri,omitempty"`
+	SoftwareID                         string    `theorydb:"attr:softwareID" json:"software_id,omitempty"`
+	SoftwareVersion                    string    `theorydb:"attr:softwareVersion" json:"software_version,omitempty"`
+	RedirectURIs                       []string  `theorydb:"attr:redirectURIs" json:"redirect_uris"`
+	GrantTypes                         []string  `theorydb:"attr:grantTypes" json:"grant_types,omitempty"`
+	Scopes                             []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
+	ClientClass                        string    `theorydb:"attr:clientClass,omitempty" json:"client_class,omitempty"`
+	AgentUsername                      string    `theorydb:"attr:agentUsername,omitempty" json:"agent_username,omitempty"`
+	OwnerID                            string    `theorydb:"attr:ownerID,omitempty" json:"owner_id,omitempty"`
+	RegistrationSource                 string    `theorydb:"attr:registrationSource,omitempty" json:"registration_source,omitempty"`
+	Confidential                       bool      `theorydb:"attr:confidential" json:"confidential"`
+	CreatedAt                          time.Time `theorydb:"attr:createdAt" json:"created_at"`
+	UpdatedAt                          time.Time `theorydb:"attr:updatedAt" json:"updated_at,omitempty"`
 }
 
 // TableName returns the DynamoDB table name

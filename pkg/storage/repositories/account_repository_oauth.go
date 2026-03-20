@@ -316,24 +316,28 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 
 	// Create DynamORM model
 	model := &models.OAuthClient{
-		ClientID:           client.ClientID,
-		ClientSecret:       storedSecret,
-		Name:               client.Name,
-		Description:        client.Description,
-		Website:            client.Website,
-		ClientURI:          client.ClientURI,
-		SoftwareID:         client.SoftwareID,
-		SoftwareVersion:    client.SoftwareVersion,
-		RedirectURIs:       client.RedirectURIs,
-		GrantTypes:         client.GrantTypes,
-		Scopes:             client.Scopes,
-		ClientClass:        client.ClientClass,
-		AgentUsername:      client.AgentUsername,
-		OwnerID:            client.OwnerID,
-		RegistrationSource: client.RegistrationSource,
-		Confidential:       client.Confidential,
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		ClientID:                           client.ClientID,
+		ClientSecret:                       storedSecret,
+		PreviousClientSecret:               client.PreviousClientSecretHash,
+		PreviousClientSecretGraceExpiresAt: client.PreviousClientSecretGraceExpiresAt,
+		SecretRotatedAt:                    client.SecretRotatedAt,
+		SecretRotatedBy:                    client.SecretRotatedBy,
+		Name:                               client.Name,
+		Description:                        client.Description,
+		Website:                            client.Website,
+		ClientURI:                          client.ClientURI,
+		SoftwareID:                         client.SoftwareID,
+		SoftwareVersion:                    client.SoftwareVersion,
+		RedirectURIs:                       client.RedirectURIs,
+		GrantTypes:                         client.GrantTypes,
+		Scopes:                             client.Scopes,
+		ClientClass:                        client.ClientClass,
+		AgentUsername:                      client.AgentUsername,
+		OwnerID:                            client.OwnerID,
+		RegistrationSource:                 client.RegistrationSource,
+		Confidential:                       client.Confidential,
+		CreatedAt:                          time.Now(),
+		UpdatedAt:                          time.Now(),
 	}
 
 	// BeforeCreate will set up keys
@@ -387,24 +391,28 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 
 	// Convert to storage model
 	result := &storage.OAuthClient{
-		ClientID:           model.ClientID,
-		ClientSecretHash:   model.ClientSecret,
-		Name:               model.Name,
-		Description:        model.Description,
-		Website:            model.Website,
-		ClientURI:          model.ClientURI,
-		SoftwareID:         model.SoftwareID,
-		SoftwareVersion:    model.SoftwareVersion,
-		RedirectURIs:       model.RedirectURIs,
-		GrantTypes:         model.GrantTypes,
-		Scopes:             model.Scopes,
-		ClientClass:        model.ClientClass,
-		AgentUsername:      model.AgentUsername,
-		OwnerID:            model.OwnerID,
-		RegistrationSource: model.RegistrationSource,
-		Confidential:       model.Confidential,
-		CreatedAt:          model.CreatedAt,
-		UpdatedAt:          model.UpdatedAt,
+		ClientID:                           model.ClientID,
+		ClientSecretHash:                   model.ClientSecret,
+		PreviousClientSecretHash:           model.PreviousClientSecret,
+		PreviousClientSecretGraceExpiresAt: model.PreviousClientSecretGraceExpiresAt,
+		SecretRotatedAt:                    model.SecretRotatedAt,
+		SecretRotatedBy:                    model.SecretRotatedBy,
+		Name:                               model.Name,
+		Description:                        model.Description,
+		Website:                            model.Website,
+		ClientURI:                          model.ClientURI,
+		SoftwareID:                         model.SoftwareID,
+		SoftwareVersion:                    model.SoftwareVersion,
+		RedirectURIs:                       model.RedirectURIs,
+		GrantTypes:                         model.GrantTypes,
+		Scopes:                             model.Scopes,
+		ClientClass:                        model.ClientClass,
+		AgentUsername:                      model.AgentUsername,
+		OwnerID:                            model.OwnerID,
+		RegistrationSource:                 model.RegistrationSource,
+		Confidential:                       model.Confidential,
+		CreatedAt:                          model.CreatedAt,
+		UpdatedAt:                          model.UpdatedAt,
 	}
 
 	r.logger.Debug("retrieved OAuth client",
@@ -436,6 +444,48 @@ func (r *AccountRepository) UpdateOAuthClientSecretHash(ctx context.Context, cli
 
 	if err := updateBuilder.Execute(); err != nil {
 		r.logger.Error("failed to update OAuth client secret hash",
+			zap.String("client_id", clientID),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, clientID)
+	}
+
+	return nil
+}
+
+// RotateOAuthClientSecret persists dual-secret rotation state for an OAuth client.
+func (r *AccountRepository) RotateOAuthClientSecret(ctx context.Context, clientID string, rotation storage.OAuthClientSecretRotation) error {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"clientID":               clientID,
+		"activeClientSecretHash": rotation.ActiveClientSecretHash,
+	}); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, "validation")
+	}
+
+	rotatedAt := rotation.RotatedAt.UTC()
+	if rotatedAt.IsZero() {
+		rotatedAt = time.Now().UTC()
+	}
+
+	if rotation.PreviousClientSecretHash == "" {
+		rotation.PreviousClientSecretGraceExpiresAt = time.Time{}
+	}
+
+	pk := "OAUTH_CLIENT#" + clientID
+	sk := oauthClientSortKey
+
+	updateBuilder := r.db.WithContext(ctx).Model(&models.OAuthClient{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		UpdateBuilder()
+	updateBuilder.Set("ClientSecret", rotation.ActiveClientSecretHash)
+	updateBuilder.Set("PreviousClientSecret", rotation.PreviousClientSecretHash)
+	updateBuilder.Set("PreviousClientSecretGraceExpiresAt", rotation.PreviousClientSecretGraceExpiresAt)
+	updateBuilder.Set("SecretRotatedAt", rotatedAt)
+	updateBuilder.Set("SecretRotatedBy", strings.TrimSpace(rotation.RotatedBy))
+	updateBuilder.Set("UpdatedAt", time.Now().UTC())
+
+	if err := updateBuilder.Execute(); err != nil {
+		r.logger.Error("failed to rotate OAuth client secret state",
 			zap.String("client_id", clientID),
 			zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, clientID)
@@ -622,23 +672,27 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, cur
 	clients := make([]*storage.OAuthClient, len(clientModels))
 	for i, model := range clientModels {
 		clients[i] = &storage.OAuthClient{
-			ClientID:           model.ClientID,
-			ClientSecretHash:   model.ClientSecret,
-			Name:               model.Name,
-			Website:            model.Website,
-			ClientURI:          model.ClientURI,
-			SoftwareID:         model.SoftwareID,
-			SoftwareVersion:    model.SoftwareVersion,
-			RedirectURIs:       model.RedirectURIs,
-			GrantTypes:         model.GrantTypes,
-			Scopes:             model.Scopes,
-			ClientClass:        model.ClientClass,
-			AgentUsername:      model.AgentUsername,
-			OwnerID:            model.OwnerID,
-			RegistrationSource: model.RegistrationSource,
-			Confidential:       model.Confidential,
-			CreatedAt:          model.CreatedAt,
-			UpdatedAt:          model.UpdatedAt,
+			ClientID:                           model.ClientID,
+			ClientSecretHash:                   model.ClientSecret,
+			PreviousClientSecretHash:           model.PreviousClientSecret,
+			PreviousClientSecretGraceExpiresAt: model.PreviousClientSecretGraceExpiresAt,
+			SecretRotatedAt:                    model.SecretRotatedAt,
+			SecretRotatedBy:                    model.SecretRotatedBy,
+			Name:                               model.Name,
+			Website:                            model.Website,
+			ClientURI:                          model.ClientURI,
+			SoftwareID:                         model.SoftwareID,
+			SoftwareVersion:                    model.SoftwareVersion,
+			RedirectURIs:                       model.RedirectURIs,
+			GrantTypes:                         model.GrantTypes,
+			Scopes:                             model.Scopes,
+			ClientClass:                        model.ClientClass,
+			AgentUsername:                      model.AgentUsername,
+			OwnerID:                            model.OwnerID,
+			RegistrationSource:                 model.RegistrationSource,
+			Confidential:                       model.Confidential,
+			CreatedAt:                          model.CreatedAt,
+			UpdatedAt:                          model.UpdatedAt,
 		}
 	}
 

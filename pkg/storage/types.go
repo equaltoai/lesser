@@ -364,23 +364,36 @@ type OAuthClient struct {
 	ClientSecret string `json:"client_secret,omitempty"`
 	// ClientSecretHash is the stored representation used for verification (e.g., bcrypt hash).
 	// It is never serialized in API responses.
-	ClientSecretHash   string    `json:"-"`
-	Name               string    `json:"name"`
-	Description        string    `json:"description,omitempty"`
-	Website            string    `json:"website,omitempty"`
-	ClientURI          string    `json:"client_uri,omitempty"`
-	SoftwareID         string    `json:"software_id,omitempty"`
-	SoftwareVersion    string    `json:"software_version,omitempty"`
-	RedirectURIs       []string  `json:"redirect_uris"`
-	GrantTypes         []string  `json:"grant_types,omitempty"`
-	Scopes             []string  `json:"scopes"`
-	ClientClass        string    `json:"client_class,omitempty"`
-	AgentUsername      string    `json:"agent_username,omitempty"`
-	OwnerID            string    `json:"owner_id,omitempty"`
-	RegistrationSource string    `json:"registration_source,omitempty"`
-	Confidential       bool      `json:"confidential"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ClientSecretHash                   string    `json:"-"`
+	PreviousClientSecretHash           string    `json:"-"`
+	PreviousClientSecretGraceExpiresAt time.Time `json:"-"`
+	SecretRotatedAt                    time.Time `json:"-"`
+	SecretRotatedBy                    string    `json:"-"`
+	Name                               string    `json:"name"`
+	Description                        string    `json:"description,omitempty"`
+	Website                            string    `json:"website,omitempty"`
+	ClientURI                          string    `json:"client_uri,omitempty"`
+	SoftwareID                         string    `json:"software_id,omitempty"`
+	SoftwareVersion                    string    `json:"software_version,omitempty"`
+	RedirectURIs                       []string  `json:"redirect_uris"`
+	GrantTypes                         []string  `json:"grant_types,omitempty"`
+	Scopes                             []string  `json:"scopes"`
+	ClientClass                        string    `json:"client_class,omitempty"`
+	AgentUsername                      string    `json:"agent_username,omitempty"`
+	OwnerID                            string    `json:"owner_id,omitempty"`
+	RegistrationSource                 string    `json:"registration_source,omitempty"`
+	Confidential                       bool      `json:"confidential"`
+	CreatedAt                          time.Time `json:"created_at"`
+	UpdatedAt                          time.Time `json:"updated_at"`
+}
+
+// OAuthClientSecretRotation captures the persisted secret state for an in-place rotation.
+type OAuthClientSecretRotation struct {
+	ActiveClientSecretHash             string    `json:"-"`
+	PreviousClientSecretHash           string    `json:"-"`
+	PreviousClientSecretGraceExpiresAt time.Time `json:"-"`
+	RotatedAt                          time.Time `json:"-"`
+	RotatedBy                          string    `json:"-"`
 }
 
 // OAuthApp represents a registered OAuth application

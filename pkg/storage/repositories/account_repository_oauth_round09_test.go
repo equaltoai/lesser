@@ -113,6 +113,8 @@ func TestRound09_AccountRepository_OAuthClientOps(t *testing.T) {
 	got, err := repo.GetOAuthClient(ctx, client.ClientID)
 	require.NoError(t, err)
 	require.NotNil(t, got)
+	require.Empty(t, got.PreviousClientSecretHash)
+	require.True(t, got.PreviousClientSecretGraceExpiresAt.IsZero())
 
 	require.Error(t, repo.UpdateOAuthClient(ctx, client.ClientID, map[string]any{}))
 	require.NoError(t, repo.UpdateOAuthClient(ctx, client.ClientID, map[string]any{

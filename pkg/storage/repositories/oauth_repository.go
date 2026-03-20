@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/theory-cloud/tabletheory/pkg/core"
@@ -114,24 +115,28 @@ func (r *OAuthRepository) CreateOAuthClient(ctx context.Context, client *storage
 
 	// Convert storage model to DynamORM model
 	model := &models.OAuthClient{
-		ClientID:           client.ClientID,
-		ClientSecret:       storedSecret,
-		Name:               client.Name,
-		Description:        client.Description,
-		Website:            client.Website,
-		ClientURI:          client.ClientURI,
-		SoftwareID:         client.SoftwareID,
-		SoftwareVersion:    client.SoftwareVersion,
-		RedirectURIs:       client.RedirectURIs,
-		GrantTypes:         client.GrantTypes,
-		Scopes:             client.Scopes,
-		ClientClass:        client.ClientClass,
-		AgentUsername:      client.AgentUsername,
-		OwnerID:            client.OwnerID,
-		RegistrationSource: client.RegistrationSource,
-		Confidential:       client.Confidential,
-		CreatedAt:          client.CreatedAt,
-		UpdatedAt:          client.UpdatedAt,
+		ClientID:                           client.ClientID,
+		ClientSecret:                       storedSecret,
+		PreviousClientSecret:               client.PreviousClientSecretHash,
+		PreviousClientSecretGraceExpiresAt: client.PreviousClientSecretGraceExpiresAt,
+		SecretRotatedAt:                    client.SecretRotatedAt,
+		SecretRotatedBy:                    client.SecretRotatedBy,
+		Name:                               client.Name,
+		Description:                        client.Description,
+		Website:                            client.Website,
+		ClientURI:                          client.ClientURI,
+		SoftwareID:                         client.SoftwareID,
+		SoftwareVersion:                    client.SoftwareVersion,
+		RedirectURIs:                       client.RedirectURIs,
+		GrantTypes:                         client.GrantTypes,
+		Scopes:                             client.Scopes,
+		ClientClass:                        client.ClientClass,
+		AgentUsername:                      client.AgentUsername,
+		OwnerID:                            client.OwnerID,
+		RegistrationSource:                 client.RegistrationSource,
+		Confidential:                       client.Confidential,
+		CreatedAt:                          client.CreatedAt,
+		UpdatedAt:                          client.UpdatedAt,
 	}
 
 	// Use BaseRepository Create method
@@ -156,25 +161,77 @@ func (r *OAuthRepository) GetOAuthClient(ctx context.Context, clientID string) (
 
 	// Convert DynamORM model to storage model
 	return &storage.OAuthClient{
-		ClientID:           model.ClientID,
-		ClientSecretHash:   model.ClientSecret,
-		Name:               model.Name,
-		Description:        model.Description,
-		Website:            model.Website,
-		ClientURI:          model.ClientURI,
-		SoftwareID:         model.SoftwareID,
-		SoftwareVersion:    model.SoftwareVersion,
-		RedirectURIs:       model.RedirectURIs,
-		GrantTypes:         model.GrantTypes,
-		Scopes:             model.Scopes,
-		ClientClass:        model.ClientClass,
-		AgentUsername:      model.AgentUsername,
-		OwnerID:            model.OwnerID,
-		RegistrationSource: model.RegistrationSource,
-		Confidential:       model.Confidential,
-		CreatedAt:          model.CreatedAt,
-		UpdatedAt:          model.UpdatedAt,
+		ClientID:                           model.ClientID,
+		ClientSecretHash:                   model.ClientSecret,
+		PreviousClientSecretHash:           model.PreviousClientSecret,
+		PreviousClientSecretGraceExpiresAt: model.PreviousClientSecretGraceExpiresAt,
+		SecretRotatedAt:                    model.SecretRotatedAt,
+		SecretRotatedBy:                    model.SecretRotatedBy,
+		Name:                               model.Name,
+		Description:                        model.Description,
+		Website:                            model.Website,
+		ClientURI:                          model.ClientURI,
+		SoftwareID:                         model.SoftwareID,
+		SoftwareVersion:                    model.SoftwareVersion,
+		RedirectURIs:                       model.RedirectURIs,
+		GrantTypes:                         model.GrantTypes,
+		Scopes:                             model.Scopes,
+		ClientClass:                        model.ClientClass,
+		AgentUsername:                      model.AgentUsername,
+		OwnerID:                            model.OwnerID,
+		RegistrationSource:                 model.RegistrationSource,
+		Confidential:                       model.Confidential,
+		CreatedAt:                          model.CreatedAt,
+		UpdatedAt:                          model.UpdatedAt,
 	}, nil
+}
+
+// RotateOAuthClientSecret persists dual-secret rotation state for an OAuth client.
+func (r *OAuthRepository) RotateOAuthClientSecret(ctx context.Context, clientID string, rotation storage.OAuthClientSecretRotation) error {
+	existing, err := r.GetOAuthClient(ctx, clientID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthClient, clientID)
+	}
+
+	existing.ClientSecretHash = rotation.ActiveClientSecretHash
+	existing.PreviousClientSecretHash = rotation.PreviousClientSecretHash
+	existing.PreviousClientSecretGraceExpiresAt = rotation.PreviousClientSecretGraceExpiresAt
+	existing.SecretRotatedAt = rotation.RotatedAt
+	existing.SecretRotatedBy = rotation.RotatedBy
+	existing.UpdatedAt = time.Now().UTC()
+
+	model := &models.OAuthClient{
+		ClientID:                           existing.ClientID,
+		ClientSecret:                       existing.ClientSecretHash,
+		PreviousClientSecret:               existing.PreviousClientSecretHash,
+		PreviousClientSecretGraceExpiresAt: existing.PreviousClientSecretGraceExpiresAt,
+		SecretRotatedAt:                    existing.SecretRotatedAt,
+		SecretRotatedBy:                    existing.SecretRotatedBy,
+		Name:                               existing.Name,
+		Description:                        existing.Description,
+		Website:                            existing.Website,
+		ClientURI:                          existing.ClientURI,
+		SoftwareID:                         existing.SoftwareID,
+		SoftwareVersion:                    existing.SoftwareVersion,
+		RedirectURIs:                       existing.RedirectURIs,
+		GrantTypes:                         existing.GrantTypes,
+		Scopes:                             existing.Scopes,
+		ClientClass:                        existing.ClientClass,
+		AgentUsername:                      existing.AgentUsername,
+		OwnerID:                            existing.OwnerID,
+		RegistrationSource:                 existing.RegistrationSource,
+		Confidential:                       existing.Confidential,
+		CreatedAt:                          existing.CreatedAt,
+		UpdatedAt:                          existing.UpdatedAt,
+	}
+	if err := model.UpdateKeys(); err != nil {
+		return err
+	}
+
+	return r.Update(ctx, model)
 }
 
 // DeleteOAuthClient deletes an OAuth client using BaseRepository
@@ -247,24 +304,28 @@ func (r *OAuthRepository) UpdateOAuthClient(ctx context.Context, clientID string
 
 	// Convert to DynamORM model
 	model := &models.OAuthClient{
-		ClientID:           existing.ClientID,
-		ClientSecret:       existing.ClientSecretHash,
-		Name:               existing.Name,
-		Description:        existing.Description,
-		Website:            existing.Website,
-		ClientURI:          existing.ClientURI,
-		SoftwareID:         existing.SoftwareID,
-		SoftwareVersion:    existing.SoftwareVersion,
-		RedirectURIs:       existing.RedirectURIs,
-		GrantTypes:         existing.GrantTypes,
-		Scopes:             existing.Scopes,
-		ClientClass:        existing.ClientClass,
-		AgentUsername:      existing.AgentUsername,
-		OwnerID:            existing.OwnerID,
-		RegistrationSource: existing.RegistrationSource,
-		Confidential:       existing.Confidential,
-		CreatedAt:          existing.CreatedAt,
-		UpdatedAt:          existing.UpdatedAt,
+		ClientID:                           existing.ClientID,
+		ClientSecret:                       existing.ClientSecretHash,
+		PreviousClientSecret:               existing.PreviousClientSecretHash,
+		PreviousClientSecretGraceExpiresAt: existing.PreviousClientSecretGraceExpiresAt,
+		SecretRotatedAt:                    existing.SecretRotatedAt,
+		SecretRotatedBy:                    existing.SecretRotatedBy,
+		Name:                               existing.Name,
+		Description:                        existing.Description,
+		Website:                            existing.Website,
+		ClientURI:                          existing.ClientURI,
+		SoftwareID:                         existing.SoftwareID,
+		SoftwareVersion:                    existing.SoftwareVersion,
+		RedirectURIs:                       existing.RedirectURIs,
+		GrantTypes:                         existing.GrantTypes,
+		Scopes:                             existing.Scopes,
+		ClientClass:                        existing.ClientClass,
+		AgentUsername:                      existing.AgentUsername,
+		OwnerID:                            existing.OwnerID,
+		RegistrationSource:                 existing.RegistrationSource,
+		Confidential:                       existing.Confidential,
+		CreatedAt:                          existing.CreatedAt,
+		UpdatedAt:                          existing.UpdatedAt,
 	}
 
 	// Use BaseRepository Update method
