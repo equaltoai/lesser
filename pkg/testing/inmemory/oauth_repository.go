@@ -185,44 +185,56 @@ func (r *OAuthRepository) UpdateOAuthClient(_ context.Context, clientID string, 
 
 	// Apply updates
 	for key, value := range updates {
-		switch key {
-		case "name":
-			if v, ok := value.(string); ok {
-				client.Name = v
-			}
-		case "description":
-			if v, ok := value.(string); ok {
-				client.Description = v
-			}
-		case "redirect_uris":
-			if v, ok := value.([]string); ok {
-				client.RedirectURIs = v
-			}
-		case "grant_types":
-			if v, ok := value.([]string); ok {
-				client.GrantTypes = v
-			}
-		case "scopes":
-			if v, ok := value.([]string); ok {
-				client.Scopes = v
-			}
-		case "website":
-			if v, ok := value.(string); ok {
-				client.Website = v
-			}
-		case "agent_username":
-			if v, ok := value.(string); ok {
-				client.AgentUsername = v
-			}
-		case "confidential":
-			if v, ok := value.(bool); ok {
-				client.Confidential = v
-			}
-		}
+		applyInMemoryOAuthClientUpdate(client, key, value)
 	}
 
 	client.UpdatedAt = time.Now()
 	return nil
+}
+
+func applyInMemoryOAuthClientUpdate(client *storage.OAuthClient, key string, value any) {
+	if client == nil {
+		return
+	}
+
+	switch key {
+	case "name":
+		if v, ok := value.(string); ok {
+			client.Name = v
+		}
+	case "description":
+		if v, ok := value.(string); ok {
+			client.Description = v
+		}
+	case "redirect_uris":
+		if v, ok := value.([]string); ok {
+			client.RedirectURIs = v
+		}
+	case "grant_types":
+		if v, ok := value.([]string); ok {
+			client.GrantTypes = v
+		}
+	case "scopes":
+		if v, ok := value.([]string); ok {
+			client.Scopes = v
+		}
+	case "website":
+		if v, ok := value.(string); ok {
+			client.Website = v
+		}
+	case "agent_username":
+		if v, ok := value.(string); ok {
+			client.AgentUsername = v
+		}
+	case "confidential":
+		if v, ok := value.(bool); ok {
+			client.Confidential = v
+		}
+	case "registration_source":
+		if v, ok := value.(string); ok {
+			client.RegistrationSource = v
+		}
+	}
 }
 
 // DeleteOAuthClient deletes an OAuth client

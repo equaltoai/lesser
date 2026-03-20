@@ -117,6 +117,13 @@ func (h *Handler) initializeAuthorizeFlow(ctx *apptheory.Context) (*authorizeFlo
 	}
 	flow.client = client
 
+	if oauthClientRequiresPKCE(client) {
+		if err := requireOAuthPKCE(req.codeChallenge, req.codeChallengeMethod); err != nil {
+			resp, respErr := h.oauthErrorLift(ctx, "invalid_request", err.Error(), req.redirectURI, req.state)
+			return nil, resp, respErr
+		}
+	}
+
 	principalUsername, resp, err := h.resolveAuthorizeUser(ctx, req)
 	if resp != nil || err != nil {
 		return nil, resp, err
@@ -1040,7 +1047,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 		return "", "", nil, err
 	}
 
-	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, code, clientID, redirectURI, codeVerifier)
+	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, client, code, clientID, redirectURI, codeVerifier)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -1120,7 +1127,7 @@ func validateAuthorizationCodeExchangeClientSecret(ctx context.Context, oauthSvc
 	return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
 }
 
-func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier string) (*storage.AuthorizationCode, error) {
+func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, code, clientID, redirectURI, codeVerifier string) (*storage.AuthorizationCode, error) {
 	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
 	if err != nil {
 		return nil, auth.ErrInvalidGrant
@@ -1131,12 +1138,33 @@ func (h *Handler) loadAndValidateAuthorizationCodeForExchange(ctx context.Contex
 	if strings.TrimSpace(authCode.RedirectURI) == "" || authCode.RedirectURI != redirectURI {
 		return nil, auth.ErrInvalidGrant
 	}
+	if oauthClientRequiresPKCE(client) && strings.TrimSpace(codeVerifier) == "" {
+		return nil, auth.ErrInvalidRequest
+	}
 	if authCode.CodeChallenge != "" || codeVerifier != "" {
 		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
 			return nil, err
 		}
 	}
 	return authCode, nil
+}
+
+func oauthClientRequiresPKCE(client *storage.OAuthClient) bool {
+	return client != nil &&
+		!client.Confidential &&
+		strings.EqualFold(strings.TrimSpace(client.RegistrationSource), oauthRegistrationSourceDynamic)
+}
+
+func requireOAuthPKCE(codeChallenge, codeChallengeMethod string) error {
+	codeChallenge = strings.TrimSpace(codeChallenge)
+	codeChallengeMethod = strings.TrimSpace(codeChallengeMethod)
+	if codeChallenge == "" {
+		return errors.New("public clients must use PKCE")
+	}
+	if !strings.EqualFold(codeChallengeMethod, "S256") {
+		return errors.New("public clients must use code_challenge_method=S256")
+	}
+	return nil
 }
 
 func authorizationCodeExchangeTokenContext(cfg *config.Config, client *storage.OAuthClient, authCode *storage.AuthorizationCode) (string, string, time.Duration, error) {

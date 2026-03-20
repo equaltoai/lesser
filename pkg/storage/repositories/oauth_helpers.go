@@ -133,7 +133,7 @@ func (h *OAuthHelper) DeleteOAuthStateGeneric(ctx context.Context, state string)
 
 // CreateOAuthClientGeneric creates an OAuth client
 func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *storage.OAuthClient) error {
-	// Generate client secret if not provided
+	// Generate client secret if not provided.
 	if err := common.ValidateRequiredParam("client.ClientSecret", client.ClientSecret); err != nil {
 		secret, err := h.generateClientSecret()
 		if err != nil {
@@ -156,20 +156,24 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 
 	// Create DynamORM model
 	model := &models.OAuthClient{
-		ClientID:      client.ClientID,
-		ClientSecret:  storedSecret,
-		Name:          client.Name,
-		Description:   client.Description,
-		RedirectURIs:  client.RedirectURIs,
-		GrantTypes:    client.GrantTypes,
-		Scopes:        client.Scopes,
-		ClientClass:   client.ClientClass,
-		AgentUsername: client.AgentUsername,
-		Website:       client.Website,
-		OwnerID:       client.OwnerID,
-		Confidential:  client.Confidential,
-		CreatedAt:     client.CreatedAt,
-		UpdatedAt:     client.UpdatedAt,
+		ClientID:           client.ClientID,
+		ClientSecret:       storedSecret,
+		Name:               client.Name,
+		Description:        client.Description,
+		Website:            client.Website,
+		ClientURI:          client.ClientURI,
+		SoftwareID:         client.SoftwareID,
+		SoftwareVersion:    client.SoftwareVersion,
+		RedirectURIs:       client.RedirectURIs,
+		GrantTypes:         client.GrantTypes,
+		Scopes:             client.Scopes,
+		ClientClass:        client.ClientClass,
+		AgentUsername:      client.AgentUsername,
+		OwnerID:            client.OwnerID,
+		RegistrationSource: client.RegistrationSource,
+		Confidential:       client.Confidential,
+		CreatedAt:          client.CreatedAt,
+		UpdatedAt:          client.UpdatedAt,
 	}
 
 	// Update keys
@@ -208,20 +212,24 @@ func (h *OAuthHelper) GetOAuthClientGeneric(ctx context.Context, clientID string
 
 	// Convert to storage model
 	return &storage.OAuthClient{
-		ClientID:         model.ClientID,
-		ClientSecretHash: model.ClientSecret,
-		Name:             model.Name,
-		Description:      model.Description,
-		RedirectURIs:     model.RedirectURIs,
-		GrantTypes:       model.GrantTypes,
-		Scopes:           model.Scopes,
-		ClientClass:      model.ClientClass,
-		AgentUsername:    model.AgentUsername,
-		Website:          model.Website,
-		OwnerID:          model.OwnerID,
-		Confidential:     model.Confidential,
-		CreatedAt:        model.CreatedAt,
-		UpdatedAt:        model.UpdatedAt,
+		ClientID:           model.ClientID,
+		ClientSecretHash:   model.ClientSecret,
+		Name:               model.Name,
+		Description:        model.Description,
+		Website:            model.Website,
+		ClientURI:          model.ClientURI,
+		SoftwareID:         model.SoftwareID,
+		SoftwareVersion:    model.SoftwareVersion,
+		RedirectURIs:       model.RedirectURIs,
+		GrantTypes:         model.GrantTypes,
+		Scopes:             model.Scopes,
+		ClientClass:        model.ClientClass,
+		AgentUsername:      model.AgentUsername,
+		OwnerID:            model.OwnerID,
+		RegistrationSource: model.RegistrationSource,
+		Confidential:       model.Confidential,
+		CreatedAt:          model.CreatedAt,
+		UpdatedAt:          model.UpdatedAt,
 	}, nil
 }
 
@@ -245,20 +253,24 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 
 	// Create updated model
 	model := &models.OAuthClient{
-		ClientID:      existing.ClientID,
-		ClientSecret:  existing.ClientSecretHash,
-		Name:          existing.Name,
-		Description:   existing.Description,
-		RedirectURIs:  existing.RedirectURIs,
-		GrantTypes:    existing.GrantTypes,
-		Scopes:        existing.Scopes,
-		ClientClass:   existing.ClientClass,
-		AgentUsername: existing.AgentUsername,
-		Website:       existing.Website,
-		OwnerID:       existing.OwnerID,
-		Confidential:  existing.Confidential,
-		CreatedAt:     existing.CreatedAt,
-		UpdatedAt:     existing.UpdatedAt,
+		ClientID:           existing.ClientID,
+		ClientSecret:       existing.ClientSecretHash,
+		Name:               existing.Name,
+		Description:        existing.Description,
+		Website:            existing.Website,
+		ClientURI:          existing.ClientURI,
+		SoftwareID:         existing.SoftwareID,
+		SoftwareVersion:    existing.SoftwareVersion,
+		RedirectURIs:       existing.RedirectURIs,
+		GrantTypes:         existing.GrantTypes,
+		Scopes:             existing.Scopes,
+		ClientClass:        existing.ClientClass,
+		AgentUsername:      existing.AgentUsername,
+		OwnerID:            existing.OwnerID,
+		RegistrationSource: existing.RegistrationSource,
+		Confidential:       existing.Confidential,
+		CreatedAt:          existing.CreatedAt,
+		UpdatedAt:          existing.UpdatedAt,
 	}
 
 	// Update keys
@@ -362,20 +374,24 @@ func (h *OAuthHelper) ListOAuthClientsGeneric(ctx context.Context, ownerID strin
 	clients := make([]*storage.OAuthClient, len(models))
 	for i, model := range models {
 		clients[i] = &storage.OAuthClient{
-			ClientID:         model.ClientID,
-			ClientSecretHash: model.ClientSecret,
-			Name:             model.Name,
-			Description:      model.Description,
-			RedirectURIs:     model.RedirectURIs,
-			GrantTypes:       model.GrantTypes,
-			Scopes:           model.Scopes,
-			ClientClass:      model.ClientClass,
-			AgentUsername:    model.AgentUsername,
-			Website:          model.Website,
-			OwnerID:          model.OwnerID,
-			Confidential:     model.Confidential,
-			CreatedAt:        model.CreatedAt,
-			UpdatedAt:        model.UpdatedAt,
+			ClientID:           model.ClientID,
+			ClientSecretHash:   model.ClientSecret,
+			Name:               model.Name,
+			Description:        model.Description,
+			Website:            model.Website,
+			ClientURI:          model.ClientURI,
+			SoftwareID:         model.SoftwareID,
+			SoftwareVersion:    model.SoftwareVersion,
+			RedirectURIs:       model.RedirectURIs,
+			GrantTypes:         model.GrantTypes,
+			Scopes:             model.Scopes,
+			ClientClass:        model.ClientClass,
+			AgentUsername:      model.AgentUsername,
+			OwnerID:            model.OwnerID,
+			RegistrationSource: model.RegistrationSource,
+			Confidential:       model.Confidential,
+			CreatedAt:          model.CreatedAt,
+			UpdatedAt:          model.UpdatedAt,
 		}
 	}
 

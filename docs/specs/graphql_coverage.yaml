@@ -1656,6 +1656,10 @@ routes:
       policy: rest_only
       exemptedBy: oauth_oidc
     - method: POST
+      path: /oauth/register
+      policy: rest_only
+      exemptedBy: oauth_oidc
+    - method: POST
       path: /oauth/revoke
       policy: rest_only
       exemptedBy: oauth_oidc

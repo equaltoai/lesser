@@ -46,6 +46,11 @@ func TestAccountRepository_ListOAuthClients_FirstPage(t *testing.T) {
 	require.Len(t, clients, limit)
 	assert.Equal(t, "client-newest", clients[0].ClientID)
 	assert.Equal(t, "client-mid", clients[1].ClientID)
+	assert.Equal(t, "https://client-newest.example/app", clients[0].ClientURI)
+	assert.Equal(t, "software-client-newest", clients[0].SoftwareID)
+	assert.Equal(t, "dynamic", clients[0].RegistrationSource)
+	assert.True(t, clients[0].Confidential)
+	assert.Equal(t, []string{"authorization_code", "refresh_token"}, clients[0].GrantTypes)
 	assert.NotEmpty(t, nextCursor)
 
 	pk, sk, err := Utils.Pagination.DecodeCursor(nextCursor)
@@ -150,9 +155,15 @@ func buildOAuthClientModel(t *testing.T, clientID string, createdAt time.Time) *
 	t.Helper()
 
 	model := &models.OAuthClient{
-		ClientID:  clientID,
-		Name:      strings.ToUpper(clientID),
-		CreatedAt: createdAt,
+		ClientID:           clientID,
+		Name:               strings.ToUpper(clientID),
+		ClientURI:          "https://" + clientID + ".example/app",
+		SoftwareID:         "software-" + clientID,
+		SoftwareVersion:    "1.0.0",
+		GrantTypes:         []string{"authorization_code", "refresh_token"},
+		RegistrationSource: "dynamic",
+		Confidential:       true,
+		CreatedAt:          createdAt,
 	}
 	require.NoError(t, model.BeforeCreate())
 	return model

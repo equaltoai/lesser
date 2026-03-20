@@ -14,6 +14,7 @@ func (h *Handler) HandleOAuthAuthorizationServerMetadataLift(_ *apptheory.Contex
 	metadata := map[string]any{
 		"issuer":                                baseURL,
 		"authorization_endpoint":                baseURL + "/oauth/authorize",
+		"registration_endpoint":                 baseURL + "/oauth/register",
 		"token_endpoint":                        baseURL + "/oauth/token",
 		"revocation_endpoint":                   baseURL + "/oauth/revoke",
 		"response_types_supported":              []string{"code"},
