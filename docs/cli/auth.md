@@ -6,6 +6,8 @@ the user approves (prefers an SSE completion stream when available; falls back t
 
 For the broader agent-auth positioning of `authorization_code` vs `device_code` vs `client_credentials`, see
 [docs/device-code-agent-auth.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/device-code-agent-auth.md).
+For the exact status/body/action rules Lesser now guarantees on auth failures, see
+[docs/architecture/auth/auth-error-contract.md](/home/aron/ai-workspace/codebases/equaltoai/lesser/docs/architecture/auth/auth-error-contract.md).
 
 ## Quickstart
 
