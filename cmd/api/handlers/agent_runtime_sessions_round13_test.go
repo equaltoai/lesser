@@ -439,6 +439,34 @@ func TestRuntimeRefreshAccessTTL_IgnoresZeroBounds(t *testing.T) {
 	})
 }
 
+func TestRuntimeRefreshAccessTTL_FallsBackWhenStoredTTLIsNonPositive(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+
+	t.Run("zero stored ttl uses config default", func(t *testing.T) {
+		token := &storagetypes.RefreshToken{
+			AccessTTLSeconds:  0,
+			IdleExpiresAt:     now.Add(90 * time.Minute),
+			AbsoluteExpiresAt: now.Add(2 * time.Hour),
+		}
+
+		ttl := runtimeRefreshAccessTTL(cfg, token)
+		require.Equal(t, auth.AgentAccessTokenTTL(cfg), ttl)
+	})
+
+	t.Run("negative stored ttl still respects nearer runtime bound", func(t *testing.T) {
+		token := &storagetypes.RefreshToken{
+			AccessTTLSeconds:  -1,
+			IdleExpiresAt:     now.Add(20 * time.Minute),
+			AbsoluteExpiresAt: now.Add(45 * time.Minute),
+		}
+
+		ttl := runtimeRefreshAccessTTL(cfg, token)
+		require.Greater(t, ttl, 0*time.Second)
+		require.LessOrEqual(t, ttl, 20*time.Minute)
+	})
+}
+
 func TestNoteAgentRuntimeRefreshFailure_NoOpBranches(t *testing.T) {
 	cfg := round10TestConfig()
 	now := time.Now().UTC()
@@ -458,4 +486,63 @@ func TestNoteAgentRuntimeRefreshFailure_NoOpBranches(t *testing.T) {
 	updated := state.refreshTokensByToken[token.Token]
 	require.Empty(t, updated.LastAuthFailureCode)
 	require.True(t, updated.LastAuthFailureAt.IsZero())
+}
+
+func TestOAuthRuntimeRefreshGrant_UpdateFailureReturnsRawError(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	token := buildRuntimeRefreshToken(t, "rt-agent-update-fail", "agent1", delegatedAgentClientID, "sid-agent-update-fail", "family-agent-update-fail", "local-agent", 1, true, false, now)
+	state := &round10QueryState{
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			token.Token: token,
+		},
+		updateErrorOnce: errors.New("update failed"),
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
+
+	accessToken, newRefreshToken, scopes, err := h.exchangeAgentRuntimeRefreshToken(context.Background(), oauthSvc, token.Token, delegatedAgentClientID, "", "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Failed to update refresh token")
+	require.Empty(t, accessToken)
+	require.Empty(t, newRefreshToken)
+	require.Nil(t, scopes)
+
+	updated := state.refreshTokensByToken[token.Token]
+	require.False(t, updated.Revoked)
+	require.Empty(t, updated.RevokedReason)
+	require.Empty(t, updated.LastAuthFailureCode)
+}
+
+func TestOAuthRuntimeRefreshGrant_CreateFailureRevokesFamilyAndPersistsDiagnostic(t *testing.T) {
+	cfg := round10TestConfig()
+	now := time.Now().UTC()
+	token := buildRuntimeRefreshToken(t, "rt-agent-create-fail", "agent1", delegatedAgentClientID, "sid-agent-create-fail", "family-agent-create-fail", "local-agent", 1, true, false, now)
+	state := &round10QueryState{
+		refreshTokensByToken: map[string]storagemodels.RefreshToken{
+			token.Token: token,
+		},
+		createErrorOnce: errors.New("create failed"),
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	h.repos.Account().SetEncryptor(noopEncryptor{})
+	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, nil)
+
+	accessToken, newRefreshToken, scopes, err := h.exchangeAgentRuntimeRefreshToken(context.Background(), oauthSvc, token.Token, delegatedAgentClientID, "198.51.100.10", "agent/1.0")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Failed to create refresh token")
+	require.Empty(t, accessToken)
+	require.Empty(t, newRefreshToken)
+	require.Nil(t, scopes)
+
+	updated := state.refreshTokensByToken[token.Token]
+	require.True(t, updated.Revoked)
+	require.Equal(t, "rotated", updated.RevokedReason)
+	require.Equal(t, "server_error", updated.LastAuthFailureCode)
+	require.Equal(t, "Runtime session rotation failed", updated.LastAuthFailureMsg)
+	require.False(t, updated.LastAuthFailureAt.IsZero())
+	require.False(t, updated.ReuseDetectedAt.IsZero())
 }
