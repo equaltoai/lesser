@@ -665,6 +665,12 @@ func (h *OAuthHelper) UpdateRefreshTokenGeneric(ctx context.Context, token *stor
 
 	if err := h.db.WithContext(ctx).Model(model).Update(); err != nil {
 		h.logger.Error("failed to update refresh token", zap.Error(err))
+		lowerErr := strings.ToLower(err.Error())
+		if errors.IsConditionFailed(err) ||
+			strings.Contains(lowerErr, "conditionalcheckfailed") ||
+			strings.Contains(lowerErr, "conditional check failed") {
+			return ErrorHandler.HandleUpdateError(stdErrors.Join(err, errors.ErrConditionFailed), EntityRefreshToken, "token")
+		}
 		return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, "token")
 	}
 
@@ -769,6 +775,10 @@ func refreshTokenModelFromStorage(token *storage.RefreshToken) *models.RefreshTo
 		ReuseDetectedAt:     token.ReuseDetectedAt,
 		ReuseDetectedFromIP: token.ReuseDetectedFromIP,
 		ReuseDetectedFromUA: token.ReuseDetectedFromUA,
+		LastAuthFailureCode: token.LastAuthFailureCode,
+		LastAuthFailureAt:   token.LastAuthFailureAt,
+		LastAuthFailureMsg:  token.LastAuthFailureMsg,
+		LastAuthSuccessAt:   token.LastAuthSuccessAt,
 		CreatedAt:           token.CreatedAt,
 		Version:             token.Version,
 	}
@@ -802,6 +812,10 @@ func refreshTokenStorageFromModel(model models.RefreshToken) *storage.RefreshTok
 		ReuseDetectedAt:     model.ReuseDetectedAt,
 		ReuseDetectedFromIP: model.ReuseDetectedFromIP,
 		ReuseDetectedFromUA: model.ReuseDetectedFromUA,
+		LastAuthFailureCode: model.LastAuthFailureCode,
+		LastAuthFailureAt:   model.LastAuthFailureAt,
+		LastAuthFailureMsg:  model.LastAuthFailureMsg,
+		LastAuthSuccessAt:   model.LastAuthSuccessAt,
 		CreatedAt:           model.CreatedAt,
 		Version:             model.Version,
 	}

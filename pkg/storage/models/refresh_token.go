@@ -48,6 +48,10 @@ type RefreshToken struct {
 	ReuseDetectedAt     time.Time `theorydb:"attr:reuseDetectedAt,omitempty" json:"ReuseDetectedAt,omitempty"`
 	ReuseDetectedFromIP string    `theorydb:"attr:reuseDetectedFromIP,omitempty" json:"ReuseDetectedFromIP,omitempty"`
 	ReuseDetectedFromUA string    `theorydb:"attr:reuseDetectedFromUA,omitempty" json:"ReuseDetectedFromUA,omitempty"`
+	LastAuthFailureCode string    `theorydb:"attr:lastAuthFailureCode,omitempty" json:"LastAuthFailureCode,omitempty"`
+	LastAuthFailureAt   time.Time `theorydb:"attr:lastAuthFailureAt,omitempty" json:"LastAuthFailureAt,omitempty"`
+	LastAuthFailureMsg  string    `theorydb:"attr:lastAuthFailureMsg,omitempty" json:"LastAuthFailureMsg,omitempty"`
+	LastAuthSuccessAt   time.Time `theorydb:"attr:lastAuthSuccessAt,omitempty" json:"LastAuthSuccessAt,omitempty"`
 
 	// Tracking fields
 	CreatedAt time.Time `theorydb:"attr:createdAt" json:"CreatedAt"`

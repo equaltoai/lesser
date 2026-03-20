@@ -4288,6 +4288,22 @@ type AgentRuntimeSession {
   revoked: Boolean!
   revokedAt: Time
   revokedReason: String
+  authDiagnostic: AgentRuntimeSessionAuthDiagnostic!
+}
+
+enum AgentRuntimeSessionAuthStatus {
+  HEALTHY
+  FAILED
+  EXPIRED
+  REVOKED
+}
+
+type AgentRuntimeSessionAuthDiagnostic {
+  status: AgentRuntimeSessionAuthStatus!
+  failureCode: String
+  failureMessage: String
+  failureAt: Time
+  lastSuccessAt: Time
 }
 
 input AgentAccessLeaseChallengeInput {

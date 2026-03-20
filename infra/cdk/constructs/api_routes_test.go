@@ -216,16 +216,21 @@ func TestBodyEnabledAddsMcpRoute(t *testing.T) {
 		}
 	}
 
-	uri, ok := gotRoutes["GET /.well-known/mcp.json"]
-	if !ok {
-		t.Fatalf("expected GET /.well-known/mcp.json route to exist when bodyEnabled=true")
-	}
-	if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
-		uriJSON, err := json.Marshal(uri)
-		if err != nil {
-			t.Fatalf("marshal integration uri: %v", err)
+	for _, routeKey := range []string{
+		"GET /.well-known/mcp.json",
+		"GET /.well-known/oauth-protected-resource",
+	} {
+		uri, ok := gotRoutes[routeKey]
+		if !ok {
+			t.Fatalf("expected %s route to exist when bodyEnabled=true", routeKey)
 		}
-		t.Fatalf("expected GET /.well-known/mcp.json integration to reference SSM param %q (got %s)", wantParamName, string(uriJSON))
+		if !integrationURIReferencesSSMParameterDefault(t, tpl, uri, wantParamName) {
+			uriJSON, err := json.Marshal(uri)
+			if err != nil {
+				t.Fatalf("marshal integration uri: %v", err)
+			}
+			t.Fatalf("expected %s integration to reference SSM param %q (got %s)", routeKey, wantParamName, string(uriJSON))
+		}
 	}
 
 	optionsProps, ok := findMethodPropertiesByRouteKey(t, tpl, "OPTIONS /mcp")
@@ -305,8 +310,13 @@ func TestBodyDisabledDoesNotAddMcpRoute(t *testing.T) {
 	if _, ok := gotRoutes["DELETE /mcp"]; ok {
 		t.Fatalf("unexpected DELETE /mcp route present when bodyEnabled=false")
 	}
-	if _, ok := gotRoutes["GET /.well-known/mcp.json"]; ok {
-		t.Fatalf("unexpected GET /.well-known/mcp.json route present when bodyEnabled=false")
+	for _, routeKey := range []string{
+		"GET /.well-known/mcp.json",
+		"GET /.well-known/oauth-protected-resource",
+	} {
+		if _, ok := gotRoutes[routeKey]; ok {
+			t.Fatalf("unexpected %s route present when bodyEnabled=false", routeKey)
+		}
 	}
 	if _, ok := gotRoutes["OPTIONS /mcp"]; ok {
 		t.Fatalf("unexpected OPTIONS /mcp route present when bodyEnabled=false")

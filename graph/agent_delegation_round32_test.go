@@ -421,44 +421,52 @@ func TestRevokeAgentToken_UsesRuntimeSessionRevocationSemantics(t *testing.T) {
 	state := newDelegationGraphState("agent1", []string{"read"})
 
 	parent := &storageModels.RefreshToken{
-		Token:             "rt-parent",
-		ClientID:          delegatedAgentClientID,
-		Username:          "agent1",
-		Scopes:            []string{auth.ScopeRead},
-		CreatedAt:         now.Add(-2 * time.Hour),
-		ExpiresAt:         now.Add(24 * time.Hour),
-		ClientClass:       auth.ClientClassAgent,
-		SessionID:         "sid-runtime-1",
-		FamilyID:          "family-runtime-1",
-		Generation:        1,
-		Current:           false,
-		DeviceLabel:       "sim-runtime",
-		LastUsedAt:        now.Add(-time.Hour),
-		IdleExpiresAt:     now.Add(24 * time.Hour),
-		AbsoluteExpiresAt: now.Add(7 * 24 * time.Hour),
-		SessionCreatedAt:  now.Add(-48 * time.Hour),
-		AccessTTLSeconds:  1800,
+		Token:               "rt-parent",
+		ClientID:            delegatedAgentClientID,
+		Username:            "agent1",
+		Scopes:              []string{auth.ScopeRead},
+		CreatedAt:           now.Add(-2 * time.Hour),
+		ExpiresAt:           now.Add(24 * time.Hour),
+		ClientClass:         auth.ClientClassAgent,
+		SessionID:           "sid-runtime-1",
+		FamilyID:            "family-runtime-1",
+		Generation:          1,
+		Current:             false,
+		DeviceLabel:         "sim-runtime",
+		LastUsedAt:          now.Add(-time.Hour),
+		IdleExpiresAt:       now.Add(24 * time.Hour),
+		AbsoluteExpiresAt:   now.Add(7 * 24 * time.Hour),
+		SessionCreatedAt:    now.Add(-48 * time.Hour),
+		AccessTTLSeconds:    1800,
+		LastAuthSuccessAt:   now.Add(-45 * time.Minute),
+		LastAuthFailureCode: "invalid_client",
+		LastAuthFailureMsg:  "Invalid client credentials",
+		LastAuthFailureAt:   now.Add(-10 * time.Minute),
 	}
 	require.NoError(t, parent.BeforeCreate())
 
 	current := &storageModels.RefreshToken{
-		Token:             "rt-current",
-		ClientID:          delegatedAgentClientID,
-		Username:          "agent1",
-		Scopes:            []string{auth.ScopeRead},
-		CreatedAt:         now.Add(-30 * time.Minute),
-		ExpiresAt:         now.Add(24 * time.Hour),
-		ClientClass:       auth.ClientClassAgent,
-		SessionID:         "sid-runtime-1",
-		FamilyID:          "family-runtime-1",
-		Generation:        2,
-		Current:           true,
-		DeviceLabel:       "sim-runtime",
-		LastUsedAt:        now.Add(-5 * time.Minute),
-		IdleExpiresAt:     now.Add(24 * time.Hour),
-		AbsoluteExpiresAt: now.Add(7 * 24 * time.Hour),
-		SessionCreatedAt:  now.Add(-48 * time.Hour),
-		AccessTTLSeconds:  1800,
+		Token:               "rt-current",
+		ClientID:            delegatedAgentClientID,
+		Username:            "agent1",
+		Scopes:              []string{auth.ScopeRead},
+		CreatedAt:           now.Add(-30 * time.Minute),
+		ExpiresAt:           now.Add(24 * time.Hour),
+		ClientClass:         auth.ClientClassAgent,
+		SessionID:           "sid-runtime-1",
+		FamilyID:            "family-runtime-1",
+		Generation:          2,
+		Current:             true,
+		DeviceLabel:         "sim-runtime",
+		LastUsedAt:          now.Add(-5 * time.Minute),
+		IdleExpiresAt:       now.Add(24 * time.Hour),
+		AbsoluteExpiresAt:   now.Add(7 * 24 * time.Hour),
+		SessionCreatedAt:    now.Add(-48 * time.Hour),
+		AccessTTLSeconds:    1800,
+		LastAuthSuccessAt:   now.Add(-45 * time.Minute),
+		LastAuthFailureCode: "invalid_client",
+		LastAuthFailureMsg:  "Invalid client credentials",
+		LastAuthFailureAt:   now.Add(-10 * time.Minute),
 	}
 	require.NoError(t, current.BeforeCreate())
 
@@ -487,23 +495,27 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 	state := newDelegationGraphState("agent1", []string{"read"})
 
 	current := &storageModels.RefreshToken{
-		Token:             "rt-current",
-		ClientID:          delegatedAgentClientID,
-		Username:          "agent1",
-		Scopes:            []string{auth.ScopeRead, "write:statuses"},
-		CreatedAt:         now.Add(-30 * time.Minute),
-		ExpiresAt:         now.Add(24 * time.Hour),
-		ClientClass:       auth.ClientClassAgent,
-		SessionID:         "sid-runtime-1",
-		FamilyID:          "family-runtime-1",
-		Generation:        2,
-		Current:           true,
-		DeviceLabel:       "sim-runtime",
-		LastUsedAt:        now.Add(-5 * time.Minute),
-		IdleExpiresAt:     now.Add(24 * time.Hour),
-		AbsoluteExpiresAt: now.Add(7 * 24 * time.Hour),
-		SessionCreatedAt:  now.Add(-48 * time.Hour),
-		AccessTTLSeconds:  1800,
+		Token:               "rt-current",
+		ClientID:            delegatedAgentClientID,
+		Username:            "agent1",
+		Scopes:              []string{auth.ScopeRead, "write:statuses"},
+		CreatedAt:           now.Add(-30 * time.Minute),
+		ExpiresAt:           now.Add(24 * time.Hour),
+		ClientClass:         auth.ClientClassAgent,
+		SessionID:           "sid-runtime-1",
+		FamilyID:            "family-runtime-1",
+		Generation:          2,
+		Current:             true,
+		DeviceLabel:         "sim-runtime",
+		LastUsedAt:          now.Add(-5 * time.Minute),
+		IdleExpiresAt:       now.Add(24 * time.Hour),
+		AbsoluteExpiresAt:   now.Add(7 * 24 * time.Hour),
+		SessionCreatedAt:    now.Add(-48 * time.Hour),
+		AccessTTLSeconds:    1800,
+		LastAuthSuccessAt:   now.Add(-45 * time.Minute),
+		LastAuthFailureCode: "invalid_client",
+		LastAuthFailureMsg:  "Invalid client credentials",
+		LastAuthFailureAt:   now.Add(-10 * time.Minute),
 	}
 	require.NoError(t, current.BeforeCreate())
 
@@ -520,6 +532,11 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 	require.Equal(t, "sid-runtime-1", sessions[0].SessionID)
 	require.Equal(t, "sim-runtime", sessions[0].DeviceLabel)
 	require.Equal(t, "read write:statuses", sessions[0].Scope)
+	require.NotNil(t, sessions[0].AuthDiagnostic)
+	require.Equal(t, model.AgentRuntimeSessionAuthStatusFailed, sessions[0].AuthDiagnostic.Status)
+	require.Equal(t, "invalid_client", derefString(sessions[0].AuthDiagnostic.FailureCode))
+	require.Equal(t, "Invalid client credentials", derefString(sessions[0].AuthDiagnostic.FailureMessage))
+	require.NotNil(t, sessions[0].AuthDiagnostic.LastSuccessAt)
 
 	reason := "operator_retired_runtime"
 	revoked, err := resolver.Mutation().RevokeAgentRuntimeSession(ctx, "agent1", "sid-runtime-1", &reason)
@@ -527,6 +544,8 @@ func TestAgentRuntimeSessions_ListAndRevoke(t *testing.T) {
 	require.NotNil(t, revoked)
 	require.True(t, revoked.Revoked)
 	require.Equal(t, "operator_retired_runtime", derefString(revoked.RevokedReason))
+	require.NotNil(t, revoked.AuthDiagnostic)
+	require.Equal(t, model.AgentRuntimeSessionAuthStatusRevoked, revoked.AuthDiagnostic.Status)
 
 	require.True(t, state.refreshTokens["rt-current"].Revoked)
 	require.Equal(t, "operator_retired_runtime", state.refreshTokens["rt-current"].RevokedReason)

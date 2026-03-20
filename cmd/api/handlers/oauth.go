@@ -1185,14 +1185,15 @@ func authorizationCodeExchangeTokenContext(cfg *config.Config, client *storage.O
 
 func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID string, client *storage.OAuthClient, authCode *storage.AuthorizationCode, clientClass, sessionID string, accessTTL time.Duration) *storage.RefreshToken {
 	oauthRefreshToken := &storage.RefreshToken{
-		Token:       refreshToken,
-		Username:    authCode.Username,
-		ClientID:    clientID,
-		Scopes:      authCode.Scopes,
-		CreatedAt:   now,
-		ExpiresAt:   now.Add(auth.RefreshTokenDuration),
-		ClientClass: clientClass,
-		SessionID:   sessionID,
+		Token:             refreshToken,
+		Username:          authCode.Username,
+		ClientID:          clientID,
+		Scopes:            authCode.Scopes,
+		CreatedAt:         now,
+		ExpiresAt:         now.Add(auth.RefreshTokenDuration),
+		ClientClass:       clientClass,
+		SessionID:         sessionID,
+		LastAuthSuccessAt: now,
 	}
 	if clientClass != auth.ClientClassAgent {
 		return oauthRefreshToken
@@ -1217,6 +1218,41 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 	return oauthRefreshToken
 }
 
+func isAgentOAuthClient(client *storage.OAuthClient) bool {
+	return client != nil && strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent)
+}
+
+func (h *Handler) validateRefreshGrantClient(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (*storage.OAuthClient, error) {
+	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
+	if err != nil || client == nil {
+		h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "invalid_client", "Invalid client credentials")
+		return nil, auth.ErrInvalidClient
+	}
+	if !oauthClientSupportsGrantType(client, oauthGrantTypeRefreshToken) {
+		if isAgentOAuthClient(client) {
+			h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "unauthorized_client", "refresh_token is not allowed for this client")
+		}
+		return nil, auth.ErrUnauthorizedClient
+	}
+	if err := validateRefreshGrantClientSecret(ctx, oauthSvc, client, clientID, clientSecret); err != nil {
+		if isAgentOAuthClient(client) {
+			h.noteAgentRuntimeRefreshFailure(ctx, refreshToken, clientID, "invalid_client", "Invalid client credentials")
+		}
+		return nil, err
+	}
+	return client, nil
+}
+
+func validateRefreshGrantClientSecret(ctx context.Context, oauthSvc *auth.OAuthService, client *storage.OAuthClient, clientID, clientSecret string) error {
+	if client.Confidential && clientSecret == "" {
+		return auth.ErrInvalidClient
+	}
+	if clientSecret == "" {
+		return nil
+	}
+	return oauthSvc.ValidateClient(ctx, clientID, clientSecret)
+}
+
 // exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
 func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret, ipAddress, userAgent string) (string, string, []string, error) {
 	refreshToken = strings.TrimSpace(refreshToken)
@@ -1227,26 +1263,11 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 
-	client, err := h.repos.Account().GetOAuthClient(ctx, clientID)
-	if err != nil || client == nil {
-		return "", "", nil, auth.ErrInvalidClient
+	client, err := h.validateRefreshGrantClient(ctx, oauthSvc, refreshToken, clientID, clientSecret)
+	if err != nil {
+		return "", "", nil, err
 	}
-	if !oauthClientSupportsGrantType(client, oauthGrantTypeRefreshToken) {
-		return "", "", nil, auth.ErrUnauthorizedClient
-	}
-
-	// Enforce confidential client authentication.
-	if client.Confidential && clientSecret == "" {
-		return "", "", nil, auth.ErrInvalidClient
-	}
-
-	// Validate client credentials if provided (or required).
-	if clientSecret != "" {
-		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
-			return "", "", nil, err
-		}
-	}
-	if strings.EqualFold(strings.TrimSpace(client.ClientClass), auth.ClientClassAgent) {
+	if isAgentOAuthClient(client) {
 		return h.exchangeAgentRuntimeRefreshToken(ctx, oauthSvc, refreshToken, clientID, ipAddress, userAgent)
 	}
 
@@ -1297,14 +1318,18 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 
 	// Create new refresh token record
 	newOAuthRefreshToken := &storage.RefreshToken{
-		Token:       newRefreshToken,
-		Username:    storedToken.Username,
-		ClientID:    clientID,
-		Scopes:      storedToken.Scopes,
-		CreatedAt:   time.Now(),
-		ExpiresAt:   refreshExpiry,
-		ClientClass: storedToken.ClientClass,
-		SessionID:   storedToken.SessionID,
+		Token:               newRefreshToken,
+		Username:            storedToken.Username,
+		ClientID:            clientID,
+		Scopes:              storedToken.Scopes,
+		CreatedAt:           time.Now(),
+		ExpiresAt:           refreshExpiry,
+		ClientClass:         storedToken.ClientClass,
+		SessionID:           storedToken.SessionID,
+		LastAuthFailureCode: storedToken.LastAuthFailureCode,
+		LastAuthFailureAt:   storedToken.LastAuthFailureAt,
+		LastAuthFailureMsg:  storedToken.LastAuthFailureMsg,
+		LastAuthSuccessAt:   time.Now().UTC(),
 	}
 
 	// Store new refresh token

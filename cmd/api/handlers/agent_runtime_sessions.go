@@ -12,6 +12,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagerepos "github.com/equaltoai/lesser/pkg/storage/repositories"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -82,6 +83,25 @@ func nextRuntimeIdleExpiry(now, absoluteExpiry time.Time) time.Time {
 	return idleExpiry
 }
 
+func (h *Handler) noteAgentRuntimeRefreshFailure(ctx context.Context, refreshToken, clientID, failureCode, failureMessage string) {
+	refreshToken = strings.TrimSpace(refreshToken)
+	clientID = strings.TrimSpace(clientID)
+	if refreshToken == "" || clientID == "" {
+		return
+	}
+
+	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
+	if err != nil || storedToken == nil {
+		return
+	}
+	if storedToken.ClientID != clientID || !strings.EqualFold(strings.TrimSpace(storedToken.ClientClass), auth.ClientClassAgent) {
+		return
+	}
+	if err := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, failureCode, failureMessage, time.Now().UTC()); err != nil {
+		h.logger.Warn("failed to persist runtime auth failure diagnostic", zap.Error(err))
+	}
+}
+
 func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, ipAddress, userAgent string) (string, string, []string, error) {
 	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
 	if err != nil {
@@ -96,10 +116,16 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		if err := auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "refresh_token_reuse_detected", ipAddress, userAgent); err != nil {
 			h.logger.Warn("failed to revoke runtime session family after refresh reuse", zap.Error(err))
 		}
+		if err := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, "invalid_grant", "Refresh token reuse detected; runtime session revoked", now); err != nil {
+			h.logger.Warn("failed to persist runtime reuse diagnostic", zap.Error(err))
+		}
 		return "", "", nil, auth.ErrInvalidToken
 	}
 	if runtimeExpiryExceeded(now, storedToken.IdleExpiresAt) || runtimeExpiryExceeded(now, storedToken.AbsoluteExpiresAt) {
 		_ = auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "runtime_session_expired", ipAddress, userAgent)
+		if err := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, "invalid_grant", "Runtime session expired", now); err != nil {
+			h.logger.Warn("failed to persist runtime expiry diagnostic", zap.Error(err))
+		}
 		return "", "", nil, auth.ErrInvalidToken
 	}
 
@@ -124,9 +150,12 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 	storedToken.RevokedReason = "rotated"
 	storedToken.LastUsedAt = now
 	if err := h.repos.Account().UpdateRefreshToken(ctx, storedToken); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "condition") {
+		if storagerepos.ErrorHandler.IsConditionalCheckFailed(err) || strings.Contains(strings.ToLower(err.Error()), "condition") {
 			if revokeErr := auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "refresh_token_reuse_detected", ipAddress, userAgent); revokeErr != nil {
 				h.logger.Warn("failed to revoke runtime session family after concurrent refresh", zap.Error(revokeErr))
+			}
+			if diagErr := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, "invalid_grant", "Concurrent refresh detected; runtime session revoked", now); diagErr != nil {
+				h.logger.Warn("failed to persist runtime concurrent refresh diagnostic", zap.Error(diagErr))
 			}
 			return "", "", nil, auth.ErrInvalidToken
 		}
@@ -134,26 +163,33 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 	}
 
 	newToken := &storage.RefreshToken{
-		Token:             newRefreshToken,
-		Username:          storedToken.Username,
-		ClientID:          clientID,
-		Scopes:            storedToken.Scopes,
-		CreatedAt:         now,
-		ExpiresAt:         nextRuntimeIdleExpiry(now, storedToken.AbsoluteExpiresAt),
-		ClientClass:       auth.ClientClassAgent,
-		SessionID:         storedToken.SessionID,
-		FamilyID:          storedToken.FamilyID,
-		Generation:        storedToken.Generation + 1,
-		Current:           true,
-		DeviceLabel:       storedToken.DeviceLabel,
-		LastUsedAt:        now,
-		IdleExpiresAt:     nextRuntimeIdleExpiry(now, storedToken.AbsoluteExpiresAt),
-		AbsoluteExpiresAt: storedToken.AbsoluteExpiresAt,
-		SessionCreatedAt:  storedToken.SessionCreatedAt,
-		AccessTTLSeconds:  storedToken.AccessTTLSeconds,
+		Token:               newRefreshToken,
+		Username:            storedToken.Username,
+		ClientID:            clientID,
+		Scopes:              storedToken.Scopes,
+		CreatedAt:           now,
+		ExpiresAt:           nextRuntimeIdleExpiry(now, storedToken.AbsoluteExpiresAt),
+		ClientClass:         auth.ClientClassAgent,
+		SessionID:           storedToken.SessionID,
+		FamilyID:            storedToken.FamilyID,
+		Generation:          storedToken.Generation + 1,
+		Current:             true,
+		DeviceLabel:         storedToken.DeviceLabel,
+		LastUsedAt:          now,
+		IdleExpiresAt:       nextRuntimeIdleExpiry(now, storedToken.AbsoluteExpiresAt),
+		AbsoluteExpiresAt:   storedToken.AbsoluteExpiresAt,
+		SessionCreatedAt:    storedToken.SessionCreatedAt,
+		AccessTTLSeconds:    storedToken.AccessTTLSeconds,
+		LastAuthFailureCode: storedToken.LastAuthFailureCode,
+		LastAuthFailureAt:   storedToken.LastAuthFailureAt,
+		LastAuthFailureMsg:  storedToken.LastAuthFailureMsg,
+		LastAuthSuccessAt:   now,
 	}
 	if err := h.repos.Account().CreateRefreshToken(ctx, newToken); err != nil {
 		_ = auth.RevokeAgentRuntimeFamily(ctx, h.repos, storedToken, "runtime_session_rotation_failed", ipAddress, userAgent)
+		if diagErr := auth.RecordAgentRuntimeAuthFailure(ctx, h.repos, storedToken, "server_error", "Runtime session rotation failed", now); diagErr != nil {
+			h.logger.Warn("failed to persist runtime rotation diagnostic", zap.Error(diagErr))
+		}
 		return "", "", nil, err
 	}
 
