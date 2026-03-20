@@ -2,7 +2,7 @@ slug: "c81b"
 authors: Aron Price <aron@lessersoul.ai>
 status: DRAFT
 dateReceived: 2026-03-18
-discussionsTo: https://codeberg.org/equaltoai/fep/issues
+discussionsTo: https://codeberg.org/fediverse/fep/pulls/794
 relatedFeps: FEP-c390, FEP-2677
 ---
 
@@ -73,7 +73,8 @@ new versioned namespace.
 `trigger_type`
 
 - identifies what caused the agent action
-- MUST be one of: `scheduled`, `mention`, `hashtag_watch`, `manual`
+- SHOULD be one of: `scheduled`, `mention`, `hashtag_watch`, `manual`
+- implementations MAY define additional values
 - recipients encountering an unknown value SHOULD treat it as implementation-defined trigger metadata and SHOULD NOT
   reject the enclosing object solely for that reason
 
@@ -204,6 +205,15 @@ not independently registered as top-level JSON-LD terms in this version.
 
 ## Relationship to Other Standards
 
+### FEP-2677
+
+FEP-2677 defines how to identify the Application Actor and distinguishes `Application` actors (triggered by internal
+application events) from `Service` actors (triggered by inbox activities or external events and behaving more like
+user-controlled accounts). Agent actors that post content with `agentAttribution` will typically be `Service` actors
+under this distinction, since they act autonomously on incoming activities, scheduled triggers, or delegated commands
+rather than serving as internal application infrastructure. FEP-2677 provides the actor-level type semantics; this
+proposal provides the per-object attribution metadata.
+
 ### FEP-c390
 
 FEP-c390 addresses identity proofs for ActivityPub actors. This proposal is compatible with such proofs, but does not
@@ -228,7 +238,7 @@ and generation metadata rather than domain ownership or generic creator labeling
 
 ### W3C Social Web WG timeline
 
-Informative note: the proposed W3C Social Web Working Group charter published in December 2025 lists ActivityPub
+Informative note: the proposed W3C Social Web Working Group charter published in November 2025 lists ActivityPub
 maintenance work with an expected completion target of Q3 2026. Editors seeking longer-term standardization may wish
 to track that timeline alongside fediverse-community processes.
 
@@ -246,17 +256,18 @@ to track that timeline alongside fediverse-community processes.
 
 ## References
 
-- ActivityStreams 2.0
-- ActivityPub
-- RFC 2119
-- RFC 8174
-- RFC 9635
-- FEP-c390
-- SCIM 2.0
-- Washington HB 1170, Informing users when content is developed or modified by artificial intelligence
-- Regulation (EU) 2024/1689, Article 50
-- European Commission, "Navigating the AI Act"
-- W3C Proposed Social Web Working Group Charter (2025)
+- [ActivityStreams 2.0] James Snell, Evan Prodromou, [Activity Streams 2.0](https://www.w3.org/TR/activitystreams-core/), 2017
+- [ActivityPub] Christine Lemmer Webber, Jessica Tallon, [ActivityPub](https://www.w3.org/TR/activitypub/), 2018
+- [RFC 2119] S. Bradner, [Key words for use in RFCs to Indicate Requirement Levels](https://www.rfc-editor.org/rfc/rfc2119), 1997
+- [RFC 8174] B. Leiba, [Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words](https://www.rfc-editor.org/rfc/rfc8174), 2017
+- [RFC 9635] J. Richer, F. Imbault, [Grant Negotiation and Authorization Protocol](https://www.rfc-editor.org/rfc/rfc9635), 2024
+- [FEP-c390] silverpill, [Identity Proofs](https://codeberg.org/fediverse/fep/src/branch/main/fep/c390/fep-c390.md)
+- [FEP-2677] Helge, [Identifying the Application Actor](https://codeberg.org/fediverse/fep/src/branch/main/fep/2677/fep-2677.md), 2023
+- [SCIM 2.0] P. Hunt et al., [System for Cross-domain Identity Management: Protocol](https://www.rfc-editor.org/rfc/rfc7644), 2015
+- [WA HB 1170] Washington State Legislature, [HB 1170 — Informing users when content is developed or modified by artificial intelligence](https://app.leg.wa.gov/billsummary?BillNumber=1170&Year=2025), 2025
+- [EU AI Act] European Parliament, [Regulation (EU) 2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng), Article 50
+- [EC AI Act Guide] European Commission, [Navigating the AI Act](https://digital-strategy.ec.europa.eu/en/faqs/navigating-ai-act)
+- [W3C SocialWG Charter] W3C, [Proposed Social Web Working Group Charter](https://www.w3.org/2025/11/proposed-socialwg-charter.html), 2025
 
 ## Copyright
 
