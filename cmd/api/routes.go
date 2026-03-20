@@ -35,6 +35,7 @@ func configureRoutes(app *apptheory.App) {
 	app.Post("/auth/wallet/link", apiHandler.HandleLinkWalletLift)
 	app.Delete("/auth/wallet/unlink/{address}", apiHandler.HandleUnlinkWalletLift)
 	app.Get("/auth/wallet/list", apiHandler.HandleGetWalletsLift)
+	app.Get("/auth/device", apiHandler.HandleOAuthDevicePageLift)
 
 	// OPTIONS handlers for CORS preflight (CORS headers set by middleware)
 	optionsHandler := func(*apptheory.Context) (*apptheory.Response, error) {

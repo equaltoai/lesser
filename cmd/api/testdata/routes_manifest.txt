@@ -143,6 +143,7 @@ GET /api/v2/trends
 GET /api/v2/trends/links
 GET /api/v2/trends/statuses
 GET /api/v2/trends/tags
+GET /auth/device
 GET /auth/wallet/list
 GET /embed/{id}
 GET /nodeinfo/2.0

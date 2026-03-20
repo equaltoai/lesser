@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,6 +92,46 @@ func TestBuildAuthorizationCodeRefreshToken(t *testing.T) {
 	require.WithinDuration(t, now, agentToken.SessionCreatedAt, time.Second)
 	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshAbsoluteTTL), agentToken.AbsoluteExpiresAt, time.Second)
 	require.WithinDuration(t, now.Add(auth.AgentRuntimeRefreshIdleTTL), agentToken.IdleExpiresAt, time.Second)
+}
+
+func TestOAuthDeviceApprovedTokenContext(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			"agent-1": {
+				Username:   "agent-1",
+				IsAgent:    true,
+				AgentOwner: "@owner",
+			},
+		},
+	})
+
+	username, clientClass, sessionID, accessTTL, err := handler.oauthDeviceApprovedTokenContext(context.Background(), &storage.OAuthClient{
+		ClientClass: auth.ClientClassCLI,
+	}, "owner")
+	require.NoError(t, err)
+	require.Equal(t, "owner", username)
+	require.Equal(t, auth.ClientClassCLI, clientClass)
+	require.NotEmpty(t, sessionID)
+	require.Equal(t, auth.AccessTokenDuration, accessTTL)
+
+	username, clientClass, sessionID, accessTTL, err = handler.oauthDeviceApprovedTokenContext(context.Background(), &storage.OAuthClient{
+		ClientClass:   auth.ClientClassAgent,
+		AgentUsername: "agent-1",
+	}, "owner")
+	require.NoError(t, err)
+	require.Equal(t, "agent-1", username)
+	require.Equal(t, auth.ClientClassAgent, clientClass)
+	require.NotEmpty(t, sessionID)
+	require.Equal(t, auth.AgentAccessTokenTTL(cfg), accessTTL)
+
+	_, _, _, _, err = handler.oauthDeviceApprovedTokenContext(context.Background(), &storage.OAuthClient{
+		ClientClass:   auth.ClientClassAgent,
+		AgentUsername: "agent-1",
+	}, "intruder")
+	require.ErrorIs(t, err, auth.ErrInvalidGrant)
 }
 
 func TestValidateAuthorizationCodeExchangeClientSecret(t *testing.T) {
