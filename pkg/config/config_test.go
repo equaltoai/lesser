@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -68,4 +69,14 @@ func TestConfig_InstanceAPIKey_ArnCapturedWhenValueMissing(t *testing.T) {
 
 	assert.Equal(t, "", cfg.InstanceAPIKey)
 	assert.Equal(t, "arn:aws:secretsmanager:us-east-1:123456789012:secret:instance-api-key", cfg.InstanceAPIKeyARN)
+}
+
+func TestConfig_OAuthClientSecretRotationGracePeriod_DefaultsTo24Hours(t *testing.T) {
+	SetupTestEnvironment(t)
+	t.Setenv("OAUTH_CLIENT_SECRET_ROTATION_GRACE_PERIOD", "")
+
+	ResetForTests()
+	cfg := Get()
+
+	assert.Equal(t, 24*time.Hour, cfg.OAuthClientSecretRotationGracePeriod)
 }

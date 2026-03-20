@@ -829,6 +829,74 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_client", body["error"])
 	})
 
+	t.Run("refresh_token confidential client accepts previous secret during grace window", func(t *testing.T) {
+		activeHash, err := auth.HashOAuthClientSecret("secret-new")
+		require.NoError(t, err)
+		previousHash, err := auth.HashOAuthClientSecret("secret-old")
+		require.NoError(t, err)
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:                           "client-1",
+					ClientSecret:                       activeHash,
+					PreviousClientSecret:               previousHash,
+					PreviousClientSecretGraceExpiresAt: time.Now().Add(2 * time.Hour),
+					Name:                               "Test App",
+					RedirectURIs:                       []string{"https://example.com/callback"},
+					Scopes:                             []string{auth.ScopeRead, auth.ScopeWrite},
+					Confidential:                       true,
+					CreatedAt:                          time.Now().Add(-24 * time.Hour),
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-1": {Token: "rt-1", ClientID: "client-1", Username: "alice", ExpiresAt: time.Now().Add(1 * time.Hour), Scopes: []string{auth.ScopeRead}},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-1&client_id=client-1&client_secret=secret-old"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.NotEmpty(t, body.RefreshToken)
+		require.Equal(t, "read", body.Scope)
+	})
+
+	t.Run("refresh_token confidential client rejects previous secret after grace window", func(t *testing.T) {
+		activeHash, err := auth.HashOAuthClientSecret("secret-new")
+		require.NoError(t, err)
+		previousHash, err := auth.HashOAuthClientSecret("secret-old")
+		require.NoError(t, err)
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-1": {
+					ClientID:                           "client-1",
+					ClientSecret:                       activeHash,
+					PreviousClientSecret:               previousHash,
+					PreviousClientSecretGraceExpiresAt: time.Now().Add(-1 * time.Minute),
+					Name:                               "Test App",
+					RedirectURIs:                       []string{"https://example.com/callback"},
+					Scopes:                             []string{auth.ScopeRead, auth.ScopeWrite},
+					Confidential:                       true,
+					CreatedAt:                          time.Now().Add(-24 * time.Hour),
+				},
+			},
+			refreshTokensByToken: map[string]storagemodels.RefreshToken{
+				"rt-1": {Token: "rt-1", ClientID: "client-1", Username: "alice", ExpiresAt: time.Now().Add(1 * time.Hour), Scopes: []string{auth.ScopeRead}},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-1&client_id=client-1&client_secret=secret-old"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
+	})
+
 	t.Run("refresh_token invalid_grant when token missing", func(t *testing.T) {
 		state := &round10QueryState{
 			notFoundPKs: map[string]bool{
@@ -862,7 +930,8 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 			refreshTokensByToken: map[string]storagemodels.RefreshToken{
 				"rt-3": {Token: "rt-3", ClientID: "client-1", Username: "alice", ExpiresAt: time.Now().Add(1 * time.Hour), Scopes: []string{auth.ScopeRead}},
 			},
-			createErrorOnce: errors.New("create failed"),
+			createErrorOnce:  errors.New("create failed"),
+			disableAuditRepo: true,
 		}
 		h, _, _ := round11NewHandler(t, cfg, state)
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=refresh_token&refresh_token=rt-3&client_id=client-1"))
@@ -935,6 +1004,89 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "@owner", claims.DelegatedBy)
 		require.NotEmpty(t, claims.SessionID)
 		require.Equal(t, claims.SessionID, claims.AgentSessionID)
+	})
+
+	t.Run("client_credentials accepts previous secret during grace window", func(t *testing.T) {
+		activeHash, err := auth.HashOAuthClientSecret("secret-new")
+		require.NoError(t, err)
+		previousHash, err := auth.HashOAuthClientSecret("secret-old")
+		require.NoError(t, err)
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:                           "client-agent",
+					ClientSecret:                       activeHash,
+					PreviousClientSecret:               previousHash,
+					PreviousClientSecretGraceExpiresAt: time.Now().Add(30 * time.Minute),
+					Name:                               "Agent Connector",
+					RedirectURIs:                       []string{"https://example.com/callback"},
+					GrantTypes:                         []string{auth.GrantTypeClientCredentials},
+					Scopes:                             []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:                        auth.ClientClassAgent,
+					AgentUsername:                      "agent1",
+					OwnerID:                            "owner",
+					Confidential:                       true,
+					CreatedAt:                          time.Now().Add(-24 * time.Hour),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentOwner: "@owner",
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret-old"))
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.Empty(t, body.RefreshToken)
+	})
+
+	t.Run("client_credentials rejects previous secret after grace window", func(t *testing.T) {
+		activeHash, err := auth.HashOAuthClientSecret("secret-new")
+		require.NoError(t, err)
+		previousHash, err := auth.HashOAuthClientSecret("secret-old")
+		require.NoError(t, err)
+
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:                           "client-agent",
+					ClientSecret:                       activeHash,
+					PreviousClientSecret:               previousHash,
+					PreviousClientSecretGraceExpiresAt: time.Now().Add(-1 * time.Minute),
+					Name:                               "Agent Connector",
+					RedirectURIs:                       []string{"https://example.com/callback"},
+					GrantTypes:                         []string{auth.GrantTypeClientCredentials},
+					Scopes:                             []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:                        auth.ClientClassAgent,
+					AgentUsername:                      "agent1",
+					OwnerID:                            "owner",
+					Confidential:                       true,
+					CreatedAt:                          time.Now().Add(-24 * time.Hour),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentOwner: "@owner",
+				},
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, state)
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=client_credentials&client_id=client-agent&client_secret=secret-old"))
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_client", body["error"])
 	})
 
 	t.Run("client_credentials rejects non-agent clients", func(t *testing.T) {

@@ -121,6 +121,7 @@ type round10QueryState struct {
 	auditLogsByUser           map[string][]*storagemodels.AuthAuditLog
 
 	forceVapidNotFound bool
+	disableAuditRepo   bool
 
 	notFoundPKs    map[string]bool
 	notFoundPKSK   map[string]bool
@@ -306,6 +307,18 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			if secret, ok := state.sets["ClientSecret"].(string); ok {
 				client.ClientSecret = secret
 			}
+			if previousSecret, ok := state.sets["PreviousClientSecret"].(string); ok {
+				client.PreviousClientSecret = previousSecret
+			}
+			if graceExpiresAt, ok := state.sets["PreviousClientSecretGraceExpiresAt"].(time.Time); ok {
+				client.PreviousClientSecretGraceExpiresAt = graceExpiresAt
+			}
+			if rotatedAt, ok := state.sets["SecretRotatedAt"].(time.Time); ok {
+				client.SecretRotatedAt = rotatedAt
+			}
+			if rotatedBy, ok := state.sets["SecretRotatedBy"].(string); ok {
+				client.SecretRotatedBy = rotatedBy
+			}
 			if updatedAt, ok := state.sets["UpdatedAt"].(time.Time); ok {
 				client.UpdatedAt = updatedAt
 			}
@@ -363,6 +376,15 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			}
 			state.oauthDeviceSessionsByHash[m.DeviceCodeHash] = *m
 			state.oauthDeviceSessionsByUserCode[m.UserCode] = *m
+		case *storagemodels.AuthAuditLog:
+			if m == nil {
+				return
+			}
+			if state.auditLogsByUser == nil {
+				state.auditLogsByUser = map[string][]*storagemodels.AuthAuditLog{}
+			}
+			username := strings.TrimSpace(m.Username)
+			state.auditLogsByUser[username] = append(state.auditLogsByUser[username], m)
 		case *storagemodels.RevokedAccessToken:
 			if m == nil {
 				return

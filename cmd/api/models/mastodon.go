@@ -78,11 +78,21 @@ type AppRegistrationResponse struct {
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 }
 
+// AppSecretRotationRequest represents an operator request to rotate an OAuth client secret.
+type AppSecretRotationRequest struct {
+	GracePeriodSeconds int  `json:"grace_period_seconds,omitempty"`
+	ForceInvalidate    bool `json:"force_invalidate,omitempty"`
+}
+
 // AppSecretRotationResponse represents the response after rotating an OAuth client secret.
 type AppSecretRotationResponse struct {
-	ClientID                string `json:"client_id"`
-	ClientSecret            string `json:"client_secret"`
-	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method,omitempty"`
+	ClientID                 string `json:"client_id"`
+	ClientSecret             string `json:"client_secret"`
+	TokenEndpointAuthMethod  string `json:"token_endpoint_auth_method,omitempty"`
+	GracePeriodSeconds       int    `json:"grace_period_seconds,omitempty"`
+	ForcedInvalidation       bool   `json:"forced_invalidation,omitempty"`
+	RotatedAt                string `json:"rotated_at,omitempty"`
+	PreviousSecretValidUntil string `json:"previous_secret_valid_until,omitempty"`
 }
 
 // CreateStatusRequest represents a Mastodon-compatible status creation request

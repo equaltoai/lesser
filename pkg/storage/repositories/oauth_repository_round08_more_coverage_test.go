@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	dynamormErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap/zaptest"
 )
@@ -71,5 +72,35 @@ func TestRound08_OAuthRepository_MoreBranches(t *testing.T) {
 		}
 		require.NoError(t, repo.CreateOAuthClient(ctx, client))
 		require.Equal(t, "pre-set", client.ClientSecret)
+	})
+
+	t.Run("RotateOAuthClientSecret updates stored rotation state", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewOAuthRepository(mockDB, zaptest.NewLogger(t))
+		err := repo.RotateOAuthClientSecret(ctx, "client-1", storage.OAuthClientSecretRotation{
+			ActiveClientSecretHash:             "hash-new",
+			PreviousClientSecretHash:           "hash-old",
+			PreviousClientSecretGraceExpiresAt: baseTime.Add(24 * time.Hour),
+			RotatedAt:                          baseTime,
+			RotatedBy:                          "owner",
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("RotateOAuthClientSecret returns not found when client lookup misses", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		mockQuery := new(mocks.MockQuery)
+		mockQuery.On("First", mock.AnythingOfType("*models.OAuthClient")).Return(dynamormErrors.ErrItemNotFound).Once()
+		setupPermissiveRound08Mocks(mockDB, mockQuery, nil, baseTime)
+
+		repo := NewOAuthRepository(mockDB, zaptest.NewLogger(t))
+		err := repo.RotateOAuthClientSecret(ctx, "missing", storage.OAuthClientSecretRotation{
+			ActiveClientSecretHash: "hash-new",
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, storage.ErrNotFound)
 	})
 }

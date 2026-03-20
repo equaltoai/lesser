@@ -192,6 +192,25 @@ func (r *OAuthRepository) UpdateOAuthClient(_ context.Context, clientID string, 
 	return nil
 }
 
+// RotateOAuthClientSecret updates the persisted dual-secret rotation state for a client.
+func (r *OAuthRepository) RotateOAuthClientSecret(_ context.Context, clientID string, rotation storage.OAuthClientSecretRotation) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	client, exists := r.clients[clientID]
+	if !exists {
+		return storage.ErrNotFound
+	}
+
+	client.ClientSecretHash = rotation.ActiveClientSecretHash
+	client.PreviousClientSecretHash = rotation.PreviousClientSecretHash
+	client.PreviousClientSecretGraceExpiresAt = rotation.PreviousClientSecretGraceExpiresAt
+	client.SecretRotatedAt = rotation.RotatedAt
+	client.SecretRotatedBy = rotation.RotatedBy
+	client.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
 func applyInMemoryOAuthClientUpdate(client *storage.OAuthClient, key string, value any) {
 	if client == nil {
 		return

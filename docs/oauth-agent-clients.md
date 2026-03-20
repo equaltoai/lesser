@@ -29,7 +29,9 @@ Legacy `read:*`, `write:*`, and `write:follows` aliases remain accepted for comp
 
 - Operators can rotate an owned client secret in place with `POST /api/v1/apps/{id}/rotate_secret`.
 - Existing bearer access tokens remain valid until their normal expiry.
-- The old client secret stops working immediately after rotation.
+- Refresh-token and `client_credentials` exchanges continue to accept the previous secret only until the grace window expires.
+- Forced invalidation skips the grace window and cuts off new client-authenticated exchanges immediately.
+- Secret rotation does not retroactively revoke already-issued bearer tokens; token revocation remains a separate operator action.
 - The replacement secret is returned once in the rotation response and must be redistributed to the connector.
 
 ## RFC 7591 dynamic registration

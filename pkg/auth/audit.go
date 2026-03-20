@@ -74,6 +74,10 @@ const (
 	AuditOAuthTokenRevoked AuditEventType = "auth.oauth.token_revoked" // #nosec G101 -- audit event type, not a credential
 	// AuditOAuthTokenFailed represents a failed OAuth token operation
 	AuditOAuthTokenFailed AuditEventType = "auth.oauth.token_failed" // #nosec G101 -- audit event type, not a credential
+	// AuditOAuthClientSecretRotated represents a successful in-place OAuth client secret rotation.
+	AuditOAuthClientSecretRotated AuditEventType = "auth.oauth.client_secret_rotated" // #nosec G101 -- audit event type, not a credential
+	// AuditOAuthClientSecretRotationFailed represents a failed OAuth client secret rotation attempt.
+	AuditOAuthClientSecretRotationFailed AuditEventType = "auth.oauth.client_secret_rotation_failed" // #nosec G101 -- audit event type, not a credential
 
 	// AuditWebAuthnRegistrationStarted represents the start of WebAuthn credential registration
 	AuditWebAuthnRegistrationStarted AuditEventType = "auth.webauthn.registration_started" // #nosec G101 -- audit event type, not a credential
@@ -433,6 +437,32 @@ func (al *AuditLogger) LogOAuthToken(ctx context.Context, clientID, username, ip
 	al.logEventBestEffort(ctx, event)
 }
 
+// LogOAuthClientSecretRotation logs OAuth client secret rotation attempts without exposing secret material.
+func (al *AuditLogger) LogOAuthClientSecretRotation(ctx context.Context, username, ipAddress, userAgent, requestID string, metadata map[string]interface{}, success bool, err error) {
+	failureReason := ""
+	if err != nil {
+		failureReason = err.Error()
+	}
+
+	eventType := AuditOAuthClientSecretRotated
+	if !success {
+		eventType = AuditOAuthClientSecretRotationFailed
+	}
+
+	event := &AuditEvent{
+		EventType:     eventType,
+		Username:      username,
+		IPAddress:     ipAddress,
+		UserAgent:     userAgent,
+		RequestID:     requestID,
+		Success:       success,
+		FailureReason: failureReason,
+		Metadata:      metadata,
+	}
+
+	al.logEventBestEffort(ctx, event)
+}
+
 // LogWebAuthn logs WebAuthn operations
 func (al *AuditLogger) LogWebAuthn(ctx context.Context, username, ipAddress, userAgent string, eventType AuditEventType, credentialID string, success bool, err error) {
 	failureReason := ""
@@ -671,6 +701,7 @@ func (al *AuditLogger) determineSeverity(eventType AuditEventType, success bool)
 			AuditLoginFailed,
 			AuditPasswordChangeFailed,
 			AuditOAuthAuthorizeFailed,
+			AuditOAuthClientSecretRotationFailed,
 			AuditWebAuthnLoginFailed,
 			AuditWalletLoginFailed,
 			AuditTwoFactorFailed,
