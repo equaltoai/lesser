@@ -202,7 +202,14 @@ func TestBodyEnabledAddsMcpRoute(t *testing.T) {
 	gotRoutes := extractHttpRouteToIntegrationURI(t, tpl)
 
 	wantParamName := "/lesser/dev/lesser-body/exports/v1/mcp_lambda_arn"
-	for _, routeKey := range []string{"POST /mcp", "GET /mcp", "DELETE /mcp"} {
+	for _, routeKey := range []string{
+		"POST /mcp",
+		"GET /mcp",
+		"DELETE /mcp",
+		"POST /mcp/{actor}",
+		"GET /mcp/{actor}",
+		"DELETE /mcp/{actor}",
+	} {
 		uri, ok := gotRoutes[routeKey]
 		if !ok {
 			t.Fatalf("expected %s route to exist when bodyEnabled=true", routeKey)
@@ -304,11 +311,20 @@ func TestBodyDisabledDoesNotAddMcpRoute(t *testing.T) {
 	if _, ok := gotRoutes["POST /mcp"]; ok {
 		t.Fatalf("unexpected POST /mcp route present when bodyEnabled=false")
 	}
+	if _, ok := gotRoutes["POST /mcp/{actor}"]; ok {
+		t.Fatalf("unexpected POST /mcp/{actor} route present when bodyEnabled=false")
+	}
 	if _, ok := gotRoutes["GET /mcp"]; ok {
 		t.Fatalf("unexpected GET /mcp route present when bodyEnabled=false")
 	}
+	if _, ok := gotRoutes["GET /mcp/{actor}"]; ok {
+		t.Fatalf("unexpected GET /mcp/{actor} route present when bodyEnabled=false")
+	}
 	if _, ok := gotRoutes["DELETE /mcp"]; ok {
 		t.Fatalf("unexpected DELETE /mcp route present when bodyEnabled=false")
+	}
+	if _, ok := gotRoutes["DELETE /mcp/{actor}"]; ok {
+		t.Fatalf("unexpected DELETE /mcp/{actor} route present when bodyEnabled=false")
 	}
 	for _, routeKey := range []string{
 		"GET /.well-known/mcp.json",
