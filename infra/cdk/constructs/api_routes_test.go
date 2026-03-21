@@ -218,7 +218,7 @@ func TestBodyEnabledAddsMcpRoute(t *testing.T) {
 
 	for _, routeKey := range []string{
 		"GET /.well-known/mcp.json",
-		"GET /.well-known/oauth-protected-resource",
+		"GET /.well-known/oauth-protected-resource/mcp/{actor}",
 	} {
 		uri, ok := gotRoutes[routeKey]
 		if !ok {
@@ -312,7 +312,7 @@ func TestBodyDisabledDoesNotAddMcpRoute(t *testing.T) {
 	}
 	for _, routeKey := range []string{
 		"GET /.well-known/mcp.json",
-		"GET /.well-known/oauth-protected-resource",
+		"GET /.well-known/oauth-protected-resource/mcp/{actor}",
 	} {
 		if _, ok := gotRoutes[routeKey]; ok {
 			t.Fatalf("unexpected %s route present when bodyEnabled=false", routeKey)
