@@ -14,7 +14,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	commonerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -65,6 +67,10 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		return h.handleCreateScheduledStatus(ctx, claims, &req)
 	}
 
+	if req.Visibility == VisibilityDirect {
+		return h.handleCreateDirectStatus(ctx, claims, &req, agentAttribution)
+	}
+
 	createCmd := createNoteCommandFromStatusRequest(claims, &req, agentAttribution)
 
 	// Call Notes service
@@ -90,6 +96,57 @@ func (h *Handler) HandleCreateStatusLift(ctx *apptheory.Context) (*apptheory.Res
 		zap.String("content", req.Status))
 
 	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Note.StatusID, map[string]any{
+		"visibility":       req.Visibility,
+		"in_reply_to_id":   req.InReplyToID,
+		"has_media":        len(req.MediaIDs) > 0,
+		"has_poll":         req.Poll != nil,
+		"content_length":   len(req.Status),
+		"spoiler_length":   len(req.SpoilerText),
+		"language":         req.Language,
+		"sensitive":        req.Sensitive,
+		"scheduled":        req.ScheduledAt != nil,
+		"requested_scopes": strings.Join(claims.Scopes, " "),
+	})
+
+	return createdJSON(apiStatus)
+}
+
+func (h *Handler) handleCreateDirectStatus(ctx *apptheory.Context, claims *auth.Claims, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) (*apptheory.Response, error) {
+	conversationsService := h.registry.Conversations()
+	if conversationsService == nil {
+		h.logger.Error("conversations service not available for direct status create")
+		return common.RespondServiceUnavailable(ctx, "conversations service")
+	}
+
+	sendCmd, err := buildDirectMessageCommandFromStatusRequest(claims, req, agentAttribution)
+	if err != nil {
+		return common.RespondValidationError(ctx, err)
+	}
+
+	result, err := conversationsService.SendDirectMessage(ctx.Context(), sendCmd)
+	if err != nil {
+		h.logger.Error("failed to create direct message via conversations service", zap.Error(err))
+		if _, ok := commonerrors.AsAppError(err); ok {
+			return common.RespondValidationError(ctx, err)
+		}
+		return common.RespondInternalServerError(ctx, "failed to create status")
+	}
+
+	if claims.IsAgent {
+		h.recordAgentMemoryEvent(ctx, claims.Username, result.Message.StatusID, req)
+	}
+
+	apiStatus, err := h.convertStorageStatusToAPI(result.Message, claims.Username)
+	if err != nil {
+		h.logger.Error("failed to convert created direct status", zap.Error(err))
+		return common.RespondInternalServerError(ctx, "failed to create status")
+	}
+
+	h.logger.Info("created direct status",
+		zap.String("id", result.Message.StatusID),
+		zap.String("content", req.Status))
+
+	h.recordAgentAuditEvent(ctx, claims, "agent.status.create", result.Message.StatusID, map[string]any{
 		"visibility":       req.Visibility,
 		"in_reply_to_id":   req.InReplyToID,
 		"has_media":        len(req.MediaIDs) > 0,
@@ -267,6 +324,52 @@ func createNoteCommandFromStatusRequest(claims *auth.Claims, req *models.CreateS
 		createCmd.PollHideTotals = req.Poll.HideTotals
 	}
 	return createCmd
+}
+
+func buildDirectMessageCommandFromStatusRequest(claims *auth.Claims, req *models.CreateStatusRequest, agentAttribution *activitypub.AgentPostAttribution) (*conversations.SendDirectMessageCommand, error) {
+	recipients := directMessageRecipientsFromStatusRequest(req)
+	switch len(recipients) {
+	case 0:
+		return nil, common.ValidationError{Field: "status", Message: "direct messages must mention exactly one recipient"}
+	case 1:
+	default:
+		return nil, common.ValidationError{Field: "status", Message: "direct messages support exactly one recipient"}
+	}
+
+	return &conversations.SendDirectMessageCommand{
+		SenderID:         claims.Username,
+		Recipients:       recipients,
+		Content:          req.Status,
+		Sensitive:        req.Sensitive,
+		SpoilerText:      req.SpoilerText,
+		Language:         req.Language,
+		MediaIDs:         req.MediaIDs,
+		InReplyToID:      req.InReplyToID,
+		AgentAttribution: agentAttribution,
+	}, nil
+}
+
+func directMessageRecipientsFromStatusRequest(req *models.CreateStatusRequest) []string {
+	if req == nil {
+		return nil
+	}
+
+	rawMentions := conversations.ExtractMentionHandles(req.Status)
+	recipients := make([]string, 0, len(rawMentions))
+	seen := make(map[string]struct{}, len(rawMentions))
+	for _, mention := range rawMentions {
+		mention = strings.TrimSpace(mention)
+		if mention == "" {
+			continue
+		}
+		if _, exists := seen[mention]; exists {
+			continue
+		}
+		seen[mention] = struct{}{}
+		recipients = append(recipients, mention)
+	}
+
+	return recipients
 }
 
 // HandleDeleteStatusLift deletes a status using the Notes service

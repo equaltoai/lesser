@@ -72,6 +72,7 @@ type ConversationsService interface {
 	DeleteConversation(ctx context.Context, cmd *conversations.DeleteConversationCommand) (*conversations.ConversationResult, error)
 	ListConversations(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error)
 	MarkConversationRead(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error)
+	SendDirectMessage(ctx context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error)
 }
 
 // EmojiService defines the subset of emoji-related operations used by the Lift API

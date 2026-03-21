@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -115,13 +116,15 @@ type apiRateLimitInfoReader interface {
 
 // SendDirectMessageCommand contains all data needed to send a direct message
 type SendDirectMessageCommand struct {
-	SenderID    string   `json:"sender_id" validate:"required"`
-	Recipients  []string `json:"recipients" validate:"required,min=1"`
-	Content     string   `json:"content" validate:"required,max=5000"`
-	Sensitive   bool     `json:"sensitive"`
-	Language    string   `json:"language"`
-	MediaIDs    []string `json:"media_ids"`
-	InReplyToID string   `json:"in_reply_to_id"` // Can reply to messages in the conversation
+	SenderID         string                            `json:"sender_id" validate:"required"`
+	Recipients       []string                          `json:"recipients" validate:"required,min=1"`
+	Content          string                            `json:"content" validate:"required,max=5000"`
+	Sensitive        bool                              `json:"sensitive"`
+	SpoilerText      string                            `json:"spoiler_text"`
+	Language         string                            `json:"language"`
+	MediaIDs         []string                          `json:"media_ids"`
+	InReplyToID      string                            `json:"in_reply_to_id"` // Can reply to messages in the conversation
+	AgentAttribution *activitypub.AgentPostAttribution `json:"agent_attribution,omitempty"`
 }
 
 // MarkConversationReadCommand contains data needed to mark a conversation as read
@@ -1398,11 +1401,13 @@ func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID 
 			Published: &now,
 			To:        make([]string, 0, len(cmd.Recipients)),
 			Sensitive: cmd.Sensitive,
+			Summary:   cmd.SpoilerText,
 		},
-		Content:        cmd.Content,
-		AttributedTo:   fmt.Sprintf("https://%s/users/%s", s.domainName, sender.User.Username),
-		Visibility:     VisibilityDirect,
-		ConversationID: conversationID,
+		Content:          cmd.Content,
+		AttributedTo:     fmt.Sprintf("https://%s/users/%s", s.domainName, sender.User.Username),
+		Visibility:       VisibilityDirect,
+		ConversationID:   conversationID,
+		AgentAttribution: cmd.AgentAttribution,
 	}
 
 	// Add recipients to To field - use cached accounts
@@ -1419,6 +1424,21 @@ func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID 
 	}
 
 	return note
+}
+
+var dmMentionHandleRegex = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_])@([a-zA-Z0-9_]+(?:@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?)?)`)
+
+// ExtractMentionHandles exposes the DM-safe mention parsing used by the conversation service so
+// REST handlers can resolve direct-message recipients consistently with note mention handling.
+func ExtractMentionHandles(content string) []string {
+	matches := dmMentionHandleRegex.FindAllStringSubmatch(content, -1)
+	mentions := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) > 1 {
+			mentions = append(mentions, match[1])
+		}
+	}
+	return mentions
 }
 
 func (s *Service) emitMessageSentEvents(ctx context.Context, message *models.Status, conversation *models.Conversation) []*streaming.Event {
