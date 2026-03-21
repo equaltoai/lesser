@@ -617,6 +617,7 @@ type round12GraphStorage struct {
 	communityNoteRepo *repositories.CommunityNoteRepository
 	costRepo          *repositories.TrackingRepository
 	analyticsRepo     *repositories.TrendingRepository
+	auditRepo         *repositories.AuditRepository
 
 	notificationRepo     interfaces.NotificationRepository
 	pushSubscriptionRepo *repositories.PushSubscriptionRepository
@@ -680,6 +681,9 @@ func (s *round12GraphStorage) Cost() *repositories.TrackingRepository {
 }
 func (s *round12GraphStorage) Analytics() *repositories.TrendingRepository {
 	return s.analyticsRepo
+}
+func (s *round12GraphStorage) Audit() *repositories.AuditRepository {
+	return s.auditRepo
 }
 func (s *round12GraphStorage) DomainBlock() *repositories.DomainBlockRepository {
 	return s.domainBlockRepo
@@ -791,6 +795,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 	communityNoteRepo := repositories.NewCommunityNoteRepository(mockDB, tableName, zap.NewNop(), nil)
 	costRepo := repositories.NewTrackingRepository(mockDB, tableName, zap.NewNop(), nil)
 	analyticsRepo := repositories.NewTrendingRepository(mockDB, zap.NewNop(), nil)
+	auditRepo := repositories.NewAuditRepository(mockDB, tableName, zap.NewNop(), nil)
 	threadRepo := repositories.NewThreadRepository(mockDB, zap.NewNop())
 
 	relationshipRepo := repositories.NewRelationshipRepository(mockDB, tableName, zap.NewNop())
@@ -812,6 +817,7 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 		communityNoteRepo:     communityNoteRepo,
 		costRepo:              costRepo,
 		analyticsRepo:         analyticsRepo,
+		auditRepo:             auditRepo,
 		announcementRepo:      repositories.NewAnnouncementRepository(mockDB, tableName, zap.NewNop()),
 		likeRepo:              repositories.NewLikeRepository(mockDB, tableName, zap.NewNop()),
 		conversationRepo:      repositories.NewConversationRepository(mockDB, tableName, zap.NewNop(), nil),

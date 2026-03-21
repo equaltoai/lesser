@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"go.uber.org/zap"
 )
@@ -32,18 +34,19 @@ func (r *mutationResolver) CreateConversation(ctx context.Context, participantID
 }
 
 // SendDirectMessage is the resolver for the sendDirectMessage field.
-func (r *mutationResolver) SendDirectMessage(ctx context.Context, to string, content string, mediaIDs []string) (*model.SendMessagePayload, error) {
+func (r *mutationResolver) SendDirectMessage(ctx context.Context, to string, content string, mediaIDs []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) (*model.SendMessagePayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := r.Registry.Conversations().SendDirectMessage(ctx, &conversations.SendDirectMessageCommand{
-		SenderID:   username,
-		Recipients: []string{to},
-		Content:    content,
-		MediaIDs:   mediaIDs,
-	})
+	claims := r.directMessageClaims(ctx, username)
+	cmd, err := r.buildGraphQLDirectMessageCommand(ctx, claims, username, []string{to}, content, mediaIDs, sensitive, spoilerText, language, inReplyToID, agentAttribution)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := r.Registry.Conversations().SendDirectMessage(ctx, cmd)
 	if err != nil {
 		r.Logger.Error("Failed to send direct message",
 			zap.String("user", username),
@@ -59,7 +62,7 @@ func (r *mutationResolver) SendDirectMessage(ctx context.Context, to string, con
 }
 
 // SendMessage is the resolver for the sendMessage field.
-func (r *mutationResolver) SendMessage(ctx context.Context, conversationID string, content string, mediaIDs []string) (*model.SendMessagePayload, error) {
+func (r *mutationResolver) SendMessage(ctx context.Context, conversationID string, content string, mediaIDs []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) (*model.SendMessagePayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -94,12 +97,13 @@ func (r *mutationResolver) SendMessage(ctx context.Context, conversationID strin
 		return nil, ErrAccessDenied
 	}
 
-	result, err := r.Registry.Conversations().SendDirectMessage(ctx, &conversations.SendDirectMessageCommand{
-		SenderID:   username,
-		Recipients: []string{recipientID},
-		Content:    content,
-		MediaIDs:   mediaIDs,
-	})
+	claims := r.directMessageClaims(ctx, username)
+	cmd, err := r.buildGraphQLDirectMessageCommand(ctx, claims, username, []string{recipientID}, content, mediaIDs, sensitive, spoilerText, language, inReplyToID, agentAttribution)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := r.Registry.Conversations().SendDirectMessage(ctx, cmd)
 	if err != nil {
 		r.Logger.Error("Failed to send message",
 			zap.String("user", username),
@@ -112,6 +116,54 @@ func (r *mutationResolver) SendMessage(ctx context.Context, conversationID strin
 		Conversation: r.convertConversationToGraphQL(ctx, result.Conversation),
 		Message:      r.convertStatusToObject(ctx, result.Message),
 	}, nil
+}
+
+func (r *mutationResolver) directMessageClaims(ctx context.Context, username string) *auth.Claims {
+	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
+		return claims
+	}
+
+	return &auth.Claims{
+		Username: username,
+	}
+}
+
+func (r *mutationResolver) buildGraphQLDirectMessageCommand(
+	ctx context.Context,
+	claims *auth.Claims,
+	username string,
+	recipients []string,
+	content string,
+	mediaIDs []string,
+	sensitive *bool,
+	spoilerText *string,
+	language *string,
+	inReplyToID *string,
+	agentAttributionInput *model.AgentPostAttributionInput,
+) (*conversations.SendDirectMessageCommand, error) {
+	agentAttribution, err := r.buildAgentPostAttribution(ctx, claims, agentAttributionInput)
+	if err != nil {
+		return nil, err
+	}
+
+	return &conversations.SendDirectMessageCommand{
+		SenderID:         username,
+		Recipients:       recipients,
+		Content:          content,
+		MediaIDs:         mediaIDs,
+		Sensitive:        derefBool(sensitive),
+		SpoilerText:      derefString(spoilerText),
+		Language:         derefString(language),
+		InReplyToID:      derefString(inReplyToID),
+		AgentAttribution: agentAttribution,
+	}, nil
+}
+
+func derefBool(value *bool) bool {
+	if value == nil {
+		return false
+	}
+	return *value
 }
 
 // AcceptMessageRequest is the resolver for the acceptMessageRequest field.

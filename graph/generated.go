@@ -1926,8 +1926,8 @@ type ComplexityRoot struct {
 		SaveMarkers                               func(childComplexity int, input []*model.SaveMarkerInput) int
 		ScheduleDraft                             func(childComplexity int, id string, scheduledAt model.Time) int
 		ScheduleStatus                            func(childComplexity int, input model.ScheduleStatusInput) int
-		SendDirectMessage                         func(childComplexity int, to string, content string, mediaIds []string) int
-		SendMessage                               func(childComplexity int, conversationID string, content string, mediaIds []string) int
+		SendDirectMessage                         func(childComplexity int, to string, content string, mediaIds []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) int
+		SendMessage                               func(childComplexity int, conversationID string, content string, mediaIds []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) int
 		SetFederationLimit                        func(childComplexity int, domain string, limit model.FederationLimitInput) int
 		SetInstanceBudget                         func(childComplexity int, domain string, monthlyUsd float64, autoLimit *bool) int
 		ShareObject                               func(childComplexity int, id string) int
@@ -3129,8 +3129,8 @@ type MutationResolver interface {
 	AddAccountsToList(ctx context.Context, id string, accountIds []string) (*model.List, error)
 	RemoveAccountsFromList(ctx context.Context, id string, accountIds []string) (*model.List, error)
 	CreateConversation(ctx context.Context, participantID string) (*model.Conversation, error)
-	SendDirectMessage(ctx context.Context, to string, content string, mediaIds []string) (*model.SendMessagePayload, error)
-	SendMessage(ctx context.Context, conversationID string, content string, mediaIds []string) (*model.SendMessagePayload, error)
+	SendDirectMessage(ctx context.Context, to string, content string, mediaIds []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) (*model.SendMessagePayload, error)
+	SendMessage(ctx context.Context, conversationID string, content string, mediaIds []string, sensitive *bool, spoilerText *string, language *string, inReplyToID *string, agentAttribution *model.AgentPostAttributionInput) (*model.SendMessagePayload, error)
 	AcceptMessageRequest(ctx context.Context, conversationID string) (*model.Conversation, error)
 	DeclineMessageRequest(ctx context.Context, conversationID string) (bool, error)
 	MarkConversationAsRead(ctx context.Context, id string) (*model.Conversation, error)
@@ -12965,7 +12965,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.SendDirectMessage(childComplexity, args["to"].(string), args["content"].(string), args["mediaIds"].([]string)), true
+		return e.complexity.Mutation.SendDirectMessage(childComplexity, args["to"].(string), args["content"].(string), args["mediaIds"].([]string), args["sensitive"].(*bool), args["spoilerText"].(*string), args["language"].(*string), args["inReplyToId"].(*string), args["agentAttribution"].(*model.AgentPostAttributionInput)), true
 
 	case "Mutation.sendMessage":
 		if e.complexity.Mutation.SendMessage == nil {
@@ -12977,7 +12977,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.complexity.Mutation.SendMessage(childComplexity, args["conversationId"].(string), args["content"].(string), args["mediaIds"].([]string)), true
+		return e.complexity.Mutation.SendMessage(childComplexity, args["conversationId"].(string), args["content"].(string), args["mediaIds"].([]string), args["sensitive"].(*bool), args["spoilerText"].(*string), args["language"].(*string), args["inReplyToId"].(*string), args["agentAttribution"].(*model.AgentPostAttributionInput)), true
 
 	case "Mutation.setFederationLimit":
 		if e.complexity.Mutation.SetFederationLimit == nil {
@@ -21127,6 +21127,31 @@ func (ec *executionContext) field_Mutation_sendDirectMessage_args(ctx context.Co
 		return nil, err
 	}
 	args["mediaIds"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "sensitive", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["sensitive"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "spoilerText", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["spoilerText"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "language", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["language"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "inReplyToId", ec.unmarshalOID2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["inReplyToId"] = arg6
+	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "agentAttribution", ec.unmarshalOAgentPostAttributionInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentPostAttributionInput)
+	if err != nil {
+		return nil, err
+	}
+	args["agentAttribution"] = arg7
 	return args, nil
 }
 
@@ -21148,6 +21173,31 @@ func (ec *executionContext) field_Mutation_sendMessage_args(ctx context.Context,
 		return nil, err
 	}
 	args["mediaIds"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "sensitive", ec.unmarshalOBoolean2ᚖbool)
+	if err != nil {
+		return nil, err
+	}
+	args["sensitive"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "spoilerText", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["spoilerText"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "language", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["language"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "inReplyToId", ec.unmarshalOID2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["inReplyToId"] = arg6
+	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "agentAttribution", ec.unmarshalOAgentPostAttributionInput2ᚖgithubᚗcomᚋequaltoaiᚋlesserᚋgraphᚋmodelᚐAgentPostAttributionInput)
+	if err != nil {
+		return nil, err
+	}
+	args["agentAttribution"] = arg7
 	return args, nil
 }
 
@@ -80467,7 +80517,7 @@ func (ec *executionContext) _Mutation_sendDirectMessage(ctx context.Context, fie
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().SendDirectMessage(rctx, fc.Args["to"].(string), fc.Args["content"].(string), fc.Args["mediaIds"].([]string))
+		return ec.resolvers.Mutation().SendDirectMessage(rctx, fc.Args["to"].(string), fc.Args["content"].(string), fc.Args["mediaIds"].([]string), fc.Args["sensitive"].(*bool), fc.Args["spoilerText"].(*string), fc.Args["language"].(*string), fc.Args["inReplyToId"].(*string), fc.Args["agentAttribution"].(*model.AgentPostAttributionInput))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -80528,7 +80578,7 @@ func (ec *executionContext) _Mutation_sendMessage(ctx context.Context, field gra
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().SendMessage(rctx, fc.Args["conversationId"].(string), fc.Args["content"].(string), fc.Args["mediaIds"].([]string))
+		return ec.resolvers.Mutation().SendMessage(rctx, fc.Args["conversationId"].(string), fc.Args["content"].(string), fc.Args["mediaIds"].([]string), fc.Args["sensitive"].(*bool), fc.Args["spoilerText"].(*string), fc.Args["language"].(*string), fc.Args["inReplyToId"].(*string), fc.Args["agentAttribution"].(*model.AgentPostAttributionInput))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

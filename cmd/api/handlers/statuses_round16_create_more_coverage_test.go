@@ -39,6 +39,21 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		requireStatus(t, http.StatusForbidden)(h.HandleCreateStatusLift(ctx))
 	})
 
+	t.Run("direct visibility still requires write scope", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob hello",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusForbidden)(h.HandleCreateStatusLift(ctx))
+	})
+
 	t.Run("service error returns 500", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
 			NotesSvc: &NotesServiceStub{
@@ -220,6 +235,27 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		require.NoError(t, err)
 
 		requireStatus(t, http.StatusForbidden)(h.HandleCreateStatusLift(ctx))
+	})
+
+	t.Run("direct visibility surfaces generic service failures as 500", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: &ConversationsServiceStub{
+				SendDirectMessageFunc: func(context.Context, *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error) {
+					return nil, errors.New("boom")
+				},
+			},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob hello",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusInternalServerError)(h.HandleCreateStatusLift(ctx))
 	})
 
 	t.Run("direct visibility without conversations service returns 503", func(t *testing.T) {

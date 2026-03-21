@@ -15,6 +15,7 @@ func bindPayloadSchemas(repoRoot string, spec *openAPISpec, routes []routeDef) e
 	if err != nil {
 		return err
 	}
+	applySchemaOverrides(spec)
 
 	liftPkg := builder.pkgs[packagePathLift]
 	if liftPkg == nil {
