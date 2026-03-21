@@ -15,6 +15,13 @@ func TestExtractMentionHandles_SupportsRemoteAndLocalMentions(t *testing.T) {
 	require.Equal(t, []string{"bob@example.com", "carol", "bob@example.com"}, mentions)
 }
 
+func TestExtractMentionHandles_SupportsStartOfStringMentions(t *testing.T) {
+	t.Parallel()
+
+	mentions := ExtractMentionHandles("@alice hello and @bob@example.com hi")
+	require.Equal(t, []string{"alice", "bob@example.com"}, mentions)
+}
+
 func TestExtractMentionHandles_IgnoresEmailsAndSupportsPunctuation(t *testing.T) {
 	t.Parallel()
 

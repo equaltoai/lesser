@@ -13,7 +13,7 @@ func TestRound40DirectMessageMutationsSupportExtendedFields(t *testing.T) {
 	config.ResetForTests()
 	t.Cleanup(config.ResetForTests)
 
-	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	resolver, storage, _, _, _ := newRound12GraphResolverWithMocks(t)
 	ctx := round12AuthContext("alice")
 
 	sensitive := true
@@ -39,6 +39,9 @@ func TestRound40DirectMessageMutationsSupportExtendedFields(t *testing.T) {
 	require.True(t, first.Message.Sensitive)
 	require.NotNil(t, first.Message.SpoilerText)
 	require.Equal(t, "cw", *first.Message.SpoilerText)
+	firstStored, err := storage.Status().GetStatus(ctx, first.Message.ID)
+	require.NoError(t, err)
+	require.Equal(t, "en", firstStored.Language)
 
 	replySpoiler := "reply cw"
 	reply, err := resolver.Mutation().SendMessage(
@@ -59,4 +62,53 @@ func TestRound40DirectMessageMutationsSupportExtendedFields(t *testing.T) {
 	require.Equal(t, first.Message.ID, reply.Message.InReplyTo.ID)
 	require.NotNil(t, reply.Message.SpoilerText)
 	require.Equal(t, "reply cw", *reply.Message.SpoilerText)
+	replyStored, err := storage.Status().GetStatus(ctx, reply.Message.ID)
+	require.NoError(t, err)
+	require.Equal(t, "en", replyStored.Language)
+}
+
+func TestRound40DirectMessageMutationsValidateEmptyInputs(t *testing.T) {
+	t.Setenv("DISABLE_RATE_LIMITING", "true")
+	config.ResetForTests()
+	t.Cleanup(config.ResetForTests)
+
+	resolver, _, _, _, _ := newRound12GraphResolverWithMocks(t)
+	ctx := round12AuthContext("alice")
+
+	t.Run("sendDirectMessage rejects empty content", func(t *testing.T) {
+		payload, err := resolver.Mutation().SendDirectMessage(
+			ctx,
+			"bob",
+			"",
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		require.Nil(t, payload)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to send direct message")
+		require.ErrorContains(t, err, "content")
+		require.ErrorContains(t, err, "required")
+	})
+
+	t.Run("sendDirectMessage rejects empty recipient", func(t *testing.T) {
+		payload, err := resolver.Mutation().SendDirectMessage(
+			ctx,
+			" ",
+			"hello",
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		require.Nil(t, payload)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to send direct message")
+		require.ErrorContains(t, err, "invalid")
+	})
 }
