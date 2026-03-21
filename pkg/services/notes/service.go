@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -22,6 +21,7 @@ import (
 	svcErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/security/htmlsafe"
+	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -1443,17 +1443,7 @@ func newMentionTag(actorID, username, domain, localDomain string) activitypub.Ta
 }
 
 func extractMentionHandles(content string) []string {
-	mentionRegex := regexp.MustCompile(`(?:^|[^a-zA-Z0-9_])@([a-zA-Z0-9_]+(?:@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?)?)`)
-	matches := mentionRegex.FindAllStringSubmatch(content, -1)
-
-	mentions := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) > 1 {
-			mentions = append(mentions, match[1])
-		}
-	}
-
-	return mentions
+	return conversations.ExtractMentionHandles(content)
 }
 
 func splitMentionHandle(mention string) (string, string) {

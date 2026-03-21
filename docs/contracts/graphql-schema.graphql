@@ -1341,8 +1341,26 @@ type Mutation {
   
   # Conversation operations
   createConversation(participantId: ID!): Conversation!
-  sendDirectMessage(to: ID!, content: String!, mediaIds: [ID!]): SendMessagePayload!
-  sendMessage(conversationId: ID!, content: String!, mediaIds: [ID!]): SendMessagePayload!
+  sendDirectMessage(
+    to: ID!
+    content: String!
+    mediaIds: [ID!]
+    sensitive: Boolean
+    spoilerText: String
+    language: String
+    inReplyToId: ID
+    agentAttribution: AgentPostAttributionInput
+  ): SendMessagePayload!
+  sendMessage(
+    conversationId: ID!
+    content: String!
+    mediaIds: [ID!]
+    sensitive: Boolean
+    spoilerText: String
+    language: String
+    inReplyToId: ID
+    agentAttribution: AgentPostAttributionInput
+  ): SendMessagePayload!
   acceptMessageRequest(conversationId: ID!): Conversation!
   declineMessageRequest(conversationId: ID!): Boolean!
   markConversationAsRead(id: ID!): Conversation!

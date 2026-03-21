@@ -250,6 +250,7 @@ type ConversationsServiceStub struct {
 	DeleteConversationFunc   func(ctx context.Context, cmd *conversations.DeleteConversationCommand) (*conversations.ConversationResult, error)
 	ListConversationsFunc    func(ctx context.Context, query *conversations.ListConversationsQuery) (*conversations.Result, error)
 	MarkConversationReadFunc func(ctx context.Context, cmd *conversations.MarkConversationReadCommand) (*conversations.ConversationResult, error)
+	SendDirectMessageFunc    func(ctx context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error)
 }
 
 var _ ConversationsService = (*ConversationsServiceStub)(nil)
@@ -273,6 +274,13 @@ func (s *ConversationsServiceStub) MarkConversationRead(ctx context.Context, cmd
 		return s.MarkConversationReadFunc(ctx, cmd)
 	}
 	return nil, missingStub("ConversationsService.MarkConversationRead")
+}
+
+func (s *ConversationsServiceStub) SendDirectMessage(ctx context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error) {
+	if s != nil && s.SendDirectMessageFunc != nil {
+		return s.SendDirectMessageFunc(ctx, cmd)
+	}
+	return nil, missingStub("ConversationsService.SendDirectMessage")
 }
 
 type EmojiServiceStub struct {

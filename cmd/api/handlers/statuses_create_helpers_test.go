@@ -5,7 +5,9 @@ import (
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,4 +110,52 @@ func TestStatuses_CreateHelpers_CreateNoteCommandFromStatusRequest(t *testing.T)
 	require.Equal(t, 120, cmd.PollExpiresIn)
 	require.Equal(t, true, cmd.PollMultiple)
 	require.Equal(t, true, cmd.PollHideTotals)
+}
+
+func TestStatuses_CreateHelpers_BuildDirectMessageCommandFromStatusRequest(t *testing.T) {
+	t.Parallel()
+
+	claims := &auth.Claims{Username: "alice"}
+	req := &apimodels.CreateStatusRequest{
+		Status:      "@bob@example.com hi again @bob@example.com",
+		Visibility:  VisibilityDirect,
+		SpoilerText: "cw",
+		Language:    "en",
+		Sensitive:   true,
+		InReplyToID: "dm-parent",
+		MediaIDs:    []string{"m1"},
+	}
+
+	attr := &activitypub.AgentPostAttribution{TriggerType: "mention"}
+	cmd, err := buildDirectMessageCommandFromStatusRequest(claims, req, attr)
+	require.NoError(t, err)
+	require.Equal(t, &conversations.SendDirectMessageCommand{
+		SenderID:         "alice",
+		Recipients:       []string{"bob@example.com"},
+		Content:          req.Status,
+		Sensitive:        true,
+		SpoilerText:      "cw",
+		Language:         "en",
+		MediaIDs:         []string{"m1"},
+		InReplyToID:      "dm-parent",
+		AgentAttribution: attr,
+	}, cmd)
+}
+
+func TestStatuses_CreateHelpers_BuildDirectMessageCommandFromStatusRequestRequiresSingleRecipient(t *testing.T) {
+	t.Parallel()
+
+	claims := &auth.Claims{Username: "alice"}
+
+	_, err := buildDirectMessageCommandFromStatusRequest(claims, &apimodels.CreateStatusRequest{
+		Status:     "no recipient",
+		Visibility: VisibilityDirect,
+	}, nil)
+	require.Error(t, err)
+
+	_, err = buildDirectMessageCommandFromStatusRequest(claims, &apimodels.CreateStatusRequest{
+		Status:     "@bob hi @carol",
+		Visibility: VisibilityDirect,
+	}, nil)
+	require.Error(t, err)
 }

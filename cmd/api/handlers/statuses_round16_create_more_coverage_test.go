@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -32,6 +33,21 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 
 		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
 			Status: "hello",
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusForbidden)(h.HandleCreateStatusLift(ctx))
+	})
+
+	t.Run("direct visibility still requires write scope", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob hello",
+			Visibility: VisibilityDirect,
 		})
 		require.NoError(t, err)
 
@@ -109,6 +125,152 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 		require.NotNil(t, gotCmd)
 		require.Equal(t, "alice", gotCmd.AuthorID)
 		require.Equal(t, VisibilityPublic, gotCmd.Visibility)
+	})
+
+	t.Run("direct visibility uses conversations service", func(t *testing.T) {
+		now := time.Now().UTC()
+
+		var gotCmd *conversations.SendDirectMessageCommand
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: &ConversationsServiceStub{
+				SendDirectMessageFunc: func(_ context.Context, cmd *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error) {
+					gotCmd = cmd
+					return &conversations.MessageResult{
+						Message: &storagemodels.Status{
+							StatusID:       "dm-1",
+							AuthorUsername: cmd.SenderID,
+							AuthorID:       cfg.BaseURL() + "/users/" + cmd.SenderID,
+							Visibility:     VisibilityDirect,
+							Sensitive:      cmd.Sensitive,
+							Language:       cmd.Language,
+							InReplyToID:    cmd.InReplyToID,
+							PublishedAt:    now,
+							CreatedAt:      now,
+							UpdatedAt:      now,
+							ModifiedAt:     now,
+							Version:        1,
+							Note: &activitypub.Note{
+								BaseObject: activitypub.BaseObject{
+									ID:      cfg.BaseURL() + "/objects/dm-1",
+									Summary: cmd.SpoilerText,
+								},
+								Content:          cmd.Content,
+								AttributedTo:     cfg.BaseURL() + "/users/" + cmd.SenderID,
+								AgentAttribution: cmd.AgentAttribution,
+							},
+						},
+					}, nil
+				},
+			},
+			NotesSvc: &NotesServiceStub{
+				CreateNoteFunc: func(context.Context, *notes.CreateNoteCommand) (*notes.NoteResult, error) {
+					t.Fatal("notes service should not be used for direct statuses")
+					return nil, nil
+				},
+			},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeRead, auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		req := models.CreateStatusRequest{
+			Status:      "@bob@example.com hello there",
+			Visibility:  VisibilityDirect,
+			SpoilerText: "cw",
+			Sensitive:   true,
+			Language:    "en",
+			InReplyToID: "parent-1",
+			MediaIDs:    []string{"m1"},
+		}
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, req)
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateStatusLift(ctx))
+		require.NotEmpty(t, resp.Body)
+
+		require.NotNil(t, gotCmd)
+		require.Equal(t, "alice", gotCmd.SenderID)
+		require.Equal(t, []string{"bob@example.com"}, gotCmd.Recipients)
+		require.Equal(t, req.Status, gotCmd.Content)
+		require.Equal(t, req.SpoilerText, gotCmd.SpoilerText)
+		require.Equal(t, req.Language, gotCmd.Language)
+		require.Equal(t, req.MediaIDs, gotCmd.MediaIDs)
+		require.Equal(t, req.InReplyToID, gotCmd.InReplyToID)
+		require.Nil(t, gotCmd.AgentAttribution)
+	})
+
+	t.Run("direct visibility without exactly one recipient returns 400", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: &ConversationsServiceStub{},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "hello with no mention",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusBadRequest)(h.HandleCreateStatusLift(ctx))
+	})
+
+	t.Run("direct visibility surfaces conversation validation errors", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: &ConversationsServiceStub{
+				SendDirectMessageFunc: func(context.Context, *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error) {
+					return nil, conversations.ErrDirectMessageBlocked
+				},
+			},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob hello",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusForbidden)(h.HandleCreateStatusLift(ctx))
+	})
+
+	t.Run("direct visibility surfaces generic service failures as 500", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			ConversationsSvc: &ConversationsServiceStub{
+				SendDirectMessageFunc: func(context.Context, *conversations.SendDirectMessageCommand) (*conversations.MessageResult, error) {
+					return nil, errors.New("boom")
+				},
+			},
+		})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob hello",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusInternalServerError)(h.HandleCreateStatusLift(ctx))
+	})
+
+	t.Run("direct visibility without conversations service returns 503", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{})
+
+		token := round11SignAccessToken(t, cfg.JWTSecret, "alice", []string{auth.ScopeWrite})
+		headers := map[string]string{"Authorization": "Bearer " + token}
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/statuses", headers, nil, models.CreateStatusRequest{
+			Status:     "@bob hello",
+			Visibility: VisibilityDirect,
+		})
+		require.NoError(t, err)
+
+		requireStatus(t, http.StatusServiceUnavailable)(h.HandleCreateStatusLift(ctx))
 	})
 }
 
