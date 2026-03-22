@@ -17,6 +17,24 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
+func countMockCalls(q *mocks.MockQuery, method, field, op string) int {
+	count := 0
+	for _, call := range q.Calls {
+		if call.Method != method || len(call.Arguments) < 2 {
+			continue
+		}
+		if gotField, ok := call.Arguments.Get(0).(string); !ok || gotField != field {
+			continue
+		}
+		if gotOp, ok := call.Arguments.Get(1).(string); !ok || gotOp != op {
+			continue
+		}
+		count++
+	}
+
+	return count
+}
+
 type fakeNotificationDispatcher struct {
 	calls int
 }
@@ -446,6 +464,8 @@ func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *
 	require.NoError(t, err)
 	require.True(t, result.HasMore)
 	require.Equal(t, "notif#2", result.NextCursor)
+	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		ptr := args.Get(0).(*[]models.Notification)
@@ -458,6 +478,9 @@ func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *
 	require.NoError(t, err)
 	require.True(t, result.HasMore)
 	require.Equal(t, "notif#2", result.NextCursor)
+	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 2, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
+	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "IsRead", "="))
 }
 
 func TestRound07_NotificationRepository_GetUserNotifications_LogsQueryError(t *testing.T) {
@@ -487,6 +510,35 @@ func TestRound07_NotificationRepository_GetUserNotifications_LogsQueryError(t *t
 	fields := entries[0].ContextMap()
 	require.Equal(t, "user-1", fields["user_id"])
 	require.Equal(t, queryErr.Error(), fields["error"])
+}
+
+func TestRound07_NotificationRepository_NotificationQueries_MovePrefixToFilterWhenCursorPresent(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+
+	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*[]models.Notification)
+		*ptr = []models.Notification{{SK: "notif#2", UserID: "user-1"}}
+	}).Return(nil).Times(2)
+
+	repo := NewNotificationRepository(mockDB, "test-table", zap.NewNop(), nil)
+
+	_, err := repo.GetNotificationGroups(context.Background(), "user-1", interfaces.PaginationOptions{Limit: 1, Cursor: "notif#99"})
+	require.NoError(t, err)
+
+	_, err = repo.GetNotificationsAdvanced(context.Background(), "user-1", map[string]interface{}{"Type": "mention"}, interfaces.PaginationOptions{Limit: 1, Cursor: "notif#99"})
+	require.NoError(t, err)
+
+	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "<"))
+	require.Equal(t, 2, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
+	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "Type", "="))
 }
 
 func TestRound07_NotificationRepository_MarkUnreadAndPush_GetErrorBranches(t *testing.T) {
