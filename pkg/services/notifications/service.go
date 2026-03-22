@@ -604,6 +604,15 @@ func (s *Service) ListNotifications(ctx context.Context, query *ListNotification
 	}
 
 	if err != nil {
+		s.logger.Error("notification query failed",
+			zap.String("user_id", query.UserID),
+			zap.Strings("types", query.Types),
+			zap.Strings("exclude_types", query.ExcludeTypes),
+			zap.Bool("only_unread", query.OnlyUnread),
+			zap.Bool("include_read", query.IncludeRead),
+			zap.String("actor_id", query.ActorID),
+			zap.String("target_type", query.TargetType),
+			zap.Error(err))
 		return nil, ErrNotificationQueryFailed
 	}
 

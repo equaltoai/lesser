@@ -63,6 +63,22 @@ func (m *testTaggedRequiredModel) UpdateKeys() error { return nil }
 func (m *testTaggedRequiredModel) GetPK() string     { return m.PK }
 func (m *testTaggedRequiredModel) GetSK() string     { return m.SK }
 
+type testOptionalTitleModel struct {
+	ID    string
+	Title string
+	PK    string
+	SK    string
+}
+
+func (m *testOptionalTitleModel) UpdateKeys() error {
+	m.PK = "PK#" + m.ID
+	m.SK = "SK#" + m.ID
+	return nil
+}
+
+func (m *testOptionalTitleModel) GetPK() string { return m.PK }
+func (m *testOptionalTitleModel) GetSK() string { return m.SK }
+
 type testEventHandler struct {
 	seen []Event
 	err  error
@@ -137,6 +153,16 @@ func TestServices_DefaultValidationService(t *testing.T) {
 		// Common required field name: ID.
 		err = svc.ValidateRequiredFields(context.Background(), &testServicesModel{})
 		assert.Error(t, err)
+	})
+
+	t.Run("title_is_not_treated_as_a_universal_required_field", func(t *testing.T) {
+		svc := NewDefaultValidationService()
+		model := &testOptionalTitleModel{ID: "notif-1"}
+		require.NoError(t, model.UpdateKeys())
+
+		err := svc.ValidateRequiredFields(context.Background(), model)
+		assert.NoError(t, err)
+		assert.False(t, svc.isCommonRequiredField("Title"))
 	})
 }
 

@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type testStringer struct{ value string }
@@ -258,6 +260,42 @@ func TestService_ListNotifications_round27_error_paths(t *testing.T) {
 
 	_, err := service.ListNotifications(ctx, &ListNotificationsQuery{UserID: "alice"})
 	assert.ErrorIs(t, err, ErrNotificationQueryFailed)
+}
+
+func TestService_ListNotifications_logsUnderlyingQueryError_round27(t *testing.T) {
+	t.Parallel()
+
+	service, notificationRepo, _, _, _ := setupTestService()
+	ctx := context.Background()
+
+	core, observed := observer.New(zapcore.ErrorLevel)
+	service.logger = zap.New(core)
+
+	queryErr := errors.New("builder failed")
+	notificationRepo.On("GetUserNotifications", ctx, "alice", mock.AnythingOfType("interfaces.PaginationOptions")).Return(nil, queryErr).Once()
+
+	_, err := service.ListNotifications(ctx, &ListNotificationsQuery{
+		UserID:       "alice",
+		Types:        nil,
+		ExcludeTypes: []string{"follow"},
+		OnlyUnread:   false,
+		IncludeRead:  false,
+		ActorID:      "bob",
+		TargetType:   "status",
+	})
+	require.ErrorIs(t, err, ErrNotificationQueryFailed)
+
+	entries := observed.All()
+	require.Len(t, entries, 1)
+	assert.Equal(t, "notification query failed", entries[0].Message)
+	assert.Equal(t, "alice", entries[0].ContextMap()["user_id"])
+	assert.Empty(t, entries[0].ContextMap()["types"])
+	assert.Equal(t, []interface{}{"follow"}, entries[0].ContextMap()["exclude_types"])
+	assert.Equal(t, false, entries[0].ContextMap()["only_unread"])
+	assert.Equal(t, false, entries[0].ContextMap()["include_read"])
+	assert.Equal(t, "bob", entries[0].ContextMap()["actor_id"])
+	assert.Equal(t, "status", entries[0].ContextMap()["target_type"])
+	assert.Contains(t, entries[0].ContextMap()["error"], "builder failed")
 }
 
 func TestService_CreateNotification_round27_actor_optional_missing(t *testing.T) {

@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -103,6 +104,30 @@ func TestAuthAuditLog(t *testing.T) {
 		assert.InDelta(t, time.Now().Add(24*time.Hour).Unix(), a.TTL, 2)
 
 		require.NoError(t, a.BeforeSave())
+	})
+
+	t.Run("empty optional gsi sources stay unset and tags omit empty keys", func(t *testing.T) {
+		a := &AuthAuditLog{
+			ID:       "e2",
+			Severity: "info",
+		}
+
+		require.NoError(t, a.UpdateKeys())
+		assert.Empty(t, a.GSI1PK)
+		assert.Empty(t, a.GSI1SK)
+		assert.Empty(t, a.GSI2PK)
+		assert.Empty(t, a.GSI2SK)
+		assert.Empty(t, a.GSI3PK)
+		assert.Empty(t, a.GSI3SK)
+		assert.Equal(t, "SEVERITY#info", a.GSI4PK)
+		assert.NotEmpty(t, a.GSI4SK)
+
+		typ := reflect.TypeOf(AuthAuditLog{})
+		for _, fieldName := range []string{"GSI1PK", "GSI1SK", "GSI2PK", "GSI2SK", "GSI3PK", "GSI3SK", "GSI4PK", "GSI4SK"} {
+			field, ok := typ.FieldByName(fieldName)
+			require.True(t, ok)
+			assert.Contains(t, field.Tag.Get("theorydb"), "omitempty")
+		}
 	})
 }
 
