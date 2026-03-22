@@ -70,6 +70,8 @@ type round10QueryState struct {
 	instanceHistories             []storagemodels.InstanceHistory
 	instanceMetrics               map[string]storagemodels.InstanceMetrics
 	instanceState                 *storagemodels.InstanceState
+	soulBodyBindingsByAgentID     map[string]storagemodels.InstanceSoulBodyBinding
+	soulBodyBindingUsernames      map[string]storagemodels.InstanceSoulBodyBindingUsername
 	agentInstanceConfig           *storagemodels.AgentInstanceConfig
 	quoteRelationships            []storagemodels.QuoteRelationship
 	announcesByKey                map[string]storagemodels.Announce
@@ -895,6 +897,26 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			defaultState := storagemodels.NewDefaultInstanceState()
 			*d = *defaultState
 			_ = d.UpdateKeys()
+		case *storagemodels.InstanceSoulBodyBindingUsername:
+			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "SOUL_BODY_BINDING_USERNAME#") {
+				username := strings.TrimPrefix(pk, "SOUL_BODY_BINDING_USERNAME#")
+				if state.soulBodyBindingUsernames != nil {
+					if binding, exists := state.soulBodyBindingUsernames[username]; exists {
+						*d = binding
+						return
+					}
+				}
+			}
+		case *storagemodels.InstanceSoulBodyBinding:
+			if sk, ok := state.whereString("SK"); ok && strings.HasPrefix(sk, storagemodels.SKSoulBodyBindingPrefix) {
+				agentID := strings.TrimPrefix(sk, storagemodels.SKSoulBodyBindingPrefix)
+				if state.soulBodyBindingsByAgentID != nil {
+					if binding, exists := state.soulBodyBindingsByAgentID[agentID]; exists {
+						*d = binding
+						return
+					}
+				}
+			}
 		case *storagemodels.RelationshipRecord:
 			pk, _ := state.whereString("PK")
 			sk, _ := state.whereString("SK")

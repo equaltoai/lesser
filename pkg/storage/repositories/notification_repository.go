@@ -48,8 +48,7 @@ func applyNotificationSortKeyScope(query core.Query, cursor string) core.Query {
 		return query.Where("SK", "begins_with", "notif#")
 	}
 
-	return query.Where("SK", "<", cursor).
-		Filter("SK", "begins_with", "notif#")
+	return query.Where("SK", "<", cursor)
 }
 
 // CreateNotification creates a new notification using BaseRepository

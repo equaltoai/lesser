@@ -465,7 +465,7 @@ func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *
 	require.True(t, result.HasMore)
 	require.Equal(t, "notif#2", result.NextCursor)
 	require.Equal(t, 1, countMockCalls(mockQuery, "Where", "SK", "<"))
-	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
+	require.Zero(t, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
 		ptr := args.Get(0).(*[]models.Notification)
@@ -479,7 +479,7 @@ func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *
 	require.True(t, result.HasMore)
 	require.Equal(t, "notif#2", result.NextCursor)
 	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "<"))
-	require.Equal(t, 2, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
+	require.Zero(t, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "IsRead", "="))
 }
 
@@ -512,7 +512,7 @@ func TestRound07_NotificationRepository_GetUserNotifications_LogsQueryError(t *t
 	require.Equal(t, queryErr.Error(), fields["error"])
 }
 
-func TestRound07_NotificationRepository_NotificationQueries_MovePrefixToFilterWhenCursorPresent(t *testing.T) {
+func TestRound07_NotificationRepository_NotificationQueries_DropSortKeyPrefixFilterWhenCursorPresent(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 
@@ -537,7 +537,7 @@ func TestRound07_NotificationRepository_NotificationQueries_MovePrefixToFilterWh
 	require.NoError(t, err)
 
 	require.Equal(t, 2, countMockCalls(mockQuery, "Where", "SK", "<"))
-	require.Equal(t, 2, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
+	require.Zero(t, countMockCalls(mockQuery, "Filter", "SK", "begins_with"))
 	require.Equal(t, 1, countMockCalls(mockQuery, "Filter", "Type", "="))
 }
 
