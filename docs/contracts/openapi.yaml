@@ -3652,6 +3652,8 @@ components:
                     type: string
                 displayName:
                     type: string
+                number:
+                    type: string
                 soulAgentId:
                     anyOf:
                         - type: string
@@ -3668,6 +3670,8 @@ components:
                         $ref: '#/components/schemas/NotificationDeliveryAttachment'
                     type: array
                 body:
+                    type: string
+                bodyMimeType:
                     type: string
                 channel:
                     type: string
@@ -3702,6 +3706,8 @@ components:
             additionalProperties: false
             properties:
                 address:
+                    type: string
+                number:
                     type: string
             required:
                 - address

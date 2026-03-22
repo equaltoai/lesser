@@ -69,49 +69,14 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
-	from := map[string]interface{}{
-		"address":     delivery.FromAddress,
-		"displayName": delivery.FromDisplayName,
-		"soulAgentId": nil,
-	}
-	if delivery.FromSoulAgentID != "" {
-		from["soulAgentId"] = delivery.FromSoulAgentID
-	}
-
-	data := map[string]interface{}{
-		"channel":    delivery.Channel,
-		"from":       from,
-		"receivedAt": delivery.ReceivedAt.Format(time.RFC3339Nano),
-		"messageId":  delivery.MessageID,
-	}
-	if delivery.ToAddress != "" {
-		data["to"] = map[string]interface{}{
-			"address": delivery.ToAddress,
-		}
-	}
-	if delivery.InReplyTo != "" {
-		data["inReplyTo"] = delivery.InReplyTo
-	}
-	if len(delivery.Attachments) > 0 {
-		attachments := make([]map[string]interface{}, 0, len(delivery.Attachments))
-		for _, attachment := range delivery.Attachments {
-			attachments = append(attachments, map[string]interface{}{
-				"id":          attachment.ID,
-				"filename":    attachment.Filename,
-				"contentType": attachment.ContentType,
-				"sizeBytes":   attachment.SizeBytes,
-				"sha256":      attachment.SHA256,
-			})
-		}
-		data["attachments"] = attachments
-	}
+	data := commNotificationData(delivery)
 
 	cmd := &notifications.CreateNotificationCommand{
 		ID:        notificationID,
 		CreatedAt: &delivery.ReceivedAt,
 		UserID:    recipient,
 		Type:      delivery.NotificationType,
-		ActorID:   delivery.FromAddress,
+		ActorID:   delivery.FromIdentifier,
 		ActorType: "external",
 		Title:     delivery.Subject,
 		Body:      delivery.Body,
@@ -135,6 +100,64 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 	h.recordCommDeliveryAuditEvent(ctx, recipient, delivery, true, "", idempotent)
 
 	return noContent(), nil
+}
+
+func commNotificationData(delivery *commNotificationDelivery) map[string]interface{} {
+	data := map[string]interface{}{
+		"channel":    delivery.Channel,
+		"from":       commNotificationParty(delivery.FromAddress, delivery.FromNumber, delivery.FromDisplayName, delivery.FromSoulAgentID),
+		"receivedAt": delivery.ReceivedAt.Format(time.RFC3339Nano),
+		"messageId":  delivery.MessageID,
+	}
+	if to := commNotificationParty(delivery.ToAddress, delivery.ToNumber, "", ""); len(to) > 0 {
+		data["to"] = to
+	}
+	if delivery.InReplyTo != "" {
+		data["inReplyTo"] = delivery.InReplyTo
+	}
+	if delivery.BodyMimeType != "" {
+		data["bodyMimeType"] = delivery.BodyMimeType
+	}
+	if attachments := commNotificationAttachmentsData(delivery.Attachments); len(attachments) > 0 {
+		data["attachments"] = attachments
+	}
+	return data
+}
+
+func commNotificationParty(address, number, displayName, soulAgentID string) map[string]interface{} {
+	party := map[string]interface{}{}
+	if address != "" {
+		party["address"] = address
+	}
+	if number != "" {
+		party["number"] = number
+	}
+	if displayName != "" {
+		party["displayName"] = displayName
+	}
+	if soulAgentID != "" {
+		party["soulAgentId"] = soulAgentID
+	}
+	return party
+}
+
+func commNotificationAttachmentsData(attachments []commNotificationAttachment) []map[string]interface{} {
+	if len(attachments) == 0 {
+		return nil
+	}
+
+	data := make([]map[string]interface{}, 0, len(attachments))
+	for _, attachment := range attachments {
+		data = append(data, map[string]interface{}{
+			"id":          attachment.ID,
+			"filename":    attachment.Filename,
+			"contentType": attachment.ContentType,
+			"sizeBytes":   attachment.SizeBytes,
+			"sha256":      attachment.SHA256,
+		})
+	}
+
+	return data
 }
 
 func (h *Handler) resolveNotificationDeliveryRecipient(ctx context.Context, delivery *commNotificationDelivery) string {
