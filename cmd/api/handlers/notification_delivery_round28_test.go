@@ -69,7 +69,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		require.GreaterOrEqual(t, len(seenCmds), 2)
 		cmd := seenCmds[len(seenCmds)-1]
 
-		expectedID, idErr := commNotificationID(cfg.AdminUsername, "comm-msg-001")
+		expectedID, idErr := commNotificationID("agent-bob", "comm-msg-001")
 		require.NoError(t, idErr)
 		require.Equal(t, expectedID, cmd.ID)
 
@@ -77,7 +77,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		require.Equal(t, time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC), cmd.CreatedAt.UTC())
 
 		require.Equal(t, commNotificationTypeInbound, cmd.Type)
-		require.Equal(t, cfg.AdminUsername, cmd.UserID)
+		require.Equal(t, "agent-bob", cmd.UserID)
 		require.Equal(t, "alice@example.com", cmd.ActorID)
 
 		require.NotNil(t, cmd.Data)
@@ -121,7 +121,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		managedHandler.registry = &RegistryStub{
 			NotificationsSvc: &NotificationsServiceStub{
 				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
-					require.Equal(t, managedCfg.AdminUsername, cmd.UserID)
+					require.Equal(t, "agent-bob", cmd.UserID)
 					return &notifications.NotificationResult{}, nil
 				},
 			},
@@ -144,7 +144,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		managedHandler.registry = &RegistryStub{
 			NotificationsSvc: &NotificationsServiceStub{
 				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
-					require.Equal(t, "simulacrum", cmd.UserID)
+					require.Equal(t, "agent-bob", cmd.UserID)
 					return &notifications.NotificationResult{}, nil
 				},
 			},

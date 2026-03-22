@@ -462,11 +462,15 @@ func (r *AccountRepository) isLocalDomain(domain string) bool {
 	if domain == "" {
 		return false
 	}
+	normalizedDomain := normalizeDomainValue(domain)
+	if normalizedDomain == "lessersoul.ai" || strings.HasSuffix(normalizedDomain, ".lessersoul.ai") {
+		return true
+	}
 	repoDomain := r.domain
 	if strings.TrimSpace(repoDomain) == "" {
 		repoDomain = config.Get().Domain
 	}
-	return normalizeDomainValue(domain) == normalizeDomainValue(repoDomain)
+	return normalizedDomain == normalizeDomainValue(repoDomain)
 }
 
 func normalizeDomainValue(domain string) string {

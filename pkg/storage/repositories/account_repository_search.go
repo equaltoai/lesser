@@ -306,8 +306,15 @@ func (r *AccountRepository) SearchByWebfinger(ctx context.Context, webfinger str
 	domain := parts[1]
 
 	// If local domain, search locally
-	if domain == r.domain {
-		return r.GetActor(ctx, username)
+	if r.isLocalDomain(domain) {
+		resolvedUsername, err := r.resolveLocalUsernameByHandle(ctx, username)
+		if err != nil {
+			return nil, err
+		}
+		if resolvedUsername == "" {
+			return nil, ErrorHandler.HandleGetError(errors.ErrItemNotFound, EntityActor, webfinger)
+		}
+		return r.GetActor(ctx, resolvedUsername)
 	}
 
 	// Search for remote actor
@@ -329,6 +336,43 @@ func (r *AccountRepository) SearchByWebfinger(ctx context.Context, webfinger str
 	}
 
 	return actor.Actor, nil
+}
+
+func (r *AccountRepository) resolveLocalUsernameByHandle(ctx context.Context, username string) (string, error) {
+	username = strings.TrimSpace(strings.TrimPrefix(username, "@"))
+	if username == "" {
+		return "", nil
+	}
+
+	user, err := r.GetUser(ctx, username)
+	if err == nil && user != nil {
+		return strings.TrimSpace(user.Username), nil
+	}
+
+	if r.db == nil {
+		return "", nil
+	}
+
+	normalizedUsername := strings.ToLower(username)
+	prefix := normalizedUsername
+	if len(prefix) > 2 {
+		prefix = prefix[:2]
+	}
+
+	var userModel models.User
+	err = r.db.WithContext(ctx).Model(&userModel).
+		Index("gsi5").
+		Where("gsi5PK", "=", fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)).
+		Where("gsi5SK", "=", normalizedUsername).
+		First(&userModel)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", ErrorHandler.HandleQueryError(err, EntityActor, fmt.Sprintf("local webfinger search: %s", username))
+	}
+
+	return strings.TrimSpace(userModel.Username), nil
 }
 
 // CacheRemoteActor caches a remote actor for search
