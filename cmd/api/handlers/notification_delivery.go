@@ -177,24 +177,31 @@ func (h *Handler) notificationDeliveryAddressedRecipient(ctx context.Context, de
 		return ""
 	}
 
-	if bindingUsername := h.notificationDeliveryBoundUsername(ctx, localPart); bindingUsername != "" {
+	lookupUsername := strings.TrimSpace(localPart)
+	canonicalUsername := h.notificationDeliveryCanonicalUsername(ctx, localPart)
+	if canonicalUsername != "" {
+		lookupUsername = canonicalUsername
+	}
+
+	if bindingUsername := h.notificationDeliveryBoundUsername(ctx, lookupUsername); bindingUsername != "" {
 		return bindingUsername
 	}
 
-	canonicalUsername := h.notificationDeliveryCanonicalUsername(ctx, localPart)
+	if lookupUsername != localPart {
+		if bindingUsername := h.notificationDeliveryBoundUsername(ctx, localPart); bindingUsername != "" {
+			return bindingUsername
+		}
+	}
+
 	if canonicalUsername == "" {
 		return ""
-	}
-
-	if bindingUsername := h.notificationDeliveryBoundUsername(ctx, canonicalUsername); bindingUsername != "" {
-		return bindingUsername
 	}
 
 	if h == nil || h.repos == nil || h.repos.Account() == nil {
 		return ""
 	}
 
-	account, err := h.repos.Account().GetAccount(ctx, canonicalUsername)
+	account, err := h.repos.Account().GetAccount(ctx, lookupUsername)
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return ""
 	}
@@ -228,9 +235,22 @@ func (h *Handler) notificationDeliveryBoundUsername(ctx context.Context, usernam
 		return ""
 	}
 
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return ""
+	}
+
 	binding, err := h.repos.Instance().GetSoulBodyBindingByUsername(ctx, username)
 	if err != nil || binding == nil {
-		return ""
+		canonicalUsername := h.notificationDeliveryCanonicalUsername(ctx, username)
+		if canonicalUsername == "" || canonicalUsername == username {
+			return ""
+		}
+
+		binding, err = h.repos.Instance().GetSoulBodyBindingByUsername(ctx, canonicalUsername)
+		if err != nil || binding == nil {
+			return ""
+		}
 	}
 
 	return strings.TrimSpace(binding.Username)
