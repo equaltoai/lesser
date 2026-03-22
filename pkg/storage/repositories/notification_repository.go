@@ -43,6 +43,15 @@ func (r *NotificationRepository) SetDispatcher(dispatcher interfaces.Notificatio
 	r.dispatcher = dispatcher
 }
 
+func applyNotificationSortKeyScope(query core.Query, cursor string) core.Query {
+	if cursor == "" {
+		return query.Where("SK", "begins_with", "notif#")
+	}
+
+	return query.Where("SK", "<", cursor).
+		Filter("SK", "begins_with", "notif#")
+}
+
 // CreateNotification creates a new notification using BaseRepository
 func (r *NotificationRepository) CreateNotification(ctx context.Context, notification *models.Notification) error {
 	if err := notification.BeforeCreate(); err != nil {
@@ -121,15 +130,12 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 		opts.Limit = 100
 	}
 	pk := "USER#" + userID
-	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "notif#").
-		OrderBy("SK", "DESC") // Most recent first
-
-	// Resume from the supplied cursor value when available
-	if opts.Cursor != "" {
-		query = query.Where("SK", "<", opts.Cursor)
-	}
+	query := applyNotificationSortKeyScope(
+		r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "DESC"), // Most recent first
+		opts.Cursor,
+	)
 
 	// Fetch limit+1 to detect if more results exist
 	query = query.Limit(opts.Limit + 1)
@@ -176,16 +182,12 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 		opts.Limit = 100
 	}
 	pk := "USER#" + userID
-	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "notif#").
-		Filter("IsRead", "=", false).
-		OrderBy("SK", "DESC") // Most recent first
-
-	// Resume from the supplied cursor value when available
-	if opts.Cursor != "" {
-		query = query.Where("SK", "<", opts.Cursor)
-	}
+	query := applyNotificationSortKeyScope(
+		r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "DESC"), // Most recent first
+		opts.Cursor,
+	).Filter("IsRead", "=", false)
 
 	// Fetch limit+1 to detect if more results exist
 	query = query.Limit(opts.Limit + 1)
@@ -471,15 +473,12 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 	}
 
 	pk := "USER#" + userID
-	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "notif#").
-		OrderBy("SK", "DESC")
-
-	// Resume from the supplied cursor value when available
-	if opts.Cursor != "" {
-		query = query.Where("SK", "<", opts.Cursor)
-	}
+	query := applyNotificationSortKeyScope(
+		r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "DESC"),
+		opts.Cursor,
+	)
 
 	// Fetch extra items to account for grouping expansion and detect more results
 	query = query.Limit((opts.Limit * 3) + 1)
@@ -897,18 +896,16 @@ func (r *NotificationRepository) GetNotificationsAdvanced(ctx context.Context, u
 	}
 
 	pk := "USER#" + userID
-	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "notif#").
-		OrderBy("SK", "DESC")
+	query := applyNotificationSortKeyScope(
+		r.db.WithContext(ctx).Model(&models.Notification{}).
+			Where("PK", "=", pk).
+			OrderBy("SK", "DESC"),
+		pagination.Cursor,
+	)
 
 	// Apply additional filters
 	for key, value := range filters {
 		query = query.Filter(key, "=", value)
-	}
-
-	if pagination.Cursor != "" {
-		query = query.Where("SK", "<", pagination.Cursor)
 	}
 
 	query = query.Limit(pagination.Limit + 1)
