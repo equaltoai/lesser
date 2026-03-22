@@ -49,14 +49,14 @@ type AuthAuditLog struct {
 	Metadata string `theorydb:"attr:metadata" json:"metadata,omitempty"`
 
 	// GSI keys for querying
-	GSI1PK string `theorydb:"attr:gsi1PK" json:"-"` // USER#username
-	GSI1SK string `theorydb:"attr:gsi1SK" json:"-"` // AUDIT#timestamp
-	GSI2PK string `theorydb:"attr:gsi2PK" json:"-"` // IP#address
-	GSI2SK string `theorydb:"attr:gsi2SK" json:"-"` // AUDIT#timestamp
-	GSI3PK string `theorydb:"attr:gsi3PK" json:"-"` // SESSION#id
-	GSI3SK string `theorydb:"attr:gsi3SK" json:"-"` // AUDIT#timestamp
-	GSI4PK string `theorydb:"attr:gsi4PK" json:"-"` // SEVERITY#level
-	GSI4SK string `theorydb:"attr:gsi4SK" json:"-"` // AUDIT#timestamp
+	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"-"` // USER#username
+	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"-"` // AUDIT#timestamp
+	GSI2PK string `theorydb:"index:gsi2,pk,attr:gsi2PK,omitempty" json:"-"` // IP#address
+	GSI2SK string `theorydb:"index:gsi2,sk,attr:gsi2SK,omitempty" json:"-"` // AUDIT#timestamp
+	GSI3PK string `theorydb:"index:gsi3,pk,attr:gsi3PK,omitempty" json:"-"` // SESSION#id
+	GSI3SK string `theorydb:"index:gsi3,sk,attr:gsi3SK,omitempty" json:"-"` // AUDIT#timestamp
+	GSI4PK string `theorydb:"index:gsi4,pk,attr:gsi4PK,omitempty" json:"-"` // SEVERITY#level
+	GSI4SK string `theorydb:"index:gsi4,sk,attr:gsi4SK,omitempty" json:"-"` // AUDIT#timestamp
 
 	// TTL for automatic deletion
 	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
