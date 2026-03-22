@@ -137,6 +137,9 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 	var notifications []models.Notification
 	err := query.All(&notifications)
 	if err != nil {
+		r.logger.Error("GetUserNotifications query error",
+			zap.String("user_id", userID),
+			zap.Error(err))
 		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "user notifications")
 	}
 
