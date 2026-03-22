@@ -72,19 +72,23 @@ func TestCommNotificationID_IsStable(t *testing.T) {
 func TestCommNotificationDeliveryContract_HelperCoverage(t *testing.T) {
 	t.Run("sender recipient and in-reply-to normalize", func(t *testing.T) {
 		soulAgentID := "agent-123"
-		fromAddress, displayName, normalizedSoulAgentID, err := normalizeCommNotificationSender(apiModels.NotificationDeliveryFrom{
+		fromIdentifier, fromAddress, fromNumber, displayName, normalizedSoulAgentID, err := normalizeCommNotificationSender(commNotificationChannelEmail, apiModels.NotificationDeliveryFrom{
 			Address:     "alice@example.com",
 			DisplayName: "Alice <Admin>",
 			SoulAgentID: &soulAgentID,
 		})
 		require.NoError(t, err)
+		require.Equal(t, "alice@example.com", fromIdentifier)
 		require.Equal(t, "alice@example.com", fromAddress)
+		require.Empty(t, fromNumber)
 		require.Equal(t, "Alice &lt;Admin&gt;", displayName)
 		require.Equal(t, soulAgentID, normalizedSoulAgentID)
 
-		toAddress, err := normalizeCommNotificationRecipient(commNotificationChannelSMS, nil)
+		toIdentifier, toAddress, toNumber, err := normalizeCommNotificationRecipient(commNotificationChannelSMS, nil)
 		require.NoError(t, err)
+		require.Empty(t, toIdentifier)
 		require.Empty(t, toAddress)
+		require.Empty(t, toNumber)
 
 		replyTo := "  parent-1  "
 		inReplyTo, err := normalizeCommNotificationInReplyTo(&replyTo)
@@ -101,6 +105,10 @@ func TestCommNotificationDeliveryContract_HelperCoverage(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, subject)
 		require.Equal(t, "hello &lt;b&gt;world&lt;/b&gt;", body)
+
+		bodyMimeType, err := normalizeCommNotificationBodyMimeType(" Text/Plain ")
+		require.NoError(t, err)
+		require.Equal(t, "text/plain", bodyMimeType)
 
 		_, _, err = normalizeCommNotificationContent(commNotificationChannelEmail, "", "hello")
 		require.Error(t, err)
@@ -152,8 +160,24 @@ func TestCommNotificationDeliveryContract_HelperCoverage(t *testing.T) {
 		_, err = normalizeCommNotificationChannel("pager")
 		require.Error(t, err)
 
-		_, err = normalizeCommNotificationRecipient(commNotificationChannelEmail, nil)
+		_, _, _, err = normalizeCommNotificationRecipient(commNotificationChannelEmail, nil)
 		require.Error(t, err)
+
+		fromIdentifier, fromAddress, fromNumber, _, _, err := normalizeCommNotificationSender(commNotificationChannelSMS, apiModels.NotificationDeliveryFrom{
+			Number: "+15551230000",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "+15551230000", fromIdentifier)
+		require.Empty(t, fromAddress)
+		require.Equal(t, "+15551230000", fromNumber)
+
+		toIdentifier, toAddress, toNumber, err := normalizeCommNotificationRecipient(commNotificationChannelSMS, &apiModels.NotificationDeliveryTo{
+			Number: "+15557654321",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "+15557654321", toIdentifier)
+		require.Empty(t, toAddress)
+		require.Equal(t, "+15557654321", toNumber)
 
 		var attachments []apiModels.NotificationDeliveryAttachment
 		for i := 0; i < commNotificationMaxAttachments+1; i++ {
@@ -167,5 +191,31 @@ func TestCommNotificationDeliveryContract_HelperCoverage(t *testing.T) {
 		}
 		_, err = normalizeCommNotificationAttachments(attachments)
 		require.Error(t, err)
+	})
+
+	t.Run("identity helpers cover email sms voice and fallback rules", func(t *testing.T) {
+		identifier, field, err := normalizeCommNotificationIdentity(commNotificationChannelEmail, "from", "alice@example.com", "")
+		require.NoError(t, err)
+		require.Equal(t, "alice@example.com", identifier)
+		require.Empty(t, field)
+
+		identifier, field, err = normalizeCommNotificationIdentity(commNotificationChannelEmail, "to", "", "")
+		require.Error(t, err)
+		require.Empty(t, identifier)
+		require.Equal(t, "to.address", field)
+		require.ErrorContains(t, err, "email recipient is required")
+
+		identifier, field, err = normalizeCommNotificationIdentity(commNotificationChannelVoice, "from", "sip:agent@example.com", "")
+		require.NoError(t, err)
+		require.Equal(t, "sip:agent@example.com", identifier)
+		require.Empty(t, field)
+
+		identifier, field, err = normalizeCommNotificationIdentity("push", "from", "", "token-123")
+		require.NoError(t, err)
+		require.Equal(t, "token-123", identifier)
+		require.Empty(t, field)
+
+		require.Equal(t, "sender", identitySubject("from"))
+		require.Equal(t, "recipient", identitySubject("to"))
 	})
 }

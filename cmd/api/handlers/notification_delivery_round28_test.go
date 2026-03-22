@@ -213,4 +213,139 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
 		requireStatus(t, http.StatusNoContent)(managedHandler.HandleDeliverNotificationLift(ctx))
 	})
+
+	t.Run("email body mime type is accepted and preserved", func(t *testing.T) {
+		mimeHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		mimeHandler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					require.Equal(t, "alice@example.com", cmd.ActorID)
+					require.NotNil(t, cmd.Data)
+					require.Equal(t, "text/plain", cmd.Data["bodyMimeType"])
+
+					from, ok := cmd.Data["from"].(map[string]interface{})
+					require.True(t, ok)
+					require.Equal(t, "alice@example.com", from["address"])
+					_, hasNumber := from["number"]
+					require.False(t, hasNumber)
+
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
+			Type:         "communication:inbound",
+			Channel:      "email",
+			From:         apiModels.NotificationDeliveryFrom{Address: "alice@example.com", DisplayName: "Alice"},
+			To:           &apiModels.NotificationDeliveryTo{Address: "agent-0@lessersoul.ai"},
+			Subject:      "hello",
+			Body:         "plain text body",
+			BodyMimeType: "text/plain",
+			ReceivedAt:   time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			MessageID:    "comm-msg-body-mime",
+		})
+		require.NoError(t, err)
+
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
+		requireStatus(t, http.StatusNoContent)(mimeHandler.HandleDeliverNotificationLift(ctx))
+	})
+
+	t.Run("sms number payload is accepted and preserved", func(t *testing.T) {
+		smsHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		smsHandler.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					require.Equal(t, "+15551230000", cmd.ActorID)
+					require.NotNil(t, cmd.Data)
+					require.Equal(t, "sms", cmd.Data["channel"])
+
+					from, ok := cmd.Data["from"].(map[string]interface{})
+					require.True(t, ok)
+					require.Equal(t, "+15551230000", from["number"])
+					_, hasAddress := from["address"]
+					require.False(t, hasAddress)
+
+					to, ok := cmd.Data["to"].(map[string]interface{})
+					require.True(t, ok)
+					require.Equal(t, "+15557654321", to["number"])
+					_, hasToAddress := to["address"]
+					require.False(t, hasToAddress)
+
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
+			Type:       "communication:inbound",
+			Channel:    "sms",
+			From:       apiModels.NotificationDeliveryFrom{Number: "+15551230000", DisplayName: "Alice"},
+			To:         &apiModels.NotificationDeliveryTo{Number: "+15557654321"},
+			Body:       "test message",
+			ReceivedAt: time.Date(2026, time.March, 4, 12, 5, 0, 0, time.UTC).Format(time.RFC3339),
+			MessageID:  "comm-msg-sms",
+		})
+		require.NoError(t, err)
+
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
+		requireStatus(t, http.StatusNoContent)(smsHandler.HandleDeliverNotificationLift(ctx))
+	})
+}
+
+func TestNotificationDelivery_Round28_HelperPayloadBuilders(t *testing.T) {
+	t.Run("comm notification data includes optional fields", func(t *testing.T) {
+		delivery := &commNotificationDelivery{
+			Channel:         commNotificationChannelSMS,
+			FromAddress:     "fallback@example.com",
+			FromNumber:      "+15551230000",
+			FromDisplayName: "Alice",
+			FromSoulAgentID: "agent-1",
+			ToNumber:        "+15557654321",
+			BodyMimeType:    "text/plain",
+			ReceivedAt:      time.Date(2026, time.March, 4, 12, 5, 0, 0, time.UTC),
+			MessageID:       "comm-msg-sms",
+			InReplyTo:       "comm-msg-parent",
+			Attachments: []commNotificationAttachment{
+				{
+					ID:          "att-1",
+					Filename:    "note.txt",
+					ContentType: "text/plain",
+					SizeBytes:   42,
+					SHA256:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				},
+			},
+		}
+
+		data := commNotificationData(delivery)
+
+		require.Equal(t, "sms", data["channel"])
+		require.Equal(t, "text/plain", data["bodyMimeType"])
+		require.Equal(t, "comm-msg-parent", data["inReplyTo"])
+
+		from, ok := data["from"].(map[string]interface{})
+		require.True(t, ok)
+		require.Equal(t, "fallback@example.com", from["address"])
+		require.Equal(t, "+15551230000", from["number"])
+		require.Equal(t, "Alice", from["displayName"])
+		require.Equal(t, "agent-1", from["soulAgentId"])
+
+		to, ok := data["to"].(map[string]interface{})
+		require.True(t, ok)
+		require.Equal(t, "+15557654321", to["number"])
+
+		attachments, ok := data["attachments"].([]map[string]interface{})
+		require.True(t, ok)
+		require.Len(t, attachments, 1)
+		require.Equal(t, "att-1", attachments[0]["id"])
+	})
+
+	t.Run("party and attachment helpers omit empty values", func(t *testing.T) {
+		require.Empty(t, commNotificationParty("", "", "", ""))
+		require.Nil(t, commNotificationAttachmentsData(nil))
+	})
 }
