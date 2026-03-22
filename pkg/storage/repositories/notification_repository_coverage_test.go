@@ -13,6 +13,8 @@ import (
 	ddbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type fakeNotificationDispatcher struct {
@@ -456,6 +458,35 @@ func TestRound07_NotificationRepository_UserNotifications_PaginationBranches(t *
 	require.NoError(t, err)
 	require.True(t, result.HasMore)
 	require.Equal(t, "notif#2", result.NextCursor)
+}
+
+func TestRound07_NotificationRepository_GetUserNotifications_LogsQueryError(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
+
+	queryErr := errors.New("builder failed")
+	mockQuery.On("All", mock.Anything).Return(queryErr).Once()
+
+	core, observed := observer.New(zapcore.ErrorLevel)
+	repo := NewNotificationRepository(mockDB, "test-table", zap.New(core), nil)
+
+	result, err := repo.GetUserNotifications(context.Background(), "user-1", interfaces.PaginationOptions{Limit: 1})
+	require.Nil(t, result)
+	require.Error(t, err)
+
+	entries := observed.All()
+	require.Len(t, entries, 1)
+	require.Equal(t, "GetUserNotifications query error", entries[0].Message)
+
+	fields := entries[0].ContextMap()
+	require.Equal(t, "user-1", fields["user_id"])
+	require.Equal(t, queryErr.Error(), fields["error"])
 }
 
 func TestRound07_NotificationRepository_MarkUnreadAndPush_GetErrorBranches(t *testing.T) {
