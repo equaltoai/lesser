@@ -7,7 +7,6 @@ import (
 	"time"
 
 	apiModels "github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
@@ -172,41 +171,15 @@ func (h *Handler) notificationDeliveryAddressedRecipient(ctx context.Context, de
 		return ""
 	}
 
-	localPart, domain, ok := splitNotificationDeliveryAddress(delivery.ToAddress)
-	if !ok || !h.isNotificationDeliveryLocalDomain(domain) {
-		return ""
+	if username := h.notificationDeliveryBoundContactIdentifier(ctx, delivery.ToAddress); username != "" {
+		return username
 	}
 
-	lookupUsername := strings.TrimSpace(localPart)
-	canonicalUsername := h.notificationDeliveryCanonicalUsername(ctx, localPart)
-	if canonicalUsername != "" {
-		lookupUsername = canonicalUsername
+	if username := h.notificationDeliveryBoundContactIdentifier(ctx, delivery.ToNumber); username != "" {
+		return username
 	}
 
-	if bindingUsername := h.notificationDeliveryBoundUsername(ctx, lookupUsername); bindingUsername != "" {
-		return bindingUsername
-	}
-
-	if lookupUsername != localPart {
-		if bindingUsername := h.notificationDeliveryBoundUsername(ctx, localPart); bindingUsername != "" {
-			return bindingUsername
-		}
-	}
-
-	if canonicalUsername == "" {
-		return ""
-	}
-
-	if h == nil || h.repos == nil || h.repos.Account() == nil {
-		return ""
-	}
-
-	account, err := h.repos.Account().GetAccount(ctx, lookupUsername)
-	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
-		return ""
-	}
-
-	return strings.TrimSpace(account.User.Username)
+	return ""
 }
 
 func (h *Handler) notificationDeliveryRecipient(ctx context.Context) string {
@@ -242,100 +215,47 @@ func (h *Handler) notificationDeliveryBoundUsername(ctx context.Context, usernam
 
 	binding, err := h.repos.Instance().GetSoulBodyBindingByUsername(ctx, username)
 	if err != nil || binding == nil {
-		canonicalUsername := h.notificationDeliveryCanonicalUsername(ctx, username)
-		if canonicalUsername == "" || canonicalUsername == username {
-			return ""
-		}
-
-		binding, err = h.repos.Instance().GetSoulBodyBindingByUsername(ctx, canonicalUsername)
-		if err != nil || binding == nil {
-			return ""
-		}
+		return ""
 	}
 
 	return strings.TrimSpace(binding.Username)
 }
 
-func (h *Handler) notificationDeliveryCanonicalUsername(ctx context.Context, username string) string {
-	if h == nil || h.repos == nil {
+func (h *Handler) notificationDeliveryBoundContactIdentifier(ctx context.Context, identifier string) string {
+	username := h.notificationDeliveryUsernameForContactIdentifier(ctx, identifier)
+	if username == "" {
 		return ""
 	}
 
-	if h.repos.Account() != nil {
-		account, err := h.repos.Account().GetAccount(ctx, username)
-		if err == nil && account != nil && account.User != nil && account.User.IsAgent {
-			return strings.TrimSpace(account.User.Username)
-		}
+	if bindingUsername := h.notificationDeliveryBoundUsername(ctx, username); bindingUsername != "" {
+		return bindingUsername
 	}
 
-	if h.repos.Actor() != nil {
-		results, err := h.repos.Actor().SearchAccounts(ctx, username, 10, false, 0)
-		if err == nil {
-			if canonical := h.notificationDeliveryMatchingLocalUsername(username, results); canonical != "" {
-				return canonical
-			}
-		}
-	}
-
-	if h.repos.Search() != nil {
-		results, err := h.repos.Search().SearchAccounts(ctx, username, 10, false, 0)
-		if err == nil {
-			if canonical := h.notificationDeliveryMatchingLocalUsername(username, results); canonical != "" {
-				return canonical
-			}
-		}
-	}
-
-	return ""
+	return username
 }
 
-func (h *Handler) notificationDeliveryMatchingLocalUsername(username string, actors []*activitypub.Actor) string {
-	for _, actor := range actors {
-		if actor == nil || !h.actorAppearsLocal(actor) {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(actor.PreferredUsername), username) {
-			return strings.TrimSpace(actor.PreferredUsername)
-		}
+func (h *Handler) notificationDeliveryUsernameForContactIdentifier(ctx context.Context, identifier string) string {
+	if h == nil || h.repos == nil || h.repos.Account() == nil {
+		return ""
 	}
 
-	return ""
-}
-
-func (h *Handler) isNotificationDeliveryLocalDomain(domain string) bool {
-	domain = strings.ToLower(strings.TrimSpace(domain))
-	if domain == "" {
-		return false
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return ""
 	}
 
-	if domain == "lessersoul.ai" {
-		return true
-	}
-	if h == nil || h.cfg == nil {
-		return false
+	if !strings.Contains(identifier, "@") {
+		return ""
 	}
 
-	return domain == strings.ToLower(strings.TrimSpace(h.cfg.Domain))
-}
-
-func splitNotificationDeliveryAddress(address string) (string, string, bool) {
-	address = strings.TrimSpace(address)
-	if address == "" {
-		return "", "", false
+	actor, err := h.repos.Account().SearchByWebfinger(ctx, identifier)
+	if err != nil || actor == nil {
+		return ""
 	}
-
-	at := strings.LastIndex(address, "@")
-	if at <= 0 || at == len(address)-1 {
-		return "", "", false
+	if !h.actorAppearsLocal(actor) {
+		return ""
 	}
-
-	localPart := strings.TrimSpace(address[:at])
-	domain := strings.TrimSpace(address[at+1:])
-	if localPart == "" || domain == "" {
-		return "", "", false
-	}
-
-	return localPart, domain, true
+	return strings.TrimSpace(actor.PreferredUsername)
 }
 
 func (h *Handler) notificationDeliveryKeys() []string {

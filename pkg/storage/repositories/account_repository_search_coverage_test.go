@@ -119,6 +119,116 @@ func TestAccountRepository_SearchByWebfinger_RemoteNotFound(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestAccountRepository_SearchByWebfinger_LocalDomainCanonicalizesMixedCaseUsername(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*models.User)
+		return ok
+	})).Return(errors.ErrItemNotFound).Once()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*models.User)
+		return ok
+	})).Run(func(args mock.Arguments) {
+		user := args.Get(0).(*models.User)
+		user.Username = "Medic"
+		user.Role = "user"
+		user.CreatedAt = baseTime
+		user.UpdatedAt = baseTime
+		_ = user.UpdateKeys()
+	}).Return(nil).Once()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*models.Actor)
+		return ok
+	})).Run(func(args mock.Arguments) {
+		actor := args.Get(0).(*models.Actor)
+		actor.Username = "Medic"
+		actor.CreatedAt = baseTime
+		actor.UpdatedAt = baseTime
+		actor.Actor = &activitypub.Actor{
+			PreferredUsername: "Medic",
+			Name:              "Medic",
+			BaseObject: activitypub.BaseObject{
+				ID: "https://example.com/users/Medic",
+			},
+		}
+		_ = actor.UpdateKeys()
+	}).Return(nil).Once()
+
+	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+
+	actor, err := repo.SearchByWebfinger(ctx, "medic@example.com")
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, "Medic", actor.PreferredUsername)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
+func TestAccountRepository_SearchByWebfinger_ManagedLesserSoulAliasIsLocal(t *testing.T) {
+	ctx := context.Background()
+	baseTime := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*models.User)
+		return ok
+	})).Return(errors.ErrItemNotFound).Once()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*models.User)
+		return ok
+	})).Run(func(args mock.Arguments) {
+		user := args.Get(0).(*models.User)
+		user.Username = "Agent-0"
+		user.Role = "user"
+		user.CreatedAt = baseTime
+		user.UpdatedAt = baseTime
+		_ = user.UpdateKeys()
+	}).Return(nil).Once()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*models.Actor)
+		return ok
+	})).Run(func(args mock.Arguments) {
+		actor := args.Get(0).(*models.Actor)
+		actor.Username = "Agent-0"
+		actor.CreatedAt = baseTime
+		actor.UpdatedAt = baseTime
+		actor.Actor = &activitypub.Actor{
+			PreferredUsername: "Agent-0",
+			Name:              "Agent-0",
+			BaseObject: activitypub.BaseObject{
+				ID: "https://example.com/users/Agent-0",
+			},
+		}
+		_ = actor.UpdateKeys()
+	}).Return(nil).Once()
+
+	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+
+	actor, err := repo.SearchByWebfinger(ctx, "agent-0@lessersoul.ai")
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, "Agent-0", actor.PreferredUsername)
+
+	mockDB.AssertExpectations(t)
+	mockQuery.AssertExpectations(t)
+}
+
 func TestAccountRepository_SearchAllActors_FilteringAndErrorBranches(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)

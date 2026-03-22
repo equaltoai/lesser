@@ -643,6 +643,32 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 		return true
 	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
 
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.User); !ok {
+			return false
+		}
+		pk, ok := state.whereString("PK")
+		if !ok || !strings.HasPrefix(pk, "USER#") || state.usersByUsername == nil {
+			return false
+		}
+		username := strings.TrimPrefix(pk, "USER#")
+		_, exactExists := state.usersByUsername[username]
+		return !exactExists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		if _, ok := dest.(*storagemodels.Actor); !ok {
+			return false
+		}
+		pk, ok := state.whereString("PK")
+		if !ok || !strings.HasPrefix(pk, "ACTOR#") || state.actorsByUser == nil {
+			return false
+		}
+		username := strings.TrimPrefix(pk, "ACTOR#")
+		_, exactExists := state.actorsByUser[username]
+		return !exactExists
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+
 	mockQuery.On("First", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dest := args.Get(0)
 		switch d := dest.(type) {
@@ -656,6 +682,15 @@ func round10NewDynamoHarness(t *testing.T, state *round10QueryState) *round10Dyn
 			username := ""
 			if pk, ok := state.whereString("PK"); ok && strings.HasPrefix(pk, "USER#") {
 				username = strings.TrimPrefix(pk, "USER#")
+			} else if gsi5pk, ok := state.whereString("gsi5PK"); ok && strings.HasPrefix(gsi5pk, "USER_HANDLE_PREFIX#") {
+				if gsi5sk, ok := state.whereString("gsi5SK"); ok {
+					for candidate, user := range state.usersByUsername {
+						if strings.EqualFold(strings.TrimSpace(user.Username), gsi5sk) || strings.EqualFold(strings.TrimSpace(candidate), gsi5sk) {
+							*d = user
+							return
+						}
+					}
+				}
 			}
 			if user, ok := state.usersByUsername[username]; ok {
 				*d = user
