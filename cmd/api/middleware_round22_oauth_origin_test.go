@@ -41,17 +41,36 @@ func TestOAuthOriginHelpers_Round22(t *testing.T) {
 		_, _, ok := normalizeOrigin("")
 		require.False(t, ok)
 
+		_, _, ok = normalizeOrigin("://bad")
+		require.False(t, ok)
+
+		_, _, ok = normalizeOrigin("https://user@claude.ai")
+		require.False(t, ok)
+
 		_, _, ok = normalizeOrigin("https://claude.ai/path")
 		require.False(t, ok)
 
 		_, _, ok = normalizeOrigin("https://claude.ai?state=1")
 		require.False(t, ok)
+
+		normalized, parsed, ok := normalizeOrigin("https://claude.ai/")
+		require.True(t, ok)
+		require.Equal(t, "https://claude.ai", normalized)
+		require.NotNil(t, parsed)
 	})
 
 	t.Run("localhost helper only allows http loopback origins", func(t *testing.T) {
 		require.False(t, isAllowedLocalDevelopmentOrigin(nil))
 
-		parsed, err := url.Parse("https://localhost:3000")
+		parsed, err := url.Parse("http://localhost:3000")
+		require.NoError(t, err)
+		require.True(t, isAllowedLocalDevelopmentOrigin(parsed))
+
+		parsed, err = url.Parse("http://example.com:3000")
+		require.NoError(t, err)
+		require.False(t, isAllowedLocalDevelopmentOrigin(parsed))
+
+		parsed, err = url.Parse("https://localhost:3000")
 		require.NoError(t, err)
 		require.False(t, isAllowedLocalDevelopmentOrigin(parsed))
 	})
@@ -136,4 +155,40 @@ func TestOAuthOriginRestrictionMiddleware_Round22(t *testing.T) {
 			require.Equal(t, tc.wantStatus, resp.Status)
 		})
 	}
+}
+
+func TestAPISecurityHeadersMiddleware_Round22(t *testing.T) {
+	mw := apiSecurityHeaders()
+
+	t.Run("passes through nil response", func(t *testing.T) {
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return nil, nil
+		})(newTestAppTheoryContext(http.MethodGet, "/"))
+		require.NoError(t, err)
+		require.Nil(t, resp)
+	})
+
+	t.Run("sets defaults without overriding existing values", func(t *testing.T) {
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{
+				Status: http.StatusOK,
+				Headers: map[string][]string{
+					"x-frame-options": {"SAMEORIGIN"},
+				},
+			}, nil
+		})(newTestAppTheoryContext(http.MethodGet, "/"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"nosniff"}, resp.Headers["x-content-type-options"])
+		require.Equal(t, []string{"SAMEORIGIN"}, resp.Headers["x-frame-options"])
+		require.Equal(t, []string{"strict-origin-when-cross-origin"}, resp.Headers["referrer-policy"])
+	})
+
+	t.Run("initializes missing header map", func(t *testing.T) {
+		resp, err := mw(func(*apptheory.Context) (*apptheory.Response, error) {
+			return &apptheory.Response{Status: http.StatusOK}, nil
+		})(newTestAppTheoryContext(http.MethodGet, "/"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"same-origin"}, resp.Headers["cross-origin-resource-policy"])
+		require.Equal(t, []string{"noindex, nofollow"}, resp.Headers["x-robots-tag"])
+	})
 }

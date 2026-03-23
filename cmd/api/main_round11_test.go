@@ -98,6 +98,16 @@ func TestMainHelpers(t *testing.T) {
 	require.Equal(t, observability.ErrorTypeValidation, determineErrorType(422))
 }
 
+func TestMainHelpers_Round22(t *testing.T) {
+	require.Equal(t, "", headerValue(nil, "origin"))
+
+	ctx := &apptheory.Context{Request: apptheory.Request{Headers: map[string][]string{}}}
+	require.Equal(t, "", headerValue(ctx, "origin"))
+
+	// Nil contexts should be ignored safely by latency helpers.
+	addLatencyContextValues(nil, requestInfo{endpoint: "GET /"}, time.Now())
+}
+
 func TestRecordLatencyMetric(t *testing.T) {
 	repos = newMainTestRepos(t)
 	cfg = &config.Config{Domain: "example.com"}
