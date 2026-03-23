@@ -93,6 +93,82 @@
   let walletConnected = $state(false);
   let connectedAddress = $state('');
   let walletChallengeId = $state('');
+  const nonOAuthURLParams = new Set(['auth_request', 'return_to', 'session_id']);
+
+  function setOAuthParam(params: URLSearchParams, key: string, value: unknown) {
+    if (value == null) {
+      return;
+    }
+
+    const stringValue = String(value);
+    if (stringValue === '') {
+      return;
+    }
+
+    params.set(key, stringValue);
+  }
+
+  function parseAuthRequestJson(authRequestParam: string): Record<string, unknown> {
+    try {
+      return JSON.parse(authRequestParam) as Record<string, unknown>;
+    } catch {
+      return JSON.parse(decodeURIComponent(authRequestParam)) as Record<string, unknown>;
+    }
+  }
+
+  function buildAuthRequestFromJson(oauthParams: Record<string, unknown>): string {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(oauthParams)) {
+      setOAuthParam(params, key, value);
+    }
+
+    return params.toString();
+  }
+
+  function buildAuthRequestFromURLParams(
+    urlParams: URLSearchParams,
+    fallbacks: {
+      clientId?: string;
+      redirectUri?: string;
+      oauthState?: string;
+      scope?: string;
+      responseType?: string;
+      codeChallenge?: string;
+      codeChallengeMethod?: string;
+    }
+  ): string {
+    const params = new URLSearchParams();
+    const urlClientId = urlParams.get('client_id') || fallbacks.clientId;
+    const urlRedirectUri = urlParams.get('redirect_uri') || fallbacks.redirectUri;
+    const urlState = urlParams.get('state') || fallbacks.oauthState;
+
+    if (!urlClientId || !urlRedirectUri || !urlState) {
+      return '';
+    }
+
+    setOAuthParam(params, 'client_id', urlClientId);
+    setOAuthParam(params, 'redirect_uri', urlRedirectUri);
+    setOAuthParam(params, 'state', urlState);
+    setOAuthParam(params, 'scope', urlParams.get('scope') || fallbacks.scope);
+    setOAuthParam(params, 'response_type', urlParams.get('response_type') || fallbacks.responseType);
+    setOAuthParam(params, 'code_challenge', urlParams.get('code_challenge') || fallbacks.codeChallenge);
+    setOAuthParam(
+      params,
+      'code_challenge_method',
+      urlParams.get('code_challenge_method') || fallbacks.codeChallengeMethod
+    );
+
+    for (const [key, value] of urlParams.entries()) {
+      if (nonOAuthURLParams.has(key) || params.has(key) || value === '') {
+        continue;
+      }
+
+      params.set(key, value);
+    }
+
+    return params.toString();
+  }
 
   function handleAuthSuccess() {
     if (authFlow === 'redirect') {
@@ -125,20 +201,8 @@
     const authRequestParam = urlParams.get('auth_request');
     if (authRequestParam) {
       try {
-        const decoded = decodeURIComponent(authRequestParam);
-        const oauthParams = JSON.parse(decoded);
-        
-        // Build query string from parsed params
-        const params = new URLSearchParams();
-        if (oauthParams.client_id) params.set('client_id', oauthParams.client_id);
-        if (oauthParams.redirect_uri) params.set('redirect_uri', oauthParams.redirect_uri);
-        if (oauthParams.state) params.set('state', oauthParams.state);
-        if (oauthParams.scope) params.set('scope', oauthParams.scope);
-        if (oauthParams.response_type) params.set('response_type', oauthParams.response_type);
-        if (oauthParams.code_challenge) params.set('code_challenge', oauthParams.code_challenge);
-        if (oauthParams.code_challenge_method) params.set('code_challenge_method', oauthParams.code_challenge_method);
-        
-        authRequest = params.toString();
+        const oauthParams = parseAuthRequestJson(authRequestParam);
+        authRequest = buildAuthRequestFromJson(oauthParams);
         console.log('PasswordlessLogin - built authRequest from URL JSON:', authRequest);
         
         // Store in sessionStorage for navigation persistence
@@ -155,21 +219,17 @@
     
     // If authRequest is still empty, check if we have individual URL params
     if (!authRequest) {
-      const params = new URLSearchParams();
-      const urlClientId = urlParams.get('client_id') || clientId;
-      const urlRedirectUri = urlParams.get('redirect_uri') || redirectUri;
-      const urlState = urlParams.get('state') || oauthState;
-      
-      if (urlClientId && urlRedirectUri && urlState) {
-        params.set('client_id', urlClientId);
-        params.set('redirect_uri', urlRedirectUri);
-        params.set('state', urlState);
-        if (urlParams.get('scope') || scope) params.set('scope', urlParams.get('scope') || scope || '');
-        if (urlParams.get('response_type') || responseType) params.set('response_type', urlParams.get('response_type') || responseType || '');
-        if (urlParams.get('code_challenge') || codeChallenge) params.set('code_challenge', urlParams.get('code_challenge') || codeChallenge || '');
-        if (urlParams.get('code_challenge_method') || codeChallengeMethod) params.set('code_challenge_method', urlParams.get('code_challenge_method') || codeChallengeMethod || '');
-        
-        authRequest = params.toString();
+      authRequest = buildAuthRequestFromURLParams(urlParams, {
+        clientId,
+        redirectUri,
+        oauthState,
+        scope,
+        responseType,
+        codeChallenge,
+        codeChallengeMethod
+      });
+
+      if (authRequest) {
         console.log('PasswordlessLogin - built authRequest from URL params:', authRequest);
         
         // Store in sessionStorage for navigation persistence

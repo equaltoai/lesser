@@ -237,6 +237,7 @@ func TestOAuthAuthorizeFlowRound12(t *testing.T) {
 
 		resp := requireStatus(t, http.StatusFound)(h.HandleOAuthAuthorizeLift(ctx))
 		require.Contains(t, firstStringValue(resp.Headers, "location"), "/auth/consent?")
+		require.Contains(t, firstStringValue(resp.Headers, "location"), "resource=https%3A%2F%2Fmcp.example%2Fresource")
 		require.NotNil(t, storedState)
 		require.Equal(t, "https://mcp.example/resource", storedState.Resource)
 	})
