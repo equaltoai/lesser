@@ -37,9 +37,26 @@
   let scopes = $state<string[]>([]);
   let oauthState = $state('');
   let redirectUri = $state('');
+  let resource = $state('');
+  let resourceDisplay = $state('');
   let error = $state('');
   let isApproving = $state(false);
   let isDenying = $state(false);
+
+  function formatResourceForDisplay(resourceValue: string): string {
+    const trimmedValue = resourceValue.trim();
+    if (!trimmedValue) {
+      return '';
+    }
+
+    try {
+      const parsed = new URL(trimmedValue);
+      const formatted = `${parsed.host}${parsed.pathname}${parsed.search}`;
+      return formatted || parsed.host;
+    } catch {
+      return trimmedValue.replace(/^https?:\/\//, '');
+    }
+  }
   
   // Read OAuth params from URL on mount
   onMount(() => {
@@ -50,6 +67,8 @@
     clientUrl = urlParams.get('client_url') || '';
     oauthState = urlParams.get('state') || '';
     redirectUri = urlParams.get('redirect_uri') || '';
+    resource = urlParams.get('resource') || '';
+    resourceDisplay = formatResourceForDisplay(resource);
     
     const scopesParam = urlParams.get('scopes') || 'read write';
     scopes = scopesParam.split(' ').filter(s => s.trim());
@@ -204,6 +223,15 @@
           {clientUrl}
         </a>
       {/if}
+
+      {#if resource}
+        <div class="oauth-resource">
+          <p class="oauth-resource-title">Requested resource</p>
+          <p class="oauth-resource-value" title={resource}>
+            {resourceDisplay}
+          </p>
+        </div>
+      {/if}
       
       <div class="oauth-scopes">
         <p class="oauth-scopes-title">This application would like to:</p>
@@ -268,6 +296,32 @@
     flex-direction: column;
     gap: var(--spacing-md);
     margin-top: var(--spacing-lg);
+  }
+
+  .oauth-resource {
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius-md);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .oauth-resource-title {
+    margin: 0 0 var(--spacing-xs);
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .oauth-resource-value {
+    margin: 0;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.96);
+    word-break: break-word;
   }
   
   .spinner {
