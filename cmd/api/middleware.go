@@ -3,10 +3,12 @@ package main
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -108,6 +110,107 @@ func apiSecurityHeaders() apptheory.Middleware {
 			setDefault("x-robots-tag", []string{"noindex, nofollow"})
 			return resp, err
 		}
+	}
+}
+
+func createOAuthOriginRestrictionMiddleware(cfg *config.Config) apptheory.Middleware {
+	return func(next apptheory.Handler) apptheory.Handler {
+		return func(ctx *apptheory.Context) (*apptheory.Response, error) {
+			if !isOAuthSensitivePath(strings.TrimSpace(ctx.Request.Path)) {
+				return next(ctx)
+			}
+
+			origin := strings.TrimSpace(headerValue(ctx, "Origin"))
+			if origin == "" || isAllowedOAuthOrigin(origin, cfg) {
+				return next(ctx)
+			}
+
+			return common.RespondForbidden(ctx, "origin not allowed for oauth endpoint")
+		}
+	}
+}
+
+func isOAuthSensitivePath(path string) bool {
+	switch {
+	case path == "":
+		return false
+	case strings.HasPrefix(path, "/oauth/"):
+		return true
+	case path == "/.well-known/oauth-authorization-server":
+		return true
+	case path == "/api/v1/apps":
+		return true
+	case strings.HasPrefix(path, "/api/v1/apps/"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isAllowedOAuthOrigin(origin string, cfg *config.Config) bool {
+	normalizedOrigin, parsedOrigin, ok := normalizeOrigin(origin)
+	if !ok {
+		return false
+	}
+
+	switch normalizedOrigin {
+	case "https://claude.ai", "https://claude.com":
+		return true
+	}
+
+	if isAllowedLocalDevelopmentOrigin(parsedOrigin) {
+		return true
+	}
+
+	if cfg == nil {
+		return false
+	}
+
+	instanceOrigin, _, ok := normalizeOrigin(cfg.BaseURL())
+	return ok && normalizedOrigin == instanceOrigin
+}
+
+func normalizeOrigin(raw string) (string, *url.URL, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil, false
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", nil, false
+	}
+
+	if parsed.Scheme == "" || parsed.Host == "" || parsed.Opaque != "" || parsed.User != nil {
+		return "", nil, false
+	}
+
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", nil, false
+	}
+
+	if path := strings.TrimSpace(parsed.Path); path != "" && path != "/" {
+		return "", nil, false
+	}
+
+	normalized := (&url.URL{
+		Scheme: strings.ToLower(parsed.Scheme),
+		Host:   strings.ToLower(parsed.Host),
+	}).String()
+
+	return normalized, parsed, true
+}
+
+func isAllowedLocalDevelopmentOrigin(origin *url.URL) bool {
+	if origin == nil || !strings.EqualFold(origin.Scheme, "http") {
+		return false
+	}
+
+	switch strings.ToLower(origin.Hostname()) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
 	}
 }
 
