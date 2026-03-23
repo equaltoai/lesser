@@ -27,6 +27,7 @@ type dynamicRegistrationNormalizedRequest struct {
 	redirectURIs            []string
 	scopes                  []string
 	grantTypes              []string
+	responseTypes           []string
 	tokenEndpointAuthMethod string
 	clientClass             string
 	agentUsername           string
@@ -57,6 +58,7 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		SoftwareVersion:    normalized.softwareVersion,
 		RedirectURIs:       normalized.redirectURIs,
 		GrantTypes:         normalized.grantTypes,
+		ResponseTypes:      normalized.responseTypes,
 		Scopes:             normalized.scopes,
 		ClientClass:        normalized.clientClass,
 		AgentUsername:      normalized.agentUsername,
@@ -77,6 +79,7 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		ClientName:              client.Name,
 		RedirectURIs:            append([]string(nil), client.RedirectURIs...),
 		GrantTypes:              append([]string(nil), client.GrantTypes...),
+		ResponseTypes:           append([]string(nil), client.ResponseTypes...),
 		TokenEndpointAuthMethod: normalized.tokenEndpointAuthMethod,
 		Scope:                   strings.Join(client.Scopes, " "),
 		ClientURI:               client.ClientURI,
@@ -177,6 +180,12 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		return nil, resp, respErr
 	}
 
+	responseTypes, err := normalizeDynamicRegistrationResponseTypes(req.ResponseTypes)
+	if err != nil {
+		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+		return nil, resp, respErr
+	}
+
 	ownerID := h.getOptionalAuthenticatedUser(ctx)
 	agentUsername := strings.TrimSpace(req.AgentUsername)
 	if clientClass == auth.ClientClassAgent {
@@ -216,6 +225,7 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		redirectURIs:            redirectURIs,
 		scopes:                  scopes,
 		grantTypes:              grantTypes,
+		responseTypes:           responseTypes,
 		tokenEndpointAuthMethod: tokenEndpointAuthMethod,
 		clientClass:             clientClass,
 		agentUsername:           agentUsername,
@@ -388,6 +398,33 @@ func dynamicRegistrationDefaultGrantTypes(clientClass, tokenEndpointAuthMethod s
 			auth.GrantTypeRefreshToken,
 		}
 	}
+}
+
+func normalizeDynamicRegistrationResponseTypes(requested []string) ([]string, error) {
+	if len(requested) == 0 {
+		return []string{"code"}, nil
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(requested))
+	for _, responseType := range requested {
+		responseType = strings.ToLower(strings.TrimSpace(responseType))
+		if responseType == "" {
+			continue
+		}
+		if responseType != "code" {
+			return nil, errors.New("response_types must only contain code")
+		}
+		if _, ok := seen[responseType]; ok {
+			continue
+		}
+		seen[responseType] = struct{}{}
+		out = append(out, responseType)
+	}
+	if len(out) == 0 {
+		return []string{"code"}, nil
+	}
+	return out, nil
 }
 
 func (h *Handler) oauthDynamicRegistrationError(status int, errorCode, errorDescription string) (*apptheory.Response, error) {

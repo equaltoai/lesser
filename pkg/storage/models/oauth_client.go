@@ -34,6 +34,7 @@ type OAuthClient struct {
 	SoftwareVersion                    string    `theorydb:"attr:softwareVersion" json:"software_version,omitempty"`
 	RedirectURIs                       []string  `theorydb:"attr:redirectURIs" json:"redirect_uris"`
 	GrantTypes                         []string  `theorydb:"attr:grantTypes" json:"grant_types,omitempty"`
+	ResponseTypes                      []string  `theorydb:"attr:responseTypes" json:"response_types,omitempty"`
 	Scopes                             []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
 	ClientClass                        string    `theorydb:"attr:clientClass,omitempty" json:"client_class,omitempty"`
 	AgentUsername                      string    `theorydb:"attr:agentUsername,omitempty" json:"agent_username,omitempty"`

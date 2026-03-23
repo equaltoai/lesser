@@ -6,6 +6,7 @@ type OAuthDynamicClientRegistrationRequest struct {
 	RedirectURIs            []string `json:"redirect_uris,omitempty"`
 	Scope                   string   `json:"scope,omitempty"`
 	GrantTypes              []string `json:"grant_types,omitempty"`
+	ResponseTypes           []string `json:"response_types,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 	ClientURI               string   `json:"client_uri,omitempty"`
 	SoftwareID              string   `json:"software_id,omitempty"`
@@ -25,6 +26,7 @@ type OAuthDynamicClientRegistrationResponse struct {
 	ClientName              string   `json:"client_name,omitempty"`
 	RedirectURIs            []string `json:"redirect_uris,omitempty"`
 	GrantTypes              []string `json:"grant_types,omitempty"`
+	ResponseTypes           []string `json:"response_types,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 	Scope                   string   `json:"scope,omitempty"`
 	ClientURI               string   `json:"client_uri,omitempty"`

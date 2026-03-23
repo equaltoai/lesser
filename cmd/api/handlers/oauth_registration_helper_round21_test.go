@@ -185,6 +185,7 @@ func TestNormalizeDynamicClientRegistration_Round21(t *testing.T) {
 		require.Equal(t, []string{"customscheme://callback"}, normalized.redirectURIs)
 		require.Equal(t, []string{auth.ScopeRead, auth.ScopeWrite}, normalized.scopes)
 		require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, normalized.grantTypes)
+		require.Equal(t, []string{"code"}, normalized.responseTypes)
 		require.Equal(t, oauthTokenEndpointAuthMethodNone, normalized.tokenEndpointAuthMethod)
 		require.Equal(t, auth.ClientClassCLI, normalized.clientClass)
 		require.False(t, normalized.confidential)
@@ -270,6 +271,19 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 
 		_, err = normalizeDynamicRegistrationGrantTypes([]string{auth.GrantTypeClientCredentials}, auth.ClientClassAgent, oauthTokenEndpointAuthMethodNone, false)
 		require.ErrorContains(t, err, "exceed Lesser's dynamic registration policy")
+	})
+
+	t.Run("response type normalization defaults to code and rejects unsupported values", func(t *testing.T) {
+		responseTypes, err := normalizeDynamicRegistrationResponseTypes(nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{"code"}, responseTypes)
+
+		responseTypes, err = normalizeDynamicRegistrationResponseTypes([]string{"code", "code"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"code"}, responseTypes)
+
+		_, err = normalizeDynamicRegistrationResponseTypes([]string{"token"})
+		require.ErrorContains(t, err, "response_types must only contain code")
 	})
 
 	t.Run("grant subset helper accepts blanks and rejects extras", func(t *testing.T) {

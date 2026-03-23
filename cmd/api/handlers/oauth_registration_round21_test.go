@@ -42,6 +42,7 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 		require.Equal(t, auth.ClientClassCLI, body.ClientClass)
 		require.Equal(t, oauthRegistrationSourceDynamic, body.RegistrationSource)
 		require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, body.GrantTypes)
+		require.Equal(t, []string{"code"}, body.ResponseTypes)
 
 		require.Len(t, state.oauthClientsByID, 1)
 		for _, client := range state.oauthClientsByID {
@@ -50,7 +51,27 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 			require.Equal(t, oauthRegistrationSourceDynamic, client.RegistrationSource)
 			require.Equal(t, "claude-code", client.SoftwareID)
 			require.Equal(t, "https://claude.example/client", client.ClientURI)
+			require.Equal(t, []string{"code"}, client.ResponseTypes)
 		}
+	})
+
+	t.Run("echoes explicit response_types", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/oauth/register", map[string]string{
+			"Content-Type": "application/json",
+		}, nil, apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:              "Explicit Response Types",
+			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
+			ResponseTypes:           []string{"code"},
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		var body apimodels.OAuthDynamicClientRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, []string{"code"}, body.ResponseTypes)
 	})
 
 	t.Run("cli default adds device code when enabled", func(t *testing.T) {

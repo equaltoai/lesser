@@ -381,6 +381,7 @@ type OAuthClient struct {
 	SoftwareVersion                    string    `json:"software_version,omitempty"`
 	RedirectURIs                       []string  `json:"redirect_uris"`
 	GrantTypes                         []string  `json:"grant_types,omitempty"`
+	ResponseTypes                      []string  `json:"response_types,omitempty"`
 	Scopes                             []string  `json:"scopes"`
 	ClientClass                        string    `json:"client_class,omitempty"`
 	AgentUsername                      string    `json:"agent_username,omitempty"`
@@ -414,6 +415,7 @@ type OAuthApp struct {
 	RedirectURI        string    `json:"redirect_uri"`
 	RedirectURIs       []string  `json:"redirect_uris,omitempty"`
 	GrantTypes         []string  `json:"grant_types,omitempty"`
+	ResponseTypes      []string  `json:"response_types,omitempty"`
 	Scopes             []string  `json:"scopes,omitempty"`
 	ClientClass        string    `json:"client_class,omitempty"`
 	AgentUsername      string    `json:"agent_username,omitempty"`
