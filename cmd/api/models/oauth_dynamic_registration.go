@@ -9,6 +9,10 @@ type OAuthDynamicClientRegistrationRequest struct {
 	ResponseTypes           []string `json:"response_types,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 	ClientURI               string   `json:"client_uri,omitempty"`
+	LogoURI                 string   `json:"logo_uri,omitempty"`
+	Contacts                []string `json:"contacts,omitempty"`
+	TosURI                  string   `json:"tos_uri,omitempty"`
+	PolicyURI               string   `json:"policy_uri,omitempty"`
 	SoftwareID              string   `json:"software_id,omitempty"`
 	SoftwareVersion         string   `json:"software_version,omitempty"`
 
@@ -30,6 +34,10 @@ type OAuthDynamicClientRegistrationResponse struct {
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 	Scope                   string   `json:"scope,omitempty"`
 	ClientURI               string   `json:"client_uri,omitempty"`
+	LogoURI                 string   `json:"logo_uri,omitempty"`
+	Contacts                []string `json:"contacts,omitempty"`
+	TosURI                  string   `json:"tos_uri,omitempty"`
+	PolicyURI               string   `json:"policy_uri,omitempty"`
 	SoftwareID              string   `json:"software_id,omitempty"`
 	SoftwareVersion         string   `json:"software_version,omitempty"`
 

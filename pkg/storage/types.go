@@ -377,6 +377,10 @@ type OAuthClient struct {
 	Description                        string    `json:"description,omitempty"`
 	Website                            string    `json:"website,omitempty"`
 	ClientURI                          string    `json:"client_uri,omitempty"`
+	LogoURI                            string    `json:"logo_uri,omitempty"`
+	Contacts                           []string  `json:"contacts,omitempty"`
+	TosURI                             string    `json:"tos_uri,omitempty"`
+	PolicyURI                          string    `json:"policy_uri,omitempty"`
 	SoftwareID                         string    `json:"software_id,omitempty"`
 	SoftwareVersion                    string    `json:"software_version,omitempty"`
 	RedirectURIs                       []string  `json:"redirect_uris"`
@@ -403,12 +407,16 @@ type OAuthClientSecretRotation struct {
 
 // OAuthApp represents a registered OAuth application
 type OAuthApp struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Website      string `json:"website,omitempty"`
-	ClientURI    string `json:"client_uri,omitempty"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Website      string   `json:"website,omitempty"`
+	ClientURI    string   `json:"client_uri,omitempty"`
+	LogoURI      string   `json:"logo_uri,omitempty"`
+	Contacts     []string `json:"contacts,omitempty"`
+	TosURI       string   `json:"tos_uri,omitempty"`
+	PolicyURI    string   `json:"policy_uri,omitempty"`
+	ClientID     string   `json:"client_id"`
+	ClientSecret string   `json:"client_secret,omitempty"`
 	// ClientSecretHash is the stored representation used for verification (e.g., bcrypt hash).
 	// It is never serialized in API responses.
 	ClientSecretHash   string    `json:"-"`

@@ -74,6 +74,40 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 		require.Equal(t, []string{"code"}, body.ResponseTypes)
 	})
 
+	t.Run("stores and echoes remaining standard metadata fields", func(t *testing.T) {
+		state := &round10QueryState{}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/oauth/register", map[string]string{
+			"Content-Type": "application/json",
+		}, nil, apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:              "Metadata Client",
+			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+			LogoURI:                 "https://example.com/logo.png",
+			Contacts:                []string{"Team@example.com", "team@example.com"},
+			TosURI:                  "https://example.com/terms",
+			PolicyURI:               "https://example.com/privacy",
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		var body apimodels.OAuthDynamicClientRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "https://example.com/logo.png", body.LogoURI)
+		require.Equal(t, []string{"team@example.com"}, body.Contacts)
+		require.Equal(t, "https://example.com/terms", body.TosURI)
+		require.Equal(t, "https://example.com/privacy", body.PolicyURI)
+
+		require.Len(t, state.oauthClientsByID, 1)
+		for _, client := range state.oauthClientsByID {
+			require.Equal(t, "https://example.com/logo.png", client.LogoURI)
+			require.Equal(t, []string{"team@example.com"}, client.Contacts)
+			require.Equal(t, "https://example.com/terms", client.TosURI)
+			require.Equal(t, "https://example.com/privacy", client.PolicyURI)
+		}
+	})
+
 	t.Run("cli default adds device code when enabled", func(t *testing.T) {
 		cfgDevice := round11TestConfig()
 		cfgDevice.AllowDeviceFlow = true

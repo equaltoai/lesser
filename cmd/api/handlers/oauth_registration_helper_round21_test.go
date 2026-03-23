@@ -127,6 +127,36 @@ func TestNormalizeDynamicClientRegistration_Round21(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
+	t.Run("rejects invalid metadata uri", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", nil, nil, nil)
+
+		normalized, resp, err := handler.normalizeDynamicClientRegistration(ctx, &apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:   "CLI Client",
+			RedirectURIs: []string{"http://127.0.0.1:8787/callback"},
+			LogoURI:      "mailto:logo@example.com",
+		})
+		require.Nil(t, normalized)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+	})
+
+	t.Run("rejects invalid contacts", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", nil, nil, nil)
+
+		normalized, resp, err := handler.normalizeDynamicClientRegistration(ctx, &apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:   "CLI Client",
+			RedirectURIs: []string{"http://127.0.0.1:8787/callback"},
+			Contacts:     []string{"not-an-email"},
+		})
+		require.Nil(t, normalized)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusBadRequest, resp.Status)
+	})
+
 	t.Run("rejects invalid public scopes", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", nil, nil, nil)
@@ -176,6 +206,10 @@ func TestNormalizeDynamicClientRegistration_Round21(t *testing.T) {
 			Scope:                   "read write",
 			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
 			ClientURI:               "https://example.com/client",
+			LogoURI:                 "https://example.com/logo.png",
+			Contacts:                []string{"Team@example.com", "team@example.com"},
+			TosURI:                  "https://example.com/terms",
+			PolicyURI:               "https://example.com/privacy",
 			SoftwareID:              "cli-software",
 			SoftwareVersion:         "1.2.3",
 		})
@@ -190,6 +224,10 @@ func TestNormalizeDynamicClientRegistration_Round21(t *testing.T) {
 		require.Equal(t, auth.ClientClassCLI, normalized.clientClass)
 		require.False(t, normalized.confidential)
 		require.Equal(t, "https://example.com/client", normalized.clientURI)
+		require.Equal(t, "https://example.com/logo.png", normalized.logoURI)
+		require.Equal(t, []string{"team@example.com"}, normalized.contacts)
+		require.Equal(t, "https://example.com/terms", normalized.tosURI)
+		require.Equal(t, "https://example.com/privacy", normalized.policyURI)
 		require.Equal(t, "cli-software", normalized.softwareID)
 		require.Equal(t, "1.2.3", normalized.softwareVersion)
 	})
@@ -240,6 +278,13 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 		require.NoError(t, validateDynamicRegistrationClientURI("https://example.com/client"))
 	})
 
+	t.Run("metadata uri validation enforces http and https", func(t *testing.T) {
+		require.ErrorContains(t, validateDynamicRegistrationMetadataURI("logo_uri", "relative/path"), "absolute http or https URL")
+		require.ErrorContains(t, validateDynamicRegistrationMetadataURI("logo_uri", "customscheme://example"), "must use http or https")
+		require.NoError(t, validateDynamicRegistrationMetadataURI("logo_uri", "http://example.com/logo.png"))
+		require.NoError(t, validateDynamicRegistrationMetadataURI("logo_uri", "https://example.com/logo.png"))
+	})
+
 	t.Run("client class normalization defaults by auth method", func(t *testing.T) {
 		clientClass, err := normalizeDynamicRegistrationClientClass("", oauthTokenEndpointAuthMethodNone)
 		require.NoError(t, err)
@@ -284,6 +329,15 @@ func TestOAuthDynamicRegistrationHelpers_Round21(t *testing.T) {
 
 		_, err = normalizeDynamicRegistrationResponseTypes([]string{"token"})
 		require.ErrorContains(t, err, "response_types must only contain code")
+	})
+
+	t.Run("contact normalization lowercases and rejects invalid values", func(t *testing.T) {
+		contacts, err := normalizeDynamicRegistrationContacts([]string{"Team@example.com", "team@example.com"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"team@example.com"}, contacts)
+
+		_, err = normalizeDynamicRegistrationContacts([]string{"not-an-email"})
+		require.ErrorContains(t, err, "contacts must contain valid email addresses")
 	})
 
 	t.Run("grant subset helper accepts blanks and rejects extras", func(t *testing.T) {

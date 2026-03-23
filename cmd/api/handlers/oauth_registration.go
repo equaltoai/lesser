@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strings"
 
@@ -32,6 +33,10 @@ type dynamicRegistrationNormalizedRequest struct {
 	clientClass             string
 	agentUsername           string
 	clientURI               string
+	logoURI                 string
+	contacts                []string
+	tosURI                  string
+	policyURI               string
 	softwareID              string
 	softwareVersion         string
 	confidential            bool
@@ -54,6 +59,10 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		Name:               normalized.clientName,
 		Website:            normalized.clientURI,
 		ClientURI:          normalized.clientURI,
+		LogoURI:            normalized.logoURI,
+		Contacts:           normalized.contacts,
+		TosURI:             normalized.tosURI,
+		PolicyURI:          normalized.policyURI,
 		SoftwareID:         normalized.softwareID,
 		SoftwareVersion:    normalized.softwareVersion,
 		RedirectURIs:       normalized.redirectURIs,
@@ -83,6 +92,10 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		TokenEndpointAuthMethod: normalized.tokenEndpointAuthMethod,
 		Scope:                   strings.Join(client.Scopes, " "),
 		ClientURI:               client.ClientURI,
+		LogoURI:                 client.LogoURI,
+		Contacts:                append([]string(nil), client.Contacts...),
+		TosURI:                  client.TosURI,
+		PolicyURI:               client.PolicyURI,
 		SoftwareID:              client.SoftwareID,
 		SoftwareVersion:         client.SoftwareVersion,
 		ClientClass:             client.ClientClass,
@@ -148,6 +161,36 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
 			return nil, resp, respErr
 		}
+	}
+
+	logoURI := strings.TrimSpace(req.LogoURI)
+	if logoURI != "" {
+		if err := validateDynamicRegistrationMetadataURI("logo_uri", logoURI); err != nil {
+			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+			return nil, resp, respErr
+		}
+	}
+
+	tosURI := strings.TrimSpace(req.TosURI)
+	if tosURI != "" {
+		if err := validateDynamicRegistrationMetadataURI("tos_uri", tosURI); err != nil {
+			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+			return nil, resp, respErr
+		}
+	}
+
+	policyURI := strings.TrimSpace(req.PolicyURI)
+	if policyURI != "" {
+		if err := validateDynamicRegistrationMetadataURI("policy_uri", policyURI); err != nil {
+			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+			return nil, resp, respErr
+		}
+	}
+
+	contacts, err := normalizeDynamicRegistrationContacts(req.Contacts)
+	if err != nil {
+		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+		return nil, resp, respErr
 	}
 
 	tokenEndpointAuthMethod, _, err := normalizeOAuthTokenEndpointAuthMethod(req.TokenEndpointAuthMethod, req.ClientClass)
@@ -230,6 +273,10 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		clientClass:             clientClass,
 		agentUsername:           agentUsername,
 		clientURI:               clientURI,
+		logoURI:                 logoURI,
+		contacts:                contacts,
+		tosURI:                  tosURI,
+		policyURI:               policyURI,
 		softwareID:              strings.TrimSpace(req.SoftwareID),
 		softwareVersion:         strings.TrimSpace(req.SoftwareVersion),
 		confidential:            confidential,
@@ -313,6 +360,45 @@ func validateDynamicRegistrationClientURI(clientURI string) error {
 	default:
 		return errors.New("client_uri must use http or https")
 	}
+}
+
+func validateDynamicRegistrationMetadataURI(fieldName, value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+		return errors.New(fieldName + " must be an absolute http or https URL")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return errors.New(fieldName + " must use http or https")
+	}
+}
+
+func normalizeDynamicRegistrationContacts(requested []string) ([]string, error) {
+	if len(requested) == 0 {
+		return nil, nil
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(requested))
+	for _, contact := range requested {
+		contact = strings.TrimSpace(contact)
+		if contact == "" {
+			continue
+		}
+		parsed, err := mail.ParseAddress(contact)
+		if err != nil || parsed.Address == "" {
+			return nil, errors.New("contacts must contain valid email addresses")
+		}
+		normalized := strings.ToLower(strings.TrimSpace(parsed.Address))
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out, nil
 }
 
 func normalizeDynamicRegistrationClientClass(value, tokenEndpointAuthMethod string) (string, error) {

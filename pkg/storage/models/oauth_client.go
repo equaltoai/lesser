@@ -30,6 +30,10 @@ type OAuthClient struct {
 	Description                        string    `theorydb:"attr:description" json:"description,omitempty"`
 	Website                            string    `theorydb:"attr:website" json:"website,omitempty"`
 	ClientURI                          string    `theorydb:"attr:clientURI" json:"client_uri,omitempty"`
+	LogoURI                            string    `theorydb:"attr:logoURI,omitempty" json:"logo_uri,omitempty"`
+	Contacts                           []string  `theorydb:"attr:contacts,omitempty" json:"contacts,omitempty"`
+	TosURI                             string    `theorydb:"attr:tosURI,omitempty" json:"tos_uri,omitempty"`
+	PolicyURI                          string    `theorydb:"attr:policyURI,omitempty" json:"policy_uri,omitempty"`
 	SoftwareID                         string    `theorydb:"attr:softwareID" json:"software_id,omitempty"`
 	SoftwareVersion                    string    `theorydb:"attr:softwareVersion" json:"software_version,omitempty"`
 	RedirectURIs                       []string  `theorydb:"attr:redirectURIs" json:"redirect_uris"`
