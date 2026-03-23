@@ -42,6 +42,7 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 		require.Equal(t, auth.ClientClassCLI, body.ClientClass)
 		require.Equal(t, oauthRegistrationSourceDynamic, body.RegistrationSource)
 		require.Equal(t, []string{auth.GrantTypeAuthorizationCode, auth.GrantTypeRefreshToken}, body.GrantTypes)
+		require.Equal(t, []string{"code"}, body.ResponseTypes)
 
 		require.Len(t, state.oauthClientsByID, 1)
 		for _, client := range state.oauthClientsByID {
@@ -50,6 +51,60 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 			require.Equal(t, oauthRegistrationSourceDynamic, client.RegistrationSource)
 			require.Equal(t, "claude-code", client.SoftwareID)
 			require.Equal(t, "https://claude.example/client", client.ClientURI)
+			require.Equal(t, []string{"code"}, client.ResponseTypes)
+		}
+	})
+
+	t.Run("echoes explicit response_types", func(t *testing.T) {
+		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/oauth/register", map[string]string{
+			"Content-Type": "application/json",
+		}, nil, apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:              "Explicit Response Types",
+			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
+			ResponseTypes:           []string{"code"},
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		var body apimodels.OAuthDynamicClientRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, []string{"code"}, body.ResponseTypes)
+	})
+
+	t.Run("stores and echoes remaining standard metadata fields", func(t *testing.T) {
+		state := &round10QueryState{}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/oauth/register", map[string]string{
+			"Content-Type": "application/json",
+		}, nil, apimodels.OAuthDynamicClientRegistrationRequest{
+			ClientName:              "Metadata Client",
+			RedirectURIs:            []string{"http://127.0.0.1:8787/callback"},
+			TokenEndpointAuthMethod: oauthTokenEndpointAuthMethodNone,
+			LogoURI:                 "https://example.com/logo.png",
+			Contacts:                []string{"Team@example.com", "team@example.com"},
+			TosURI:                  "https://example.com/terms",
+			PolicyURI:               "https://example.com/privacy",
+		})
+		require.NoError(t, err)
+
+		resp := requireStatus(t, http.StatusCreated)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+		var body apimodels.OAuthDynamicClientRegistrationResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "https://example.com/logo.png", body.LogoURI)
+		require.Equal(t, []string{"team@example.com"}, body.Contacts)
+		require.Equal(t, "https://example.com/terms", body.TosURI)
+		require.Equal(t, "https://example.com/privacy", body.PolicyURI)
+
+		require.Len(t, state.oauthClientsByID, 1)
+		for _, client := range state.oauthClientsByID {
+			require.Equal(t, "https://example.com/logo.png", client.LogoURI)
+			require.Equal(t, []string{"team@example.com"}, client.Contacts)
+			require.Equal(t, "https://example.com/terms", client.TosURI)
+			require.Equal(t, "https://example.com/privacy", client.PolicyURI)
 		}
 	})
 
@@ -145,15 +200,19 @@ func TestHandleOAuthDynamicClientRegistrationLift_Round21(t *testing.T) {
 		require.Contains(t, string(resp.Body), "\"error\":\"invalid_redirect_uri\"")
 	})
 
-	t.Run("rejects unknown metadata fields", func(t *testing.T) {
+	t.Run("accepts unknown metadata fields and drops them from the response", func(t *testing.T) {
 		handler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/register", map[string]string{
 			"Content-Type": "application/json",
 		}, nil, []byte(`{"client_name":"Unknown","redirect_uris":["https://example.com/callback"],"jwks_uri":"https://example.com/jwks"}`))
 
-		resp := requireStatus(t, http.StatusBadRequest)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
-		require.Contains(t, string(resp.Body), "\"error\":\"invalid_client_metadata\"")
+		resp := requireStatus(t, http.StatusCreated)(handler.HandleOAuthDynamicClientRegistrationLift(ctx))
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "Unknown", body["client_name"])
+		require.NotContains(t, body, "jwks_uri")
 	})
 
 	t.Run("returns server error when client persistence fails", func(t *testing.T) {

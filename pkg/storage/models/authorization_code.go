@@ -16,6 +16,7 @@ type AuthorizationCode struct {
 	Code              string    `theorydb:"attr:code" json:"Code"`
 	ClientID          string    `theorydb:"attr:clientID" json:"ClientID"`
 	RedirectURI       string    `theorydb:"attr:redirectURI" json:"RedirectURI"`
+	Resource          string    `theorydb:"attr:resource,omitempty" json:"Resource,omitempty"`
 	Username          string    `theorydb:"attr:username" json:"Username"`
 	PrincipalUsername string    `theorydb:"attr:principalUsername,omitempty" json:"PrincipalUsername,omitempty"`
 	AgentUsername     string    `theorydb:"attr:agentUsername,omitempty" json:"AgentUsername,omitempty"`

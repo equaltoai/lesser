@@ -3875,11 +3875,23 @@ components:
                     type: string
                 client_uri:
                     type: string
+                contacts:
+                    items:
+                        type: string
+                    type: array
                 grant_types:
                     items:
                         type: string
                     type: array
+                logo_uri:
+                    type: string
+                policy_uri:
+                    type: string
                 redirect_uris:
+                    items:
+                        type: string
+                    type: array
+                response_types:
                     items:
                         type: string
                     type: array
@@ -3890,6 +3902,8 @@ components:
                 software_version:
                     type: string
                 token_endpoint_auth_method:
+                    type: string
+                tos_uri:
                     type: string
             type: object
         OAuthDynamicClientRegistrationResponse:
@@ -3911,16 +3925,28 @@ components:
                     type: integer
                 client_uri:
                     type: string
+                contacts:
+                    items:
+                        type: string
+                    type: array
                 grant_types:
                     items:
                         type: string
                     type: array
+                logo_uri:
+                    type: string
+                policy_uri:
+                    type: string
                 redirect_uris:
                     items:
                         type: string
                     type: array
                 registration_source:
                     type: string
+                response_types:
+                    items:
+                        type: string
+                    type: array
                 scope:
                     type: string
                 software_id:
@@ -3928,6 +3954,8 @@ components:
                 software_version:
                     type: string
                 token_endpoint_auth_method:
+                    type: string
+                tos_uri:
                     type: string
             required:
                 - client_id

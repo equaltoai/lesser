@@ -24,6 +24,7 @@ type OAuthState struct {
 	Scopes              []string  `theorydb:"attr:scopes" json:"scopes,omitempty"`
 	CodeChallenge       string    `theorydb:"attr:codeChallenge" json:"code_challenge,omitempty"`
 	CodeChallengeMethod string    `theorydb:"attr:codeChallengeMethod" json:"code_challenge_method,omitempty"`
+	Resource            string    `theorydb:"attr:resource,omitempty" json:"resource,omitempty"`
 	CreatedAt           time.Time `theorydb:"attr:createdAt" json:"created_at"`
 	ExpiresAt           time.Time `theorydb:"attr:expiresAt" json:"expires_at"`
 

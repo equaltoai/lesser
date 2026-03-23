@@ -26,6 +26,7 @@ type RefreshToken struct {
 	Token       string    `theorydb:"attr:token" json:"Token"`
 	ClientID    string    `theorydb:"attr:clientID" json:"ClientID"`
 	Username    string    `theorydb:"attr:username" json:"Username"`
+	Resource    string    `theorydb:"attr:resource,omitempty" json:"Resource,omitempty"`
 	ExpiresAt   time.Time `theorydb:"attr:expiresAt" json:"ExpiresAt"`
 	Scopes      []string  `theorydb:"attr:scopes" json:"Scopes"`
 	ClientClass string    `theorydb:"attr:clientClass" json:"ClientClass,omitempty"`

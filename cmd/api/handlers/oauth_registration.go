@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"strings"
 
@@ -27,10 +28,15 @@ type dynamicRegistrationNormalizedRequest struct {
 	redirectURIs            []string
 	scopes                  []string
 	grantTypes              []string
+	responseTypes           []string
 	tokenEndpointAuthMethod string
 	clientClass             string
 	agentUsername           string
 	clientURI               string
+	logoURI                 string
+	contacts                []string
+	tosURI                  string
+	policyURI               string
 	softwareID              string
 	softwareVersion         string
 	confidential            bool
@@ -53,10 +59,15 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		Name:               normalized.clientName,
 		Website:            normalized.clientURI,
 		ClientURI:          normalized.clientURI,
+		LogoURI:            normalized.logoURI,
+		Contacts:           normalized.contacts,
+		TosURI:             normalized.tosURI,
+		PolicyURI:          normalized.policyURI,
 		SoftwareID:         normalized.softwareID,
 		SoftwareVersion:    normalized.softwareVersion,
 		RedirectURIs:       normalized.redirectURIs,
 		GrantTypes:         normalized.grantTypes,
+		ResponseTypes:      normalized.responseTypes,
 		Scopes:             normalized.scopes,
 		ClientClass:        normalized.clientClass,
 		AgentUsername:      normalized.agentUsername,
@@ -77,9 +88,14 @@ func (h *Handler) HandleOAuthDynamicClientRegistrationLift(ctx *apptheory.Contex
 		ClientName:              client.Name,
 		RedirectURIs:            append([]string(nil), client.RedirectURIs...),
 		GrantTypes:              append([]string(nil), client.GrantTypes...),
+		ResponseTypes:           append([]string(nil), client.ResponseTypes...),
 		TokenEndpointAuthMethod: normalized.tokenEndpointAuthMethod,
 		Scope:                   strings.Join(client.Scopes, " "),
 		ClientURI:               client.ClientURI,
+		LogoURI:                 client.LogoURI,
+		Contacts:                append([]string(nil), client.Contacts...),
+		TosURI:                  client.TosURI,
+		PolicyURI:               client.PolicyURI,
 		SoftwareID:              client.SoftwareID,
 		SoftwareVersion:         client.SoftwareVersion,
 		ClientClass:             client.ClientClass,
@@ -109,7 +125,6 @@ func (h *Handler) parseOAuthDynamicClientRegistrationRequest(ctx *apptheory.Cont
 
 	var req models.OAuthDynamicClientRegistrationRequest
 	decoder := json.NewDecoder(bytes.NewReader(ctx.Request.Body))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", "unsupported or malformed client metadata")
 		return nil, resp, respErr
@@ -148,6 +163,36 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		}
 	}
 
+	logoURI := strings.TrimSpace(req.LogoURI)
+	if logoURI != "" {
+		if err := validateDynamicRegistrationMetadataURI("logo_uri", logoURI); err != nil {
+			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+			return nil, resp, respErr
+		}
+	}
+
+	tosURI := strings.TrimSpace(req.TosURI)
+	if tosURI != "" {
+		if err := validateDynamicRegistrationMetadataURI("tos_uri", tosURI); err != nil {
+			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+			return nil, resp, respErr
+		}
+	}
+
+	policyURI := strings.TrimSpace(req.PolicyURI)
+	if policyURI != "" {
+		if err := validateDynamicRegistrationMetadataURI("policy_uri", policyURI); err != nil {
+			resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+			return nil, resp, respErr
+		}
+	}
+
+	contacts, err := normalizeDynamicRegistrationContacts(req.Contacts)
+	if err != nil {
+		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+		return nil, resp, respErr
+	}
+
 	tokenEndpointAuthMethod, _, err := normalizeOAuthTokenEndpointAuthMethod(req.TokenEndpointAuthMethod, req.ClientClass)
 	if err != nil {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
@@ -173,6 +218,12 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 	}
 
 	grantTypes, err := normalizeDynamicRegistrationGrantTypes(req.GrantTypes, clientClass, tokenEndpointAuthMethod, h.cfg != nil && h.cfg.AllowDeviceFlow)
+	if err != nil {
+		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
+		return nil, resp, respErr
+	}
+
+	responseTypes, err := normalizeDynamicRegistrationResponseTypes(req.ResponseTypes)
 	if err != nil {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", err.Error())
 		return nil, resp, respErr
@@ -217,10 +268,15 @@ func (h *Handler) normalizeDynamicClientRegistration(ctx *apptheory.Context, req
 		redirectURIs:            redirectURIs,
 		scopes:                  scopes,
 		grantTypes:              grantTypes,
+		responseTypes:           responseTypes,
 		tokenEndpointAuthMethod: tokenEndpointAuthMethod,
 		clientClass:             clientClass,
 		agentUsername:           agentUsername,
 		clientURI:               clientURI,
+		logoURI:                 logoURI,
+		contacts:                contacts,
+		tosURI:                  tosURI,
+		policyURI:               policyURI,
 		softwareID:              strings.TrimSpace(req.SoftwareID),
 		softwareVersion:         strings.TrimSpace(req.SoftwareVersion),
 		confidential:            confidential,
@@ -264,12 +320,12 @@ func validateDynamicRegistrationRedirectURI(redirectURI string) error {
 	}
 
 	switch strings.ToLower(parsed.Scheme) {
-	case "https":
+	case schemeHTTPS:
 		if parsed.Host == "" {
 			return errors.New("https redirect_uris must include a host")
 		}
 		return nil
-	case "http":
+	case schemeHTTP:
 		host := parsed.Hostname()
 		if !isLoopbackRedirectHost(host) {
 			return errors.New("http redirect_uris must use a loopback host")
@@ -304,6 +360,45 @@ func validateDynamicRegistrationClientURI(clientURI string) error {
 	default:
 		return errors.New("client_uri must use http or https")
 	}
+}
+
+func validateDynamicRegistrationMetadataURI(fieldName, value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+		return errors.New(fieldName + " must be an absolute http or https URL")
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return errors.New(fieldName + " must use http or https")
+	}
+}
+
+func normalizeDynamicRegistrationContacts(requested []string) ([]string, error) {
+	if len(requested) == 0 {
+		return nil, nil
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(requested))
+	for _, contact := range requested {
+		contact = strings.TrimSpace(contact)
+		if contact == "" {
+			continue
+		}
+		parsed, err := mail.ParseAddress(contact)
+		if err != nil || parsed.Address == "" {
+			return nil, errors.New("contacts must contain valid email addresses")
+		}
+		normalized := strings.ToLower(strings.TrimSpace(parsed.Address))
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out, nil
 }
 
 func normalizeDynamicRegistrationClientClass(value, tokenEndpointAuthMethod string) (string, error) {
@@ -363,7 +458,9 @@ func grantTypeSubsetAllowed(allowed, requested []string) bool {
 func dynamicRegistrationDefaultGrantTypes(clientClass, tokenEndpointAuthMethod string, allowDeviceFlow bool) []string {
 	switch clientClass {
 	case auth.ClientClassAgent:
-		if strings.EqualFold(strings.TrimSpace(tokenEndpointAuthMethod), oauthTokenEndpointAuthMethodClientSecretPost) {
+		tokenEndpointAuthMethod = strings.TrimSpace(tokenEndpointAuthMethod)
+		if strings.EqualFold(tokenEndpointAuthMethod, oauthTokenEndpointAuthMethodClientSecretPost) ||
+			strings.EqualFold(tokenEndpointAuthMethod, oauthTokenEndpointAuthMethodClientSecretBasic) {
 			return []string{
 				auth.GrantTypeAuthorizationCode,
 				auth.GrantTypeRefreshToken,
@@ -389,6 +486,33 @@ func dynamicRegistrationDefaultGrantTypes(clientClass, tokenEndpointAuthMethod s
 			auth.GrantTypeRefreshToken,
 		}
 	}
+}
+
+func normalizeDynamicRegistrationResponseTypes(requested []string) ([]string, error) {
+	if len(requested) == 0 {
+		return []string{"code"}, nil
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(requested))
+	for _, responseType := range requested {
+		responseType = strings.ToLower(strings.TrimSpace(responseType))
+		if responseType == "" {
+			continue
+		}
+		if responseType != "code" {
+			return nil, errors.New("response_types must only contain code")
+		}
+		if _, ok := seen[responseType]; ok {
+			continue
+		}
+		seen[responseType] = struct{}{}
+		out = append(out, responseType)
+	}
+	if len(out) == 0 {
+		return []string{"code"}, nil
+	}
+	return out, nil
 }
 
 func (h *Handler) oauthDynamicRegistrationError(status int, errorCode, errorDescription string) (*apptheory.Response, error) {

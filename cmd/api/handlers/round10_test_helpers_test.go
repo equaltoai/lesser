@@ -197,7 +197,11 @@ func round10NewLiftContextWithBodyBytes(method, path string, headers, query map[
 	}
 	if len(body) > 0 {
 		if _, ok := hdr["content-type"]; !ok {
-			hdr["content-type"] = []string{"application/json; charset=utf-8"}
+			defaultContentType := "application/json; charset=utf-8"
+			if parsedPath == "/oauth/token" {
+				defaultContentType = "application/x-www-form-urlencoded"
+			}
+			hdr["content-type"] = []string{defaultContentType}
 		}
 	}
 

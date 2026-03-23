@@ -93,7 +93,7 @@ func configureRoutes(app *apptheory.App) {
 		20, 5*time.Minute, logger))
 	app.Post("/oauth/register", ratelimit.ApplyOAuthRegistrationRateLimit(
 		apiHandler.HandleOAuthDynamicClientRegistrationLift,
-		5, time.Minute, logger))
+		20, time.Minute, logger))
 	app.Post("/oauth/token", ratelimit.ApplyOAuthTokenRateLimit(
 		apiHandler.HandleOAuthTokenLift,
 		10, time.Minute, logger))

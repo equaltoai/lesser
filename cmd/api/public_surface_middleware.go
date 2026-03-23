@@ -123,7 +123,7 @@ func apiRequestIsPublic(method, path string) bool {
 
 	case http.MethodPost:
 		switch path {
-		case "/api/v1/apps",
+		case apiV1AppsPath,
 			"/oauth/register",
 			"/api/v1/accounts",
 			"/api/v1/notifications/deliver",

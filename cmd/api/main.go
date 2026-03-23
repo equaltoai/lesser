@@ -398,6 +398,9 @@ func buildApp(lambdaLogger *zap.Logger) *apptheory.App {
 	// Security headers (web-friendly).
 	app.Use(apiSecurityHeaders())
 
+	// Restrict browser origins on OAuth-sensitive endpoints while keeping public API CORS broad.
+	app.Use(createOAuthOriginRestrictionMiddleware(cfg))
+
 	// Standardized API error mapping.
 	app.Use(common.CreateAPIErrorMiddleware(lambdaLogger))
 

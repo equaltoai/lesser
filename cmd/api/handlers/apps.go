@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	oauthTokenEndpointAuthMethodNone             = "none"
-	oauthTokenEndpointAuthMethodClientSecretPost = "client_secret_post"
+	oauthTokenEndpointAuthMethodNone              = "none"
+	oauthTokenEndpointAuthMethodClientSecretBasic = "client_secret_basic"
+	oauthTokenEndpointAuthMethodClientSecretPost  = "client_secret_post"
 )
 
 // HandleAppRegistrationLift handles OAuth app registration requests
@@ -570,6 +571,8 @@ func normalizeOAuthTokenEndpointAuthMethod(value, clientClass string) (string, b
 	switch method {
 	case oauthTokenEndpointAuthMethodNone:
 		return method, false, nil
+	case oauthTokenEndpointAuthMethodClientSecretBasic:
+		return method, true, nil
 	case oauthTokenEndpointAuthMethodClientSecretPost:
 		return method, true, nil
 	default:

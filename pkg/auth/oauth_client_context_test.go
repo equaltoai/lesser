@@ -63,6 +63,31 @@ func TestOAuthService_GenerateTokensWithAccessTokenTTLAndClientContext(t *testin
 	require.Greater(t, time.Until(claims.ExpiresAt.Time), 30*time.Minute)
 }
 
+func TestOAuthService_GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(t *testing.T) {
+	t.Parallel()
+
+	svc := &OAuthService{jwtSecret: []byte("test-secret")}
+
+	access, refresh, err := svc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(
+		context.Background(),
+		"alice",
+		"client-1",
+		"192.0.2.10",
+		[]string{ScopeRead},
+		time.Hour,
+		ClientClassCLI,
+		"sid-1",
+		"https://mcp.example/resource",
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, access)
+	require.NotEmpty(t, refresh)
+
+	claims, err := svc.ValidateAccessToken(access)
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://mcp.example/resource"}, []string(claims.Audience))
+}
+
 func TestResolveAgentClaims_Branches(t *testing.T) {
 	t.Parallel()
 

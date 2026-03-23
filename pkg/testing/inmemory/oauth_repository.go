@@ -233,6 +233,10 @@ func applyInMemoryOAuthClientUpdate(client *storage.OAuthClient, key string, val
 		if v, ok := value.([]string); ok {
 			client.GrantTypes = v
 		}
+	case "response_types":
+		if v, ok := value.([]string); ok {
+			client.ResponseTypes = v
+		}
 	case "scopes":
 		if v, ok := value.([]string); ok {
 			client.Scopes = v
