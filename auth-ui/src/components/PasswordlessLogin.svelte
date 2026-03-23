@@ -94,6 +94,37 @@
   let connectedAddress = $state('');
   let walletChallengeId = $state('');
 
+  function setOAuthParam(params: URLSearchParams, key: string, value: unknown) {
+    if (value == null) {
+      return;
+    }
+
+    const stringValue = String(value);
+    if (stringValue === '') {
+      return;
+    }
+
+    params.set(key, stringValue);
+  }
+
+  function parseAuthRequestJson(authRequestParam: string): Record<string, unknown> {
+    try {
+      return JSON.parse(authRequestParam) as Record<string, unknown>;
+    } catch {
+      return JSON.parse(decodeURIComponent(authRequestParam)) as Record<string, unknown>;
+    }
+  }
+
+  function buildAuthRequestFromJson(oauthParams: Record<string, unknown>): string {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(oauthParams)) {
+      setOAuthParam(params, key, value);
+    }
+
+    return params.toString();
+  }
+
   function handleAuthSuccess() {
     if (authFlow === 'redirect') {
       const target = postAuthRedirectTo || window.location.href;
@@ -125,20 +156,8 @@
     const authRequestParam = urlParams.get('auth_request');
     if (authRequestParam) {
       try {
-        const decoded = decodeURIComponent(authRequestParam);
-        const oauthParams = JSON.parse(decoded);
-        
-        // Build query string from parsed params
-        const params = new URLSearchParams();
-        if (oauthParams.client_id) params.set('client_id', oauthParams.client_id);
-        if (oauthParams.redirect_uri) params.set('redirect_uri', oauthParams.redirect_uri);
-        if (oauthParams.state) params.set('state', oauthParams.state);
-        if (oauthParams.scope) params.set('scope', oauthParams.scope);
-        if (oauthParams.response_type) params.set('response_type', oauthParams.response_type);
-        if (oauthParams.code_challenge) params.set('code_challenge', oauthParams.code_challenge);
-        if (oauthParams.code_challenge_method) params.set('code_challenge_method', oauthParams.code_challenge_method);
-        
-        authRequest = params.toString();
+        const oauthParams = parseAuthRequestJson(authRequestParam);
+        authRequest = buildAuthRequestFromJson(oauthParams);
         console.log('PasswordlessLogin - built authRequest from URL JSON:', authRequest);
         
         // Store in sessionStorage for navigation persistence
