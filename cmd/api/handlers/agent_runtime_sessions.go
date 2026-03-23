@@ -130,7 +130,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 	}
 
 	accessTTL := runtimeRefreshAccessTTL(h.cfg, storedToken)
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(
 		ctx,
 		storedToken.Username,
 		clientID,
@@ -139,6 +139,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		accessTTL,
 		auth.ClientClassAgent,
 		storedToken.SessionID,
+		storedToken.Resource,
 	)
 	if err != nil {
 		return "", "", nil, err
@@ -166,6 +167,7 @@ func (h *Handler) exchangeAgentRuntimeRefreshToken(ctx context.Context, oauthSvc
 		Token:               newRefreshToken,
 		Username:            storedToken.Username,
 		ClientID:            clientID,
+		Resource:            storedToken.Resource,
 		Scopes:              storedToken.Scopes,
 		CreatedAt:           now,
 		ExpiresAt:           nextRuntimeIdleExpiry(now, storedToken.AbsoluteExpiresAt),

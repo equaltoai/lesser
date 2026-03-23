@@ -334,6 +334,11 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTL(ctx context.Context, use
 // non-spoofable classification derived at token issuance time. For agent accounts, if a sessionID is not provided,
 // a new session ID is generated.
 func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContext(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration, clientClass, sessionID string) (accessToken, refreshToken string, err error) {
+	return s.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx, username, clientID, ipAddress, scopes, accessTokenTTL, clientClass, sessionID, "")
+}
+
+// GenerateTokensWithAccessTokenTTLAndClientContextAndAudience generates tokens with explicit client context and JWT audience.
+func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx context.Context, username, clientID, ipAddress string, scopes []string, accessTokenTTL time.Duration, clientClass, sessionID, audience string) (accessToken, refreshToken string, err error) {
 	if accessTokenTTL <= 0 {
 		accessTokenTTL = AccessTokenDuration
 	}
@@ -353,6 +358,7 @@ func (s *OAuthService) GenerateTokensWithAccessTokenTTLAndClientContext(ctx cont
 		IPAddress:      ipAddress,
 		SessionID:      effectiveSessionID,
 		ClientClass:    clientClass,
+		Audience:       audience,
 		IsAgent:        isAgent,
 		AgentType:      agentType,
 		DelegatedBy:    delegatedBy,
@@ -387,6 +393,7 @@ type accessTokenMetadata struct {
 	IPAddress    string
 	UserAgent    string
 	ExpiresAt    time.Time
+	Audience     string
 
 	IsAgent        bool
 	AgentType      string
@@ -426,6 +433,9 @@ func (s *OAuthService) generateAccessTokenWithMetadata(username, clientID string
 		AgentType:      meta.AgentType,
 		DelegatedBy:    meta.DelegatedBy,
 		AgentSessionID: meta.AgentSessionID,
+	}
+	if audience := strings.TrimSpace(meta.Audience); audience != "" {
+		claims.Audience = jwt.ClaimStrings{audience}
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

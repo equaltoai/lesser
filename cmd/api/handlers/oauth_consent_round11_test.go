@@ -24,6 +24,7 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 				ClientID:    "client-2",
 				Username:    "alice",
 				RedirectURI: "https://client.example/callback",
+				Resource:    "https://mcp.example/resource",
 				Scopes:      []string{"read", "write"},
 			},
 		},
@@ -35,6 +36,10 @@ func TestOAuthConsentHandlers_Round11(t *testing.T) {
 
 	ctxApprove := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/consent", nil, nil, []byte("state=state-2&action=approve"))
 	requireStatus(t, http.StatusOK)(handler.HandleOAuthConsentLift(ctxApprove))
+	require.Len(t, state.authorizationCodesByCode, 1)
+	for _, authCode := range state.authorizationCodesByCode {
+		require.Equal(t, "https://mcp.example/resource", authCode.Resource)
+	}
 
 	authRequest := `{"client_id":"client-1","redirect_uri":"https://client.example/callback","state":"xyz","code_challenge":"abc","code_challenge_method":"plain","scope":"read write"}`
 	ctxLogin, err := round10NewLiftContext(http.MethodGet, "/oauth/login", nil, map[string]string{

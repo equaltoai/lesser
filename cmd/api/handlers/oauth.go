@@ -25,6 +25,7 @@ type authorizeRequest struct {
 	responseType        string
 	clientID            string
 	redirectURI         string
+	resource            string
 	scope               string
 	state               string
 	codeChallenge       string
@@ -51,6 +52,8 @@ const (
 	oauthTokenTypeBearer       = "Bearer"
 	oauthTokenExpiresInSeconds = 3600
 )
+
+var errOAuthInvalidTarget = errors.New("invalid_target")
 
 func (h *Handler) isOAuthAuthorizeUIMode(ctx *apptheory.Context) bool {
 	if strings.EqualFold(queryValue(ctx, "mode"), "ui") {
@@ -169,6 +172,7 @@ func (h *Handler) extractAuthorizeRequest(ctx *apptheory.Context) (*authorizeReq
 		responseType:        queryValue(ctx, "response_type"),
 		clientID:            queryValue(ctx, "client_id"),
 		redirectURI:         queryValue(ctx, "redirect_uri"),
+		resource:            queryValue(ctx, "resource"),
 		scope:               queryValue(ctx, "scope"),
 		state:               queryValue(ctx, "state"),
 		codeChallenge:       queryValue(ctx, "code_challenge"),
@@ -184,6 +188,13 @@ func (h *Handler) extractAuthorizeRequest(ctx *apptheory.Context) (*authorizeReq
 		resp, err := h.redirectMissingAuthorizeParams(ctx, req)
 		return nil, resp, err
 	}
+
+	resource, err := normalizeOAuthResourceIndicator(req.resource)
+	if err != nil {
+		resp, respErr := h.oauthErrorLift(ctx, "invalid_target", err.Error(), req.redirectURI, req.state)
+		return nil, resp, respErr
+	}
+	req.resource = resource
 
 	return req, nil, nil
 }
@@ -205,6 +216,9 @@ func (h *Handler) redirectMissingAuthorizeParams(ctx *apptheory.Context, req *au
 	}
 	if req.scope != "" {
 		errorParams.Set("scope", req.scope)
+	}
+	if req.resource != "" {
+		errorParams.Set("resource", req.resource)
 	}
 	if req.responseType != "" {
 		errorParams.Set("response_type", req.responseType)
@@ -230,6 +244,7 @@ func (h *Handler) redirectUserToLogin(ctx *apptheory.Context, req *authorizeRequ
 	authRequest := map[string]string{
 		"client_id":             req.clientID,
 		"redirect_uri":          req.redirectURI,
+		"resource":              req.resource,
 		"scope":                 req.scope,
 		"state":                 req.state,
 		"response_type":         req.responseType,
@@ -263,6 +278,26 @@ func (h *Handler) normalizeAuthorizeScopes(scope string) ([]string, error) {
 	return scopes, nil
 }
 
+func normalizeOAuthResourceIndicator(resource string) (string, error) {
+	resource = strings.TrimSpace(resource)
+	if resource == "" {
+		return "", nil
+	}
+
+	parsed, err := url.Parse(resource)
+	if err != nil || parsed == nil || !parsed.IsAbs() || parsed.Host == "" {
+		return "", errors.New("resource must be an absolute https URI without fragment")
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return "", errors.New("resource must use https")
+	}
+	if parsed.Fragment != "" {
+		return "", errors.New("resource must not include a fragment")
+	}
+
+	return resource, nil
+}
+
 func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFlow) (*apptheory.Response, error) {
 	if h.registry == nil {
 		h.logger.Error("service registry not initialized for OAuth authorization")
@@ -281,6 +316,7 @@ func (h *Handler) ensureConsentForFlow(ctx *apptheory.Context, flow *authorizeFl
 		AgentUsername:       flow.agentUsername,
 		Scopes:              flow.scopes,
 		RedirectURI:         flow.request.redirectURI,
+		Resource:            flow.request.resource,
 		CodeChallenge:       flow.request.codeChallenge,
 		CodeChallengeMethod: flow.request.codeChallengeMethod,
 		ExpiresAt:           time.Now().Add(10 * time.Minute),
@@ -312,6 +348,7 @@ func (h *Handler) completeAuthorizationFlow(ctx *apptheory.Context, flow *author
 		Code:              code,
 		ClientID:          flow.request.clientID,
 		RedirectURI:       flow.request.redirectURI,
+		Resource:          flow.request.resource,
 		Username:          flow.username,
 		PrincipalUsername: flow.principalUsername,
 		AgentUsername:     flow.agentUsername,
@@ -429,6 +466,9 @@ func (h *Handler) redirectToConsentUI(ctx *apptheory.Context, authState *storage
 		url.QueryEscape(app.Website),
 		url.QueryEscape(strings.Join(authState.Scopes, " ")),
 		url.QueryEscape(authState.RedirectURI))
+	if strings.TrimSpace(authState.Resource) != "" {
+		consentURL += "&resource=" + url.QueryEscape(authState.Resource)
+	}
 	if strings.TrimSpace(authState.AgentUsername) != "" {
 		consentURL += "&agent_username=" + url.QueryEscape(authState.AgentUsername)
 		consentURL += "&principal_username=" + url.QueryEscape(authState.PrincipalUsername)
@@ -468,6 +508,7 @@ type oauthTokenRequest struct {
 	redirectURI  string
 	clientID     string
 	clientSecret string
+	resource     string
 	codeVerifier string
 	refreshToken string
 	deviceCode   string
@@ -519,12 +560,22 @@ func parseOAuthTokenRequest(ctx *apptheory.Context) (*oauthTokenRequest, *appthe
 		clientSecret = basicClientSecret
 	}
 
+	resource, err := normalizeOAuthResourceIndicator(params["resource"])
+	if err != nil {
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_target",
+			"error_description": err.Error(),
+		})
+		return nil, resp, respErr
+	}
+
 	return &oauthTokenRequest{
 		grantType:    params["grant_type"],
 		code:         params["code"],
 		redirectURI:  params["redirect_uri"],
 		clientID:     clientID,
 		clientSecret: clientSecret,
+		resource:     resource,
 		codeVerifier: params["code_verifier"],
 		refreshToken: params["refresh_token"],
 		deviceCode:   params["device_code"],
@@ -598,10 +649,15 @@ func (h *Handler) handleOAuthAuthorizationCodeGrant(ctx context.Context, oauthSv
 		})
 	}
 
-	accessToken, refreshTokenOut, grantedScopes, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret)
+	accessToken, refreshTokenOut, grantedScopes, err := h.exchangeAuthorizationCode(ctx, oauthSvc, req.code, req.clientID, req.redirectURI, req.codeVerifier, req.clientSecret, req.resource)
 	if err != nil {
 		h.logger.Error("failed to exchange authorization code", zap.Error(err))
 		switch err {
+		case errOAuthInvalidTarget:
+			return apptheory.JSON(http.StatusBadRequest, map[string]string{
+				"error":             "invalid_target",
+				"error_description": "resource must match the original authorization request",
+			})
 		case auth.ErrInvalidGrant:
 			return apptheory.JSON(http.StatusBadRequest, map[string]string{
 				"error":             "invalid_grant",
@@ -756,7 +812,7 @@ func (h *Handler) handleOAuthClientCredentialsGrant(ctx context.Context, oauthSv
 	}
 
 	accessTTL := auth.AgentAccessTokenTTL(h.cfg)
-	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(
+	accessToken, _, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(
 		ctx,
 		agentUser.Username,
 		client.ClientID,
@@ -765,6 +821,7 @@ func (h *Handler) handleOAuthClientCredentialsGrant(ctx context.Context, oauthSv
 		accessTTL,
 		auth.ClientClassAgent,
 		common.GenerateSessionIDULID(),
+		req.resource,
 	)
 	if err != nil {
 		h.logger.Error("failed to generate client_credentials access token", zap.Error(err))
@@ -1090,7 +1147,7 @@ func (h *Handler) oauthDeviceApprovedTokenContextErrorResponse(err error) (*appt
 }
 
 // exchangeAuthorizationCode exchanges an authorization code for access and refresh tokens
-func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret string) (string, string, []string, error) {
+func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret, requestedResource string) (string, string, []string, error) {
 	code = strings.TrimSpace(code)
 	clientID = strings.TrimSpace(clientID)
 	redirectURI = strings.TrimSpace(redirectURI)
@@ -1104,6 +1161,9 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	authCode, err := h.loadAndValidateAuthorizationCodeForExchange(ctx, oauthSvc, client, code, clientID, redirectURI, codeVerifier)
 	if err != nil {
 		return "", "", nil, err
+	}
+	if strings.TrimSpace(authCode.Resource) != strings.TrimSpace(requestedResource) {
+		return "", "", nil, errOAuthInvalidTarget
 	}
 
 	// Consume the authorization code before issuing tokens. This prevents code reuse via
@@ -1119,7 +1179,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	}
 
 	// Generate tokens
-	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID)
+	accessToken, refreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx, authCode.Username, clientID, "", authCode.Scopes, accessTTL, clientClass, sessionID, authCode.Resource)
 	if err != nil {
 		return "", "", nil, errors.Join(failedToGenerateTokens(), err)
 	}
@@ -1242,6 +1302,7 @@ func buildAuthorizationCodeRefreshToken(now time.Time, refreshToken, clientID st
 		Token:             refreshToken,
 		Username:          authCode.Username,
 		ClientID:          clientID,
+		Resource:          authCode.Resource,
 		Scopes:            authCode.Scopes,
 		CreatedAt:         now,
 		ExpiresAt:         now.Add(auth.RefreshTokenDuration),
@@ -1365,7 +1426,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		refreshExpiry = storedToken.ExpiresAt
 	}
 
-	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContext(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, storedToken.ClientClass, storedToken.SessionID)
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokensWithAccessTokenTTLAndClientContextAndAudience(ctx, storedToken.Username, clientID, "", storedToken.Scopes, accessTTL, storedToken.ClientClass, storedToken.SessionID, storedToken.Resource)
 	if err != nil {
 		return "", "", nil, errors.Join(failedToGenerateNewTokens(), err)
 	}
@@ -1375,6 +1436,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		Token:               newRefreshToken,
 		Username:            storedToken.Username,
 		ClientID:            clientID,
+		Resource:            storedToken.Resource,
 		Scopes:              storedToken.Scopes,
 		CreatedAt:           time.Now(),
 		ExpiresAt:           refreshExpiry,

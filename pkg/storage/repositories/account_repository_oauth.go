@@ -54,6 +54,7 @@ func (r *AccountRepository) StoreOAuthState(ctx context.Context, state string, d
 		Scopes:              data.Scopes,
 		CodeChallenge:       data.CodeChallenge,
 		CodeChallengeMethod: data.CodeChallengeMethod,
+		Resource:            data.Resource,
 		CreatedAt:           data.CreatedAt,
 		ExpiresAt:           data.ExpiresAt,
 	}
@@ -118,6 +119,7 @@ func (r *AccountRepository) GetOAuthState(ctx context.Context, state string) (*s
 		Scopes:              model.Scopes,
 		CodeChallenge:       model.CodeChallenge,
 		CodeChallengeMethod: model.CodeChallengeMethod,
+		Resource:            model.Resource,
 		CreatedAt:           model.CreatedAt,
 		ExpiresAt:           model.ExpiresAt,
 	}

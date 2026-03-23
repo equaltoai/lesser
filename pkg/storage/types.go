@@ -252,6 +252,7 @@ type AuthorizationCode struct {
 	Code              string    `json:"code"`
 	ClientID          string    `json:"client_id"`
 	RedirectURI       string    `json:"redirect_uri"`
+	Resource          string    `json:"resource,omitempty"`
 	Username          string    `json:"username"`
 	PrincipalUsername string    `json:"principal_username,omitempty"`
 	AgentUsername     string    `json:"agent_username,omitempty"`
@@ -265,6 +266,7 @@ type RefreshToken struct {
 	Token               string    `json:"token"`
 	Username            string    `json:"username"`
 	ClientID            string    `json:"client_id"`
+	Resource            string    `json:"resource,omitempty"`
 	Scopes              []string  `json:"scopes"`
 	CreatedAt           time.Time `json:"created_at"`
 	ExpiresAt           time.Time `json:"expires_at"`
@@ -335,6 +337,7 @@ type OAuthState struct {
 	CodeChallengeMethod string    `json:"code_challenge_method"`
 	ClientID            string    `json:"client_id"`
 	RedirectURI         string    `json:"redirect_uri"`
+	Resource            string    `json:"resource,omitempty"`
 	Scope               string    `json:"scope"`
 	CreatedAt           time.Time `json:"created_at"`
 	ExpiresAt           time.Time `json:"expires_at"`

@@ -133,6 +133,7 @@ func (h *Handler) handleConsentApproval(ctx *apptheory.Context, authState *stora
 		Code:              code,
 		ClientID:          authState.ClientID,
 		RedirectURI:       authState.RedirectURI,
+		Resource:          authState.Resource,
 		Username:          authState.Username,
 		PrincipalUsername: authState.PrincipalUsername,
 		AgentUsername:     authState.AgentUsername,
