@@ -320,12 +320,12 @@ func validateDynamicRegistrationRedirectURI(redirectURI string) error {
 	}
 
 	switch strings.ToLower(parsed.Scheme) {
-	case "https":
+	case schemeHTTPS:
 		if parsed.Host == "" {
 			return errors.New("https redirect_uris must include a host")
 		}
 		return nil
-	case "http":
+	case schemeHTTP:
 		host := parsed.Hostname()
 		if !isLoopbackRedirectHost(host) {
 			return errors.New("http redirect_uris must use a loopback host")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/equaltoai/lesser/pkg/config"
@@ -11,6 +12,7 @@ import (
 
 func TestOAuthOriginHelpers_Round22(t *testing.T) {
 	t.Run("oauth path detection includes oauth-sensitive surfaces", func(t *testing.T) {
+		require.False(t, isOAuthSensitivePath(""))
 		require.True(t, isOAuthSensitivePath("/oauth/token"))
 		require.True(t, isOAuthSensitivePath("/.well-known/oauth-authorization-server"))
 		require.True(t, isOAuthSensitivePath("/api/v1/apps"))
@@ -30,8 +32,28 @@ func TestOAuthOriginHelpers_Round22(t *testing.T) {
 
 		require.False(t, isAllowedOAuthOrigin("https://evil.example.com", cfg))
 		require.False(t, isAllowedOAuthOrigin("https://localhost:3000", cfg))
+		require.False(t, isAllowedOAuthOrigin("https://sim.example.com", nil))
 		require.False(t, isAllowedOAuthOrigin("null", cfg))
 		require.False(t, isAllowedOAuthOrigin("https://claude.ai/app", cfg))
+	})
+
+	t.Run("origin normalization rejects invalid forms", func(t *testing.T) {
+		_, _, ok := normalizeOrigin("")
+		require.False(t, ok)
+
+		_, _, ok = normalizeOrigin("https://claude.ai/path")
+		require.False(t, ok)
+
+		_, _, ok = normalizeOrigin("https://claude.ai?state=1")
+		require.False(t, ok)
+	})
+
+	t.Run("localhost helper only allows http loopback origins", func(t *testing.T) {
+		require.False(t, isAllowedLocalDevelopmentOrigin(nil))
+
+		parsed, err := url.Parse("https://localhost:3000")
+		require.NoError(t, err)
+		require.False(t, isAllowedLocalDevelopmentOrigin(parsed))
 	})
 }
 

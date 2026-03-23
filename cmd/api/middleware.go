@@ -138,9 +138,9 @@ func isOAuthSensitivePath(path string) bool {
 		return true
 	case path == "/.well-known/oauth-authorization-server":
 		return true
-	case path == "/api/v1/apps":
+	case path == apiV1AppsPath:
 		return true
-	case strings.HasPrefix(path, "/api/v1/apps/"):
+	case strings.HasPrefix(path, apiV1AppsPathPrefix):
 		return true
 	default:
 		return false
@@ -286,7 +286,7 @@ func isWriteAllowedWhileLocked(path string) bool {
 		strings.HasPrefix(path, "/auth/") ||
 		strings.HasPrefix(path, "/oauth/") ||
 		strings.HasPrefix(path, "/api/v1/auth/") ||
-		path == "/api/v1/apps"
+		path == apiV1AppsPath
 }
 
 func shouldSuppressContentReadWhileLocked(path string) bool {
