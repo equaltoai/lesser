@@ -458,7 +458,9 @@ func grantTypeSubsetAllowed(allowed, requested []string) bool {
 func dynamicRegistrationDefaultGrantTypes(clientClass, tokenEndpointAuthMethod string, allowDeviceFlow bool) []string {
 	switch clientClass {
 	case auth.ClientClassAgent:
-		if strings.EqualFold(strings.TrimSpace(tokenEndpointAuthMethod), oauthTokenEndpointAuthMethodClientSecretPost) {
+		tokenEndpointAuthMethod = strings.TrimSpace(tokenEndpointAuthMethod)
+		if strings.EqualFold(tokenEndpointAuthMethod, oauthTokenEndpointAuthMethodClientSecretPost) ||
+			strings.EqualFold(tokenEndpointAuthMethod, oauthTokenEndpointAuthMethodClientSecretBasic) {
 			return []string{
 				auth.GrantTypeAuthorizationCode,
 				auth.GrantTypeRefreshToken,

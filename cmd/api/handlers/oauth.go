@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -503,17 +504,58 @@ func parseOAuthTokenRequest(ctx *apptheory.Context) (*oauthTokenRequest, *appthe
 		return nil, resp, respErr
 	}
 
+	clientID := params["client_id"]
+	clientSecret := params["client_secret"]
+	basicClientID, basicClientSecret, usedBasicAuth, basicErr := parseOAuthTokenBasicClientCredentials(ctx)
+	if basicErr != nil {
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_client",
+			"error_description": "Invalid client credentials",
+		})
+		return nil, resp, respErr
+	}
+	if usedBasicAuth {
+		clientID = basicClientID
+		clientSecret = basicClientSecret
+	}
+
 	return &oauthTokenRequest{
 		grantType:    params["grant_type"],
 		code:         params["code"],
 		redirectURI:  params["redirect_uri"],
-		clientID:     params["client_id"],
-		clientSecret: params["client_secret"],
+		clientID:     clientID,
+		clientSecret: clientSecret,
 		codeVerifier: params["code_verifier"],
 		refreshToken: params["refresh_token"],
 		deviceCode:   params["device_code"],
 		scope:        params["scope"],
 	}, nil, nil
+}
+
+func parseOAuthTokenBasicClientCredentials(ctx *apptheory.Context) (clientID, clientSecret string, used bool, err error) {
+	authHeader := strings.TrimSpace(headerValue(ctx, "Authorization"))
+	if authHeader == "" {
+		authHeader = strings.TrimSpace(headerValue(ctx, "authorization"))
+	}
+	if authHeader == "" {
+		return "", "", false, nil
+	}
+	if !strings.HasPrefix(strings.ToLower(authHeader), "basic ") {
+		return "", "", false, nil
+	}
+
+	encoded := strings.TrimSpace(authHeader[len("Basic "):])
+	decoded, decodeErr := base64.StdEncoding.DecodeString(encoded)
+	if decodeErr != nil {
+		return "", "", true, decodeErr
+	}
+
+	clientID, clientSecret, found := strings.Cut(string(decoded), ":")
+	if !found || strings.TrimSpace(clientID) == "" {
+		return "", "", true, errors.New("invalid basic auth credentials")
+	}
+
+	return clientID, clientSecret, true, nil
 }
 
 // HandleOAuthTokenLift handles the OAuth token endpoint using native Lift patterns

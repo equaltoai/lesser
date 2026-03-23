@@ -76,8 +76,10 @@ func TestNormalizeOAuthTokenEndpointAuthMethod(t *testing.T) {
 	require.Equal(t, "client_secret_post", method)
 	require.True(t, confidential)
 
-	_, _, err = normalizeOAuthTokenEndpointAuthMethod("client_secret_basic", auth.ClientClassCLI)
-	require.Error(t, err)
+	method, confidential, err = normalizeOAuthTokenEndpointAuthMethod("client_secret_basic", auth.ClientClassCLI)
+	require.NoError(t, err)
+	require.Equal(t, "client_secret_basic", method)
+	require.True(t, confidential)
 }
 
 func TestOAuthClientTokenEndpointAuthMethod(t *testing.T) {

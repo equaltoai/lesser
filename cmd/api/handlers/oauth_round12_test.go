@@ -1022,6 +1022,53 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, claims.SessionID, claims.AgentSessionID)
 	})
 
+	t.Run("client_credentials accepts client_secret_basic and prefers it over body credentials", func(t *testing.T) {
+		state := &round10QueryState{
+			oauthClientsByID: map[string]storagemodels.OAuthClient{
+				"client-agent": {
+					ClientID:      "client-agent",
+					ClientSecret:  "secret",
+					Name:          "Agent Connector",
+					RedirectURIs:  []string{"https://example.com/callback"},
+					GrantTypes:    []string{auth.GrantTypeClientCredentials},
+					Scopes:        []string{auth.ScopeRead, auth.ScopeWrite},
+					ClientClass:   auth.ClientClassAgent,
+					AgentUsername: "agent1",
+					OwnerID:       "owner",
+					Confidential:  true,
+					CreatedAt:     time.Now().Add(-24 * time.Hour),
+				},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"agent1": {
+					Username:   "agent1",
+					IsAgent:    true,
+					AgentType:  "assistant",
+					AgentOwner: "@owner",
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		basic := base64.StdEncoding.EncodeToString([]byte("client-agent:secret"))
+		ctx := round10NewLiftContextWithBodyBytes(
+			http.MethodPost,
+			"/oauth/token",
+			map[string]string{"Authorization": "Basic " + basic},
+			nil,
+			[]byte("grant_type=client_credentials&client_id=client-wrong&client_secret=wrong"),
+		)
+		resp := requireStatus(t, http.StatusOK)(h.HandleOAuthTokenLift(ctx))
+		var body apimodels.OAuthTokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.NotEmpty(t, body.AccessToken)
+		require.Empty(t, body.RefreshToken)
+
+		claims := round12DecodeJWTClaims(t, body.AccessToken)
+		require.Equal(t, "client-agent", claims.ClientID)
+		require.Equal(t, "agent1", claims.Username)
+	})
+
 	t.Run("client_credentials accepts previous secret during grace window", func(t *testing.T) {
 		activeHash, err := auth.HashOAuthClientSecret("secret-new")
 		require.NoError(t, err)
