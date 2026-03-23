@@ -442,6 +442,22 @@ func TestOAuthTokenLiftRound12(t *testing.T) {
 		require.Equal(t, "invalid_request", body["error"])
 	})
 
+	t.Run("invalid content type", func(t *testing.T) {
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		ctx := round10NewLiftContextWithBodyBytes(
+			http.MethodPost,
+			"/oauth/token",
+			map[string]string{"Content-Type": "application/json"},
+			nil,
+			[]byte("grant_type=client_credentials&client_id=client-1"),
+		)
+		resp := requireStatus(t, http.StatusBadRequest)(h.HandleOAuthTokenLift(ctx))
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		require.Equal(t, "invalid_request", body["error"])
+		require.Equal(t, "token endpoint requires application/x-www-form-urlencoded", body["error_description"])
+	})
+
 	t.Run("unsupported grant type", func(t *testing.T) {
 		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/oauth/token", nil, nil, []byte("grant_type=password&client_id=client-1"))

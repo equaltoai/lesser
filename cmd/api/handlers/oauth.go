@@ -482,6 +482,18 @@ func parseOAuthTokenRequest(ctx *apptheory.Context) (*oauthTokenRequest, *appthe
 		return nil, resp, respErr
 	}
 
+	contentType := strings.ToLower(strings.TrimSpace(headerValue(ctx, "Content-Type")))
+	if contentType == "" {
+		contentType = strings.ToLower(strings.TrimSpace(headerValue(ctx, "content-type")))
+	}
+	if !strings.HasPrefix(contentType, common.ContentTypeForm) {
+		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
+			"error":             "invalid_request",
+			"error_description": "token endpoint requires application/x-www-form-urlencoded",
+		})
+		return nil, resp, respErr
+	}
+
 	params, err := common.ParseFormURLEncoded(string(ctx.Request.Body))
 	if err != nil {
 		resp, respErr := apptheory.JSON(http.StatusBadRequest, map[string]string{
