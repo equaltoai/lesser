@@ -109,7 +109,6 @@ func (h *Handler) parseOAuthDynamicClientRegistrationRequest(ctx *apptheory.Cont
 
 	var req models.OAuthDynamicClientRegistrationRequest
 	decoder := json.NewDecoder(bytes.NewReader(ctx.Request.Body))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
 		resp, respErr := h.oauthDynamicRegistrationError(http.StatusBadRequest, "invalid_client_metadata", "unsupported or malformed client metadata")
 		return nil, resp, respErr
