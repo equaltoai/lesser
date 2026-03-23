@@ -20,6 +20,7 @@ func (h *Handler) HandleOAuthAuthorizationServerMetadataLift(_ *apptheory.Contex
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 oauthGrantTypesSupported(h.cfg),
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "none"},
+		"client_id_metadata_document_supported": false,
 		"code_challenge_methods_supported":      []string{"S256"},
 		"scopes_supported":                      auth.CanonicalOAuthScopes(),
 	}
