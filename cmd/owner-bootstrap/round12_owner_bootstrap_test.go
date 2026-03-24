@@ -108,7 +108,7 @@ func TestParseOwnerBootstrapArgs_ParsesAndErrors(t *testing.T) {
 		"-kms-key-id=alias/test",
 		"-wallet-secret=w",
 		"-oauth-secret=o",
-		"-username=admin",
+		"-username=Admin",
 		"-chain-id=2",
 		"-force=true",
 	})

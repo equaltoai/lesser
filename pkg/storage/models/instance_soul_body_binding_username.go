@@ -31,7 +31,7 @@ func (b *InstanceSoulBodyBindingUsername) UpdateKeys() error {
 		return fmt.Errorf("soul body binding username index is nil")
 	}
 
-	b.Username = strings.TrimSpace(b.Username)
+	b.Username = strings.ToLower(strings.TrimSpace(b.Username))
 	b.AgentID = strings.ToLower(strings.TrimSpace(b.AgentID))
 
 	if b.Username == "" {
@@ -63,7 +63,7 @@ func (b *InstanceSoulBodyBindingUsername) GetSK() string {
 // NewInstanceSoulBodyBindingUsername creates a new reverse username binding record.
 func NewInstanceSoulBodyBindingUsername(username string, agentID string) *InstanceSoulBodyBindingUsername {
 	index := &InstanceSoulBodyBindingUsername{
-		Username:  strings.TrimSpace(username),
+		Username:  strings.ToLower(strings.TrimSpace(username)),
 		AgentID:   strings.ToLower(strings.TrimSpace(agentID)),
 		UpdatedAt: time.Now().UTC(),
 	}

@@ -18,14 +18,18 @@ func NewKeyUtils() *KeyUtils {
 	return &KeyUtils{}
 }
 
+func normalizeKeyUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
 // UserKey generates a user primary key: USER#{username}
 func (k *KeyUtils) UserKey(username string) string {
-	return fmt.Sprintf("USER#%s", username)
+	return fmt.Sprintf("USER#%s", normalizeKeyUsername(username))
 }
 
 // ActorKey generates an actor primary key: ACTOR#{username}
 func (k *KeyUtils) ActorKey(username string) string {
-	return fmt.Sprintf("ACTOR#%s", username)
+	return fmt.Sprintf("ACTOR#%s", normalizeKeyUsername(username))
 }
 
 // ObjectKey generates an object primary key: object#{id}
@@ -35,32 +39,32 @@ func (k *KeyUtils) ObjectKey(objectID string) string {
 
 // FollowKey generates a follow primary key: follow#{follower}
 func (k *KeyUtils) FollowKey(followerUsername string) string {
-	return fmt.Sprintf("follow#%s", followerUsername)
+	return fmt.Sprintf("follow#%s", normalizeKeyUsername(followerUsername))
 }
 
 // FollowingSK generates a following sort key: following#{followed}
 func (k *KeyUtils) FollowingSK(followedUsername string) string {
-	return fmt.Sprintf("following#%s", followedUsername)
+	return fmt.Sprintf("following#%s", normalizeKeyUsername(followedUsername))
 }
 
 // BlockKey generates a block primary key: ACTOR#{username}#BLOCKS
 func (k *KeyUtils) BlockKey(username string) string {
-	return fmt.Sprintf("ACTOR#%s#BLOCKS", username)
+	return fmt.Sprintf("ACTOR#%s#BLOCKS", normalizeKeyUsername(username))
 }
 
 // BlockedSK generates a blocked sort key: BLOCKED#{username}
 func (k *KeyUtils) BlockedSK(blockedUsername string) string {
-	return fmt.Sprintf("BLOCKED#%s", blockedUsername)
+	return fmt.Sprintf("BLOCKED#%s", normalizeKeyUsername(blockedUsername))
 }
 
 // MuteKey generates a mute primary key: MUTE#{username}
 func (k *KeyUtils) MuteKey(username string) string {
-	return fmt.Sprintf("MUTE#%s", username)
+	return fmt.Sprintf("MUTE#%s", normalizeKeyUsername(username))
 }
 
 // MutedSK generates a muted sort key: MUTED#{username}
 func (k *KeyUtils) MutedSK(mutedUsername string) string {
-	return fmt.Sprintf("MUTED#%s", mutedUsername)
+	return fmt.Sprintf("MUTED#%s", normalizeKeyUsername(mutedUsername))
 }
 
 // HashtagKey generates a hashtag primary key: HASHTAG#{tag}
@@ -129,7 +133,7 @@ func NewGSIKeyUtils() *GSIKeyUtils {
 
 // UserIndexKey generates a user index key: USER#{username}
 func (g *GSIKeyUtils) UserIndexKey(username string) string {
-	return fmt.Sprintf("USER#%s", username)
+	return fmt.Sprintf("USER#%s", normalizeKeyUsername(username))
 }
 
 // DomainIndexKey generates a domain index key: DOMAIN#{domain}

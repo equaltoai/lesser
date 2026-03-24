@@ -224,7 +224,7 @@ func extractUsernameFromActor(actorURL string) string {
 	// Format: https://domain.com/users/username
 	parts := strings.Split(actorURL, "/")
 	if len(parts) >= 2 {
-		return parts[len(parts)-1] // Get the last part (username)
+		return strings.ToLower(strings.TrimSpace(parts[len(parts)-1])) // Get the last part (username)
 	}
-	return actorURL // Fallback to full URL if parsing fails
+	return strings.ToLower(strings.TrimSpace(actorURL)) // Fallback to full URL if parsing fails
 }

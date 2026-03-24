@@ -15,6 +15,7 @@ import (
 )
 
 const commDeliveryAuditEventType = "comm.notification.deliver"
+const commNotificationRecipientResolutionFailure = "notification recipient could not be resolved"
 
 // HandleDeliverNotificationLift handles POST /api/v1/notifications/deliver.
 //
@@ -53,8 +54,17 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		return common.RespondValidationError(ctx, err)
 	}
 
-	recipient := h.resolveNotificationDeliveryRecipient(ctx.Context(), delivery)
+	recipient, addressedRecipient := h.resolveNotificationDeliveryRecipient(ctx.Context(), delivery)
 	if recipient == "" {
+		if addressedRecipient {
+			h.logger.Warn("notification recipient resolution failed",
+				zap.String("to_identifier", delivery.ToIdentifier),
+				zap.String("to_address", delivery.ToAddress),
+				zap.String("to_number", delivery.ToNumber),
+				zap.String("channel", delivery.Channel))
+			h.recordCommDeliveryAuditEvent(ctx, "", delivery, false, commNotificationRecipientResolutionFailure, false)
+			return common.RespondUnprocessableEntity(ctx, commNotificationRecipientResolutionFailure)
+		}
 		return common.RespondServiceUnavailable(ctx, "notification delivery")
 	}
 
@@ -163,11 +173,24 @@ func commNotificationAttachmentsData(attachments []commNotificationAttachment) [
 	return data
 }
 
-func (h *Handler) resolveNotificationDeliveryRecipient(ctx context.Context, delivery *commNotificationDelivery) string {
-	if username := h.notificationDeliveryAddressedRecipient(ctx, delivery); username != "" {
-		return h.notificationDeliveryResolvedUsername(ctx, username)
+func (h *Handler) resolveNotificationDeliveryRecipient(ctx context.Context, delivery *commNotificationDelivery) (string, bool) {
+	if h.notificationDeliveryHasExplicitRecipient(delivery) {
+		username := h.notificationDeliveryAddressedRecipient(ctx, delivery)
+		if username == "" {
+			return "", true
+		}
+		return h.notificationDeliveryResolvedUsername(ctx, username), true
 	}
-	return h.notificationDeliveryResolvedUsername(ctx, h.notificationDeliveryRecipient(ctx))
+	return h.notificationDeliveryResolvedUsername(ctx, h.notificationDeliveryRecipient(ctx)), false
+}
+
+func (h *Handler) notificationDeliveryHasExplicitRecipient(delivery *commNotificationDelivery) bool {
+	if delivery == nil {
+		return false
+	}
+	return strings.TrimSpace(delivery.ToIdentifier) != "" ||
+		strings.TrimSpace(delivery.ToAddress) != "" ||
+		strings.TrimSpace(delivery.ToNumber) != ""
 }
 
 func (h *Handler) notificationDeliveryAddressedRecipient(ctx context.Context, delivery *commNotificationDelivery) string {

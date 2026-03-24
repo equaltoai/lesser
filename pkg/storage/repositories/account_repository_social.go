@@ -76,8 +76,8 @@ func (r *AccountRepository) Follow(ctx context.Context, followerUsername, follow
 func (r *AccountRepository) Unfollow(ctx context.Context, followerUsername, followedUsername string) error {
 	// Delete follow relationship
 	err := r.db.WithContext(ctx).Model(&models.Follow{}).
-		Where("PK", "=", fmt.Sprintf("follow#%s", followerUsername)).
-		Where("SK", "=", fmt.Sprintf("following#%s", followedUsername)).
+		Where("PK", "=", Utils.Keys.FollowKey(followerUsername)).
+		Where("SK", "=", Utils.Keys.FollowingSK(followedUsername)).
 		Delete()
 
 	if err != nil && !errors.IsNotFound(err) {
@@ -99,8 +99,8 @@ func (r *AccountRepository) IsFollowing(ctx context.Context, followerUsername, f
 	var follow models.Follow
 
 	err := r.db.WithContext(ctx).Model(&follow).
-		Where("PK", "=", fmt.Sprintf("follow#%s", followerUsername)).
-		Where("SK", "=", fmt.Sprintf("following#%s", followedUsername)).
+		Where("PK", "=", Utils.Keys.FollowKey(followerUsername)).
+		Where("SK", "=", Utils.Keys.FollowingSK(followedUsername)).
 		First(&follow)
 
 	if err != nil {
@@ -153,7 +153,7 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 	// Build query using GSI1 for followed's perspective
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
 		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("follow#%s", username)).
+		Where("gsi1PK", "=", Utils.Keys.FollowKey(username)).
 		OrderBy("gsi1SK", "ASC").
 		Limit(safeLimit + 1)
 
@@ -207,7 +207,7 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 
 	// Build query using primary key
 	query := r.db.WithContext(ctx).Model(&models.Follow{}).
-		Where("PK", "=", fmt.Sprintf("follow#%s", username)).
+		Where("PK", "=", Utils.Keys.FollowKey(username)).
 		Where("SK", "BEGINS_WITH", "following#").
 		OrderBy("SK", "ASC").
 		Limit(safeLimit + 1)
@@ -307,8 +307,8 @@ func (r *AccountRepository) Block(ctx context.Context, blockerUsername, blockedU
 // Unblock removes a block relationship
 func (r *AccountRepository) Unblock(ctx context.Context, blockerUsername, blockedUsername string) error {
 	err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf(storage.ActorBlocksKey, blockerUsername)).
-		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
+		Where("PK", "=", Utils.Keys.BlockKey(blockerUsername)).
+		Where("SK", "=", Utils.Keys.BlockedSK(blockedUsername)).
 		Delete()
 
 	if err != nil && !errors.IsNotFound(err) {
@@ -327,8 +327,8 @@ func (r *AccountRepository) IsBlocked(ctx context.Context, blockerUsername, bloc
 	var block models.Block
 
 	err := r.db.WithContext(ctx).Model(&block).
-		Where("PK", "=", fmt.Sprintf(storage.ActorBlocksKey, blockerUsername)).
-		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
+		Where("PK", "=", Utils.Keys.BlockKey(blockerUsername)).
+		Where("SK", "=", Utils.Keys.BlockedSK(blockedUsername)).
 		First(&block)
 
 	if err != nil {
@@ -351,7 +351,7 @@ func (r *AccountRepository) GetBlocks(ctx context.Context, username string) ([]*
 		ctx,
 		&QueryUtils{db: r.db, logger: r.logger},
 		func() *models.Block { return &models.Block{} },
-		fmt.Sprintf("ACTOR#%s#BLOCKS", username),
+		Utils.Keys.BlockKey(username),
 		"BLOCKED#",
 		false, // use Where
 		func(block models.Block) *storage.Block {
@@ -407,8 +407,8 @@ func (r *AccountRepository) Mute(ctx context.Context, muterUsername, mutedUserna
 // Unmute removes a mute relationship
 func (r *AccountRepository) Unmute(ctx context.Context, muterUsername, mutedUsername string) error {
 	err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
+		Where("PK", "=", Utils.Keys.MuteKey(muterUsername)).
+		Where("SK", "=", Utils.Keys.MutedSK(mutedUsername)).
 		Delete()
 
 	if err != nil && !errors.IsNotFound(err) {
@@ -427,8 +427,8 @@ func (r *AccountRepository) IsMuted(ctx context.Context, muterUsername, mutedUse
 	var mute models.Mute
 
 	err := r.db.WithContext(ctx).Model(&mute).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
+		Where("PK", "=", Utils.Keys.MuteKey(muterUsername)).
+		Where("SK", "=", Utils.Keys.MutedSK(mutedUsername)).
 		First(&mute)
 
 	if err != nil {
@@ -450,7 +450,7 @@ func (r *AccountRepository) GetMutes(ctx context.Context, username string) ([]*s
 	var mutes []models.Mute
 
 	err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", username)).
+		Where("PK", "=", Utils.Keys.MuteKey(username)).
 		Where("SK", "BEGINS_WITH", "MUTED#").
 		All(&mutes)
 
@@ -739,8 +739,8 @@ func (r *AccountRepository) updateMute(ctx context.Context, muterUsername, muted
 	// Get existing mute
 	var mute models.Mute
 	err := r.db.WithContext(ctx).Model(&mute).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
+		Where("PK", "=", Utils.Keys.MuteKey(muterUsername)).
+		Where("SK", "=", Utils.Keys.MutedSK(mutedUsername)).
 		First(&mute)
 
 	if err != nil {

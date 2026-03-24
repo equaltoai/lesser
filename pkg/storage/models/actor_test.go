@@ -17,8 +17,30 @@ func TestActor_TableName(t *testing.T) {
 	assert.Equal(t, MainTableName, actor.TableName())
 }
 
-// TestActor_BeforeCreate removed - requires complex fixtures and DynamoDB key verification
-// Better suited for integration tests
+func TestActor_BeforeCreate_NormalizesMixedCaseUsername(t *testing.T) {
+	actor := &Actor{
+		Username:      " Alice ",
+		FollowerCount: 12,
+		Actor: &activitypub.Actor{
+			Name: "Alice",
+		},
+	}
+
+	err := actor.BeforeCreate()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "alice", actor.Username)
+	assert.Equal(t, "ACTOR#alice", actor.PK)
+	assert.Equal(t, SKProfile, actor.SK)
+	assert.Equal(t, "USERNAME_SEARCH#al", actor.GSI1PK)
+	assert.Equal(t, "alice", actor.GSI1SK)
+	assert.Equal(t, "NAME_SEARCH#al", actor.GSI2PK)
+	assert.Equal(t, "alice#alice", actor.GSI2SK)
+	assert.Equal(t, "ACTOR_RANK#10+", actor.GSI4PK)
+	assert.Equal(t, "0000000012#alice", actor.GSI4SK)
+	assert.False(t, actor.CreatedAt.IsZero())
+	assert.False(t, actor.UpdatedAt.IsZero())
+}
 
 func TestActor_BeforeUpdate(t *testing.T) {
 	actor := &Actor{
@@ -41,6 +63,27 @@ func TestActor_BeforeUpdate(t *testing.T) {
 	// Check GSI2 keys are updated for new display name
 	assert.Equal(t, "NAME_SEARCH#up", actor.GSI2PK)
 	assert.Equal(t, "updated user#testuser", actor.GSI2SK)
+}
+
+func TestActor_UpdateKeys_NormalizesMixedCaseUsername(t *testing.T) {
+	actor := &Actor{
+		Username:      " Alice ",
+		FollowerCount: 3,
+		Actor: &activitypub.Actor{
+			Name: "Alice",
+		},
+	}
+
+	err := actor.UpdateKeys()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "alice", actor.Username)
+	assert.Equal(t, "ACTOR#alice", actor.PK)
+	assert.Equal(t, SKProfile, actor.SK)
+	assert.Equal(t, "USERNAME_SEARCH#al", actor.GSI1PK)
+	assert.Equal(t, "alice", actor.GSI1SK)
+	assert.Equal(t, "alice#alice", actor.GSI2SK)
+	assert.Equal(t, "0000000003#alice", actor.GSI4SK)
 }
 
 func TestActor_setupGSIKeys(t *testing.T) {

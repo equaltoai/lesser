@@ -627,7 +627,7 @@ func (c *CommonQueries) GetUserFollows(ctx context.Context, username string, lim
 
 // GetUserFollowers retrieves followers for a user with pagination
 func (c *CommonQueries) GetUserFollowers(ctx context.Context, username string, limit int, cursor string) (*QueryResult[map[string]interface{}], error) {
-	return c.GSIStatusQuery(ctx, "gsi1", fmt.Sprintf("follow#%s", username), &QueryOptions{
+	return c.GSIStatusQuery(ctx, "gsi1", Utils.Keys.FollowKey(username), &QueryOptions{
 		Limit:  limit,
 		Cursor: cursor,
 	})

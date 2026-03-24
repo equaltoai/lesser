@@ -130,6 +130,7 @@ func clampActivityLimit(limit int) int {
 
 // GetInboxActivities returns inbox activities ordered newest-first with opaque pagination cursors.
 func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
 	safeLimit := clampActivityLimit(limit)
 
 	// Query using GSI1 for inbox activities
@@ -210,6 +211,7 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 
 // GetOutboxActivities retrieves activities created by a user - matches legacy implementation
 func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
 	safeLimit := clampActivityLimit(limit)
 
 	// Use BaseRepository QueryWithSKPrefix for outbox activities
@@ -588,14 +590,14 @@ func activityExtractUsernameFromActorID(actorID string) string {
 	if len(parts) < 2 {
 		return ""
 	}
-	return parts[len(parts)-1]
+	return strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
 }
 
 // isInboxActivity determines if an activity should be stored in the inbox
 // An activity is an inbox activity if the actor is different from the local user
 func isInboxActivity(activity *activitypub.Activity, localUsername string) bool {
 	actorUsername := activityExtractUsernameFromActorID(activity.Actor)
-	return actorUsername != localUsername
+	return actorUsername != strings.ToLower(strings.TrimSpace(localUsername))
 }
 
 // activityEncodeCursor encodes a map to a string cursor
