@@ -279,6 +279,16 @@ func (s *Service) normalizeUsername(username string) string {
 	return strings.TrimSpace(trimmed)
 }
 
+func storedUsernameMatches(storedUsername, candidate string) bool {
+	storedUsername = strings.TrimSpace(storedUsername)
+	candidate = strings.TrimSpace(candidate)
+	if storedUsername == "" || candidate == "" {
+		return false
+	}
+
+	return strings.EqualFold(storedUsername, candidate)
+}
+
 func (s *Service) isLocalDomain(domain string) bool {
 	if domain == "" {
 		return false
@@ -539,7 +549,7 @@ func (s *Service) UpdateProfile(ctx context.Context, cmd *UpdateProfileCommand) 
 	}
 
 	// Verify permission (only account owner can update)
-	if account.User.Username != cmd.UpdaterID {
+	if !storedUsernameMatches(account.User.Username, cmd.UpdaterID) {
 		return nil, common.ErrForbidden(ErrCannotUpdateProfileForOtherUser)
 	}
 
