@@ -88,6 +88,10 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		createErr = nil
 	}
 	if createErr != nil {
+		h.logger.Error("failed to create notification",
+			zap.String("user_id", cmd.UserID),
+			zap.String("type", cmd.Type),
+			zap.Error(createErr))
 		h.recordCommDeliveryAuditEvent(ctx, recipient, delivery, false, createErr.Error(), false)
 		if apperrors.HasCode(createErr, apperrors.CodeValidationFailed) {
 			return common.RespondValidationError(ctx, createErr)
