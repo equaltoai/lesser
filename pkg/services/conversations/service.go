@@ -398,14 +398,14 @@ func (s *Service) enforceDirectMessageTotalRateLimit(ctx context.Context, cmd *S
 	return nil
 }
 
-func (s *Service) getDirectMessageAccounts(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*storage.Account, map[string]*storage.Account, error) {
+func (s *Service) getDirectMessageAccounts(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*storage.Account, *storage.Account, map[string]*storage.Account, error) {
 	sender, err := s.accountRepo.GetAccount(ctx, cmd.SenderID)
 	if err != nil {
 		s.logger.Error("failed to get sender account", zap.String("sender_id", cmd.SenderID), zap.Error(err))
 		s.auditDMEvent(ctx, cmd, "", false, "get_sender_account_failed", map[string]any{
 			"recipient_id": recipientID,
 		})
-		return nil, nil, errors.Join(ErrGetSenderAccount, err)
+		return nil, nil, nil, errors.Join(ErrGetSenderAccount, err)
 	}
 
 	recipientAccounts := make(map[string]*storage.Account, 1)
@@ -415,11 +415,49 @@ func (s *Service) getDirectMessageAccounts(ctx context.Context, cmd *SendDirectM
 		s.auditDMEvent(ctx, cmd, "", false, "get_recipient_account_failed", map[string]any{
 			"recipient_id": recipientID,
 		})
-		return nil, nil, errors.Join(ErrInvalidRecipient, err)
+		return nil, nil, nil, errors.Join(ErrInvalidRecipient, err)
 	}
-	recipientAccounts[recipientID] = recipient
+	resolvedRecipientID := resolvedLegacyLocalAccountID(recipientID, recipient)
+	recipientAccounts[resolvedRecipientID] = recipient
 
-	return sender, recipientAccounts, nil
+	return sender, recipient, recipientAccounts, nil
+}
+
+func cloneDirectMessageCommandWithResolvedParticipants(
+	cmd *SendDirectMessageCommand,
+	sender *storage.Account,
+	recipient *storage.Account,
+) *SendDirectMessageCommand {
+	if cmd == nil {
+		return nil
+	}
+
+	cloned := *cmd
+	cloned.SenderID = resolvedLegacyLocalAccountID(cmd.SenderID, sender)
+	cloned.Recipients = append([]string(nil), cmd.Recipients...)
+	if len(cloned.Recipients) > 0 {
+		cloned.Recipients[0] = resolvedLegacyLocalAccountID(cloned.Recipients[0], recipient)
+	}
+
+	return &cloned
+}
+
+func resolvedLegacyLocalAccountID(requestedID string, account *storage.Account) string {
+	requestedID = strings.TrimSpace(requestedID)
+	if requestedID == "" || account == nil || account.User == nil {
+		return requestedID
+	}
+
+	storedUsername := strings.TrimSpace(account.User.Username)
+	if storedUsername == "" {
+		return requestedID
+	}
+
+	if requestedID == storedUsername || !strings.EqualFold(requestedID, storedUsername) {
+		return requestedID
+	}
+
+	return storedUsername
 }
 
 func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*models.Conversation, error) {
@@ -725,10 +763,13 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		return nil, err
 	}
 
-	sender, recipientAccounts, err := s.getDirectMessageAccounts(ctx, cmd, recipientID)
+	sender, recipient, recipientAccounts, err := s.getDirectMessageAccounts(ctx, cmd, recipientID)
 	if err != nil {
 		return nil, err
 	}
+
+	cmd = cloneDirectMessageCommandWithResolvedParticipants(cmd, sender, recipient)
+	recipientID = cmd.Recipients[0]
 
 	conversation, err := s.getOrCreateDirectMessageConversation(ctx, cmd, recipientID)
 	if err != nil {
