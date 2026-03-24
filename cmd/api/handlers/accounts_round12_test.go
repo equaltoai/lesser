@@ -497,6 +497,44 @@ func TestAccountsRound12_AccountHandlers_ErrorBranches(t *testing.T) {
 		require.Equal(t, common.GenerateNumericID("alice"), lookedUp.ID)
 		require.Equal(t, "alice", lookedUp.Username)
 	})
+
+	t.Run("HandleGetAccountLift_lowercases_legacy_mastodon_identity", func(t *testing.T) {
+		createdAt := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
+		account := &storage.Account{
+			User: &storage.User{
+				Username:  "Arch",
+				CreatedAt: createdAt,
+			},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID:   cfg.ActorURL("Arch"),
+					Type: "Person",
+				},
+				PreferredUsername: "Arch",
+				Name:              "Arch",
+			},
+		}
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{}, &RegistryStub{
+			AccountsSvc: &AccountsServiceStub{
+				GetAccountFunc: func(context.Context, string) (*storage.Account, error) {
+					return account, nil
+				},
+			},
+		})
+
+		ctx, err := round10NewLiftContext(http.MethodGet, "/api/v1/accounts/Arch", nil, nil, nil)
+		require.NoError(t, err)
+		ctx.Params["id"] = "Arch"
+
+		resp := requireStatus(t, http.StatusOK)(h.HandleGetAccountLift(ctx))
+		var got apimodels.Account
+		require.NoError(t, json.Unmarshal(resp.Body, &got))
+		require.Equal(t, "arch", got.Username)
+		require.Equal(t, "arch", got.Acct)
+		require.Equal(t, "Arch", got.DisplayName)
+		require.Equal(t, cfg.BaseURL()+"/@arch", got.URL)
+	})
 }
 
 func TestAccountsRound12_RelationshipsAndActions(t *testing.T) {

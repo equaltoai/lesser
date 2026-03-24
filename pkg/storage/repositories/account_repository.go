@@ -138,6 +138,10 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	account.User.Username = r.canonicalUsername(account.User.Username)
 	user := account.User
 	actor := account.Actor
+	if actor != nil {
+		actor = r.normalizeLocalActorIdentity(user.Username, actor)
+		account.Actor = actor
+	}
 
 	// Create User model with enhanced validation and defaults
 	userModel := &models.User{
@@ -397,7 +401,7 @@ func (r *AccountRepository) GetActor(ctx context.Context, username string) (*act
 		return nil, err
 	}
 
-	return actorModel.Actor, nil
+	return r.normalizeLocalActorIdentity(actorModel.Username, actorModel.Actor), nil
 }
 
 // GetActorByUsername is an alias for GetActor (for compatibility)
@@ -587,7 +591,8 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		return common.ValidationError{Field: "PreferredUsername", Message: "username is required"}
 	}
 
-	username := actor.PreferredUsername
+	username := r.canonicalUsername(actor.PreferredUsername)
+	actor = r.normalizeLocalActorIdentity(username, actor)
 	numericID := common.GenerateNumericID(username)
 
 	r.logger.Info("creating actor",
@@ -774,6 +779,43 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 	}
 
 	return user
+}
+
+func (r *AccountRepository) normalizeLocalActorIdentity(username string, actor *activitypub.Actor) *activitypub.Actor {
+	if actor == nil {
+		return nil
+	}
+
+	canonical := r.canonicalUsername(username)
+	if canonical == "" {
+		canonical = r.canonicalUsername(actor.PreferredUsername)
+	}
+	if canonical == "" {
+		return actor
+	}
+
+	baseURL := r.actorBaseURL()
+	normalized := activitypubutil.BuildLocalActor(canonical, baseURL, nil, actor)
+	if normalized == nil {
+		return actor
+	}
+
+	normalized.PreferredUsername = canonical
+	if baseURL != "" {
+		normalized.ID = fmt.Sprintf("%s/users/%s", baseURL, canonical)
+		normalized.URL = fmt.Sprintf("%s/@%s", baseURL, canonical)
+		normalized.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, canonical)
+		normalized.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, canonical)
+		normalized.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, canonical)
+		normalized.Following = fmt.Sprintf("%s/users/%s/following", baseURL, canonical)
+		normalized.Liked = fmt.Sprintf("%s/users/%s/liked", baseURL, canonical)
+		if normalized.Endpoints == nil {
+			normalized.Endpoints = &activitypub.Endpoints{}
+		}
+		normalized.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", baseURL)
+	}
+
+	return normalized
 }
 
 // UserUpdatePayload captures mutable account fields accepted from federation updates.
