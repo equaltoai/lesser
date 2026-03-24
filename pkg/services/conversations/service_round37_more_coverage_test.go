@@ -354,7 +354,7 @@ func TestService_getDirectMessageAccounts_ReturnsErrors(t *testing.T) {
 
 		accountRepo.On("GetAccount", ctx, "alice").Return((*storage.Account)(nil), errors.New("boom")).Once()
 
-		_, _, err := service.getDirectMessageAccounts(ctx, &SendDirectMessageCommand{
+		_, _, _, err := service.getDirectMessageAccounts(ctx, &SendDirectMessageCommand{
 			SenderID:   "alice",
 			Recipients: []string{"bob"},
 			Content:    "hi",
@@ -369,7 +369,7 @@ func TestService_getDirectMessageAccounts_ReturnsErrors(t *testing.T) {
 		accountRepo.On("GetAccount", ctx, "alice").Return(createTestAccount("alice", "alice"), nil).Once()
 		accountRepo.On("GetAccount", ctx, "bob").Return((*storage.Account)(nil), errors.New("boom")).Once()
 
-		_, _, err := service.getDirectMessageAccounts(ctx, &SendDirectMessageCommand{
+		_, _, _, err := service.getDirectMessageAccounts(ctx, &SendDirectMessageCommand{
 			SenderID:   "alice",
 			Recipients: []string{"bob"},
 			Content:    "hi",

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
@@ -191,7 +194,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		managedHandler.registry = &RegistryStub{
 			NotificationsSvc: &NotificationsServiceStub{
 				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
-					require.Equal(t, "agent-0", cmd.UserID)
+					require.Equal(t, "Agent-0", cmd.UserID)
 					return &notifications.NotificationResult{}, nil
 				},
 			},
@@ -271,7 +274,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		managedHandler.registry = &RegistryStub{
 			NotificationsSvc: &NotificationsServiceStub{
 				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
-					require.Equal(t, "medic", cmd.UserID)
+					require.Equal(t, "Medic", cmd.UserID)
 					return &notifications.NotificationResult{}, nil
 				},
 			},
@@ -428,4 +431,35 @@ func TestNotificationDelivery_Round28_HelperPayloadBuilders(t *testing.T) {
 		require.Empty(t, commNotificationParty("", "", "", ""))
 		require.Nil(t, commNotificationAttachmentsData(nil))
 	})
+}
+
+func TestNotificationDelivery_Round28_LogsCreateNotificationFailureCause(t *testing.T) {
+	cfg := round11TestConfig()
+	cfg.AdminUsername = "admin"
+	cfg.InstanceAPIKey = "instance-key"
+
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+	core, observed := observer.New(zap.ErrorLevel)
+	h.logger = zap.New(core)
+	h.registry = &RegistryStub{
+		NotificationsSvc: &NotificationsServiceStub{
+			CreateNotificationFunc: func(_ context.Context, _ *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+				return nil, errors.New("recipient user not found")
+			},
+		},
+	}
+
+	fixturePath := filepath.Join("..", "testdata", "notification_deliver_fixture_v3.json")
+	payload, err := os.ReadFile(fixturePath)
+	require.NoError(t, err)
+
+	headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+	ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, payload)
+	requireStatus(t, http.StatusInternalServerError)(h.HandleDeliverNotificationLift(ctx))
+
+	entries := observed.FilterMessage("failed to create notification").All()
+	require.Len(t, entries, 1)
+	require.Equal(t, "agent-bob", entries[0].ContextMap()["user_id"])
+	require.Equal(t, "communication:inbound", entries[0].ContextMap()["type"])
+	require.Contains(t, entries[0].ContextMap()["error"], "recipient user not found")
 }

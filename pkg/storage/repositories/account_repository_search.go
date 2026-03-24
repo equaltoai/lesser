@@ -349,22 +349,7 @@ func (r *AccountRepository) resolveLocalUsernameByHandle(ctx context.Context, us
 		return strings.TrimSpace(user.Username), nil
 	}
 
-	if r.db == nil {
-		return "", nil
-	}
-
-	normalizedUsername := strings.ToLower(username)
-	prefix := normalizedUsername
-	if len(prefix) > 2 {
-		prefix = prefix[:2]
-	}
-
-	var userModel models.User
-	err = r.db.WithContext(ctx).Model(&userModel).
-		Index("gsi5").
-		Where("gsi5PK", "=", fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)).
-		Where("gsi5SK", "=", normalizedUsername).
-		First(&userModel)
+	resolvedUsername, err := r.lookupStoredUsernameByCanonicalHandle(ctx, username)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return "", nil
@@ -372,7 +357,7 @@ func (r *AccountRepository) resolveLocalUsernameByHandle(ctx context.Context, us
 		return "", ErrorHandler.HandleQueryError(err, EntityActor, fmt.Sprintf("local webfinger search: %s", username))
 	}
 
-	return strings.TrimSpace(userModel.Username), nil
+	return resolvedUsername, nil
 }
 
 // CacheRemoteActor caches a remote actor for search

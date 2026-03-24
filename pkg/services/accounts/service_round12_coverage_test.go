@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 )
 
@@ -275,6 +276,45 @@ func TestService_emitAccountUpdatedEvents_PublishesToUserAndFollowers(t *testing
 	assert.True(t, sawFollowersStream)
 }
 
+func TestService_emitAccountUpdatedEvents_ToleratesPublishFailures(t *testing.T) {
+	ctx := context.Background()
+	account := &storage.Account{
+		User: &storage.User{Username: "alice"},
+		Actor: &activitypub.Actor{
+			BaseObject: activitypub.BaseObject{
+				ID:   "https://example.com/users/alice",
+				Type: "Person",
+			},
+		},
+	}
+
+	t.Run("user publish failure still attempts followers stream", func(t *testing.T) {
+		publisher := new(MockPublisher)
+		svc := NewService(nil, publisher, nil, nil, nil, zap.NewNop(), "example.com")
+
+		publisher.On("PublishToUser", ctx, "alice", mock.AnythingOfType("*streaming.Event")).Return(errors.New("boom")).Once()
+		publisher.On("PublishToStream", ctx, "followers:alice", mock.AnythingOfType("*streaming.Event")).Return(nil).Once()
+
+		events := svc.emitAccountUpdatedEvents(ctx, account)
+		assert.Len(t, events, 1)
+		assert.Equal(t, "followers:alice", events[0].Stream)
+		publisher.AssertExpectations(t)
+	})
+
+	t.Run("followers publish failure still returns user event", func(t *testing.T) {
+		publisher := new(MockPublisher)
+		svc := NewService(nil, publisher, nil, nil, nil, zap.NewNop(), "example.com")
+
+		publisher.On("PublishToUser", ctx, "alice", mock.AnythingOfType("*streaming.Event")).Return(nil).Once()
+		publisher.On("PublishToStream", ctx, "followers:alice", mock.AnythingOfType("*streaming.Event")).Return(errors.New("boom")).Once()
+
+		events := svc.emitAccountUpdatedEvents(ctx, account)
+		assert.Len(t, events, 1)
+		assert.Equal(t, "user:alice", events[0].Stream)
+		publisher.AssertExpectations(t)
+	})
+}
+
 func TestService_emitPreferencesUpdatedEvents_PublishesToUserOnly(t *testing.T) {
 	svc := NewService(nil, streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
 	ctx := context.Background()
@@ -283,6 +323,18 @@ func TestService_emitPreferencesUpdatedEvents_PublishesToUserOnly(t *testing.T) 
 	if assert.Len(t, events, 1) {
 		assert.Equal(t, "user:alice", events[0].Stream)
 	}
+}
+
+func TestService_emitPreferencesUpdatedEvents_PublishFailureReturnsNoEvents(t *testing.T) {
+	ctx := context.Background()
+	publisher := new(MockPublisher)
+	svc := NewService(nil, publisher, nil, nil, nil, zap.NewNop(), "example.com")
+
+	publisher.On("PublishToUser", ctx, "alice", mock.AnythingOfType("*streaming.Event")).Return(errors.New("boom")).Once()
+
+	events := svc.emitPreferencesUpdatedEvents(ctx, "alice", map[string]interface{}{"theme": "dark"})
+	assert.Empty(t, events)
+	publisher.AssertExpectations(t)
 }
 
 func TestService_emitAccountCreatedEvents_SkipsWhenPublisherNil(t *testing.T) {

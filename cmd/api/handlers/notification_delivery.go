@@ -88,6 +88,10 @@ func (h *Handler) HandleDeliverNotificationLift(ctx *apptheory.Context) (*appthe
 		createErr = nil
 	}
 	if createErr != nil {
+		h.logger.Error("failed to create notification",
+			zap.String("user_id", cmd.UserID),
+			zap.String("type", cmd.Type),
+			zap.Error(createErr))
 		h.recordCommDeliveryAuditEvent(ctx, recipient, delivery, false, createErr.Error(), false)
 		if apperrors.HasCode(createErr, apperrors.CodeValidationFailed) {
 			return common.RespondValidationError(ctx, createErr)
@@ -161,9 +165,9 @@ func commNotificationAttachmentsData(attachments []commNotificationAttachment) [
 
 func (h *Handler) resolveNotificationDeliveryRecipient(ctx context.Context, delivery *commNotificationDelivery) string {
 	if username := h.notificationDeliveryAddressedRecipient(ctx, delivery); username != "" {
-		return username
+		return h.notificationDeliveryResolvedUsername(ctx, username)
 	}
-	return h.notificationDeliveryRecipient(ctx)
+	return h.notificationDeliveryResolvedUsername(ctx, h.notificationDeliveryRecipient(ctx))
 }
 
 func (h *Handler) notificationDeliveryAddressedRecipient(ctx context.Context, delivery *commNotificationDelivery) string {
@@ -201,6 +205,25 @@ func (h *Handler) notificationDeliveryRecipient(ctx context.Context) string {
 	}
 
 	return strings.TrimSpace(state.PrimaryAdminUsername)
+}
+
+func (h *Handler) notificationDeliveryResolvedUsername(ctx context.Context, username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" || h == nil || h.repos == nil || h.repos.Account() == nil {
+		return username
+	}
+
+	account, err := h.repos.Account().GetAccount(ctx, username)
+	if err != nil || account == nil || account.User == nil {
+		return username
+	}
+
+	resolvedUsername := strings.TrimSpace(account.User.Username)
+	if resolvedUsername == "" {
+		return username
+	}
+
+	return resolvedUsername
 }
 
 func (h *Handler) notificationDeliveryBoundUsername(ctx context.Context, username string) string {

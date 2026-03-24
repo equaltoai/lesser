@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/storage/theorydb/marshalers"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -97,6 +98,13 @@ func (s *permissiveAccountsStorage) Activity() interfaces.ActivityRepository { r
 func (s *permissiveAccountsStorage) GetDB() dynamormcore.DB                  { return s.db }
 func (s *permissiveAccountsStorage) GetTableName() string                    { return s.tableName }
 func (s *permissiveAccountsStorage) GetLogger() *zap.Logger                  { return s.logger }
+
+type userRepositoryOverrideStorage struct {
+	*permissiveAccountsStorage
+	userRepo interfaces.UserRepository
+}
+
+func (s *userRepositoryOverrideStorage) User() interfaces.UserRepository { return s.userRepo }
 
 type permissiveDBOptions struct {
 	domain               string
@@ -621,6 +629,27 @@ func TestService_Round13_MainlineCoverage(t *testing.T) {
 		assert.Equal(t, 1, fed.calls)
 	})
 
+	t.Run("UpdateProfile allows case-insensitive owner match", func(t *testing.T) {
+		res, err := svc.UpdateProfile(ctx, &UpdateProfileCommand{
+			Username:    "alice",
+			UpdaterID:   "ALICE",
+			DisplayName: "Alice Legacy",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.NotNil(t, res.Account)
+		assert.Equal(t, "Alice Legacy", res.Account.User.DisplayName)
+	})
+
+	t.Run("UpdateProfile returns ErrGetAccount when account lookup fails", func(t *testing.T) {
+		missingSvc, _ := newPermissiveAccountsService(t, permissiveDBOptions{domain: "example.com", forceUserNotFound: true})
+		_, err := missingSvc.UpdateProfile(ctx, &UpdateProfileCommand{
+			Username:  "alice",
+			UpdaterID: "alice",
+		})
+		assert.ErrorIs(t, err, ErrGetAccount)
+	})
+
 	t.Run("UpdateProfile forbids other user", func(t *testing.T) {
 		_, err := svc.UpdateProfile(ctx, &UpdateProfileCommand{
 			Username:  "alice",
@@ -991,6 +1020,21 @@ func TestService_Round13_MoreBranchesAndErrors(t *testing.T) {
 			DisplayName: strings.Repeat("x", 200),
 		})
 		assert.Error(t, err)
+
+		err = svc.validateUpdateProfileCommand(ctx, &UpdateProfileCommand{
+			Username:  "alice",
+			UpdaterID: "",
+		})
+		assert.ErrorIs(t, err, ErrUpdaterIDRequired)
+
+		err = svc.validateUpdateProfileCommand(ctx, &UpdateProfileCommand{
+			Username:  "alice",
+			UpdaterID: "alice",
+			Fields: []ProfileField{
+				{Name: "Website", Value: "https://example.com"},
+			},
+		})
+		assert.NoError(t, err)
 	})
 
 	t.Run("UpdatePreferences permission check", func(t *testing.T) {
@@ -1117,6 +1161,55 @@ func TestService_Round13_MoreBranchesAndErrors(t *testing.T) {
 
 		_, err = svc.RegisterAccount(ctx, &RegisterAccountCommand{Username: "", Agreement: false})
 		assert.ErrorIs(t, err, ErrValidationFailed)
+	})
+
+	t.Run("GetPreference rejects missing user repo", func(t *testing.T) {
+		svc := NewService(NewMockRepositoryStorage(), streaming.NewMockPublisher(), nil, nil, nil, zap.NewNop(), "example.com")
+
+		_, err := svc.GetPreference(ctx, "alice", "language")
+		assert.ErrorIs(t, err, ErrUserRepositoryNotAvailable)
+	})
+
+	t.Run("GetPreference returns empty when preferences or key are missing", func(t *testing.T) {
+		svc, storageIface := newPermissiveAccountsService(t, permissiveDBOptions{domain: "example.com"})
+		storageImpl := storageIface.(*permissiveAccountsStorage)
+		mockUserRepo := testmocks.NewMockUserRepositoryInterface()
+		svc.storage = &userRepositoryOverrideStorage{
+			permissiveAccountsStorage: storageImpl,
+			userRepo:                  mockUserRepo,
+		}
+
+		mockUserRepo.On("GetUserPreferences", ctx, "alice").Return(nil, nil).Once()
+		value, err := svc.GetPreference(ctx, "alice", "language")
+		require.NoError(t, err)
+		assert.Empty(t, value)
+
+		mockUserRepo.On("GetUserPreferences", ctx, "alice").Return(&storage.UserPreferences{
+			Username:    "alice",
+			Preferences: map[string]string{"theme": "dark"},
+		}, nil).Once()
+		value, err = svc.GetPreference(ctx, "alice", "language")
+		require.NoError(t, err)
+		assert.Empty(t, value)
+	})
+
+	t.Run("GetPreference returns stored value", func(t *testing.T) {
+		svc, storageIface := newPermissiveAccountsService(t, permissiveDBOptions{domain: "example.com"})
+		storageImpl := storageIface.(*permissiveAccountsStorage)
+		mockUserRepo := testmocks.NewMockUserRepositoryInterface()
+		svc.storage = &userRepositoryOverrideStorage{
+			permissiveAccountsStorage: storageImpl,
+			userRepo:                  mockUserRepo,
+		}
+
+		mockUserRepo.On("GetUserPreferences", ctx, "alice").Return(&storage.UserPreferences{
+			Username:    "alice",
+			Preferences: map[string]string{"language": "en"},
+		}, nil).Once()
+
+		value, err := svc.GetPreference(ctx, "alice", "language")
+		require.NoError(t, err)
+		assert.Equal(t, "en", value)
 	})
 }
 
@@ -1301,6 +1394,21 @@ func TestService_Round13_RepositoryErrorBranches(t *testing.T) {
 			SetterID:      "alice",
 		})
 		assert.ErrorIs(t, err, ErrSetAccountNote)
+	})
+
+	t.Run("GetPreference returns ErrGetUserPreferences on repo error", func(t *testing.T) {
+		svc, storageIface := newPermissiveAccountsService(t, permissiveDBOptions{domain: "example.com"})
+		storageImpl := storageIface.(*permissiveAccountsStorage)
+		mockUserRepo := testmocks.NewMockUserRepositoryInterface()
+		svc.storage = &userRepositoryOverrideStorage{
+			permissiveAccountsStorage: storageImpl,
+			userRepo:                  mockUserRepo,
+		}
+
+		mockUserRepo.On("GetUserPreferences", ctx, "alice").Return(nil, errors.New("prefs failed")).Once()
+
+		_, err := svc.GetPreference(ctx, "alice", "language")
+		assert.ErrorIs(t, err, ErrGetUserPreferences)
 	})
 
 	t.Run("RemoveFollower returns ErrRemoveFollower when repo delete fails", func(t *testing.T) {
