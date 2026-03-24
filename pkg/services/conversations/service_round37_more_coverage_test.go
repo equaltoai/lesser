@@ -411,6 +411,36 @@ func TestService_createDirectMessageStatus_ReturnsErrorsWhenRepositoryFails(t *t
 	require.ErrorIs(t, err, ErrCreateDirectMessage)
 }
 
+func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
+	ctx := context.Background()
+
+	noteRepo := &mockNoteRepository{}
+	service := NewService(nil, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	var created *models.Status
+	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).
+		Run(func(args mock.Arguments) {
+			created = args.Get(1).(*models.Status)
+		}).
+		Return(nil).
+		Once()
+
+	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob"},
+		Content:    "hi",
+	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
+		"bob": createTestAccount("bob", "bob"),
+	}, "conv123", "bob")
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.NotNil(t, created)
+	require.False(t, created.PublishedAt.IsZero())
+	require.Equal(t, created.PublishedAt, created.CreatedAt)
+	require.Equal(t, created.PublishedAt, created.ModifiedAt)
+	require.Equal(t, created.PublishedAt, created.UpdatedAt)
+}
+
 func TestService_updateConversationLastStatus_HandlesUpdateFailures(t *testing.T) {
 	ctx := context.Background()
 
@@ -461,6 +491,45 @@ func TestService_getSendMessageAccounts_ReturnsErrors(t *testing.T) {
 		_, _, err := service.getSendMessageAccounts(ctx, "alice", "bob")
 		require.ErrorIs(t, err, ErrInvalidRecipient)
 	})
+}
+
+func TestService_createSendMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
+	ctx := context.Background()
+
+	noteRepo := &mockNoteRepository{}
+	service := NewService(nil, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	var created *models.Status
+	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).
+		Run(func(args mock.Arguments) {
+			created = args.Get(1).(*models.Status)
+		}).
+		Return(nil).
+		Once()
+
+	status, _, err := service.createSendMessageStatus(
+		ctx,
+		&SendMessageCommand{
+			SenderID: "alice",
+			Content:  "hi again",
+		},
+		&SendDirectMessageCommand{
+			SenderID:   "alice",
+			Recipients: []string{"bob"},
+			Content:    "hi again",
+		},
+		createTestAccount("alice", "alice"),
+		createTestAccount("bob", "bob"),
+		"conv123",
+		"bob",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.NotNil(t, created)
+	require.False(t, created.PublishedAt.IsZero())
+	require.Equal(t, created.PublishedAt, created.CreatedAt)
+	require.Equal(t, created.PublishedAt, created.ModifiedAt)
+	require.Equal(t, created.PublishedAt, created.UpdatedAt)
 }
 
 func TestService_AcceptAndDeclineMessageRequest_NilCommand(t *testing.T) {
