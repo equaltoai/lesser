@@ -336,32 +336,8 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		requireStatus(t, http.StatusNoContent)(mimeHandler.HandleDeliverNotificationLift(ctx))
 	})
 
-	t.Run("sms number payload is accepted and preserved", func(t *testing.T) {
+	t.Run("sms number payload is rejected when explicit recipient cannot be resolved", func(t *testing.T) {
 		smsHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
-
-		smsHandler.registry = &RegistryStub{
-			NotificationsSvc: &NotificationsServiceStub{
-				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
-					require.Equal(t, "+15551230000", cmd.ActorID)
-					require.NotNil(t, cmd.Data)
-					require.Equal(t, "sms", cmd.Data["channel"])
-
-					from, ok := cmd.Data["from"].(map[string]interface{})
-					require.True(t, ok)
-					require.Equal(t, "+15551230000", from["number"])
-					_, hasAddress := from["address"]
-					require.False(t, hasAddress)
-
-					to, ok := cmd.Data["to"].(map[string]interface{})
-					require.True(t, ok)
-					require.Equal(t, "+15557654321", to["number"])
-					_, hasToAddress := to["address"]
-					require.False(t, hasToAddress)
-
-					return &notifications.NotificationResult{}, nil
-				},
-			},
-		}
 
 		body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
 			Type:       "communication:inbound",
@@ -376,7 +352,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 
 		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
 		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
-		requireStatus(t, http.StatusNoContent)(smsHandler.HandleDeliverNotificationLift(ctx))
+		requireStatus(t, http.StatusUnprocessableEntity)(smsHandler.HandleDeliverNotificationLift(ctx))
 	})
 }
 
@@ -462,4 +438,78 @@ func TestNotificationDelivery_Round28_LogsCreateNotificationFailureCause(t *test
 	require.Equal(t, "agent-bob", entries[0].ContextMap()["user_id"])
 	require.Equal(t, "communication:inbound", entries[0].ContextMap()["type"])
 	require.Contains(t, entries[0].ContextMap()["error"], "recipient user not found")
+}
+
+func TestNotificationDelivery_Round28_RejectsUnresolvedExplicitRecipientAndKeepsAdminFallbackForInstanceMessages(t *testing.T) {
+	t.Run("explicit recipient resolution failure is rejected", func(t *testing.T) {
+		cfg := round11TestConfig()
+		cfg.AdminUsername = "admin"
+		cfg.InstanceAPIKey = "instance-key"
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		core, observed := observer.New(zap.WarnLevel)
+		h.logger = zap.New(core)
+
+		createCalls := 0
+		h.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, _ *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					createCalls++
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
+			Type:       "communication:inbound",
+			Channel:    "email",
+			From:       apiModels.NotificationDeliveryFrom{Address: "alice@example.com", DisplayName: "Alice"},
+			To:         &apiModels.NotificationDeliveryTo{Address: "missing-agent@remote.example"},
+			Subject:    "hello",
+			Body:       "test message",
+			ReceivedAt: time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			MessageID:  "comm-msg-missing-agent",
+		})
+		require.NoError(t, err)
+
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
+		requireStatus(t, http.StatusUnprocessableEntity)(h.HandleDeliverNotificationLift(ctx))
+		require.Zero(t, createCalls)
+
+		entries := observed.FilterMessage("notification recipient resolution failed").All()
+		require.Len(t, entries, 1)
+		require.Equal(t, "missing-agent@remote.example", entries[0].ContextMap()["to_address"])
+		require.Equal(t, "email", entries[0].ContextMap()["channel"])
+	})
+
+	t.Run("instance-addressed notifications still fall back to admin", func(t *testing.T) {
+		cfg := round11TestConfig()
+		cfg.AdminUsername = "admin"
+		cfg.InstanceAPIKey = "instance-key"
+
+		h, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+		h.registry = &RegistryStub{
+			NotificationsSvc: &NotificationsServiceStub{
+				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
+					require.Equal(t, "admin", cmd.UserID)
+					return &notifications.NotificationResult{}, nil
+				},
+			},
+		}
+
+		body, err := json.Marshal(apiModels.NotificationDeliveryRequest{
+			Type:       "communication:inbound",
+			Channel:    "sms",
+			From:       apiModels.NotificationDeliveryFrom{Number: "+15551230000", DisplayName: "Alice"},
+			Body:       "test message",
+			ReceivedAt: time.Date(2026, time.March, 4, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			MessageID:  "comm-msg-instance",
+		})
+		require.NoError(t, err)
+
+		headers := map[string]string{"Authorization": "Bearer " + cfg.InstanceAPIKey}
+		ctx := round10NewLiftContextWithBodyBytes(http.MethodPost, "/api/v1/notifications/deliver", headers, nil, body)
+		requireStatus(t, http.StatusNoContent)(h.HandleDeliverNotificationLift(ctx))
+	})
 }
