@@ -130,6 +130,53 @@ func TestAccountRepository_CreateActor_PreparesActorAndNumericIDMapping(t *testi
 	require.False(t, createdMapping.CreatedAt.IsZero())
 }
 
+func TestAccountRepository_CreateActor_NormalizesMixedCaseNumericIdentity(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var currentModel any
+	var createdActor *models.Actor
+	var createdMapping *models.NumericIDMapping
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Run(func(args mock.Arguments) {
+		currentModel = args.Get(0)
+	}).Return(mockQuery).Maybe()
+
+	mockQuery.On("Create").Run(func(mock.Arguments) {
+		switch model := currentModel.(type) {
+		case *models.Actor:
+			copyActor := *model
+			createdActor = &copyActor
+		case *models.NumericIDMapping:
+			copyMapping := *model
+			createdMapping = &copyMapping
+		}
+	}).Return(nil).Maybe()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+	repo.SetEncryptor(testEncryptor{})
+
+	err := repo.createActor(ctx, &activitypub.Actor{
+		PreferredUsername: "Agent-0",
+		BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/Agent-0"},
+		Name:              "Agent 0",
+	}, "private-key")
+	require.NoError(t, err)
+
+	require.NotNil(t, createdActor)
+	require.Equal(t, "ACTOR#agent-0", createdActor.PK)
+	require.Equal(t, common.GenerateNumericID("agent-0"), createdActor.NumericID)
+	require.NotNil(t, createdActor.Actor)
+	require.Equal(t, "agent-0", createdActor.Actor.PreferredUsername)
+	require.Equal(t, "https://example.com/users/agent-0", createdActor.Actor.ID)
+
+	require.NotNil(t, createdMapping)
+	require.Equal(t, common.GenerateNumericID("agent-0"), createdMapping.NumericID)
+	require.Equal(t, "agent-0", createdMapping.Username)
+	require.Equal(t, "https://example.com/users/agent-0", createdMapping.ActorID)
+}
+
 func TestAccountRepository_GetActorPrivateKey_DecryptPaths(t *testing.T) {
 	ctx := context.Background()
 	baseTime := time.Date(2025, 8, 9, 10, 11, 12, 0, time.UTC)

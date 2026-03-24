@@ -614,18 +614,19 @@ func normalizeDomainValue(domain string) string {
 	return normalized
 }
 
-func (r *AccountRepository) ensureNumericIDMapping(ctx context.Context, numericID, username, actorID string) error {
-	if strings.TrimSpace(numericID) == "" || strings.TrimSpace(username) == "" {
+func (r *AccountRepository) ensureNumericIDMapping(ctx context.Context, _ string, username, actorID string) error {
+	normalizedNumericID, canonicalUsername, canonicalActorID := normalizedNumericIDMappingValues(username, actorID)
+	if canonicalUsername == "" {
 		return nil
 	}
 
 	mapping := &models.NumericIDMapping{
-		NumericID: strings.TrimSpace(numericID),
-		Username:  strings.TrimSpace(username),
-		ActorID:   strings.TrimSpace(actorID),
+		NumericID: normalizedNumericID,
+		Username:  canonicalUsername,
+		ActorID:   canonicalActorID,
 	}
 	if err := mapping.BeforeCreate(); err != nil {
-		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", normalizedNumericID)
 	}
 
 	err := r.db.WithContext(ctx).Model(mapping).Create()
@@ -633,21 +634,21 @@ func (r *AccountRepository) ensureNumericIDMapping(ctx context.Context, numericI
 		return nil
 	}
 	if !dynamormErrors.IsConditionFailed(err) {
-		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", normalizedNumericID)
 	}
 
 	var existing models.NumericIDMapping
 	lookupErr := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
-		Where("PK", "=", "NUMERIC_ID#"+numericID).
+		Where("PK", "=", "NUMERIC_ID#"+normalizedNumericID).
 		Where("SK", "=", models.SKMetadata).
 		First(&existing)
 	if lookupErr == nil && strings.EqualFold(existing.Username, mapping.Username) {
 		return nil
 	}
 	if lookupErr == nil {
-		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", normalizedNumericID)
 	}
-	return ErrorHandler.HandleCreateError(lookupErr, "numeric ID mapping", numericID)
+	return ErrorHandler.HandleCreateError(lookupErr, "numeric ID mapping", normalizedNumericID)
 }
 
 func (r *AccountRepository) deleteNumericIDMapping(ctx context.Context, numericID string) error {
@@ -863,40 +864,11 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 }
 
 func (r *AccountRepository) normalizeLocalActorIdentity(username string, actor *activitypub.Actor) *activitypub.Actor {
-	if actor == nil {
-		return nil
-	}
-
 	canonical := r.canonicalUsername(username)
-	if canonical == "" {
+	if canonical == "" && actor != nil {
 		canonical = r.canonicalUsername(actor.PreferredUsername)
 	}
-	if canonical == "" {
-		return actor
-	}
-
-	baseURL := r.actorBaseURL()
-	normalized := activitypubutil.BuildLocalActor(canonical, baseURL, nil, actor)
-	if normalized == nil {
-		return actor
-	}
-
-	normalized.PreferredUsername = canonical
-	if baseURL != "" {
-		normalized.ID = fmt.Sprintf("%s/users/%s", baseURL, canonical)
-		normalized.URL = fmt.Sprintf("%s/@%s", baseURL, canonical)
-		normalized.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, canonical)
-		normalized.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, canonical)
-		normalized.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, canonical)
-		normalized.Following = fmt.Sprintf("%s/users/%s/following", baseURL, canonical)
-		normalized.Liked = fmt.Sprintf("%s/users/%s/liked", baseURL, canonical)
-		if normalized.Endpoints == nil {
-			normalized.Endpoints = &activitypub.Endpoints{}
-		}
-		normalized.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", baseURL)
-	}
-
-	return normalized
+	return normalizeLocalActorIdentityForStorage(canonical, r.actorBaseURL(), actor)
 }
 
 // UserUpdatePayload captures mutable account fields accepted from federation updates.

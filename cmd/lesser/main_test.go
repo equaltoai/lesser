@@ -136,6 +136,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevAPI := runAPIFn
 	prevSoul := runSoulFn
 	prevMigrateUserKeys := runMigrateUserKeysFn
+	prevMigrateNumericIDs := runMigrateNumericIDsFn
 	t.Cleanup(func() {
 		runUpFn = prevUp
 		runDownFn = prevDown
@@ -164,6 +165,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 		runAPIFn = prevAPI
 		runSoulFn = prevSoul
 		runMigrateUserKeysFn = prevMigrateUserKeys
+		runMigrateNumericIDsFn = prevMigrateNumericIDs
 	})
 
 	type call struct {
@@ -204,6 +206,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runAPIFn = stub("api")
 	runSoulFn = stub("soul")
 	runMigrateUserKeysFn = stub("migrate-user-keys")
+	runMigrateNumericIDsFn = stub("migrate-numeric-ids")
 
 	var buf bytes.Buffer
 	require.Equal(t, 0, runCLI([]string{"lesser", helpFlagShort}, &buf))
@@ -296,6 +299,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-user-keys", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-user-keys"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-numeric-ids", "--env", "dev"}, &buf))
+	require.Equal(t, []string{"--env", "dev"}, calls["migrate-numeric-ids"].argv)
 }
 
 func TestExitCodeFromErr(t *testing.T) {

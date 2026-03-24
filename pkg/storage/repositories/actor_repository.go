@@ -80,7 +80,8 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 		return err
 	}
 
-	username := actor.PreferredUsername
+	username := canonicalNumericMappingUsername(actor.PreferredUsername)
+	actor = normalizeLocalActorIdentityForStorage(username, actorRepositoryBaseURL(), actor)
 	numericID := common.GenerateNumericID(username)
 
 	// Encrypt private key - REQUIRED for security
@@ -204,12 +205,12 @@ func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID str
 		return nil, ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
 	}
 
-	return r.GetActor(ctx, mapping.Username)
+	return r.GetActor(ctx, canonicalNumericMappingUsername(mapping.Username))
 }
 
 // EnsureNumericIDMapping recreates the numeric ID lookup row for an existing actor when it is missing.
 func (r *ActorRepository) EnsureNumericIDMapping(ctx context.Context, username string) error {
-	username = strings.TrimSpace(username)
+	username = canonicalNumericMappingUsername(username)
 	if username == "" {
 		return nil
 	}
@@ -475,35 +476,47 @@ func (r *ActorRepository) lookupNumericIDMapping(ctx context.Context, numericID 
 	return &mapping, nil
 }
 
-func (r *ActorRepository) ensureNumericIDMapping(ctx context.Context, numericID, username, actorID string) error {
-	if strings.TrimSpace(numericID) == "" || strings.TrimSpace(username) == "" {
+func (r *ActorRepository) ensureNumericIDMapping(ctx context.Context, _ string, username, actorID string) error {
+	normalizedNumericID, canonicalUsername, canonicalActorID := normalizedNumericIDMappingValues(username, actorID)
+	if canonicalUsername == "" {
 		return nil
 	}
 
 	mapping := &models.NumericIDMapping{
-		NumericID: strings.TrimSpace(numericID),
-		Username:  strings.TrimSpace(username),
-		ActorID:   strings.TrimSpace(actorID),
+		NumericID: normalizedNumericID,
+		Username:  canonicalUsername,
+		ActorID:   canonicalActorID,
 	}
 	err := r.db.WithContext(ctx).Model(mapping).Create()
 	if err == nil {
 		return nil
 	}
 	if !dynamormerrors.IsConditionFailed(err) {
-		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", normalizedNumericID)
 	}
 
-	existing, lookupErr := r.lookupNumericIDMapping(ctx, numericID)
+	existing, lookupErr := r.lookupNumericIDMapping(ctx, normalizedNumericID)
 	if lookupErr == nil && existing != nil && strings.EqualFold(existing.Username, mapping.Username) {
 		return nil
 	}
 	if lookupErr == nil {
-		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", normalizedNumericID)
 	}
 	if dynamormerrors.IsNotFound(lookupErr) {
-		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", numericID)
+		return ErrorHandler.HandleCreateError(err, "numeric ID mapping", normalizedNumericID)
 	}
-	return ErrorHandler.HandleCreateError(lookupErr, "numeric ID mapping", numericID)
+	return ErrorHandler.HandleCreateError(lookupErr, "numeric ID mapping", normalizedNumericID)
+}
+
+func actorRepositoryBaseURL() string {
+	domain := strings.TrimSpace(lesserconfig.Get().Domain)
+	if domain == "" {
+		return ""
+	}
+	if strings.HasPrefix(domain, "http://") || strings.HasPrefix(domain, "https://") {
+		return strings.TrimSuffix(domain, "/")
+	}
+	return "https://" + strings.TrimSuffix(domain, "/")
 }
 
 func (r *ActorRepository) deleteNumericIDMapping(ctx context.Context, numericID string) error {

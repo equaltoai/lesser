@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormerrors "github.com/theory-cloud/tabletheory/pkg/errors"
+	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
@@ -534,6 +536,42 @@ func TestActorRepository_EnsureNumericIDMapping_conditionFailedWithExistingMappi
 	}).Once()
 
 	require.NoError(t, repo.EnsureNumericIDMapping(ctx, "alice"))
+}
+
+func TestActorRepository_EnsureNumericIDMapping_normalizesMixedCaseIdentity(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	var currentModel any
+	var createdMapping *models.NumericIDMapping
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.Anything).Run(func(args mock.Arguments) {
+		currentModel = args.Get(0)
+	}).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("First", mock.AnythingOfType("*models.NumericIDMapping")).Return(dynamormerrors.ErrItemNotFound).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Return(nil).Run(func(args mock.Arguments) {
+		m := args.Get(0).(*models.Actor)
+		m.Actor = &activitypub.Actor{
+			BaseObject:        activitypub.BaseObject{ID: "https://example.com/users/Agent-0"},
+			PreferredUsername: "Agent-0",
+		}
+	}).Once()
+	mockQuery.On("Create").Run(func(mock.Arguments) {
+		if mapping, ok := currentModel.(*models.NumericIDMapping); ok {
+			copyMapping := *mapping
+			createdMapping = &copyMapping
+		}
+	}).Return(nil).Once()
+
+	repo := NewActorRepository(mockDB, "test-table", logger)
+	require.NoError(t, repo.EnsureNumericIDMapping(ctx, "Agent-0"))
+	require.NotNil(t, createdMapping)
+	require.Equal(t, common.GenerateNumericID("agent-0"), createdMapping.NumericID)
+	require.Equal(t, "agent-0", createdMapping.Username)
+	require.Equal(t, "https://example.com/users/agent-0", createdMapping.ActorID)
 }
 
 func TestActorRepository_misc_methods(t *testing.T) {
