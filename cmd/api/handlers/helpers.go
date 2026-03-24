@@ -181,45 +181,70 @@ func (h *Handler) recoverLocalActorByNumericID(ctx context.Context, numericID st
 
 	trimmedNumericID := strings.TrimSpace(numericID)
 	for _, actorModel := range actorModels {
-		if strings.TrimSpace(actorModel.NumericID) != trimmedNumericID {
+		canonicalUsername, ok := recoveredActorCanonicalUsername(actorModel, trimmedNumericID)
+		if !ok {
 			continue
 		}
-
-		username := strings.TrimSpace(actorModel.Username)
-		if username == "" && actorModel.Actor != nil {
-			username = strings.TrimSpace(actorModel.Actor.PreferredUsername)
-		}
-		if username == "" {
-			continue
-		}
-
-		h.ensureLocalNumericIDMapping(ctx, username)
-
-		actor, err := h.repos.Actor().GetActor(ctx, username)
+		actor, err := h.loadRecoveredLocalActor(ctx, canonicalUsername, actorModel.Actor)
 		if err == nil && actor != nil {
 			return actor, nil
 		}
 		if err != nil && !isMissingAccountLookup(err) {
 			return nil, err
 		}
-
-		actor = actorModel.Actor
-		if actor == nil {
-			continue
-		}
-		if strings.TrimSpace(actor.PreferredUsername) == "" {
-			actor.PreferredUsername = username
-		}
-		if strings.TrimSpace(actor.ID) == "" {
-			baseURL := handlerBaseURL(h)
-			if baseURL != "" {
-				actor.ID = baseURL + "/users/" + username
-			}
-		}
-		return actor, nil
 	}
 
 	return nil, common.ActorNotFoundError{Username: numericID}
+}
+
+func recoveredActorCanonicalUsername(actorModel storageModels.Actor, numericID string) (string, bool) {
+	username := strings.TrimSpace(actorModel.Username)
+	if username == "" && actorModel.Actor != nil {
+		username = strings.TrimSpace(actorModel.Actor.PreferredUsername)
+	}
+	if username == "" {
+		return "", false
+	}
+
+	canonicalUsername := strings.ToLower(username)
+	if strings.TrimSpace(actorModel.NumericID) != numericID && common.GenerateNumericID(canonicalUsername) != numericID {
+		return "", false
+	}
+
+	return canonicalUsername, true
+}
+
+func (h *Handler) loadRecoveredLocalActor(ctx context.Context, canonicalUsername string, fallback *activitypub.Actor) (*activitypub.Actor, error) {
+	h.ensureLocalNumericIDMapping(ctx, canonicalUsername)
+
+	actor, err := h.repos.Actor().GetActor(ctx, canonicalUsername)
+	if err == nil && actor != nil {
+		normalizeRecoveredLocalActor(h, actor, canonicalUsername)
+		return actor, nil
+	}
+	if err != nil && !isMissingAccountLookup(err) {
+		return nil, err
+	}
+	if fallback == nil {
+		return nil, nil
+	}
+
+	normalizeRecoveredLocalActor(h, fallback, canonicalUsername)
+	return fallback, nil
+}
+
+func normalizeRecoveredLocalActor(h *Handler, actor *activitypub.Actor, canonicalUsername string) {
+	if actor == nil {
+		return
+	}
+
+	actor.PreferredUsername = canonicalUsername
+	if strings.TrimSpace(actor.ID) == "" {
+		baseURL := handlerBaseURL(h)
+		if baseURL != "" {
+			actor.ID = baseURL + "/users/" + canonicalUsername
+		}
+	}
 }
 
 func normalizeLocalActorDomain(domain string) string {

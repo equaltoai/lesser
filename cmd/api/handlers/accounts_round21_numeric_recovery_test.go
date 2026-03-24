@@ -205,3 +205,32 @@ func TestAccountsRound21_VerifyCredentialsEnsuresOwnNumericIDStillWorks(t *testi
 
 	requireStatus(t, http.StatusOK)(h.HandleVerifyCredentialsLift(ctx))
 }
+
+func TestAccountsFullRound21_ResolveAccountIDFull_RecoversLegacyMixedCaseNumericIDRows(t *testing.T) {
+	cfg := round10TestConfig()
+	username := "agent-0"
+	requestedNumericID := common.GenerateNumericID(username)
+
+	legacyActor := round21LocalActor(cfg.BaseURL(), "Agent-0")
+	legacyActor.PK = "ACTOR#" + username
+	legacyActor.Username = username
+	legacyActor.GSI3SK = username
+
+	state := &round10QueryState{
+		usersByUsername: map[string]storagemodels.User{
+			username: round21LocalUser(username),
+		},
+		actorsByUser: map[string]storagemodels.Actor{
+			username: legacyActor,
+		},
+		notFoundPKs: map[string]bool{
+			"NUMERIC_ID#" + requestedNumericID: true,
+		},
+	}
+
+	h, _, _ := round11NewHandler(t, cfg, state)
+	actor, err := h.resolveAccountIDFull(context.Background(), requestedNumericID)
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.Equal(t, username, actor.PreferredUsername)
+}
