@@ -94,6 +94,7 @@ func (a *Actor) BeforeCreate() error {
 	now := time.Now()
 	a.CreatedAt = now
 	a.UpdatedAt = now
+	a.Username = strings.ToLower(strings.TrimSpace(a.Username))
 
 	// Set up primary key - matches legacy pattern exactly
 	a.PK = "ACTOR#" + a.Username
@@ -117,8 +118,9 @@ func (a *Actor) BeforeUpdate() error {
 
 // setupGSIKeys configures all GSI partition and sort keys
 func (a *Actor) setupGSIKeys() {
-	username := a.Username
-	usernameLower := strings.ToLower(username)
+	username := strings.ToLower(strings.TrimSpace(a.Username))
+	a.Username = username
+	usernameLower := username
 
 	// GSI1 - Username search with prefix partitioning
 	if len(usernameLower) >= 2 {
@@ -131,7 +133,7 @@ func (a *Actor) setupGSIKeys() {
 		displayNameLower := strings.ToLower(a.Actor.Name)
 		if len(displayNameLower) >= 2 {
 			a.GSI2PK = "NAME_SEARCH#" + displayNameLower[:2]
-			a.GSI2SK = displayNameLower + "#" + username
+			a.GSI2SK = displayNameLower + "#" + usernameLower
 		}
 	}
 
@@ -142,12 +144,12 @@ func (a *Actor) setupGSIKeys() {
 	// GSI4 - Popularity ranking
 	bucket := getFollowerCountBucket(a.FollowerCount)
 	a.GSI4PK = "ACTOR_RANK#" + bucket
-	a.GSI4SK = formatFollowerCountForGSI(a.FollowerCount, username)
+	a.GSI4SK = formatFollowerCountForGSI(a.FollowerCount, usernameLower)
 
 	// GSI5 - Recent activity
 	now := time.Now()
 	a.GSI5PK = "ACTIVE#" + now.Format(common.DateFormat)
-	a.GSI5SK = fmt.Sprintf("%d#%s", now.Unix(), username)
+	a.GSI5SK = fmt.Sprintf("%d#%s", now.Unix(), usernameLower)
 }
 
 // getFollowerCountBucket returns a bucket for follower count grouping
@@ -178,6 +180,7 @@ func (a *Actor) UpdateKeys() error {
 	if err := common.ValidateRequiredParam("a.Username", a.Username); err != nil {
 		return err
 	}
+	a.Username = strings.ToLower(strings.TrimSpace(a.Username))
 	a.PK = "ACTOR#" + a.Username
 	a.SK = SKProfile
 

@@ -139,6 +139,7 @@ func parseOwnerBootstrapArgs(rawArgs []string) (ownerBootstrapArgs, error) {
 	if err := fs.Parse(rawArgs); err != nil {
 		return ownerBootstrapArgs{}, err
 	}
+	args.username = strings.ToLower(strings.TrimSpace(args.username))
 
 	return args, nil
 }
@@ -204,7 +205,7 @@ func runOwnerBootstrap(ctx context.Context, args ownerBootstrapArgs) {
 	sm := newSecretsManagerClientFn(awsCfg)
 	kmsClient := newKMSClientFn(awsCfg)
 
-	userPK := fmt.Sprintf("USER#%s", args.username)
+	userPK := fmt.Sprintf("USER#%s", strings.ToLower(strings.TrimSpace(args.username)))
 
 	state, err := checkBootstrapState(ctx, db, sm, args, userPK)
 	if err != nil {

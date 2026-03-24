@@ -890,7 +890,7 @@ func TestHeaderExtractionFallbacks(t *testing.T) {
 
 func TestClaimsIntegration(t *testing.T) {
 	t.Run("claims methods work correctly", func(t *testing.T) {
-		claims := createTestClaims("testuser", []string{ScopeRead, ScopeWrite})
+		claims := createTestClaims("TestUser", []string{ScopeRead, ScopeWrite})
 
 		assert.Equal(t, "testuser", claims.GetUsername())
 		assert.True(t, claims.HasScope(ScopeRead))

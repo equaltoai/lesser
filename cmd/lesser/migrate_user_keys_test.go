@@ -120,9 +120,12 @@ func TestRunMigrateUserKeys_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "audited_gsi_fields:")
 	require.Contains(t, output, "gsi3SK: 1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
-	require.Len(t, client.scanInputs, 2)
+	require.Len(t, client.scanInputs, 5)
 	require.Equal(t, "USER#", strAttr(t, client.scanInputs[0].ExpressionAttributeValues[":prefix"]))
 	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#", strAttr(t, client.scanInputs[1].ExpressionAttributeValues[":prefix"]))
+	require.Equal(t, "ACTOR#", strAttr(t, client.scanInputs[2].ExpressionAttributeValues[":prefix"]))
+	require.Equal(t, "MUTE#", strAttr(t, client.scanInputs[3].ExpressionAttributeValues[":prefix"]))
+	require.Equal(t, "follow#", strAttr(t, client.scanInputs[4].ExpressionAttributeValues[":prefix"]))
 }
 
 func TestRunMigrateUserKeys_ApplyUsesExplicitTable(t *testing.T) {
@@ -425,6 +428,73 @@ func TestBuildSoulBodyBindingUsernameMigrationItem_SkipsLowercaseAndMissingSK(t 
 	require.Error(t, err)
 	require.False(t, ok)
 	require.ErrorContains(t, err, "missing SK")
+}
+
+func TestBuildActorKeyMigrationItem_NormalizesActorAndBlockKeys(t *testing.T) {
+	actorItem, ok, err := buildActorKeyMigrationItem(map[string]types.AttributeValue{
+		"PK":       sAttr("ACTOR#Medic"),
+		"SK":       sAttr("PROFILE"),
+		"username": sAttr("Medic"),
+		"gsi2SK":   sAttr("medic channel#Medic"),
+		"gsi4SK":   sAttr("0000000010#Medic"),
+		"gsi5SK":   sAttr("1700000000#Medic"),
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "ACTOR#medic", actorItem.NewPK)
+	require.Equal(t, "medic", strAttr(t, actorItem.Item["username"]))
+	require.Equal(t, "medic channel#medic", strAttr(t, actorItem.Item["gsi2SK"]))
+	require.Equal(t, "0000000010#medic", strAttr(t, actorItem.Item["gsi4SK"]))
+	require.Equal(t, "1700000000#medic", strAttr(t, actorItem.Item["gsi5SK"]))
+
+	blockItem, ok, err := buildActorKeyMigrationItem(map[string]types.AttributeValue{
+		"PK":     sAttr("ACTOR#Medic#BLOCKS"),
+		"SK":     sAttr("BLOCKED#Arch"),
+		"gsi5PK": sAttr("BLOCKED#Arch"),
+		"gsi5SK": sAttr("BLOCKER#Medic"),
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "ACTOR#medic#BLOCKS", blockItem.NewPK)
+	require.Equal(t, "BLOCKED#arch", blockItem.NewSK)
+	require.Equal(t, "BLOCKED#arch", strAttr(t, blockItem.Item["gsi5PK"]))
+	require.Equal(t, "BLOCKER#medic", strAttr(t, blockItem.Item["gsi5SK"]))
+}
+
+func TestBuildMuteKeyMigrationItem_NormalizesLegacyKey(t *testing.T) {
+	item, ok, err := buildMuteKeyMigrationItem(map[string]types.AttributeValue{
+		"PK":     sAttr("MUTE#Medic"),
+		"SK":     sAttr("MUTED#Arch"),
+		"gsi1PK": sAttr("MUTED#Arch"),
+		"gsi1SK": sAttr("MUTER#Medic"),
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "MUTE#medic", item.NewPK)
+	require.Equal(t, "MUTED#arch", item.NewSK)
+	require.Equal(t, "MUTED#arch", strAttr(t, item.Item["gsi1PK"]))
+	require.Equal(t, "MUTER#medic", strAttr(t, item.Item["gsi1SK"]))
+}
+
+func TestBuildFollowKeyMigrationItem_NormalizesLegacyKey(t *testing.T) {
+	item, ok, err := buildFollowKeyMigrationItem(map[string]types.AttributeValue{
+		"PK":               sAttr("follow#Medic"),
+		"SK":               sAttr("following#Arch"),
+		"gsi1PK":           sAttr("follow#Arch"),
+		"gsi1SK":           sAttr("follower#Medic"),
+		"gsi2SK":           sAttr("2026-03-24T11:28:58Z#Medic#Arch"),
+		"followerUsername": sAttr("Medic"),
+		"followedUsername": sAttr("Arch"),
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "follow#medic", item.NewPK)
+	require.Equal(t, "following#arch", item.NewSK)
+	require.Equal(t, "follow#arch", strAttr(t, item.Item["gsi1PK"]))
+	require.Equal(t, "follower#medic", strAttr(t, item.Item["gsi1SK"]))
+	require.Equal(t, "2026-03-24T11:28:58Z#medic#arch", strAttr(t, item.Item["gsi2SK"]))
+	require.Equal(t, "medic", strAttr(t, item.Item["followerUsername"]))
+	require.Equal(t, "arch", strAttr(t, item.Item["followedUsername"]))
 }
 
 func TestNormalizeLegacyUserPartitionAttribute_HandlesNestedMapsAndLists(t *testing.T) {

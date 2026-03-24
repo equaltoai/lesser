@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -41,6 +42,8 @@ const (
 // NewFollow creates a new follow relationship
 func NewFollow(followerUsername, followedUsername, activityID string) *Follow {
 	now := time.Now()
+	followerUsername = strings.ToLower(strings.TrimSpace(followerUsername))
+	followedUsername = strings.ToLower(strings.TrimSpace(followedUsername))
 	follow := &Follow{
 		PK:               fmt.Sprintf("follow#%s", followerUsername),
 		SK:               fmt.Sprintf("following#%s", followedUsername),

@@ -106,8 +106,8 @@ func (r *MuteRepository) DeleteMute(ctx context.Context, muterActor, mutedActor 
 	muterUsername := extractUsernameFromActor(muterActor)
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
-	pk := fmt.Sprintf("MUTE#%s", muterUsername)
-	sk := fmt.Sprintf("MUTED#%s", mutedUsername)
+	pk := Utils.Keys.MuteKey(muterUsername)
+	sk := Utils.Keys.MutedSK(mutedUsername)
 
 	err := r.Delete(ctx, pk, sk)
 	if err != nil {
@@ -137,8 +137,8 @@ func (r *MuteRepository) IsMuted(ctx context.Context, muterActor, mutedActor str
 	muterUsername := extractUsernameFromActor(muterActor)
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
-	pk := fmt.Sprintf("MUTE#%s", muterUsername)
-	sk := fmt.Sprintf("MUTED#%s", mutedUsername)
+	pk := Utils.Keys.MuteKey(muterUsername)
+	sk := Utils.Keys.MutedSK(mutedUsername)
 
 	var mute models.Mute
 	err := r.Get(ctx, pk, sk, &mute)
@@ -196,8 +196,8 @@ func (r *MuteRepository) GetMute(ctx context.Context, muterActor, mutedActor str
 	muterUsername := extractUsernameFromActor(muterActor)
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
-	pk := fmt.Sprintf("MUTE#%s", muterUsername)
-	sk := fmt.Sprintf("MUTED#%s", mutedUsername)
+	pk := Utils.Keys.MuteKey(muterUsername)
+	sk := Utils.Keys.MutedSK(mutedUsername)
 
 	var mute models.Mute
 	err := r.Get(ctx, pk, sk, &mute)
@@ -227,7 +227,7 @@ func (r *MuteRepository) GetMute(ctx context.Context, muterActor, mutedActor str
 // CountMutedUsers returns the number of users muted by the given actor
 func (r *MuteRepository) CountMutedUsers(ctx context.Context, muterActor string) (int, error) {
 	muterUsername := extractUsernameFromActor(muterActor)
-	pk := fmt.Sprintf("MUTE#%s", muterUsername)
+	pk := Utils.Keys.MuteKey(muterUsername)
 
 	count, err := r.Count(ctx, pk)
 	if err != nil {
@@ -246,7 +246,7 @@ func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor stri
 
 	count, err := r.db.WithContext(ctx).Model(&models.Mute{}).
 		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
+		Where("gsi1PK", "=", Utils.Keys.MutedSK(mutedUsername)).
 		Count()
 	if err != nil {
 		r.logger.Error("failed to count users who muted actor",

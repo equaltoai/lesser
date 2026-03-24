@@ -95,8 +95,8 @@ func (r *BlockRepository) DeleteBlock(ctx context.Context, blockerActor, blocked
 	blockerUsername := extractUsernameFromActor(blockerActor)
 	blockedUsername := extractUsernameFromActor(blockedActor)
 
-	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
-	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+	pk := Utils.Keys.BlockKey(blockerUsername)
+	sk := Utils.Keys.BlockedSK(blockedUsername)
 
 	err := r.Delete(ctx, pk, sk)
 	if err != nil {
@@ -126,8 +126,8 @@ func (r *BlockRepository) IsBlocked(ctx context.Context, blockerActor, blockedAc
 	blockerUsername := extractUsernameFromActor(blockerActor)
 	blockedUsername := extractUsernameFromActor(blockedActor)
 
-	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
-	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+	pk := Utils.Keys.BlockKey(blockerUsername)
+	sk := Utils.Keys.BlockedSK(blockedUsername)
 
 	var block models.Block
 	err := r.Get(ctx, pk, sk, &block)
@@ -202,8 +202,8 @@ func (r *BlockRepository) GetBlock(ctx context.Context, blockerActor, blockedAct
 	blockerUsername := extractUsernameFromActor(blockerActor)
 	blockedUsername := extractUsernameFromActor(blockedActor)
 
-	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
-	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+	pk := Utils.Keys.BlockKey(blockerUsername)
+	sk := Utils.Keys.BlockedSK(blockedUsername)
 
 	var block models.Block
 	err := r.Get(ctx, pk, sk, &block)
@@ -231,7 +231,7 @@ func (r *BlockRepository) GetBlock(ctx context.Context, blockerActor, blockedAct
 // CountBlockedUsers returns the number of users blocked by the given actor
 func (r *BlockRepository) CountBlockedUsers(ctx context.Context, blockerActor string) (int, error) {
 	blockerUsername := extractUsernameFromActor(blockerActor)
-	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
+	pk := Utils.Keys.BlockKey(blockerUsername)
 
 	count, err := r.Count(ctx, pk)
 	if err != nil {
@@ -250,7 +250,7 @@ func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor
 
 	count, err := r.db.WithContext(ctx).Model(&models.Block{}).
 		Index("gsi5").
-		Where("gsi5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
+		Where("gsi5PK", "=", Utils.Keys.BlockedSK(blockedUsername)).
 		Count()
 	if err != nil {
 		r.logger.Error("failed to count users who blocked actor",

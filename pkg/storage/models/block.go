@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -109,7 +110,7 @@ func extractUsername(actorID string) string {
 
 	// Return the last part
 	if len(parts) > 0 {
-		return parts[len(parts)-1]
+		return strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
 	}
-	return actorID
+	return strings.ToLower(strings.TrimSpace(actorID))
 }

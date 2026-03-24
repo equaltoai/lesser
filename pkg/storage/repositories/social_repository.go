@@ -130,8 +130,8 @@ func (r *SocialRepository) DeleteBlock(ctx context.Context, actor, blockedActor 
 	blockerUsername := extractUsername(actor)
 	blockedUsername := extractUsername(blockedActor)
 
-	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
-	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+	pk := Utils.Keys.BlockKey(blockerUsername)
+	sk := Utils.Keys.BlockedSK(blockedUsername)
 
 	// Use BaseRepository Delete method
 	err := r.blockRepo.Delete(ctx, pk, sk)
@@ -148,8 +148,8 @@ func (r *SocialRepository) GetBlock(ctx context.Context, actor, blockedActor str
 	blockerUsername := extractUsername(actor)
 	blockedUsername := extractUsername(blockedActor)
 
-	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
-	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+	pk := Utils.Keys.BlockKey(blockerUsername)
+	sk := Utils.Keys.BlockedSK(blockedUsername)
 
 	// Use BaseRepository Get method
 	var block models.Block
@@ -178,8 +178,8 @@ func (r *SocialRepository) IsBlocked(ctx context.Context, actor, targetActor str
 
 	var block models.Block
 	err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
+		Where("PK", "=", Utils.Keys.BlockKey(blockerUsername)).
+		Where("SK", "=", Utils.Keys.BlockedSK(blockedUsername)).
 		First(&block)
 
 	if err != nil {
@@ -203,7 +203,7 @@ func (r *SocialRepository) GetBlockedUsers(ctx context.Context, actor string, li
 	blockerUsername := extractUsername(actor)
 
 	query := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername))
+		Where("PK", "=", Utils.Keys.BlockKey(blockerUsername))
 
 	if cursor != "" {
 		query = query.Where("SK", ">", cursor)
@@ -255,7 +255,7 @@ func (r *SocialRepository) GetBlockedByUsers(ctx context.Context, actor string, 
 
 	query := r.db.WithContext(ctx).Model(&models.Block{}).
 		Index("gsi5").
-		Where("gsi5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername))
+		Where("gsi5PK", "=", Utils.Keys.BlockedSK(blockedUsername))
 
 	if cursor != "" {
 		query = query.Where("gsi5SK", ">", cursor)
@@ -330,8 +330,8 @@ func (r *SocialRepository) CreateMute(ctx context.Context, mute *storage.Mute) e
 
 // DeleteMute removes a mute relationship
 func (r *SocialRepository) DeleteMute(ctx context.Context, actor, mutedActor string) error {
-	pk := fmt.Sprintf("MUTE#%s", actor)
-	sk := fmt.Sprintf("MUTED#%s", mutedActor)
+	pk := Utils.Keys.MuteKey(actor)
+	sk := Utils.Keys.MutedSK(mutedActor)
 
 	// Use BaseRepository Delete method
 	err := r.muteRepo.Delete(ctx, pk, sk)
@@ -344,8 +344,8 @@ func (r *SocialRepository) DeleteMute(ctx context.Context, actor, mutedActor str
 
 // GetMute retrieves a specific mute relationship
 func (r *SocialRepository) GetMute(ctx context.Context, actor, mutedActor string) (*storage.Mute, error) {
-	pk := fmt.Sprintf("MUTE#%s", actor)
-	sk := fmt.Sprintf("MUTED#%s", mutedActor)
+	pk := Utils.Keys.MuteKey(actor)
+	sk := Utils.Keys.MutedSK(mutedActor)
 
 	// Use BaseRepository Get method
 	var mute models.Mute
@@ -371,8 +371,8 @@ func (r *SocialRepository) GetMute(ctx context.Context, actor, mutedActor string
 func (r *SocialRepository) IsMuted(ctx context.Context, actor, targetActor string) (bool, error) {
 	var mute models.Mute
 	err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", actor)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", targetActor)).
+		Where("PK", "=", Utils.Keys.MuteKey(actor)).
+		Where("SK", "=", Utils.Keys.MutedSK(targetActor)).
 		First(&mute)
 
 	if err != nil {
@@ -394,7 +394,7 @@ func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limi
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", actor)).
+		Where("PK", "=", Utils.Keys.MuteKey(actor)).
 		OrderBy("SK", "DESC") // Newest first
 
 	if cursor != "" {
@@ -1171,7 +1171,7 @@ func (r *SocialRepository) CountUserPinnedStatuses(ctx context.Context, username
 func extractUsername(actorID string) string {
 	parts := strings.Split(actorID, "/")
 	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
-		return parts[len(parts)-1]
+		return strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
 	}
-	return actorID
+	return strings.ToLower(strings.TrimSpace(actorID))
 }

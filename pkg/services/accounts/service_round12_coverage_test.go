@@ -35,14 +35,14 @@ func TestService_normalizeUsername(t *testing.T) {
 		expected string
 	}{
 		{name: "empty", input: "   ", expected: ""},
-		{name: "plain username", input: " alice ", expected: "alice"},
+		{name: "plain username", input: " Alice ", expected: "alice"},
 		{name: "acct prefix", input: "acct:alice", expected: "alice"},
 		{name: "leading at", input: "@alice", expected: "alice"},
 		{name: "acct + leading at + local domain", input: "acct:@alice@example.com", expected: "alice"},
 		{name: "local handle", input: "alice@example.com", expected: "alice"},
-		{name: "remote handle", input: "alice@remote.social", expected: "alice@remote.social"},
-		{name: "users url", input: "https://example.com/users/alice", expected: "alice"},
-		{name: "at url", input: "https://example.com/@alice", expected: "alice"},
+		{name: "remote handle", input: "Alice@Remote.Social", expected: "alice@remote.social"},
+		{name: "users url", input: "https://example.com/users/Alice", expected: "alice"},
+		{name: "at url", input: "https://example.com/@Alice", expected: "alice"},
 	}
 
 	for _, tt := range tests {

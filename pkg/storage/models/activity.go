@@ -58,7 +58,7 @@ func (a *Activity) UpdateKeys() error {
 		actorParts := strings.Split(a.Activity.Actor, "/")
 		if len(actorParts) >= 2 {
 			username := actorParts[len(actorParts)-1]
-			a.PK = "ACTOR#" + username
+			a.PK = "ACTOR#" + strings.ToLower(strings.TrimSpace(username))
 		}
 	}
 

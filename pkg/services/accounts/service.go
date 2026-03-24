@@ -276,7 +276,7 @@ func (s *Service) normalizeUsername(username string) string {
 		}
 	}
 
-	return strings.TrimSpace(trimmed)
+	return strings.ToLower(strings.TrimSpace(trimmed))
 }
 
 func storedUsernameMatches(storedUsername, candidate string) bool {
