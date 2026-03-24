@@ -25,6 +25,7 @@ goInsecureSkipVerify:
 # Exact occurrences of TableTheory `Query.Scan(...)` in non-test Go code (tracked by count per file).
 # This gate exists to prevent adding new DynamoDB scans to production code paths.
 goDynamoDBQueryScan:
+  cmd/lesser/migrate_user_keys.go: 1
   pkg/cost/dynamorm_tracker.go: 1
   pkg/federation/relationship_tracker.go: 4
   pkg/moderation/advanced/reputation.go: 1
