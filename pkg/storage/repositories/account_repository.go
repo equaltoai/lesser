@@ -478,6 +478,15 @@ func (r *AccountRepository) getUserModel(ctx context.Context, username string) (
 		}
 	}
 
+	if user, err := r.lookupUserModelByCanonicalHandle(ctx, canonical); err == nil && user != nil {
+		return user, strings.TrimSpace(user.Username), nil
+	} else if err != nil && !isAccountNotFound(err) {
+		r.logger.Error("failed to resolve user by canonical handle",
+			zap.String("username", canonical),
+			zap.Error(err))
+		return nil, "", ErrorHandler.HandleGetError(err, EntityUser, canonical)
+	}
+
 	return nil, "", ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, canonical)
 }
 
@@ -499,6 +508,25 @@ func (r *AccountRepository) getActorModel(ctx context.Context, username string) 
 		}
 	}
 
+	resolvedUsername, err := r.lookupStoredUsernameByCanonicalHandle(ctx, canonical)
+	if err != nil && !isAccountNotFound(err) {
+		return nil, "", ErrorHandler.HandleGetError(err, EntityActor, canonical)
+	}
+	if resolvedUsername != "" {
+		var actorModel models.Actor
+		pk := fmt.Sprintf(models.KeyPatternActor, resolvedUsername)
+		err = r.db.WithContext(ctx).Model(&actorModel).
+			Where("PK", "=", pk).
+			Where("SK", "=", models.SKProfile).
+			First(&actorModel)
+		if err == nil {
+			return &actorModel, resolvedUsername, nil
+		}
+		if err != nil && !isAccountNotFound(err) {
+			return nil, "", ErrorHandler.HandleGetError(err, EntityActor, canonical)
+		}
+	}
+
 	return nil, "", ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActor, canonical)
 }
 
@@ -508,6 +536,45 @@ func (r *AccountRepository) resolveStoredUsername(ctx context.Context, username 
 		return "", err
 	}
 	return resolvedUsername, nil
+}
+
+func (r *AccountRepository) lookupStoredUsernameByCanonicalHandle(ctx context.Context, username string) (string, error) {
+	user, err := r.lookupUserModelByCanonicalHandle(ctx, username)
+	if err != nil {
+		return "", err
+	}
+	if user == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(user.Username), nil
+}
+
+func (r *AccountRepository) lookupUserModelByCanonicalHandle(ctx context.Context, username string) (*models.User, error) {
+	if r.db == nil {
+		return nil, storage.ErrNotFound
+	}
+
+	normalizedUsername := strings.ToLower(strings.TrimSpace(username))
+	if normalizedUsername == "" {
+		return nil, storage.ErrNotFound
+	}
+
+	prefix := normalizedUsername
+	if len(prefix) > 2 {
+		prefix = prefix[:2]
+	}
+
+	var userModel models.User
+	err := r.db.WithContext(ctx).Model(&userModel).
+		Index("gsi5").
+		Where("gsi5PK", "=", fmt.Sprintf("USER_HANDLE_PREFIX#%s", prefix)).
+		Where("gsi5SK", "=", normalizedUsername).
+		First(&userModel)
+	if err != nil {
+		return nil, err
+	}
+
+	return &userModel, nil
 }
 
 func (r *AccountRepository) isLocalDomain(domain string) bool {

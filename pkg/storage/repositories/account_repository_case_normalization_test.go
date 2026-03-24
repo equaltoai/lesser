@@ -55,6 +55,43 @@ func TestAccountRepository_GetUser_FallsBackToLegacyMixedCaseKeys(t *testing.T) 
 	mockQuery.AssertNumberOfCalls(t, "First", 2)
 }
 
+func TestAccountRepository_GetUser_ResolvesLegacyMixedCaseKeysViaCanonicalHandleIndex(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 24, 11, 30, 0, 0, time.UTC)
+
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.User")).Return(mockQuery).Maybe()
+	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", "gsi5").Return(mockQuery).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.User")).
+		Return(dynamormErrors.ErrItemNotFound).
+		Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.User")).
+		Run(func(args mock.Arguments) {
+			user := args.Get(0).(*models.User)
+			user.Username = "Medic"
+			user.Role = "user"
+			user.CreatedAt = now
+			user.UpdatedAt = now
+			user.GSI5PK = "USER_HANDLE_PREFIX#me"
+			user.GSI5SK = "medic"
+			_ = user.UpdateKeys()
+		}).
+		Return(nil).
+		Once()
+
+	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
+
+	user, err := repo.GetUser(ctx, "medic")
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, "Medic", user.Username)
+	mockQuery.AssertNumberOfCalls(t, "First", 2)
+	mockQuery.AssertCalled(t, "Index", "gsi5")
+}
+
 func TestAccountRepository_GetActor_NormalizesLegacyMixedCaseIdentityOnRead(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 23, 9, 30, 0, 0, time.UTC)

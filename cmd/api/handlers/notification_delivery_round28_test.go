@@ -191,7 +191,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		managedHandler.registry = &RegistryStub{
 			NotificationsSvc: &NotificationsServiceStub{
 				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
-					require.Equal(t, "agent-0", cmd.UserID)
+					require.Equal(t, "Agent-0", cmd.UserID)
 					return &notifications.NotificationResult{}, nil
 				},
 			},
@@ -271,7 +271,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 		managedHandler.registry = &RegistryStub{
 			NotificationsSvc: &NotificationsServiceStub{
 				CreateNotificationFunc: func(_ context.Context, cmd *notifications.CreateNotificationCommand) (*notifications.NotificationResult, error) {
-					require.Equal(t, "medic", cmd.UserID)
+					require.Equal(t, "Medic", cmd.UserID)
 					return &notifications.NotificationResult{}, nil
 				},
 			},

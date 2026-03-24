@@ -156,6 +156,10 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 	if err != nil {
 		return nil, common.WrapError(common.ErrNotFound("recipient user"), "failed to get recipient user")
 	}
+	recipientUserID := strings.TrimSpace(cmd.UserID)
+	if recipientAccount != nil && recipientAccount.User != nil && strings.TrimSpace(recipientAccount.User.Username) != "" {
+		recipientUserID = strings.TrimSpace(recipientAccount.User.Username)
+	}
 
 	// Check if actor exists (optional validation)
 	var actorAccount *storage.Account
@@ -170,7 +174,7 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 
 	// Build notification using the builder pattern
 	builder := models.NewNotificationBuilder().
-		ForUser(cmd.UserID).
+		ForUser(recipientUserID).
 		OfType(cmd.Type).
 		FromActor(cmd.ActorID, cmd.ActorType)
 

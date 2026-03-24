@@ -321,3 +321,30 @@ func TestService_CreateNotification_round27_actor_optional_missing(t *testing.T)
 	assert.Equal(t, "alice", result.Notification.UserID)
 	assert.Len(t, pushService.Messages(), 1)
 }
+
+func TestService_CreateNotification_UsesResolvedRecipientUsernameForStorage(t *testing.T) {
+	t.Parallel()
+
+	service, notificationRepo, accountRepo, _, pushService := setupTestService()
+	ctx := context.Background()
+
+	recipient := &storage.Account{User: &storage.User{Username: "Medic"}}
+	accountRepo.On("GetAccount", ctx, "medic").Return(recipient, nil).Once()
+	notificationRepo.On("CreateNotification", ctx, mock.MatchedBy(func(notification *models.Notification) bool {
+		return notification != nil && notification.UserID == "Medic"
+	})).Return(nil).Once()
+
+	result, err := service.CreateNotification(ctx, &CreateNotificationCommand{
+		UserID:    "medic",
+		Type:      "communication:inbound",
+		ActorID:   "system",
+		ActorType: "external",
+		Title:     "hello",
+		Body:      "test",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "Medic", result.Notification.UserID)
+	assert.Len(t, pushService.Messages(), 1)
+	assert.Equal(t, "Medic", pushService.Messages()[0].Username)
+}
