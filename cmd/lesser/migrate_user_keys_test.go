@@ -120,6 +120,9 @@ func TestRunMigrateUserKeys_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "audited_gsi_fields:")
 	require.Contains(t, output, "gsi3SK: 1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
+	require.Len(t, client.scanInputs, 2)
+	require.Equal(t, "USER#", strAttr(t, client.scanInputs[0].ExpressionAttributeValues[":prefix"]))
+	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#", strAttr(t, client.scanInputs[1].ExpressionAttributeValues[":prefix"]))
 }
 
 func TestRunMigrateUserKeys_ApplyUsesExplicitTable(t *testing.T) {
@@ -187,7 +190,7 @@ func TestBuildUserKeyMigrationItem_NormalizesLegacyMetadataAndGSIs(t *testing.T)
 	require.True(t, ok)
 	require.Equal(t, "USER#Medic", item.OldPK)
 	require.Equal(t, "USER#medic", item.NewPK)
-	require.Equal(t, "METADATA", item.SK)
+	require.Equal(t, "METADATA", item.NewSK)
 	require.Equal(t, "USER#medic", strAttr(t, item.Item["PK"]))
 	require.Equal(t, "medic", strAttr(t, item.Item["username"]))
 	require.Equal(t, "2026-03-24T11:28:58Z#medic", strAttr(t, item.Item["gsi1SK"]))
@@ -265,6 +268,36 @@ func TestExecuteUserKeyMigration_ApplyWritesLowercaseItemAndDeletesLegacyKey(t *
 	require.Equal(t, "notif#1", strAttr(t, client.deleteInputs[0].Key["SK"]))
 }
 
+func TestExecuteUserKeyMigration_ApplyWritesLowercaseSoulBodyBindingUsernameItem(t *testing.T) {
+	client := &fakeUserKeyMigrationClient{
+		scanOutputs: []*dynamodb.ScanOutput{
+			{},
+			{
+				Items: []map[string]types.AttributeValue{
+					{
+						"PK":       sAttr("SOUL_BODY_BINDING_USERNAME#Medic"),
+						"SK":       sAttr("SOUL_BODY_BINDING"),
+						"username": sAttr("Medic"),
+						"agentId":  sAttr("0xmedic"),
+					},
+				},
+			},
+		},
+	}
+
+	summary, err := executeUserKeyMigration(context.Background(), client, "lesser-dev-main-table", true, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, summary.LegacyPartitions)
+	require.Equal(t, 1, summary.Migrated)
+	require.Equal(t, 1, summary.Deleted)
+	require.Len(t, client.putInputs, 1)
+	require.Len(t, client.deleteInputs, 1)
+	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#medic", strAttr(t, client.putInputs[0].Item["PK"]))
+	require.Equal(t, "medic", strAttr(t, client.putInputs[0].Item["username"]))
+	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#Medic", strAttr(t, client.deleteInputs[0].Key["PK"]))
+	require.Equal(t, "SOUL_BODY_BINDING", strAttr(t, client.deleteInputs[0].Key["SK"]))
+}
+
 func TestExecuteUserKeyMigration_ValidatesInputsAndScanErrors(t *testing.T) {
 	_, err := executeUserKeyMigration(context.Background(), nil, "lesser-dev-main-table", false, 0)
 	require.Error(t, err)
@@ -313,8 +346,9 @@ func TestExecuteUserKeyMigration_UsesPaginationCursorAndLimit(t *testing.T) {
 func TestWriteUserKeyMigrationItem_PropagatesWriteErrors(t *testing.T) {
 	item := userKeyMigrationItem{
 		OldPK: "USER#Arch",
+		OldSK: "METADATA",
 		NewPK: "USER#arch",
-		SK:    "METADATA",
+		NewSK: "METADATA",
 		Item: map[string]types.AttributeValue{
 			"PK": sAttr("USER#arch"),
 			"SK": sAttr("METADATA"),
@@ -354,6 +388,39 @@ func TestBuildUserKeyMigrationItem_SkipsLowercaseAndErrorsOnMissingSK(t *testing
 
 	_, ok, err = buildUserKeyMigrationItem(map[string]types.AttributeValue{
 		"PK": sAttr("USER#Arch"),
+	})
+	require.Error(t, err)
+	require.False(t, ok)
+	require.ErrorContains(t, err, "missing SK")
+}
+
+func TestBuildSoulBodyBindingUsernameMigrationItem_NormalizesLegacyKey(t *testing.T) {
+	item, ok, err := buildSoulBodyBindingUsernameMigrationItem(map[string]types.AttributeValue{
+		"PK":       sAttr("SOUL_BODY_BINDING_USERNAME#Medic"),
+		"SK":       sAttr("SOUL_BODY_BINDING"),
+		"username": sAttr("Medic"),
+		"agentId":  sAttr("0xmedic"),
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#Medic", item.OldPK)
+	require.Equal(t, "SOUL_BODY_BINDING", item.OldSK)
+	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#medic", item.NewPK)
+	require.Equal(t, "SOUL_BODY_BINDING", item.NewSK)
+	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#medic", strAttr(t, item.Item["PK"]))
+	require.Equal(t, "medic", strAttr(t, item.Item["username"]))
+}
+
+func TestBuildSoulBodyBindingUsernameMigrationItem_SkipsLowercaseAndMissingSK(t *testing.T) {
+	_, ok, err := buildSoulBodyBindingUsernameMigrationItem(map[string]types.AttributeValue{
+		"PK": sAttr("SOUL_BODY_BINDING_USERNAME#medic"),
+		"SK": sAttr("SOUL_BODY_BINDING"),
+	})
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	_, ok, err = buildSoulBodyBindingUsernameMigrationItem(map[string]types.AttributeValue{
+		"PK": sAttr("SOUL_BODY_BINDING_USERNAME#Medic"),
 	})
 	require.Error(t, err)
 	require.False(t, ok)

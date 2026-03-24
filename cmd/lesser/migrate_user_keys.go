@@ -31,14 +31,27 @@ type userKeyMigrationSummary struct {
 
 type userKeyMigrationItem struct {
 	OldPK            string
+	OldSK            string
 	NewPK            string
-	SK               string
+	NewSK            string
 	Item             map[string]types.AttributeValue
 	AuditedGSIFields []string
 }
 
+type userKeyMigrationBuilder func(map[string]types.AttributeValue) (userKeyMigrationItem, bool, error)
+
+type userKeyMigrationSpec struct {
+	Prefix  string
+	Builder userKeyMigrationBuilder
+}
+
 var newUserKeyMigrationClientFn = func(cfg aws.Config) userKeyMigrationClient {
 	return dynamodb.NewFromConfig(cfg)
+}
+
+var userKeyMigrationSpecs = []userKeyMigrationSpec{
+	{Prefix: "USER#", Builder: buildUserKeyMigrationItem},
+	{Prefix: "SOUL_BODY_BINDING_USERNAME#", Builder: buildSoulBodyBindingUsernameMigrationItem},
 }
 
 func runMigrateUserKeys(argv []string) error {
@@ -109,7 +122,7 @@ func runMigrateUserKeys(argv []string) error {
 	}
 
 	if !apply {
-		fmt.Println("no writes performed; re-run with --apply to copy lowercase USER# partitions and delete legacy keys")
+		fmt.Println("no writes performed; re-run with --apply to copy lowercase username-bearing partitions and delete legacy keys")
 	}
 
 	return nil
@@ -157,37 +170,57 @@ func executeUserKeyMigration(
 		return summary, fmt.Errorf("table name is required")
 	}
 
-	scanInput := &dynamodb.ScanInput{
-		TableName: aws.String(tableName),
-		FilterExpression: aws.String(
-			"begins_with(PK, :user_prefix)",
-		),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":user_prefix": &types.AttributeValueMemberS{Value: "USER#"},
-		},
-	}
-
-	for {
-		out, err := client.Scan(ctx, scanInput)
-		if err != nil {
-			return summary, fmt.Errorf("scan legacy USER# items: %w", err)
-		}
-
-		stop, err := processUserKeyMigrationPage(ctx, client, tableName, apply, limit, out.Items, &summary)
+	for _, spec := range userKeyMigrationSpecs {
+		stop, err := executeUserKeyMigrationSpec(ctx, client, tableName, apply, limit, spec, &summary)
 		if err != nil {
 			return summary, err
 		}
 		if stop {
 			return summary, nil
 		}
-
-		if len(out.LastEvaluatedKey) == 0 {
-			break
-		}
-		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
 	}
 
 	return summary, nil
+}
+
+func executeUserKeyMigrationSpec(
+	ctx context.Context,
+	client userKeyMigrationClient,
+	tableName string,
+	apply bool,
+	limit int,
+	spec userKeyMigrationSpec,
+	summary *userKeyMigrationSummary,
+) (bool, error) {
+	scanInput := &dynamodb.ScanInput{
+		TableName: aws.String(tableName),
+		FilterExpression: aws.String(
+			"begins_with(PK, :prefix)",
+		),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":prefix": &types.AttributeValueMemberS{Value: spec.Prefix},
+		},
+	}
+
+	for {
+		out, err := client.Scan(ctx, scanInput)
+		if err != nil {
+			return false, fmt.Errorf("scan legacy %s items: %w", spec.Prefix, err)
+		}
+
+		stop, err := processUserKeyMigrationPage(ctx, client, tableName, apply, limit, spec.Builder, out.Items, summary)
+		if err != nil {
+			return false, err
+		}
+		if stop {
+			return true, nil
+		}
+
+		if len(out.LastEvaluatedKey) == 0 {
+			return false, nil
+		}
+		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+	}
 }
 
 func processUserKeyMigrationPage(
@@ -196,11 +229,12 @@ func processUserKeyMigrationPage(
 	tableName string,
 	apply bool,
 	limit int,
+	builder userKeyMigrationBuilder,
 	items []map[string]types.AttributeValue,
 	summary *userKeyMigrationSummary,
 ) (bool, error) {
 	for _, item := range items {
-		stop, err := processUserKeyMigrationItem(ctx, client, tableName, apply, limit, item, summary)
+		stop, err := processUserKeyMigrationItem(ctx, client, tableName, apply, limit, builder, item, summary)
 		if err != nil {
 			return false, err
 		}
@@ -218,12 +252,13 @@ func processUserKeyMigrationItem(
 	tableName string,
 	apply bool,
 	limit int,
+	builder userKeyMigrationBuilder,
 	item map[string]types.AttributeValue,
 	summary *userKeyMigrationSummary,
 ) (bool, error) {
 	summary.Scanned++
 
-	migrationItem, ok, err := buildUserKeyMigrationItem(item)
+	migrationItem, ok, err := builder(item)
 	if err != nil {
 		return false, err
 	}
@@ -260,7 +295,7 @@ func writeUserKeyMigrationItem(
 		TableName: aws.String(tableName),
 		Item:      migrationItem.Item,
 	}); err != nil {
-		return fmt.Errorf("put migrated item %s %s: %w", migrationItem.NewPK, migrationItem.SK, err)
+		return fmt.Errorf("put migrated item %s %s: %w", migrationItem.NewPK, migrationItem.NewSK, err)
 	}
 	summary.Migrated++
 
@@ -268,10 +303,10 @@ func writeUserKeyMigrationItem(
 		TableName: aws.String(tableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: migrationItem.OldPK},
-			"SK": &types.AttributeValueMemberS{Value: migrationItem.SK},
+			"SK": &types.AttributeValueMemberS{Value: migrationItem.OldSK},
 		},
 	}); err != nil {
-		return fmt.Errorf("delete legacy item %s %s: %w", migrationItem.OldPK, migrationItem.SK, err)
+		return fmt.Errorf("delete legacy item %s %s: %w", migrationItem.OldPK, migrationItem.OldSK, err)
 	}
 	summary.Deleted++
 
@@ -299,10 +334,47 @@ func buildUserKeyMigrationItem(item map[string]types.AttributeValue) (userKeyMig
 
 	return userKeyMigrationItem{
 		OldPK:            oldPK,
+		OldSK:            sk,
 		NewPK:            "USER#" + newUsername,
-		SK:               sk,
+		NewSK:            sk,
 		Item:             newItem,
 		AuditedGSIFields: auditedGSIFields,
+	}, true, nil
+}
+
+func buildSoulBodyBindingUsernameMigrationItem(item map[string]types.AttributeValue) (userKeyMigrationItem, bool, error) {
+	oldPK, ok := attributeString(item["PK"])
+	if !ok || !strings.HasPrefix(oldPK, "SOUL_BODY_BINDING_USERNAME#") {
+		return userKeyMigrationItem{}, false, nil
+	}
+
+	oldUsername := strings.TrimPrefix(oldPK, "SOUL_BODY_BINDING_USERNAME#")
+	newUsername := strings.ToLower(strings.TrimSpace(oldUsername))
+	if newUsername == "" || newUsername == oldUsername {
+		return userKeyMigrationItem{}, false, nil
+	}
+
+	oldSK, ok := attributeString(item["SK"])
+	if !ok || strings.TrimSpace(oldSK) == "" {
+		return userKeyMigrationItem{}, false, fmt.Errorf("legacy soul body binding username item missing SK for PK %q", oldPK)
+	}
+
+	newItem := make(map[string]types.AttributeValue, len(item))
+	for key, value := range item {
+		newItem[key] = value
+	}
+	newItem["PK"] = &types.AttributeValueMemberS{Value: "SOUL_BODY_BINDING_USERNAME#" + newUsername}
+
+	if usernameValue, ok := attributeString(item["username"]); ok && strings.EqualFold(strings.TrimSpace(usernameValue), oldUsername) {
+		newItem["username"] = &types.AttributeValueMemberS{Value: newUsername}
+	}
+
+	return userKeyMigrationItem{
+		OldPK: oldPK,
+		OldSK: oldSK,
+		NewPK: "SOUL_BODY_BINDING_USERNAME#" + newUsername,
+		NewSK: oldSK,
+		Item:  newItem,
 	}, true, nil
 }
 

@@ -16,6 +16,7 @@ func TestSoulBodyBindingKeyHelpers(t *testing.T) {
 	)
 	require.Equal(t, "", SoulBodyBindingSortKey(" "))
 	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#alice", SoulBodyBindingUsernamePartitionKey(" alice "))
+	require.Equal(t, "SOUL_BODY_BINDING_USERNAME#medic", SoulBodyBindingUsernamePartitionKey(" Medic "))
 	require.Equal(t, "", SoulBodyBindingUsernamePartitionKey(" "))
 }
 

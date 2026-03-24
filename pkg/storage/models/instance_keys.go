@@ -50,7 +50,7 @@ func SoulBodyBindingSortKey(agentID string) string {
 
 // SoulBodyBindingUsernamePartitionKey returns the partition key for username reverse-index records.
 func SoulBodyBindingUsernamePartitionKey(username string) string {
-	username = strings.TrimSpace(username)
+	username = strings.ToLower(strings.TrimSpace(username))
 	if username == "" {
 		return ""
 	}

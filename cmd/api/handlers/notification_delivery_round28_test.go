@@ -249,7 +249,7 @@ func TestNotificationDelivery_Round28_AuthAndIdempotency(t *testing.T) {
 				},
 			},
 			soulBodyBindingUsernames: map[string]storagemodels.InstanceSoulBodyBindingUsername{
-				"Medic": {
+				"medic": {
 					PK:        storagemodels.SoulBodyBindingUsernamePartitionKey("Medic"),
 					SK:        storagemodels.SKSoulBodyBindingUsername,
 					Username:  "Medic",
