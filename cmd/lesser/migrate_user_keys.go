@@ -173,48 +173,12 @@ func executeUserKeyMigration(
 			return summary, fmt.Errorf("scan legacy USER# items: %w", err)
 		}
 
-		for _, item := range out.Items {
-			summary.Scanned++
-
-			migrationItem, ok, err := buildUserKeyMigrationItem(item)
-			if err != nil {
-				return summary, err
-			}
-			if !ok {
-				continue
-			}
-
-			summary.LegacyPartitions++
-			for _, field := range migrationItem.AuditedGSIFields {
-				summary.AuditedGSIFields[field]++
-			}
-
-			if apply {
-				if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
-					TableName: aws.String(tableName),
-					Item:      migrationItem.Item,
-				}); err != nil {
-					return summary, fmt.Errorf("put migrated item %s %s: %w", migrationItem.NewPK, migrationItem.SK, err)
-				}
-				summary.Migrated++
-
-				if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-					TableName: aws.String(tableName),
-					Key: map[string]types.AttributeValue{
-						"PK": &types.AttributeValueMemberS{Value: migrationItem.OldPK},
-						"SK": &types.AttributeValueMemberS{Value: migrationItem.SK},
-					},
-				}); err != nil {
-					return summary, fmt.Errorf("delete legacy item %s %s: %w", migrationItem.OldPK, migrationItem.SK, err)
-				}
-				summary.Deleted++
-			} else {
-				summary.DryRunCandidates++
-			}
-
-			if limit > 0 && summary.LegacyPartitions >= limit {
-				return summary, nil
-			}
+		stop, err := processUserKeyMigrationPage(ctx, client, tableName, apply, limit, out.Items, &summary)
+		if err != nil {
+			return summary, err
+		}
+		if stop {
+			return summary, nil
 		}
 
 		if len(out.LastEvaluatedKey) == 0 {
@@ -224,6 +188,94 @@ func executeUserKeyMigration(
 	}
 
 	return summary, nil
+}
+
+func processUserKeyMigrationPage(
+	ctx context.Context,
+	client userKeyMigrationClient,
+	tableName string,
+	apply bool,
+	limit int,
+	items []map[string]types.AttributeValue,
+	summary *userKeyMigrationSummary,
+) (bool, error) {
+	for _, item := range items {
+		stop, err := processUserKeyMigrationItem(ctx, client, tableName, apply, limit, item, summary)
+		if err != nil {
+			return false, err
+		}
+		if stop {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func processUserKeyMigrationItem(
+	ctx context.Context,
+	client userKeyMigrationClient,
+	tableName string,
+	apply bool,
+	limit int,
+	item map[string]types.AttributeValue,
+	summary *userKeyMigrationSummary,
+) (bool, error) {
+	summary.Scanned++
+
+	migrationItem, ok, err := buildUserKeyMigrationItem(item)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+
+	summary.LegacyPartitions++
+	for _, field := range migrationItem.AuditedGSIFields {
+		summary.AuditedGSIFields[field]++
+	}
+
+	if err := writeUserKeyMigrationItem(ctx, client, tableName, apply, migrationItem, summary); err != nil {
+		return false, err
+	}
+
+	return limit > 0 && summary.LegacyPartitions >= limit, nil
+}
+
+func writeUserKeyMigrationItem(
+	ctx context.Context,
+	client userKeyMigrationClient,
+	tableName string,
+	apply bool,
+	migrationItem userKeyMigrationItem,
+	summary *userKeyMigrationSummary,
+) error {
+	if !apply {
+		summary.DryRunCandidates++
+		return nil
+	}
+
+	if _, err := client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item:      migrationItem.Item,
+	}); err != nil {
+		return fmt.Errorf("put migrated item %s %s: %w", migrationItem.NewPK, migrationItem.SK, err)
+	}
+	summary.Migrated++
+
+	if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: migrationItem.OldPK},
+			"SK": &types.AttributeValueMemberS{Value: migrationItem.SK},
+		},
+	}); err != nil {
+		return fmt.Errorf("delete legacy item %s %s: %w", migrationItem.OldPK, migrationItem.SK, err)
+	}
+	summary.Deleted++
+
+	return nil
 }
 
 func buildUserKeyMigrationItem(item map[string]types.AttributeValue) (userKeyMigrationItem, bool, error) {
