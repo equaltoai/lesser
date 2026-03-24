@@ -399,57 +399,15 @@ func buildActorKeyMigrationItem(item map[string]types.AttributeValue) (userKeyMi
 	}
 
 	newPK := "ACTOR#" + newUsername + suffix
-	newSK := oldSK
 	newItem := cloneMigrationAttributes(item)
 	audited := map[string]struct{}{}
 	changed := setMigrationStringAttribute(newItem, "PK", newPK, audited)
+	changed = normalizeActorUsernameAttributes(item, newItem, oldUsername, newUsername, audited) || changed
+	changed = normalizeActorIndexAttributes(item, newItem, oldUsername, newUsername, audited) || changed
 
-	if usernameValue, ok := attributeString(item["username"]); ok && strings.EqualFold(strings.TrimSpace(usernameValue), oldUsername) {
-		changed = setMigrationStringAttribute(newItem, "username", newUsername, audited) || changed
-	}
-
-	if value, ok := attributeString(item["gsi1PK"]); ok {
-		updated, didUpdate := lowercasePrefixedUsername(value, "INBOX#")
-		if didUpdate {
-			changed = setMigrationStringAttribute(newItem, "gsi1PK", updated, audited) || changed
-		}
-	}
-
-	if value, ok := attributeString(item["gsi1SK"]); ok {
-		updated := normalizedMigrationUsername(value)
-		if updated != "" && updated != value {
-			changed = setMigrationStringAttribute(newItem, "gsi1SK", updated, audited) || changed
-		}
-	}
-
-	if value, ok := attributeString(item["gsi3SK"]); ok && strings.EqualFold(strings.TrimSpace(value), oldUsername) {
-		changed = setMigrationStringAttribute(newItem, "gsi3SK", newUsername, audited) || changed
-	}
-
-	for _, field := range []string{"gsi2SK", "gsi4SK", "gsi5SK"} {
-		if value, ok := attributeString(item[field]); ok {
-			updated := replaceDelimitedUsernameToken(value, oldUsername, newUsername)
-			if strings.HasPrefix(value, "BLOCKER#") {
-				if prefixed, didUpdate := lowercasePrefixedUsername(value, "BLOCKER#"); didUpdate {
-					updated = prefixed
-				}
-			}
-			if updated != value {
-				changed = setMigrationStringAttribute(newItem, field, updated, audited) || changed
-			}
-		}
-	}
-
-	if updated, didUpdate := lowercasePrefixedUsername(oldSK, "BLOCKED#"); didUpdate {
-		newSK = updated
-		changed = setMigrationStringAttribute(newItem, "SK", newSK, audited) || changed
-	}
-
-	if value, ok := attributeString(item["gsi5PK"]); ok {
-		if updated, didUpdate := lowercasePrefixedUsername(value, "BLOCKED#"); didUpdate {
-			changed = setMigrationStringAttribute(newItem, "gsi5PK", updated, audited) || changed
-		}
-	}
+	newSK, skChanged := normalizeActorBlockedSK(newItem, oldSK, audited)
+	changed = skChanged || changed
+	changed = normalizeActorBlockedIndex(item, newItem, audited) || changed
 
 	if !changed {
 		return userKeyMigrationItem{}, false, nil
@@ -463,6 +421,109 @@ func buildActorKeyMigrationItem(item map[string]types.AttributeValue) (userKeyMi
 		Item:             newItem,
 		AuditedGSIFields: collectAuditedGSIFields(audited),
 	}, true, nil
+}
+
+func normalizeActorUsernameAttributes(
+	item map[string]types.AttributeValue,
+	newItem map[string]types.AttributeValue,
+	oldUsername string,
+	newUsername string,
+	audited map[string]struct{},
+) bool {
+	changed := false
+
+	if usernameValue, ok := attributeString(item["username"]); ok && strings.EqualFold(strings.TrimSpace(usernameValue), oldUsername) {
+		changed = setMigrationStringAttribute(newItem, "username", newUsername, audited) || changed
+	}
+
+	if value, ok := attributeString(item["gsi1SK"]); ok {
+		updated := normalizedMigrationUsername(value)
+		if updated != "" && updated != value {
+			changed = setMigrationStringAttribute(newItem, "gsi1SK", updated, audited) || changed
+		}
+	}
+
+	if value, ok := attributeString(item["gsi3SK"]); ok && strings.EqualFold(strings.TrimSpace(value), oldUsername) {
+		changed = setMigrationStringAttribute(newItem, "gsi3SK", newUsername, audited) || changed
+	}
+
+	return changed
+}
+
+func normalizeActorIndexAttributes(
+	item map[string]types.AttributeValue,
+	newItem map[string]types.AttributeValue,
+	oldUsername string,
+	newUsername string,
+	audited map[string]struct{},
+) bool {
+	changed := false
+
+	if value, ok := attributeString(item["gsi1PK"]); ok {
+		if updated, didUpdate := lowercasePrefixedUsername(value, "INBOX#"); didUpdate {
+			changed = setMigrationStringAttribute(newItem, "gsi1PK", updated, audited) || changed
+		}
+	}
+
+	for _, field := range []string{"gsi2SK", "gsi4SK", "gsi5SK"} {
+		if updated, didUpdate := normalizedActorIndexField(item, field, oldUsername, newUsername); didUpdate {
+			changed = setMigrationStringAttribute(newItem, field, updated, audited) || changed
+		}
+	}
+
+	return changed
+}
+
+func normalizedActorIndexField(
+	item map[string]types.AttributeValue,
+	field string,
+	oldUsername string,
+	newUsername string,
+) (string, bool) {
+	value, ok := attributeString(item[field])
+	if !ok {
+		return "", false
+	}
+
+	updated := replaceDelimitedUsernameToken(value, oldUsername, newUsername)
+	if strings.HasPrefix(value, "BLOCKER#") {
+		if prefixed, didUpdate := lowercasePrefixedUsername(value, "BLOCKER#"); didUpdate {
+			updated = prefixed
+		}
+	}
+
+	return updated, updated != value
+}
+
+func normalizeActorBlockedSK(
+	newItem map[string]types.AttributeValue,
+	oldSK string,
+	audited map[string]struct{},
+) (string, bool) {
+	updated, didUpdate := lowercasePrefixedUsername(oldSK, "BLOCKED#")
+	if !didUpdate {
+		return oldSK, false
+	}
+
+	return updated, setMigrationStringAttribute(newItem, "SK", updated, audited)
+}
+
+func normalizeActorBlockedIndex(
+	item map[string]types.AttributeValue,
+	newItem map[string]types.AttributeValue,
+	audited map[string]struct{},
+) bool {
+	value, ok := attributeString(item["gsi5PK"])
+	if !ok {
+		return false
+	}
+
+	updated, didUpdate := lowercasePrefixedUsername(value, "BLOCKED#")
+	if !didUpdate {
+		return false
+	}
+
+	return setMigrationStringAttribute(newItem, "gsi5PK", updated, audited)
 }
 
 func buildMuteKeyMigrationItem(item map[string]types.AttributeValue) (userKeyMigrationItem, bool, error) {
