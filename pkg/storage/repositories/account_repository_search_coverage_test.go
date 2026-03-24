@@ -168,7 +168,7 @@ func TestAccountRepository_SearchByWebfinger_LocalDomainCanonicalizesMixedCaseUs
 	actor, err := repo.SearchByWebfinger(ctx, "medic@example.com")
 	require.NoError(t, err)
 	require.NotNil(t, actor)
-	require.Equal(t, "Medic", actor.PreferredUsername)
+	require.Equal(t, "medic", actor.PreferredUsername)
 
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)
@@ -223,7 +223,7 @@ func TestAccountRepository_SearchByWebfinger_ManagedLesserSoulAliasIsLocal(t *te
 	actor, err := repo.SearchByWebfinger(ctx, "agent-0@lessersoul.ai")
 	require.NoError(t, err)
 	require.NotNil(t, actor)
-	require.Equal(t, "Agent-0", actor.PreferredUsername)
+	require.Equal(t, "agent-0", actor.PreferredUsername)
 
 	mockDB.AssertExpectations(t)
 	mockQuery.AssertExpectations(t)

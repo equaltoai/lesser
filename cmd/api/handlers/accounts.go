@@ -155,7 +155,7 @@ func (h *Handler) mastodonAccountFromStorageAccount(account *storage.Account) (m
 		return models.Account{}, fmt.Errorf("account is missing user")
 	}
 
-	username := strings.TrimSpace(account.User.Username)
+	username := canonicalStorageAccountUsername(account)
 	if username == "" {
 		return models.Account{}, fmt.Errorf("account is missing username")
 	}
@@ -374,6 +374,29 @@ func handlerBaseURL(h *Handler) string {
 		return ""
 	}
 	return strings.TrimSuffix(strings.TrimSpace(h.cfg.BaseURL()), "/")
+}
+
+func canonicalStorageAccountUsername(account *storage.Account) string {
+	if account == nil {
+		return ""
+	}
+
+	candidates := []string{}
+	if account.User != nil {
+		candidates = append(candidates, account.User.Username)
+	}
+	if account.Actor != nil {
+		candidates = append(candidates, account.Actor.PreferredUsername)
+	}
+
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed != "" {
+			return strings.ToLower(trimmed)
+		}
+	}
+
+	return ""
 }
 
 func mastodonAccountFromActor(actor *activitypub.Actor, baseURL string) models.Account {

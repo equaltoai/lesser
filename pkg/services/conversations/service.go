@@ -571,6 +571,7 @@ func (s *Service) previewDirectMessageRequestRateLimit(ctx context.Context, cmd 
 
 func (s *Service) createDirectMessageStatus(ctx context.Context, cmd *SendDirectMessageCommand, sender *storage.Account, recipientAccounts map[string]*storage.Account, conversationID, recipientID string) (*models.Status, string, error) {
 	messageID := uuid.New().String()
+	now := time.Now().UTC()
 
 	status := &models.Status{
 		StatusID:       messageID,
@@ -582,7 +583,10 @@ func (s *Service) createDirectMessageStatus(ctx context.Context, cmd *SendDirect
 		Language:       cmd.Language,
 		ConversationID: conversationID,
 		InReplyToID:    cmd.InReplyToID,
-		PublishedAt:    time.Now(),
+		PublishedAt:    now,
+		CreatedAt:      now,
+		ModifiedAt:     now,
+		UpdatedAt:      now,
 	}
 
 	recipientURLs := make([]string, 0, len(cmd.Recipients))
@@ -859,6 +863,7 @@ func (s *Service) getSendMessageAccounts(ctx context.Context, senderID, recipien
 
 func (s *Service) createSendMessageStatus(ctx context.Context, cmd *SendMessageCommand, sendCmd *SendDirectMessageCommand, sender *storage.Account, recipient *storage.Account, conversationID, recipientID string) (*models.Status, string, error) {
 	messageID := uuid.New().String()
+	now := time.Now().UTC()
 	status := &models.Status{
 		StatusID:       messageID,
 		AuthorID:       cmd.SenderID,
@@ -869,7 +874,10 @@ func (s *Service) createSendMessageStatus(ctx context.Context, cmd *SendMessageC
 		Language:       cmd.Language,
 		ConversationID: conversationID,
 		InReplyToID:    cmd.InReplyToID,
-		PublishedAt:    time.Now(),
+		PublishedAt:    now,
+		CreatedAt:      now,
+		ModifiedAt:     now,
+		UpdatedAt:      now,
 	}
 
 	recipientURL := fmt.Sprintf("https://%s/users/%s", s.domainName, recipient.User.Username)

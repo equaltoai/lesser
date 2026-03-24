@@ -138,6 +138,10 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	account.User.Username = r.canonicalUsername(account.User.Username)
 	user := account.User
 	actor := account.Actor
+	if actor != nil {
+		actor = r.normalizeLocalActorIdentity(user.Username, actor)
+		account.Actor = actor
+	}
 
 	// Create User model with enhanced validation and defaults
 	userModel := &models.User{
@@ -277,7 +281,7 @@ func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, e
 
 // GetAccount retrieves complete account information (User + Actor)
 func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*storage.Account, error) {
-	username = r.canonicalUsername(username)
+	canonicalUsername := r.canonicalUsername(username)
 	// Get user data
 	user, err := r.GetUser(ctx, username)
 	if err != nil {
@@ -287,7 +291,7 @@ func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*s
 	// Get actor data
 	actor, err := r.GetActor(ctx, username)
 	if err != nil && !isAccountNotFound(err) {
-		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, canonicalUsername)
 	}
 
 	// Combine into account
@@ -301,7 +305,11 @@ func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*s
 
 // DeleteAccount removes both User and Actor entities
 func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) error {
-	username = r.canonicalUsername(username)
+	resolvedUsername, err := r.resolveStoredUsername(ctx, username)
+	if err != nil {
+		return err
+	}
+	username = resolvedUsername
 	// Delete actor first (it's optional)
 	if err := r.deleteActor(ctx, username); err != nil && !isAccountNotFound(err) {
 		r.logger.Error("failed to delete actor",
@@ -324,18 +332,9 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 
 // GetUser retrieves user authentication data
 func (r *AccountRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
-	username = r.canonicalUsername(username)
-	user := &models.User{}
-
-	// Use consistent key pattern
-	pk := fmt.Sprintf("USER#%s", username)
-
-	err := r.Get(ctx, pk, models.SKMetadata, user)
+	user, _, err := r.getUserModel(ctx, username)
 	if err != nil {
-		if !dynamormErrors.IsNotFound(err) {
-			r.logger.Error("failed to get user", zap.Error(err), zap.String("username", username))
-		}
-		return nil, ErrorHandler.HandleGetError(err, EntityUser, username)
+		return nil, err
 	}
 
 	return r.modelToStorageUser(user), nil
@@ -349,14 +348,12 @@ func (r *AccountRepository) GetUserByEmail(_ context.Context, email string) (*st
 
 // UpdateUser updates user authentication data
 func (r *AccountRepository) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
-	username = r.canonicalUsername(username)
-	// Get existing user
-	user := &models.User{}
-	pk := fmt.Sprintf("USER#%s", username)
-	err := r.Get(ctx, pk, models.SKMetadata, user)
+	user, resolvedUsername, err := r.getUserModel(ctx, username)
 	if err != nil {
-		return ErrorHandler.HandleGetError(err, EntityUser, username)
+		return err
 	}
+	username = resolvedUsername
+	pk := fmt.Sprintf("USER#%s", username)
 
 	if user.Version == 0 {
 		versionProjection := &userVersionProjection{Table: r.tableName}
@@ -399,22 +396,12 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 
 // GetActor retrieves an actor by username
 func (r *AccountRepository) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	username = r.canonicalUsername(username)
-	var actorModel models.Actor
-
-	// Use key utilities for consistent key generation
-	pk := fmt.Sprintf(models.KeyPatternActor, username)
-
-	err := r.db.WithContext(ctx).Model(&actorModel).
-		Where("PK", "=", pk).
-		Where("SK", "=", models.SKProfile).
-		First(&actorModel)
-
+	actorModel, _, err := r.getActorModel(ctx, username)
 	if err != nil {
-		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
+		return nil, err
 	}
 
-	return actorModel.Actor, nil
+	return r.normalizeLocalActorIdentity(actorModel.Username, actorModel.Actor), nil
 }
 
 // GetActorByUsername is an alias for GetActor (for compatibility)
@@ -423,6 +410,10 @@ func (r *AccountRepository) GetActorByUsername(ctx context.Context, username str
 }
 
 func (r *AccountRepository) canonicalUsername(username string) string {
+	return strings.ToLower(r.normalizeUsername(username))
+}
+
+func (r *AccountRepository) normalizeUsername(username string) string {
 	trimmed := strings.TrimSpace(username)
 	if trimmed == "" {
 		return trimmed
@@ -456,6 +447,67 @@ func (r *AccountRepository) canonicalUsername(username string) string {
 	}
 
 	return strings.TrimSpace(trimmed)
+}
+
+func (r *AccountRepository) usernameLookupCandidates(username string) []string {
+	normalized := r.normalizeUsername(username)
+	if normalized == "" {
+		return nil
+	}
+
+	canonical := strings.ToLower(normalized)
+	if canonical == normalized {
+		return []string{canonical}
+	}
+
+	return []string{canonical, normalized}
+}
+
+func (r *AccountRepository) getUserModel(ctx context.Context, username string) (*models.User, string, error) {
+	canonical := r.canonicalUsername(username)
+	for _, candidate := range r.usernameLookupCandidates(username) {
+		user := &models.User{}
+		pk := fmt.Sprintf("USER#%s", candidate)
+		err := r.Get(ctx, pk, models.SKMetadata, user)
+		if err == nil {
+			return user, candidate, nil
+		}
+		if !isAccountNotFound(err) {
+			r.logger.Error("failed to get user", zap.Error(err), zap.String("username", canonical))
+			return nil, "", ErrorHandler.HandleGetError(err, EntityUser, canonical)
+		}
+	}
+
+	return nil, "", ErrorHandler.HandleGetError(storage.ErrNotFound, EntityUser, canonical)
+}
+
+func (r *AccountRepository) getActorModel(ctx context.Context, username string) (*models.Actor, string, error) {
+	canonical := r.canonicalUsername(username)
+	for _, candidate := range r.usernameLookupCandidates(username) {
+		var actorModel models.Actor
+		pk := fmt.Sprintf(models.KeyPatternActor, candidate)
+
+		err := r.db.WithContext(ctx).Model(&actorModel).
+			Where("PK", "=", pk).
+			Where("SK", "=", models.SKProfile).
+			First(&actorModel)
+		if err == nil {
+			return &actorModel, candidate, nil
+		}
+		if !isAccountNotFound(err) {
+			return nil, "", ErrorHandler.HandleGetError(err, EntityActor, canonical)
+		}
+	}
+
+	return nil, "", ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActor, canonical)
+}
+
+func (r *AccountRepository) resolveStoredUsername(ctx context.Context, username string) (string, error) {
+	_, resolvedUsername, err := r.getUserModel(ctx, username)
+	if err != nil {
+		return "", err
+	}
+	return resolvedUsername, nil
 }
 
 func (r *AccountRepository) isLocalDomain(domain string) bool {
@@ -539,7 +591,8 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 		return common.ValidationError{Field: "PreferredUsername", Message: "username is required"}
 	}
 
-	username := actor.PreferredUsername
+	username := r.canonicalUsername(actor.PreferredUsername)
+	actor = r.normalizeLocalActorIdentity(username, actor)
 	numericID := common.GenerateNumericID(username)
 
 	r.logger.Info("creating actor",
@@ -638,19 +691,9 @@ func (r *AccountRepository) deleteActor(ctx context.Context, username string) er
 
 // GetActorPrivateKey retrieves an actor's private key
 func (r *AccountRepository) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	var actorModel models.Actor
-
-	// Use key utilities for consistent key generation
-	pk := fmt.Sprintf(models.KeyPatternActor, username)
-
-	err := r.db.WithContext(ctx).Model(&actorModel).
-		Where("PK", "=", pk).
-		Where("SK", "=", models.SKProfile).
-		Select("PrivateKey").
-		First(&actorModel)
-
+	actorModel, _, err := r.getActorModel(ctx, username)
 	if err != nil {
-		return "", ErrorHandler.HandleGetError(err, EntityActor, username)
+		return "", err
 	}
 
 	// Decrypt private key - REQUIRED
@@ -736,6 +779,43 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 	}
 
 	return user
+}
+
+func (r *AccountRepository) normalizeLocalActorIdentity(username string, actor *activitypub.Actor) *activitypub.Actor {
+	if actor == nil {
+		return nil
+	}
+
+	canonical := r.canonicalUsername(username)
+	if canonical == "" {
+		canonical = r.canonicalUsername(actor.PreferredUsername)
+	}
+	if canonical == "" {
+		return actor
+	}
+
+	baseURL := r.actorBaseURL()
+	normalized := activitypubutil.BuildLocalActor(canonical, baseURL, nil, actor)
+	if normalized == nil {
+		return actor
+	}
+
+	normalized.PreferredUsername = canonical
+	if baseURL != "" {
+		normalized.ID = fmt.Sprintf("%s/users/%s", baseURL, canonical)
+		normalized.URL = fmt.Sprintf("%s/@%s", baseURL, canonical)
+		normalized.Inbox = fmt.Sprintf("%s/users/%s/inbox", baseURL, canonical)
+		normalized.Outbox = fmt.Sprintf("%s/users/%s/outbox", baseURL, canonical)
+		normalized.Followers = fmt.Sprintf("%s/users/%s/followers", baseURL, canonical)
+		normalized.Following = fmt.Sprintf("%s/users/%s/following", baseURL, canonical)
+		normalized.Liked = fmt.Sprintf("%s/users/%s/liked", baseURL, canonical)
+		if normalized.Endpoints == nil {
+			normalized.Endpoints = &activitypub.Endpoints{}
+		}
+		normalized.Endpoints.SharedInbox = fmt.Sprintf("%s/inbox", baseURL)
+	}
+
+	return normalized
 }
 
 // UserUpdatePayload captures mutable account fields accepted from federation updates.
@@ -1054,7 +1134,7 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 
 // isAccountNotFound checks if an error is a not found error
 func isAccountNotFound(err error) bool {
-	return dynamormErrors.IsNotFound(err) || strings.Contains(err.Error(), "not found")
+	return dynamormErrors.IsNotFound(err) || IsRepositoryNotFoundError(err) || strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 // ===== Account Pin Operations =====
@@ -1366,11 +1446,12 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 		return ErrorHandler.HandleUpdateError(errors.New("username is required"), EntityUser, "account")
 	}
 
-	pk := fmt.Sprintf("USER#%s", username)
-	userModel := &models.User{}
-	if err := r.Get(ctx, pk, models.SKMetadata, userModel); err != nil {
-		return ErrorHandler.HandleGetError(err, EntityUser, username)
+	userModel, resolvedUsername, err := r.getUserModel(ctx, username)
+	if err != nil {
+		return err
 	}
+	username = resolvedUsername
+	pk := fmt.Sprintf("USER#%s", username)
 
 	// Ensure we have the current optimistic locking version
 	versionExistsInDB := userModel.Version > 0 // If Version > 0 after Get(), it exists in DB
