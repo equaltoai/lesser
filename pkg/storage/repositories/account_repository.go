@@ -492,7 +492,9 @@ func (r *AccountRepository) getUserModel(ctx context.Context, username string) (
 
 func (r *AccountRepository) getActorModel(ctx context.Context, username string) (*models.Actor, string, error) {
 	canonical := r.canonicalUsername(username)
+	attemptedUsernames := map[string]struct{}{}
 	for _, candidate := range r.usernameLookupCandidates(username) {
+		attemptedUsernames[candidate] = struct{}{}
 		var actorModel models.Actor
 		pk := fmt.Sprintf(models.KeyPatternActor, candidate)
 
@@ -513,6 +515,10 @@ func (r *AccountRepository) getActorModel(ctx context.Context, username string) 
 		return nil, "", ErrorHandler.HandleGetError(err, EntityActor, canonical)
 	}
 	if resolvedUsername != "" {
+		if _, alreadyTried := attemptedUsernames[resolvedUsername]; alreadyTried {
+			return nil, "", ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActor, canonical)
+		}
+
 		var actorModel models.Actor
 		pk := fmt.Sprintf(models.KeyPatternActor, resolvedUsername)
 		err = r.db.WithContext(ctx).Model(&actorModel).
@@ -572,6 +578,14 @@ func (r *AccountRepository) lookupUserModelByCanonicalHandle(ctx context.Context
 		First(&userModel)
 	if err != nil {
 		return nil, err
+	}
+
+	resolvedUsername := strings.TrimSpace(userModel.Username)
+	if resolvedUsername == "" || !strings.EqualFold(resolvedUsername, normalizedUsername) {
+		return nil, storage.ErrNotFound
+	}
+	if resolvedUsername == normalizedUsername {
+		return nil, storage.ErrNotFound
 	}
 
 	return &userModel, nil
