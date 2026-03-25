@@ -19,6 +19,7 @@
    - The sender's `UserConversationState` is always `RequestState=ACCEPTED`.
    - The sender's row may still become `Folder=HIDDEN` if they delete the conversation for themselves.
    - The sender never has a `REQUESTS` or `DECLINED` folder for their own outbound DM row.
+   - Any successful outbound send by the sender clears `DeletedAt`, keeps `RequestState=ACCEPTED`, and returns the sender row to `Folder=INBOX`.
 3. **Define recipient-side request semantics exactly once.**
    - A new inbound DM lands in `Folder=INBOX` with `RequestState=ACCEPTED` when policy allows direct delivery.
    - A new inbound DM lands in `Folder=REQUESTS` with `RequestState=PENDING` when policy requires consent.
@@ -33,13 +34,15 @@
    - Delete-for-me sets `DeletedAt` and moves the viewer row to `Folder=HIDDEN`.
    - It never deletes the shared conversation row, DM `Status` rows, or the counterpart's `UserConversationState`.
    - Restoring a hidden row clears `DeletedAt` and recomputes `Folder` from the retained consent state.
-6. **Define reopen behavior for future inbound DMs.**
+6. **Define reopen behavior for future inbound and outbound DMs.**
    - A new inbound DM to a hidden accepted thread clears `DeletedAt`, moves the viewer row back to `Folder=INBOX`, and marks it unread.
+   - A successful outbound send from a sender-hidden thread clears `DeletedAt`, moves the sender row back to `Folder=INBOX`, and leaves the sender row read after the send completes.
    - A new inbound DM to a declined thread reopens as a fresh request: clear `DeclinedAt`, set `RequestState=PENDING`, set `RequestedAt` to the new inbound time, move the row to `Folder=REQUESTS`, and mark it unread.
    - A pending request remains a single outstanding consent decision; later write-path work must not append unlimited pending-request spam to the viewer's visible inbox.
 7. **Keep unread as a secondary view, not a competing lifecycle.**
    - `Unread=true` means the viewer has unseen thread activity.
    - Unread does not override `Folder`; it only provides a sparse query over visible per-user state.
+   - The unread index includes only rows whose current folder is query-visible (`INBOX` or `REQUESTS`); rows in `DECLINED` or `HIDDEN` must not remain in that sparse index.
 
 ## Consequences
 

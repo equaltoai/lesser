@@ -21,7 +21,7 @@
 3. **Materialize keyed DM list access directly on the row.** The target index attributes are:
    - `gsi1PK = USER_CONVERSATION_FOLDER#<viewerID>#<folder>`
    - `gsi1SK = <sortAt RFC3339Nano>#<conversationID>`
-   - `gsi2PK = USER_CONVERSATION_UNREAD#<viewerID>` when `Unread=true` and omitted otherwise
+   - `gsi2PK = USER_CONVERSATION_UNREAD#<viewerID>` only when the row is both unread and query-visible (`Folder=INBOX` or `Folder=REQUESTS`, `DeletedAt=nil`); omit it for hidden or declined rows
    - `gsi2SK = <sortAt RFC3339Nano>#<conversationID>`
    - `gsi3PK = CONVERSATION#<conversationID>`
    - `gsi3SK = USER#<viewerID>`
@@ -34,7 +34,7 @@ type UserConversationState struct {
 
     GSI1PK string // USER_CONVERSATION_FOLDER#<viewerID>#<folder>
     GSI1SK string // <sortAt RFC3339Nano>#<conversationID>
-    GSI2PK string // USER_CONVERSATION_UNREAD#<viewerID> when unread
+    GSI2PK string // USER_CONVERSATION_UNREAD#<viewerID> when unread and query-visible
     GSI2SK string // <sortAt RFC3339Nano>#<conversationID>
     GSI3PK string // CONVERSATION#<conversationID>
     GSI3SK string // USER#<viewerID>
@@ -61,6 +61,7 @@ type UserConversationState struct {
 5. **Treat index attributes as denormalized access paths, not independent sources of truth.**
    - `Folder`, `RequestState`, `Unread`, `PreviewStatusID`, `PreviewStatusPublishedAt`, `SortAt`, and `DeletedAt` are logical fields on `UserConversationState`.
    - `gsi1*`, `gsi2*`, and `gsi3*` exist only to support keyed queries over that same row.
+   - `gsi2*` is the sparse index for visible unread rows, not a blanket mirror of every `Unread=true` row.
 6. **Keep the row intentionally 1:1 aware.** `CounterpartID` is required because the DM rewrite remains 1:1 only and later list APIs need a stable actor ID for batch enrichment without embedded snapshots.
 
 ## Consequences

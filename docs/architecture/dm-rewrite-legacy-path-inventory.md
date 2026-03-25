@@ -41,6 +41,7 @@ This inventory marks the legacy DM storage shapes and scan-based runtime paths t
 - `pkg/storage/repositories/conversation_repository.go`
   - `GetUserConversations`
   - `GetUserConversationsByRequestState`
+  - `GetUnreadConversations`
   - `scanUserConversationsByRequestState`
   - `fetchUserConversationParticipantRecords`
   - `GetUnreadConversationCount`
@@ -48,6 +49,7 @@ This inventory marks the legacy DM storage shapes and scan-based runtime paths t
   - `RemoveStatusFromConversation`
 - Why they go away:
   - they load participant snapshot rows and filter in Go instead of querying keyed canonical DM state
+  - unread listing still fans out through `GetUserConversations` plus legacy unread rows instead of querying a sparse unread index
   - unread counting fans out across legacy unread rows
   - thread reads and message mutation still assume `ConversationMessage`
 

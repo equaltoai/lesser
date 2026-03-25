@@ -1158,6 +1158,9 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 	return nil
 }
 
+// Deprecated: DM rewrite M4/M5 replaces unread list fan-out with a keyed sparse unread query
+// over canonical per-user DM state.
+//
 // GetUnreadConversations retrieves unread conversations for a user (KEEP - Complex filtering logic)
 func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	log := r.logger.With(zap.String("user_id", userID))
