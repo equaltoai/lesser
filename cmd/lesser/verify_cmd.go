@@ -11,9 +11,16 @@ import (
 )
 
 const (
-	defaultVerifyCIJobs              = 2
-	defaultVerifyCICoverageBatchSize = 10
+	defaultVerifyCIJobs              = 1
+	defaultVerifyCICoverageBatchSize = 5
+	defaultVerifyCIGOMEMLIMIT        = "1536MiB"
+	defaultVerifyCIGOGC              = "50"
+	envValueOff                      = "off"
 	lesserVerifyCIJobsEnv            = "LESSER_VERIFY_CI_JOBS"
+	lesserVerifyCIGOMEMLIMITEnv      = "LESSER_VERIFY_CI_GOMEMLIMIT"
+	lesserVerifyCIGOGCEnv            = "LESSER_VERIFY_CI_GOGC"
+	goMemoryLimitEnvVar              = "GOMEMLIMIT"
+	goGCEnvVar                       = "GOGC"
 )
 
 func runVerify(argv []string) error {
@@ -172,26 +179,35 @@ func runVerifyCI(argv []string) error {
 	}
 	cmdPrefix := modulePath + "/cmd"
 	pkgPrefix := modulePath + "/pkg"
-	run := func() error {
-		if strings.TrimSpace(os.Getenv(coverageBatchSizeEnvVar)) != "" {
-			return runVerifyCIWorkflow(includeSecurity, cmdPrefix, pkgPrefix)
-		}
-		return withTemporaryEnv(map[string]string{
-			coverageBatchSizeEnvVar: fmt.Sprintf("%d", defaultVerifyCICoverageBatchSize),
-		}, func() error {
-			return runVerifyCIWorkflow(includeSecurity, cmdPrefix, pkgPrefix)
-		})
-	}
-
+	overrides := make(map[string]string)
 	if jobs := resolveVerifyCIJobs(); jobs > 0 {
-		return withTemporaryEnv(map[string]string{
-			lesserToolJobsEnvVar: fmt.Sprintf("%d", jobs),
-			goMaxProcsEnvVar:     fmt.Sprintf("%d", jobs),
-			goFlagsEnvVar:        goFlagsWithBuildParallelism(os.Getenv(goFlagsEnvVar), jobs),
-		}, run)
+		overrides[lesserToolJobsEnvVar] = fmt.Sprintf("%d", jobs)
+		overrides[goMaxProcsEnvVar] = fmt.Sprintf("%d", jobs)
+		overrides[goFlagsEnvVar] = goFlagsWithBuildParallelism(os.Getenv(goFlagsEnvVar), jobs)
+	}
+	if strings.TrimSpace(os.Getenv(coverageBatchSizeEnvVar)) == "" {
+		overrides[coverageBatchSizeEnvVar] = fmt.Sprintf("%d", resolveVerifyCICoverageBatchSize())
+	}
+	if limit := resolveVerifyCIGOMEMLIMIT(); limit != "" {
+		overrides[goMemoryLimitEnvVar] = limit
+	}
+	if gc := resolveVerifyCIGOGC(); gc != "" {
+		overrides[goGCEnvVar] = gc
 	}
 
-	return run()
+	run := func() error {
+		return runVerifyCIWorkflow(includeSecurity, cmdPrefix, pkgPrefix)
+	}
+	if len(overrides) == 0 {
+		return run()
+	}
+	fmt.Fprintf(os.Stderr, "info: verify ci resource profile enabled (jobs=%s, coverage-batch=%s, GOMEMLIMIT=%s, GOGC=%s)\n",
+		effectiveOverrideValue(overrides, lesserToolJobsEnvVar, os.Getenv(lesserToolJobsEnvVar)),
+		effectiveOverrideValue(overrides, coverageBatchSizeEnvVar, os.Getenv(coverageBatchSizeEnvVar)),
+		effectiveOverrideValue(overrides, goMemoryLimitEnvVar, os.Getenv(goMemoryLimitEnvVar)),
+		effectiveOverrideValue(overrides, goGCEnvVar, os.Getenv(goGCEnvVar)),
+	)
+	return withTemporaryEnv(overrides, run)
 }
 
 func readVerifyCIModulePath() (string, error) {
@@ -278,20 +294,61 @@ func resolveVerifyCIJobs() int {
 		}
 	}
 
-	if strings.TrimSpace(os.Getenv(lesserToolJobsEnvVar)) != "" ||
-		strings.TrimSpace(os.Getenv(goMaxProcsEnvVar)) != "" ||
-		goFlagsHasBuildParallelism(strings.TrimSpace(os.Getenv(goFlagsEnvVar))) {
+	if (strings.TrimSpace(os.Getenv(goMaxProcsEnvVar)) != "" && !envVarTruthy(lesserDefaultedGoMaxProcsEnvVar)) ||
+		(goFlagsHasBuildParallelism(strings.TrimSpace(os.Getenv(goFlagsEnvVar))) && !envVarTruthy(lesserDefaultedGoFlagsParallelismEnvVar)) {
 		return 0
 	}
+	return defaultVerifyCIJobs
+}
 
-	jobs := resolveToolJobs()
-	if jobs <= 0 {
-		return defaultVerifyCIJobs
+func resolveVerifyCICoverageBatchSize() int {
+	return defaultVerifyCICoverageBatchSize
+}
+
+func resolveVerifyCIGOMEMLIMIT() string {
+	if value := strings.TrimSpace(os.Getenv(lesserVerifyCIGOMEMLIMITEnv)); value != "" {
+		return value
 	}
-	if jobs > defaultVerifyCIJobs {
-		return defaultVerifyCIJobs
+	if strings.TrimSpace(os.Getenv(goMemoryLimitEnvVar)) != "" {
+		return ""
 	}
-	return jobs
+
+	return defaultVerifyCIGOMEMLIMIT
+}
+
+func resolveVerifyCIGOGC() string {
+	if value := strings.TrimSpace(os.Getenv(lesserVerifyCIGOGCEnv)); value != "" {
+		return value
+	}
+	if strings.TrimSpace(os.Getenv(goGCEnvVar)) != "" {
+		return ""
+	}
+
+	return defaultVerifyCIGOGC
+}
+
+func envVarTruthy(key string) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return false
+	}
+
+	switch strings.ToLower(value) {
+	case "0", "false", "no", envValueOff:
+		return false
+	default:
+		return true
+	}
+}
+
+func effectiveOverrideValue(overrides map[string]string, key, fallback string) string {
+	if value, ok := overrides[key]; ok {
+		return value
+	}
+	if strings.TrimSpace(fallback) != "" {
+		return fallback
+	}
+	return "unset"
 }
 
 func withTemporaryEnv(overrides map[string]string, fn func() error) error {

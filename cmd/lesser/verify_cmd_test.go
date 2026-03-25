@@ -101,6 +101,8 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	t.Setenv("LESSER_JOBS", "8")
 	t.Setenv(goMaxProcsEnvVar, "")
 	t.Setenv(goFlagsEnvVar, "")
+	t.Setenv(lesserSecScanBatchSizeEnv, "10")
+	t.Setenv(lesserVulnCheckBatchSizeEnv, "10")
 
 	repoRoot := t.TempDir()
 	findRepoRootFn = func() (string, error) { return repoRoot, nil }
@@ -108,8 +110,16 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.25\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
-	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
-		if len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
+	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, name string, args ...string) (string, error) {
+		if name == "go" && len(args) >= 4 && args[0] == "list" && args[1] == "-f" {
+			return strings.Join([]string{
+				filepath.Join(repoRoot, "cmd", "lesser"),
+				filepath.Join(repoRoot, "pkg", "common"),
+				filepath.Join(repoRoot, "pkg", "testing", "harness"),
+				filepath.Join(repoRoot, "tools", "coverage_scoreboard"),
+			}, "\n"), nil
+		}
+		if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
 			return strings.Join([]string{
 				"github.com/equaltoai/lesser/cmd/lesser",
 				"github.com/equaltoai/lesser/pkg/common",
@@ -121,16 +131,20 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	}
 
 	var calls []string
+	var coverageRuns int
 	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
 		if name == "golangci-lint" {
 			calls = append(calls, name+" "+strings.Join(args, " "))
 		} else if name == "go" && firstArgOrEmpty(args) == "run" {
 			calls = append(calls, name+" "+strings.Join(args, " "))
-		} else if name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(strings.Join(args, " "), "-coverprofile=coverage_overall.out") {
+		} else if name == "go" && firstArgOrEmpty(args) == "test" {
 			calls = append(calls, name+" "+strings.Join(args, " "))
-			coveragePath := filepath.Join(repoRoot, "coverage_overall.out")
-			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
-			return os.WriteFile(coveragePath, []byte(coverageData), 0o644)
+			coverageRuns++
+			return writeCoverageProfileFromArgs(repoRoot, args)
+		} else if name == "gosec" {
+			calls = append(calls, name+" "+strings.Join(args, " "))
+		} else if name == "govulncheck" {
+			calls = append(calls, name+" "+strings.Join(args, " "))
 		} else {
 			calls = append(calls, name+" "+firstArgOrEmpty(args))
 		}
@@ -138,10 +152,42 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	}
 
 	require.NoError(t, runVerify([]string{"ci"}))
-	require.Contains(t, calls, "golangci-lint run --config .golangci.yml --disable gosec --concurrency 8")
+	var sawBatchedLint bool
+	for _, call := range calls {
+		if !strings.HasPrefix(call, "golangci-lint run --config .golangci.yml --disable gosec --concurrency 1") {
+			continue
+		}
+		if strings.Contains(call, "./cmd/lesser") && strings.Contains(call, "./pkg/common") {
+			sawBatchedLint = true
+			break
+		}
+	}
+	require.True(t, sawBatchedLint)
 	require.Contains(t, calls, "go run ./tools/audit_gates --check")
-	require.Contains(t, calls, "gosec -quiet")
-	require.Contains(t, calls, "govulncheck ./...")
+	var sawBatchedSecScan bool
+	for _, call := range calls {
+		if !strings.HasPrefix(call, "gosec ") {
+			continue
+		}
+		if strings.Contains(call, "github.com/equaltoai/lesser/cmd/lesser") &&
+			strings.Contains(call, "github.com/equaltoai/lesser/pkg/common") {
+			sawBatchedSecScan = true
+			break
+		}
+	}
+	require.True(t, sawBatchedSecScan)
+	var sawBatchedVulnCheck bool
+	for _, call := range calls {
+		if !strings.HasPrefix(call, "govulncheck ") {
+			continue
+		}
+		if strings.Contains(call, "github.com/equaltoai/lesser/cmd/lesser") &&
+			strings.Contains(call, "github.com/equaltoai/lesser/pkg/common") {
+			sawBatchedVulnCheck = true
+			break
+		}
+	}
+	require.True(t, sawBatchedVulnCheck)
 	require.Contains(t, calls, "bash scripts/verify_supply_chain.sh")
 	require.Contains(t, calls, "bash scripts/verify_lambda_set.sh")
 	require.Contains(t, calls, "bash scripts/verify_inventory.sh")
@@ -153,6 +199,7 @@ func TestRunVerifyCI_RunsLintSecurityAndVerifySuite(t *testing.T) {
 	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 85 --profile coverage_overall.out")
 	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 90 --profile coverage_overall.out --package github.com/equaltoai/lesser/pkg")
 	require.Contains(t, calls, "go run ./tools/coverage_scoreboard --mode package --top 10 --min 0 --sort-uncovered=true --exclude-generated=true --min-total 90 --profile coverage_overall.out --package github.com/equaltoai/lesser/cmd")
+	require.Equal(t, 1, coverageRuns)
 }
 
 func TestRunVerifyGraphQLCoverage_StrictFlag(t *testing.T) {

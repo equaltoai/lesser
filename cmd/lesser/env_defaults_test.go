@@ -29,44 +29,66 @@ func TestResolveToolJobs_PrefersLesserJobsThenGOMAXPROCS(t *testing.T) {
 	require.Equal(t, defaultCLIMaxToolJobs, resolveToolJobs())
 }
 
+func TestResolveToolJobs_UsesExplicitGOMAXPROCSWhenWithinCap(t *testing.T) {
+	t.Setenv(lesserToolJobsEnvVar, "")
+	t.Setenv(goMaxProcsEnvVar, "3")
+	require.Equal(t, 3, resolveToolJobs())
+}
+
 func TestApplyToolParallelismDefaults_SetsGOMAXPROCSAndGOFLAGSWhenUnset(t *testing.T) {
 	t.Setenv(lesserToolJobsEnvVar, "4")
 	t.Setenv(goMaxProcsEnvVar, "")
 	t.Setenv(goFlagsEnvVar, "")
+	t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+	t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 
 	applyToolParallelismDefaults()
 	require.Equal(t, "4", os.Getenv(goMaxProcsEnvVar))
 	require.Equal(t, "-p=4", os.Getenv(goFlagsEnvVar))
+	require.Equal(t, "1", os.Getenv(lesserDefaultedGoMaxProcsEnvVar))
+	require.Equal(t, "1", os.Getenv(lesserDefaultedGoFlagsParallelismEnvVar))
 }
 
 func TestApplyToolParallelismDefaults_AppendsToExistingGOFLAGS(t *testing.T) {
 	t.Setenv(lesserToolJobsEnvVar, "3")
 	t.Setenv(goMaxProcsEnvVar, "")
 	t.Setenv(goFlagsEnvVar, "-trimpath")
+	t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+	t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 
 	applyToolParallelismDefaults()
 	require.Equal(t, "3", os.Getenv(goMaxProcsEnvVar))
 	require.Equal(t, "-trimpath -p=3", os.Getenv(goFlagsEnvVar))
+	require.Equal(t, "1", os.Getenv(lesserDefaultedGoMaxProcsEnvVar))
+	require.Equal(t, "1", os.Getenv(lesserDefaultedGoFlagsParallelismEnvVar))
 }
 
 func TestApplyToolParallelismDefaults_DoesNotOverrideExistingSettings(t *testing.T) {
 	t.Setenv(lesserToolJobsEnvVar, "6")
 	t.Setenv(goMaxProcsEnvVar, "12")
 	t.Setenv(goFlagsEnvVar, "-p=20")
+	t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+	t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 
 	applyToolParallelismDefaults()
 	require.Equal(t, "12", os.Getenv(goMaxProcsEnvVar))
 	require.Equal(t, "-p=20", os.Getenv(goFlagsEnvVar))
+	require.Empty(t, os.Getenv(lesserDefaultedGoMaxProcsEnvVar))
+	require.Empty(t, os.Getenv(lesserDefaultedGoFlagsParallelismEnvVar))
 }
 
 func TestApplyToolParallelismDefaults_DoesNotModifyGOFLAGSWhenDashPTokenPresent(t *testing.T) {
 	t.Setenv(lesserToolJobsEnvVar, "5")
 	t.Setenv(goMaxProcsEnvVar, "")
 	t.Setenv(goFlagsEnvVar, "-trimpath -p")
+	t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+	t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 
 	applyToolParallelismDefaults()
 	require.Equal(t, "5", os.Getenv(goMaxProcsEnvVar))
 	require.Equal(t, "-trimpath -p", os.Getenv(goFlagsEnvVar))
+	require.Equal(t, "1", os.Getenv(lesserDefaultedGoMaxProcsEnvVar))
+	require.Empty(t, os.Getenv(lesserDefaultedGoFlagsParallelismEnvVar))
 }
 
 func TestResolveToolJobs_FallsBackToRuntime(t *testing.T) {
