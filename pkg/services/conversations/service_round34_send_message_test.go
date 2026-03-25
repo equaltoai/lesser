@@ -56,7 +56,7 @@ func TestService_SendMessage_Success(t *testing.T) {
 	accountRepo.On("GetAccount", ctx, "recipient456").Return(createTestAccount("recipient456", "bob"), nil)
 
 	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil).Once()
-	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil).Once()
+	conversationRepo.On("UpdateConversationLastStatus", ctx, "conv123", mock.AnythingOfType("string")).Return(nil).Once()
 
 	conversationRepo.
 		On("GetConversationParticipantRecord", ctx, "conv123", "sender123").

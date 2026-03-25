@@ -400,7 +400,7 @@ func TestConversationModels(t *testing.T) {
 		assert.ErrorIs(t, p.BeforeCreate("alice"), ErrConversationDataRequired)
 
 		updated := time.Unix(1700000000, 0).UTC()
-		p.Conversation = &Conversation{ID: "c1", UpdatedAt: updated}
+		p.Conversation = &Conversation{ID: "c1", Participants: []string{"alice", "bob"}, UpdatedAt: updated}
 		require.NoError(t, p.BeforeCreate("alice"))
 		assert.Equal(t, "USER_CONVERSATIONS#alice", p.PK)
 		assert.Equal(t, updated.Format(time.RFC3339)+"#c1", p.SK)

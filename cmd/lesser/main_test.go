@@ -137,6 +137,8 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevSoul := runSoulFn
 	prevMigrateUserKeys := runMigrateUserKeysFn
 	prevMigrateConversations := runMigrateConversationsFn
+	prevMigrateConversationMetadata := runMigrateConversationMetadataFn
+	prevMigrateConversationParticipantSnapshots := runMigrateConversationParticipantSnapshotsFn
 	prevMigrateNumericIDs := runMigrateNumericIDsFn
 	t.Cleanup(func() {
 		runUpFn = prevUp
@@ -167,6 +169,8 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 		runSoulFn = prevSoul
 		runMigrateUserKeysFn = prevMigrateUserKeys
 		runMigrateConversationsFn = prevMigrateConversations
+		runMigrateConversationMetadataFn = prevMigrateConversationMetadata
+		runMigrateConversationParticipantSnapshotsFn = prevMigrateConversationParticipantSnapshots
 		runMigrateNumericIDsFn = prevMigrateNumericIDs
 	})
 
@@ -209,6 +213,8 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runSoulFn = stub("soul")
 	runMigrateUserKeysFn = stub("migrate-user-keys")
 	runMigrateConversationsFn = stub("migrate-conversations")
+	runMigrateConversationMetadataFn = stub("migrate-conversation-metadata")
+	runMigrateConversationParticipantSnapshotsFn = stub("migrate-conversation-participant-snapshots")
 	runMigrateNumericIDsFn = stub("migrate-numeric-ids")
 
 	var buf bytes.Buffer
@@ -305,6 +311,12 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-conversations", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-conversations"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-conversation-metadata", "--env", "dev"}, &buf))
+	require.Equal(t, []string{"--env", "dev"}, calls["migrate-conversation-metadata"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-conversation-participant-snapshots", "--env", "dev"}, &buf))
+	require.Equal(t, []string{"--env", "dev"}, calls["migrate-conversation-participant-snapshots"].argv)
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-numeric-ids", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-numeric-ids"].argv)

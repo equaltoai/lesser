@@ -31,6 +31,10 @@ func canonicalConversationParticipantIndexSK(participantID string) string {
 	return fmt.Sprintf("PARTICIPANT#%s", models.CanonicalConversationParticipantID(participantID))
 }
 
+func conversationParticipantLookupPK(participants []string) string {
+	return fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", strings.Join(models.CanonicalConversationParticipants(participants), ","))
+}
+
 func canonicalConversationStatusSK(participantID string) string {
 	return fmt.Sprintf("USER#%s", models.CanonicalConversationParticipantID(participantID))
 }
@@ -181,9 +185,18 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		ConversationID: conversation.ID,
 	}
 
-	if err := r.GetDB().Model(lookupKey).WithContext(ctx).Create(); err != nil {
+	if err := r.GetDB().Model(lookupKey).WithContext(ctx).IfNotExists().Create(); err != nil {
+		if errors.IsConditionFailed(err) {
+			log.Info("participant lookup already exists; cleaning up duplicate conversation create",
+				zap.String("participant_key", participantKey),
+				zap.String("conversation_id", conversation.ID))
+			if cleanupErr := r.DeleteConversation(ctx, conversation.ID); cleanupErr != nil {
+				return ErrorHandler.HandleCreateError(fmt.Errorf("lookup collision cleanup failed: %w", cleanupErr), EntityConversation, conversation.ID)
+			}
+			return storage.ErrAlreadyExists
+		}
 		log.Warn("failed to create participant lookup key", zap.Error(err))
-		// Don't fail the operation if lookup key creation fails
+		return ErrorHandler.HandleCreateError(err, EntityConversation, participantKey)
 	}
 
 	log.Debug("conversation created successfully")
@@ -502,14 +515,40 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 	if record.PK == "" || record.SK == "" {
 		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "participant record keys missing")
 	}
-	if record.SyncConversationData() != nil {
-		record.Conversation.Unread = record.Unread
+
+	updateBuilder := r.GetDB().WithContext(ctx).Model(record).
+		Where("PK", "=", record.PK).
+		Where("SK", "=", record.SK).
+		UpdateBuilder().
+		Set("Unread", record.Unread)
+
+	if strings.TrimSpace(string(record.RequestState)) == "" {
+		updateBuilder.Remove("RequestState")
+	} else {
+		updateBuilder.Set("RequestState", record.RequestState)
 	}
 
-	if err := r.GetDB().WithContext(ctx).Model(record).Update(); err != nil {
+	applyOptionalConversationParticipantTime(updateBuilder, "RequestedAt", record.RequestedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "AcceptedAt", record.AcceptedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "DeclinedAt", record.DeclinedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "DeletedAt", record.DeletedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "LastReadAt", record.LastReadAt)
+
+	if err := updateBuilder.Execute(); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
 	}
 	return nil
+}
+
+func applyOptionalConversationParticipantTime(updateBuilder core.UpdateBuilder, field string, value *time.Time) {
+	if updateBuilder == nil {
+		return
+	}
+	if value == nil || value.IsZero() {
+		updateBuilder.Remove(field)
+		return
+	}
+	updateBuilder.Set(field, value.UTC())
 }
 
 func (r *ConversationRepository) findParticipantRecordsByConversationAndParticipant(ctx context.Context, conversationID, participantID string) ([]models.ConversationParticipantRecord, error) {
@@ -544,14 +583,13 @@ func (r *ConversationRepository) findParticipantRecordsByConversationAndParticip
 func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
-	participantKey := strings.Join(models.CanonicalConversationParticipants(participants), ",")
+	participantKey := conversationParticipantLookupPK(participants)
 
-	// Query by participant key using GSI1
+	// Exact participant lookups are deterministic, so use a base-table point read.
 	var record models.ConversationParticipantKey
 	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey)).
-		Limit(1).
+		Where("PK", "=", participantKey).
+		Where("SK", "=", "LOOKUP").
 		First(&record)
 
 	if err != nil {
@@ -919,18 +957,38 @@ func (r *ConversationRepository) GetConversationParticipants(ctx context.Context
 
 // UpdateConversationLastStatus updates the last status in a conversation (KEEP - Conversation state update logic)
 func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	// Get current conversation
-	conv, err := r.GetConversation(ctx, id)
+	var status models.Status
+	err := r.GetDB().WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", "status#"+lastStatusID).
+		Where("SK", "=", "status#"+lastStatusID).
+		First(&status)
 	if err != nil {
-		return err
+		return ErrorHandler.HandleGetError(err, EntityConversation, id)
 	}
 
-	// Update fields
-	conv.LastStatusID = lastStatusID
-	conv.UpdatedAt = time.Now()
+	if conversationID := strings.TrimSpace(status.ConversationID); conversationID != "" && conversationID != id {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, id)
+	}
 
-	// Update the conversation (this will recreate participant records with new timestamps)
-	return r.UpdateConversation(ctx, conv)
+	lastMessageTime := status.PublishedAt.UTC()
+	if lastMessageTime.IsZero() {
+		lastMessageTime = status.CreatedAt.UTC()
+	}
+	if lastMessageTime.IsZero() {
+		lastMessageTime = time.Now().UTC()
+	}
+
+	updateBuilder := r.GetDB().WithContext(ctx).Model(&models.Conversation{}).
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", id)).
+		Where("SK", "=", "METADATA").
+		UpdateBuilder().
+		SetIfNotExists("TotalMessageCount", nil, int64(0)).
+		Add("TotalMessageCount", 1).
+		Set("LastStatusID", lastStatusID).
+		Set("LastMessageTime", lastMessageTime).
+		Set("UpdatedAt", time.Now().UTC())
+
+	return ErrorHandler.HandleUpdateError(updateBuilder.Execute(), EntityConversation, id)
 }
 
 // RemoveParticipant removes a participant from a conversation (KEEP - Complex participant management)

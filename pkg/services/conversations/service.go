@@ -486,6 +486,15 @@ func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd 
 	}
 
 	if err := s.conversationRepo.CreateConversation(ctx, conversation, lookupParticipants); err != nil {
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			existingConversation, reloadErr := s.conversationRepo.GetConversationByParticipants(ctx, lookupParticipants)
+			if reloadErr == nil && existingConversation != nil {
+				return existingConversation, nil
+			}
+			s.logger.Warn("conversation create lost a lookup race and canonical reload failed",
+				zap.Strings("participants", lookupParticipants),
+				zap.Error(reloadErr))
+		}
 		s.logger.Error("failed to create conversation", zap.String("conversation_id", conversationID), zap.Error(err))
 		s.auditDMEvent(ctx, cmd, conversationID, false, "create_conversation_failed", map[string]any{
 			"recipient_id": recipientID,
@@ -649,10 +658,20 @@ func (s *Service) createDirectMessageStatus(ctx context.Context, cmd *SendDirect
 	return status, messageID, nil
 }
 
-func (s *Service) updateConversationLastStatus(ctx context.Context, conversation *models.Conversation, messageID string) {
-	conversation.LastStatusID = messageID
-	conversation.UpdatedAt = time.Now()
-	if err := s.conversationRepo.UpdateConversation(ctx, conversation); err != nil {
+func (s *Service) updateConversationLastStatus(ctx context.Context, conversation *models.Conversation, status *models.Status) {
+	if conversation == nil || status == nil {
+		return
+	}
+
+	conversation.LastStatusID = status.StatusID
+	conversation.TotalMessageCount++
+	conversation.LastMessageTime = status.PublishedAt
+	if conversation.LastMessageTime.IsZero() {
+		conversation.LastMessageTime = time.Now().UTC()
+	}
+	conversation.UpdatedAt = time.Now().UTC()
+
+	if err := s.conversationRepo.UpdateConversationLastStatus(ctx, conversation.ID, status.StatusID); err != nil {
 		s.logger.Warn("failed to update conversation", zap.Error(err))
 	}
 }
@@ -791,7 +810,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		return nil, err
 	}
 
-	s.updateConversationLastStatus(ctx, conversation, messageID)
+	s.updateConversationLastStatus(ctx, conversation, status)
 	s.updateDirectMessageParticipantStateAfterSend(ctx, conversation.ID, cmd.SenderID, recipientID, deliversToInbox)
 	s.updateConversationUnreadAfterSend(ctx, conversation, cmd.SenderID, recipientID)
 
@@ -1018,12 +1037,12 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		return nil, err
 	}
 
-	status, messageID, err := s.createSendMessageStatus(ctx, cmd, sendCmd, sender, recipient, conversation.ID, recipientID)
+	status, _, err := s.createSendMessageStatus(ctx, cmd, sendCmd, sender, recipient, conversation.ID, recipientID)
 	if err != nil {
 		return nil, err
 	}
 
-	s.updateConversationLastStatus(ctx, conversation, messageID)
+	s.updateConversationLastStatus(ctx, conversation, status)
 	s.updateSendMessageParticipantStateAfterSend(ctx, conversation.ID, cmd.SenderID, recipientID)
 	s.updateConversationUnreadAfterSend(ctx, conversation, cmd.SenderID, recipientID)
 
@@ -1621,9 +1640,21 @@ func (s *Service) updateParticipantRecord(ctx context.Context, conversationID, p
 	if record == nil {
 		return storage.ErrNotFound
 	}
+	if participantRecordSnapshotCorrupt(record) {
+		s.logger.Warn("participant record snapshot missing canonical conversation identity",
+			zap.String("conversation_id", conversationID),
+			zap.String("participant_id", participantID))
+	}
 
 	mutator(record)
 	return s.conversationRepo.UpdateConversationParticipantRecord(ctx, record)
+}
+
+func participantRecordSnapshotCorrupt(record *models.ConversationParticipantRecord) bool {
+	if record == nil || record.ConversationData == nil {
+		return true
+	}
+	return strings.TrimSpace(record.ConversationData.ID) == "" || len(record.ConversationData.Participants) == 0
 }
 
 // DeleteConversation implements delete-for-me semantics for a DM conversation.

@@ -235,11 +235,12 @@ func TestRound07_ConversationRepository_CreateConversation_EmptyParticipantsAndL
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Create").Return(nil).Once()                            // main conversation record
+	mockQuery.On("IfNotExists").Return(mockQuery).Once()                 // conditional lookup key create
 	mockQuery.On("Create").Return(stdErrors.New("lookup-failed")).Once() // lookup key
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	conv := &models.Conversation{}
-	require.NoError(t, repo.CreateConversation(context.Background(), conv, nil))
+	require.Error(t, repo.CreateConversation(context.Background(), conv, nil))
 }
 
 func TestRound07_ConversationRepository_GetConversationByParticipants_ErrorBranches(t *testing.T) {
@@ -272,9 +273,8 @@ func TestRound07_ConversationRepository_GetConversationByParticipants_Canonicali
 	mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantKey")).Return(mockQuery).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(mockQuery).Once()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
-	mockQuery.On("Where", "gsi1PK", "=", "CONVERSATION_PARTICIPANTS#arch,medic").Return(mockQuery).Once()
-	mockQuery.On("Limit", 1).Return(mockQuery).Once()
+	mockQuery.On("Where", "PK", "=", "CONVERSATION_PARTICIPANTS#arch,medic").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", "LOOKUP").Return(mockQuery).Once()
 	mockQuery.On("First", mock.AnythingOfType("*models.ConversationParticipantKey")).Run(func(args mock.Arguments) {
 		record := args.Get(0).(*models.ConversationParticipantKey)
 		record.ConversationID = "conv-1"
