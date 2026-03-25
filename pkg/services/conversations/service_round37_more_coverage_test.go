@@ -448,11 +448,52 @@ func TestService_updateConversationLastStatus_HandlesUpdateFailures(t *testing.T
 	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	conversationRepo.
-		On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).
+		On("UpdateConversationLastStatus", ctx, "conv123", "msg-1").
 		Return(errors.New("boom")).
 		Once()
 
-	service.updateConversationLastStatus(ctx, createTestConversation("conv123", []string{"alice", "bob"}), "msg-1")
+	service.updateConversationLastStatus(ctx, createTestConversation("conv123", []string{"alice", "bob"}), &models.Status{
+		StatusID:    "msg-1",
+		PublishedAt: time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC),
+	})
+	conversationRepo.AssertExpectations(t)
+}
+
+func TestService_updateConversationLastStatus_TracksFirstAndSubsequentMessages(t *testing.T) {
+	ctx := context.Background()
+
+	conversationRepo := &mockConversationRepository{}
+	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	conversation := createTestConversation("conv123", []string{"alice", "bob"})
+
+	firstPublishedAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+	secondPublishedAt := firstPublishedAt.Add(2 * time.Minute)
+
+	conversationRepo.
+		On("UpdateConversationLastStatus", ctx, "conv123", "msg-1").
+		Return(nil).
+		Once()
+	conversationRepo.
+		On("UpdateConversationLastStatus", ctx, "conv123", "msg-2").
+		Return(nil).
+		Once()
+
+	service.updateConversationLastStatus(ctx, conversation, &models.Status{
+		StatusID:    "msg-1",
+		PublishedAt: firstPublishedAt,
+	})
+	require.Equal(t, "msg-1", conversation.LastStatusID)
+	require.EqualValues(t, 1, conversation.TotalMessageCount)
+	require.Equal(t, firstPublishedAt, conversation.LastMessageTime)
+
+	service.updateConversationLastStatus(ctx, conversation, &models.Status{
+		StatusID:    "msg-2",
+		PublishedAt: secondPublishedAt,
+	})
+	require.Equal(t, "msg-2", conversation.LastStatusID)
+	require.EqualValues(t, 2, conversation.TotalMessageCount)
+	require.Equal(t, secondPublishedAt, conversation.LastMessageTime)
+
 	conversationRepo.AssertExpectations(t)
 }
 

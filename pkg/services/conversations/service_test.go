@@ -768,7 +768,7 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
 
 	// Update conversation
-	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
+	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil)
 
 	// DM request lifecycle + unread tracking
 	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
@@ -838,7 +838,7 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
 
 	// Update conversation
-	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
+	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil)
 
 	// DM request lifecycle + unread tracking
 	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
@@ -890,7 +890,7 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
 
 	// Update conversation
-	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
+	conversationRepo.On("UpdateConversationLastStatus", ctx, "conv123", mock.AnythingOfType("string")).Return(nil)
 
 	// DM request lifecycle + unread tracking
 	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)

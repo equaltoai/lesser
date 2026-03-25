@@ -11,35 +11,37 @@ func main() {
 }
 
 var (
-	runUpFn                   = runUp
-	runDownFn                 = runDown
-	runClientDeployFn         = runClientDeploy
-	runInitAdminFn            = runInitAdmin
-	runBuildFn                = runBuild
-	runGenerateFn             = runGenerate
-	runVerifyFn               = runVerify
-	runTestFn                 = runTest
-	runCoverageFn             = runCoverage
-	runDevFn                  = runDev
-	runFmtFn                  = runFmt
-	runLintFn                 = runLint
-	runSecScanFn              = runSecScan
-	runVulnCheckFn            = runVulnCheck
-	runGqlgenFn               = runGqlgen
-	runTidyFn                 = runTidy
-	runSchemaFn               = runSchema
-	runExportSchemaFn         = runExportSchema
-	runLogsFn                 = runLogs
-	runMetricsFn              = runMetrics
-	runErrorsFn               = runErrors
-	runDashboardFn            = runDashboard
-	runSmokeFn                = runSmoke
-	runAuthFn                 = runAuth
-	runAPIFn                  = runAPI
-	runSoulFn                 = runSoul
-	runMigrateUserKeysFn      = runMigrateUserKeys
-	runMigrateConversationsFn = runMigrateConversations
-	runMigrateNumericIDsFn    = runMigrateNumericIDs
+	runUpFn                                      = runUp
+	runDownFn                                    = runDown
+	runClientDeployFn                            = runClientDeploy
+	runInitAdminFn                               = runInitAdmin
+	runBuildFn                                   = runBuild
+	runGenerateFn                                = runGenerate
+	runVerifyFn                                  = runVerify
+	runTestFn                                    = runTest
+	runCoverageFn                                = runCoverage
+	runDevFn                                     = runDev
+	runFmtFn                                     = runFmt
+	runLintFn                                    = runLint
+	runSecScanFn                                 = runSecScan
+	runVulnCheckFn                               = runVulnCheck
+	runGqlgenFn                                  = runGqlgen
+	runTidyFn                                    = runTidy
+	runSchemaFn                                  = runSchema
+	runExportSchemaFn                            = runExportSchema
+	runLogsFn                                    = runLogs
+	runMetricsFn                                 = runMetrics
+	runErrorsFn                                  = runErrors
+	runDashboardFn                               = runDashboard
+	runSmokeFn                                   = runSmoke
+	runAuthFn                                    = runAuth
+	runAPIFn                                     = runAPI
+	runSoulFn                                    = runSoul
+	runMigrateUserKeysFn                         = runMigrateUserKeys
+	runMigrateConversationsFn                    = runMigrateConversations
+	runMigrateConversationMetadataFn             = runMigrateConversationMetadata
+	runMigrateConversationParticipantSnapshotsFn = runMigrateConversationParticipantSnapshots
+	runMigrateNumericIDsFn                       = runMigrateNumericIDs
 )
 
 func runCLI(args []string, stderr io.Writer) int {
@@ -101,7 +103,13 @@ func commandRunner(cmd string) (func([]string) error, bool) {
 		"soul":                  func(argv []string) error { return runSoulFn(argv) },
 		"migrate-user-keys":     func(argv []string) error { return runMigrateUserKeysFn(argv) },
 		"migrate-conversations": func(argv []string) error { return runMigrateConversationsFn(argv) },
-		"migrate-numeric-ids":   func(argv []string) error { return runMigrateNumericIDsFn(argv) },
+		"migrate-conversation-metadata": func(argv []string) error {
+			return runMigrateConversationMetadataFn(argv)
+		},
+		"migrate-conversation-participant-snapshots": func(argv []string) error {
+			return runMigrateConversationParticipantSnapshotsFn(argv)
+		},
+		"migrate-numeric-ids": func(argv []string) error { return runMigrateNumericIDsFn(argv) },
 	}
 
 	runner, ok := runners[cmd]
@@ -159,6 +167,8 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser soul ens set|preview|publish [flags...]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-user-keys [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-conversations [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
+	_, _ = fmt.Fprintln(w, "  lesser migrate-conversation-metadata [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
+	_, _ = fmt.Fprintln(w, "  lesser migrate-conversation-participant-snapshots [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-numeric-ids [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 }
 

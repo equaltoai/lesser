@@ -658,10 +658,20 @@ func (s *Service) createDirectMessageStatus(ctx context.Context, cmd *SendDirect
 	return status, messageID, nil
 }
 
-func (s *Service) updateConversationLastStatus(ctx context.Context, conversation *models.Conversation, messageID string) {
-	conversation.LastStatusID = messageID
-	conversation.UpdatedAt = time.Now()
-	if err := s.conversationRepo.UpdateConversation(ctx, conversation); err != nil {
+func (s *Service) updateConversationLastStatus(ctx context.Context, conversation *models.Conversation, status *models.Status) {
+	if conversation == nil || status == nil {
+		return
+	}
+
+	conversation.LastStatusID = status.StatusID
+	conversation.TotalMessageCount++
+	conversation.LastMessageTime = status.PublishedAt
+	if conversation.LastMessageTime.IsZero() {
+		conversation.LastMessageTime = time.Now().UTC()
+	}
+	conversation.UpdatedAt = time.Now().UTC()
+
+	if err := s.conversationRepo.UpdateConversationLastStatus(ctx, conversation.ID, status.StatusID); err != nil {
 		s.logger.Warn("failed to update conversation", zap.Error(err))
 	}
 }
@@ -800,7 +810,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		return nil, err
 	}
 
-	s.updateConversationLastStatus(ctx, conversation, messageID)
+	s.updateConversationLastStatus(ctx, conversation, status)
 	s.updateDirectMessageParticipantStateAfterSend(ctx, conversation.ID, cmd.SenderID, recipientID, deliversToInbox)
 	s.updateConversationUnreadAfterSend(ctx, conversation, cmd.SenderID, recipientID)
 

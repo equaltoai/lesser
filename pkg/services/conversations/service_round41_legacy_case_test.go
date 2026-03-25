@@ -42,7 +42,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(
 	})).
 		Return(nil).
 		Once()
-	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil).Once()
+	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "Medic").
 		Return(&models.ConversationParticipantRecord{}, nil).
 		Once()
@@ -95,7 +95,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *
 	})).
 		Return(nil).
 		Once()
-	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil).Once()
+	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "Medic").
 		Return(&models.ConversationParticipantRecord{}, nil).
 		Once()

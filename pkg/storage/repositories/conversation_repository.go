@@ -957,18 +957,38 @@ func (r *ConversationRepository) GetConversationParticipants(ctx context.Context
 
 // UpdateConversationLastStatus updates the last status in a conversation (KEEP - Conversation state update logic)
 func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	// Get current conversation
-	conv, err := r.GetConversation(ctx, id)
+	var status models.Status
+	err := r.GetDB().WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", "status#"+lastStatusID).
+		Where("SK", "=", "status#"+lastStatusID).
+		First(&status)
 	if err != nil {
-		return err
+		return ErrorHandler.HandleGetError(err, EntityConversation, id)
 	}
 
-	// Update fields
-	conv.LastStatusID = lastStatusID
-	conv.UpdatedAt = time.Now()
+	if conversationID := strings.TrimSpace(status.ConversationID); conversationID != "" && conversationID != id {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, id)
+	}
 
-	// Update the conversation (this will recreate participant records with new timestamps)
-	return r.UpdateConversation(ctx, conv)
+	lastMessageTime := status.PublishedAt.UTC()
+	if lastMessageTime.IsZero() {
+		lastMessageTime = status.CreatedAt.UTC()
+	}
+	if lastMessageTime.IsZero() {
+		lastMessageTime = time.Now().UTC()
+	}
+
+	updateBuilder := r.GetDB().WithContext(ctx).Model(&models.Conversation{}).
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", id)).
+		Where("SK", "=", "METADATA").
+		UpdateBuilder().
+		SetIfNotExists("TotalMessageCount", nil, int64(0)).
+		Add("TotalMessageCount", 1).
+		Set("LastStatusID", lastStatusID).
+		Set("LastMessageTime", lastMessageTime).
+		Set("UpdatedAt", time.Now().UTC())
+
+	return ErrorHandler.HandleUpdateError(updateBuilder.Execute(), EntityConversation, id)
 }
 
 // RemoveParticipant removes a participant from a conversation (KEEP - Complex participant management)
