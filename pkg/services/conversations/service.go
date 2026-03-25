@@ -486,6 +486,15 @@ func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd 
 	}
 
 	if err := s.conversationRepo.CreateConversation(ctx, conversation, lookupParticipants); err != nil {
+		if errors.Is(err, storage.ErrAlreadyExists) {
+			existingConversation, reloadErr := s.conversationRepo.GetConversationByParticipants(ctx, lookupParticipants)
+			if reloadErr == nil && existingConversation != nil {
+				return existingConversation, nil
+			}
+			s.logger.Warn("conversation create lost a lookup race and canonical reload failed",
+				zap.Strings("participants", lookupParticipants),
+				zap.Error(reloadErr))
+		}
 		s.logger.Error("failed to create conversation", zap.String("conversation_id", conversationID), zap.Error(err))
 		s.auditDMEvent(ctx, cmd, conversationID, false, "create_conversation_failed", map[string]any{
 			"recipient_id": recipientID,

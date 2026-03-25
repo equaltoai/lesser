@@ -31,6 +31,10 @@ func canonicalConversationParticipantIndexSK(participantID string) string {
 	return fmt.Sprintf("PARTICIPANT#%s", models.CanonicalConversationParticipantID(participantID))
 }
 
+func conversationParticipantLookupPK(participants []string) string {
+	return fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", strings.Join(models.CanonicalConversationParticipants(participants), ","))
+}
+
 func canonicalConversationStatusSK(participantID string) string {
 	return fmt.Sprintf("USER#%s", models.CanonicalConversationParticipantID(participantID))
 }
@@ -181,9 +185,18 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		ConversationID: conversation.ID,
 	}
 
-	if err := r.GetDB().Model(lookupKey).WithContext(ctx).Create(); err != nil {
+	if err := r.GetDB().Model(lookupKey).WithContext(ctx).IfNotExists().Create(); err != nil {
+		if errors.IsConditionFailed(err) {
+			log.Info("participant lookup already exists; cleaning up duplicate conversation create",
+				zap.String("participant_key", participantKey),
+				zap.String("conversation_id", conversation.ID))
+			if cleanupErr := r.DeleteConversation(ctx, conversation.ID); cleanupErr != nil {
+				return ErrorHandler.HandleCreateError(fmt.Errorf("lookup collision cleanup failed: %w", cleanupErr), EntityConversation, conversation.ID)
+			}
+			return storage.ErrAlreadyExists
+		}
 		log.Warn("failed to create participant lookup key", zap.Error(err))
-		// Don't fail the operation if lookup key creation fails
+		return ErrorHandler.HandleCreateError(err, EntityConversation, participantKey)
 	}
 
 	log.Debug("conversation created successfully")
