@@ -7,6 +7,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
+// Deprecated: DM rewrite M4 removes ConversationStatus as the canonical owner of DM unread state.
+//
 // ConversationStatus represents a user's read status for a conversation
 // This tracks whether a user has unread messages in a conversation
 type ConversationStatus struct {
@@ -68,6 +70,8 @@ func (s *ConversationStatus) GetSK() string {
 	return s.SK
 }
 
+// Deprecated: DM rewrite M3/M8 removes ConversationMessage from live DM write logic.
+//
 // ConversationMessage represents a message/status within a conversation
 // Note: Based on the legacy code and instructions, this appears to be handled
 // differently - messages are stored as regular Status objects with conversation context

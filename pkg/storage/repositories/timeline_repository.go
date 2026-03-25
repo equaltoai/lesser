@@ -367,6 +367,8 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 	return entries, nextCursor, nil
 }
 
+// Deprecated: DM rewrite M5 removes timeline-side DM list reads that hydrate embedded participant snapshots.
+//
 // GetConversations retrieves conversations for a user (timeline interface compatibility)
 // This bridges between timeline interface and conversation repository
 func (r *TimelineRepository) GetConversations(ctx context.Context, username string, limit int, cursor string) ([]*models.Conversation, string, error) {
