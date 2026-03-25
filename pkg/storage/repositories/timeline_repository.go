@@ -372,7 +372,7 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 func (r *TimelineRepository) GetConversations(ctx context.Context, username string, limit int, cursor string) ([]*models.Conversation, string, error) {
 	// Query user's conversation participant records using the established pattern
 	// PK = USER_CONVERSATIONS#username, SK = timestamp#conversationID
-	pk := fmt.Sprintf("USER_CONVERSATIONS#%s", username)
+	pk := fmt.Sprintf("USER_CONVERSATIONS#%s", models.CanonicalConversationParticipantID(username))
 
 	query := r.db.WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
 		Where("PK", "=", pk).

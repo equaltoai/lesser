@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -235,7 +234,8 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 
 	creatorID := strings.TrimSpace(cmd.CreatorID)
 	participantID := strings.TrimSpace(cmd.ParticipantID)
-	if creatorID == "" || participantID == "" || creatorID == participantID {
+	if creatorID == "" || participantID == "" ||
+		models.CanonicalConversationParticipantID(creatorID) == models.CanonicalConversationParticipantID(participantID) {
 		return nil, errors.Join(ErrConversationValidationFailed, ErrInvalidRecipient)
 	}
 
@@ -257,8 +257,7 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 		}
 	}
 
-	participants := []string{creatorID, participantID}
-	sort.Strings(participants)
+	participants := models.CanonicalConversationParticipants([]string{creatorID, participantID})
 
 	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, participants)
 	if err != nil && !isNotFoundError(err) {
@@ -347,7 +346,8 @@ func (s *Service) validateSendDirectMessageCommand(ctx context.Context, cmd *Sen
 	}
 
 	recipientID := cmd.Recipients[0]
-	if strings.TrimSpace(recipientID) == "" || recipientID == cmd.SenderID {
+	if strings.TrimSpace(recipientID) == "" ||
+		models.CanonicalConversationParticipantID(recipientID) == models.CanonicalConversationParticipantID(cmd.SenderID) {
 		s.auditDMEvent(ctx, cmd, "", false, "invalid_recipient", map[string]any{
 			"recipient_id": recipientID,
 		})
@@ -463,7 +463,6 @@ func resolvedLegacyLocalAccountID(requestedID string, account *storage.Account) 
 func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*models.Conversation, error) {
 	allParticipants := append([]string{cmd.SenderID}, cmd.Recipients...)
 	lookupParticipants := models.CanonicalConversationParticipants(allParticipants)
-	sort.Strings(allParticipants)
 
 	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, lookupParticipants)
 	if err != nil && !isNotFoundError(err) {
@@ -481,12 +480,12 @@ func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd 
 	conversationID := uuid.New().String()
 	conversation = &models.Conversation{
 		ID:           conversationID,
-		Participants: allParticipants,
+		Participants: lookupParticipants,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := s.conversationRepo.CreateConversation(ctx, conversation, allParticipants); err != nil {
+	if err := s.conversationRepo.CreateConversation(ctx, conversation, lookupParticipants); err != nil {
 		s.logger.Error("failed to create conversation", zap.String("conversation_id", conversationID), zap.Error(err))
 		s.auditDMEvent(ctx, cmd, conversationID, false, "create_conversation_failed", map[string]any{
 			"recipient_id": recipientID,
@@ -496,7 +495,7 @@ func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd 
 
 	s.logger.Info("created new conversation",
 		zap.String("conversation_id", conversationID),
-		zap.Strings("participants", allParticipants))
+		zap.Strings("participants", lookupParticipants))
 
 	return conversation, nil
 }
@@ -1595,8 +1594,9 @@ func (s *Service) queueFederationDelivery(ctx context.Context, message *models.S
 }
 
 func (s *Service) isParticipant(userID string, participants []string) bool {
+	canonicalUserID := models.CanonicalConversationParticipantID(userID)
 	for _, participant := range participants {
-		if participant == userID {
+		if models.CanonicalConversationParticipantID(participant) == canonicalUserID {
 			return true
 		}
 	}

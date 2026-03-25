@@ -96,9 +96,9 @@ func runMigrateUserKeys(argv []string) error {
 		return err
 	}
 
-	mode := "dry-run"
+	mode := migrationModeDryRun
 	if apply {
-		mode = "apply"
+		mode = migrationModeApply
 	}
 
 	fmt.Printf("migrate-user-keys %s complete\n", mode)

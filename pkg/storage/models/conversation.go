@@ -257,6 +257,7 @@ func (p *ConversationParticipantRecord) BeforeCreate(participantID string) error
 		return ErrConversationDataRequired
 	}
 
+	participantID = CanonicalConversationParticipantID(participantID)
 	p.PK = fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)
 	p.SK = fmt.Sprintf("%s#%s", conversation.UpdatedAt.Format(time.RFC3339), conversation.ID)
 	p.GSI1PK = fmt.Sprintf(KeyPatternConversation, conversation.ID)

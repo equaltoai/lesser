@@ -18,9 +18,12 @@ import (
 type fakeUserKeyMigrationClient struct {
 	scanOutputs  []*dynamodb.ScanOutput
 	scanInputs   []*dynamodb.ScanInput
+	queryOutputs []*dynamodb.QueryOutput
+	queryInputs  []*dynamodb.QueryInput
 	putInputs    []*dynamodb.PutItemInput
 	deleteInputs []*dynamodb.DeleteItemInput
 	scanErr      error
+	queryErr     error
 	putErr       error
 	deleteErr    error
 }
@@ -35,6 +38,19 @@ func (f *fakeUserKeyMigrationClient) Scan(_ context.Context, input *dynamodb.Sca
 	}
 	out := f.scanOutputs[0]
 	f.scanOutputs = f.scanOutputs[1:]
+	return out, nil
+}
+
+func (f *fakeUserKeyMigrationClient) Query(_ context.Context, input *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+	f.queryInputs = append(f.queryInputs, input)
+	if f.queryErr != nil {
+		return nil, f.queryErr
+	}
+	if len(f.queryOutputs) == 0 {
+		return &dynamodb.QueryOutput{}, nil
+	}
+	out := f.queryOutputs[0]
+	f.queryOutputs = f.queryOutputs[1:]
 	return out, nil
 }
 

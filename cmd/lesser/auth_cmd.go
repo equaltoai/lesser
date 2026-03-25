@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const authStatusCommand = "status"
+
 func runAuth(argv []string) error {
 	if len(argv) == 0 {
 		printUsage()
@@ -24,7 +26,7 @@ func runAuth(argv []string) error {
 		return runAuthLogin(argv[1:])
 	case "logout":
 		return runAuthLogout(argv[1:])
-	case "status":
+	case authStatusCommand:
 		return runAuthStatus(argv[1:])
 	case "whoami":
 		return runAuthWhoami(argv[1:])
