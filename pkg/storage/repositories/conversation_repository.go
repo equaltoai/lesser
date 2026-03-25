@@ -143,10 +143,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 	}
 
 	// Create participant lookup key if needed (for GetConversationByParticipants) - KEEP - Conversation search logic
-	sortedParticipants := make([]string, len(conversation.Participants))
-	copy(sortedParticipants, conversation.Participants)
-	sort.Strings(sortedParticipants)
-	participantKey := strings.Join(sortedParticipants, ",")
+	participantKey := strings.Join(models.CanonicalConversationParticipants(conversation.Participants), ",")
 
 	lookupKey := &models.ConversationParticipantKey{
 		PK:             fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey),
@@ -503,20 +500,7 @@ func (r *ConversationRepository) findParticipantRecordsByConversationAndParticip
 func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
-	// Sort participants to create a consistent lookup key (matching legacy)
-	sortedParticipants := make([]string, len(participants))
-	copy(sortedParticipants, participants)
-	// Simple sort for deterministic order
-	for i := 0; i < len(sortedParticipants)-1; i++ {
-		for j := i + 1; j < len(sortedParticipants); j++ {
-			if sortedParticipants[i] > sortedParticipants[j] {
-				sortedParticipants[i], sortedParticipants[j] = sortedParticipants[j], sortedParticipants[i]
-			}
-		}
-	}
-
-	// Create a consistent participant key
-	participantKey := strings.Join(sortedParticipants, ",")
+	participantKey := strings.Join(models.CanonicalConversationParticipants(participants), ",")
 
 	// Query by participant key using GSI1
 	var record models.ConversationParticipantKey

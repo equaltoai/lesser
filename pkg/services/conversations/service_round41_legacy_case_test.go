@@ -31,7 +31,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(
 	accountRepo.On("GetAccount", ctx, "Medic").Return(senderAccount, nil).Once()
 	accountRepo.On("GetAccount", ctx, "arch").Return(recipientAccount, nil).Once()
 
-	conversationRepo.On("GetConversationByParticipants", ctx, []string{"Arch", "Medic"}).
+	conversationRepo.On("GetConversationByParticipants", ctx, []string{"arch", "medic"}).
 		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
 		Once()
 	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"Arch", "Medic"}).
@@ -84,7 +84,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *
 	accountRepo.On("GetAccount", ctx, "medic").Return(senderAccount, nil).Once()
 	accountRepo.On("GetAccount", ctx, "arch").Return(recipientAccount, nil).Once()
 
-	conversationRepo.On("GetConversationByParticipants", ctx, []string{"Arch", "Medic"}).
+	conversationRepo.On("GetConversationByParticipants", ctx, []string{"arch", "medic"}).
 		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
 		Once()
 	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"Arch", "Medic"}).

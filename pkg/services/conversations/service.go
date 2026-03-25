@@ -462,11 +462,12 @@ func resolvedLegacyLocalAccountID(requestedID string, account *storage.Account) 
 
 func (s *Service) getOrCreateDirectMessageConversation(ctx context.Context, cmd *SendDirectMessageCommand, recipientID string) (*models.Conversation, error) {
 	allParticipants := append([]string{cmd.SenderID}, cmd.Recipients...)
+	lookupParticipants := models.CanonicalConversationParticipants(allParticipants)
 	sort.Strings(allParticipants)
 
-	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, allParticipants)
+	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, lookupParticipants)
 	if err != nil && !isNotFoundError(err) {
-		s.logger.Error("failed to lookup existing conversation", zap.Strings("participants", allParticipants), zap.Error(err))
+		s.logger.Error("failed to lookup existing conversation", zap.Strings("participants", lookupParticipants), zap.Error(err))
 		s.auditDMEvent(ctx, cmd, "", false, "lookup_conversation_failed", map[string]any{
 			"recipient_id": recipientID,
 		})

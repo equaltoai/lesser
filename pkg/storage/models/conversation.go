@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"slices"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -95,6 +97,32 @@ func ConversationSnapshotFromConversation(conversation *Conversation) *Conversat
 		TotalMessageCount: conversation.TotalMessageCount,
 		LastMessageTime:   conversation.LastMessageTime,
 	}
+}
+
+// CanonicalConversationParticipantID normalizes local conversation participant identifiers
+// to the lowercase form used by conversation lookup keys.
+func CanonicalConversationParticipantID(participantID string) string {
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" || strings.Contains(participantID, "://") {
+		return participantID
+	}
+
+	return strings.ToLower(participantID)
+}
+
+// CanonicalConversationParticipants returns a sorted, normalized participant list for comparison keys.
+func CanonicalConversationParticipants(participants []string) []string {
+	normalized := make([]string, 0, len(participants))
+	for _, participant := range participants {
+		canonicalParticipant := CanonicalConversationParticipantID(participant)
+		if canonicalParticipant == "" {
+			continue
+		}
+		normalized = append(normalized, canonicalParticipant)
+	}
+
+	sort.Strings(normalized)
+	return normalized
 }
 
 // TableName returns the DynamoDB table name
