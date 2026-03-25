@@ -1018,12 +1018,12 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		return nil, err
 	}
 
-	status, messageID, err := s.createSendMessageStatus(ctx, cmd, sendCmd, sender, recipient, conversation.ID, recipientID)
+	status, _, err := s.createSendMessageStatus(ctx, cmd, sendCmd, sender, recipient, conversation.ID, recipientID)
 	if err != nil {
 		return nil, err
 	}
 
-	s.updateConversationLastStatus(ctx, conversation, messageID)
+	s.updateConversationLastStatus(ctx, conversation, status)
 	s.updateSendMessageParticipantStateAfterSend(ctx, conversation.ID, cmd.SenderID, recipientID)
 	s.updateConversationUnreadAfterSend(ctx, conversation, cmd.SenderID, recipientID)
 
@@ -1621,9 +1621,21 @@ func (s *Service) updateParticipantRecord(ctx context.Context, conversationID, p
 	if record == nil {
 		return storage.ErrNotFound
 	}
+	if participantRecordSnapshotCorrupt(record) {
+		s.logger.Warn("participant record snapshot missing canonical conversation identity",
+			zap.String("conversation_id", conversationID),
+			zap.String("participant_id", participantID))
+	}
 
 	mutator(record)
 	return s.conversationRepo.UpdateConversationParticipantRecord(ctx, record)
+}
+
+func participantRecordSnapshotCorrupt(record *models.ConversationParticipantRecord) bool {
+	if record == nil || record.ConversationData == nil {
+		return true
+	}
+	return strings.TrimSpace(record.ConversationData.ID) == "" || len(record.ConversationData.Participants) == 0
 }
 
 // DeleteConversation implements delete-for-me semantics for a DM conversation.

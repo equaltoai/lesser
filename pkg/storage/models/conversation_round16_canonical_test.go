@@ -25,8 +25,9 @@ func TestRound16_ConversationCanonicalHelpersAndKeys(t *testing.T) {
 	t.Run("participant record keys canonicalize usernames", func(t *testing.T) {
 		record := &ConversationParticipantRecord{
 			Conversation: &Conversation{
-				ID:        "conv-1",
-				UpdatedAt: time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC),
+				ID:           "conv-1",
+				Participants: []string{"arch", "medic"},
+				UpdatedAt:    time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC),
 			},
 		}
 		require.NoError(t, record.BeforeCreate("Medic"))

@@ -16,16 +16,19 @@ import (
 )
 
 type fakeUserKeyMigrationClient struct {
-	scanOutputs  []*dynamodb.ScanOutput
-	scanInputs   []*dynamodb.ScanInput
-	queryOutputs []*dynamodb.QueryOutput
-	queryInputs  []*dynamodb.QueryInput
-	putInputs    []*dynamodb.PutItemInput
-	deleteInputs []*dynamodb.DeleteItemInput
-	scanErr      error
-	queryErr     error
-	putErr       error
-	deleteErr    error
+	scanOutputs   []*dynamodb.ScanOutput
+	scanInputs    []*dynamodb.ScanInput
+	queryOutputs  []*dynamodb.QueryOutput
+	queryInputs   []*dynamodb.QueryInput
+	getItemMap    map[string]map[string]types.AttributeValue
+	getItemInputs []*dynamodb.GetItemInput
+	putInputs     []*dynamodb.PutItemInput
+	deleteInputs  []*dynamodb.DeleteItemInput
+	scanErr       error
+	queryErr      error
+	getItemErr    error
+	putErr        error
+	deleteErr     error
 }
 
 func (f *fakeUserKeyMigrationClient) Scan(_ context.Context, input *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
@@ -52,6 +55,24 @@ func (f *fakeUserKeyMigrationClient) Query(_ context.Context, input *dynamodb.Qu
 	out := f.queryOutputs[0]
 	f.queryOutputs = f.queryOutputs[1:]
 	return out, nil
+}
+
+func (f *fakeUserKeyMigrationClient) GetItem(_ context.Context, input *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+	f.getItemInputs = append(f.getItemInputs, input)
+	if f.getItemErr != nil {
+		return nil, f.getItemErr
+	}
+	if f.getItemMap == nil {
+		return &dynamodb.GetItemOutput{}, nil
+	}
+
+	pk, _ := attributeString(input.Key["PK"])
+	sk, _ := attributeString(input.Key["SK"])
+	item, ok := f.getItemMap[pk+"\x00"+sk]
+	if !ok {
+		return &dynamodb.GetItemOutput{}, nil
+	}
+	return &dynamodb.GetItemOutput{Item: cloneAttributeMap(item)}, nil
 }
 
 func (f *fakeUserKeyMigrationClient) PutItem(_ context.Context, input *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {

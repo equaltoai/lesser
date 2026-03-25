@@ -253,7 +253,7 @@ func (p *ConversationParticipantRecord) SyncConversationData() *Conversation {
 // BeforeCreate sets up the keys for a participant record
 func (p *ConversationParticipantRecord) BeforeCreate(participantID string) error {
 	conversation := p.SyncConversationData()
-	if conversation == nil || conversation.ID == "" {
+	if conversation == nil || conversation.ID == "" || len(conversation.Participants) == 0 {
 		return ErrConversationDataRequired
 	}
 

@@ -502,14 +502,40 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 	if record.PK == "" || record.SK == "" {
 		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "participant record keys missing")
 	}
-	if record.SyncConversationData() != nil {
-		record.Conversation.Unread = record.Unread
+
+	updateBuilder := r.GetDB().WithContext(ctx).Model(record).
+		Where("PK", "=", record.PK).
+		Where("SK", "=", record.SK).
+		UpdateBuilder().
+		Set("Unread", record.Unread)
+
+	if strings.TrimSpace(string(record.RequestState)) == "" {
+		updateBuilder.Remove("RequestState")
+	} else {
+		updateBuilder.Set("RequestState", record.RequestState)
 	}
 
-	if err := r.GetDB().WithContext(ctx).Model(record).Update(); err != nil {
+	applyOptionalConversationParticipantTime(updateBuilder, "RequestedAt", record.RequestedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "AcceptedAt", record.AcceptedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "DeclinedAt", record.DeclinedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "DeletedAt", record.DeletedAt)
+	applyOptionalConversationParticipantTime(updateBuilder, "LastReadAt", record.LastReadAt)
+
+	if err := updateBuilder.Execute(); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
 	}
 	return nil
+}
+
+func applyOptionalConversationParticipantTime(updateBuilder core.UpdateBuilder, field string, value *time.Time) {
+	if updateBuilder == nil {
+		return
+	}
+	if value == nil || value.IsZero() {
+		updateBuilder.Remove(field)
+		return
+	}
+	updateBuilder.Set(field, value.UTC())
 }
 
 func (r *ConversationRepository) findParticipantRecordsByConversationAndParticipant(ctx context.Context, conversationID, participantID string) ([]models.ConversationParticipantRecord, error) {
@@ -544,14 +570,13 @@ func (r *ConversationRepository) findParticipantRecordsByConversationAndParticip
 func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
-	participantKey := strings.Join(models.CanonicalConversationParticipants(participants), ",")
+	participantKey := conversationParticipantLookupPK(participants)
 
-	// Query by participant key using GSI1
+	// Exact participant lookups are deterministic, so use a base-table point read.
 	var record models.ConversationParticipantKey
 	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey)).
-		Limit(1).
+		Where("PK", "=", participantKey).
+		Where("SK", "=", "LOOKUP").
 		First(&record)
 
 	if err != nil {

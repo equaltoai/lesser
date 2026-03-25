@@ -52,15 +52,17 @@ func setupPermissiveRound08Mocks(mockDB *mocks.MockDB, mockQuery *mocks.MockQuer
 	mockQuery.On("BatchCreate", mock.Anything).Return(nil).Maybe()
 	mockQuery.On("BatchDelete", mock.Anything).Return(nil).Maybe()
 
-	if mockUpdateBuilder != nil {
-		mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("Add", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("ConditionVersion", mock.Anything).Return(mockUpdateBuilder).Maybe()
-		mockUpdateBuilder.On("Execute").Return(nil).Maybe()
+	if mockUpdateBuilder == nil {
+		mockUpdateBuilder = new(mocks.MockUpdateBuilder)
 	}
+	mockQuery.On("UpdateBuilder").Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Add", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Condition", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Set", mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Remove", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("ConditionVersion", mock.Anything).Return(mockUpdateBuilder).Maybe()
+	mockUpdateBuilder.On("Execute").Return(nil).Maybe()
 }
 
 func populateRound08SliceForCoverage(target any, baseTime time.Time) {
