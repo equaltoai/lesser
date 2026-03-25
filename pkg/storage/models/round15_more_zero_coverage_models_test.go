@@ -410,6 +410,30 @@ func TestConversationModels(t *testing.T) {
 		assert.Equal(t, p.SK, p.GetSK())
 	})
 
+	t.Run("ConversationParticipantRecord syncs and hydrates embedded snapshots", func(t *testing.T) {
+		updated := time.Unix(1700000000, 0).UTC()
+		p := &ConversationParticipantRecord{
+			Unread:       true,
+			Conversation: &Conversation{ID: "c2", Participants: []string{"alice", "bob"}, UpdatedAt: updated},
+		}
+
+		conv := p.SyncConversationData()
+		require.NotNil(t, conv)
+		require.NotNil(t, p.ConversationData)
+		assert.Equal(t, "c2", p.ConversationData.ID)
+		assert.Equal(t, []string{"alice", "bob"}, p.ConversationData.Participants)
+		assert.True(t, p.ConversationData.Unread)
+
+		rehydrated := (&ConversationParticipantRecord{
+			Unread:           true,
+			ConversationData: p.ConversationData,
+		}).HydrateConversation()
+		require.NotNil(t, rehydrated)
+		assert.Equal(t, "c2", rehydrated.ID)
+		assert.Equal(t, []string{"alice", "bob"}, rehydrated.Participants)
+		assert.True(t, rehydrated.Unread)
+	})
+
 	t.Run("ConversationMessage requires keys and builds sortable SK", func(t *testing.T) {
 		m := &ConversationMessage{}
 		assert.ErrorIs(t, m.BeforeCreate(), ErrConversationStatusIDRequired)

@@ -109,6 +109,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		convCopy := *conversation
 		convCopy.Unread = participantRecord.Unread
 		participantRecord.Conversation = &convCopy
+		participantRecord.SyncConversationData()
 
 		if err := participantRecord.BeforeCreate(participantID); err != nil {
 			log.Error("failed to prepare participant record",
@@ -273,7 +274,7 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 		if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
 			continue
 		}
-		if record.Conversation != nil {
+		if record.HydrateConversation() != nil {
 			// Ensure per-user unread status is populated on the returned Conversation model.
 			record.Conversation.Unread = record.Unread
 			conversations = append(conversations, record.Conversation)
@@ -424,7 +425,7 @@ func appendRequestStateMatches(records []*models.ConversationParticipantRecord, 
 		if !matchesRequestState(record.RequestState, requestState) {
 			continue
 		}
-		if record.Conversation == nil {
+		if record.HydrateConversation() == nil {
 			continue
 		}
 
@@ -463,6 +464,7 @@ func (r *ConversationRepository) GetConversationParticipantRecord(ctx context.Co
 		return records[i].SK > records[j].SK
 	})
 	latest := records[0]
+	latest.HydrateConversation()
 	return &latest, nil
 }
 
@@ -474,7 +476,7 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 	if record.PK == "" || record.SK == "" {
 		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "participant record keys missing")
 	}
-	if record.Conversation != nil {
+	if record.SyncConversationData() != nil {
 		record.Conversation.Unread = record.Unread
 	}
 

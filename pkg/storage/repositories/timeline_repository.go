@@ -395,7 +395,7 @@ func (r *TimelineRepository) GetConversations(ctx context.Context, username stri
 	// Extract conversations from participant records
 	conversations := make([]*models.Conversation, 0, len(participantRecords))
 	for _, record := range participantRecords {
-		if record.Conversation != nil {
+		if record != nil && record.HydrateConversation() != nil {
 			conversations = append(conversations, record.Conversation)
 		}
 	}

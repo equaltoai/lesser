@@ -60,9 +60,9 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 				Conversation: conv,
 			},
 			{
-				SK:           "sk-nil-conv",
-				RequestState: models.DmRequestStateAccepted,
-				Conversation: nil,
+				SK:               "sk-nil-conv",
+				RequestState:     models.DmRequestStateAccepted,
+				ConversationData: &models.ConversationSnapshot{ID: "from-snapshot"},
 			},
 		}
 
@@ -71,6 +71,11 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.Equal(t, "conv-1", got[0].ID)
 		require.True(t, got[0].Unread)
 		require.Equal(t, "sk-accepted", lastSK)
+
+		got, lastSK = appendRequestStateMatches(records[4:], models.DmRequestStateAccepted, 1, []*models.Conversation{})
+		require.Len(t, got, 1)
+		require.Equal(t, "from-snapshot", got[0].ID)
+		require.Equal(t, "sk-nil-conv", lastSK)
 	})
 }
 

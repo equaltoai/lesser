@@ -549,6 +549,7 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 		return nil
 	}
 
+	participant.HydrateConversation()
 	conv := participant.Conversation
 	if conv == nil || strings.TrimSpace(conv.ID) == "" {
 		return nil
