@@ -23,6 +23,33 @@ type ConversationRepository struct {
 	logger *zap.Logger
 }
 
+func canonicalConversationParticipantPK(participantID string) string {
+	return fmt.Sprintf("USER_CONVERSATIONS#%s", models.CanonicalConversationParticipantID(participantID))
+}
+
+func canonicalConversationParticipantIndexSK(participantID string) string {
+	return fmt.Sprintf("PARTICIPANT#%s", models.CanonicalConversationParticipantID(participantID))
+}
+
+func canonicalConversationStatusSK(participantID string) string {
+	return fmt.Sprintf("USER#%s", models.CanonicalConversationParticipantID(participantID))
+}
+
+func conversationParticipantLookupIDs(participantID string) []string {
+	trimmed := strings.TrimSpace(participantID)
+	if trimmed == "" {
+		return nil
+	}
+
+	lookupIDs := []string{trimmed}
+	canonicalID := models.CanonicalConversationParticipantID(trimmed)
+	if canonicalID != "" && canonicalID != trimmed {
+		lookupIDs = append(lookupIDs, canonicalID)
+	}
+
+	return lookupIDs
+}
+
 // NewConversationRepository creates a new conversation repository with enhanced functionality and cost tracking
 func NewConversationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ConversationRepository {
 	// Create enhanced repository optimized for conversation operations
@@ -63,7 +90,9 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 
 	// Set participants if provided
 	if err := common.ValidateSliceNotEmpty("participants", participants); err == nil {
-		conversation.Participants = participants
+		conversation.Participants = models.CanonicalConversationParticipants(participants)
+	} else {
+		conversation.Participants = models.CanonicalConversationParticipants(conversation.Participants)
 	}
 
 	if err := conversation.BeforeCreate(); err != nil {
@@ -109,6 +138,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		convCopy := *conversation
 		convCopy.Unread = participantRecord.Unread
 		participantRecord.Conversation = &convCopy
+		participantRecord.SyncConversationData()
 
 		if err := participantRecord.BeforeCreate(participantID); err != nil {
 			log.Error("failed to prepare participant record",
@@ -142,10 +172,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 	}
 
 	// Create participant lookup key if needed (for GetConversationByParticipants) - KEEP - Conversation search logic
-	sortedParticipants := make([]string, len(conversation.Participants))
-	copy(sortedParticipants, conversation.Participants)
-	sort.Strings(sortedParticipants)
-	participantKey := strings.Join(sortedParticipants, ",")
+	participantKey := strings.Join(models.CanonicalConversationParticipants(conversation.Participants), ",")
 
 	lookupKey := &models.ConversationParticipantKey{
 		PK:             fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey),
@@ -211,7 +238,7 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 		for _, participantID := range conv.Participants {
 			// Delete participant record
 			err = r.GetDB().Model(&models.ConversationParticipantRecord{}).WithContext(ctx).
-				Where("PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)).
+				Where("PK", "=", canonicalConversationParticipantPK(participantID)).
 				Where("SK", "=", fmt.Sprintf("%s#%s", conv.UpdatedAt.Format(time.RFC3339), id)).
 				Delete()
 			if err != nil {
@@ -250,7 +277,7 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 	)
 
 	query := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-		Where("PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", userID)).
+		Where("PK", "=", canonicalConversationParticipantPK(userID)).
 		OrderBy("SK", "DESC") // Most recent first (timestamp-based sorting)
 
 	// Add cursor condition if provided
@@ -273,7 +300,7 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 		if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
 			continue
 		}
-		if record.Conversation != nil {
+		if record.HydrateConversation() != nil {
 			// Ensure per-user unread status is populated on the returned Conversation model.
 			record.Conversation.Unread = record.Unread
 			conversations = append(conversations, record.Conversation)
@@ -388,7 +415,7 @@ func requestStateFetchLimit(limit int) int {
 
 func (r *ConversationRepository) fetchUserConversationParticipantRecords(ctx context.Context, userID string, fetchLimit int, cursor string) ([]*models.ConversationParticipantRecord, bool, error) {
 	query := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-		Where("PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", userID)).
+		Where("PK", "=", canonicalConversationParticipantPK(userID)).
 		OrderBy("SK", "DESC").
 		Limit(fetchLimit + 1)
 	if cursor != "" {
@@ -424,7 +451,7 @@ func appendRequestStateMatches(records []*models.ConversationParticipantRecord, 
 		if !matchesRequestState(record.RequestState, requestState) {
 			continue
 		}
-		if record.Conversation == nil {
+		if record.HydrateConversation() == nil {
 			continue
 		}
 
@@ -463,6 +490,7 @@ func (r *ConversationRepository) GetConversationParticipantRecord(ctx context.Co
 		return records[i].SK > records[j].SK
 	})
 	latest := records[0]
+	latest.HydrateConversation()
 	return &latest, nil
 }
 
@@ -474,7 +502,7 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 	if record.PK == "" || record.SK == "" {
 		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "participant record keys missing")
 	}
-	if record.Conversation != nil {
+	if record.SyncConversationData() != nil {
 		record.Conversation.Unread = record.Unread
 	}
 
@@ -485,14 +513,29 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 }
 
 func (r *ConversationRepository) findParticipantRecordsByConversationAndParticipant(ctx context.Context, conversationID, participantID string) ([]models.ConversationParticipantRecord, error) {
-	var records []models.ConversationParticipantRecord
-	err := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-		Index("gsi1").
-		Where("gsi1PK", "=", fmt.Sprintf(models.KeyPatternConversation, conversationID)).
-		Where("gsi1SK", "=", fmt.Sprintf("PARTICIPANT#%s", participantID)).
-		All(&records)
-	if err != nil {
-		return nil, err
+	deduped := make(map[string]models.ConversationParticipantRecord)
+	for _, lookupID := range conversationParticipantLookupIDs(participantID) {
+		var records []models.ConversationParticipantRecord
+		err := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", fmt.Sprintf(models.KeyPatternConversation, conversationID)).
+			Where("gsi1SK", "=", canonicalConversationParticipantIndexSK(lookupID)).
+			All(&records)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+
+		for _, record := range records {
+			deduped[record.PK+"\x00"+record.SK] = record
+		}
+	}
+
+	records := make([]models.ConversationParticipantRecord, 0, len(deduped))
+	for _, record := range deduped {
+		records = append(records, record)
 	}
 	return records, nil
 }
@@ -501,20 +544,7 @@ func (r *ConversationRepository) findParticipantRecordsByConversationAndParticip
 func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
-	// Sort participants to create a consistent lookup key (matching legacy)
-	sortedParticipants := make([]string, len(participants))
-	copy(sortedParticipants, participants)
-	// Simple sort for deterministic order
-	for i := 0; i < len(sortedParticipants)-1; i++ {
-		for j := i + 1; j < len(sortedParticipants); j++ {
-			if sortedParticipants[i] > sortedParticipants[j] {
-				sortedParticipants[i], sortedParticipants[j] = sortedParticipants[j], sortedParticipants[i]
-			}
-		}
-	}
-
-	// Create a consistent participant key
-	participantKey := strings.Join(sortedParticipants, ",")
+	participantKey := strings.Join(models.CanonicalConversationParticipants(participants), ",")
 
 	// Query by participant key using GSI1
 	var record models.ConversationParticipantKey
@@ -591,7 +621,7 @@ func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context,
 		var status models.ConversationStatus
 		err := r.GetDB().WithContext(ctx).Model(&models.ConversationStatus{}).
 			Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conv.ID)).
-			Where("SK", "=", fmt.Sprintf("USER#%s", username)).
+			Where("SK", "=", canonicalConversationStatusSK(username)).
 			First(&status)
 
 		if errors.IsNotFound(err) || status.Unread {
@@ -820,7 +850,7 @@ func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conve
 	var status models.ConversationStatus
 	err := r.GetDB().Model(&models.ConversationStatus{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conversationID)).
-		Where("SK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "=", canonicalConversationStatusSK(username)).
 		First(&status)
 
 	var lastReadTime time.Time
@@ -1076,7 +1106,7 @@ func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, use
 		var status models.ConversationStatus
 		err := r.GetDB().WithContext(ctx).Model(&models.ConversationStatus{}).
 			Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conv.ID)).
-			Where("SK", "=", fmt.Sprintf("USER#%s", userID)).
+			Where("SK", "=", canonicalConversationStatusSK(userID)).
 			First(&status)
 
 		if errors.IsNotFound(err) || status.Unread {

@@ -264,6 +264,35 @@ func TestRound07_ConversationRepository_GetConversationByParticipants_ErrorBranc
 	require.Error(t, err)
 }
 
+func TestRound07_ConversationRepository_GetConversationByParticipants_CanonicalizesMixedCaseParticipants(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantKey")).Return(mockQuery).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(mockQuery).Once()
+	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", "gsi1").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi1PK", "=", "CONVERSATION_PARTICIPANTS#arch,medic").Return(mockQuery).Once()
+	mockQuery.On("Limit", 1).Return(mockQuery).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.ConversationParticipantKey")).Run(func(args mock.Arguments) {
+		record := args.Get(0).(*models.ConversationParticipantKey)
+		record.ConversationID = "conv-1"
+	}).Return(nil).Once()
+	mockQuery.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(mockQuery).Once()
+	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery).Once()
+	mockQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+		conv := args.Get(0).(*models.Conversation)
+		conv.ID = "conv-1"
+	}).Return(nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	conv, err := repo.GetConversationByParticipants(context.Background(), []string{"Medic", "Arch"})
+	require.NoError(t, err)
+	require.NotNil(t, conv)
+	require.Equal(t, "conv-1", conv.ID)
+}
+
 func TestRound07_ConversationRepository_RemoveStatusFromConversation_DeleteAndConvGetErrorBranches(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)

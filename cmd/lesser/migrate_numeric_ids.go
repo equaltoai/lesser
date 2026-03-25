@@ -80,9 +80,9 @@ func runMigrateNumericIDs(argv []string) error {
 		return err
 	}
 
-	mode := "dry-run"
+	mode := migrationModeDryRun
 	if apply {
-		mode = "apply"
+		mode = migrationModeApply
 	}
 
 	fmt.Printf("migrate-numeric-ids %s complete\n", mode)

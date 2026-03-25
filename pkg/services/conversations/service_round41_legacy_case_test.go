@@ -31,10 +31,10 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(
 	accountRepo.On("GetAccount", ctx, "Medic").Return(senderAccount, nil).Once()
 	accountRepo.On("GetAccount", ctx, "arch").Return(recipientAccount, nil).Once()
 
-	conversationRepo.On("GetConversationByParticipants", ctx, []string{"Arch", "Medic"}).
+	conversationRepo.On("GetConversationByParticipants", ctx, []string{"arch", "medic"}).
 		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
 		Once()
-	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"Arch", "Medic"}).
+	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"arch", "medic"}).
 		Return(nil).
 		Once()
 	noteRepo.On("CreateStatus", ctx, mock.MatchedBy(func(status *models.Status) bool {
@@ -60,7 +60,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Conversation)
-	assert.Equal(t, []string{"Arch", "Medic"}, result.Conversation.Participants)
+	assert.Equal(t, []string{"arch", "medic"}, result.Conversation.Participants)
 	assert.Equal(t, []string{"https://example.com/users/Arch"}, result.Message.ToRecipients)
 
 	conversationRepo.AssertExpectations(t)
@@ -84,10 +84,10 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *
 	accountRepo.On("GetAccount", ctx, "medic").Return(senderAccount, nil).Once()
 	accountRepo.On("GetAccount", ctx, "arch").Return(recipientAccount, nil).Once()
 
-	conversationRepo.On("GetConversationByParticipants", ctx, []string{"Arch", "Medic"}).
+	conversationRepo.On("GetConversationByParticipants", ctx, []string{"arch", "medic"}).
 		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
 		Once()
-	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"Arch", "Medic"}).
+	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"arch", "medic"}).
 		Return(nil).
 		Once()
 	noteRepo.On("CreateStatus", ctx, mock.MatchedBy(func(status *models.Status) bool {
@@ -113,7 +113,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Conversation)
-	assert.Equal(t, []string{"Arch", "Medic"}, result.Conversation.Participants)
+	assert.Equal(t, []string{"arch", "medic"}, result.Conversation.Participants)
 	assert.Equal(t, "Medic", result.Message.AuthorID)
 
 	conversationRepo.AssertExpectations(t)

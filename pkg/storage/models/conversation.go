@@ -2,6 +2,9 @@ package models
 
 import (
 	"fmt"
+	"slices"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -44,6 +47,82 @@ type Conversation struct {
 	// Message counting fields
 	TotalMessageCount int64     `theorydb:"attr:totalMessageCount" json:"total_message_count"`       // Total messages in conversation
 	LastMessageTime   time.Time `theorydb:"attr:lastMessageTime" json:"last_message_time,omitempty"` // Time of last message
+}
+
+// ConversationSnapshot stores the participant-facing conversation payload nested under
+// ConversationParticipantRecord. It intentionally avoids theorydb/json tags so the
+// nested map round-trips using stable exported field names.
+type ConversationSnapshot struct {
+	ID                string
+	Participants      []string
+	LastStatusID      string
+	Unread            bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	TotalMessageCount int64
+	LastMessageTime   time.Time
+}
+
+// ToConversation converts the embedded snapshot back into the full conversation model used by callers.
+func (s *ConversationSnapshot) ToConversation() *Conversation {
+	if s == nil {
+		return nil
+	}
+
+	return &Conversation{
+		ID:                s.ID,
+		Participants:      slices.Clone(s.Participants),
+		LastStatusID:      s.LastStatusID,
+		Unread:            s.Unread,
+		CreatedAt:         s.CreatedAt,
+		UpdatedAt:         s.UpdatedAt,
+		TotalMessageCount: s.TotalMessageCount,
+		LastMessageTime:   s.LastMessageTime,
+	}
+}
+
+// ConversationSnapshotFromConversation converts a full conversation into the embedded participant snapshot shape.
+func ConversationSnapshotFromConversation(conversation *Conversation) *ConversationSnapshot {
+	if conversation == nil {
+		return nil
+	}
+
+	return &ConversationSnapshot{
+		ID:                conversation.ID,
+		Participants:      slices.Clone(conversation.Participants),
+		LastStatusID:      conversation.LastStatusID,
+		Unread:            conversation.Unread,
+		CreatedAt:         conversation.CreatedAt,
+		UpdatedAt:         conversation.UpdatedAt,
+		TotalMessageCount: conversation.TotalMessageCount,
+		LastMessageTime:   conversation.LastMessageTime,
+	}
+}
+
+// CanonicalConversationParticipantID normalizes local conversation participant identifiers
+// to the lowercase form used by conversation lookup keys.
+func CanonicalConversationParticipantID(participantID string) string {
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" || strings.Contains(participantID, "://") {
+		return participantID
+	}
+
+	return strings.ToLower(participantID)
+}
+
+// CanonicalConversationParticipants returns a sorted, normalized participant list for comparison keys.
+func CanonicalConversationParticipants(participants []string) []string {
+	normalized := make([]string, 0, len(participants))
+	for _, participant := range participants {
+		canonicalParticipant := CanonicalConversationParticipantID(participant)
+		if canonicalParticipant == "" {
+			continue
+		}
+		normalized = append(normalized, canonicalParticipant)
+	}
+
+	sort.Strings(normalized)
+	return normalized
 }
 
 // TableName returns the DynamoDB table name
@@ -125,8 +204,11 @@ type ConversationParticipantRecord struct {
 	Unread       bool           `theorydb:"attr:unread" json:"unread"`
 	LastReadAt   *time.Time     `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
 
-	// Embed the full conversation data
-	*Conversation `theorydb:"attr:conversation" json:",inline"`
+	// ConversationData is the durable embedded snapshot stored in DynamoDB.
+	ConversationData *ConversationSnapshot `theorydb:"attr:conversation" json:"-"`
+
+	// Conversation is the hydrated runtime view used by repository callers.
+	Conversation *Conversation `theorydb:"-" json:"-"`
 }
 
 // TableName returns the DynamoDB table name
@@ -134,15 +216,51 @@ func (ConversationParticipantRecord) TableName() string {
 	return MainTableName
 }
 
+// HydrateConversation rebuilds the runtime conversation model from the durable snapshot.
+func (p *ConversationParticipantRecord) HydrateConversation() *Conversation {
+	if p == nil {
+		return nil
+	}
+
+	if p.Conversation == nil {
+		p.Conversation = p.ConversationData.ToConversation()
+	}
+	if p.Conversation != nil {
+		p.Conversation.Unread = p.Unread
+	}
+	return p.Conversation
+}
+
+// SyncConversationData refreshes the durable snapshot from the runtime conversation model.
+func (p *ConversationParticipantRecord) SyncConversationData() *Conversation {
+	if p == nil {
+		return nil
+	}
+
+	if p.Conversation == nil {
+		p.Conversation = p.ConversationData.ToConversation()
+	}
+	if p.Conversation == nil {
+		p.ConversationData = nil
+		return nil
+	}
+
+	p.Conversation.Unread = p.Unread
+	p.ConversationData = ConversationSnapshotFromConversation(p.Conversation)
+	return p.Conversation
+}
+
 // BeforeCreate sets up the keys for a participant record
 func (p *ConversationParticipantRecord) BeforeCreate(participantID string) error {
-	if p.Conversation == nil || p.ID == "" {
+	conversation := p.SyncConversationData()
+	if conversation == nil || conversation.ID == "" {
 		return ErrConversationDataRequired
 	}
 
+	participantID = CanonicalConversationParticipantID(participantID)
 	p.PK = fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)
-	p.SK = fmt.Sprintf("%s#%s", p.UpdatedAt.Format(time.RFC3339), p.ID)
-	p.GSI1PK = fmt.Sprintf(KeyPatternConversation, p.ID)
+	p.SK = fmt.Sprintf("%s#%s", conversation.UpdatedAt.Format(time.RFC3339), conversation.ID)
+	p.GSI1PK = fmt.Sprintf(KeyPatternConversation, conversation.ID)
 	p.GSI1SK = fmt.Sprintf("PARTICIPANT#%s", participantID)
 
 	return nil

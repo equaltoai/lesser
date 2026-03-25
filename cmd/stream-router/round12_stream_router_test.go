@@ -207,7 +207,7 @@ func newConversationParticipantRecord(username, conversationID, requestState str
 				"gsi1SK":       events.NewStringAttribute("PARTICIPANT#" + username),
 				"requestState": events.NewStringAttribute(requestState),
 				"conversation": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-					"id": events.NewStringAttribute(conversationID),
+					"ID": events.NewStringAttribute(conversationID),
 				}),
 			},
 		},

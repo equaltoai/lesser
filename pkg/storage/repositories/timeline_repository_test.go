@@ -95,6 +95,46 @@ func TestGetConversations(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
+func TestGetConversations_HydratesEmbeddedSnapshot(t *testing.T) {
+	mockDB := new(mocks.MockDB)
+	expectWithContext(mockDB)
+	mockQuery := new(mocks.MockQuery)
+	logger := zap.NewNop()
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
+
+	ctx := context.Background()
+	username := "testuser"
+
+	records := []*models.ConversationParticipantRecord{
+		{
+			PK: fmt.Sprintf("USER_CONVERSATIONS#%s", username),
+			SK: fmt.Sprintf("%d#conv1", time.Now().Unix()),
+			ConversationData: &models.ConversationSnapshot{
+				ID:           "conv1",
+				Participants: []string{username, "user2"},
+			},
+			Unread: true,
+		},
+	}
+
+	mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(mockQuery)
+	mockQuery.On("Where", "PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", username)).Return(mockQuery)
+	mockQuery.On("OrderBy", "SK", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Limit", 11).Return(mockQuery)
+	mockQuery.On("All", mock.AnythingOfType("*[]*models.ConversationParticipantRecord")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]*models.ConversationParticipantRecord)
+		*dest = records
+	}).Return(nil)
+
+	conversations, nextCursor, err := repo.GetConversations(ctx, username, 10, "")
+
+	assert.NoError(t, err)
+	assert.Len(t, conversations, 1)
+	assert.Equal(t, "conv1", conversations[0].ID)
+	assert.True(t, conversations[0].Unread)
+	assert.Empty(t, nextCursor)
+}
+
 func TestRemoveFromTimelines(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	expectWithContext(mockDB)

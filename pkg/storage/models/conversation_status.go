@@ -37,6 +37,7 @@ func (s *ConversationStatus) BeforeCreate() error {
 		return ErrConversationStatusUserIDRequired
 	}
 
+	s.UserID = CanonicalConversationParticipantID(s.UserID)
 	s.PK = fmt.Sprintf("CONVERSATION_STATUS#%s", s.ConversationID)
 	s.SK = fmt.Sprintf(KeyPatternUser, s.UserID)
 
@@ -50,6 +51,7 @@ func (s *ConversationStatus) BeforeCreate() error {
 // UpdateKeys updates the composite keys based on conversation ID and user ID
 func (s *ConversationStatus) UpdateKeys() error {
 	if s.ConversationID != "" && s.UserID != "" {
+		s.UserID = CanonicalConversationParticipantID(s.UserID)
 		s.PK = fmt.Sprintf("CONVERSATION_STATUS#%s", s.ConversationID)
 		s.SK = fmt.Sprintf(KeyPatternUser, s.UserID)
 	}
