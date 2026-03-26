@@ -108,7 +108,7 @@ func TestService_auditDMRequestEvent_UsesMediumSeverityOnFailure(t *testing.T) {
 	auditRepo.AssertExpectations(t)
 }
 
-func TestService_directMessageRecipientRequestState_ReturnsEmptyOnErrorOrNilRecord(t *testing.T) {
+func TestService_getParticipantRecordForSend_ReturnsNilOnErrorOrMissingRecord(t *testing.T) {
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
@@ -118,11 +118,15 @@ func TestService_directMessageRecipientRequestState_ReturnsEmptyOnErrorOrNilReco
 		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
 		Return((*models.ConversationParticipantRecord)(nil), errors.New("boom")).
 		Once()
-	require.Equal(t, models.DmRequestState(""), service.directMessageRecipientRequestState(ctx, "conv123", "bob"))
+	record, err := service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	require.Error(t, err)
+	require.Nil(t, record)
 
 	conversationRepo.
 		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
 		Return((*models.ConversationParticipantRecord)(nil), nil).
 		Once()
-	require.Equal(t, models.DmRequestState(""), service.directMessageRecipientRequestState(ctx, "conv123", "bob"))
+	record, err = service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	require.NoError(t, err)
+	require.Nil(t, record)
 }

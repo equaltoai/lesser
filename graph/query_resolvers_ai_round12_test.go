@@ -36,9 +36,6 @@ func TestRound12QueryResolvers_AI_ExplainObject_ObjectAndStatusFallback(t *testi
 	require.NotNil(t, expl.Object)
 	require.NotEmpty(t, expl.AccessPattern)
 
-	statusRepo, ok := storageRepo.Status().(*inmemory.StatusRepository)
-	require.True(t, ok)
-
 	status := &models.Status{
 		StatusID:       "status-1",
 		AuthorUsername: "alice",
@@ -46,7 +43,7 @@ func TestRound12QueryResolvers_AI_ExplainObject_ObjectAndStatusFallback(t *testi
 		CreatedAt:      time.Now().Add(-time.Hour),
 		UpdatedAt:      time.Now().Add(-time.Minute),
 	}
-	require.NoError(t, statusRepo.CreateStatus(ctx, status))
+	require.NoError(t, storageRepo.Status().CreateStatus(ctx, status))
 
 	expl, err = resolver.Query().ExplainObject(ctx, "status-1")
 	require.NoError(t, err)

@@ -43,7 +43,7 @@ func TestService_CreateConversation_CreatesNewConversation(t *testing.T) {
 }
 
 func TestService_SendMessage_Success(t *testing.T) {
-	service, conversationRepo, noteRepo, accountRepo, publisher, federation := createTestService()
+	service, conversationRepo, _, accountRepo, publisher, federation := createTestService()
 	ctx := context.Background()
 
 	conversation := createTestConversation("conv123", []string{"sender123", "recipient456"})
@@ -52,24 +52,37 @@ func TestService_SendMessage_Success(t *testing.T) {
 	accountRepo.On("GetAccount", ctx, "sender123").Return(createTestAccount("sender123", "alice"), nil)
 	accountRepo.On("GetAccount", ctx, "recipient456").Return(createTestAccount("recipient456", "bob"), nil)
 
-	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil).Once()
-	conversationRepo.On("UpdateConversationLastStatus", ctx, "conv123", mock.AnythingOfType("string")).Return(nil).Once()
-
-	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "sender123").
-		Return(&models.ConversationParticipantRecord{}, nil).
-		Once()
 	conversationRepo.
 		On("GetConversationParticipantRecord", ctx, "conv123", "recipient456").
 		Return(&models.ConversationParticipantRecord{RequestState: models.DmRequestStateDeclined}, nil).
 		Once()
 	conversationRepo.
-		On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).
-		Return(nil).
-		Twice()
+		On("GetConversationParticipantRecord", ctx, "conv123", "sender123").
+		Return(&models.ConversationParticipantRecord{}, nil).
+		Once()
+	conversationRepo.
+		On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+			if transition == nil || transition.Status == nil || len(transition.ParticipantStates) != 2 {
+				return false
+			}
+			stateByViewer := map[string]*models.UserConversationState{}
+			for _, state := range transition.ParticipantStates {
+				stateByViewer[state.ViewerID] = state
+			}
 
-	conversationRepo.On("MarkConversationRead", ctx, "conv123", "sender123").Return(nil).Once()
-	conversationRepo.On("MarkConversationUnread", ctx, "conv123", "recipient456").Return(nil).Once()
+			senderState := stateByViewer["sender123"]
+			recipientState := stateByViewer["recipient456"]
+			return senderState != nil &&
+				recipientState != nil &&
+				senderState.Folder == models.UserConversationFolderInbox &&
+				senderState.RequestState == models.DmRequestStateAccepted &&
+				!senderState.Unread &&
+				recipientState.Folder == models.UserConversationFolderRequests &&
+				recipientState.RequestState == models.DmRequestStatePending &&
+				recipientState.Unread
+		})).
+		Return(nil).
+		Once()
 
 	result, err := service.SendMessage(ctx, &SendMessageCommand{
 		SenderID:       "sender123",
@@ -85,7 +98,6 @@ func TestService_SendMessage_Success(t *testing.T) {
 	require.Empty(t, federation.GetQueuedActivities())
 
 	conversationRepo.AssertExpectations(t)
-	noteRepo.AssertExpectations(t)
 	accountRepo.AssertExpectations(t)
 }
 

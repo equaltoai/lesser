@@ -181,6 +181,11 @@ func (m *mockConversationRepository) UpdateConversationLastStatus(ctx context.Co
 	return args.Error(0)
 }
 
+func (m *mockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
+	args := m.Called(ctx, transition)
+	return args.Error(0)
+}
+
 func (m *mockConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
 	args := m.Called(ctx, conversationID, username)
 	return args.Error(0)
@@ -745,7 +750,7 @@ func createTestMessage(id, authorID, conversationID, content string) *models.Sta
 // Test cases
 
 func TestService_SendDirectMessage_NewConversation(t *testing.T) {
-	service, conversationRepo, noteRepo, accountRepo, publisher, federation := createTestService()
+	service, conversationRepo, _, accountRepo, publisher, federation := createTestService()
 	ctx := context.Background()
 
 	// Test data
@@ -766,21 +771,30 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 	// No existing conversation
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"recipient456", "sender123"}).Return(nil, fmt.Errorf("not found"))
 
-	// Create new conversation
-	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"recipient456", "sender123"}).Return(nil)
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		if transition == nil || transition.Status == nil || len(transition.ParticipantStates) != 2 {
+			return false
+		}
+		if !transition.CreateConversation {
+			return false
+		}
 
-	// Create message
-	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
+		stateByViewer := map[string]*models.UserConversationState{}
+		for _, state := range transition.ParticipantStates {
+			stateByViewer[state.ViewerID] = state
+		}
 
-	// Update conversation
-	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil)
-
-	// DM request lifecycle + unread tracking
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil)
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
-	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "sender123").Return(nil)
-	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "recipient456").Return(nil)
+		senderState := stateByViewer["sender123"]
+		recipientState := stateByViewer["recipient456"]
+		return senderState != nil &&
+			recipientState != nil &&
+			senderState.Folder == models.UserConversationFolderInbox &&
+			senderState.RequestState == models.DmRequestStateAccepted &&
+			!senderState.Unread &&
+			recipientState.Folder == models.UserConversationFolderRequests &&
+			recipientState.RequestState == models.DmRequestStatePending &&
+			recipientState.Unread
+	})).Return(nil).Once()
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
@@ -806,12 +820,11 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 	assert.Len(t, events, 3)
 
 	conversationRepo.AssertExpectations(t)
-	noteRepo.AssertExpectations(t)
 	accountRepo.AssertExpectations(t)
 }
 
 func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
-	service, conversationRepo, noteRepo, accountRepo, _, federation := createTestService()
+	service, conversationRepo, _, accountRepo, _, federation := createTestService()
 	ctx := context.Background()
 
 	// Test data - create a remote recipient (different domain)
@@ -836,21 +849,7 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	// No existing conversation
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"bob@remote.com", "sender123"}).Return(nil, fmt.Errorf("not found"))
 
-	// Create new conversation
-	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"bob@remote.com", "sender123"}).Return(nil)
-
-	// Create message
-	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
-
-	// Update conversation
-	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil)
-
-	// DM request lifecycle + unread tracking
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "bob@remote.com").Return(&models.ConversationParticipantRecord{}, nil)
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
-	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "sender123").Return(nil)
-	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "bob@remote.com").Return(nil)
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).Return(nil).Once()
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
@@ -865,12 +864,11 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	assert.Len(t, activities, 0)
 
 	conversationRepo.AssertExpectations(t)
-	noteRepo.AssertExpectations(t)
 	accountRepo.AssertExpectations(t)
 }
 
 func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
-	service, conversationRepo, noteRepo, accountRepo, _, _ := createTestService()
+	service, conversationRepo, _, accountRepo, _, _ := createTestService()
 	ctx := context.Background()
 
 	// Test data
@@ -891,18 +889,32 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 	// Existing conversation found
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"recipient456", "sender123"}).Return(existingConversation, nil)
 
-	// Create message
-	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil).Once()
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil).Once()
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		if transition == nil || transition.Status == nil || len(transition.ParticipantStates) != 2 {
+			return false
+		}
+		if transition.CreateConversation {
+			return false
+		}
 
-	// Update conversation
-	conversationRepo.On("UpdateConversationLastStatus", ctx, "conv123", mock.AnythingOfType("string")).Return(nil)
+		stateByViewer := map[string]*models.UserConversationState{}
+		for _, state := range transition.ParticipantStates {
+			stateByViewer[state.ViewerID] = state
+		}
 
-	// DM request lifecycle + unread tracking
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil)
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil)
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
-	conversationRepo.On("MarkConversationRead", ctx, "conv123", "sender123").Return(nil)
-	conversationRepo.On("MarkConversationUnread", ctx, "conv123", "recipient456").Return(nil)
+		senderState := stateByViewer["sender123"]
+		recipientState := stateByViewer["recipient456"]
+		return senderState != nil &&
+			recipientState != nil &&
+			senderState.Folder == models.UserConversationFolderInbox &&
+			senderState.RequestState == models.DmRequestStateAccepted &&
+			!senderState.Unread &&
+			recipientState.Folder == models.UserConversationFolderRequests &&
+			recipientState.RequestState == models.DmRequestStatePending &&
+			recipientState.Unread
+	})).Return(nil).Once()
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
@@ -914,7 +926,6 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 	assert.Equal(t, "Another message in existing conversation", result.Message.Content)
 
 	conversationRepo.AssertExpectations(t)
-	noteRepo.AssertExpectations(t)
 	accountRepo.AssertExpectations(t)
 }
 
