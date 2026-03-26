@@ -1115,27 +1115,7 @@ func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, use
 		return nil, err
 	}
 
-	states := make([]*models.UserConversationState, 0, len(stateResult.Items))
-	for _, item := range stateResult.Items {
-		states = append(states, &models.UserConversationState{
-			ViewerID:                 item.ViewerID,
-			ConversationID:           item.ConversationID,
-			CounterpartID:            item.CounterpartID,
-			Folder:                   item.Folder,
-			RequestState:             item.RequestState,
-			PreviewStatusID:          item.PreviewStatusID,
-			PreviewStatusPublishedAt: item.PreviewStatusPublishedAt,
-			SortAt:                   item.SortAt,
-			Unread:                   item.Unread,
-			LastReadAt:               item.LastReadAt,
-			DeletedAt:                item.DeletedAt,
-			RequestedAt:              item.RequestedAt,
-			AcceptedAt:               item.AcceptedAt,
-			DeclinedAt:               item.DeclinedAt,
-			CreatedAt:                item.CreatedAt,
-			UpdatedAt:                item.UpdatedAt,
-		})
-	}
+	states := stateModelsFromContracts(stateResult.Items)
 	unreadConversations, err := r.loadConversationsForStates(ctx, states)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "unread conversations")
