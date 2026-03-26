@@ -176,11 +176,7 @@ func listGoPackageDirsForLint(repoRoot string, env map[string]string) ([]string,
 	}
 
 	dirsByPath := make(map[string]struct{})
-	for _, line := range strings.Split(out, "\n") {
-		dir := strings.TrimSpace(line)
-		if dir == "" {
-			continue
-		}
+	for _, dir := range goListLines(out) {
 		rel, err := filepath.Rel(repoRoot, dir)
 		if err != nil {
 			return nil, err

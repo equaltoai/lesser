@@ -128,13 +128,7 @@ func listGoPackagesForSecurityTool(dir string, env map[string]string) ([]string,
 	}
 
 	pkgs := make([]string, 0)
-	for _, line := range strings.Split(out, "\n") {
-		pkg := strings.TrimSpace(line)
-		if pkg == "" {
-			continue
-		}
-		pkgs = append(pkgs, pkg)
-	}
+	pkgs = append(pkgs, goListLines(out)...)
 	sort.Strings(pkgs)
 	return pkgs, nil
 }
