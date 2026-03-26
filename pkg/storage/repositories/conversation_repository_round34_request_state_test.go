@@ -66,16 +66,17 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		conversationUpdatedAt := sortAt.Add(2 * time.Hour)
 		lastReadAt := conversationTimePtr(sortAt.Add(-30 * time.Minute))
 		state := &models.UserConversationState{
-			ViewerID:       "alice",
-			ConversationID: "conv-1",
-			CounterpartID:  "bob",
-			Folder:         models.UserConversationFolderInbox,
-			RequestState:   models.DmRequestStateAccepted,
-			Unread:         true,
-			LastReadAt:     lastReadAt,
-			SortAt:         sortAt,
-			CreatedAt:      sortAt.Add(-time.Hour),
-			UpdatedAt:      sortAt,
+			ViewerID:        "alice",
+			ConversationID:  "conv-1",
+			CounterpartID:   "bob",
+			Folder:          models.UserConversationFolderInbox,
+			RequestState:    models.DmRequestStateAccepted,
+			PreviewStatusID: "status-1",
+			Unread:          true,
+			LastReadAt:      lastReadAt,
+			SortAt:          sortAt,
+			CreatedAt:       sortAt.Add(-time.Hour),
+			UpdatedAt:       sortAt,
 		}
 		conversation := &models.Conversation{
 			ID:           "conv-1",
@@ -105,10 +106,12 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.Len(t, modelsFromContracts, 1)
 		require.Equal(t, contract.ConversationID, modelsFromContracts[0].ConversationID)
 
-		require.Nil(t, cloneConversationForViewer(nil, false))
-		cloned := cloneConversationForViewer(conversation, true)
+		require.Nil(t, cloneConversationForViewer(nil, nil))
+		cloned := cloneConversationForViewer(conversation, state)
 		require.NotNil(t, cloned)
 		require.True(t, cloned.Unread)
+		require.NotNil(t, cloned.ViewerState)
+		require.Equal(t, "status-1", cloned.ViewerState.PreviewStatusID)
 		cloned.Participants[0] = "mutated"
 		require.Equal(t, "alice", conversation.Participants[0])
 
@@ -470,6 +473,9 @@ func TestRound34_ConversationRepository_GetUserConversationsByFolder_UsesFolderQ
 	require.Len(t, result.Items, 1)
 	require.Equal(t, "conv-1", result.Items[0].ID)
 	require.True(t, result.Items[0].Unread)
+	require.NotNil(t, result.Items[0].ViewerState)
+	require.Equal(t, models.UserConversationFolderRequests, result.Items[0].ViewerState.Folder)
+	require.Equal(t, "bob", result.Items[0].ViewerState.CounterpartID)
 }
 
 func TestRound34_ConversationRepository_GetUserConversationsByFolder_PropagatesFolderQueryError(t *testing.T) {
@@ -776,14 +782,16 @@ func TestRound34_ConversationRepository_GetUnreadConversations_ProjectsCanonical
 	unreadQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.UserConversationState)
 		*dest = []*models.UserConversationState{{
-			ViewerID:       "alice",
-			ConversationID: "conv-8",
-			CounterpartID:  "bob",
-			Folder:         models.UserConversationFolderInbox,
-			Unread:         true,
-			SortAt:         sortAt,
-			CreatedAt:      sortAt.Add(-time.Hour),
-			UpdatedAt:      sortAt,
+			ViewerID:        "alice",
+			ConversationID:  "conv-8",
+			CounterpartID:   "bob",
+			Folder:          models.UserConversationFolderInbox,
+			RequestState:    models.DmRequestStateAccepted,
+			PreviewStatusID: "status-preview",
+			Unread:          true,
+			SortAt:          sortAt,
+			CreatedAt:       sortAt.Add(-time.Hour),
+			UpdatedAt:       sortAt,
 		}}
 	}).Return(nil).Once()
 
@@ -805,6 +813,9 @@ func TestRound34_ConversationRepository_GetUnreadConversations_ProjectsCanonical
 	require.Len(t, result.Items, 1)
 	require.Equal(t, "conv-8", result.Items[0].ID)
 	require.True(t, result.Items[0].Unread)
+	require.NotNil(t, result.Items[0].ViewerState)
+	require.Equal(t, "status-preview", result.Items[0].ViewerState.PreviewStatusID)
+	require.Equal(t, "bob", result.Items[0].ViewerState.CounterpartID)
 }
 
 func TestRound34_ConversationRepository_GetUnreadConversations_WrapsConversationLoadError(t *testing.T) {

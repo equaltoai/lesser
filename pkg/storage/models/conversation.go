@@ -46,6 +46,11 @@ type Conversation struct {
 	// Message counting fields
 	TotalMessageCount int64     `theorydb:"attr:totalMessageCount" json:"total_message_count"`       // Total messages in conversation
 	LastMessageTime   time.Time `theorydb:"attr:lastMessageTime" json:"last_message_time,omitempty"` // Time of last message
+
+	// ViewerState is a runtime-only projection of the canonical per-user DM row that
+	// powered a list read. It lets callers build list responses from canonical state
+	// without reloading compatibility participant snapshots.
+	ViewerState *UserConversationState `theorydb:"-" json:"-"`
 }
 
 // CanonicalConversationParticipantID normalizes local conversation participant identifiers

@@ -92,13 +92,27 @@ func defaultUserConversationState(conversation *models.Conversation, viewerID st
 	return state
 }
 
-func cloneConversationForViewer(conversation *models.Conversation, unread bool) *models.Conversation {
+func cloneUserConversationState(state *models.UserConversationState) *models.UserConversationState {
+	if state == nil {
+		return nil
+	}
+
+	cloned := *state
+	return &cloned
+}
+
+func cloneConversationForViewer(conversation *models.Conversation, state *models.UserConversationState) *models.Conversation {
 	if conversation == nil {
 		return nil
 	}
 
 	clonedParticipants := make([]string, len(conversation.Participants))
 	copy(clonedParticipants, conversation.Participants)
+
+	unread := false
+	if state != nil {
+		unread = state.Unread
+	}
 
 	return &models.Conversation{
 		PK:                conversation.PK,
@@ -113,6 +127,7 @@ func cloneConversationForViewer(conversation *models.Conversation, unread bool) 
 		UpdatedAt:         conversation.UpdatedAt,
 		TotalMessageCount: conversation.TotalMessageCount,
 		LastMessageTime:   conversation.LastMessageTime,
+		ViewerState:       cloneUserConversationState(state),
 	}
 }
 
@@ -200,7 +215,7 @@ func stateRecordFromModel(state *models.UserConversationState, conversation *mod
 		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
 		SortAt:                   state.SortAt,
 		UpdatedAt:                state.UpdatedAt,
-		Conversation:             cloneConversationForViewer(conversation, state.Unread),
+		Conversation:             cloneConversationForViewer(conversation, state),
 	}
 	return record
 }
@@ -360,7 +375,7 @@ func (r *ConversationRepository) loadConversationsForStates(ctx context.Context,
 			}
 			return nil, err
 		}
-		conversations = append(conversations, cloneConversationForViewer(conversation, state.Unread))
+		conversations = append(conversations, cloneConversationForViewer(conversation, state))
 	}
 	return conversations, nil
 }

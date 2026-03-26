@@ -255,28 +255,30 @@ func TestRound07_ConversationRepository_GetConversationStatuses_ScanErrorAndPagi
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 
-	mockQuery.On("Scan", mock.Anything).Return(stdErrors.New("scan-failed")).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Return(stdErrors.New("query-failed")).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	_, _, err := repo.GetConversationStatuses(context.Background(), "conv-1", 1, "")
 	require.Error(t, err)
 
 	// Pagination + nextCursor branch.
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		ptr := args.Get(0).(*[]models.ConversationMessage)
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*[]models.Status)
 		now := time.Unix(10, 0).UTC()
-		*ptr = []models.ConversationMessage{
-			{SK: "STATUS#1", ConversationID: "conv-1", SenderUsername: "user-1", CreatedAt: now},
-			{SK: "STATUS#2", ConversationID: "conv-1", SenderUsername: "user-1", CreatedAt: now.Add(time.Second)},
+		*ptr = []models.Status{
+			{StatusID: "status-1", AuthorUsername: "user-1", CreatedAt: now, GSI3SK: "STATUS#1"},
+			{StatusID: "status-2", AuthorUsername: "user-1", CreatedAt: now.Add(time.Second), GSI3SK: "STATUS#2"},
 		}
 	}).Return(nil).Once()
 
 	_, nextCursor, err := repo.GetConversationStatuses(context.Background(), "conv-1", 1, "")
 	require.NoError(t, err)
-	require.Equal(t, "STATUS#2", nextCursor)
+	require.Equal(t, "STATUS#1", nextCursor)
 }
 
 func TestRound07_ConversationRepository_StatusCreateValidationErrors(t *testing.T) {
@@ -511,7 +513,6 @@ func TestRound07_ConversationRepository_MuteCRUD_ErrorBranchesAndCleanup(t *test
 func TestRound07_ConversationRepository_GetUnreadMessageCount_WarnsAndContinues(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	inboxQuery := new(mocks.MockQuery)
-	requestQuery := new(mocks.MockQuery)
 	conversationQuery1 := new(mocks.MockQuery)
 	conversationQuery2 := new(mocks.MockQuery)
 	pointStateQuery1 := new(mocks.MockQuery)
@@ -530,13 +531,6 @@ func TestRound07_ConversationRepository_GetUnreadMessageCount_WarnsAndContinues(
 			{ViewerID: "user-1", ConversationID: "conv-2", Folder: models.UserConversationFolderInbox, SortAt: time.Unix(1, 0).UTC()},
 		}
 	}).Return(nil).Once()
-
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(requestQuery).Once()
-	requestQuery.On("Index", "gsi1").Return(requestQuery).Once()
-	requestQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#user-1#REQUESTS").Return(requestQuery).Once()
-	requestQuery.On("OrderBy", "gsi1SK", "DESC").Return(requestQuery).Once()
-	requestQuery.On("Limit", 101).Return(requestQuery).Once()
-	requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(nil).Once()
 
 	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery1).Once()
 	conversationQuery1.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(conversationQuery1).Once()
