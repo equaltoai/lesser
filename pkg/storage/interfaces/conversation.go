@@ -98,6 +98,10 @@ type ConversationRepository interface {
 	// UpdateConversationLastStatus updates the last status in a conversation
 	UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error
 
+	// ApplyDirectMessageSend atomically writes the canonical DM send transition:
+	// status row, shared conversation metadata, and both per-user state rows.
+	ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error
+
 	// ===== Participant Operations =====
 
 	// AddParticipant adds a participant to a conversation
