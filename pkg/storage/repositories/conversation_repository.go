@@ -80,6 +80,12 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 	return r.createConversation(ctx, conversation, participants, nil)
 }
 
+// CreateConversationWithParticipantStates creates a conversation and explicit canonical
+// per-user DM state rows through the same repository-owned write path.
+func (r *ConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error {
+	return r.createConversation(ctx, conversation, participants, participantStates)
+}
+
 func (r *ConversationRepository) createConversation(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error {
 	if conversation == nil {
 		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityConversation, "nil")

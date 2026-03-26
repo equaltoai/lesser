@@ -264,9 +264,7 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 		return nil, errors.Join(ErrLookupExistingConversation, err)
 	}
 
-	created := false
 	if conversation == nil {
-		created = true
 		conversationID := uuid.New().String()
 		conversation = &models.Conversation{
 			ID:           conversationID,
@@ -274,12 +272,12 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
-		if err := s.conversationRepo.CreateConversation(ctx, conversation, participants); err != nil {
+		initialStates := buildCreateConversationParticipantStates(conversation, creatorID, participantID)
+		if err := s.conversationRepo.CreateConversationWithParticipantStates(ctx, conversation, participants, initialStates); err != nil {
 			if errors.Is(err, storage.ErrAlreadyExists) {
 				existingConversation, reloadErr := s.conversationRepo.GetConversationByParticipants(ctx, participants)
 				if reloadErr == nil && existingConversation != nil {
 					conversation = existingConversation
-					created = false
 				} else {
 					s.logger.Warn("conversation create lost a lookup race and canonical reload failed",
 						zap.Strings("participants", participants),
@@ -292,47 +290,6 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 		}
 	}
 
-	// Ensure per-user request state is initialized consistently for a new conversation.
-	now := time.Now().UTC()
-	if err := s.updateParticipantRecord(ctx, conversation.ID, creatorID, func(record *models.ConversationParticipantRecord) {
-		if record == nil {
-			return
-		}
-		record.RequestState = models.DmRequestStateAccepted
-		record.DeclinedAt = nil
-		if record.AcceptedAt == nil {
-			t := now
-			record.AcceptedAt = &t
-		}
-	}); err != nil {
-		s.logger.Warn("failed to update creator participant record for conversation create",
-			zap.String("conversation_id", conversation.ID),
-			zap.String("creator_id", creatorID),
-			zap.Error(err))
-	}
-
-	if err := s.updateParticipantRecord(ctx, conversation.ID, participantID, func(record *models.ConversationParticipantRecord) {
-		if record == nil {
-			return
-		}
-
-		// Creating a conversation (without sending a message) should not surface anything to the other
-		// participant. We keep their side hidden until the first inbound DM arrives.
-		if !created {
-			return
-		}
-
-		record.RequestState = ""
-		record.RequestedAt = nil
-		record.AcceptedAt = nil
-		record.DeclinedAt = nil
-	}); err != nil {
-		s.logger.Warn("failed to update participant record for conversation create",
-			zap.String("conversation_id", conversation.ID),
-			zap.String("participant_id", participantID),
-			zap.Error(err))
-	}
-
 	// Populate per-viewer unread state.
 	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, creatorID); err == nil && record != nil {
 		conversation.Unread = record.Unread
@@ -342,6 +299,45 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 		Conversation: conversation,
 		Events:       []*streaming.Event{},
 	}, nil
+}
+
+func buildCreateConversationParticipantStates(conversation *models.Conversation, creatorID, participantID string) []*models.UserConversationState {
+	if conversation == nil {
+		return nil
+	}
+
+	updatedAt := conversation.UpdatedAt.UTC()
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	createdAt := conversation.CreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = updatedAt
+	}
+	acceptedAt := updatedAt
+
+	return []*models.UserConversationState{
+		{
+			ViewerID:       creatorID,
+			ConversationID: conversation.ID,
+			CounterpartID:  participantID,
+			Folder:         models.UserConversationFolderInbox,
+			RequestState:   models.DmRequestStateAccepted,
+			AcceptedAt:     &acceptedAt,
+			CreatedAt:      createdAt,
+			UpdatedAt:      updatedAt,
+			SortAt:         updatedAt,
+		},
+		{
+			ViewerID:       participantID,
+			ConversationID: conversation.ID,
+			CounterpartID:  creatorID,
+			Folder:         models.UserConversationFolderHidden,
+			CreatedAt:      createdAt,
+			UpdatedAt:      updatedAt,
+			SortAt:         updatedAt,
+		},
+	}
 }
 
 func (s *Service) validateSendDirectMessageCommand(ctx context.Context, cmd *SendDirectMessageCommand) (string, error) {

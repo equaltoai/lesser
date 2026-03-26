@@ -239,7 +239,7 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Return((*models.Conversation)(nil), errors.New("not found")).
 			Once()
 		conversationRepo.
-			On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}).
+			On("CreateConversationWithParticipantStates", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}, mock.AnythingOfType("[]*models.UserConversationState")).
 			Return(errors.New("boom")).
 			Once()
 
@@ -262,7 +262,7 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Return((*models.Conversation)(nil), errors.New("not found")).
 			Once()
 		conversationRepo.
-			On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}).
+			On("CreateConversationWithParticipantStates", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}, mock.AnythingOfType("[]*models.UserConversationState")).
 			Return(storage.ErrAlreadyExists).
 			Once()
 
@@ -273,10 +273,7 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Once()
 
 		creatorRecord := &models.ConversationParticipantRecord{}
-		participantRecord := &models.ConversationParticipantRecord{}
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-race", "alice").Return(creatorRecord, nil).Twice()
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-race", "bob").Return(participantRecord, nil).Once()
-		conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Twice()
+		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-race", "alice").Return(creatorRecord, nil).Once()
 
 		result, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
 		require.NoError(t, err)
@@ -302,16 +299,13 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Once()
 
 		creatorRecord := &models.ConversationParticipantRecord{Unread: true}
-		participantRecord := &models.ConversationParticipantRecord{RequestState: models.DmRequestStatePending}
+		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(creatorRecord, nil).Once()
 
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(creatorRecord, nil).Twice()
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "bob").Return(participantRecord, nil).Once()
-		conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Twice()
-
-		_, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
+		result, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
 		require.NoError(t, err)
-		require.Equal(t, models.DmRequestStateAccepted, creatorRecord.RequestState)
-		require.Equal(t, models.DmRequestStatePending, participantRecord.RequestState)
+		require.NotNil(t, result)
+		require.Equal(t, "conv123", result.Conversation.ID)
+		require.True(t, result.Conversation.Unread)
 	})
 }
 

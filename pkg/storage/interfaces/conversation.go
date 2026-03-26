@@ -20,6 +20,10 @@ type ConversationRepository interface {
 	// CreateConversation creates a new conversation with participants
 	CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error
 
+	// CreateConversationWithParticipantStates creates a new conversation and its canonical
+	// per-user DM state rows as one repository-owned write path.
+	CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error
+
 	// GetConversation retrieves a conversation by ID
 	GetConversation(ctx context.Context, id string) (*models.Conversation, error)
 
