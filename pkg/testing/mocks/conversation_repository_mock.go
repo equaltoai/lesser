@@ -29,6 +29,12 @@ func (m *MockConversationRepository) CreateConversation(ctx context.Context, con
 	return args.Error(0)
 }
 
+// CreateConversationWithParticipantStates mocks the CreateConversationWithParticipantStates method
+func (m *MockConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error {
+	args := m.Called(ctx, conversation, participants, participantStates)
+	return args.Error(0)
+}
+
 // GetConversation mocks the GetConversation method
 func (m *MockConversationRepository) GetConversation(ctx context.Context, id string) (*models.Conversation, error) {
 	args := m.Called(ctx, id)

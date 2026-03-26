@@ -61,6 +61,12 @@ func (r *ConversationRepository) CreateConversation(_ context.Context, conversat
 	return nil
 }
 
+// CreateConversationWithParticipantStates creates a new conversation while ignoring the
+// explicit participant states in the in-memory test repository.
+func (r *ConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, _ []*models.UserConversationState) error {
+	return r.CreateConversation(ctx, conversation, participants)
+}
+
 // GetConversation retrieves a conversation by ID
 func (r *ConversationRepository) GetConversation(_ context.Context, id string) (*models.Conversation, error) {
 	r.mu.RLock()

@@ -239,12 +239,47 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Return((*models.Conversation)(nil), errors.New("not found")).
 			Once()
 		conversationRepo.
-			On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}).
+			On("CreateConversationWithParticipantStates", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}, mock.AnythingOfType("[]*models.UserConversationState")).
 			Return(errors.New("boom")).
 			Once()
 
 		_, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
 		require.ErrorIs(t, err, ErrCreateConversation)
+		accountRepo.AssertExpectations(t)
+		conversationRepo.AssertExpectations(t)
+	})
+
+	t.Run("create_conversation_race_reloads_existing_lookup", func(t *testing.T) {
+		conversationRepo := &mockConversationRepository{}
+		accountRepo := &mockAccountRepository{}
+		service := NewService(conversationRepo, nil, nil, accountRepo, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+		accountRepo.On("GetAccount", ctx, "alice").Return(createTestAccount("alice", "alice"), nil).Once()
+		accountRepo.On("GetAccount", ctx, "bob").Return(createTestAccount("bob", "bob"), nil).Once()
+
+		conversationRepo.
+			On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).
+			Return((*models.Conversation)(nil), errors.New("not found")).
+			Once()
+		conversationRepo.
+			On("CreateConversationWithParticipantStates", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}, mock.AnythingOfType("[]*models.UserConversationState")).
+			Return(storage.ErrAlreadyExists).
+			Once()
+
+		existing := createTestConversation("conv-race", []string{"alice", "bob"})
+		conversationRepo.
+			On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).
+			Return(existing, nil).
+			Once()
+
+		creatorRecord := &models.ConversationParticipantRecord{}
+		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-race", "alice").Return(creatorRecord, nil).Once()
+
+		result, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, "conv-race", result.Conversation.ID)
+
 		accountRepo.AssertExpectations(t)
 		conversationRepo.AssertExpectations(t)
 	})
@@ -264,16 +299,13 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Once()
 
 		creatorRecord := &models.ConversationParticipantRecord{Unread: true}
-		participantRecord := &models.ConversationParticipantRecord{RequestState: models.DmRequestStatePending}
+		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(creatorRecord, nil).Once()
 
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(creatorRecord, nil).Twice()
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "bob").Return(participantRecord, nil).Once()
-		conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Twice()
-
-		_, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
+		result, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
 		require.NoError(t, err)
-		require.Equal(t, models.DmRequestStateAccepted, creatorRecord.RequestState)
-		require.Equal(t, models.DmRequestStatePending, participantRecord.RequestState)
+		require.NotNil(t, result)
+		require.Equal(t, "conv123", result.Conversation.ID)
+		require.True(t, result.Conversation.Unread)
 	})
 }
 

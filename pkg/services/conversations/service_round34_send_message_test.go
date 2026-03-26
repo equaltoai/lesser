@@ -23,15 +23,12 @@ func TestService_CreateConversation_CreatesNewConversation(t *testing.T) {
 		On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).
 		Return((*models.Conversation)(nil), errors.New("not found"))
 	conversationRepo.
-		On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}).
+		On("CreateConversationWithParticipantStates", ctx, mock.AnythingOfType("*models.Conversation"), []string{"alice", "bob"}, mock.AnythingOfType("[]*models.UserConversationState")).
 		Return(nil).
 		Once()
 
 	creatorRecord := &models.ConversationParticipantRecord{Unread: true}
-	participantRecord := &models.ConversationParticipantRecord{}
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "alice").Return(creatorRecord, nil)
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "bob").Return(participantRecord, nil)
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil)
+	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "alice").Return(creatorRecord, nil).Once()
 
 	result, err := service.CreateConversation(ctx, &CreateConversationCommand{
 		CreatorID:     "alice",

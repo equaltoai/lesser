@@ -20,15 +20,41 @@ import (
 // ConversationRepository handles conversation-related database operations using enhanced patterns
 type ConversationRepository struct {
 	*EnhancedBaseRepository[*models.Conversation]
-	logger *zap.Logger
+	logger          *zap.Logger
+	transactWriteFn func(ctx context.Context, fn func(core.TransactionBuilder) error) error
+}
+
+const conversationParticipantLookupSK = "LOOKUP"
+
+type conversationTransactionalDB interface {
+	core.DB
+	TransactWrite(ctx context.Context, fn func(core.TransactionBuilder) error) error
 }
 
 func conversationParticipantLookupPK(participants []string) string {
 	return fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", strings.Join(models.CanonicalConversationParticipants(participants), ","))
 }
 
+func newConversationParticipantLookup(conversationID string, participants []string) *models.ConversationParticipantKey {
+	participantKey := conversationParticipantLookupPK(participants)
+	return &models.ConversationParticipantKey{
+		PK:             participantKey,
+		SK:             conversationParticipantLookupSK,
+		GSI1PK:         participantKey,
+		ConversationID: conversationID,
+	}
+}
+
 func canonicalConversationStatusSK(participantID string) string {
 	return fmt.Sprintf("USER#%s", models.CanonicalConversationParticipantID(participantID))
+}
+
+func newConversationTransactWriteFn(db core.DB) func(ctx context.Context, fn func(core.TransactionBuilder) error) error {
+	txDB, ok := db.(conversationTransactionalDB)
+	if !ok {
+		return nil
+	}
+	return txDB.TransactWrite
 }
 
 // NewConversationRepository creates a new conversation repository with enhanced functionality and cost tracking
@@ -45,11 +71,22 @@ func NewConversationRepository(db core.DB, tableName string, logger *zap.Logger,
 	return &ConversationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,
+		transactWriteFn:        newConversationTransactWriteFn(db),
 	}
 }
 
 // CreateConversation creates a new conversation with participants (KEEP - Complex conversation business logic)
 func (r *ConversationRepository) CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error {
+	return r.createConversation(ctx, conversation, participants, nil)
+}
+
+// CreateConversationWithParticipantStates creates a conversation and explicit canonical
+// per-user DM state rows through the same repository-owned write path.
+func (r *ConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error {
+	return r.createConversation(ctx, conversation, participants, participantStates)
+}
+
+func (r *ConversationRepository) createConversation(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error {
 	if conversation == nil {
 		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityConversation, "nil")
 	}
@@ -81,33 +118,66 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
-	// Create main conversation record using enhanced validation and creation
+	explicitParticipantStates := len(participantStates) > 0
+	preparedStates, err := normalizeConversationParticipantStates(conversation, participantStates)
+	if err != nil {
+		log.Error("failed to prepare participant states", zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
+	}
+
+	if r.transactWriteFn == nil {
+		return r.createConversationLegacy(ctx, log, conversation, preparedStates, explicitParticipantStates)
+	}
+
+	lookupKey := newConversationParticipantLookup(conversation.ID, conversation.Participants)
+	if err := r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
+		tx = tx.WithContext(ctx)
+		tx.Create(conversation)
+		for _, state := range preparedStates {
+			tx.Create(state)
+		}
+		tx.Create(lookupKey)
+		return nil
+	}); err != nil {
+		if errors.IsConditionFailed(err) {
+			log.Info("conversation create transaction lost a duplicate-create race",
+				zap.String("conversation_id", conversation.ID),
+				zap.String("participant_key", lookupKey.PK))
+			return storage.ErrAlreadyExists
+		}
+		log.Error("failed to create conversation transactionally", zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
+	}
+
+	log.Debug("conversation created successfully")
+	return nil
+}
+
+func (r *ConversationRepository) createConversationLegacy(ctx context.Context, log *zap.Logger, conversation *models.Conversation, participantStates []*models.UserConversationState, explicitParticipantStates bool) error {
 	if err := r.ValidateAndCreate(ctx, conversation); err != nil {
 		log.Error("failed to create conversation", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
-	if err := r.initializeUserConversationStates(ctx, conversation); err != nil {
+	var stateErr error
+	switch {
+	case explicitParticipantStates:
+		stateErr = r.createOrUpdateUserConversationStates(ctx, participantStates)
+	default:
+		stateErr = r.initializeUserConversationStates(ctx, conversation)
+	}
+	if stateErr != nil {
 		log.Error("failed to initialize canonical user conversation state",
 			zap.String("conversation_id", conversation.ID),
-			zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
+			zap.Error(stateErr))
+		return ErrorHandler.HandleCreateError(stateErr, EntityConversation, conversation.ID)
 	}
 
-	// Create participant lookup key if needed (for GetConversationByParticipants) - KEEP - Conversation search logic
-	participantKey := strings.Join(models.CanonicalConversationParticipants(conversation.Participants), ",")
-
-	lookupKey := &models.ConversationParticipantKey{
-		PK:             fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey),
-		SK:             "LOOKUP",
-		GSI1PK:         fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey),
-		ConversationID: conversation.ID,
-	}
-
+	lookupKey := newConversationParticipantLookup(conversation.ID, conversation.Participants)
 	if err := r.GetDB().Model(lookupKey).WithContext(ctx).IfNotExists().Create(); err != nil {
 		if errors.IsConditionFailed(err) {
 			log.Info("participant lookup already exists; cleaning up duplicate conversation create",
-				zap.String("participant_key", participantKey),
+				zap.String("participant_key", lookupKey.PK),
 				zap.String("conversation_id", conversation.ID))
 			if cleanupErr := r.DeleteConversation(ctx, conversation.ID); cleanupErr != nil {
 				return ErrorHandler.HandleCreateError(fmt.Errorf("lookup collision cleanup failed: %w", cleanupErr), EntityConversation, conversation.ID)
@@ -115,11 +185,124 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 			return storage.ErrAlreadyExists
 		}
 		log.Warn("failed to create participant lookup key", zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, EntityConversation, participantKey)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, lookupKey.PK)
 	}
 
-	log.Debug("conversation created successfully")
 	return nil
+}
+
+func normalizeConversationParticipantStates(conversation *models.Conversation, participantStates []*models.UserConversationState) ([]*models.UserConversationState, error) {
+	canonicalParticipants, err := canonicalConversationParticipantsForStates(conversation)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(participantStates) == 0 {
+		return defaultConversationParticipantStates(conversation, canonicalParticipants)
+	}
+
+	return normalizeExplicitConversationParticipantStates(conversation, canonicalParticipants, participantStates)
+}
+
+func canonicalConversationParticipantsForStates(conversation *models.Conversation) ([]string, error) {
+	if conversation == nil {
+		return nil, storage.ErrInvalidInput
+	}
+
+	canonicalParticipants := models.CanonicalConversationParticipants(conversation.Participants)
+	if len(canonicalParticipants) == 0 {
+		return nil, storage.ErrInvalidInput
+	}
+	return canonicalParticipants, nil
+}
+
+func defaultConversationParticipantStates(conversation *models.Conversation, canonicalParticipants []string) ([]*models.UserConversationState, error) {
+	states := make([]*models.UserConversationState, 0, len(canonicalParticipants))
+	for _, participantID := range canonicalParticipants {
+		state := defaultUserConversationState(conversation, participantID)
+		if err := state.BeforeCreate(); err != nil {
+			return nil, err
+		}
+		states = append(states, state)
+	}
+	return states, nil
+}
+
+func normalizeExplicitConversationParticipantStates(conversation *models.Conversation, canonicalParticipants []string, participantStates []*models.UserConversationState) ([]*models.UserConversationState, error) {
+	stateByViewer := make(map[string]*models.UserConversationState, len(participantStates))
+	for _, candidate := range participantStates {
+		state, err := normalizeConversationParticipantStateCandidate(conversation, canonicalParticipants, candidate)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := stateByViewer[state.ViewerID]; exists {
+			return nil, storage.ErrInvalidInput
+		}
+		stateByViewer[state.ViewerID] = state
+	}
+
+	states := make([]*models.UserConversationState, 0, len(canonicalParticipants))
+	for _, participantID := range canonicalParticipants {
+		state := stateByViewer[participantID]
+		if state == nil {
+			return nil, storage.ErrInvalidInput
+		}
+		states = append(states, state)
+	}
+	return states, nil
+}
+
+func normalizeConversationParticipantStateCandidate(conversation *models.Conversation, canonicalParticipants []string, candidate *models.UserConversationState) (*models.UserConversationState, error) {
+	if candidate == nil {
+		return nil, storage.ErrInvalidInput
+	}
+
+	state := *candidate
+	state.ViewerID = models.CanonicalConversationParticipantID(state.ViewerID)
+	if state.ViewerID == "" {
+		return nil, storage.ErrInvalidInput
+	}
+	if state.ConversationID == "" {
+		state.ConversationID = conversation.ID
+	}
+	if state.ConversationID != conversation.ID {
+		return nil, storage.ErrInvalidInput
+	}
+	if state.CounterpartID == "" {
+		state.CounterpartID = counterpartForConversation(state.ViewerID, canonicalParticipants)
+	}
+	if state.CreatedAt.IsZero() {
+		state.CreatedAt = conversation.CreatedAt.UTC()
+	}
+	if state.UpdatedAt.IsZero() {
+		state.UpdatedAt = conversation.UpdatedAt.UTC()
+	}
+	if state.PreviewStatusID == "" {
+		state.PreviewStatusID = conversation.LastStatusID
+	}
+	if state.PreviewStatusPublishedAt.IsZero() && !conversation.LastMessageTime.IsZero() {
+		state.PreviewStatusPublishedAt = conversation.LastMessageTime.UTC()
+	}
+	if state.SortAt.IsZero() {
+		state.SortAt = conversationParticipantStateSortAt(conversation, &state)
+	}
+	if err := state.BeforeCreate(); err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+func conversationParticipantStateSortAt(conversation *models.Conversation, state *models.UserConversationState) time.Time {
+	switch {
+	case state != nil && !state.PreviewStatusPublishedAt.IsZero():
+		return state.PreviewStatusPublishedAt.UTC()
+	case conversation != nil && !conversation.LastMessageTime.IsZero():
+		return conversation.LastMessageTime.UTC()
+	case conversation != nil:
+		return conversation.UpdatedAt.UTC()
+	default:
+		return time.Now().UTC()
+	}
 }
 
 // GetConversation retrieves a conversation by ID (REPLACE with BaseRepository)
@@ -356,13 +539,15 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
-	participantKey := conversationParticipantLookupPK(participants)
+	lookupKey := newConversationParticipantLookup("", participants)
 
-	// Exact participant lookups are deterministic, so use a base-table point read.
+	// Exact participant lookups are race-recovery reads, so force strong consistency for
+	// both the lookup row and the conversation metadata row.
 	var record models.ConversationParticipantKey
 	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
-		Where("PK", "=", participantKey).
-		Where("SK", "=", "LOOKUP").
+		ConsistentRead().
+		Where("PK", "=", lookupKey.PK).
+		Where("SK", "=", lookupKey.SK).
 		First(&record)
 
 	if err != nil {
@@ -373,8 +558,23 @@ func (r *ConversationRepository) GetConversationByParticipants(ctx context.Conte
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "participants")
 	}
 
-	// Get the full conversation
-	return r.GetConversation(ctx, record.ConversationID)
+	var conversation models.Conversation
+	err = r.GetDB().Model(&models.Conversation{}).WithContext(ctx).
+		ConsistentRead().
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", record.ConversationID)).
+		Where("SK", "=", "METADATA").
+		First(&conversation)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)
+		}
+		log.Error("failed to load conversation after participant lookup",
+			zap.String("conversation_id", record.ConversationID),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)
+	}
+
+	return &conversation, nil
 }
 
 // MarkConversationRead marks a conversation as read for a user (KEEP - Read receipt business logic)
