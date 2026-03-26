@@ -831,27 +831,21 @@ func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conve
 		zap.String("username", username),
 	)
 
-	// Get the conversation status to find last read time
-	var status models.ConversationStatus
-	err := r.GetDB().Model(&models.ConversationStatus{}).WithContext(ctx).
-		Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conversationID)).
-		Where("SK", "=", canonicalConversationStatusSK(username)).
-		First(&status)
-
-	var lastReadTime time.Time
-	if errors.IsNotFound(err) {
-		// If no status record exists, user has never read this conversation
-		// Count all messages as unread
-		lastReadTime = time.Time{} // Zero time
-	} else if err != nil {
-		log.Error("failed to get conversation status", zap.Error(err))
-		return 0, ErrorHandler.HandleGetError(err, EntityConversation, conversationID)
-	} else {
-		if !status.Unread {
-			// Conversation is marked as read
+	state, err := r.getUserConversationStateModel(ctx, username, conversationID)
+	if err != nil {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return 0, nil
 		}
-		lastReadTime = status.LastReadAt
+		log.Error("failed to get user conversation state", zap.Error(err))
+		return 0, ErrorHandler.HandleGetError(err, EntityConversation, conversationID)
+	}
+	if state == nil || !state.Unread {
+		return 0, nil
+	}
+
+	var lastReadTime time.Time
+	if state.LastReadAt != nil {
+		lastReadTime = state.LastReadAt.UTC()
 	}
 
 	// Count messages after the last read time
