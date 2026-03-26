@@ -60,6 +60,14 @@ func (m *mockConversationRepository) GetUserConversations(ctx context.Context, u
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
 }
 
+func (m *mockConversationRepository) GetUserConversationsByFolder(ctx context.Context, userID string, folder models.UserConversationFolder, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	args := m.Called(ctx, userID, folder, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
+}
+
 func (m *mockConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	args := m.Called(ctx, userID, requestState, opts)
 	if args.Get(0) == nil {

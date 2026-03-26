@@ -1365,11 +1365,11 @@ func (s *Service) ListConversations(ctx context.Context, query *ListConversation
 	var err error
 
 	if query.Folder != "" {
-		requestState := models.DmRequestStateAccepted
+		folder := models.UserConversationFolderInbox
 		if query.Folder == ConversationFolderRequests {
-			requestState = models.DmRequestStatePending
+			folder = models.UserConversationFolderRequests
 		}
-		result, err = s.conversationRepo.GetUserConversationsByRequestState(ctx, query.UserID, requestState, query.Pagination)
+		result, err = s.conversationRepo.GetUserConversationsByFolder(ctx, query.UserID, folder, query.Pagination)
 	} else if query.OnlyUnread {
 		result, err = s.conversationRepo.GetUnreadConversations(ctx, query.UserID, query.Pagination)
 	} else {

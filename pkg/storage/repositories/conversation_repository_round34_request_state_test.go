@@ -409,7 +409,7 @@ func TestRound34_ConversationRepository_UserConversationStateWrappers(t *testing
 	})
 }
 
-func TestRound34_ConversationRepository_GetUserConversationsByRequestState_UsesFolderQuery(t *testing.T) {
+func TestRound34_ConversationRepository_GetUserConversationsByFolder_UsesFolderQuery(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	requestQuery := new(mocks.MockQuery)
@@ -447,14 +447,14 @@ func TestRound34_ConversationRepository_GetUserConversationsByRequestState_UsesF
 	}).Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	result, err := repo.GetUserConversationsByRequestState(ctx, "alice", models.DmRequestStatePending, interfaces.PaginationOptions{Limit: 1})
+	result, err := repo.GetUserConversationsByFolder(ctx, "alice", models.UserConversationFolderRequests, interfaces.PaginationOptions{Limit: 1})
 	require.NoError(t, err)
 	require.Len(t, result.Items, 1)
 	require.Equal(t, "conv-1", result.Items[0].ID)
 	require.True(t, result.Items[0].Unread)
 }
 
-func TestRound34_ConversationRepository_GetUserConversationsByRequestState_PropagatesFolderQueryError(t *testing.T) {
+func TestRound34_ConversationRepository_GetUserConversationsByFolder_PropagatesFolderQueryError(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	requestQuery := new(mocks.MockQuery)
@@ -468,7 +468,7 @@ func TestRound34_ConversationRepository_GetUserConversationsByRequestState_Propa
 	requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(stdErrors.New("boom")).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	result, err := repo.GetUserConversationsByRequestState(ctx, "alice", models.DmRequestStatePending, interfaces.PaginationOptions{})
+	result, err := repo.GetUserConversationsByFolder(ctx, "alice", models.UserConversationFolderRequests, interfaces.PaginationOptions{})
 	require.Nil(t, result)
 	require.Error(t, err)
 }

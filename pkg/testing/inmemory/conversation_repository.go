@@ -179,6 +179,16 @@ func (r *ConversationRepository) GetUserConversations(_ context.Context, userID 
 	}, nil
 }
 
+// GetUserConversationsByFolder retrieves conversations filtered by the canonical viewer folder.
+func (r *ConversationRepository) GetUserConversationsByFolder(ctx context.Context, userID string, folder models.UserConversationFolder, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	switch folder {
+	case models.UserConversationFolderRequests:
+		return r.GetUserConversationsByRequestState(ctx, userID, models.DmRequestStatePending, opts)
+	default:
+		return r.GetUserConversationsByRequestState(ctx, userID, models.DmRequestStateAccepted, opts)
+	}
+}
+
 // GetUserConversationsByRequestState retrieves conversations for a user filtered by request state.
 // The in-memory repository does not model DM request lifecycle; it treats all conversations as accepted.
 func (r *ConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {

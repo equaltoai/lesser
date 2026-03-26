@@ -428,6 +428,11 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 // request state. This powers DM inbox vs. requests listings.
 func (r *ConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	folder := folderFromRequestState(requestState)
+	return r.GetUserConversationsByFolder(ctx, userID, folder, opts)
+}
+
+// GetUserConversationsByFolder retrieves conversations for a user filtered by the canonical viewer folder.
+func (r *ConversationRepository) GetUserConversationsByFolder(ctx context.Context, userID string, folder models.UserConversationFolder, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	states, nextCursor, hasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, folder, opts)
 	if err != nil {
 		return nil, err
