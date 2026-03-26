@@ -64,6 +64,7 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 	t.Run("projection helpers preserve canonical state and clone conversation payloads", func(t *testing.T) {
 		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 		conversationUpdatedAt := sortAt.Add(2 * time.Hour)
+		lastReadAt := conversationTimePtr(sortAt.Add(-30 * time.Minute))
 		state := &models.UserConversationState{
 			ViewerID:       "alice",
 			ConversationID: "conv-1",
@@ -71,6 +72,7 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 			Folder:         models.UserConversationFolderInbox,
 			RequestState:   models.DmRequestStateAccepted,
 			Unread:         true,
+			LastReadAt:     lastReadAt,
 			SortAt:         sortAt,
 			CreatedAt:      sortAt.Add(-time.Hour),
 			UpdatedAt:      sortAt,
@@ -86,6 +88,22 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.Equal(t, "alice", contract.ViewerID)
 		require.Equal(t, "conv-1", contract.ConversationID)
 		require.True(t, contract.Unread)
+		require.Equal(t, lastReadAt.UTC(), *contract.LastReadAt)
+
+		require.Nil(t, stateModelFromContract(nil))
+		model := stateModelFromContract(contract)
+		require.NotNil(t, model)
+		require.Equal(t, contract.ViewerID, model.ViewerID)
+		require.Equal(t, contract.ConversationID, model.ConversationID)
+		require.Equal(t, contract.CounterpartID, model.CounterpartID)
+		require.Equal(t, contract.RequestState, model.RequestState)
+		require.Equal(t, contract.SortAt, model.SortAt)
+		require.NotNil(t, model.LastReadAt)
+		require.Equal(t, *contract.LastReadAt, *model.LastReadAt)
+
+		modelsFromContracts := stateModelsFromContracts([]*interfaces.UserConversationStateContract{nil, contract})
+		require.Len(t, modelsFromContracts, 1)
+		require.Equal(t, contract.ConversationID, modelsFromContracts[0].ConversationID)
 
 		require.Nil(t, cloneConversationForViewer(nil, false))
 		cloned := cloneConversationForViewer(conversation, true)
