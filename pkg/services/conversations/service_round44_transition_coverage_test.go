@@ -45,6 +45,57 @@ func TestUserConversationStateFromParticipantRecord_PrefersParticipantUpdatedAt(
 	require.Equal(t, participantUpdatedAt, state.UpdatedAt)
 }
 
+func TestUserConversationStateFromParticipantRecord_FallsBackToConversationUpdatedAt(t *testing.T) {
+	conversation := createTestConversation("conv-existing", []string{"alice", "bob"})
+	conversation.CreatedAt = time.Date(2026, 3, 26, 15, 0, 0, 0, time.UTC)
+	conversation.UpdatedAt = time.Date(2026, 3, 26, 15, 30, 0, 0, time.UTC)
+
+	state := userConversationStateFromParticipantRecord(conversation, "alice", "bob", &models.ConversationParticipantRecord{
+		Conversation: &models.Conversation{
+			ID:        conversation.ID,
+			CreatedAt: conversation.CreatedAt,
+			UpdatedAt: conversation.UpdatedAt,
+		},
+	})
+
+	require.Equal(t, conversation.CreatedAt.UTC(), state.CreatedAt)
+	require.Equal(t, conversation.UpdatedAt.UTC(), state.UpdatedAt)
+}
+
+func TestService_getParticipantRecordForSend_HandlesMissingAndUnexpectedErrors(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("not found returns nil record", func(t *testing.T) {
+		conversationRepo := &mockConversationRepository{}
+		service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+		conversationRepo.
+			On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").
+			Return((*models.ConversationParticipantRecord)(nil), storage.ErrNotFound).
+			Once()
+
+		record, err := service.getParticipantRecordForSend(ctx, "conv-existing", "alice")
+		require.NoError(t, err)
+		require.Nil(t, record)
+		conversationRepo.AssertExpectations(t)
+	})
+
+	t.Run("unexpected errors propagate", func(t *testing.T) {
+		conversationRepo := &mockConversationRepository{}
+		service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+		conversationRepo.
+			On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").
+			Return((*models.ConversationParticipantRecord)(nil), fmt.Errorf("boom")).
+			Once()
+
+		record, err := service.getParticipantRecordForSend(ctx, "conv-existing", "alice")
+		require.Error(t, err)
+		require.Nil(t, record)
+		conversationRepo.AssertExpectations(t)
+	})
+}
+
 func TestService_resolveDirectMessageConversationForSend_ReturnsExistingConversation(t *testing.T) {
 	ctx := context.Background()
 	conversationRepo := &mockConversationRepository{}
