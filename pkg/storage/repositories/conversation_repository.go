@@ -21,6 +21,7 @@ import (
 type ConversationRepository struct {
 	*EnhancedBaseRepository[*models.Conversation]
 	logger          *zap.Logger
+	statusRepo      interfaces.StatusRepository
 	transactWriteFn func(ctx context.Context, fn func(core.TransactionBuilder) error) error
 }
 
@@ -67,6 +68,7 @@ func NewConversationRepository(db core.DB, tableName string, logger *zap.Logger,
 	return &ConversationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,
+		statusRepo:             NewStatusRepository(db, tableName, logger, costService),
 		transactWriteFn:        newConversationTransactWriteFn(db),
 	}
 }
@@ -649,52 +651,42 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 		zap.String("cursor", cursor),
 	)
 
-	// Note: Based on the legacy code, conversation messages/statuses seem to be handled
-	// differently than specified in the instructions. The legacy code doesn't show
-	// STATUS# records under CONVERSATION# keys. This implementation follows the
-	// instructions but may need adjustment based on actual usage.
-
-	query := r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
-		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID))
-
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
+	if r.statusRepo == nil {
+		return nil, "", ErrorHandler.HandleQueryError(storage.ErrDatabaseConnectionFailed, EntityConversation, "statuses")
 	}
 
-	query = query.Limit(limit + 1)
-
-	var messages []models.ConversationMessage
-	err := query.Scan(&messages)
+	thread, err := r.statusRepo.GetConversationThread(ctx, conversationID, interfaces.PaginationOptions{
+		Limit:  limit,
+		Cursor: cursor,
+	})
 	if err != nil {
-		log.Error("failed to query conversation statuses", zap.Error(err))
+		log.Error("failed to query conversation thread", zap.Error(err))
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "statuses")
 	}
 
-	// Convert to storage.ConversationStatus
-	statuses := make([]*storage.ConversationStatus, 0, len(messages))
-	for _, msg := range messages {
-		// This is a simplified conversion - actual implementation may need adjustment
+	statuses := make([]*storage.ConversationStatus, 0, len(thread.Items))
+	for index, status := range thread.Items {
+		if status == nil {
+			continue
+		}
+		createdAt := status.PublishedAt
+		if createdAt.IsZero() {
+			createdAt = status.CreatedAt
+		}
+		lastReadAt := &createdAt
 		statuses = append(statuses, &storage.ConversationStatus{
-			ConversationID: msg.ConversationID,
-			UserID:         msg.SenderUsername,
+			ConversationID: conversationID,
+			StatusID:       status.StatusID,
+			UserID:         status.AuthorUsername,
+			Position:       index,
 			Unread:         false,
-			LastReadAt:     &msg.CreatedAt,
+			LastReadAt:     lastReadAt,
+			ReplyToID:      status.InReplyToID,
+			CreatedAt:      createdAt,
 		})
 	}
 
-	// Determine next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("statuses", statuses, limit); err != nil {
-		statuses = statuses[:limit]
-		if err := common.ValidateSliceLength("messages", messages, limit); err != nil {
-			if err := common.ValidateSliceNotEmpty("messages", messages); err == nil {
-				lastMsg := messages[limit]
-				nextCursor = lastMsg.SK
-			}
-		}
-	}
-
-	return statuses, nextCursor, nil
+	return statuses, thread.NextCursor, nil
 }
 
 // RemoveStatusFromConversation removes a status from a conversation.

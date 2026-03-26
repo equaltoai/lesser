@@ -139,6 +139,51 @@ func TestRound07_ConversationRepository_MessageCount_ScanPaths(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRound07_ConversationRepository_GetConversationStatuses_UsesStatusThreadQuery(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	mockQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(mockQuery).Once()
+	mockQuery.On("Index", "gsi3").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3PK", "=", "CONVERSATION#conv-1").Return(mockQuery).Once()
+	mockQuery.On("OrderBy", "gsi3SK", "ASC").Return(mockQuery).Once()
+	mockQuery.On("Where", "gsi3SK", ">", "cursor-1").Return(mockQuery).Once()
+	mockQuery.On("Limit", 2).Return(mockQuery).Once()
+	mockQuery.On("All", mock.AnythingOfType("*[]models.Status")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*[]models.Status)
+		*dest = []models.Status{
+			{
+				StatusID:       "status-1",
+				ConversationID: "conv-1",
+				AuthorUsername: "alice",
+				InReplyToID:    "status-0",
+				PublishedAt:    time.Unix(10, 0).UTC(),
+				CreatedAt:      time.Unix(10, 0).UTC(),
+				GSI3SK:         "2026-03-26T10:00:00Z#status-1",
+			},
+			{
+				StatusID:       "status-2",
+				ConversationID: "conv-1",
+				AuthorUsername: "bob",
+				PublishedAt:    time.Unix(20, 0).UTC(),
+				CreatedAt:      time.Unix(20, 0).UTC(),
+				GSI3SK:         "2026-03-26T10:01:00Z#status-2",
+			},
+		}
+	}).Return(nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	statuses, nextCursor, err := repo.GetConversationStatuses(ctx, "conv-1", 1, "cursor-1")
+	require.NoError(t, err)
+	require.Len(t, statuses, 1)
+	require.Equal(t, "status-1", statuses[0].StatusID)
+	require.Equal(t, "alice", statuses[0].UserID)
+	require.Equal(t, "status-0", statuses[0].ReplyToID)
+	require.Equal(t, "2026-03-26T10:00:00Z#status-1", nextCursor)
+}
+
 func TestRound07_ConversationRepository_UnreadStatusCount_Branches(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	stateQuery := new(mocks.MockQuery)
