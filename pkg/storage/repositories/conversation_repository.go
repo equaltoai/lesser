@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -110,69 +109,11 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
-	// Create participant records for each participant (KEEP - Conversation threading logic)
-	for _, participantID := range conversation.Participants {
-		participantRecord := &models.ConversationParticipantRecord{}
-
-		// Preserve participant metadata across conversation updates by looking up the existing record(s)
-		// via the reverse index: GSI1PK=CONVERSATION#<id>, GSI1SK=PARTICIPANT#<username>.
-		existingRecords, err := r.findParticipantRecordsByConversationAndParticipant(ctx, conversation.ID, participantID)
-		if err != nil && !errors.IsNotFound(err) {
-			log.Warn("failed to lookup existing participant record metadata; proceeding with defaults",
-				zap.String("participant_id", participantID),
-				zap.Error(err))
-		}
-
-		if len(existingRecords) > 0 {
-			// Pick the most recent record (SK is RFC3339 timestamp + conversation ID).
-			sort.Slice(existingRecords, func(i, j int) bool {
-				return existingRecords[i].SK > existingRecords[j].SK
-			})
-			latest := existingRecords[0]
-			participantRecord.RequestState = latest.RequestState
-			participantRecord.RequestedAt = latest.RequestedAt
-			participantRecord.AcceptedAt = latest.AcceptedAt
-			participantRecord.DeclinedAt = latest.DeclinedAt
-			participantRecord.DeletedAt = latest.DeletedAt
-			participantRecord.Unread = latest.Unread
-			participantRecord.LastReadAt = latest.LastReadAt
-		}
-
-		// Always embed a per-participant conversation copy so Unread can be per-user.
-		convCopy := *conversation
-		convCopy.Unread = participantRecord.Unread
-		participantRecord.Conversation = &convCopy
-		participantRecord.SyncConversationData()
-
-		if err := participantRecord.BeforeCreate(participantID); err != nil {
-			log.Error("failed to prepare participant record",
-				zap.String("participant_id", participantID),
-				zap.Error(err))
-			continue
-		}
-
-		// Remove any stale participant records for this (conversation, participant) pair so we don't
-		// accumulate duplicates as the conversation UpdatedAt (and thus SK) changes.
-		for _, existing := range existingRecords {
-			err := r.GetDB().Model(&models.ConversationParticipantRecord{}).WithContext(ctx).
-				Where("PK", "=", existing.PK).
-				Where("SK", "=", existing.SK).
-				Delete()
-			if err != nil && !errors.IsNotFound(err) {
-				log.Warn("failed to delete stale participant record",
-					zap.String("participant_id", participantID),
-					zap.String("pk", existing.PK),
-					zap.String("sk", existing.SK),
-					zap.Error(err))
-			}
-		}
-
-		if err := r.GetDB().Model(participantRecord).WithContext(ctx).Create(); err != nil {
-			log.Error("failed to create participant record",
-				zap.String("participant_id", participantID),
-				zap.Error(err))
-			continue
-		}
+	if err := r.initializeUserConversationStates(ctx, conversation); err != nil {
+		log.Error("failed to initialize canonical user conversation state",
+			zap.String("conversation_id", conversation.ID),
+			zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
 	// Create participant lookup key if needed (for GetConversationByParticipants) - KEEP - Conversation search logic
@@ -246,19 +187,17 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 		return ErrorHandler.HandleDeleteError(err, EntityConversation, id)
 	}
 
-	// Delete participant records (KEEP - Conversation cleanup logic)
+	// Delete canonical per-user DM state rows.
 	if conv != nil {
 		for _, participantID := range conv.Participants {
-			// Delete participant record
-			err = r.GetDB().Model(&models.ConversationParticipantRecord{}).WithContext(ctx).
-				Where("PK", "=", canonicalConversationParticipantPK(participantID)).
-				Where("SK", "=", fmt.Sprintf("%s#%s", conv.UpdatedAt.Format(time.RFC3339), id)).
+			err = r.GetDB().Model(&models.UserConversationState{}).WithContext(ctx).
+				Where("PK", "=", userConversationStatePK(participantID)).
+				Where("SK", "=", userConversationStateSK(id)).
 				Delete()
-			if err != nil {
-				log.Warn("failed to delete participant record",
+			if err != nil && !errors.IsNotFound(err) {
+				log.Warn("failed to delete user conversation state",
 					zap.String("participant_id", participantID),
 					zap.Error(err))
-				// Continue deleting other records
 			}
 		}
 	}
@@ -285,70 +224,57 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 // Legacy note: DM rewrite M5 replaces this snapshot-hydrated list path with a keyed folder query
 // over canonical per-user DM state.
 func (r *ConversationRepository) GetUserConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
-	log := r.logger.With(
-		zap.String("user_id", userID),
-		zap.Int("limit", opts.Limit),
-		zap.String("cursor", opts.Cursor),
-	)
+	limit := clampListLimit(opts.Limit, 20, 100)
 
-	query := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-		Where("PK", "=", canonicalConversationParticipantPK(userID)).
-		OrderBy("SK", "DESC") // Most recent first (timestamp-based sorting)
-
-	// Add cursor condition if provided
-	if opts.Cursor != "" {
-		query = query.Where("SK", "<", opts.Cursor)
-	}
-
-	// Query with limit + 1 to determine if there are more results
-	query = query.Limit(opts.Limit + 1)
-
-	var records []models.ConversationParticipantRecord
-	err := query.Scan(&records)
+	inboxStates, _, inboxHasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, models.UserConversationFolderInbox, interfaces.PaginationOptions{
+		Limit:  limit,
+		Cursor: opts.Cursor,
+	})
 	if err != nil {
-		log.Error("failed to query user conversations", zap.Error(err))
+		return nil, err
+	}
+
+	requestStates, _, requestHasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, models.UserConversationFolderRequests, interfaces.PaginationOptions{
+		Limit:  limit,
+		Cursor: opts.Cursor,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	mergedStates, nextCursor, hasMore := mergeVisibleConversationStatePages(inboxStates, requestStates, limit)
+	if !hasMore {
+		hasMore = inboxHasMore || requestHasMore
+		if hasMore && nextCursor == "" && len(mergedStates) > 0 {
+			nextCursor = mergedStates[len(mergedStates)-1].LegacyListCursor()
+		}
+	}
+
+	conversations, err := r.loadConversationsForStates(ctx, mergedStates)
+	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "user conversations")
-	}
-
-	conversations := make([]*models.Conversation, 0, len(records))
-	for _, record := range records {
-		if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
-			continue
-		}
-		if record.HydrateConversation() != nil {
-			// Ensure per-user unread status is populated on the returned Conversation model.
-			record.Conversation.Unread = record.Unread
-			conversations = append(conversations, record.Conversation)
-		}
-	}
-
-	// Determine next cursor and pagination
-	var nextCursor string
-	hasMore := len(conversations) > opts.Limit
-	if hasMore {
-		conversations = conversations[:opts.Limit]
-		if err := common.ValidateSliceNotEmpty("conversations", conversations); err == nil {
-			lastConv := conversations[len(conversations)-1]
-			nextCursor = fmt.Sprintf("%s#%s", lastConv.UpdatedAt.Format(time.RFC3339), lastConv.ID)
-		}
 	}
 
 	return &interfaces.PaginatedResult[*models.Conversation]{
 		Items:      conversations,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-		Total:      -1, // Not calculated
+		Total:      -1,
 	}, nil
 }
 
 // GetUserConversationsByRequestState retrieves conversations for a user filtered by the participant
 // request state. This powers DM inbox vs. requests listings.
 func (r *ConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
-	limit := clampListLimit(opts.Limit, 20, 100)
-
-	conversations, nextCursor, hasMore, err := r.scanUserConversationsByRequestState(ctx, userID, requestState, limit, opts.Cursor)
+	folder := folderFromRequestState(requestState)
+	states, nextCursor, hasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, folder, opts)
 	if err != nil {
 		return nil, err
+	}
+
+	conversations, err := r.loadConversationsForStates(ctx, states)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "user conversations by request state")
 	}
 
 	return &interfaces.PaginatedResult[*models.Conversation]{
@@ -468,12 +394,11 @@ func appendRequestStateMatches(records []*models.ConversationParticipantRecord, 
 		if !matchesRequestState(record.RequestState, requestState) {
 			continue
 		}
-		if record.HydrateConversation() == nil {
+		if record.Conversation == nil {
 			continue
 		}
 
-		record.Conversation.Unread = record.Unread
-		dst = append(dst, record.Conversation)
+		dst = append(dst, cloneConversationForViewer(record.Conversation, record.Unread))
 		if len(dst) >= limit {
 			break
 		}
@@ -492,23 +417,20 @@ func matchesRequestState(current models.DmRequestState, want models.DmRequestSta
 // GetConversationParticipantRecord returns the most recent participant record for a given
 // (conversationID, participantID) pair.
 func (r *ConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
-	records, err := r.findParticipantRecordsByConversationAndParticipant(ctx, conversationID, participantID)
+	state, err := r.ensureUserConversationStateModel(ctx, participantID, conversationID)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if err == storage.ErrNotFound {
 			return nil, storage.ErrNotFound
 		}
 		return nil, err
 	}
-	if len(records) == 0 {
-		return nil, storage.ErrNotFound
+
+	conversation, err := r.GetConversation(ctx, conversationID)
+	if err != nil && err != storage.ErrNotFound {
+		return nil, err
 	}
 
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].SK > records[j].SK
-	})
-	latest := records[0]
-	latest.HydrateConversation()
-	return &latest, nil
+	return stateRecordFromModel(state, conversation), nil
 }
 
 // UpdateConversationParticipantRecord persists an updated participant record (metadata updates).
@@ -519,26 +441,53 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 	if record.PK == "" || record.SK == "" {
 		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "participant record keys missing")
 	}
-
-	updateBuilder := r.GetDB().WithContext(ctx).Model(record).
-		Where("PK", "=", record.PK).
-		Where("SK", "=", record.SK).
-		UpdateBuilder().
-		Set("Unread", record.Unread)
-
-	if strings.TrimSpace(string(record.RequestState)) == "" {
-		updateBuilder.Remove("RequestState")
-	} else {
-		updateBuilder.Set("RequestState", record.RequestState)
+	if strings.TrimSpace(record.ViewerID) == "" {
+		record.ViewerID = strings.TrimPrefix(record.PK, "USER_CONVERSATIONS#")
+	}
+	if strings.TrimSpace(record.ConversationID) == "" {
+		record.ConversationID = strings.TrimPrefix(record.GSI1PK, "CONVERSATION#")
+		if record.ConversationID == record.GSI1PK {
+			parts := strings.Split(record.SK, "#")
+			if len(parts) > 1 {
+				record.ConversationID = parts[len(parts)-1]
+			}
+		}
 	}
 
-	applyOptionalConversationParticipantTime(updateBuilder, "RequestedAt", record.RequestedAt)
-	applyOptionalConversationParticipantTime(updateBuilder, "AcceptedAt", record.AcceptedAt)
-	applyOptionalConversationParticipantTime(updateBuilder, "DeclinedAt", record.DeclinedAt)
-	applyOptionalConversationParticipantTime(updateBuilder, "DeletedAt", record.DeletedAt)
-	applyOptionalConversationParticipantTime(updateBuilder, "LastReadAt", record.LastReadAt)
+	state, err := r.ensureUserConversationStateModel(ctx, record.ViewerID, record.ConversationID)
+	if err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
+	}
 
-	if err := updateBuilder.Execute(); err != nil {
+	state.CounterpartID = record.CounterpartID
+	if strings.TrimSpace(state.CounterpartID) == "" {
+		if conversation, convErr := r.GetConversation(ctx, record.ConversationID); convErr == nil && conversation != nil {
+			state.CounterpartID = counterpartForConversation(record.ViewerID, conversation.Participants)
+		}
+	}
+	state.Folder = participantRecordFolder(record)
+	state.RequestState = record.RequestState
+	state.RequestedAt = record.RequestedAt
+	state.AcceptedAt = record.AcceptedAt
+	state.DeclinedAt = record.DeclinedAt
+	state.DeletedAt = record.DeletedAt
+	state.Unread = record.Unread
+	state.LastReadAt = record.LastReadAt
+	if record.PreviewStatusID != "" {
+		state.PreviewStatusID = record.PreviewStatusID
+	}
+	if !record.PreviewStatusPublishedAt.IsZero() {
+		state.PreviewStatusPublishedAt = record.PreviewStatusPublishedAt
+	}
+	if !record.SortAt.IsZero() {
+		state.SortAt = record.SortAt
+	}
+	state.UpdatedAt = time.Now().UTC()
+
+	if err := state.BeforeUpdate(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
+	}
+	if err := r.GetDB().WithContext(ctx).Model(state).Update(); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
 	}
 	return nil
@@ -615,31 +564,36 @@ func (r *ConversationRepository) MarkConversationRead(ctx context.Context, conve
 		zap.String("username", username),
 	)
 
+	if strings.TrimSpace(conversationID) == "" || strings.TrimSpace(username) == "" {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, conversationID)
+	}
+
+	now := time.Now().UTC()
+	state, err := r.ensureUserConversationStateModel(ctx, username, conversationID)
+	if err != nil {
+		log.Error("failed to load user conversation state for mark read", zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
+	}
+	state.Unread = false
+	state.LastReadAt = &now
+	state.UpdatedAt = now
+	if err := state.BeforeUpdate(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
+	}
+	if err := r.GetDB().WithContext(ctx).Model(state).Update(); err != nil {
+		log.Error("failed to update user conversation state as read", zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
+	}
+
 	status := &models.ConversationStatus{
 		ConversationID: conversationID,
 		UserID:         username,
 		Unread:         false,
-		LastReadAt:     time.Now(),
+		LastReadAt:     now,
 	}
-
-	if err := status.BeforeCreate(); err != nil {
-		log.Error("failed to prepare status", zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, EntityConversation, conversationID)
-	}
-
-	err := r.GetDB().Model(status).WithContext(ctx).Create()
-	if err != nil {
-		log.Error("failed to mark conversation as read", zap.Error(err))
-		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
-	}
-
-	// Best-effort: keep the participant record unread metadata in sync.
-	if record, err := r.GetConversationParticipantRecord(ctx, conversationID, username); err == nil && record != nil {
-		record.Unread = false
-		t := status.LastReadAt
-		record.LastReadAt = &t
-		if err := r.UpdateConversationParticipantRecord(ctx, record); err != nil {
-			log.Warn("failed to sync participant unread metadata on mark read", zap.Error(err))
+	if err := status.BeforeCreate(); err == nil {
+		if err := r.GetDB().Model(status).WithContext(ctx).Create(); err != nil {
+			log.Warn("failed to maintain legacy conversation status row on mark read", zap.Error(err))
 		}
 	}
 
@@ -649,31 +603,19 @@ func (r *ConversationRepository) MarkConversationRead(ctx context.Context, conve
 // GetUnreadConversationCount gets the count of unread conversations for a user.
 // Legacy note: DM rewrite M4/M5 replaces fan-out unread counting with keyed unread-state queries.
 func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context, username string) (int, error) {
-	log := r.logger.With(zap.String("username", username))
-
-	// Get all conversations for the user
-	opts := interfaces.PaginationOptions{Limit: 1000} // Large limit to get all
-	result, err := r.GetUserConversations(ctx, username, opts)
-	if err != nil {
-		return 0, err
-	}
-
-	unreadCount := 0
-	for _, conv := range result.Items {
-		// Check if conversation has unread status
-		var status models.ConversationStatus
-		err := r.GetDB().WithContext(ctx).Model(&models.ConversationStatus{}).
-			Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conv.ID)).
-			Where("SK", "=", canonicalConversationStatusSK(username)).
-			First(&status)
-
-		if errors.IsNotFound(err) || status.Unread {
-			unreadCount++
+	count := 0
+	cursor := ""
+	for {
+		result, err := r.ListUnreadUserConversationStates(ctx, username, interfaces.PaginationOptions{Limit: 100, Cursor: cursor})
+		if err != nil {
+			return 0, err
 		}
+		count += len(result.Items)
+		if !result.HasMore || result.NextCursor == "" {
+			return count, nil
+		}
+		cursor = result.NextCursor
 	}
-
-	log.Debug("unread conversation count", zap.Int("count", unreadCount))
-	return unreadCount, nil
 }
 
 // AddStatusToConversation adds a status/message to a conversation (KEEP - Complex message threading logic)
@@ -995,7 +937,32 @@ func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Contex
 		Set("LastMessageTime", lastMessageTime).
 		Set("UpdatedAt", time.Now().UTC())
 
-	return ErrorHandler.HandleUpdateError(updateBuilder.Execute(), EntityConversation, id)
+	if err := updateBuilder.Execute(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, id)
+	}
+
+	participantStates, err := r.ListConversationParticipantStates(ctx, id)
+	if err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, id)
+	}
+	for _, stateContract := range participantStates {
+		state, stateErr := r.getUserConversationStateModel(ctx, stateContract.ViewerID, id)
+		if stateErr != nil {
+			return ErrorHandler.HandleUpdateError(stateErr, EntityConversation, id)
+		}
+		state.PreviewStatusID = lastStatusID
+		state.PreviewStatusPublishedAt = lastMessageTime
+		state.SortAt = lastMessageTime
+		state.UpdatedAt = time.Now().UTC()
+		if stateErr := state.BeforeUpdate(); stateErr != nil {
+			return ErrorHandler.HandleUpdateError(stateErr, EntityConversation, id)
+		}
+		if stateErr := r.GetDB().WithContext(ctx).Model(state).Update(); stateErr != nil {
+			return ErrorHandler.HandleUpdateError(stateErr, EntityConversation, id)
+		}
+	}
+
+	return nil
 }
 
 // RemoveParticipant removes a participant from a conversation (KEEP - Complex participant management)
@@ -1124,30 +1091,35 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 		zap.String("user_id", userID),
 	)
 
+	if strings.TrimSpace(conversationID) == "" || strings.TrimSpace(userID) == "" {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, conversationID)
+	}
+
+	state, err := r.ensureUserConversationStateModel(ctx, userID, conversationID)
+	if err != nil {
+		log.Error("failed to load user conversation state for mark unread", zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
+	}
+	state.Unread = true
+	state.LastReadAt = nil
+	state.UpdatedAt = time.Now().UTC()
+	if err := state.BeforeUpdate(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
+	}
+	if err := r.GetDB().WithContext(ctx).Model(state).Update(); err != nil {
+		log.Error("failed to update user conversation state as unread", zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
+	}
+
 	status := &models.ConversationStatus{
 		ConversationID: conversationID,
 		UserID:         userID,
 		Unread:         true,
-		LastReadAt:     time.Unix(0, 0).UTC(), // Epoch sentinel for unread
+		LastReadAt:     time.Unix(0, 0).UTC(),
 	}
-
-	if err := status.BeforeCreate(); err != nil {
-		log.Error("failed to prepare status", zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, EntityConversation, conversationID)
-	}
-
-	err := r.GetDB().Model(status).WithContext(ctx).Create()
-	if err != nil {
-		log.Error("failed to mark conversation as unread", zap.Error(err))
-		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
-	}
-
-	// Best-effort: keep the participant record unread metadata in sync.
-	if record, err := r.GetConversationParticipantRecord(ctx, conversationID, userID); err == nil && record != nil {
-		record.Unread = true
-		record.LastReadAt = nil
-		if err := r.UpdateConversationParticipantRecord(ctx, record); err != nil {
-			log.Warn("failed to sync participant unread metadata on mark unread", zap.Error(err))
+	if err := status.BeforeCreate(); err == nil {
+		if err := r.GetDB().Model(status).WithContext(ctx).Create(); err != nil {
+			log.Warn("failed to maintain legacy conversation status row on mark unread", zap.Error(err))
 		}
 	}
 
@@ -1158,36 +1130,42 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 // Legacy note: DM rewrite M4/M5 replaces unread list fan-out with a keyed sparse unread query
 // over canonical per-user DM state.
 func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
-	log := r.logger.With(zap.String("user_id", userID))
-
-	// Get all user conversations
-	allResult, err := r.GetUserConversations(ctx, userID, opts)
+	stateResult, err := r.ListUnreadUserConversationStates(ctx, userID, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	// Filter for unread conversations
-	unreadConversations := make([]*models.Conversation, 0)
-	for _, conv := range allResult.Items {
-		// Check if conversation has unread status
-		var status models.ConversationStatus
-		err := r.GetDB().WithContext(ctx).Model(&models.ConversationStatus{}).
-			Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conv.ID)).
-			Where("SK", "=", canonicalConversationStatusSK(userID)).
-			First(&status)
-
-		if errors.IsNotFound(err) || status.Unread {
-			unreadConversations = append(unreadConversations, conv)
-		}
+	states := make([]*models.UserConversationState, 0, len(stateResult.Items))
+	for _, item := range stateResult.Items {
+		states = append(states, &models.UserConversationState{
+			ViewerID:                 item.ViewerID,
+			ConversationID:           item.ConversationID,
+			CounterpartID:            item.CounterpartID,
+			Folder:                   item.Folder,
+			RequestState:             item.RequestState,
+			PreviewStatusID:          item.PreviewStatusID,
+			PreviewStatusPublishedAt: item.PreviewStatusPublishedAt,
+			SortAt:                   item.SortAt,
+			Unread:                   item.Unread,
+			LastReadAt:               item.LastReadAt,
+			DeletedAt:                item.DeletedAt,
+			RequestedAt:              item.RequestedAt,
+			AcceptedAt:               item.AcceptedAt,
+			DeclinedAt:               item.DeclinedAt,
+			CreatedAt:                item.CreatedAt,
+			UpdatedAt:                item.UpdatedAt,
+		})
 	}
-
-	log.Debug("retrieved unread conversations", zap.Int("count", len(unreadConversations)))
+	unreadConversations, err := r.loadConversationsForStates(ctx, states)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "unread conversations")
+	}
 
 	return &interfaces.PaginatedResult[*models.Conversation]{
 		Items:      unreadConversations,
-		NextCursor: allResult.NextCursor,
-		HasMore:    allResult.HasMore,
-		Total:      int64(len(unreadConversations)),
+		NextCursor: stateResult.NextCursor,
+		HasMore:    stateResult.HasMore,
+		Total:      stateResult.Total,
 	}, nil
 }
 
