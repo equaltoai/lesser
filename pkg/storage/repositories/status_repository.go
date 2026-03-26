@@ -72,6 +72,17 @@ func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Stat
 		return err
 	}
 
+	return r.FinalizeCreatedStatus(ctx, status)
+}
+
+// FinalizeCreatedStatus runs the best-effort side effects that normally follow a
+// successful status row create. This lets transaction-owned write paths preserve
+// the same invariants as CreateStatus without creating the row twice.
+func (r *StatusRepository) FinalizeCreatedStatus(ctx context.Context, status *models.Status) error {
+	if status == nil {
+		return fmt.Errorf("status is required")
+	}
+
 	r.updateInstanceMetricsForStatusCreate(ctx, status)
 
 	if err := r.canonicalizeStatusIndexes(ctx, status); err != nil {

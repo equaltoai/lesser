@@ -3,128 +3,116 @@ package conversations
 import (
 	"context"
 	"fmt"
-	"sync"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zaptest"
 )
 
-type concurrentDMConversationRepo struct {
-	mockConversationRepository
-
-	mu             sync.Mutex
-	lookupRows     map[string]*models.Conversation
-	conversations  map[string]*models.Conversation
-	initialLookups int
-	releaseInitial chan struct{}
-}
-
-func newConcurrentDMConversationRepo() *concurrentDMConversationRepo {
-	return &concurrentDMConversationRepo{
-		lookupRows:     map[string]*models.Conversation{},
-		conversations:  map[string]*models.Conversation{},
-		releaseInitial: make(chan struct{}),
-	}
-}
-
-func (r *concurrentDMConversationRepo) GetConversationByParticipants(_ context.Context, participants []string) (*models.Conversation, error) {
-	key := fmt.Sprintf("%v", models.CanonicalConversationParticipants(participants))
-
-	r.mu.Lock()
-	if conversation := r.lookupRows[key]; conversation != nil {
-		r.mu.Unlock()
-		return cloneConversation(conversation), nil
-	}
-
-	r.initialLookups++
-	releaseInitial := r.releaseInitial
-	if r.initialLookups == 2 {
-		close(r.releaseInitial)
-	}
-	r.mu.Unlock()
-
-	<-releaseInitial
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if conversation := r.lookupRows[key]; conversation != nil {
-		return cloneConversation(conversation), nil
-	}
-	return nil, fmt.Errorf("not found")
-}
-
-func (r *concurrentDMConversationRepo) CreateConversation(_ context.Context, conversation *models.Conversation, participants []string) error {
-	key := fmt.Sprintf("%v", models.CanonicalConversationParticipants(participants))
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if _, exists := r.lookupRows[key]; exists {
-		return storage.ErrAlreadyExists
-	}
-
-	stored := cloneConversation(conversation)
-	stored.Participants = append([]string(nil), models.CanonicalConversationParticipants(participants)...)
-	r.lookupRows[key] = stored
-	r.conversations[stored.ID] = stored
-	return nil
-}
-
-func (r *concurrentDMConversationRepo) lookupRowCount() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.lookupRows)
-}
-
-func (r *concurrentDMConversationRepo) conversationCount() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.conversations)
-}
-
-func cloneConversation(conversation *models.Conversation) *models.Conversation {
-	if conversation == nil {
-		return nil
-	}
-
-	cloned := *conversation
-	cloned.Participants = append([]string(nil), conversation.Participants...)
-	return &cloned
-}
-
-func TestRound43_Service_getOrCreateDirectMessageConversation_ConcurrentCreatesResolveToOneConversation(t *testing.T) {
+func TestRound43_Service_SendDirectMessage_RetriesTransactionalCreateRace(t *testing.T) {
+	service, conversationRepo, _, accountRepo, publisher, federation := createTestService()
 	ctx := context.Background()
-	repo := newConcurrentDMConversationRepo()
-	service := NewService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
-	cmd := &SendDirectMessageCommand{
-		SenderID:   "Arch",
-		Recipients: []string{"Medic"},
+	senderAccount := createTestAccount("alice", "alice")
+	recipientAccount := createTestAccount("bob", "bob")
+	existingConversation := createTestConversation("conv-existing", []string{"alice", "bob"})
+
+	accountRepo.On("GetAccount", ctx, "alice").Return(senderAccount, nil).Once()
+	accountRepo.On("GetAccount", ctx, "bob").Return(recipientAccount, nil).Once()
+
+	conversationRepo.On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).
+		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
+		Once()
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		return transition != nil && transition.CreateConversation
+	})).
+		Return(storage.ErrAlreadyExists).
+		Once()
+
+	conversationRepo.On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).
+		Return(existingConversation, nil).
+		Once()
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "bob").
+		Return(&models.ConversationParticipantRecord{Conversation: existingConversation}, nil).
+		Once()
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").
+		Return(&models.ConversationParticipantRecord{Conversation: existingConversation}, nil).
+		Once()
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		return transition != nil && !transition.CreateConversation && transition.Conversation != nil && transition.Conversation.ID == "conv-existing"
+	})).
+		Return(nil).
+		Once()
+
+	result, err := service.SendDirectMessage(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob"},
+		Content:    "hello after race",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "conv-existing", result.Conversation.ID)
+	require.Len(t, result.Events, 3)
+	require.Len(t, publisher.GetEvents(), 3)
+	require.Empty(t, federation.GetQueuedActivities())
+}
+
+func TestRound43_Service_SendMessage_RetriesTransactionalVersionConflict(t *testing.T) {
+	service, conversationRepo, _, accountRepo, publisher, federation := createTestService()
+	ctx := context.Background()
+
+	initialConversation := createTestConversation("conv-existing", []string{"alice", "bob"})
+	initialConversation.TotalMessageCount = 5
+	initialConversation.UpdatedAt = time.Date(2026, 3, 26, 17, 0, 0, 0, time.UTC)
+
+	reloadedConversation := createTestConversation("conv-existing", []string{"alice", "bob"})
+	reloadedConversation.TotalMessageCount = 6
+	reloadedConversation.UpdatedAt = time.Date(2026, 3, 26, 17, 1, 0, 0, time.UTC)
+	reloadedConversation.LastStatusID = "status-winner"
+
+	senderAccount := createTestAccount("alice", "alice")
+	recipientAccount := createTestAccount("bob", "bob")
+	record := &models.ConversationParticipantRecord{
+		RequestState:             models.DmRequestStateAccepted,
+		PreviewStatusID:          "status-winner",
+		PreviewStatusPublishedAt: reloadedConversation.UpdatedAt,
+		SortAt:                   reloadedConversation.UpdatedAt,
+		Conversation:             reloadedConversation,
 	}
 
-	type result struct {
-		conversation *models.Conversation
-		err          error
-	}
+	conversationRepo.On("GetConversation", ctx, "conv-existing").Return(initialConversation, nil).Once()
+	accountRepo.On("GetAccount", ctx, "alice").Return(senderAccount, nil).Twice()
+	accountRepo.On("GetAccount", ctx, "bob").Return(recipientAccount, nil).Twice()
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "bob").Return(record, nil).Twice()
+	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").Return(record, nil).Twice()
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		return transition != nil && transition.Conversation != nil && transition.Conversation.ID == "conv-existing"
+	})).
+		Return(storage.ErrVersionConflict).
+		Once()
 
-	results := make(chan result, 2)
-	for range 2 {
-		go func() {
-			conversation, err := service.getOrCreateDirectMessageConversation(ctx, cmd, "Medic")
-			results <- result{conversation: conversation, err: err}
-		}()
-	}
+	conversationRepo.On("GetConversation", ctx, "conv-existing").Return(reloadedConversation, nil).Once()
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		return transition != nil &&
+			transition.Conversation != nil &&
+			transition.Conversation.ID == "conv-existing" &&
+			len(transition.ExpectedParticipantStates) == 2
+	})).
+		Return(nil).
+		Once()
 
-	first := <-results
-	second := <-results
-	require.NoError(t, first.err)
-	require.NoError(t, second.err)
-	require.NotNil(t, first.conversation)
-	require.NotNil(t, second.conversation)
-	require.Equal(t, first.conversation.ID, second.conversation.ID)
-	require.Equal(t, 1, repo.lookupRowCount())
-	require.Equal(t, 1, repo.conversationCount())
+	result, err := service.SendMessage(ctx, &SendMessageCommand{
+		SenderID:       "alice",
+		ConversationID: "conv-existing",
+		Content:        "hello after conflict",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "conv-existing", result.Conversation.ID)
+	require.Len(t, result.Events, 3)
+	require.Len(t, publisher.GetEvents(), 3)
+	require.Empty(t, federation.GetQueuedActivities())
 }

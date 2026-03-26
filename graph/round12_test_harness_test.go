@@ -682,6 +682,31 @@ type round12GraphStorage struct {
 	likeRepo         *repositories.LikeRepository
 }
 
+type round12MirroredStatusRepo struct {
+	interfaces.StatusRepository
+	mirror interfaces.StatusRepository
+}
+
+func (r *round12MirroredStatusRepo) CreateStatus(ctx context.Context, status *models.Status) error {
+	if r.mirror != nil {
+		mirrored := *status
+		if err := r.mirror.CreateStatus(ctx, &mirrored); err != nil {
+			return err
+		}
+	}
+	return r.StatusRepository.CreateStatus(ctx, status)
+}
+
+func (r *round12MirroredStatusRepo) CreateBoostStatus(ctx context.Context, status *models.Status) error {
+	if r.mirror != nil {
+		mirrored := *status
+		if err := r.mirror.CreateBoostStatus(ctx, &mirrored); err != nil {
+			return err
+		}
+	}
+	return r.StatusRepository.CreateBoostStatus(ctx, status)
+}
+
 func (s *round12GraphStorage) GetDB() dynamormcore.DB { return s.db }
 func (s *round12GraphStorage) Account() *repositories.AccountRepository {
 	return s.accountRepo
@@ -812,14 +837,22 @@ func newRound12GraphResolverWithMocks(t *testing.T) (*Resolver, *round12GraphSto
 	categoryRepo := &round12CategoryRepoWithDB{CategoryRepository: inmemory.NewCategoryRepository(), db: mockDB}
 	publicationRepo := &round12PublicationRepoWithDB{PublicationRepository: inmemory.NewPublicationRepository(), db: mockDB}
 
+	tableName := "test-table"
+	statusRepo := &round12MirroredStatusRepo{
+		StatusRepository: inmemory.NewStatusRepository(),
+		mirror:           repositories.NewStatusRepository(mockDB, tableName, zap.NewNop(), nil),
+	}
+
 	base := pkgtesting.NewMockRepositoryStorage(
 		pkgtesting.WithArticleRepository(articleRepo),
 		pkgtesting.WithCategoryRepository(categoryRepo),
 		pkgtesting.WithPublicationRepository(publicationRepo),
+		pkgtesting.WithStatusRepository(statusRepo),
+		pkgtesting.WithTableName(tableName),
 		pkgtesting.WithLogger(zap.NewNop()),
 	)
 
-	tableName := base.GetTableName()
+	tableName = base.GetTableName()
 	accountRepo := repositories.NewAccountRepository(mockDB, tableName, "localhost", zap.NewNop())
 	notificationRepo := inmemory.NewNotificationRepository()
 	bookmarkRepo := repositories.NewBookmarkRepository(mockDB, tableName, zap.NewNop())

@@ -164,6 +164,12 @@ func (m *MockConversationRepository) UpdateConversationLastStatus(ctx context.Co
 	return args.Error(0)
 }
 
+// ApplyDirectMessageSend mocks the ApplyDirectMessageSend method.
+func (m *MockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
+	args := m.Called(ctx, transition)
+	return args.Error(0)
+}
+
 // ===== Participant Operations =====
 
 // AddParticipant mocks the AddParticipant method

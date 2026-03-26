@@ -15,15 +15,14 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-func TestService_updateSendMessageParticipantStateAfterSend_CoversRecipientRequestStateCases(t *testing.T) {
-	ctx := context.Background()
-
+func TestService_buildDirectMessageParticipantStatesForSend_CoversExistingConversationRequestStateCases(t *testing.T) {
 	tests := []struct {
 		name             string
 		recipientState   models.DmRequestState
 		recipientHasTime bool
-		preference       string
+		deliversToInbox  bool
 		wantState        models.DmRequestState
+		wantFolder       models.UserConversationFolder
 		wantAcceptedAt   bool
 		wantRequestedAt  bool
 	}{
@@ -31,6 +30,7 @@ func TestService_updateSendMessageParticipantStateAfterSend_CoversRecipientReque
 			name:            "accepted_stays_accepted",
 			recipientState:  models.DmRequestStateAccepted,
 			wantState:       models.DmRequestStateAccepted,
+			wantFolder:      models.UserConversationFolderInbox,
 			wantAcceptedAt:  false,
 			wantRequestedAt: false,
 		},
@@ -38,20 +38,23 @@ func TestService_updateSendMessageParticipantStateAfterSend_CoversRecipientReque
 			name:            "declined_becomes_pending",
 			recipientState:  models.DmRequestStateDeclined,
 			wantState:       models.DmRequestStatePending,
+			wantFolder:      models.UserConversationFolderRequests,
 			wantAcceptedAt:  false,
 			wantRequestedAt: true,
 		},
 		{
 			name:            "unset_delivers_to_inbox_accepts",
 			recipientState:  "",
-			preference:      "ANYONE",
+			deliversToInbox: true,
 			wantState:       models.DmRequestStateAccepted,
+			wantFolder:      models.UserConversationFolderInbox,
 			wantAcceptedAt:  true,
 			wantRequestedAt: false,
 		},
 		{
 			name:            "unset_defaults_to_pending",
 			recipientState:  "",
+			wantFolder:      models.UserConversationFolderRequests,
 			wantState:       models.DmRequestStatePending,
 			wantAcceptedAt:  false,
 			wantRequestedAt: true,
@@ -60,6 +63,7 @@ func TestService_updateSendMessageParticipantStateAfterSend_CoversRecipientReque
 			name:             "pending_does_not_overwrite_requested_at",
 			recipientState:   models.DmRequestStatePending,
 			recipientHasTime: true,
+			wantFolder:       models.UserConversationFolderRequests,
 			wantState:        models.DmRequestStatePending,
 			wantAcceptedAt:   false,
 			wantRequestedAt:  true,
@@ -68,19 +72,8 @@ func TestService_updateSendMessageParticipantStateAfterSend_CoversRecipientReque
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			conversationRepo := &mockConversationRepository{}
-
-			var userRepo interfaces.UserRepository
-			if tc.preference != "" {
-				mockUserRepo := testmocks.NewMockUserRepositoryInterface()
-				mockUserRepo.
-					On("GetUserPreferences", mock.Anything, "bob").
-					Return(&storage.UserPreferences{DirectMessagesFrom: tc.preference}, nil).
-					Once()
-				userRepo = mockUserRepo
-			}
-
-			service := NewService(conversationRepo, nil, nil, nil, nil, userRepo, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+			conversation := createTestConversation("conv123", []string{"alice", "bob"})
+			publishedAt := time.Date(2026, 3, 26, 14, 0, 0, 0, time.UTC)
 
 			senderRecord := &models.ConversationParticipantRecord{
 				RequestState: models.DmRequestStatePending,
@@ -96,36 +89,33 @@ func TestService_updateSendMessageParticipantStateAfterSend_CoversRecipientReque
 				recipientRecord.RequestedAt = &tm
 			}
 
-			conversationRepo.
-				On("GetConversationParticipantRecord", ctx, "conv123", "alice").
-				Return(senderRecord, nil).
-				Once()
-			conversationRepo.
-				On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-				Return(recipientRecord, nil).
-				Once()
-			conversationRepo.
-				On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).
-				Return(nil).
-				Twice()
+			states := buildDirectMessageParticipantStatesForSend(
+				conversation,
+				&models.Status{StatusID: "status-1", PublishedAt: publishedAt},
+				"alice",
+				"bob",
+				senderRecord,
+				recipientRecord,
+				tc.deliversToInbox,
+			)
 
-			service.updateSendMessageParticipantStateAfterSend(ctx, "conv123", "alice", "bob")
+			require.Len(t, states, 2)
 
-			require.Equal(t, models.DmRequestStateAccepted, senderRecord.RequestState)
-			require.NotNil(t, senderRecord.AcceptedAt)
-			require.Nil(t, senderRecord.DeclinedAt)
+			senderState := states[0]
+			require.Equal(t, models.DmRequestStateAccepted, senderState.RequestState)
+			require.NotNil(t, senderState.AcceptedAt)
+			require.Nil(t, senderState.DeclinedAt)
+			require.False(t, senderState.Unread)
 
-			require.Equal(t, tc.wantState, recipientRecord.RequestState)
+			recipientState := states[1]
+			require.Equal(t, tc.wantState, recipientState.RequestState)
+			require.Equal(t, tc.wantFolder, recipientState.Folder)
+			require.True(t, recipientState.Unread)
 			if tc.wantAcceptedAt {
-				require.NotNil(t, recipientRecord.AcceptedAt)
+				require.NotNil(t, recipientState.AcceptedAt)
 			}
 			if tc.wantRequestedAt {
-				require.NotNil(t, recipientRecord.RequestedAt)
-			}
-
-			conversationRepo.AssertExpectations(t)
-			if mockUserRepo, ok := userRepo.(*testmocks.MockUserRepositoryInterface); ok {
-				mockUserRepo.AssertExpectations(t)
+				require.NotNil(t, recipientState.RequestedAt)
 			}
 		})
 	}
@@ -410,7 +400,7 @@ func TestService_getDirectMessageAccounts_ReturnsErrors(t *testing.T) {
 	})
 }
 
-func TestService_directMessageRecipientRequestState_ReturnsStateWhenPresent(t *testing.T) {
+func TestService_getParticipantRecordForSend_ReturnsStateWhenPresent(t *testing.T) {
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
@@ -421,41 +411,17 @@ func TestService_directMessageRecipientRequestState_ReturnsStateWhenPresent(t *t
 		Return(&models.ConversationParticipantRecord{RequestState: models.DmRequestStateAccepted}, nil).
 		Once()
 
-	require.Equal(t, models.DmRequestStateAccepted, service.directMessageRecipientRequestState(ctx, "conv123", "bob"))
+	record, err := service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	require.Equal(t, models.DmRequestStateAccepted, record.RequestState)
 	conversationRepo.AssertExpectations(t)
 }
 
-func TestService_createDirectMessageStatus_ReturnsErrorsWhenRepositoryFails(t *testing.T) {
+func TestService_createDirectMessageStatus_BuildsStatusWithoutPersistence(t *testing.T) {
 	ctx := context.Background()
 
-	noteRepo := &mockNoteRepository{}
-	service := NewService(nil, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
-
-	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(errors.New("boom")).Once()
-
-	_, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
-		SenderID:   "alice",
-		Recipients: []string{"bob"},
-		Content:    "hi",
-	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
-		"bob": createTestAccount("bob", "bob"),
-	}, "conv123", "bob")
-	require.ErrorIs(t, err, ErrCreateDirectMessage)
-}
-
-func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
-	ctx := context.Background()
-
-	noteRepo := &mockNoteRepository{}
-	service := NewService(nil, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
-
-	var created *models.Status
-	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).
-		Run(func(args mock.Arguments) {
-			created = args.Get(1).(*models.Status)
-		}).
-		Return(nil).
-		Once()
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",
@@ -466,67 +432,77 @@ func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.
 	}, "conv123", "bob")
 	require.NoError(t, err)
 	require.NotNil(t, status)
-	require.NotNil(t, created)
-	require.False(t, created.PublishedAt.IsZero())
-	require.Equal(t, created.PublishedAt, created.CreatedAt)
-	require.Equal(t, created.PublishedAt, created.ModifiedAt)
-	require.Equal(t, created.PublishedAt, created.UpdatedAt)
+	require.Equal(t, "conv123", status.ConversationID)
+	require.Equal(t, []string{"https://example.com/users/bob"}, status.ToRecipients)
 }
 
-func TestService_updateConversationLastStatus_HandlesUpdateFailures(t *testing.T) {
+func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
+	ctx := context.Background()
+
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	status, _, err := service.createDirectMessageStatus(ctx, &SendDirectMessageCommand{
+		SenderID:   "alice",
+		Recipients: []string{"bob"},
+		Content:    "hi",
+	}, createTestAccount("alice", "alice"), map[string]*storage.Account{
+		"bob": createTestAccount("bob", "bob"),
+	}, "conv123", "bob")
+	require.NoError(t, err)
+	require.NotNil(t, status)
+	require.False(t, status.PublishedAt.IsZero())
+	require.Equal(t, status.PublishedAt, status.CreatedAt)
+	require.Equal(t, status.PublishedAt, status.ModifiedAt)
+	require.Equal(t, status.PublishedAt, status.UpdatedAt)
+}
+
+func TestService_applyDirectMessageSendTransition_PropagatesRepositoryErrors(t *testing.T) {
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
 	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	conversationRepo.
-		On("UpdateConversationLastStatus", ctx, "conv123", "msg-1").
+		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
 		Return(errors.New("boom")).
 		Once()
 
-	service.updateConversationLastStatus(ctx, createTestConversation("conv123", []string{"alice", "bob"}), &models.Status{
+	err := service.applyDirectMessageSendTransition(ctx, createTestConversation("conv123", []string{"alice", "bob"}), false, "alice", "bob", nil, nil, &models.Status{
 		StatusID:    "msg-1",
 		PublishedAt: time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC),
-	})
+	}, true)
+	require.ErrorIs(t, err, ErrCreateDirectMessage)
 	conversationRepo.AssertExpectations(t)
 }
 
-func TestService_updateConversationLastStatus_TracksFirstAndSubsequentMessages(t *testing.T) {
+func TestService_applyDirectMessageSendTransition_PropagatesStatusMirrorErrors(t *testing.T) {
 	ctx := context.Background()
 
-	conversationRepo := &mockConversationRepository{}
-	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	conversationRepo := &nonTransactionalConversationRepo{}
+	noteRepo := &mockNoteRepository{}
+	service := NewService(conversationRepo, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
 
-	firstPublishedAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
-	secondPublishedAt := firstPublishedAt.Add(2 * time.Minute)
+	publishedAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 
 	conversationRepo.
-		On("UpdateConversationLastStatus", ctx, "conv123", "msg-1").
+		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
 		Return(nil).
 		Once()
-	conversationRepo.
-		On("UpdateConversationLastStatus", ctx, "conv123", "msg-2").
-		Return(nil).
+	noteRepo.
+		On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).
+		Return(errors.New("boom")).
 		Once()
 
-	service.updateConversationLastStatus(ctx, conversation, &models.Status{
+	err := service.applyDirectMessageSendTransition(ctx, conversation, false, "alice", "bob", nil, nil, &models.Status{
 		StatusID:    "msg-1",
-		PublishedAt: firstPublishedAt,
-	})
-	require.Equal(t, "msg-1", conversation.LastStatusID)
-	require.EqualValues(t, 1, conversation.TotalMessageCount)
-	require.Equal(t, firstPublishedAt, conversation.LastMessageTime)
-
-	service.updateConversationLastStatus(ctx, conversation, &models.Status{
-		StatusID:    "msg-2",
-		PublishedAt: secondPublishedAt,
-	})
-	require.Equal(t, "msg-2", conversation.LastStatusID)
-	require.EqualValues(t, 2, conversation.TotalMessageCount)
-	require.Equal(t, secondPublishedAt, conversation.LastMessageTime)
-
+		PublishedAt: publishedAt,
+	}, true)
+	require.ErrorIs(t, err, ErrCreateDirectMessage)
+	require.Empty(t, conversation.LastStatusID)
+	require.Zero(t, conversation.TotalMessageCount)
 	conversationRepo.AssertExpectations(t)
+	noteRepo.AssertExpectations(t)
 }
 
 func TestService_validateSendMessageReplyTarget_ReturnsErrorWhenParentMissing(t *testing.T) {
@@ -569,16 +545,7 @@ func TestService_getSendMessageAccounts_ReturnsErrors(t *testing.T) {
 func TestService_createSendMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
 	ctx := context.Background()
 
-	noteRepo := &mockNoteRepository{}
-	service := NewService(nil, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
-
-	var created *models.Status
-	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).
-		Run(func(args mock.Arguments) {
-			created = args.Get(1).(*models.Status)
-		}).
-		Return(nil).
-		Once()
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	status, _, err := service.createSendMessageStatus(
 		ctx,
@@ -598,11 +565,10 @@ func TestService_createSendMessageStatus_SetsAllCreationTimestamps(t *testing.T)
 	)
 	require.NoError(t, err)
 	require.NotNil(t, status)
-	require.NotNil(t, created)
-	require.False(t, created.PublishedAt.IsZero())
-	require.Equal(t, created.PublishedAt, created.CreatedAt)
-	require.Equal(t, created.PublishedAt, created.ModifiedAt)
-	require.Equal(t, created.PublishedAt, created.UpdatedAt)
+	require.False(t, status.PublishedAt.IsZero())
+	require.Equal(t, status.PublishedAt, status.CreatedAt)
+	require.Equal(t, status.PublishedAt, status.ModifiedAt)
+	require.Equal(t, status.PublishedAt, status.UpdatedAt)
 }
 
 func TestService_AcceptAndDeclineMessageRequest_NilCommand(t *testing.T) {

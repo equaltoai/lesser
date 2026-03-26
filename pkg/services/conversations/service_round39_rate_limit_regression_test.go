@@ -17,7 +17,6 @@ func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t 
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
-	noteRepo := &mockNoteRepository{}
 	accountRepo := &mockAccountRepository{}
 
 	relationshipRepo := testmocks.NewMockRelationshipRepository()
@@ -47,7 +46,7 @@ func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t 
 
 	service := NewService(
 		conversationRepo,
-		noteRepo,
+		nil,
 		nil,
 		accountRepo,
 		relationshipRepo,
@@ -67,7 +66,10 @@ func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t 
 	conversationRepo.On("GetConversationParticipantRecord", mock.Anything, "conv123", "bob").Return(&models.ConversationParticipantRecord{
 		Conversation: conversation,
 	}, nil).Once()
-	noteRepo.On("CreateStatus", mock.Anything, mock.Anything).Return(errors.New("boom")).Once()
+	conversationRepo.On("GetConversationParticipantRecord", mock.Anything, "conv123", "alice").Return(&models.ConversationParticipantRecord{
+		Conversation: conversation,
+	}, nil).Once()
+	conversationRepo.On("ApplyDirectMessageSend", mock.Anything, mock.AnythingOfType("*models.DirectMessageSendTransition")).Return(errors.New("boom")).Once()
 
 	_, err := service.SendDirectMessage(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",

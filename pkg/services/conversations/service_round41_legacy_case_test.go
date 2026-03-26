@@ -16,7 +16,7 @@ import (
 )
 
 func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(t *testing.T) {
-	service, conversationRepo, noteRepo, accountRepo, _, _ := createTestService()
+	service, conversationRepo, _, accountRepo, _, _ := createTestService()
 	ctx := context.Background()
 
 	senderAccount := createTestAccount("Medic", "Medic")
@@ -34,26 +34,14 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"arch", "medic"}).
 		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
 		Once()
-	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"arch", "medic"}).
-		Return(nil).
-		Once()
-	noteRepo.On("CreateStatus", ctx, mock.MatchedBy(func(status *models.Status) bool {
-		return assert.Contains(t, status.ToRecipients, "https://example.com/users/Arch")
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		if transition == nil || transition.Status == nil {
+			return false
+		}
+		return assert.Contains(t, transition.Status.ToRecipients, "https://example.com/users/Arch")
 	})).
 		Return(nil).
 		Once()
-	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "Medic").
-		Return(&models.ConversationParticipantRecord{}, nil).
-		Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "Arch").
-		Return(&models.ConversationParticipantRecord{}, nil).
-		Twice()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).
-		Return(nil).
-		Twice()
-	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "Medic").Return(nil).Once()
-	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "Arch").Return(nil).Once()
 
 	result, err := service.SendDirectMessage(ctx, cmd)
 
@@ -64,12 +52,11 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(
 	assert.Equal(t, []string{"https://example.com/users/Arch"}, result.Message.ToRecipients)
 
 	conversationRepo.AssertExpectations(t)
-	noteRepo.AssertExpectations(t)
 	accountRepo.AssertExpectations(t)
 }
 
 func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *testing.T) {
-	service, conversationRepo, noteRepo, accountRepo, _, _ := createTestService()
+	service, conversationRepo, _, accountRepo, _, _ := createTestService()
 	ctx := context.Background()
 
 	senderAccount := createTestAccount("medic", "Medic")
@@ -87,26 +74,14 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"arch", "medic"}).
 		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
 		Once()
-	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"arch", "medic"}).
-		Return(nil).
-		Once()
-	noteRepo.On("CreateStatus", ctx, mock.MatchedBy(func(status *models.Status) bool {
-		return assert.Equal(t, "Medic", status.AuthorID)
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+		if transition == nil || transition.Status == nil {
+			return false
+		}
+		return assert.Equal(t, "Medic", transition.Status.AuthorID)
 	})).
 		Return(nil).
 		Once()
-	conversationRepo.On("UpdateConversationLastStatus", ctx, mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "Medic").
-		Return(&models.ConversationParticipantRecord{}, nil).
-		Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "Arch").
-		Return(&models.ConversationParticipantRecord{}, nil).
-		Twice()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).
-		Return(nil).
-		Twice()
-	conversationRepo.On("MarkConversationRead", ctx, mock.Anything, "Medic").Return(nil).Once()
-	conversationRepo.On("MarkConversationUnread", ctx, mock.Anything, "Arch").Return(nil).Once()
 
 	result, err := service.SendDirectMessage(ctx, cmd)
 
@@ -117,7 +92,6 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *
 	assert.Equal(t, "Medic", result.Message.AuthorID)
 
 	conversationRepo.AssertExpectations(t)
-	noteRepo.AssertExpectations(t)
 	accountRepo.AssertExpectations(t)
 }
 
@@ -230,48 +204,30 @@ func TestService_previewDirectMessageRequestRateLimit_ReturnsTotalPreviewFailure
 
 func TestService_evaluateDirectMessageRequestPolicy_DeclinedThreadReopensAsRequest(t *testing.T) {
 	ctx := context.Background()
-	conversationRepo := &mockConversationRepository{}
-	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return(&models.ConversationParticipantRecord{RequestState: models.DmRequestStateDeclined}, nil).
-		Once()
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
-	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
-
-	willBeRequest, deliversToInbox, state, err := service.evaluateDirectMessageRequestPolicy(ctx, &SendDirectMessageCommand{
+	willBeRequest, deliversToInbox, err := service.evaluateDirectMessageRequestPolicyForState(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",
 		Recipients: []string{"bob"},
 		Content:    "hi",
-	}, "conv123", "bob")
+	}, "conv123", "bob", models.DmRequestStateDeclined)
 	require.NoError(t, err)
 	assert.True(t, willBeRequest)
 	assert.False(t, deliversToInbox)
-	assert.Equal(t, models.DmRequestStateDeclined, state)
-
-	conversationRepo.AssertExpectations(t)
 }
 
 func TestService_evaluateDirectMessageRequestPolicy_AcceptedThreadSkipsRequestFlow(t *testing.T) {
 	ctx := context.Background()
-	conversationRepo := &mockConversationRepository{}
-	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return(&models.ConversationParticipantRecord{RequestState: models.DmRequestStateAccepted}, nil).
-		Once()
+	service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
-	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
-
-	willBeRequest, deliversToInbox, state, err := service.evaluateDirectMessageRequestPolicy(ctx, &SendDirectMessageCommand{
+	willBeRequest, deliversToInbox, err := service.evaluateDirectMessageRequestPolicyForState(ctx, &SendDirectMessageCommand{
 		SenderID:   "alice",
 		Recipients: []string{"bob"},
 		Content:    "hi",
-	}, "conv123", "bob")
+	}, "conv123", "bob", models.DmRequestStateAccepted)
 	require.NoError(t, err)
 	assert.False(t, willBeRequest)
 	assert.False(t, deliversToInbox)
-	assert.Equal(t, models.DmRequestStateAccepted, state)
-
-	conversationRepo.AssertExpectations(t)
 }
 
 func TestService_SendDirectMessage_RateLimitsPendingRequestPreview(t *testing.T) {

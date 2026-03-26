@@ -91,6 +91,40 @@ func (r *ConversationRepository) UpdateConversation(_ context.Context, conversat
 	return nil
 }
 
+// ApplyDirectMessageSend applies the canonical DM send transition in memory.
+func (r *ConversationRepository) ApplyDirectMessageSend(_ context.Context, transition *models.DirectMessageSendTransition) error {
+	if transition == nil || transition.Conversation == nil || transition.Status == nil {
+		return storage.ErrInvalidInput
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	conversation := transition.Conversation
+	if transition.CreateConversation {
+		if _, exists := r.conversations[conversation.ID]; exists {
+			return storage.ErrAlreadyExists
+		}
+		r.conversations[conversation.ID] = conversation
+		r.participants[conversation.ID] = append([]string(nil), conversation.Participants...)
+		for _, participantID := range conversation.Participants {
+			r.userConversations[participantID] = append(r.userConversations[participantID], conversation.ID)
+		}
+	} else {
+		if _, exists := r.conversations[conversation.ID]; !exists {
+			return storage.ErrNotFound
+		}
+		r.conversations[conversation.ID] = conversation
+	}
+
+	senderID := transition.Status.AuthorID
+	for _, participantID := range conversation.Participants {
+		r.readStatus[conversation.ID+":"+participantID] = participantID == senderID
+	}
+
+	return nil
+}
+
 // DeleteConversation deletes a conversation by ID
 func (r *ConversationRepository) DeleteConversation(_ context.Context, id string) error {
 	r.mu.Lock()

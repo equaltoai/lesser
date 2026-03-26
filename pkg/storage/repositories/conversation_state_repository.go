@@ -164,6 +164,7 @@ func stateRecordFromModel(state *models.UserConversationState, conversation *mod
 		PreviewStatusID:          state.PreviewStatusID,
 		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
 		SortAt:                   state.SortAt,
+		UpdatedAt:                state.UpdatedAt,
 		Conversation:             cloneConversationForViewer(conversation, state.Unread),
 	}
 	return record

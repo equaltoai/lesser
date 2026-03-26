@@ -7,7 +7,6 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/testing/inmemory"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,9 +18,7 @@ func TestRound12MutationResolvers_Quotes_UpdateQuotePermissions(t *testing.T) {
 	viewerBoostStateResolverFunc = func(context.Context, *Resolver, string, string) (bool, error) { return false, nil }
 	t.Cleanup(func() { viewerBoostStateResolverFunc = originalBoostFn })
 
-	statusRepo, ok := storageRepo.Status().(*inmemory.StatusRepository)
-	require.True(t, ok)
-	require.NoError(t, statusRepo.CreateStatus(context.Background(), &models.Status{
+	require.NoError(t, storageRepo.Status().CreateStatus(context.Background(), &models.Status{
 		StatusID:       "status-1",
 		AuthorUsername: "alice",
 		Content:        "hello",
