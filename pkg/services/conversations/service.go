@@ -678,11 +678,14 @@ func userConversationStateFromParticipantRecord(conversation *models.Conversatio
 	if !record.SortAt.IsZero() {
 		state.SortAt = record.SortAt.UTC()
 	}
+	if !record.UpdatedAt.IsZero() {
+		state.UpdatedAt = record.UpdatedAt.UTC()
+	}
 	if record.Conversation != nil {
 		if !record.Conversation.CreatedAt.IsZero() {
 			state.CreatedAt = record.Conversation.CreatedAt.UTC()
 		}
-		if !record.Conversation.UpdatedAt.IsZero() {
+		if record.UpdatedAt.IsZero() && !record.Conversation.UpdatedAt.IsZero() {
 			state.UpdatedAt = record.Conversation.UpdatedAt.UTC()
 		}
 	}

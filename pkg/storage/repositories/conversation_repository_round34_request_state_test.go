@@ -63,6 +63,7 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 
 	t.Run("projection helpers preserve canonical state and clone conversation payloads", func(t *testing.T) {
 		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+		conversationUpdatedAt := sortAt.Add(2 * time.Hour)
 		state := &models.UserConversationState{
 			ViewerID:       "alice",
 			ConversationID: "conv-1",
@@ -77,7 +78,7 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		conversation := &models.Conversation{
 			ID:           "conv-1",
 			Participants: []string{"alice", "bob"},
-			UpdatedAt:    sortAt,
+			UpdatedAt:    conversationUpdatedAt,
 		}
 
 		require.Nil(t, stateContractFromModel(nil))
@@ -98,8 +99,10 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.Equal(t, "USER_CONVERSATIONS#alice", record.PK)
 		require.Equal(t, "PARTICIPANT#alice", record.GSI1SK)
 		require.Equal(t, sortAt.Format(time.RFC3339Nano)+"#conv-1", record.SK)
+		require.Equal(t, sortAt, record.UpdatedAt)
 		require.NotNil(t, record.Conversation)
 		require.True(t, record.Conversation.Unread)
+		require.Equal(t, conversationUpdatedAt, record.Conversation.UpdatedAt)
 	})
 }
 

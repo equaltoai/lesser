@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -23,6 +24,25 @@ func TestDefaultSendConversationState_AllowsNilConversation(t *testing.T) {
 	require.False(t, state.SortAt.IsZero())
 	require.False(t, state.CreatedAt.IsZero())
 	require.False(t, state.UpdatedAt.IsZero())
+}
+
+func TestUserConversationStateFromParticipantRecord_PrefersParticipantUpdatedAt(t *testing.T) {
+	conversation := createTestConversation("conv-existing", []string{"alice", "bob"})
+	conversation.CreatedAt = time.Date(2026, 3, 26, 15, 0, 0, 0, time.UTC)
+	conversation.UpdatedAt = time.Date(2026, 3, 26, 15, 30, 0, 0, time.UTC)
+	participantUpdatedAt := time.Date(2026, 3, 26, 15, 20, 0, 0, time.UTC)
+
+	state := userConversationStateFromParticipantRecord(conversation, "alice", "bob", &models.ConversationParticipantRecord{
+		UpdatedAt: participantUpdatedAt,
+		Conversation: &models.Conversation{
+			ID:        conversation.ID,
+			CreatedAt: conversation.CreatedAt,
+			UpdatedAt: conversation.UpdatedAt,
+		},
+	})
+
+	require.Equal(t, conversation.CreatedAt.UTC(), state.CreatedAt)
+	require.Equal(t, participantUpdatedAt, state.UpdatedAt)
 }
 
 func TestService_resolveDirectMessageConversationForSend_ReturnsExistingConversation(t *testing.T) {

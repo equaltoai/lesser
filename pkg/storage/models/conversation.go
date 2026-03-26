@@ -161,6 +161,7 @@ type ConversationParticipantRecord struct {
 	PreviewStatusID          string         `theorydb:"-" json:"preview_status_id,omitempty"`
 	PreviewStatusPublishedAt time.Time      `theorydb:"-" json:"preview_status_published_at,omitempty"`
 	SortAt                   time.Time      `theorydb:"-" json:"sort_at,omitempty"`
+	UpdatedAt                time.Time      `theorydb:"-" json:"updated_at,omitempty"`
 
 	// Conversation is the hydrated runtime view used by repository callers.
 	Conversation *Conversation `theorydb:"-" json:"-"`

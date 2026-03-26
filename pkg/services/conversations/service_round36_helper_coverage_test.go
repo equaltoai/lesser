@@ -422,6 +422,86 @@ func TestService_applyDirectMessageSendTransition_FinalizesStatusForTransactiona
 	noteRepo.AssertNotCalled(t, "CreateStatus", mock.Anything, mock.Anything)
 }
 
+func TestService_applyDirectMessageSendTransition_UsesParticipantRecordVersionsForExpectedStates(t *testing.T) {
+	ctx := context.Background()
+	conversationRepo := &transactionalConversationRepo{}
+	noteRepo := &mockNoteRepository{}
+	service := NewService(conversationRepo, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	conversation := createTestConversation("conv123", []string{"alice", "bob"})
+	conversation.UpdatedAt = time.Date(2026, 3, 26, 13, 0, 0, 0, time.UTC)
+	status := &models.Status{
+		StatusID:    "status-expected",
+		PublishedAt: time.Date(2026, 3, 26, 13, 20, 0, 0, time.UTC),
+	}
+
+	senderUpdatedAt := time.Date(2026, 3, 26, 13, 5, 0, 0, time.UTC)
+	recipientUpdatedAt := time.Date(2026, 3, 26, 13, 10, 0, 0, time.UTC)
+	senderRecord := &models.ConversationParticipantRecord{
+		RequestState: models.DmRequestStateAccepted,
+		UpdatedAt:    senderUpdatedAt,
+		Conversation: &models.Conversation{
+			ID:        conversation.ID,
+			CreatedAt: conversation.CreatedAt,
+			UpdatedAt: conversation.UpdatedAt,
+		},
+	}
+	recipientRecord := &models.ConversationParticipantRecord{
+		RequestState: models.DmRequestStateAccepted,
+		UpdatedAt:    recipientUpdatedAt,
+		Conversation: &models.Conversation{
+			ID:        conversation.ID,
+			CreatedAt: conversation.CreatedAt,
+			UpdatedAt: conversation.UpdatedAt,
+		},
+	}
+
+	conversationRepo.
+		On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+			if transition == nil || transition.Conversation == nil || transition.Status == nil {
+				return false
+			}
+			if transition.Conversation.ID != "conv123" || transition.Status.StatusID != "status-expected" {
+				return false
+			}
+			if len(transition.ExpectedParticipantStates) != 2 {
+				return false
+			}
+
+			expectedByViewer := make(map[string]*models.UserConversationState, len(transition.ExpectedParticipantStates))
+			for _, state := range transition.ExpectedParticipantStates {
+				expectedByViewer[state.ViewerID] = state
+			}
+
+			return expectedByViewer["alice"] != nil &&
+				expectedByViewer["bob"] != nil &&
+				expectedByViewer["alice"].UpdatedAt.Equal(senderUpdatedAt) &&
+				expectedByViewer["bob"].UpdatedAt.Equal(recipientUpdatedAt)
+		})).
+		Return(nil).
+		Once()
+	noteRepo.
+		On("FinalizeCreatedStatus", ctx, mock.MatchedBy(func(stored *models.Status) bool {
+			return stored != nil && stored.StatusID == "status-expected"
+		})).
+		Return(nil).
+		Once()
+
+	err := service.applyDirectMessageSendTransition(
+		ctx,
+		conversation,
+		false,
+		"alice",
+		"bob",
+		senderRecord,
+		recipientRecord,
+		status,
+		true,
+	)
+	require.NoError(t, err)
+	conversationRepo.AssertExpectations(t)
+	noteRepo.AssertExpectations(t)
+}
+
 func TestService_applyDirectMessageSendTransition_ReturnsTransactionalFinalizerErrors(t *testing.T) {
 	ctx := context.Background()
 	conversationRepo := &transactionalConversationRepo{}
