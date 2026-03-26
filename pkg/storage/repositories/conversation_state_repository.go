@@ -431,16 +431,21 @@ func (r *ConversationRepository) ListUserConversationStatesByFolder(ctx context.
 		items = append(items, stateContractFromModel(state))
 	}
 
+	total := int64(-1)
+	if len(items) == 0 && !hasMore {
+		total = 0
+	}
+
 	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{
 		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-		Total:      -1,
+		Total:      total,
 	}, nil
 }
 
 // ListUnreadUserConversationStates queries the viewer's sparse unread index.
-func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+func (r *ConversationRepository) listUnreadUserConversationStatesModels(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) ([]*models.UserConversationState, string, bool, error) {
 	limit := clampListLimit(opts.Limit, 20, 100)
 	query := r.GetDB().WithContext(ctx).Model(&models.UserConversationState{}).
 		Index("gsi2").
@@ -454,13 +459,9 @@ func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Co
 	var states []*models.UserConversationState
 	if err := query.All(&states); err != nil {
 		if errors.IsNotFound(err) {
-			return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{
-				Items:   []*interfaces.UserConversationStateContract{},
-				Total:   0,
-				HasMore: false,
-			}, nil
+			return []*models.UserConversationState{}, "", false, nil
 		}
-		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "unread user conversation states")
+		return nil, "", false, ErrorHandler.HandleQueryError(err, EntityConversation, "unread user conversation states")
 	}
 
 	hasMore := len(states) > limit
@@ -473,16 +474,31 @@ func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Co
 		nextCursor = states[len(states)-1].LegacyListCursor()
 	}
 
+	return states, nextCursor, hasMore, nil
+}
+
+// ListUnreadUserConversationStates queries the viewer's sparse unread index.
+func (r *ConversationRepository) ListUnreadUserConversationStates(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	states, nextCursor, hasMore, err := r.listUnreadUserConversationStatesModels(ctx, viewerID, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	items := make([]*interfaces.UserConversationStateContract, 0, len(states))
 	for _, state := range states {
 		items = append(items, stateContractFromModel(state))
+	}
+
+	total := int64(-1)
+	if len(items) == 0 && !hasMore {
+		total = 0
 	}
 
 	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{
 		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
-		Total:      -1,
+		Total:      total,
 	}, nil
 }
 

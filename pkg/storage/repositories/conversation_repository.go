@@ -564,15 +564,15 @@ func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context,
 	count := 0
 	cursor := ""
 	for {
-		result, err := r.ListUnreadUserConversationStates(ctx, username, interfaces.PaginationOptions{Limit: 100, Cursor: cursor})
+		states, nextCursor, hasMore, err := r.listUnreadUserConversationStatesModels(ctx, username, interfaces.PaginationOptions{Limit: 100, Cursor: cursor})
 		if err != nil {
 			return 0, err
 		}
-		count += len(result.Items)
-		if !result.HasMore || result.NextCursor == "" {
+		count += len(states)
+		if !hasMore || nextCursor == "" {
 			return count, nil
 		}
-		cursor = result.NextCursor
+		cursor = nextCursor
 	}
 }
 
@@ -1070,12 +1070,11 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 // Legacy note: DM rewrite M4/M5 replaces unread list fan-out with a keyed sparse unread query
 // over canonical per-user DM state.
 func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
-	stateResult, err := r.ListUnreadUserConversationStates(ctx, userID, opts)
+	states, nextCursor, hasMore, err := r.listUnreadUserConversationStatesModels(ctx, userID, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	states := stateModelsFromContracts(stateResult.Items)
 	unreadConversations, err := r.loadConversationsForStates(ctx, states)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "unread conversations")
@@ -1083,9 +1082,9 @@ func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, use
 
 	return &interfaces.PaginatedResult[*models.Conversation]{
 		Items:      unreadConversations,
-		NextCursor: stateResult.NextCursor,
-		HasMore:    stateResult.HasMore,
-		Total:      stateResult.Total,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      -1,
 	}, nil
 }
 
