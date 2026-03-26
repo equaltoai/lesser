@@ -35,6 +35,12 @@ func setupVerifyCIRound20Harness(t *testing.T) string {
 		if name == "golangci-lint" && firstArgOrEmpty(args) == "version" {
 			return "golangci-lint has version v2.10.1\n", nil
 		}
+		if name == "go" && len(args) >= 4 && args[0] == "list" && args[1] == "-f" {
+			return strings.Join([]string{
+				filepath.Join(repoRoot, "cmd", "lesser"),
+				filepath.Join(repoRoot, "pkg", "common"),
+			}, "\n"), nil
+		}
 		if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
 			return strings.Join([]string{
 				"github.com/equaltoai/lesser/cmd/lesser",
@@ -47,6 +53,21 @@ func setupVerifyCIRound20Harness(t *testing.T) string {
 	runCommandFn = func(context.Context, string, []string, execOptions) error { return nil }
 
 	return repoRoot
+}
+
+func writeCoverageProfileFromArgs(repoRoot string, args []string) error {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-coverprofile=") {
+			continue
+		}
+		profilePath := strings.TrimPrefix(arg, "-coverprofile=")
+		if !filepath.IsAbs(profilePath) {
+			profilePath = filepath.Join(repoRoot, profilePath)
+		}
+		coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
+		return os.WriteFile(profilePath, []byte(coverageData), 0o644)
+	}
+	return nil
 }
 
 func TestRunVerifyCI_Round20_PropagatesAuditFailure(t *testing.T) {
@@ -131,24 +152,30 @@ func TestResolveVerifyCIJobs_Round20(t *testing.T) {
 	t.Run("explicit verify ci override wins", func(t *testing.T) {
 		t.Setenv(lesserVerifyCIJobsEnv, "3")
 		t.Setenv(lesserToolJobsEnvVar, "8")
+		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 		require.Equal(t, 3, resolveVerifyCIJobs())
 	})
 
-	t.Run("explicit tool env disables automatic override", func(t *testing.T) {
+	t.Run("generic tool env does not weaken verify ci defaults", func(t *testing.T) {
 		t.Setenv(lesserVerifyCIJobsEnv, "")
 		t.Setenv(lesserToolJobsEnvVar, "8")
-		require.Zero(t, resolveVerifyCIJobs())
+		t.Setenv(goMaxProcsEnvVar, "")
+		t.Setenv(goFlagsEnvVar, "")
+		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
+		require.Equal(t, 1, resolveVerifyCIJobs())
 	})
 
-	t.Run("default cap stays at or below two", func(t *testing.T) {
+	t.Run("default verify ci profile uses one job", func(t *testing.T) {
 		t.Setenv(lesserVerifyCIJobsEnv, "")
 		t.Setenv(lesserToolJobsEnvVar, "")
 		t.Setenv(goMaxProcsEnvVar, "")
 		t.Setenv(goFlagsEnvVar, "")
+		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 
-		jobs := resolveVerifyCIJobs()
-		require.GreaterOrEqual(t, jobs, 1)
-		require.LessOrEqual(t, jobs, defaultVerifyCIJobs)
+		require.Equal(t, 1, resolveVerifyCIJobs())
 	})
 
 	t.Run("goflags build parallelism disables automatic override", func(t *testing.T) {
@@ -156,8 +183,21 @@ func TestResolveVerifyCIJobs_Round20(t *testing.T) {
 		t.Setenv(lesserToolJobsEnvVar, "")
 		t.Setenv(goMaxProcsEnvVar, "")
 		t.Setenv(goFlagsEnvVar, "-trimpath -p=8")
+		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 
 		require.Zero(t, resolveVerifyCIJobs())
+	})
+
+	t.Run("cli-defaulted parallelism still allows verify ci downshift", func(t *testing.T) {
+		t.Setenv(lesserVerifyCIJobsEnv, "")
+		t.Setenv(lesserToolJobsEnvVar, "")
+		t.Setenv(goMaxProcsEnvVar, "4")
+		t.Setenv(goFlagsEnvVar, "-trimpath -p=4")
+		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "1")
+		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "1")
+
+		require.Equal(t, 1, resolveVerifyCIJobs())
 	})
 }
 
@@ -171,33 +211,23 @@ func TestRunVerifyCI_Round20_UsesVerifyCIJobsOverride(t *testing.T) {
 	t.Setenv(coverageBatchSizeEnvVar, "")
 
 	var lintCall string
-	var coverageEnv map[string]string
+	var coverageRuns int
 
-	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
+	runCommandFn = func(_ context.Context, name string, args []string, opts execOptions) error {
 		joinedArgs := strings.Join(args, " ")
 		switch {
 		case name == "golangci-lint":
 			lintCall = name + " " + joinedArgs
-		case name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(joinedArgs, "-coverprofile=coverage_overall.out"):
-			coverageEnv = map[string]string{
-				lesserToolJobsEnvVar:    os.Getenv(lesserToolJobsEnvVar),
-				goMaxProcsEnvVar:        os.Getenv(goMaxProcsEnvVar),
-				goFlagsEnvVar:           os.Getenv(goFlagsEnvVar),
-				coverageBatchSizeEnvVar: os.Getenv(coverageBatchSizeEnvVar),
-			}
-			coveragePath := filepath.Join(repoRoot, "coverage_overall.out")
-			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
-			return os.WriteFile(coveragePath, []byte(coverageData), 0o644)
+		case name == "go" && firstArgOrEmpty(args) == "test":
+			coverageRuns++
+			return writeCoverageProfileFromArgs(repoRoot, args)
 		}
 		return nil
 	}
 
 	require.NoError(t, runVerifyCI(nil))
 	require.Contains(t, lintCall, "--concurrency 2")
-	require.Equal(t, "2", coverageEnv[lesserToolJobsEnvVar])
-	require.Equal(t, "2", coverageEnv[goMaxProcsEnvVar])
-	require.Equal(t, "-trimpath -p=2", coverageEnv[goFlagsEnvVar])
-	require.Equal(t, "10", coverageEnv[coverageBatchSizeEnvVar])
+	require.Equal(t, 1, coverageRuns)
 
 	require.Equal(t, "8", os.Getenv(lesserToolJobsEnvVar))
 	require.Equal(t, "", os.Getenv(goMaxProcsEnvVar))
@@ -214,22 +244,61 @@ func TestRunVerifyCI_Round20_PreservesExplicitCoverageBatchSize(t *testing.T) {
 	t.Setenv(goFlagsEnvVar, "-trimpath")
 	t.Setenv(coverageBatchSizeEnvVar, "3")
 
-	var coverageBatchSize string
+	var coverageRuns int
 
 	runCommandFn = func(_ context.Context, name string, args []string, _ execOptions) error {
-		joinedArgs := strings.Join(args, " ")
-		if name == "go" && firstArgOrEmpty(args) == "test" && strings.Contains(joinedArgs, "-coverprofile=coverage_overall.out") {
-			coverageBatchSize = os.Getenv(coverageBatchSizeEnvVar)
-			coveragePath := filepath.Join(repoRoot, "coverage_overall.out")
-			coverageData := "mode: set\n" + "github.com/equaltoai/lesser/pkg/common/errors.go:1.1,1.2 1 1\n"
-			return os.WriteFile(coveragePath, []byte(coverageData), 0o644)
+		if name == "go" && firstArgOrEmpty(args) == "test" {
+			coverageRuns++
+			return writeCoverageProfileFromArgs(repoRoot, args)
 		}
 		return nil
 	}
 
 	require.NoError(t, runVerifyCI(nil))
-	require.Equal(t, "3", coverageBatchSize)
+	require.Equal(t, 1, coverageRuns)
 	require.Equal(t, "3", os.Getenv(coverageBatchSizeEnvVar))
+}
+
+func TestRunVerifyCI_Round20_CIResourceProfileOverridesCLIDefaultParallelism(t *testing.T) {
+	repoRoot := setupVerifyCIRound20Harness(t)
+
+	t.Setenv(lesserVerifyCIJobsEnv, "")
+	t.Setenv(lesserToolJobsEnvVar, "")
+	t.Setenv(goMaxProcsEnvVar, "")
+	t.Setenv(goFlagsEnvVar, "")
+	t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
+	t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
+	t.Setenv(coverageBatchSizeEnvVar, "")
+	t.Setenv(goMemoryLimitEnvVar, "")
+	t.Setenv(goGCEnvVar, "")
+
+	applyToolParallelismDefaults()
+
+	var lintCall string
+	var coverageRuns int
+
+	runCommandFn = func(_ context.Context, name string, args []string, opts execOptions) error {
+		joinedArgs := strings.Join(args, " ")
+		switch {
+		case name == "golangci-lint":
+			lintCall = name + " " + joinedArgs
+		case name == "go" && firstArgOrEmpty(args) == "test":
+			coverageRuns++
+			return writeCoverageProfileFromArgs(repoRoot, args)
+		}
+		return nil
+	}
+
+	require.NoError(t, runVerifyCI(nil))
+	require.Contains(t, lintCall, "--concurrency 1")
+	require.Equal(t, 1, coverageRuns)
+	require.Equal(t, defaultVerifyCIGOMEMLIMIT, resolveVerifyCIGOMEMLIMIT())
+	require.Equal(t, defaultVerifyCIGOGC, resolveVerifyCIGOGC())
+
+	require.Equal(t, "4", os.Getenv(goMaxProcsEnvVar))
+	require.Equal(t, "-p=4", os.Getenv(goFlagsEnvVar))
+	require.Equal(t, "", os.Getenv(goMemoryLimitEnvVar))
+	require.Equal(t, "", os.Getenv(goGCEnvVar))
 }
 
 func TestRunVerifyCI_Round20_SkipsSecurityWhenDisabled(t *testing.T) {

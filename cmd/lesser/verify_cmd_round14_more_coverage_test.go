@@ -29,8 +29,14 @@ func TestRunVerifyCI_Round14_SkipsSecurityWhenDisabled(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "go.mod"), []byte("module github.com/equaltoai/lesser\n\ngo 1.25\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".golangci.yml"), []byte("version: \"2\"\n"), 0o644))
 
-	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, _ string, args ...string) (string, error) {
-		if len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
+	captureCommandOutputFn = func(_ context.Context, _ string, _ map[string]string, name string, args ...string) (string, error) {
+		if name == "go" && len(args) >= 4 && args[0] == "list" && args[1] == "-f" {
+			return strings.Join([]string{
+				filepath.Join(repoRoot, "cmd", "api"),
+				filepath.Join(repoRoot, "pkg", "common"),
+			}, "\n"), nil
+		}
+		if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "./..." {
 			return strings.Join([]string{
 				"github.com/equaltoai/lesser/cmd/api",
 				"github.com/equaltoai/lesser/pkg/common",

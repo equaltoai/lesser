@@ -281,7 +281,9 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 	return nil
 }
 
-// GetUserConversations retrieves conversations for a user with pagination (KEEP - Complex pagination logic)
+// GetUserConversations retrieves conversations for a user with pagination.
+// Legacy note: DM rewrite M5 replaces this snapshot-hydrated list path with a keyed folder query
+// over canonical per-user DM state.
 func (r *ConversationRepository) GetUserConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	log := r.logger.With(
 		zap.String("user_id", userID),
@@ -367,6 +369,7 @@ func clampListLimit(limit int, defaultLimit int, maxLimit int) int {
 	return limit
 }
 
+// scanUserConversationsByRequestState is the legacy scan-and-filter helper for DM request-state reads.
 func (r *ConversationRepository) scanUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, limit int, cursor string) ([]*models.Conversation, string, bool, error) {
 	// Defense-in-depth: re-clamp to ensure user-provided pagination limits cannot trigger
 	// excessive allocations, regardless of how this helper is called.
@@ -426,6 +429,7 @@ func requestStateFetchLimit(limit int) int {
 	return fetchLimit
 }
 
+// fetchUserConversationParticipantRecords loads the legacy participant-record pages used by DM list reads.
 func (r *ConversationRepository) fetchUserConversationParticipantRecords(ctx context.Context, userID string, fetchLimit int, cursor string) ([]*models.ConversationParticipantRecord, bool, error) {
 	query := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
 		Where("PK", "=", canonicalConversationParticipantPK(userID)).
@@ -642,7 +646,8 @@ func (r *ConversationRepository) MarkConversationRead(ctx context.Context, conve
 	return nil
 }
 
-// GetUnreadConversationCount gets the count of unread conversations for a user (KEEP - Complex count logic)
+// GetUnreadConversationCount gets the count of unread conversations for a user.
+// Legacy note: DM rewrite M4/M5 replaces fan-out unread counting with keyed unread-state queries.
 func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context, username string) (int, error) {
 	log := r.logger.With(zap.String("username", username))
 
@@ -735,7 +740,8 @@ func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, co
 	return nil
 }
 
-// GetConversationStatuses retrieves messages in a conversation with pagination (KEEP - Complex message retrieval)
+// GetConversationStatuses retrieves messages in a conversation with pagination.
+// Legacy note: DM rewrite M5 keeps DM thread reads on StatusRepository.GetConversationThread.
 func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error) {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -791,7 +797,8 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 	return statuses, nextCursor, nil
 }
 
-// RemoveStatusFromConversation removes a status from a conversation (KEEP - Complex message removal logic)
+// RemoveStatusFromConversation removes a status from a conversation.
+// Legacy note: DM rewrite M3/M8 removes ConversationMessage-based DM mutation paths.
 func (r *ConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -1147,7 +1154,9 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 	return nil
 }
 
-// GetUnreadConversations retrieves unread conversations for a user (KEEP - Complex filtering logic)
+// GetUnreadConversations retrieves unread conversations for a user.
+// Legacy note: DM rewrite M4/M5 replaces unread list fan-out with a keyed sparse unread query
+// over canonical per-user DM state.
 func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	log := r.logger.With(zap.String("user_id", userID))
 

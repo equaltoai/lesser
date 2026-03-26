@@ -52,6 +52,8 @@ type Conversation struct {
 // ConversationSnapshot stores the participant-facing conversation payload nested under
 // ConversationParticipantRecord. It intentionally avoids theorydb/json tags so the
 // nested map round-trips using stable exported field names.
+//
+// Legacy note: DM rewrite M1 removes embedded conversation snapshots from live DM state.
 type ConversationSnapshot struct {
 	ID                string
 	Participants      []string
@@ -182,8 +184,11 @@ func (c *Conversation) GetSK() string {
 	return c.SK
 }
 
-// ConversationParticipantRecord represents a participant's view of a conversation
-// This is used for querying conversations by user
+// ConversationParticipantRecord represents a participant's view of a conversation.
+// This is used for querying conversations by user.
+//
+// Legacy note: DM rewrite M1 replaces snapshot-hydrated participant rows with canonical
+// UserConversationState rows.
 type ConversationParticipantRecord struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
@@ -217,6 +222,8 @@ func (ConversationParticipantRecord) TableName() string {
 }
 
 // HydrateConversation rebuilds the runtime conversation model from the durable snapshot.
+//
+// Legacy note: DM rewrite M1 removes runtime dependence on embedded participant snapshots.
 func (p *ConversationParticipantRecord) HydrateConversation() *Conversation {
 	if p == nil {
 		return nil
@@ -232,6 +239,8 @@ func (p *ConversationParticipantRecord) HydrateConversation() *Conversation {
 }
 
 // SyncConversationData refreshes the durable snapshot from the runtime conversation model.
+//
+// Legacy note: DM rewrite M1 removes runtime dependence on embedded participant snapshots.
 func (p *ConversationParticipantRecord) SyncConversationData() *Conversation {
 	if p == nil {
 		return nil

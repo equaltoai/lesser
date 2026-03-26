@@ -9,12 +9,14 @@ import (
 )
 
 const (
-	defaultCLIStage        = "dev"
-	defaultCLIMaxToolJobs  = 4
-	lesserToolJobsEnvVar   = "LESSER_JOBS"
-	goMaxProcsEnvVar       = "GOMAXPROCS"
-	goFlagsEnvVar          = "GOFLAGS"
-	goBuildParallelismFlag = "-p"
+	defaultCLIStage                         = "dev"
+	defaultCLIMaxToolJobs                   = 4
+	lesserToolJobsEnvVar                    = "LESSER_JOBS"
+	goMaxProcsEnvVar                        = "GOMAXPROCS"
+	goFlagsEnvVar                           = "GOFLAGS"
+	goBuildParallelismFlag                  = "-p"
+	lesserDefaultedGoMaxProcsEnvVar         = "LESSER_DEFAULTED_GOMAXPROCS"
+	lesserDefaultedGoFlagsParallelismEnvVar = "LESSER_DEFAULTED_GOFLAGS_PARALLELISM"
 )
 
 func applyCLIDefaultEnv() {
@@ -36,6 +38,7 @@ func applyToolParallelismDefaults() {
 
 	if strings.TrimSpace(os.Getenv(goMaxProcsEnvVar)) == "" {
 		_ = os.Setenv(goMaxProcsEnvVar, fmt.Sprintf("%d", jobs))
+		_ = os.Setenv(lesserDefaultedGoMaxProcsEnvVar, "1")
 	}
 
 	currentGoFlags := strings.TrimSpace(os.Getenv(goFlagsEnvVar))
@@ -45,9 +48,11 @@ func applyToolParallelismDefaults() {
 
 	if currentGoFlags == "" {
 		_ = os.Setenv(goFlagsEnvVar, fmt.Sprintf("%s=%d", goBuildParallelismFlag, jobs))
+		_ = os.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "1")
 		return
 	}
 	_ = os.Setenv(goFlagsEnvVar, currentGoFlags+" "+fmt.Sprintf("%s=%d", goBuildParallelismFlag, jobs))
+	_ = os.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "1")
 }
 
 func resolveToolJobs() int {

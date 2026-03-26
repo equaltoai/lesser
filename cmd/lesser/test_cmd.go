@@ -510,11 +510,7 @@ func listPackagesForPkgCoverage(repoRoot string, goCache string) ([]string, erro
 	testingPrefix := modulePath + "/pkg/testing"
 
 	pkgs := make([]string, 0)
-	for _, line := range strings.Split(out, "\n") {
-		pkg := strings.TrimSpace(line)
-		if pkg == "" {
-			continue
-		}
+	for _, pkg := range goListLines(out) {
 		if pkg == testingPrefix || strings.HasPrefix(pkg, testingPrefix+"/") {
 			continue
 		}
@@ -541,12 +537,7 @@ func listPackagesForAllCoverage(repoRoot string, goCache string, includeTools bo
 	toolsPrefix := modulePath + "/tools"
 
 	pkgs := make([]string, 0)
-	for _, line := range strings.Split(out, "\n") {
-		pkg := strings.TrimSpace(line)
-		if pkg == "" {
-			continue
-		}
-
+	for _, pkg := range goListLines(out) {
 		if !includeTools {
 			if pkg == toolsPrefix || strings.HasPrefix(pkg, toolsPrefix+"/") {
 				continue
@@ -577,12 +568,7 @@ func listPackagesForOverallCoverage(repoRoot string, goCache string, includeTool
 	testingPrefix := modulePath + "/pkg/testing"
 
 	pkgs := make([]string, 0)
-	for _, line := range strings.Split(out, "\n") {
-		pkg := strings.TrimSpace(line)
-		if pkg == "" {
-			continue
-		}
-
+	for _, pkg := range goListLines(out) {
 		if !includeTools {
 			if pkg == toolsPrefix || strings.HasPrefix(pkg, toolsPrefix+"/") {
 				continue

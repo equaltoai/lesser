@@ -367,8 +367,10 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 	return entries, nextCursor, nil
 }
 
-// GetConversations retrieves conversations for a user (timeline interface compatibility)
-// This bridges between timeline interface and conversation repository
+// GetConversations retrieves conversations for a user (timeline interface compatibility).
+// This bridges between timeline interface and conversation repository.
+//
+// Legacy note: DM rewrite M5 removes timeline-side DM list reads that hydrate embedded participant snapshots.
 func (r *TimelineRepository) GetConversations(ctx context.Context, username string, limit int, cursor string) ([]*models.Conversation, string, error) {
 	// Query user's conversation participant records using the established pattern
 	// PK = USER_CONVERSATIONS#username, SK = timestamp#conversationID
