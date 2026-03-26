@@ -4,8 +4,10 @@ import (
 	"context"
 	"strings"
 
+	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/transformations"
 )
 
 type prefetchedConversationAccountsContextKey struct{}
@@ -141,4 +143,70 @@ func (h *Handler) loadConversationAPIPrefetch(ctx context.Context, conversations
 	}
 
 	return prefetch
+}
+
+func (h *Handler) conversationAPIAccountForParticipant(ctx context.Context, participant string, prefetch *conversationAPIPrefetch) *storage.Account {
+	participant = strings.ToLower(strings.TrimSpace(participant))
+	if participant == "" || h == nil || h.repos == nil {
+		return nil
+	}
+
+	if prefetch != nil {
+		if account := prefetch.accountsByUsername[participant]; account != nil {
+			return account
+		}
+	}
+
+	actor, err := h.repos.Actor().GetActor(ctx, participant)
+	if err != nil || actor == nil {
+		return nil
+	}
+
+	return &storage.Account{
+		User:  &storage.User{Username: participant, DisplayName: participant},
+		Actor: actor,
+	}
+}
+
+func (h *Handler) conversationAPIAccounts(ctx context.Context, conv *storageModels.Conversation, viewerUsername string, prefetch *conversationAPIPrefetch) []apimodels.Account {
+	accounts := make([]apimodels.Account, 0, len(conv.Participants))
+	for _, participant := range conversationParticipantUsernames(conv, viewerUsername) {
+		account := h.conversationAPIAccountForParticipant(ctx, participant, prefetch)
+		if account == nil || account.Actor == nil {
+			continue
+		}
+		accounts = append(accounts, transformations.ActorToAccountBase(account.Actor, h.cfg.BaseURL()))
+	}
+	return accounts
+}
+
+func (h *Handler) conversationAPIStatus(ctx context.Context, conv *storageModels.Conversation, prefetch *conversationAPIPrefetch) *storageModels.Status {
+	previewStatusID := conversationPreviewStatusID(conv)
+	if previewStatusID == "" || h == nil || h.repos == nil || h.repos.Status() == nil {
+		return nil
+	}
+
+	if prefetch != nil {
+		if status := prefetch.statusesByID[previewStatusID]; status != nil {
+			return status
+		}
+	}
+
+	status, err := h.repos.Status().GetStatus(ctx, previewStatusID)
+	if err != nil {
+		return nil
+	}
+	return status
+}
+
+func conversationAPIStatusContext(h *Handler, prefetch *conversationAPIPrefetch) context.Context {
+	if h == nil {
+		return context.Background()
+	}
+
+	statusCtx := h.statusConversionContext()
+	if prefetch != nil {
+		statusCtx = withPrefetchedConversationAccounts(statusCtx, prefetch.accountsByUsername)
+	}
+	return statusCtx
 }

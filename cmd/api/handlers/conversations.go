@@ -6,14 +6,11 @@ import (
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/transformations"
 	apptheory "github.com/theory-cloud/apptheory/runtime"
 	"go.uber.org/zap"
 )
@@ -32,61 +29,12 @@ func (h *Handler) convertConversationToAPIWithPrefetch(ctx context.Context, conv
 		Unread: conv.Unread,
 	}
 
-	accounts := make([]apimodels.Account, 0, len(conv.Participants))
-	for _, participant := range conversationParticipantUsernames(conv, viewerUsername) {
-		if participant == "" {
-			continue
-		}
+	apiConversation.Accounts = h.conversationAPIAccounts(ctx, conv, viewerUsername, prefetch)
 
-		var account *storage.Account
-		if prefetch != nil {
-			account = prefetch.accountsByUsername[strings.ToLower(strings.TrimSpace(participant))]
-		}
-		if account == nil {
-			actor, err := h.repos.Actor().GetActor(ctx, participant)
-			if err != nil || actor == nil {
-				continue
-			}
-			account = &storage.Account{
-				User:  &storage.User{Username: participant, DisplayName: participant},
-				Actor: actor,
-			}
-		}
-
-		var actor *activitypub.Actor
-		if account != nil {
-			actor = account.Actor
-		}
-		if actor == nil {
-			continue
-		}
-
-		apiAccount := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
-		accounts = append(accounts, apiAccount)
-	}
-	apiConversation.Accounts = accounts
-
-	if previewStatusID := conversationPreviewStatusID(conv); previewStatusID != "" {
-		var status *storageModels.Status
-		if prefetch != nil {
-			status = prefetch.statusesByID[previewStatusID]
-		}
-		if status == nil {
-			var err error
-			status, err = h.repos.Status().GetStatus(ctx, previewStatusID)
-			if err != nil {
-				status = nil
-			}
-		}
-		if status != nil {
-			statusCtx := h.statusConversionContext()
-			if prefetch != nil {
-				statusCtx = withPrefetchedConversationAccounts(statusCtx, prefetch.accountsByUsername)
-			}
-			apiStatus, err := h.convertStorageStatusToAPIWithContext(statusCtx, status, viewerUsername)
-			if err == nil {
-				apiConversation.LastStatus = apiStatus
-			}
+	if status := h.conversationAPIStatus(ctx, conv, prefetch); status != nil {
+		apiStatus, err := h.convertStorageStatusToAPIWithContext(conversationAPIStatusContext(h, prefetch), status, viewerUsername)
+		if err == nil {
+			apiConversation.LastStatus = apiStatus
 		}
 	}
 
