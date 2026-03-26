@@ -22,6 +22,14 @@ func (r *nonTransactionalConversationRepo) TransactionalDirectMessageSendEnabled
 	return false
 }
 
+type transactionalConversationRepo struct {
+	mockConversationRepository
+}
+
+func (r *transactionalConversationRepo) TransactionalDirectMessageSendEnabled() bool {
+	return true
+}
+
 func TestService_enforceDirectMessageRequestRateLimit_AuditsAndFailsOnTotalLimit(t *testing.T) {
 	ctx := context.Background()
 
@@ -363,6 +371,102 @@ func TestService_applyDirectMessageSendTransition_MirrorsStatusForNonTransaction
 	require.False(t, conversation.Unread)
 	conversationRepo.AssertExpectations(t)
 	noteRepo.AssertExpectations(t)
+}
+
+func TestService_applyDirectMessageSendTransition_FinalizesStatusForTransactionalRepositories(t *testing.T) {
+	ctx := context.Background()
+	conversationRepo := &transactionalConversationRepo{}
+	noteRepo := &mockNoteRepository{}
+	service := NewService(conversationRepo, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	conversation := createTestConversation("conv123", []string{"alice", "bob"})
+	status := &models.Status{
+		StatusID:    "status-1",
+		PublishedAt: time.Date(2026, 3, 26, 13, 20, 0, 0, time.UTC),
+	}
+
+	conversationRepo.
+		On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
+			if transition == nil || transition.Status == nil || transition.Conversation == nil {
+				return false
+			}
+			return transition.Status.StatusID == "status-1" &&
+				transition.Conversation.ID == "conv123" &&
+				!transition.CreateConversation &&
+				len(transition.ExpectedParticipantStates) == 2
+		})).
+		Return(nil).
+		Once()
+	noteRepo.
+		On("FinalizeCreatedStatus", ctx, mock.MatchedBy(func(stored *models.Status) bool {
+			return stored != nil && stored.StatusID == "status-1"
+		})).
+		Return(nil).
+		Once()
+
+	err := service.applyDirectMessageSendTransition(
+		ctx,
+		conversation,
+		false,
+		"alice",
+		"bob",
+		nil,
+		nil,
+		status,
+		true,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "status-1", conversation.LastStatusID)
+	require.EqualValues(t, 1, conversation.TotalMessageCount)
+	conversationRepo.AssertExpectations(t)
+	noteRepo.AssertExpectations(t)
+	noteRepo.AssertNotCalled(t, "CreateStatus", mock.Anything, mock.Anything)
+}
+
+func TestService_applyDirectMessageSendTransition_ReturnsTransactionalFinalizerErrors(t *testing.T) {
+	ctx := context.Background()
+	conversationRepo := &transactionalConversationRepo{}
+	noteRepo := &mockNoteRepository{}
+	service := NewService(conversationRepo, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+	conversation := createTestConversation("conv123", []string{"alice", "bob"})
+	status := &models.Status{
+		StatusID:    "status-1",
+		PublishedAt: time.Date(2026, 3, 26, 13, 20, 0, 0, time.UTC),
+	}
+
+	conversationRepo.
+		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
+		Return(nil).
+		Once()
+	noteRepo.
+		On("FinalizeCreatedStatus", ctx, mock.AnythingOfType("*models.Status")).
+		Return(errors.New("boom")).
+		Once()
+
+	err := service.applyDirectMessageSendTransition(
+		ctx,
+		conversation,
+		false,
+		"alice",
+		"bob",
+		nil,
+		nil,
+		status,
+		true,
+	)
+	require.ErrorIs(t, err, ErrCreateDirectMessage)
+	conversationRepo.AssertExpectations(t)
+	noteRepo.AssertExpectations(t)
+}
+
+func TestService_finalizeDirectMessageStatusWrite_NoOpsWithoutCapabilitySignal(t *testing.T) {
+	ctx := context.Background()
+	noteRepo := &mockNoteRepository{}
+	service := NewService(&mockConversationRepository{}, noteRepo, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
+
+	err := service.finalizeDirectMessageStatusWrite(ctx, &models.Status{StatusID: "status-1"})
+	require.NoError(t, err)
+	noteRepo.AssertNotCalled(t, "CreateStatus", mock.Anything, mock.Anything)
+	noteRepo.AssertNotCalled(t, "FinalizeCreatedStatus", mock.Anything, mock.Anything)
 }
 
 func TestService_resolveDirectMessageConversationForSend_ReturnsLookupErrors(t *testing.T) {

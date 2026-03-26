@@ -68,7 +68,7 @@ func TestService_executeDirectMessageSendAttempt_RetriesCreateRace(t *testing.T)
 	}, sender, map[string]*storage.Account{
 		"bob": recipient,
 	}, "bob")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, storage.ErrAlreadyExists)
 	require.True(t, retry)
 	require.Nil(t, attempt)
 	conversationRepo.AssertExpectations(t)

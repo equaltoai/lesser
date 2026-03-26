@@ -230,6 +230,11 @@ func (m *mockNoteRepository) CreateStatus(ctx context.Context, status *models.St
 	return args.Error(0)
 }
 
+func (m *mockNoteRepository) FinalizeCreatedStatus(ctx context.Context, status *models.Status) error {
+	args := m.Called(ctx, status)
+	return args.Error(0)
+}
+
 func (m *mockNoteRepository) CreateBoostStatus(ctx context.Context, status *models.Status) error {
 	// Reuse CreateStatus expectations when needed; boosts aren't exercised in these tests.
 	return m.CreateStatus(ctx, status)

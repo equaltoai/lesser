@@ -67,6 +67,10 @@ type directMessageSendCapability interface {
 	TransactionalDirectMessageSendEnabled() bool
 }
 
+type transactionalDirectMessageStatusFinalizer interface {
+	FinalizeCreatedStatus(ctx context.Context, status *models.Status) error
+}
+
 type directMessageSendAttempt struct {
 	conversation  *models.Conversation
 	status        *models.Status
@@ -118,6 +122,7 @@ const (
 	dmRequestTotalWindow        = time.Hour
 	dmRequestPerRecipientLimit  = 3
 	dmRequestPerRecipientWindow = 24 * time.Hour
+	directMessageSendRetryLimit = 3
 )
 
 type apiRateLimitInfoReader interface {
@@ -615,12 +620,12 @@ func (s *Service) getParticipantRecordForSend(ctx context.Context, conversationI
 func defaultSendConversationState(conversation *models.Conversation, viewerID, counterpartID string) *models.UserConversationState {
 	now := time.Now().UTC()
 	state := &models.UserConversationState{
-		ViewerID:       viewerID,
-		CounterpartID:  counterpartID,
-		Folder:         models.UserConversationFolderHidden,
-		SortAt:         now,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ViewerID:      viewerID,
+		CounterpartID: counterpartID,
+		Folder:        models.UserConversationFolderHidden,
+		SortAt:        now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if conversation != nil {
 		state.ConversationID = conversation.ID
@@ -799,6 +804,48 @@ func buildDirectMessageParticipantStatesForSend(
 	return []*models.UserConversationState{senderState, recipientState}
 }
 
+func buildExpectedDirectMessageParticipantStates(
+	conversation *models.Conversation,
+	senderID string,
+	recipientID string,
+	senderRecord *models.ConversationParticipantRecord,
+	recipientRecord *models.ConversationParticipantRecord,
+) []*models.UserConversationState {
+	return []*models.UserConversationState{
+		userConversationStateFromParticipantRecord(conversation, senderID, recipientID, senderRecord),
+		userConversationStateFromParticipantRecord(conversation, recipientID, senderID, recipientRecord),
+	}
+}
+
+func (s *Service) finalizeDirectMessageStatusWrite(ctx context.Context, status *models.Status) error {
+	if s.noteRepo == nil {
+		return nil
+	}
+
+	capability, ok := s.conversationRepo.(directMessageSendCapability)
+	if !ok {
+		return nil
+	}
+
+	if !capability.TransactionalDirectMessageSendEnabled() {
+		if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
+			return errors.Join(ErrCreateDirectMessage, err)
+		}
+		return nil
+	}
+
+	finalizer, ok := s.noteRepo.(transactionalDirectMessageStatusFinalizer)
+	if !ok {
+		return nil
+	}
+
+	if err := finalizer.FinalizeCreatedStatus(ctx, status); err != nil {
+		return errors.Join(ErrCreateDirectMessage, err)
+	}
+
+	return nil
+}
+
 func (s *Service) applyDirectMessageSendTransition(
 	ctx context.Context,
 	conversation *models.Conversation,
@@ -816,14 +863,15 @@ func (s *Service) applyDirectMessageSendTransition(
 		ParticipantStates:  buildDirectMessageParticipantStatesForSend(conversation, status, senderID, recipientID, senderRecord, recipientRecord, deliversToInbox),
 		CreateConversation: createConversation,
 	}
+	if !createConversation {
+		transition.ExpectedParticipantStates = buildExpectedDirectMessageParticipantStates(conversation, senderID, recipientID, senderRecord, recipientRecord)
+	}
 
 	if err := s.conversationRepo.ApplyDirectMessageSend(ctx, transition); err != nil {
 		return errors.Join(ErrCreateDirectMessage, err)
 	}
-	if capability, ok := s.conversationRepo.(directMessageSendCapability); ok && !capability.TransactionalDirectMessageSendEnabled() && s.noteRepo != nil {
-		if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-			return errors.Join(ErrCreateDirectMessage, err)
-		}
+	if err := s.finalizeDirectMessageStatusWrite(ctx, status); err != nil {
+		return err
 	}
 
 	if conversation != nil {
@@ -889,7 +937,10 @@ func (s *Service) executeDirectMessageSendAttempt(
 
 	if err := s.applyDirectMessageSendTransition(ctx, conversation, createConversation, cmd.SenderID, recipientID, senderRecord, recipientRecord, status, deliversToInbox); err != nil {
 		if createConversation && errors.Is(err, storage.ErrAlreadyExists) {
-			return nil, true, nil
+			return nil, true, storage.ErrAlreadyExists
+		}
+		if !createConversation && errors.Is(err, storage.ErrVersionConflict) {
+			return nil, true, storage.ErrVersionConflict
 		}
 		return nil, false, err
 	}
@@ -935,18 +986,23 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	recipientID = cmd.Recipients[0]
 
 	var attemptResult *directMessageSendAttempt
-	for attempt := 0; attempt < 2; attempt++ {
+	var retryErr error
+	for attempt := 0; attempt < directMessageSendRetryLimit; attempt++ {
 		var retry bool
 		attemptResult, retry, err = s.executeDirectMessageSendAttempt(ctx, cmd, sender, recipientAccounts, recipientID)
 		if err != nil {
+			if retry {
+				retryErr = err
+				continue
+			}
 			return nil, err
-		}
-		if retry {
-			continue
 		}
 		break
 	}
 	if attemptResult == nil || attemptResult.conversation == nil || attemptResult.status == nil {
+		if retryErr != nil {
+			return nil, errors.Join(ErrCreateDirectMessage, retryErr)
+		}
 		return nil, errors.Join(ErrCreateDirectMessage, storage.ErrAlreadyExists)
 	}
 
@@ -1090,35 +1146,30 @@ func (s *Service) createSendMessageStatus(_ context.Context, cmd *SendMessageCom
 	return status, messageID, nil
 }
 
-// SendMessage sends a message in an existing 1:1 conversation, enforcing strict participant authz.
-func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*MessageResult, error) {
-	if cmd == nil {
-		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
-	}
-
+func (s *Service) executeSendMessageAttempt(ctx context.Context, cmd *SendMessageCommand) (*MessageResult, bool, error) {
 	conversation, recipientID, err := s.loadConversationAndRecipientForSendMessage(ctx, cmd)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	sendCmd := sendDirectMessageCommandFromSendMessage(cmd, recipientID)
 	if err := s.validateSendMessageCommandBasic(ctx, sendCmd); err != nil {
-		return nil, errors.Join(ErrConversationValidationFailed, err)
+		return nil, false, errors.Join(ErrConversationValidationFailed, err)
 	}
 
 	if err := s.validateSendMessageReplyTarget(ctx, cmd.InReplyToID, conversation.ID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	sender, recipient, err := s.getSendMessageAccounts(ctx, cmd.SenderID, recipientID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	recipientRequestState := models.DmRequestState("")
 	record, err := s.getParticipantRecordForSend(ctx, conversation.ID, recipientID)
 	if err != nil {
-		return nil, errors.Join(ErrCreateDirectMessage, err)
+		return nil, false, errors.Join(ErrCreateDirectMessage, err)
 	}
 	if record != nil {
 		recipientRequestState = record.RequestState
@@ -1126,25 +1177,28 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 
 	willBeRequest, deliversToInbox, err := s.evaluateDirectMessageRequestPolicyForState(ctx, sendCmd, conversation.ID, recipientID, recipientRequestState)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if willBeRequest {
 		if err := s.previewDirectMessageRequestRateLimit(ctx, sendCmd, conversation.ID, recipientID); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
 	status, _, err := s.createSendMessageStatus(ctx, cmd, sendCmd, sender, recipient, conversation.ID, recipientID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	senderRecord, err := s.getParticipantRecordForSend(ctx, conversation.ID, cmd.SenderID)
 	if err != nil {
-		return nil, errors.Join(ErrCreateDirectMessage, err)
+		return nil, false, errors.Join(ErrCreateDirectMessage, err)
 	}
 
 	if err := s.applyDirectMessageSendTransition(ctx, conversation, false, cmd.SenderID, recipientID, senderRecord, record, status, deliversToInbox); err != nil {
-		return nil, err
+		if errors.Is(err, storage.ErrVersionConflict) {
+			return nil, true, storage.ErrVersionConflict
+		}
+		return nil, false, err
 	}
 
 	events := s.emitMessageSentEvents(ctx, status, conversation)
@@ -1163,7 +1217,32 @@ func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*Me
 		Message:      status,
 		Conversation: conversation,
 		Events:       events,
-	}, nil
+	}, false, nil
+}
+
+// SendMessage sends a message in an existing 1:1 conversation, enforcing strict participant authz.
+func (s *Service) SendMessage(ctx context.Context, cmd *SendMessageCommand) (*MessageResult, error) {
+	if cmd == nil {
+		return nil, errors.Join(ErrConversationValidationFailed, storage.ErrInvalidInput)
+	}
+
+	var retryErr error
+	for attempt := 0; attempt < directMessageSendRetryLimit; attempt++ {
+		result, retry, err := s.executeSendMessageAttempt(ctx, cmd)
+		if err != nil {
+			if retry {
+				retryErr = err
+				continue
+			}
+			return nil, err
+		}
+		return result, nil
+	}
+
+	if retryErr != nil {
+		return nil, errors.Join(ErrCreateDirectMessage, retryErr)
+	}
+	return nil, errors.Join(ErrCreateDirectMessage, storage.ErrVersionConflict)
 }
 
 // AcceptMessageRequest moves a pending request thread into the user's inbox.

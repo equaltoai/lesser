@@ -4,8 +4,9 @@ package models
 // It captures the status row, shared conversation metadata, and both
 // canonical participant state rows that must move together for one send.
 type DirectMessageSendTransition struct {
-	Conversation       *Conversation
-	Status             *Status
-	ParticipantStates  []*UserConversationState
-	CreateConversation bool
+	Conversation              *Conversation
+	Status                    *Status
+	ParticipantStates         []*UserConversationState
+	ExpectedParticipantStates []*UserConversationState
+	CreateConversation        bool
 }

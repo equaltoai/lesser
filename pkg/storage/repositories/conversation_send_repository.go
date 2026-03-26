@@ -10,6 +10,15 @@ import (
 	"github.com/theory-cloud/tabletheory/pkg/errors"
 )
 
+type preparedDirectMessageSendTransition struct {
+	conversation              *models.Conversation
+	expectedConversation      *models.Conversation
+	status                    *models.Status
+	participantStates         []*models.UserConversationState
+	expectedParticipantStates []*models.UserConversationState
+	createConversation        bool
+}
+
 // TransactionalDirectMessageSendEnabled reports whether the repository can apply
 // DM send transitions as a single database transaction.
 func (r *ConversationRepository) TransactionalDirectMessageSendEnabled() bool {
@@ -22,38 +31,52 @@ func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, tra
 		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityConversation, "dm send transition")
 	}
 
-	conversation, status, participantStates, err := prepareDirectMessageSendTransition(transition)
+	prepared, err := prepareDirectMessageSendTransition(transition)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityConversation, transition.Conversation.ID)
 	}
 	if r.transactWriteFn == nil {
-		return r.applyDirectMessageSendWithoutTransaction(ctx, conversation, status, participantStates, transition.CreateConversation)
+		return r.applyDirectMessageSendWithoutTransaction(ctx, prepared.conversation, prepared.status, prepared.participantStates, prepared.createConversation)
 	}
 
 	err = r.transactWriteFn(ctx, func(tx core.TransactionBuilder) error {
 		tx = tx.WithContext(ctx)
 
-		if transition.CreateConversation {
-			tx.Create(conversation)
-			for _, state := range participantStates {
+		if prepared.createConversation {
+			tx.Create(prepared.conversation)
+			for _, state := range prepared.participantStates {
 				tx.Create(state)
 			}
-			tx.Create(newConversationParticipantLookup(conversation.ID, conversation.Participants))
+			tx.Create(newConversationParticipantLookup(prepared.conversation.ID, prepared.conversation.Participants))
 		} else {
-			tx.Put(conversation)
-			for _, state := range participantStates {
-				tx.Put(state)
+			tx.UpdateWithBuilder(prepared.expectedConversation, func(update core.UpdateBuilder) error {
+				update.SetIfNotExists("TotalMessageCount", nil, int64(0)).
+					Add("TotalMessageCount", int64(1)).
+					Set("LastStatusID", prepared.conversation.LastStatusID).
+					Set("LastMessageTime", prepared.conversation.LastMessageTime).
+					Set("UpdatedAt", prepared.conversation.UpdatedAt)
+				return nil
+			}, directMessageSendConversationConditions(prepared.expectedConversation)...)
+			for index, state := range prepared.participantStates {
+				expected := prepared.expectedParticipantStates[index]
+				tx.UpdateWithBuilder(expected, func(update core.UpdateBuilder) error {
+					applyDirectMessageParticipantStateUpdate(update, state)
+					return nil
+				}, directMessageSendParticipantStateConditions(expected)...)
 			}
 		}
 
-		tx.Create(status)
+		tx.Create(prepared.status)
 		return nil
 	})
 	if err != nil {
-		if transition.CreateConversation && errors.IsConditionFailed(err) {
-			return storage.ErrAlreadyExists
+		if errors.IsConditionFailed(err) {
+			if prepared.createConversation {
+				return storage.ErrAlreadyExists
+			}
+			return storage.ErrVersionConflict
 		}
-		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, prepared.conversation.ID)
 	}
 
 	return nil
@@ -79,22 +102,29 @@ func (r *ConversationRepository) applyDirectMessageSendWithoutTransaction(ctx co
 	return nil
 }
 
-func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTransition) (*models.Conversation, *models.Status, []*models.UserConversationState, error) {
-	conversation := *transition.Conversation
+func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTransition) (*preparedDirectMessageSendTransition, error) {
+	expectedConversation := cloneConversationModel(transition.Conversation)
+	if expectedConversation == nil {
+		return nil, storage.ErrInvalidInput
+	}
+
 	status := *transition.Status
 
-	if conversation.ID == "" || status.StatusID == "" {
-		return nil, nil, nil, storage.ErrInvalidInput
+	if expectedConversation.ID == "" || status.StatusID == "" {
+		return nil, storage.ErrInvalidInput
 	}
 
-	conversation.Participants = models.CanonicalConversationParticipants(conversation.Participants)
-	if len(conversation.Participants) == 0 {
-		return nil, nil, nil, storage.ErrInvalidInput
+	expectedConversation.Participants = models.CanonicalConversationParticipants(expectedConversation.Participants)
+	if len(expectedConversation.Participants) == 0 {
+		return nil, storage.ErrInvalidInput
+	}
+	if err := expectedConversation.UpdateKeys(); err != nil {
+		return nil, err
 	}
 
-	status.ConversationID = conversation.ID
+	status.ConversationID = expectedConversation.ID
 	if err := status.BeforeCreate(); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	lastMessageTime := status.PublishedAt.UTC()
@@ -105,6 +135,10 @@ func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTran
 		lastMessageTime = time.Now().UTC()
 	}
 
+	conversation := cloneConversationModel(expectedConversation)
+	if conversation == nil {
+		return nil, storage.ErrInvalidInput
+	}
 	if conversation.CreatedAt.IsZero() {
 		conversation.CreatedAt = lastMessageTime
 	}
@@ -113,13 +147,127 @@ func prepareDirectMessageSendTransition(transition *models.DirectMessageSendTran
 	conversation.LastMessageTime = lastMessageTime
 	conversation.TotalMessageCount++
 	if err := conversation.UpdateKeys(); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
-	participantStates, err := normalizeExplicitConversationParticipantStates(&conversation, conversation.Participants, transition.ParticipantStates)
+	participantStates, err := normalizeExplicitConversationParticipantStates(conversation, conversation.Participants, transition.ParticipantStates)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
-	return &conversation, &status, participantStates, nil
+	prepared := &preparedDirectMessageSendTransition{
+		conversation:         conversation,
+		expectedConversation: expectedConversation,
+		status:               &status,
+		participantStates:    participantStates,
+		createConversation:   transition.CreateConversation,
+	}
+	if transition.CreateConversation {
+		return prepared, nil
+	}
+
+	if len(transition.ExpectedParticipantStates) != len(transition.ParticipantStates) {
+		return nil, storage.ErrInvalidInput
+	}
+
+	expectedParticipantStates, err := normalizeExplicitConversationParticipantStates(expectedConversation, expectedConversation.Participants, transition.ExpectedParticipantStates)
+	if err != nil {
+		return nil, err
+	}
+	prepared.expectedParticipantStates = expectedParticipantStates
+
+	return prepared, nil
+}
+
+func cloneConversationModel(conversation *models.Conversation) *models.Conversation {
+	if conversation == nil {
+		return nil
+	}
+
+	cloned := *conversation
+	if conversation.Participants != nil {
+		cloned.Participants = append([]string(nil), conversation.Participants...)
+	}
+
+	return &cloned
+}
+
+func directMessageSendConversationConditions(conversation *models.Conversation) []core.TransactCondition {
+	if conversation == nil {
+		return nil
+	}
+
+	conditions := []core.TransactCondition{
+		{Kind: core.TransactConditionKindPrimaryKeyExists},
+		{Field: "TotalMessageCount", Operator: "=", Value: conversation.TotalMessageCount},
+	}
+	if !conversation.UpdatedAt.IsZero() {
+		conditions = append(conditions, core.TransactCondition{Field: "UpdatedAt", Operator: "=", Value: conversation.UpdatedAt})
+	}
+
+	return conditions
+}
+
+func directMessageSendParticipantStateConditions(state *models.UserConversationState) []core.TransactCondition {
+	if state == nil {
+		return nil
+	}
+
+	conditions := []core.TransactCondition{
+		{Kind: core.TransactConditionKindPrimaryKeyExists},
+	}
+	if !state.UpdatedAt.IsZero() {
+		conditions = append(conditions, core.TransactCondition{Field: "UpdatedAt", Operator: "=", Value: state.UpdatedAt})
+	}
+
+	return conditions
+}
+
+func applyDirectMessageParticipantStateUpdate(update core.UpdateBuilder, state *models.UserConversationState) {
+	update.Set("CounterpartID", state.CounterpartID).
+		Set("Folder", state.Folder).
+		Set("SortAt", state.SortAt).
+		Set("Unread", state.Unread).
+		Set("UpdatedAt", state.UpdatedAt)
+
+	if state.RequestState != "" {
+		update.Set("RequestState", state.RequestState)
+	} else {
+		update.Remove("RequestState")
+	}
+	if state.PreviewStatusID != "" {
+		update.Set("PreviewStatusID", state.PreviewStatusID)
+	} else {
+		update.Remove("PreviewStatusID")
+	}
+	if !state.PreviewStatusPublishedAt.IsZero() {
+		update.Set("PreviewStatusPublishedAt", state.PreviewStatusPublishedAt)
+	} else {
+		update.Remove("PreviewStatusPublishedAt")
+	}
+	if state.LastReadAt != nil {
+		update.Set("LastReadAt", *state.LastReadAt)
+	} else {
+		update.Remove("LastReadAt")
+	}
+	if state.DeletedAt != nil {
+		update.Set("DeletedAt", *state.DeletedAt)
+	} else {
+		update.Remove("DeletedAt")
+	}
+	if state.RequestedAt != nil {
+		update.Set("RequestedAt", *state.RequestedAt)
+	} else {
+		update.Remove("RequestedAt")
+	}
+	if state.AcceptedAt != nil {
+		update.Set("AcceptedAt", *state.AcceptedAt)
+	} else {
+		update.Remove("AcceptedAt")
+	}
+	if state.DeclinedAt != nil {
+		update.Set("DeclinedAt", *state.DeclinedAt)
+	} else {
+		update.Remove("DeclinedAt")
+	}
 }
