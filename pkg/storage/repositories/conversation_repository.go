@@ -45,10 +45,6 @@ func newConversationParticipantLookup(conversationID string, participants []stri
 	}
 }
 
-func canonicalConversationStatusSK(participantID string) string {
-	return fmt.Sprintf("USER#%s", models.CanonicalConversationParticipantID(participantID))
-}
-
 func newConversationTransactWriteFn(db core.DB) func(ctx context.Context, fn func(core.TransactionBuilder) error) error {
 	txDB, ok := db.(conversationTransactionalDB)
 	if !ok {
