@@ -4,7 +4,6 @@ import (
 	"context"
 	stdErrors "errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -153,41 +152,6 @@ func stateContractFromModel(state *models.UserConversationState) *interfaces.Use
 		CreatedAt:                state.CreatedAt,
 		UpdatedAt:                state.UpdatedAt,
 	}
-}
-
-func stateModelFromContract(state *interfaces.UserConversationStateContract) *models.UserConversationState {
-	if state == nil {
-		return nil
-	}
-
-	return &models.UserConversationState{
-		ViewerID:                 state.ViewerID,
-		ConversationID:           state.ConversationID,
-		CounterpartID:            state.CounterpartID,
-		Folder:                   state.Folder,
-		RequestState:             state.RequestState,
-		PreviewStatusID:          state.PreviewStatusID,
-		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
-		SortAt:                   state.SortAt,
-		Unread:                   state.Unread,
-		LastReadAt:               state.LastReadAt,
-		DeletedAt:                state.DeletedAt,
-		RequestedAt:              state.RequestedAt,
-		AcceptedAt:               state.AcceptedAt,
-		DeclinedAt:               state.DeclinedAt,
-		CreatedAt:                state.CreatedAt,
-		UpdatedAt:                state.UpdatedAt,
-	}
-}
-
-func stateModelsFromContracts(items []*interfaces.UserConversationStateContract) []*models.UserConversationState {
-	states := make([]*models.UserConversationState, 0, len(items))
-	for _, item := range items {
-		if state := stateModelFromContract(item); state != nil {
-			states = append(states, state)
-		}
-	}
-	return states
 }
 
 func stateRecordFromModel(state *models.UserConversationState, conversation *models.Conversation) *models.ConversationParticipantRecord {
@@ -389,27 +353,6 @@ func folderFromRequestState(requestState models.DmRequestState) models.UserConve
 	default:
 		return models.UserConversationFolderInbox
 	}
-}
-
-func mergeVisibleConversationStatePages(inbox []*models.UserConversationState, requests []*models.UserConversationState, limit int) ([]*models.UserConversationState, string, bool) {
-	merged := make([]*models.UserConversationState, 0, len(inbox)+len(requests))
-	merged = append(merged, inbox...)
-	merged = append(merged, requests...)
-
-	sort.Slice(merged, func(i, j int) bool {
-		if merged[i].SortAt.Equal(merged[j].SortAt) {
-			return merged[i].ConversationID > merged[j].ConversationID
-		}
-		return merged[i].SortAt.After(merged[j].SortAt)
-	})
-
-	hasMore := len(merged) > limit
-	if !hasMore {
-		return merged, "", false
-	}
-
-	merged = merged[:limit]
-	return merged, merged[len(merged)-1].LegacyListCursor(), true
 }
 
 func participantRecordFolder(record *models.ConversationParticipantRecord) models.UserConversationFolder {

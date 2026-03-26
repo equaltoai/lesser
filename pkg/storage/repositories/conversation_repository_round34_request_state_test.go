@@ -44,23 +44,6 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		}))
 	})
 
-	t.Run("mergeVisibleConversationStatePages orders by sort time", func(t *testing.T) {
-		inbox := []*models.UserConversationState{{
-			ConversationID: "conv-1",
-			SortAt:         time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC),
-		}}
-		requests := []*models.UserConversationState{{
-			ConversationID: "conv-2",
-			SortAt:         time.Date(2026, 3, 25, 11, 0, 0, 0, time.UTC),
-		}}
-
-		merged, nextCursor, hasMore := mergeVisibleConversationStatePages(inbox, requests, 1)
-		require.Len(t, merged, 1)
-		require.Equal(t, "conv-1", merged[0].ConversationID)
-		require.True(t, hasMore)
-		require.Equal(t, merged[0].LegacyListCursor(), nextCursor)
-	})
-
 	t.Run("projection helpers preserve canonical state and clone conversation payloads", func(t *testing.T) {
 		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 		conversationUpdatedAt := sortAt.Add(2 * time.Hour)
@@ -90,21 +73,6 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.Equal(t, "conv-1", contract.ConversationID)
 		require.True(t, contract.Unread)
 		require.Equal(t, lastReadAt.UTC(), *contract.LastReadAt)
-
-		require.Nil(t, stateModelFromContract(nil))
-		model := stateModelFromContract(contract)
-		require.NotNil(t, model)
-		require.Equal(t, contract.ViewerID, model.ViewerID)
-		require.Equal(t, contract.ConversationID, model.ConversationID)
-		require.Equal(t, contract.CounterpartID, model.CounterpartID)
-		require.Equal(t, contract.RequestState, model.RequestState)
-		require.Equal(t, contract.SortAt, model.SortAt)
-		require.NotNil(t, model.LastReadAt)
-		require.Equal(t, *contract.LastReadAt, *model.LastReadAt)
-
-		modelsFromContracts := stateModelsFromContracts([]*interfaces.UserConversationStateContract{nil, contract})
-		require.Len(t, modelsFromContracts, 1)
-		require.Equal(t, contract.ConversationID, modelsFromContracts[0].ConversationID)
 
 		require.Nil(t, cloneConversationForViewer(nil, nil))
 		cloned := cloneConversationForViewer(conversation, state)
