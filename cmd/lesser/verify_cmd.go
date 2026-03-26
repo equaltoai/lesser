@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultVerifyCIJobs               = 10
+	defaultVerifyCIJobs               = 20
 	defaultVerifyCILintBatchSize      = 50
 	defaultVerifyCISecScanBatchSize   = 25
 	defaultVerifyCIVulnCheckBatchSize = 15

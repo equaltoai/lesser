@@ -541,9 +541,11 @@ func (r *ConversationRepository) GetConversationByParticipants(ctx context.Conte
 
 	lookupKey := newConversationParticipantLookup("", participants)
 
-	// Exact participant lookups are deterministic, so use the canonical base-table lookup row.
+	// Exact participant lookups are race-recovery reads, so force strong consistency for
+	// both the lookup row and the conversation metadata row.
 	var record models.ConversationParticipantKey
 	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
+		ConsistentRead().
 		Where("PK", "=", lookupKey.PK).
 		Where("SK", "=", lookupKey.SK).
 		First(&record)
@@ -556,8 +558,23 @@ func (r *ConversationRepository) GetConversationByParticipants(ctx context.Conte
 		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "participants")
 	}
 
-	// Get the full conversation
-	return r.GetConversation(ctx, record.ConversationID)
+	var conversation models.Conversation
+	err = r.GetDB().Model(&models.Conversation{}).WithContext(ctx).
+		ConsistentRead().
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", record.ConversationID)).
+		Where("SK", "=", "METADATA").
+		First(&conversation)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)
+		}
+		log.Error("failed to load conversation after participant lookup",
+			zap.String("conversation_id", record.ConversationID),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, EntityConversation, record.ConversationID)
+	}
+
+	return &conversation, nil
 }
 
 // MarkConversationRead marks a conversation as read for a user (KEEP - Read receipt business logic)

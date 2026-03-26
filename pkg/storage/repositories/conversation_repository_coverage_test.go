@@ -250,6 +250,7 @@ func TestRound07_ConversationRepository_GetConversationByParticipants_ErrorBranc
 	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
+	mockQuery.On("ConsistentRead").Return(mockQuery).Twice()
 	mockQuery.On("Index", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
@@ -267,21 +268,27 @@ func TestRound07_ConversationRepository_GetConversationByParticipants_ErrorBranc
 
 func TestRound07_ConversationRepository_GetConversationByParticipants_CanonicalizesMixedCaseParticipants(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
+	lookupQuery := new(mocks.MockQuery)
+	conversationQuery := new(mocks.MockQuery)
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantKey")).Return(mockQuery).Once()
-	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(mockQuery).Once()
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", "PK", "=", "CONVERSATION_PARTICIPANTS#arch,medic").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "=", "LOOKUP").Return(mockQuery).Once()
-	mockQuery.On("First", mock.AnythingOfType("*models.ConversationParticipantKey")).Run(func(args mock.Arguments) {
+	mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantKey")).Return(lookupQuery).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+
+	lookupQuery.On("WithContext", mock.Anything).Return(lookupQuery).Once()
+	lookupQuery.On("ConsistentRead").Return(lookupQuery).Once()
+	lookupQuery.On("Where", "PK", "=", "CONVERSATION_PARTICIPANTS#arch,medic").Return(lookupQuery).Once()
+	lookupQuery.On("Where", "SK", "=", "LOOKUP").Return(lookupQuery).Once()
+	lookupQuery.On("First", mock.AnythingOfType("*models.ConversationParticipantKey")).Run(func(args mock.Arguments) {
 		record := args.Get(0).(*models.ConversationParticipantKey)
 		record.ConversationID = "conv-1"
 	}).Return(nil).Once()
-	mockQuery.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(mockQuery).Once()
-	mockQuery.On("Where", "SK", "=", "METADATA").Return(mockQuery).Once()
-	mockQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+
+	conversationQuery.On("WithContext", mock.Anything).Return(conversationQuery).Once()
+	conversationQuery.On("ConsistentRead").Return(conversationQuery).Once()
+	conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(conversationQuery).Once()
+	conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+	conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
 		conv := args.Get(0).(*models.Conversation)
 		conv.ID = "conv-1"
 	}).Return(nil).Once()
@@ -291,6 +298,73 @@ func TestRound07_ConversationRepository_GetConversationByParticipants_Canonicali
 	require.NoError(t, err)
 	require.NotNil(t, conv)
 	require.Equal(t, "conv-1", conv.ID)
+
+	lookupQuery.AssertExpectations(t)
+	conversationQuery.AssertExpectations(t)
+}
+
+func TestRound07_ConversationRepository_GetConversationByParticipants_ConversationLoadErrorBranches(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("conversation metadata not found after lookup row returns error", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		lookupQuery := new(mocks.MockQuery)
+		conversationQuery := new(mocks.MockQuery)
+
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+		mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantKey")).Return(lookupQuery).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+
+		lookupQuery.On("WithContext", mock.Anything).Return(lookupQuery).Once()
+		lookupQuery.On("ConsistentRead").Return(lookupQuery).Once()
+		lookupQuery.On("Where", "PK", "=", "CONVERSATION_PARTICIPANTS#arch,medic").Return(lookupQuery).Once()
+		lookupQuery.On("Where", "SK", "=", "LOOKUP").Return(lookupQuery).Once()
+		lookupQuery.On("First", mock.AnythingOfType("*models.ConversationParticipantKey")).Run(func(args mock.Arguments) {
+			record := args.Get(0).(*models.ConversationParticipantKey)
+			record.ConversationID = "conv-missing"
+		}).Return(nil).Once()
+
+		conversationQuery.On("WithContext", mock.Anything).Return(conversationQuery).Once()
+		conversationQuery.On("ConsistentRead").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-missing").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Return(ddbErrors.ErrItemNotFound).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		conv, err := repo.GetConversationByParticipants(ctx, []string{"Medic", "Arch"})
+		require.Nil(t, conv)
+		require.Error(t, err)
+	})
+
+	t.Run("conversation metadata query failure returns error", func(t *testing.T) {
+		mockDB := new(mocks.MockDB)
+		lookupQuery := new(mocks.MockQuery)
+		conversationQuery := new(mocks.MockQuery)
+
+		mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+		mockDB.On("Model", mock.AnythingOfType("*models.ConversationParticipantKey")).Return(lookupQuery).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+
+		lookupQuery.On("WithContext", mock.Anything).Return(lookupQuery).Once()
+		lookupQuery.On("ConsistentRead").Return(lookupQuery).Once()
+		lookupQuery.On("Where", "PK", "=", "CONVERSATION_PARTICIPANTS#arch,medic").Return(lookupQuery).Once()
+		lookupQuery.On("Where", "SK", "=", "LOOKUP").Return(lookupQuery).Once()
+		lookupQuery.On("First", mock.AnythingOfType("*models.ConversationParticipantKey")).Run(func(args mock.Arguments) {
+			record := args.Get(0).(*models.ConversationParticipantKey)
+			record.ConversationID = "conv-error"
+		}).Return(nil).Once()
+
+		conversationQuery.On("WithContext", mock.Anything).Return(conversationQuery).Once()
+		conversationQuery.On("ConsistentRead").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-error").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Return(stdErrors.New("conversation-load-failed")).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		conv, err := repo.GetConversationByParticipants(ctx, []string{"Medic", "Arch"})
+		require.Nil(t, conv)
+		require.Error(t, err)
+	})
 }
 
 func TestRound07_ConversationRepository_RemoveStatusFromConversation_DeleteAndConvGetErrorBranches(t *testing.T) {
