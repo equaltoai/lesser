@@ -549,9 +549,16 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 		return nil
 	}
 
-	participant.HydrateConversation()
-	conv := participant.Conversation
-	if conv == nil || strings.TrimSpace(conv.ID) == "" {
+	conversationID := strings.TrimSpace(participant.ConversationID)
+	if conversationID == "" {
+		conversationID = strings.TrimSpace(strings.TrimPrefix(participant.GSI1PK, "CONVERSATION#"))
+	}
+	if conversationID == "" {
+		if _, tail, ok := strings.Cut(participant.SK, "#"); ok {
+			conversationID = strings.TrimSpace(tail)
+		}
+	}
+	if conversationID == "" {
 		return nil
 	}
 
@@ -570,7 +577,7 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 	envelopePayload := map[string]any{
 		"data": map[string]any{
 			"conversationUpdates": map[string]any{
-				"id": conv.ID,
+				"id": conversationID,
 			},
 		},
 	}

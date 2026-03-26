@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,35 +23,12 @@ type ConversationRepository struct {
 	logger *zap.Logger
 }
 
-func canonicalConversationParticipantPK(participantID string) string {
-	return fmt.Sprintf("USER_CONVERSATIONS#%s", models.CanonicalConversationParticipantID(participantID))
-}
-
-func canonicalConversationParticipantIndexSK(participantID string) string {
-	return fmt.Sprintf("PARTICIPANT#%s", models.CanonicalConversationParticipantID(participantID))
-}
-
 func conversationParticipantLookupPK(participants []string) string {
 	return fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", strings.Join(models.CanonicalConversationParticipants(participants), ","))
 }
 
 func canonicalConversationStatusSK(participantID string) string {
 	return fmt.Sprintf("USER#%s", models.CanonicalConversationParticipantID(participantID))
-}
-
-func conversationParticipantLookupIDs(participantID string) []string {
-	trimmed := strings.TrimSpace(participantID)
-	if trimmed == "" {
-		return nil
-	}
-
-	lookupIDs := []string{trimmed}
-	canonicalID := models.CanonicalConversationParticipantID(trimmed)
-	if canonicalID != "" && canonicalID != trimmed {
-		lookupIDs = append(lookupIDs, canonicalID)
-	}
-
-	return lookupIDs
 }
 
 // NewConversationRepository creates a new conversation repository with enhanced functionality and cost tracking
@@ -295,138 +273,19 @@ func clampListLimit(limit int, defaultLimit int, maxLimit int) int {
 	return limit
 }
 
-// scanUserConversationsByRequestState is the legacy scan-and-filter helper for DM request-state reads.
-func (r *ConversationRepository) scanUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, limit int, cursor string) ([]*models.Conversation, string, bool, error) {
-	// Defense-in-depth: re-clamp to ensure user-provided pagination limits cannot trigger
-	// excessive allocations, regardless of how this helper is called.
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
-	}
-
-	scanCursor := cursor
-	conversations := make([]*models.Conversation, 0, limit)
-
-	// Filtering requires scanning participant records until we have enough matches or the table is exhausted.
-	// Keep the scan window bounded to avoid pathological loops in large inboxes.
-	const maxIterations = 10
-	for iter := 0; iter < maxIterations && len(conversations) < limit; iter++ {
-		fetchLimit := requestStateFetchLimit(limit)
-
-		records, pageHasMore, err := r.fetchUserConversationParticipantRecords(ctx, userID, fetchLimit, scanCursor)
-		if err != nil {
-			return nil, "", false, err
-		}
-		if len(records) == 0 {
-			return conversations, "", false, nil
-		}
-
-		var lastSK string
-		conversations, lastSK = appendRequestStateMatches(records, requestState, limit, conversations)
-		if lastSK != "" {
-			scanCursor = lastSK
-		}
-
-		if len(conversations) >= limit {
-			return conversations, scanCursor, true, nil
-		}
-		if !pageHasMore {
-			return conversations, "", false, nil
-		}
-	}
-
-	// We bailed out due to iteration limits; assume there may be more.
-	if scanCursor == "" {
-		return conversations, "", false, nil
-	}
-	return conversations, scanCursor, true, nil
-}
-
-func requestStateFetchLimit(limit int) int {
-	fetchLimit := limit * 3
-	if fetchLimit < 20 {
-		return 20
-	}
-	if fetchLimit > 200 {
-		return 200
-	}
-	return fetchLimit
-}
-
-// fetchUserConversationParticipantRecords loads the legacy participant-record pages used by DM list reads.
-func (r *ConversationRepository) fetchUserConversationParticipantRecords(ctx context.Context, userID string, fetchLimit int, cursor string) ([]*models.ConversationParticipantRecord, bool, error) {
-	query := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-		Where("PK", "=", canonicalConversationParticipantPK(userID)).
-		OrderBy("SK", "DESC").
-		Limit(fetchLimit + 1)
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
-	}
-
-	var records []*models.ConversationParticipantRecord
-	if err := query.All(&records); err != nil {
-		if errors.IsNotFound(err) {
-			return nil, false, nil
-		}
-		return nil, false, ErrorHandler.HandleQueryError(err, EntityConversation, "user conversations by request state")
-	}
-
-	pageHasMore := len(records) > fetchLimit
-	if pageHasMore {
-		records = records[:fetchLimit]
-	}
-	return records, pageHasMore, nil
-}
-
-func appendRequestStateMatches(records []*models.ConversationParticipantRecord, requestState models.DmRequestState, limit int, dst []*models.Conversation) ([]*models.Conversation, string) {
-	lastSK := ""
-	for _, record := range records {
-		if record == nil {
-			continue
-		}
-		lastSK = record.SK
-
-		if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
-			continue
-		}
-		if !matchesRequestState(record.RequestState, requestState) {
-			continue
-		}
-		if record.Conversation == nil {
-			continue
-		}
-
-		dst = append(dst, cloneConversationForViewer(record.Conversation, record.Unread))
-		if len(dst) >= limit {
-			break
-		}
-	}
-	return dst, lastSK
-}
-
-func matchesRequestState(current models.DmRequestState, want models.DmRequestState) bool {
-	if current == want {
-		return true
-	}
-	// Back-compat: conversations created before DM v1 metadata default to inbox.
-	return want == models.DmRequestStateAccepted && current == ""
-}
-
 // GetConversationParticipantRecord returns the most recent participant record for a given
 // (conversationID, participantID) pair.
 func (r *ConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
 	state, err := r.ensureUserConversationStateModel(ctx, participantID, conversationID)
 	if err != nil {
-		if err == storage.ErrNotFound {
+		if stdErrors.Is(err, storage.ErrNotFound) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, err
 	}
 
 	conversation, err := r.GetConversation(ctx, conversationID)
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && !stdErrors.Is(err, storage.ErrNotFound) {
 		return nil, err
 	}
 
@@ -491,45 +350,6 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
 	}
 	return nil
-}
-
-func applyOptionalConversationParticipantTime(updateBuilder core.UpdateBuilder, field string, value *time.Time) {
-	if updateBuilder == nil {
-		return
-	}
-	if value == nil || value.IsZero() {
-		updateBuilder.Remove(field)
-		return
-	}
-	updateBuilder.Set(field, value.UTC())
-}
-
-func (r *ConversationRepository) findParticipantRecordsByConversationAndParticipant(ctx context.Context, conversationID, participantID string) ([]models.ConversationParticipantRecord, error) {
-	deduped := make(map[string]models.ConversationParticipantRecord)
-	for _, lookupID := range conversationParticipantLookupIDs(participantID) {
-		var records []models.ConversationParticipantRecord
-		err := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-			Index("gsi1").
-			Where("gsi1PK", "=", fmt.Sprintf(models.KeyPatternConversation, conversationID)).
-			Where("gsi1SK", "=", canonicalConversationParticipantIndexSK(lookupID)).
-			All(&records)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				continue
-			}
-			return nil, err
-		}
-
-		for _, record := range records {
-			deduped[record.PK+"\x00"+record.SK] = record
-		}
-	}
-
-	records := make([]models.ConversationParticipantRecord, 0, len(deduped))
-	for _, record := range deduped {
-		records = append(records, record)
-	}
-	return records, nil
 }
 
 // GetConversationByParticipants finds a conversation with exact participants (KEEP - Complex participant search logic)

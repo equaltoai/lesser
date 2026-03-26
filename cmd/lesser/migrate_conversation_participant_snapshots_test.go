@@ -28,7 +28,7 @@ func TestRunMigrateConversationParticipantSnapshots_PrintsDryRunSummary(t *testi
 		"conv-1",
 		updatedAt,
 		true,
-		&models.ConversationSnapshot{},
+		&legacyConversationSnapshot{},
 	)
 
 	client := &fakeUserKeyMigrationClient{
@@ -91,7 +91,7 @@ func TestExecuteConversationParticipantSnapshotMigration_ApplyRepairsCorruptedRo
 		"conv-1",
 		updatedAt,
 		true,
-		&models.ConversationSnapshot{},
+		&legacyConversationSnapshot{},
 	)
 	corruptedParticipant["requestState"] = sAttr(string(models.DmRequestStatePending))
 
@@ -148,7 +148,7 @@ func TestExecuteConversationParticipantSnapshotMigration_MissingCanonicalAndLimi
 		"conv-1",
 		time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC),
 		false,
-		&models.ConversationSnapshot{},
+		&legacyConversationSnapshot{},
 	)
 
 	client := &fakeUserKeyMigrationClient{
@@ -189,7 +189,7 @@ func TestRebuildConversationParticipantSnapshot_ValidatesCanonicalConversation(t
 		"conv-1",
 		time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC),
 		true,
-		&models.ConversationSnapshot{},
+		&legacyConversationSnapshot{},
 	)
 
 	_, err := rebuildConversationParticipantSnapshot(item, map[string]types.AttributeValue{
@@ -248,7 +248,7 @@ func TestBuildConversationParticipantSnapshotRepairCandidate_HandlesBadRowsAndCa
 		"conv-1",
 		time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC),
 		false,
-		&models.ConversationSnapshot{},
+		&legacyConversationSnapshot{},
 	)
 
 	_, _, err = buildConversationParticipantSnapshotRepairCandidate(context.Background(), &fakeUserKeyMigrationClient{

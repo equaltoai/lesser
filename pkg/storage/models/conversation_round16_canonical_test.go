@@ -59,6 +59,44 @@ func TestRound16_ConversationCanonicalHelpersAndKeys(t *testing.T) {
 		require.Equal(t, "USER#medic", state.GSI3SK)
 	})
 
+	t.Run("user conversation state before update normalizes timing and unread visibility", func(t *testing.T) {
+		requestedAt := time.Date(2026, 3, 25, 8, 30, 0, 0, time.FixedZone("EST", -5*60*60))
+		deletedAt := time.Date(2026, 3, 25, 9, 0, 0, 0, time.FixedZone("EST", -5*60*60))
+		lastReadAt := time.Time{}
+		createdAt := time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC)
+		previewAt := time.Date(2026, 3, 25, 14, 0, 0, 0, time.UTC)
+
+		state := &UserConversationState{
+			ViewerID:                 " Medic ",
+			ConversationID:           " conv-1 ",
+			CounterpartID:            " Arch ",
+			Folder:                   UserConversationFolderHidden,
+			Unread:                   true,
+			RequestedAt:              &requestedAt,
+			DeletedAt:                &deletedAt,
+			LastReadAt:               &lastReadAt,
+			CreatedAt:                createdAt,
+			PreviewStatusPublishedAt: previewAt,
+		}
+
+		require.NoError(t, state.BeforeUpdate())
+		require.Equal(t, "medic", state.ViewerID)
+		require.Equal(t, "conv-1", state.ConversationID)
+		require.Equal(t, "arch", state.CounterpartID)
+		require.Equal(t, createdAt, state.CreatedAt)
+		require.Equal(t, previewAt, state.SortAt)
+		require.Equal(t, requestedAt.UTC(), *state.RequestedAt)
+		require.Equal(t, deletedAt.UTC(), *state.DeletedAt)
+		require.Nil(t, state.LastReadAt)
+		require.False(t, state.UnreadQueryVisible())
+		require.Empty(t, state.GSI2PK)
+		require.Equal(t, previewAt.Format(time.RFC3339Nano)+"#conv-1", state.LegacyListCursor())
+
+		state.Folder = UserConversationFolderInbox
+		state.DeletedAt = nil
+		require.True(t, state.UnreadQueryVisible())
+	})
+
 	t.Run("participant lookup key helpers expose stored keys", func(t *testing.T) {
 		lookup := &ConversationParticipantKey{
 			PK: "CONVERSATION_PARTICIPANTS#arch,medic",

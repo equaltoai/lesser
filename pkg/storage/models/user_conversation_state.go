@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -11,10 +12,14 @@ import (
 type UserConversationFolder string
 
 const (
-	UserConversationFolderInbox    UserConversationFolder = "INBOX"
+	// UserConversationFolderInbox is the normal visible inbox placement for a DM thread.
+	UserConversationFolderInbox UserConversationFolder = "INBOX"
+	// UserConversationFolderRequests is the visible folder for inbound DM requests.
 	UserConversationFolderRequests UserConversationFolder = "REQUESTS"
+	// UserConversationFolderDeclined is the visible folder for declined DM requests.
 	UserConversationFolderDeclined UserConversationFolder = "DECLINED"
-	UserConversationFolderHidden   UserConversationFolder = "HIDDEN"
+	// UserConversationFolderHidden is the hidden/tombstoned viewer-specific folder.
+	UserConversationFolderHidden UserConversationFolder = "HIDDEN"
 )
 
 // UserConversationState is the canonical per-user DM state row.
@@ -74,6 +79,10 @@ func (s *UserConversationState) prepareForWrite(isCreate bool) error {
 	if s == nil {
 		return ErrConversationDataRequired
 	}
+	s.ViewerID = CanonicalConversationParticipantID(s.ViewerID)
+	s.CounterpartID = CanonicalConversationParticipantID(s.CounterpartID)
+	s.ConversationID = strings.TrimSpace(s.ConversationID)
+
 	if err := common.ValidateRequiredParam("ViewerID", s.ViewerID); err != nil {
 		return ErrConversationViewerIDRequired
 	}
@@ -86,10 +95,6 @@ func (s *UserConversationState) prepareForWrite(isCreate bool) error {
 	if err := common.ValidateRequiredParam("Folder", string(s.Folder)); err != nil {
 		return ErrConversationFolderRequired
 	}
-
-	s.ViewerID = CanonicalConversationParticipantID(s.ViewerID)
-	s.CounterpartID = CanonicalConversationParticipantID(s.CounterpartID)
-	s.ConversationID = s.ConversationID
 
 	now := time.Now().UTC()
 	if isCreate && s.CreatedAt.IsZero() {
