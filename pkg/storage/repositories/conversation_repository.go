@@ -363,21 +363,6 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 		}
 	}
 
-	// Delete all status records for this conversation (KEEP - Conversation cleanup logic)
-	var statuses []models.ConversationStatus
-	err = r.GetDB().Model(&models.ConversationStatus{}).WithContext(ctx).
-		Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", id)).
-		Scan(&statuses)
-
-	if err == nil {
-		for _, status := range statuses {
-			err := r.GetDB().Model(&status).WithContext(ctx).Delete()
-			if err != nil {
-				log.Warn("failed to delete status record", zap.Error(err))
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -1122,18 +1107,6 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 	if err := r.GetDB().WithContext(ctx).Model(state).Update(); err != nil {
 		log.Error("failed to update user conversation state as unread", zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
-	}
-
-	status := &models.ConversationStatus{
-		ConversationID: conversationID,
-		UserID:         userID,
-		Unread:         true,
-		LastReadAt:     time.Unix(0, 0).UTC(),
-	}
-	if err := status.BeforeCreate(); err == nil {
-		if err := r.GetDB().Model(status).WithContext(ctx).Create(); err != nil {
-			log.Warn("failed to maintain legacy conversation status row on mark unread", zap.Error(err))
-		}
 	}
 
 	return nil

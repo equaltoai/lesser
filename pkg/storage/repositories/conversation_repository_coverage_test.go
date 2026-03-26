@@ -535,11 +535,6 @@ func TestRound07_ConversationRepository_DeleteConversation_CleanupWarnings(t *te
 	mockQuery.On("Delete").Return(nil).Once()
 	mockQuery.On("Delete").Return(stdErrors.New("cleanup-delete-failed")).Maybe()
 
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		ptr := args.Get(0).(*[]models.ConversationStatus)
-		*ptr = []models.ConversationStatus{{ConversationID: "conv-1", UserID: "user-1"}}
-	}).Return(nil).Once()
-
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	require.NoError(t, repo.DeleteConversation(context.Background(), "conv-1"))
 }
