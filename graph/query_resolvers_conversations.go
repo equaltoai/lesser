@@ -50,9 +50,10 @@ func (r *queryResolver) Conversations(ctx context.Context, folder *model.Convers
 
 	var convos []*model.Conversation
 	if result.Conversations != nil {
+		prefetch := r.loadConversationListPrefetch(ctx, username, result.Conversations.Items)
 		convos = make([]*model.Conversation, len(result.Conversations.Items))
 		for i, conv := range result.Conversations.Items {
-			convos[i] = r.convertConversationToGraphQL(ctx, conv)
+			convos[i] = r.convertConversationListToGraphQL(ctx, conv, prefetch)
 		}
 	}
 

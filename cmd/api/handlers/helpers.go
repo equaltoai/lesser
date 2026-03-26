@@ -384,7 +384,13 @@ func (h *Handler) isLocal(username string) bool {
 //
 //nolint:gocognit // Complex conversion between storage and API models with many fields
 func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
-	ctx := h.statusConversionContext()
+	return h.convertStorageStatusToAPIWithContext(h.statusConversionContext(), storageStatus, currentUsername)
+}
+
+func (h *Handler) convertStorageStatusToAPIWithContext(ctx context.Context, storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
+	if ctx == nil {
+		ctx = h.statusConversionContext()
+	}
 	inReplyToID, inReplyToAccountID := h.statusReplyReferences(ctx, storageStatus)
 	authorAccount := h.loadStatusAuthorAccount(ctx, storageStatus)
 	counts := h.statusEngagementCounts(ctx, storageStatus)
@@ -473,6 +479,10 @@ func (h *Handler) statusReplyReferences(ctx context.Context, storageStatus *stor
 func (h *Handler) loadStatusAuthorAccount(ctx context.Context, storageStatus *storageModels.Status) *storage.Account {
 	if storageStatus == nil {
 		return &storage.Account{User: &storage.User{}}
+	}
+
+	if prefetched := prefetchedConversationAccount(ctx, storageStatus.AuthorUsername); prefetched != nil {
+		return prefetched
 	}
 
 	authorAccount, err := h.repos.Account().GetAccount(ctx, storageStatus.AuthorUsername)

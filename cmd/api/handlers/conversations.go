@@ -6,9 +6,11 @@ import (
 	"strings"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -17,6 +19,10 @@ import (
 )
 
 func (h *Handler) convertConversationToAPI(ctx context.Context, conv *storageModels.Conversation, viewerUsername string) (apimodels.Conversation, error) {
+	return h.convertConversationToAPIWithPrefetch(ctx, conv, viewerUsername, nil)
+}
+
+func (h *Handler) convertConversationToAPIWithPrefetch(ctx context.Context, conv *storageModels.Conversation, viewerUsername string, prefetch *conversationAPIPrefetch) (apimodels.Conversation, error) {
 	if conv == nil {
 		return apimodels.Conversation{}, nil
 	}
@@ -27,25 +33,57 @@ func (h *Handler) convertConversationToAPI(ctx context.Context, conv *storageMod
 	}
 
 	accounts := make([]apimodels.Account, 0, len(conv.Participants))
-	for _, participant := range conv.Participants {
-		if participant == "" || participant == viewerUsername {
+	for _, participant := range conversationParticipantUsernames(conv, viewerUsername) {
+		if participant == "" {
 			continue
 		}
 
-		actor, err := h.repos.Actor().GetActor(ctx, participant)
-		if err != nil || actor == nil {
+		var account *storage.Account
+		if prefetch != nil {
+			account = prefetch.accountsByUsername[strings.ToLower(strings.TrimSpace(participant))]
+		}
+		if account == nil {
+			actor, err := h.repos.Actor().GetActor(ctx, participant)
+			if err != nil || actor == nil {
+				continue
+			}
+			account = &storage.Account{
+				User:  &storage.User{Username: participant, DisplayName: participant},
+				Actor: actor,
+			}
+		}
+
+		var actor *activitypub.Actor
+		if account != nil {
+			actor = account.Actor
+		}
+		if actor == nil {
 			continue
 		}
 
-		account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
-		accounts = append(accounts, account)
+		apiAccount := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
+		accounts = append(accounts, apiAccount)
 	}
 	apiConversation.Accounts = accounts
 
-	if conv.LastStatusID != "" {
-		status, err := h.repos.Status().GetStatus(ctx, conv.LastStatusID)
-		if err == nil && status != nil {
-			apiStatus, err := h.convertStorageStatusToAPI(status, viewerUsername)
+	if previewStatusID := conversationPreviewStatusID(conv); previewStatusID != "" {
+		var status *storageModels.Status
+		if prefetch != nil {
+			status = prefetch.statusesByID[previewStatusID]
+		}
+		if status == nil {
+			var err error
+			status, err = h.repos.Status().GetStatus(ctx, previewStatusID)
+			if err != nil {
+				status = nil
+			}
+		}
+		if status != nil {
+			statusCtx := h.statusConversionContext()
+			if prefetch != nil {
+				statusCtx = withPrefetchedConversationAccounts(statusCtx, prefetch.accountsByUsername)
+			}
+			apiStatus, err := h.convertStorageStatusToAPIWithContext(statusCtx, status, viewerUsername)
 			if err == nil {
 				apiConversation.LastStatus = apiStatus
 			}
@@ -87,8 +125,9 @@ func (h *Handler) HandleGetConversationsLift(ctx *apptheory.Context) (*apptheory
 	}
 
 	response := make([]apimodels.Conversation, 0, len(result.Conversations.Items))
+	prefetch := h.loadConversationAPIPrefetch(ctx.Context(), result.Conversations.Items, username)
 	for _, conv := range result.Conversations.Items {
-		apiConv, err := h.convertConversationToAPI(ctx.Context(), conv, username)
+		apiConv, err := h.convertConversationToAPIWithPrefetch(ctx.Context(), conv, username, prefetch)
 		if err != nil {
 			continue
 		}
