@@ -135,21 +135,47 @@ func TestRound09_TimelineRepository_DeletionFiltersConversations(t *testing.T) {
 	require.NotNil(t, filtered)
 
 	mockQuery.On("All", mock.Anything).Run(func(args mock.Arguments) {
-		ptr, ok := args.Get(0).(*[]*models.ConversationParticipantRecord)
+		ptr, ok := args.Get(0).(*[]*models.UserConversationState)
 		if !ok {
 			return
 		}
 		*ptr = append(*ptr,
-			&models.ConversationParticipantRecord{
-				PK: "USER_CONVERSATIONS#user-1",
-				SK: baseTime.Format(time.RFC3339) + "#c1",
-				Conversation: &models.Conversation{
-					ID:        "c1",
-					UpdatedAt: baseTime,
-				},
+			&models.UserConversationState{
+				ViewerID:       "user-1",
+				ConversationID: "c1",
+				CounterpartID:  "user-2",
+				Folder:         models.UserConversationFolderInbox,
+				SortAt:         baseTime,
+				Unread:         true,
 			},
-			&models.ConversationParticipantRecord{PK: "USER_CONVERSATIONS#user-1", SK: baseTime.Format(time.RFC3339) + "#c2"},
+			&models.UserConversationState{
+				ViewerID:       "user-1",
+				ConversationID: "c2",
+				CounterpartID:  "user-3",
+				Folder:         models.UserConversationFolderInbox,
+				SortAt:         baseTime.Add(-time.Minute),
+			},
 		)
+	}).Return(nil).Once()
+
+	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+		conversation, ok := args.Get(0).(*models.Conversation)
+		if !ok {
+			return
+		}
+		conversation.ID = "c1"
+		conversation.Participants = []string{"user-1", "user-2"}
+		conversation.UpdatedAt = baseTime
+	}).Return(nil).Once()
+
+	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+		conversation, ok := args.Get(0).(*models.Conversation)
+		if !ok {
+			return
+		}
+		conversation.ID = "c2"
+		conversation.Participants = []string{"user-1", "user-3"}
+		conversation.UpdatedAt = baseTime.Add(-time.Minute)
 	}).Return(nil).Once()
 
 	conversations, next, err := repo.GetConversations(ctx, "user-1", 1, "")

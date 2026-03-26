@@ -3627,7 +3627,7 @@ func (s *Service) getDirectTimeline(ctx context.Context, query *ListNotesQuery) 
 		Limit:  query.Pagination.Limit,
 		Cursor: query.Pagination.Cursor,
 	}
-	result, err := s.conversationRepo.GetUserConversations(ctx, query.ViewerID, opts)
+	result, err := s.conversationRepo.GetUserConversationsByFolder(ctx, query.ViewerID, models.UserConversationFolderInbox, opts)
 	if err != nil {
 		return nil, ErrGetConversations
 	}

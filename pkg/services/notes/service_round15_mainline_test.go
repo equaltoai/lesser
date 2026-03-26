@@ -608,6 +608,10 @@ func (s *stubConversationRepo) GetUserConversations(_ context.Context, _ string,
 	}, nil
 }
 
+func (s *stubConversationRepo) GetUserConversationsByFolder(_ context.Context, _ string, _ models.UserConversationFolder, _ interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	return s.GetUserConversations(context.Background(), "", interfaces.PaginationOptions{})
+}
+
 func (s *stubConversationRepo) CreateConversationMute(_ context.Context, _ *storage.ConversationMute) error {
 	return s.createMuteErr
 }

@@ -366,43 +366,7 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 // Legacy note: DM rewrite M5 replaces this snapshot-hydrated list path with a keyed folder query
 // over canonical per-user DM state.
 func (r *ConversationRepository) GetUserConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
-	limit := clampListLimit(opts.Limit, 20, 100)
-
-	inboxStates, _, inboxHasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, models.UserConversationFolderInbox, interfaces.PaginationOptions{
-		Limit:  limit,
-		Cursor: opts.Cursor,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	requestStates, _, requestHasMore, err := r.listUserConversationStatesByFolderModels(ctx, userID, models.UserConversationFolderRequests, interfaces.PaginationOptions{
-		Limit:  limit,
-		Cursor: opts.Cursor,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	mergedStates, nextCursor, hasMore := mergeVisibleConversationStatePages(inboxStates, requestStates, limit)
-	if !hasMore {
-		hasMore = inboxHasMore || requestHasMore
-		if hasMore && nextCursor == "" && len(mergedStates) > 0 {
-			nextCursor = mergedStates[len(mergedStates)-1].LegacyListCursor()
-		}
-	}
-
-	conversations, err := r.loadConversationsForStates(ctx, mergedStates)
-	if err != nil {
-		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "user conversations")
-	}
-
-	return &interfaces.PaginatedResult[*models.Conversation]{
-		Items:      conversations,
-		NextCursor: nextCursor,
-		HasMore:    hasMore,
-		Total:      -1,
-	}, nil
+	return r.GetUserConversationsByFolder(ctx, userID, models.UserConversationFolderInbox, opts)
 }
 
 // GetUserConversationsByRequestState retrieves conversations for a user filtered by the participant

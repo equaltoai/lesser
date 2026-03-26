@@ -491,15 +491,14 @@ func TestRound34_ConversationRepository_GetUserConversationsByFolder_PropagatesF
 	require.Error(t, err)
 }
 
-func TestRound34_ConversationRepository_GetUserConversations_UsesMergedFolderQueries(t *testing.T) {
+func TestRound34_ConversationRepository_GetUserConversations_UsesInboxFolderQuery(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	inboxQuery := new(mocks.MockQuery)
-	requestQuery := new(mocks.MockQuery)
 	conversationQuery := new(mocks.MockQuery)
 	sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 
-	mockDB.On("WithContext", ctx).Return(mockDB).Times(3)
+	mockDB.On("WithContext", ctx).Return(mockDB).Times(2)
 	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(inboxQuery).Once()
 	inboxQuery.On("Index", "gsi1").Return(inboxQuery).Once()
 	inboxQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#INBOX").Return(inboxQuery).Once()
@@ -507,19 +506,9 @@ func TestRound34_ConversationRepository_GetUserConversations_UsesMergedFolderQue
 	inboxQuery.On("Limit", 2).Return(inboxQuery).Once()
 	inboxQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*[]*models.UserConversationState)
-		*dest = []*models.UserConversationState{}
-	}).Return(nil).Once()
-
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(requestQuery).Once()
-	requestQuery.On("Index", "gsi1").Return(requestQuery).Once()
-	requestQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#alice#REQUESTS").Return(requestQuery).Once()
-	requestQuery.On("OrderBy", "gsi1SK", "DESC").Return(requestQuery).Once()
-	requestQuery.On("Limit", 2).Return(requestQuery).Once()
-	requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
-		dest := args.Get(0).(*[]*models.UserConversationState)
 		*dest = []*models.UserConversationState{
-			{ViewerID: "alice", ConversationID: "conv-2", CounterpartID: "bob", Folder: models.UserConversationFolderRequests, SortAt: sortAt, Unread: true},
-			{ViewerID: "alice", ConversationID: "conv-3", CounterpartID: "cara", Folder: models.UserConversationFolderRequests, SortAt: sortAt.Add(-time.Hour), Unread: true},
+			{ViewerID: "alice", ConversationID: "conv-2", CounterpartID: "bob", Folder: models.UserConversationFolderInbox, SortAt: sortAt, Unread: true},
+			{ViewerID: "alice", ConversationID: "conv-3", CounterpartID: "cara", Folder: models.UserConversationFolderInbox, SortAt: sortAt.Add(-time.Hour), Unread: true},
 		}
 	}).Return(nil).Once()
 
