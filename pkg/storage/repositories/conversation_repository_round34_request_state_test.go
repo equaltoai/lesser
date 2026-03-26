@@ -104,6 +104,17 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.True(t, record.Conversation.Unread)
 		require.Equal(t, conversationUpdatedAt, record.Conversation.UpdatedAt)
 	})
+
+	t.Run("defaultUserConversationState initializes hidden rows without conversation metadata", func(t *testing.T) {
+		state := defaultUserConversationState(nil, "alice")
+		require.NotNil(t, state)
+		require.Equal(t, "alice", state.ViewerID)
+		require.Equal(t, models.UserConversationFolderHidden, state.Folder)
+		require.Empty(t, state.ConversationID)
+		require.False(t, state.SortAt.IsZero())
+		require.False(t, state.CreatedAt.IsZero())
+		require.False(t, state.UpdatedAt.IsZero())
+	})
 }
 
 func TestRound34_ConversationRepository_ListUserConversationStatesByFolderModels(t *testing.T) {

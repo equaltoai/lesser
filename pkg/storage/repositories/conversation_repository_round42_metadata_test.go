@@ -238,6 +238,23 @@ func TestRound42_ConversationRepository_EnsureUserConversationStateModel_Propaga
 }
 
 func TestRound42_ConversationRepository_GetConversationParticipantRecord_MissingBranches(t *testing.T) {
+	t.Run("returns unexpected canonical state lookup errors", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		stateQuery := new(mocks.MockQuery)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
+		stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(stateQuery).Once()
+		stateQuery.On("Where", "SK", "=", "CONVERSATION#conv-error").Return(stateQuery).Once()
+		stateQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Return(stdErrors.New("boom")).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		record, err := repo.GetConversationParticipantRecord(ctx, "conv-error", "alice")
+		require.Nil(t, record)
+		require.EqualError(t, err, "boom")
+	})
+
 	t.Run("returns storage not found when canonical state is missing", func(t *testing.T) {
 		ctx := context.Background()
 		mockDB := new(mocks.MockDB)
@@ -298,6 +315,43 @@ func TestRound42_ConversationRepository_GetConversationParticipantRecord_Missing
 		require.Equal(t, "USER_CONVERSATIONS#alice", record.PK)
 		require.Equal(t, sortAt.Format(time.RFC3339Nano)+"#conv-4", record.SK)
 		require.Nil(t, record.Conversation)
+	})
+
+	t.Run("returns conversation metadata lookup errors", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		stateQuery := new(mocks.MockQuery)
+		conversationQuery := new(mocks.MockQuery)
+		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
+		stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(stateQuery).Once()
+		stateQuery.On("Where", "SK", "=", "CONVERSATION#conv-lookup-error").Return(stateQuery).Once()
+		stateQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*models.UserConversationState)
+			*dest = models.UserConversationState{
+				ViewerID:       "alice",
+				ConversationID: "conv-lookup-error",
+				CounterpartID:  "bob",
+				Folder:         models.UserConversationFolderInbox,
+				Unread:         true,
+				SortAt:         sortAt,
+				CreatedAt:      sortAt.Add(-time.Hour),
+				UpdatedAt:      sortAt,
+			}
+		}).Return(nil).Once()
+
+		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
+		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-lookup-error").Return(conversationQuery).Once()
+		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
+		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Return(stdErrors.New("boom")).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		record, err := repo.GetConversationParticipantRecord(ctx, "conv-lookup-error", "alice")
+		require.Nil(t, record)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Failed to retrieve conversation")
 	})
 }
 
