@@ -92,3 +92,53 @@ func TestRound44_ConversationRepository_CreateConversation_UsesTransactionalWrit
 	require.Equal(t, conversationParticipantLookupSK, lookup.SK)
 	require.Equal(t, "conv-1", lookup.ConversationID)
 }
+
+func TestRound44_ConversationRepository_CreateConversationWithParticipantStates_UsesStableStateKeys(t *testing.T) {
+	ctx := context.Background()
+	repo := NewConversationRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
+	builder := &recordingConversationTransactionBuilder{}
+
+	repo.transactWriteFn = func(txCtx context.Context, fn func(core.TransactionBuilder) error) error {
+		require.Equal(t, ctx, txCtx)
+		return fn(builder)
+	}
+
+	conversation := &models.Conversation{ID: "conv-stable"}
+	explicitStates := []*models.UserConversationState{
+		{
+			ViewerID:       "Medic",
+			ConversationID: "conv-stable",
+			CounterpartID:  "Arch",
+			Folder:         models.UserConversationFolderInbox,
+			RequestState:   models.DmRequestStateAccepted,
+		},
+		{
+			ViewerID:       "Arch",
+			ConversationID: "conv-stable",
+			CounterpartID:  "Medic",
+			Folder:         models.UserConversationFolderHidden,
+		},
+	}
+
+	err := repo.CreateConversationWithParticipantStates(ctx, conversation, []string{"Medic", "Arch"}, explicitStates)
+	require.NoError(t, err)
+
+	require.Len(t, builder.created, 4)
+	for _, item := range builder.created {
+		_, isLegacyRecord := item.(*models.ConversationParticipantRecord)
+		require.False(t, isLegacyRecord)
+	}
+
+	firstState, ok := builder.created[1].(*models.UserConversationState)
+	require.True(t, ok)
+	require.Equal(t, "arch", firstState.ViewerID)
+	require.Equal(t, "USER_CONVERSATION_STATE#arch", firstState.PK)
+	require.Equal(t, "CONVERSATION#conv-stable", firstState.SK)
+
+	secondState, ok := builder.created[2].(*models.UserConversationState)
+	require.True(t, ok)
+	require.Equal(t, "medic", secondState.ViewerID)
+	require.Equal(t, "USER_CONVERSATION_STATE#medic", secondState.PK)
+	require.Equal(t, "CONVERSATION#conv-stable", secondState.SK)
+	require.Equal(t, models.DmRequestStateAccepted, secondState.RequestState)
+}
