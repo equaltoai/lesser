@@ -372,42 +372,62 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 //
 // Legacy note: DM rewrite M5 removes timeline-side DM list reads that hydrate embedded participant snapshots.
 func (r *TimelineRepository) GetConversations(ctx context.Context, username string, limit int, cursor string) ([]*models.Conversation, string, error) {
-	// Query user's conversation participant records using the established pattern
-	// PK = USER_CONVERSATIONS#username, SK = timestamp#conversationID
-	pk := fmt.Sprintf("USER_CONVERSATIONS#%s", models.CanonicalConversationParticipantID(username))
+	limit = clampListLimit(limit, 20, 100)
 
-	query := r.db.WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-		Where("PK", "=", pk).
-		OrderBy("SK", "DESC") // Most recent first (timestamp-based sorting)
+	fetchFolder := func(folder models.UserConversationFolder) ([]*models.UserConversationState, bool, error) {
+		query := r.db.WithContext(ctx).Model(&models.UserConversationState{}).
+			Index("gsi1").
+			Where("gsi1PK", "=", userConversationFolderIndexPK(username, folder)).
+			OrderBy("gsi1SK", "DESC").
+			Limit(limit + 1)
+		if cursor != "" {
+			query = query.Where("gsi1SK", "<", cursor)
+		}
 
-	// Resume from the supplied cursor value when available
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor) // < for getting older conversations
+		var states []*models.UserConversationState
+		if err := query.All(&states); err != nil {
+			return nil, false, err
+		}
+		hasMore := len(states) > limit
+		if hasMore {
+			states = states[:limit]
+		}
+		return states, hasMore, nil
 	}
 
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var participantRecords []*models.ConversationParticipantRecord
-	err := query.All(&participantRecords)
+	inboxStates, inboxHasMore, err := fetchFolder(models.UserConversationFolderInbox)
 	if err != nil {
-		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "participants")
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "user conversation inbox states")
+	}
+	requestStates, requestHasMore, err := fetchFolder(models.UserConversationFolderRequests)
+	if err != nil {
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "user conversation request states")
 	}
 
-	// Extract conversations from participant records
-	conversations := make([]*models.Conversation, 0, len(participantRecords))
-	for _, record := range participantRecords {
-		if record != nil && record.HydrateConversation() != nil {
-			conversations = append(conversations, record.Conversation)
+	mergedStates, nextCursor, hasMore := mergeVisibleConversationStatePages(inboxStates, requestStates, limit)
+	if !hasMore {
+		hasMore = inboxHasMore || requestHasMore
+		if hasMore && nextCursor == "" && len(mergedStates) > 0 {
+			nextCursor = mergedStates[len(mergedStates)-1].LegacyListCursor()
 		}
 	}
 
-	// Generate next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("conversations", conversations, limit); err != nil {
-		// We got more results than requested, so there are more pages
-		nextCursor = participantRecords[limit-1].SK
-		conversations = conversations[:limit] // Trim to requested limit
+	conversations := make([]*models.Conversation, 0, len(mergedStates))
+	for _, state := range mergedStates {
+		if state == nil {
+			continue
+		}
+
+		var conversation models.Conversation
+		err := r.db.WithContext(ctx).Model(&models.Conversation{}).
+			Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", state.ConversationID)).
+			Where("SK", "=", "METADATA").
+			First(&conversation)
+		if err != nil {
+			continue
+		}
+
+		conversations = append(conversations, cloneConversationForViewer(&conversation, state.Unread))
 	}
 
 	return conversations, nextCursor, nil

@@ -463,6 +463,43 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 			v.Conversation = &models.Conversation{}
 		}
 		round12PopulateStruct(v.Conversation, state)
+		if strings.TrimSpace(v.ViewerID) == "" {
+			v.ViewerID = "alice"
+		}
+		if strings.TrimSpace(v.ConversationID) == "" {
+			v.ConversationID = v.Conversation.ID
+		}
+		if v.Folder == "" {
+			v.Folder = models.UserConversationFolderInbox
+		}
+		v.Unread = true
+		return
+	case *models.UserConversationState:
+		viewerID := "alice"
+		if strings.Contains(state.lastPK, "USER_CONVERSATION_STATE#") {
+			if candidate := strings.TrimPrefix(state.lastPK, "USER_CONVERSATION_STATE#"); strings.TrimSpace(candidate) != "" {
+				viewerID = candidate
+			}
+		}
+		v.ViewerID = viewerID
+		if strings.HasPrefix(state.lastSK, "CONVERSATION#") {
+			v.ConversationID = strings.TrimPrefix(state.lastSK, "CONVERSATION#")
+		}
+		if strings.TrimSpace(v.ConversationID) == "" {
+			v.ConversationID = fmt.Sprintf("conv_%d", state.autoPopulateIndex+1)
+		}
+		v.CounterpartID = "bob"
+		v.Folder = models.UserConversationFolderInbox
+		v.RequestState = models.DmRequestStateAccepted
+		v.Unread = true
+		if v.CreatedAt.IsZero() {
+			v.CreatedAt = time.Now().Add(-time.Hour)
+		}
+		v.UpdatedAt = time.Now()
+		if v.SortAt.IsZero() {
+			v.SortAt = v.UpdatedAt
+		}
+		_ = v.UpdateKeys()
 		return
 	case *models.Announcement:
 		id := fmt.Sprintf("announcement-%d", state.autoPopulateIndex+1)
