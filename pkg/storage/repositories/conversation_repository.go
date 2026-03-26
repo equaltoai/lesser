@@ -20,11 +20,24 @@ import (
 // ConversationRepository handles conversation-related database operations using enhanced patterns
 type ConversationRepository struct {
 	*EnhancedBaseRepository[*models.Conversation]
-	logger *zap.Logger
+	logger          *zap.Logger
+	transactWriteFn func(ctx context.Context, fn func(core.TransactionBuilder) error) error
 }
+
+const conversationParticipantLookupSK = "LOOKUP"
 
 func conversationParticipantLookupPK(participants []string) string {
 	return fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", strings.Join(models.CanonicalConversationParticipants(participants), ","))
+}
+
+func newConversationParticipantLookup(conversationID string, participants []string) *models.ConversationParticipantKey {
+	participantKey := conversationParticipantLookupPK(participants)
+	return &models.ConversationParticipantKey{
+		PK:             participantKey,
+		SK:             conversationParticipantLookupSK,
+		GSI1PK:         participantKey,
+		ConversationID: conversationID,
+	}
 }
 
 func canonicalConversationStatusSK(participantID string) string {
@@ -45,6 +58,7 @@ func NewConversationRepository(db core.DB, tableName string, logger *zap.Logger,
 	return &ConversationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,
+		transactWriteFn:        nil,
 	}
 }
 
@@ -356,13 +370,13 @@ func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context
 func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
-	participantKey := conversationParticipantLookupPK(participants)
+	lookupKey := newConversationParticipantLookup("", participants)
 
-	// Exact participant lookups are deterministic, so use a base-table point read.
+	// Exact participant lookups are deterministic, so use the canonical base-table lookup row.
 	var record models.ConversationParticipantKey
 	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
-		Where("PK", "=", participantKey).
-		Where("SK", "=", "LOOKUP").
+		Where("PK", "=", lookupKey.PK).
+		Where("SK", "=", lookupKey.SK).
 		First(&record)
 
 	if err != nil {
