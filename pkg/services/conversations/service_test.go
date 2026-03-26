@@ -60,6 +60,14 @@ func (m *mockConversationRepository) GetUserConversations(ctx context.Context, u
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
 }
 
+func (m *mockConversationRepository) GetUserConversationsByFolder(ctx context.Context, userID string, folder models.UserConversationFolder, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	args := m.Called(ctx, userID, folder, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
+}
+
 func (m *mockConversationRepository) GetUserConversationsByRequestState(ctx context.Context, userID string, requestState models.DmRequestState, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	args := m.Called(ctx, userID, requestState, opts)
 	if args.Get(0) == nil {
@@ -979,6 +987,7 @@ func TestService_MarkConversationRead_Success(t *testing.T) {
 	ctx := context.Background()
 
 	conversation := createTestConversation("conv123", []string{"user123", "user456"})
+	conversation.Unread = true
 
 	cmd := &MarkConversationReadCommand{
 		ConversationID: "conv123",
@@ -996,6 +1005,7 @@ func TestService_MarkConversationRead_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, "conv123", result.Conversation.ID)
+	assert.False(t, result.Conversation.Unread)
 	assert.Len(t, result.Events, 1)
 	assert.Equal(t, ConversationReadEvent, result.Events[0].Type)
 

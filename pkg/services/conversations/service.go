@@ -1284,13 +1284,17 @@ func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationI
 
 		switch state {
 		case models.DmRequestStateAccepted:
+			record.Folder = models.UserConversationFolderInbox
 			record.RequestState = models.DmRequestStateAccepted
+			record.DeletedAt = nil
 			record.RequestedAt = nil
 			record.DeclinedAt = nil
 			t := now
 			record.AcceptedAt = &t
 		case models.DmRequestStateDeclined:
+			record.Folder = models.UserConversationFolderDeclined
 			record.RequestState = models.DmRequestStateDeclined
+			record.DeletedAt = nil
 			record.RequestedAt = nil
 			record.AcceptedAt = nil
 			t := now
@@ -1343,6 +1347,8 @@ func (s *Service) MarkConversationRead(ctx context.Context, cmd *MarkConversatio
 		zap.String("conversation_id", cmd.ConversationID),
 		zap.String("user_id", cmd.UserID))
 
+	conversation.Unread = false
+
 	// Emit read event (only to the user who read it)
 	events := s.emitConversationReadEvents(ctx, conversation, cmd.UserID)
 
@@ -1363,11 +1369,11 @@ func (s *Service) ListConversations(ctx context.Context, query *ListConversation
 	var err error
 
 	if query.Folder != "" {
-		requestState := models.DmRequestStateAccepted
+		folder := models.UserConversationFolderInbox
 		if query.Folder == ConversationFolderRequests {
-			requestState = models.DmRequestStatePending
+			folder = models.UserConversationFolderRequests
 		}
-		result, err = s.conversationRepo.GetUserConversationsByRequestState(ctx, query.UserID, requestState, query.Pagination)
+		result, err = s.conversationRepo.GetUserConversationsByFolder(ctx, query.UserID, folder, query.Pagination)
 	} else if query.OnlyUnread {
 		result, err = s.conversationRepo.GetUnreadConversations(ctx, query.UserID, query.Pagination)
 	} else {
@@ -1906,6 +1912,7 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 			return
 		}
 		t := now
+		record.Folder = models.UserConversationFolderHidden
 		record.DeletedAt = &t
 	}); err != nil {
 		if errors.Is(err, storage.ErrNotFound) || isNotFoundError(err) {

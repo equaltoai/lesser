@@ -86,7 +86,12 @@ func TestService_DeleteConversation_AllowsActorIDParticipant(t *testing.T) {
 		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "ap://example.com/actors/alice"}},
 	}, nil).Once()
 	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-1", "ap://example.com/actors/alice").Return(&models.ConversationParticipantRecord{}, nil).Once()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Once()
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.MatchedBy(func(record *models.ConversationParticipantRecord) bool {
+		return record != nil &&
+			record.Folder == models.UserConversationFolderHidden &&
+			record.DeletedAt != nil &&
+			!record.DeletedAt.IsZero()
+	})).Return(nil).Once()
 
 	result, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-1", UserID: "user-1"})
 	require.NoError(t, err)
@@ -114,7 +119,12 @@ func TestService_DeleteConversation_StillReturnsEventsWhenPublishFails(t *testin
 
 	conversationRepo.On("GetConversation", ctx, "conv-2").Return(conversation, nil).Once()
 	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-2", "user-1").Return(&models.ConversationParticipantRecord{}, nil).Once()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Once()
+	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.MatchedBy(func(record *models.ConversationParticipantRecord) bool {
+		return record != nil &&
+			record.Folder == models.UserConversationFolderHidden &&
+			record.DeletedAt != nil &&
+			!record.DeletedAt.IsZero()
+	})).Return(nil).Once()
 
 	result, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-2", UserID: "user-1"})
 	require.NoError(t, err)
@@ -162,7 +172,12 @@ func TestService_DeleteConversation_PermissionAndDeleteFailures(t *testing.T) {
 		}
 		conversationRepo.On("GetConversation", ctx, "conv-5").Return(conversation, nil).Once()
 		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-5", "user-1").Return(&models.ConversationParticipantRecord{}, nil).Once()
-		conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(errors.New("boom")).Once()
+		conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.MatchedBy(func(record *models.ConversationParticipantRecord) bool {
+			return record != nil &&
+				record.Folder == models.UserConversationFolderHidden &&
+				record.DeletedAt != nil &&
+				!record.DeletedAt.IsZero()
+		})).Return(errors.New("boom")).Once()
 
 		_, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-5", UserID: "user-1"})
 		require.Error(t, err)

@@ -593,7 +593,7 @@ func TestService_ListConversations_FolderBranchesAndErrors(t *testing.T) {
 	paginated := &interfaces.PaginatedResult[*models.Conversation]{Items: []*models.Conversation{}, HasMore: false}
 
 	conversationRepo.
-		On("GetUserConversationsByRequestState", ctx, "alice", models.DmRequestStatePending, mock.Anything).
+		On("GetUserConversationsByFolder", ctx, "alice", models.UserConversationFolderRequests, mock.Anything).
 		Return(paginated, nil).
 		Once()
 	_, err := service.ListConversations(ctx, &ListConversationsQuery{
@@ -604,7 +604,7 @@ func TestService_ListConversations_FolderBranchesAndErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	conversationRepo.
-		On("GetUserConversationsByRequestState", ctx, "alice", models.DmRequestStateAccepted, mock.Anything).
+		On("GetUserConversationsByFolder", ctx, "alice", models.UserConversationFolderInbox, mock.Anything).
 		Return(paginated, nil).
 		Once()
 	_, err = service.ListConversations(ctx, &ListConversationsQuery{

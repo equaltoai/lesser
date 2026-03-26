@@ -141,38 +141,64 @@ func TestRound07_ConversationRepository_MessageCount_ScanPaths(t *testing.T) {
 
 func TestRound07_ConversationRepository_UnreadStatusCount_Branches(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
+	stateQuery := new(mocks.MockQuery)
+	messageQuery := new(mocks.MockQuery)
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Times(4)
+	stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#user-1").Return(stateQuery).Times(4)
+	stateQuery.On("Where", "SK", "=", "CONVERSATION#conv-1").Return(stateQuery).Times(4)
 
-	// Status not found -> zero time, counts messages.
-	mockQuery.On("First", mock.Anything).Return(ddbErrors.ErrItemNotFound).Once()
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		ptr := args.Get(0).(*[]models.ConversationMessage)
-		*ptr = []models.ConversationMessage{{}, {}, {}}
-	}).Return(nil).Once()
+	// Missing canonical state -> no unread truth.
+	stateQuery.On("First", mock.Anything).Return(ddbErrors.ErrItemNotFound).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	count, err := repo.GetUnreadStatusCount(context.Background(), "conv-1", "user-1")
 	require.NoError(t, err)
-	require.Equal(t, 3, count)
+	require.Equal(t, 0, count)
 
-	// Status found, unread=false -> returns 0 without counting.
-	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
-		status := args.Get(0).(*models.ConversationStatus)
-		status.Unread = false
-		status.LastReadAt = time.Unix(1, 0).UTC()
+	// Canonical state found, unread=false -> returns 0 without counting.
+	stateQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+		state := args.Get(0).(*models.UserConversationState)
+		state.Unread = false
+		state.LastReadAt = conversationTimePtr(time.Unix(1, 0).UTC())
 	}).Return(nil).Once()
 
 	count, err = repo.GetUnreadStatusCount(context.Background(), "conv-1", "user-1")
 	require.NoError(t, err)
 	require.Equal(t, 0, count)
 
-	// Status query error.
-	mockQuery.On("First", mock.Anything).Return(stdErrors.New("status-failed")).Once()
+	// Canonical state found, unread=true -> count messages after last read time.
+	readAt := time.Unix(2, 0).UTC()
+	stateQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
+		state := args.Get(0).(*models.UserConversationState)
+		*state = models.UserConversationState{
+			ViewerID:       "user-1",
+			ConversationID: "conv-1",
+			CounterpartID:  "user-2",
+			Folder:         models.UserConversationFolderInbox,
+			Unread:         true,
+			LastReadAt:     &readAt,
+			SortAt:         readAt,
+			CreatedAt:      readAt.Add(-time.Hour),
+			UpdatedAt:      readAt,
+		}
+	}).Return(nil).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.ConversationMessage")).Return(messageQuery).Once()
+	messageQuery.On("WithContext", mock.Anything).Return(messageQuery).Once()
+	messageQuery.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(messageQuery).Once()
+	messageQuery.On("Where", "SK", ">", mock.Anything).Return(messageQuery).Once()
+	messageQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*[]models.ConversationMessage)
+		*ptr = []models.ConversationMessage{{}, {}, {}}
+	}).Return(nil).Once()
+
+	count, err = repo.GetUnreadStatusCount(context.Background(), "conv-1", "user-1")
+	require.NoError(t, err)
+	require.Equal(t, 3, count)
+
+	// State query error.
+	stateQuery.On("First", mock.Anything).Return(stdErrors.New("state-failed")).Once()
 	_, err = repo.GetUnreadStatusCount(context.Background(), "conv-1", "user-1")
 	require.Error(t, err)
 }
@@ -443,7 +469,8 @@ func TestRound07_ConversationRepository_GetUnreadMessageCount_WarnsAndContinues(
 	requestQuery := new(mocks.MockQuery)
 	conversationQuery1 := new(mocks.MockQuery)
 	conversationQuery2 := new(mocks.MockQuery)
-	statusQuery := new(mocks.MockQuery)
+	pointStateQuery1 := new(mocks.MockQuery)
+	pointStateQuery2 := new(mocks.MockQuery)
 
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
 	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(inboxQuery).Once()
@@ -482,10 +509,27 @@ func TestRound07_ConversationRepository_GetUnreadMessageCount_WarnsAndContinues(
 		*ptr = models.Conversation{ID: "conv-2"}
 	}).Return(nil).Once()
 
-	mockDB.On("Model", mock.AnythingOfType("*models.ConversationStatus")).Return(statusQuery).Maybe()
-	statusQuery.On("WithContext", mock.Anything).Return(statusQuery).Maybe()
-	statusQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(statusQuery).Maybe()
-	statusQuery.On("First", mock.Anything).Return(stdErrors.New("status-failed")).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(pointStateQuery1).Once()
+	pointStateQuery1.On("Where", "PK", "=", "USER_CONVERSATION_STATE#user-1").Return(pointStateQuery1).Once()
+	pointStateQuery1.On("Where", "SK", "=", "CONVERSATION#conv-1").Return(pointStateQuery1).Once()
+	pointStateQuery1.On("First", mock.AnythingOfType("*models.UserConversationState")).Return(stdErrors.New("state-failed")).Once()
+
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(pointStateQuery2).Once()
+	pointStateQuery2.On("Where", "PK", "=", "USER_CONVERSATION_STATE#user-1").Return(pointStateQuery2).Once()
+	pointStateQuery2.On("Where", "SK", "=", "CONVERSATION#conv-2").Return(pointStateQuery2).Once()
+	pointStateQuery2.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*models.UserConversationState)
+		*ptr = models.UserConversationState{
+			ViewerID:       "user-1",
+			ConversationID: "conv-2",
+			CounterpartID:  "user-2",
+			Folder:         models.UserConversationFolderInbox,
+			Unread:         false,
+			SortAt:         time.Unix(1, 0).UTC(),
+			CreatedAt:      time.Unix(1, 0).UTC(),
+			UpdatedAt:      time.Unix(1, 0).UTC(),
+		}
+	}).Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	count, err := repo.GetUnreadMessageCount(context.Background(), "user-1")
@@ -534,11 +578,6 @@ func TestRound07_ConversationRepository_DeleteConversation_CleanupWarnings(t *te
 	// Main delete succeeds; cleanup deletes can fail without failing the operation.
 	mockQuery.On("Delete").Return(nil).Once()
 	mockQuery.On("Delete").Return(stdErrors.New("cleanup-delete-failed")).Maybe()
-
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		ptr := args.Get(0).(*[]models.ConversationStatus)
-		*ptr = []models.ConversationStatus{{ConversationID: "conv-1", UserID: "user-1"}}
-	}).Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	require.NoError(t, repo.DeleteConversation(context.Background(), "conv-1"))

@@ -381,12 +381,11 @@ func TestRound42_ConversationRepository_CreateOrUpdateUserConversationState_Erro
 	require.EqualError(t, err, "boom")
 }
 
-func TestRound42_ConversationRepository_MarkConversationRead_UpdatesCanonicalStateAndLegacyStatus(t *testing.T) {
+func TestRound42_ConversationRepository_MarkConversationRead_UpdatesCanonicalStateOnly(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	loadQuery := new(mocks.MockQuery)
 	updateQuery := new(mocks.MockQuery)
-	createQuery := new(mocks.MockQuery)
 	sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
@@ -417,16 +416,6 @@ func TestRound42_ConversationRepository_MarkConversationRead_UpdatesCanonicalSta
 			!state.LastReadAt.IsZero()
 	})).Return(updateQuery).Once()
 	updateQuery.On("Update", mock.Anything).Return(nil).Once()
-
-	mockDB.On("Model", mock.MatchedBy(func(status *models.ConversationStatus) bool {
-		return status != nil &&
-			status.ConversationID == "conv-6" &&
-			status.UserID == "alice" &&
-			!status.Unread &&
-			!status.LastReadAt.IsZero()
-	})).Return(createQuery).Once()
-	createQuery.On("WithContext", ctx).Return(createQuery).Once()
-	createQuery.On("Create").Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	require.NoError(t, repo.MarkConversationRead(ctx, "conv-6", "Alice"))
@@ -475,12 +464,11 @@ func TestRound42_ConversationRepository_MarkConversationRead_ErrorPaths(t *testi
 	})
 }
 
-func TestRound42_ConversationRepository_MarkConversationUnread_UpdatesCanonicalStateAndLegacyStatus(t *testing.T) {
+func TestRound42_ConversationRepository_MarkConversationUnread_UpdatesCanonicalStateOnly(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
 	loadQuery := new(mocks.MockQuery)
 	updateQuery := new(mocks.MockQuery)
-	createQuery := new(mocks.MockQuery)
 	sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
@@ -511,16 +499,6 @@ func TestRound42_ConversationRepository_MarkConversationUnread_UpdatesCanonicalS
 			state.LastReadAt == nil
 	})).Return(updateQuery).Once()
 	updateQuery.On("Update", mock.Anything).Return(nil).Once()
-
-	mockDB.On("Model", mock.MatchedBy(func(status *models.ConversationStatus) bool {
-		return status != nil &&
-			status.ConversationID == "conv-9" &&
-			status.UserID == "alice" &&
-			status.Unread &&
-			status.LastReadAt.Equal(time.Unix(0, 0).UTC())
-	})).Return(createQuery).Once()
-	createQuery.On("WithContext", ctx).Return(createQuery).Once()
-	createQuery.On("Create").Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	require.NoError(t, repo.MarkConversationUnread(ctx, "conv-9", "Alice"))

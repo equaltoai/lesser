@@ -40,6 +40,10 @@ type ConversationRepository interface {
 	// DirectMessageRepository.ListUserConversationStatesByFolder.
 	GetUserConversations(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
 
+	// GetUserConversationsByFolder retrieves conversations for a user filtered by the
+	// canonical viewer folder (e.g. inbox vs requests) via keyed per-user DM state queries.
+	GetUserConversationsByFolder(ctx context.Context, userID string, folder models.UserConversationFolder, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
+
 	// GetUserConversationsByRequestState retrieves conversations for a user filtered by the participant
 	// request state (e.g., inbox vs requests). Legacy note: DM rewrite M1 replaces request-state
 	// filtering with keyed folder queries on canonical per-user DM state.

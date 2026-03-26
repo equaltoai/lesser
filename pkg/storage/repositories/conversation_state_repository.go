@@ -140,6 +140,41 @@ func stateContractFromModel(state *models.UserConversationState) *interfaces.Use
 	}
 }
 
+func stateModelFromContract(state *interfaces.UserConversationStateContract) *models.UserConversationState {
+	if state == nil {
+		return nil
+	}
+
+	return &models.UserConversationState{
+		ViewerID:                 state.ViewerID,
+		ConversationID:           state.ConversationID,
+		CounterpartID:            state.CounterpartID,
+		Folder:                   state.Folder,
+		RequestState:             state.RequestState,
+		PreviewStatusID:          state.PreviewStatusID,
+		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+		SortAt:                   state.SortAt,
+		Unread:                   state.Unread,
+		LastReadAt:               state.LastReadAt,
+		DeletedAt:                state.DeletedAt,
+		RequestedAt:              state.RequestedAt,
+		AcceptedAt:               state.AcceptedAt,
+		DeclinedAt:               state.DeclinedAt,
+		CreatedAt:                state.CreatedAt,
+		UpdatedAt:                state.UpdatedAt,
+	}
+}
+
+func stateModelsFromContracts(items []*interfaces.UserConversationStateContract) []*models.UserConversationState {
+	states := make([]*models.UserConversationState, 0, len(items))
+	for _, item := range items {
+		if state := stateModelFromContract(item); state != nil {
+			states = append(states, state)
+		}
+	}
+	return states
+}
+
 func stateRecordFromModel(state *models.UserConversationState, conversation *models.Conversation) *models.ConversationParticipantRecord {
 	if state == nil {
 		return nil

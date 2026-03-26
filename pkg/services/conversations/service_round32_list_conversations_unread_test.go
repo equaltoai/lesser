@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,6 +35,8 @@ func TestService_ListConversations_OnlyUnread(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, out)
 		require.Len(t, out.Conversations.Items, 1)
+		conversationRepo.AssertNotCalled(t, "GetUserConversations", ctx, "user-1", query.Pagination)
+		conversationRepo.AssertNotCalled(t, "GetUserConversationsByFolder", ctx, "user-1", mock.Anything, query.Pagination)
 	})
 
 	t.Run("repo error returns expected error", func(t *testing.T) {
