@@ -410,28 +410,63 @@ func TestConversationModels(t *testing.T) {
 		assert.Equal(t, p.SK, p.GetSK())
 	})
 
-	t.Run("ConversationParticipantRecord syncs and hydrates embedded snapshots", func(t *testing.T) {
+	t.Run("ConversationParticipantRecord keeps runtime projection identity without snapshots", func(t *testing.T) {
 		updated := time.Unix(1700000000, 0).UTC()
 		p := &ConversationParticipantRecord{
-			Unread:       true,
-			Conversation: &Conversation{ID: "c2", Participants: []string{"alice", "bob"}, UpdatedAt: updated},
+			Unread:         true,
+			ConversationID: "c2",
+			Folder:         UserConversationFolderInbox,
+			Conversation:   &Conversation{ID: "c2", Participants: []string{"alice", "bob"}, UpdatedAt: updated},
 		}
 
-		conv := p.SyncConversationData()
-		require.NotNil(t, conv)
-		require.NotNil(t, p.ConversationData)
-		assert.Equal(t, "c2", p.ConversationData.ID)
-		assert.Equal(t, []string{"alice", "bob"}, p.ConversationData.Participants)
-		assert.True(t, p.ConversationData.Unread)
+		require.NoError(t, p.BeforeCreate("alice"))
+		require.NotNil(t, p.Conversation)
+		assert.Equal(t, "c2", p.Conversation.ID)
+		assert.Equal(t, []string{"alice", "bob"}, p.Conversation.Participants)
+		assert.Equal(t, updated, p.SortAt)
+		assert.Equal(t, UserConversationFolderInbox, p.Folder)
+	})
 
-		rehydrated := (&ConversationParticipantRecord{
-			Unread:           true,
-			ConversationData: p.ConversationData,
-		}).HydrateConversation()
-		require.NotNil(t, rehydrated)
-		assert.Equal(t, "c2", rehydrated.ID)
-		assert.Equal(t, []string{"alice", "bob"}, rehydrated.Participants)
-		assert.True(t, rehydrated.Unread)
+	t.Run("UserConversationState builds canonical keys and sparse unread index", func(t *testing.T) {
+		state := &UserConversationState{
+			ViewerID:                 "Alice",
+			ConversationID:           "c2",
+			CounterpartID:            "Bob",
+			Folder:                   UserConversationFolderInbox,
+			RequestState:             DmRequestStateAccepted,
+			PreviewStatusID:          "s1",
+			PreviewStatusPublishedAt: time.Unix(1700000010, 0).UTC(),
+			SortAt:                   time.Unix(1700000010, 0).UTC(),
+			Unread:                   true,
+		}
+
+		require.NoError(t, state.BeforeCreate())
+		assert.Equal(t, "USER_CONVERSATION_STATE#alice", state.PK)
+		assert.Equal(t, "CONVERSATION#c2", state.SK)
+		assert.Equal(t, "USER_CONVERSATION_FOLDER#alice#INBOX", state.GSI1PK)
+		assert.Equal(t, "USER_CONVERSATION_UNREAD#alice", state.GSI2PK)
+		assert.Equal(t, "CONVERSATION#c2", state.GSI3PK)
+		assert.Equal(t, "USER#alice", state.GSI3SK)
+		assert.True(t, state.UnreadQueryVisible())
+		assert.Equal(t, MainTableName, state.TableName())
+		assert.Equal(t, state.PK, state.GetPK())
+		assert.Equal(t, state.SK, state.GetSK())
+	})
+
+	t.Run("UserConversationState omits sparse unread index for hidden rows", func(t *testing.T) {
+		state := &UserConversationState{
+			ViewerID:       "alice",
+			ConversationID: "c3",
+			CounterpartID:  "bob",
+			Folder:         UserConversationFolderHidden,
+			SortAt:         time.Unix(1700000020, 0).UTC(),
+			Unread:         true,
+		}
+
+		require.NoError(t, state.BeforeCreate())
+		assert.Empty(t, state.GSI2PK)
+		assert.Empty(t, state.GSI2SK)
+		assert.False(t, state.UnreadQueryVisible())
 	})
 
 	t.Run("ConversationMessage requires keys and builds sortable SK", func(t *testing.T) {
