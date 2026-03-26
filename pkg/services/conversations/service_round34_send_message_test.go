@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
@@ -144,7 +145,16 @@ func TestService_MessageRequestDecisions_UpdateParticipantStateAndAudit(t *testi
 	)
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
-	record := &models.ConversationParticipantRecord{Conversation: conversation, RequestState: models.DmRequestStatePending}
+	deletedAt := time.Date(2026, 3, 26, 12, 0, 0, 0, time.UTC)
+	record := &models.ConversationParticipantRecord{
+		Conversation:  conversation,
+		RequestState:  models.DmRequestStatePending,
+		Folder:        models.UserConversationFolderRequests,
+		DeletedAt:     &deletedAt,
+		RequestedAt:   &deletedAt,
+		DeclinedAt:    &deletedAt,
+		AcceptedAt:    nil,
+	}
 
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil)
 	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(record, nil).Twice()
@@ -179,6 +189,11 @@ func TestService_MessageRequestDecisions_UpdateParticipantStateAndAudit(t *testi
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, models.DmRequestStateAccepted, record.RequestState)
+	require.Equal(t, models.UserConversationFolderInbox, record.Folder)
+	require.Nil(t, record.DeletedAt)
+	require.Nil(t, record.RequestedAt)
+	require.Nil(t, record.DeclinedAt)
+	require.NotNil(t, record.AcceptedAt)
 
 	conversationRepo.AssertExpectations(t)
 	auditRepo.AssertExpectations(t)
@@ -206,7 +221,14 @@ func TestService_DeclineMessageRequest_UpdatesParticipantStateAndAudit(t *testin
 	)
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
-	record := &models.ConversationParticipantRecord{Conversation: conversation, RequestState: models.DmRequestStatePending}
+	deletedAt := time.Date(2026, 3, 26, 12, 0, 0, 0, time.UTC)
+	record := &models.ConversationParticipantRecord{
+		Conversation: conversation,
+		RequestState: models.DmRequestStatePending,
+		Folder:       models.UserConversationFolderRequests,
+		DeletedAt:    &deletedAt,
+		RequestedAt:  &deletedAt,
+	}
 
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil)
 	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(record, nil).Twice()
@@ -241,6 +263,9 @@ func TestService_DeclineMessageRequest_UpdatesParticipantStateAndAudit(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, models.DmRequestStateDeclined, record.RequestState)
+	require.Equal(t, models.UserConversationFolderDeclined, record.Folder)
+	require.Nil(t, record.DeletedAt)
+	require.Nil(t, record.RequestedAt)
 	require.NotNil(t, record.DeclinedAt)
 	require.Nil(t, record.AcceptedAt)
 

@@ -1284,13 +1284,17 @@ func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationI
 
 		switch state {
 		case models.DmRequestStateAccepted:
+			record.Folder = models.UserConversationFolderInbox
 			record.RequestState = models.DmRequestStateAccepted
+			record.DeletedAt = nil
 			record.RequestedAt = nil
 			record.DeclinedAt = nil
 			t := now
 			record.AcceptedAt = &t
 		case models.DmRequestStateDeclined:
+			record.Folder = models.UserConversationFolderDeclined
 			record.RequestState = models.DmRequestStateDeclined
+			record.DeletedAt = nil
 			record.RequestedAt = nil
 			record.AcceptedAt = nil
 			t := now
