@@ -549,9 +549,8 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 		return nil
 	}
 
-	participant.HydrateConversation()
-	conv := participant.Conversation
-	if conv == nil || strings.TrimSpace(conv.ID) == "" {
+	conversationID := conversationIDFromParticipant(participant)
+	if conversationID == "" {
 		return nil
 	}
 
@@ -570,7 +569,7 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 	envelopePayload := map[string]any{
 		"data": map[string]any{
 			"conversationUpdates": map[string]any{
-				"id": conv.ID,
+				"id": conversationID,
 			},
 		},
 	}
@@ -607,6 +606,24 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 	}
 
 	return nil
+}
+
+func conversationIDFromParticipant(participant models.ConversationParticipantRecord) string {
+	conversationID := strings.TrimSpace(participant.ConversationID)
+	if conversationID != "" {
+		return conversationID
+	}
+
+	conversationID = strings.TrimSpace(strings.TrimPrefix(participant.GSI1PK, "CONVERSATION#"))
+	if conversationID != "" {
+		return conversationID
+	}
+
+	if _, tail, ok := strings.Cut(participant.SK, "#"); ok {
+		return strings.TrimSpace(tail)
+	}
+
+	return ""
 }
 
 // processStatusEvent processes status/object events using DynamORM stream utilities

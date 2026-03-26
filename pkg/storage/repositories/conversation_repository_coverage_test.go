@@ -365,25 +365,53 @@ func TestRound07_ConversationRepository_MuteCRUD_ErrorBranchesAndCleanup(t *test
 
 func TestRound07_ConversationRepository_GetUnreadMessageCount_WarnsAndContinues(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
+	inboxQuery := new(mocks.MockQuery)
+	requestQuery := new(mocks.MockQuery)
+	conversationQuery1 := new(mocks.MockQuery)
+	conversationQuery2 := new(mocks.MockQuery)
+	statusQuery := new(mocks.MockQuery)
 
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
-
-	mockQuery.On("Scan", mock.Anything).Run(func(args mock.Arguments) {
-		ptr := args.Get(0).(*[]models.ConversationParticipantRecord)
-		*ptr = []models.ConversationParticipantRecord{
-			{Conversation: &models.Conversation{ID: "conv-1"}},
-			{Conversation: &models.Conversation{ID: "conv-2"}},
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(inboxQuery).Once()
+	inboxQuery.On("Index", "gsi1").Return(inboxQuery).Once()
+	inboxQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#user-1#INBOX").Return(inboxQuery).Once()
+	inboxQuery.On("OrderBy", "gsi1SK", "DESC").Return(inboxQuery).Once()
+	inboxQuery.On("Limit", 101).Return(inboxQuery).Once()
+	inboxQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*[]*models.UserConversationState)
+		*ptr = []*models.UserConversationState{
+			{ViewerID: "user-1", ConversationID: "conv-1", Folder: models.UserConversationFolderInbox, SortAt: time.Unix(2, 0).UTC()},
+			{ViewerID: "user-1", ConversationID: "conv-2", Folder: models.UserConversationFolderInbox, SortAt: time.Unix(1, 0).UTC()},
 		}
 	}).Return(nil).Once()
 
-	// Force GetUnreadStatusCount to error for each conversation.
-	mockQuery.On("First", mock.Anything).Return(stdErrors.New("status-failed")).Maybe()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(requestQuery).Once()
+	requestQuery.On("Index", "gsi1").Return(requestQuery).Once()
+	requestQuery.On("Where", "gsi1PK", "=", "USER_CONVERSATION_FOLDER#user-1#REQUESTS").Return(requestQuery).Once()
+	requestQuery.On("OrderBy", "gsi1SK", "DESC").Return(requestQuery).Once()
+	requestQuery.On("Limit", 101).Return(requestQuery).Once()
+	requestQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(nil).Once()
+
+	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery1).Once()
+	conversationQuery1.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(conversationQuery1).Once()
+	conversationQuery1.On("Where", "SK", "=", "METADATA").Return(conversationQuery1).Once()
+	conversationQuery1.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*models.Conversation)
+		*ptr = models.Conversation{ID: "conv-1"}
+	}).Return(nil).Once()
+
+	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery2).Once()
+	conversationQuery2.On("Where", "PK", "=", "CONVERSATION#conv-2").Return(conversationQuery2).Once()
+	conversationQuery2.On("Where", "SK", "=", "METADATA").Return(conversationQuery2).Once()
+	conversationQuery2.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*models.Conversation)
+		*ptr = models.Conversation{ID: "conv-2"}
+	}).Return(nil).Once()
+
+	mockDB.On("Model", mock.AnythingOfType("*models.ConversationStatus")).Return(statusQuery).Maybe()
+	statusQuery.On("WithContext", mock.Anything).Return(statusQuery).Maybe()
+	statusQuery.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(statusQuery).Maybe()
+	statusQuery.On("First", mock.Anything).Return(stdErrors.New("status-failed")).Maybe()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	count, err := repo.GetUnreadMessageCount(context.Background(), "user-1")
@@ -444,12 +472,29 @@ func TestRound07_ConversationRepository_DeleteConversation_CleanupWarnings(t *te
 
 func TestRound07_ConversationRepository_MarkConversationUnread_CreateError(t *testing.T) {
 	mockDB := new(mocks.MockDB)
-	mockQuery := new(mocks.MockQuery)
+	loadQuery := new(mocks.MockQuery)
+	updateQuery := new(mocks.MockQuery)
 
-	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
 	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery).Maybe()
-	mockQuery.On("Create").Return(stdErrors.New("create-failed")).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(loadQuery).Once()
+	loadQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#user-1").Return(loadQuery).Once()
+	loadQuery.On("Where", "SK", "=", "CONVERSATION#conv-1").Return(loadQuery).Once()
+	loadQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
+		ptr := args.Get(0).(*models.UserConversationState)
+		*ptr = models.UserConversationState{
+			ViewerID:       "user-1",
+			ConversationID: "conv-1",
+			CounterpartID:  "user-2",
+			Folder:         models.UserConversationFolderInbox,
+			SortAt:         time.Now().UTC(),
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
+		}
+	}).Return(nil).Once()
+	mockDB.On("Model", mock.MatchedBy(func(state *models.UserConversationState) bool {
+		return state != nil && state.ViewerID == "user-1" && state.ConversationID == "conv-1"
+	})).Return(updateQuery).Once()
+	updateQuery.On("Update", mock.Anything).Return(stdErrors.New("update-failed")).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
 	require.Error(t, repo.MarkConversationUnread(context.Background(), "conv-1", "user-1"))

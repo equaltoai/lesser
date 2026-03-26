@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 type conversationParticipantSnapshotMigrationClient interface {
@@ -277,7 +276,7 @@ func rebuildConversationParticipantSnapshot(
 	lastMessageTime, _ := attributeTime(canonicalConversationItem[conversationLastMessageTimeAttribute])
 	lastStatusID, _ := firstAttributeString(canonicalConversationItem, conversationLastStatusIDAttribute, "LastStatusID")
 
-	snapshotValue, err := attributevalue.Marshal(models.ConversationSnapshot{
+	snapshotValue, err := attributevalue.Marshal(legacyConversationSnapshot{
 		ID:                conversationID,
 		Participants:      participants,
 		LastStatusID:      lastStatusID,

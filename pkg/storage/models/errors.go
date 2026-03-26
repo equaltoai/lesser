@@ -138,8 +138,11 @@ var (
 	ErrAccessTokenExpired = centralErrors.NewAppError(centralErrors.CodeTokenExpired, centralErrors.CategoryAuth, "Access token has expired")
 
 	// Conversation validation errors
-	ErrConversationIDRequired   = centralErrors.RequiredFieldMissing("conversation ID")
-	ErrConversationDataRequired = centralErrors.RequiredFieldMissing("conversation data")
+	ErrConversationIDRequired            = centralErrors.RequiredFieldMissing("conversation ID")
+	ErrConversationDataRequired          = centralErrors.RequiredFieldMissing("conversation data")
+	ErrConversationViewerIDRequired      = centralErrors.RequiredFieldMissing("viewer ID")
+	ErrConversationCounterpartIDRequired = centralErrors.RequiredFieldMissing("counterpart ID")
+	ErrConversationFolderRequired        = centralErrors.RequiredFieldMissing("folder")
 
 	// Conversation Status validation errors
 	ErrConversationStatusIDRequired       = centralErrors.RequiredFieldMissing("conversation ID")

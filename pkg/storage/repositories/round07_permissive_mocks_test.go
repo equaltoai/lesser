@@ -174,6 +174,17 @@ func populateRound07StructForCoverage(target any, idx int, baseTime time.Time) {
 	case *models.ConversationParticipantKey:
 		model.ConversationID = fmt.Sprintf("conv-%d", idx+1)
 
+	case *models.UserConversationState:
+		model.ViewerID = fmt.Sprintf("user-%d", idx+1)
+		model.ConversationID = fmt.Sprintf("conv-%d", idx+1)
+		model.CounterpartID = "user-2"
+		model.Folder = models.UserConversationFolderInbox
+		model.Unread = true
+		model.SortAt = now
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		_ = model.BeforeCreate()
+
 	case *models.ConversationMessage:
 		model.ConversationID = "conv-1"
 		model.StatusID = fmt.Sprintf("status-%d", idx+1)

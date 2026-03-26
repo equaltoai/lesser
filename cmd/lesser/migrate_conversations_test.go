@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -572,7 +571,7 @@ func conversationParticipantRow(
 	conversationID string,
 	updatedAt time.Time,
 	unread bool,
-	snapshot *models.ConversationSnapshot,
+	snapshot *legacyConversationSnapshot,
 ) map[string]types.AttributeValue {
 	return map[string]types.AttributeValue{
 		"PK":                          sAttr("USER_CONVERSATIONS#" + participantID),
@@ -627,8 +626,8 @@ func buildConversationSnapshot(
 	totalMessageCount int64,
 	lastMessageTime time.Time,
 	unread bool,
-) *models.ConversationSnapshot {
-	return &models.ConversationSnapshot{
+) *legacyConversationSnapshot {
+	return &legacyConversationSnapshot{
 		ID:                conversationID,
 		Participants:      participants,
 		LastStatusID:      lastStatusID,

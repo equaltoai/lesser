@@ -1332,7 +1332,7 @@ func conversationMessageCreatedAt(item map[string]types.AttributeValue) time.Tim
 }
 
 func setConversationSnapshotAttribute(item map[string]types.AttributeValue, state conversationCanonicalState, unread bool) error {
-	snapshot := &models.ConversationSnapshot{
+	snapshot := &legacyConversationSnapshot{
 		ID:                state.ID,
 		Participants:      append([]string(nil), state.Participants...),
 		LastStatusID:      state.LastStatusID,

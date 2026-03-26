@@ -9,18 +9,18 @@ import (
 )
 
 // UserConversationFolder identifies the viewer-visible placement of a DM thread.
-// This is the M0 contract that the future UserConversationState storage model will materialize.
-type UserConversationFolder string
+// This aliases the canonical storage-model enum so contracts and persistence stay aligned.
+type UserConversationFolder = models.UserConversationFolder
 
 const (
 	// UserConversationFolderInbox is the default accepted DM list.
-	UserConversationFolderInbox UserConversationFolder = "INBOX"
+	UserConversationFolderInbox UserConversationFolder = models.UserConversationFolderInbox
 	// UserConversationFolderRequests contains inbound threads awaiting viewer acceptance.
-	UserConversationFolderRequests UserConversationFolder = "REQUESTS"
+	UserConversationFolderRequests UserConversationFolder = models.UserConversationFolderRequests
 	// UserConversationFolderDeclined contains threads the viewer explicitly declined.
-	UserConversationFolderDeclined UserConversationFolder = "DECLINED"
+	UserConversationFolderDeclined UserConversationFolder = models.UserConversationFolderDeclined
 	// UserConversationFolderHidden contains viewer-hidden threads (delete-for-me/archive).
-	UserConversationFolderHidden UserConversationFolder = "HIDDEN"
+	UserConversationFolderHidden UserConversationFolder = models.UserConversationFolderHidden
 )
 
 // UserConversationStateContract is the M0 contract shape for canonical per-user DM state.
