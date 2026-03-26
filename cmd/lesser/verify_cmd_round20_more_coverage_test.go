@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -164,10 +165,10 @@ func TestResolveVerifyCIJobs_Round20(t *testing.T) {
 		t.Setenv(goFlagsEnvVar, "")
 		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
 		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
-		require.Equal(t, 1, resolveVerifyCIJobs())
+		require.Equal(t, defaultVerifyCIJobs, resolveVerifyCIJobs())
 	})
 
-	t.Run("default verify ci profile uses one job", func(t *testing.T) {
+	t.Run("default verify ci profile uses configured job count", func(t *testing.T) {
 		t.Setenv(lesserVerifyCIJobsEnv, "")
 		t.Setenv(lesserToolJobsEnvVar, "")
 		t.Setenv(goMaxProcsEnvVar, "")
@@ -175,7 +176,7 @@ func TestResolveVerifyCIJobs_Round20(t *testing.T) {
 		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "")
 		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "")
 
-		require.Equal(t, 1, resolveVerifyCIJobs())
+		require.Equal(t, defaultVerifyCIJobs, resolveVerifyCIJobs())
 	})
 
 	t.Run("goflags build parallelism disables automatic override", func(t *testing.T) {
@@ -189,7 +190,7 @@ func TestResolveVerifyCIJobs_Round20(t *testing.T) {
 		require.Zero(t, resolveVerifyCIJobs())
 	})
 
-	t.Run("cli-defaulted parallelism still allows verify ci downshift", func(t *testing.T) {
+	t.Run("cli-defaulted parallelism still allows verify ci override", func(t *testing.T) {
 		t.Setenv(lesserVerifyCIJobsEnv, "")
 		t.Setenv(lesserToolJobsEnvVar, "")
 		t.Setenv(goMaxProcsEnvVar, "4")
@@ -197,7 +198,7 @@ func TestResolveVerifyCIJobs_Round20(t *testing.T) {
 		t.Setenv(lesserDefaultedGoMaxProcsEnvVar, "1")
 		t.Setenv(lesserDefaultedGoFlagsParallelismEnvVar, "1")
 
-		require.Equal(t, 1, resolveVerifyCIJobs())
+		require.Equal(t, defaultVerifyCIJobs, resolveVerifyCIJobs())
 	})
 }
 
@@ -290,7 +291,7 @@ func TestRunVerifyCI_Round20_CIResourceProfileOverridesCLIDefaultParallelism(t *
 	}
 
 	require.NoError(t, runVerifyCI(nil))
-	require.Contains(t, lintCall, "--concurrency 1")
+	require.Contains(t, lintCall, "--concurrency "+strconv.Itoa(defaultVerifyCIJobs))
 	require.Equal(t, 1, coverageRuns)
 	require.Equal(t, defaultVerifyCIGOMEMLIMIT, resolveVerifyCIGOMEMLIMIT())
 	require.Equal(t, defaultVerifyCIGOGC, resolveVerifyCIGOGC())

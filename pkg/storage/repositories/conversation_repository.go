@@ -118,6 +118,7 @@ func (r *ConversationRepository) createConversation(ctx context.Context, convers
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
+	explicitParticipantStates := len(participantStates) > 0
 	preparedStates, err := normalizeConversationParticipantStates(conversation, participantStates)
 	if err != nil {
 		log.Error("failed to prepare participant states", zap.Error(err))
@@ -125,7 +126,7 @@ func (r *ConversationRepository) createConversation(ctx context.Context, convers
 	}
 
 	if r.transactWriteFn == nil {
-		return r.createConversationLegacy(ctx, log, conversation, preparedStates)
+		return r.createConversationLegacy(ctx, log, conversation, preparedStates, explicitParticipantStates)
 	}
 
 	lookupKey := newConversationParticipantLookup(conversation.ID, conversation.Participants)
@@ -152,19 +153,24 @@ func (r *ConversationRepository) createConversation(ctx context.Context, convers
 	return nil
 }
 
-func (r *ConversationRepository) createConversationLegacy(ctx context.Context, log *zap.Logger, conversation *models.Conversation, participantStates []*models.UserConversationState) error {
+func (r *ConversationRepository) createConversationLegacy(ctx context.Context, log *zap.Logger, conversation *models.Conversation, participantStates []*models.UserConversationState, explicitParticipantStates bool) error {
 	if err := r.ValidateAndCreate(ctx, conversation); err != nil {
 		log.Error("failed to create conversation", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
-	for _, state := range participantStates {
-		if err := r.createOrUpdateUserConversationState(ctx, state); err != nil {
-			log.Error("failed to initialize canonical user conversation state",
-				zap.String("conversation_id", conversation.ID),
-				zap.Error(err))
-			return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
-		}
+	var stateErr error
+	switch {
+	case explicitParticipantStates:
+		stateErr = r.createOrUpdateUserConversationStates(ctx, participantStates)
+	default:
+		stateErr = r.initializeUserConversationStates(ctx, conversation)
+	}
+	if stateErr != nil {
+		log.Error("failed to initialize canonical user conversation state",
+			zap.String("conversation_id", conversation.ID),
+			zap.Error(stateErr))
+		return ErrorHandler.HandleCreateError(stateErr, EntityConversation, conversation.ID)
 	}
 
 	lookupKey := newConversationParticipantLookup(conversation.ID, conversation.Participants)
@@ -186,6 +192,19 @@ func (r *ConversationRepository) createConversationLegacy(ctx context.Context, l
 }
 
 func normalizeConversationParticipantStates(conversation *models.Conversation, participantStates []*models.UserConversationState) ([]*models.UserConversationState, error) {
+	canonicalParticipants, err := canonicalConversationParticipantsForStates(conversation)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(participantStates) == 0 {
+		return defaultConversationParticipantStates(conversation, canonicalParticipants)
+	}
+
+	return normalizeExplicitConversationParticipantStates(conversation, canonicalParticipants, participantStates)
+}
+
+func canonicalConversationParticipantsForStates(conversation *models.Conversation) ([]string, error) {
 	if conversation == nil {
 		return nil, storage.ErrInvalidInput
 	}
@@ -194,68 +213,32 @@ func normalizeConversationParticipantStates(conversation *models.Conversation, p
 	if len(canonicalParticipants) == 0 {
 		return nil, storage.ErrInvalidInput
 	}
+	return canonicalParticipants, nil
+}
 
-	if len(participantStates) == 0 {
-		states := make([]*models.UserConversationState, 0, len(canonicalParticipants))
-		for _, participantID := range canonicalParticipants {
-			state := defaultUserConversationState(conversation, participantID)
-			if err := state.BeforeCreate(); err != nil {
-				return nil, err
-			}
-			states = append(states, state)
+func defaultConversationParticipantStates(conversation *models.Conversation, canonicalParticipants []string) ([]*models.UserConversationState, error) {
+	states := make([]*models.UserConversationState, 0, len(canonicalParticipants))
+	for _, participantID := range canonicalParticipants {
+		state := defaultUserConversationState(conversation, participantID)
+		if err := state.BeforeCreate(); err != nil {
+			return nil, err
 		}
-		return states, nil
+		states = append(states, state)
 	}
+	return states, nil
+}
 
+func normalizeExplicitConversationParticipantStates(conversation *models.Conversation, canonicalParticipants []string, participantStates []*models.UserConversationState) ([]*models.UserConversationState, error) {
 	stateByViewer := make(map[string]*models.UserConversationState, len(participantStates))
 	for _, candidate := range participantStates {
-		if candidate == nil {
-			return nil, storage.ErrInvalidInput
-		}
-
-		state := *candidate
-		state.ViewerID = models.CanonicalConversationParticipantID(state.ViewerID)
-		if state.ViewerID == "" {
-			return nil, storage.ErrInvalidInput
+		state, err := normalizeConversationParticipantStateCandidate(conversation, canonicalParticipants, candidate)
+		if err != nil {
+			return nil, err
 		}
 		if _, exists := stateByViewer[state.ViewerID]; exists {
 			return nil, storage.ErrInvalidInput
 		}
-		if state.ConversationID == "" {
-			state.ConversationID = conversation.ID
-		}
-		if state.ConversationID != conversation.ID {
-			return nil, storage.ErrInvalidInput
-		}
-		if state.CounterpartID == "" {
-			state.CounterpartID = counterpartForConversation(state.ViewerID, canonicalParticipants)
-		}
-		if state.CreatedAt.IsZero() {
-			state.CreatedAt = conversation.CreatedAt.UTC()
-		}
-		if state.UpdatedAt.IsZero() {
-			state.UpdatedAt = conversation.UpdatedAt.UTC()
-		}
-		if state.PreviewStatusID == "" {
-			state.PreviewStatusID = conversation.LastStatusID
-		}
-		if state.PreviewStatusPublishedAt.IsZero() && !conversation.LastMessageTime.IsZero() {
-			state.PreviewStatusPublishedAt = conversation.LastMessageTime.UTC()
-		}
-		if state.SortAt.IsZero() {
-			switch {
-			case !state.PreviewStatusPublishedAt.IsZero():
-				state.SortAt = state.PreviewStatusPublishedAt.UTC()
-			case !conversation.LastMessageTime.IsZero():
-				state.SortAt = conversation.LastMessageTime.UTC()
-			default:
-				state.SortAt = conversation.UpdatedAt.UTC()
-			}
-		}
-		if err := state.BeforeCreate(); err != nil {
-			return nil, err
-		}
-		stateByViewer[state.ViewerID] = &state
+		stateByViewer[state.ViewerID] = state
 	}
 
 	states := make([]*models.UserConversationState, 0, len(canonicalParticipants))
@@ -267,6 +250,59 @@ func normalizeConversationParticipantStates(conversation *models.Conversation, p
 		states = append(states, state)
 	}
 	return states, nil
+}
+
+func normalizeConversationParticipantStateCandidate(conversation *models.Conversation, canonicalParticipants []string, candidate *models.UserConversationState) (*models.UserConversationState, error) {
+	if candidate == nil {
+		return nil, storage.ErrInvalidInput
+	}
+
+	state := *candidate
+	state.ViewerID = models.CanonicalConversationParticipantID(state.ViewerID)
+	if state.ViewerID == "" {
+		return nil, storage.ErrInvalidInput
+	}
+	if state.ConversationID == "" {
+		state.ConversationID = conversation.ID
+	}
+	if state.ConversationID != conversation.ID {
+		return nil, storage.ErrInvalidInput
+	}
+	if state.CounterpartID == "" {
+		state.CounterpartID = counterpartForConversation(state.ViewerID, canonicalParticipants)
+	}
+	if state.CreatedAt.IsZero() {
+		state.CreatedAt = conversation.CreatedAt.UTC()
+	}
+	if state.UpdatedAt.IsZero() {
+		state.UpdatedAt = conversation.UpdatedAt.UTC()
+	}
+	if state.PreviewStatusID == "" {
+		state.PreviewStatusID = conversation.LastStatusID
+	}
+	if state.PreviewStatusPublishedAt.IsZero() && !conversation.LastMessageTime.IsZero() {
+		state.PreviewStatusPublishedAt = conversation.LastMessageTime.UTC()
+	}
+	if state.SortAt.IsZero() {
+		state.SortAt = conversationParticipantStateSortAt(conversation, &state)
+	}
+	if err := state.BeforeCreate(); err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+func conversationParticipantStateSortAt(conversation *models.Conversation, state *models.UserConversationState) time.Time {
+	switch {
+	case state != nil && !state.PreviewStatusPublishedAt.IsZero():
+		return state.PreviewStatusPublishedAt.UTC()
+	case conversation != nil && !conversation.LastMessageTime.IsZero():
+		return conversation.LastMessageTime.UTC()
+	case conversation != nil:
+		return conversation.UpdatedAt.UTC()
+	default:
+		return time.Now().UTC()
+	}
 }
 
 // GetConversation retrieves a conversation by ID (REPLACE with BaseRepository)

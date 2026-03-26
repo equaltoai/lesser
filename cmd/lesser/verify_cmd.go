@@ -11,16 +11,19 @@ import (
 )
 
 const (
-	defaultVerifyCIJobs              = 1
-	defaultVerifyCICoverageBatchSize = 5
-	defaultVerifyCIGOMEMLIMIT        = "1536MiB"
-	defaultVerifyCIGOGC              = "50"
-	envValueOff                      = "off"
-	lesserVerifyCIJobsEnv            = "LESSER_VERIFY_CI_JOBS"
-	lesserVerifyCIGOMEMLIMITEnv      = "LESSER_VERIFY_CI_GOMEMLIMIT"
-	lesserVerifyCIGOGCEnv            = "LESSER_VERIFY_CI_GOGC"
-	goMemoryLimitEnvVar              = "GOMEMLIMIT"
-	goGCEnvVar                       = "GOGC"
+	defaultVerifyCIJobs               = 10
+	defaultVerifyCILintBatchSize      = 50
+	defaultVerifyCISecScanBatchSize   = 25
+	defaultVerifyCIVulnCheckBatchSize = 15
+	defaultVerifyCICoverageBatchSize  = 25
+	defaultVerifyCIGOMEMLIMIT         = "1536MiB"
+	defaultVerifyCIGOGC               = "50"
+	envValueOff                       = "off"
+	lesserVerifyCIJobsEnv             = "LESSER_VERIFY_CI_JOBS"
+	lesserVerifyCIGOMEMLIMITEnv       = "LESSER_VERIFY_CI_GOMEMLIMIT"
+	lesserVerifyCIGOGCEnv             = "LESSER_VERIFY_CI_GOGC"
+	goMemoryLimitEnvVar               = "GOMEMLIMIT"
+	goGCEnvVar                        = "GOGC"
 )
 
 func runVerify(argv []string) error {
@@ -185,6 +188,15 @@ func runVerifyCI(argv []string) error {
 		overrides[goMaxProcsEnvVar] = fmt.Sprintf("%d", jobs)
 		overrides[goFlagsEnvVar] = goFlagsWithBuildParallelism(os.Getenv(goFlagsEnvVar), jobs)
 	}
+	if strings.TrimSpace(os.Getenv(lesserLintBatchSizeEnv)) == "" {
+		overrides[lesserLintBatchSizeEnv] = fmt.Sprintf("%d", defaultVerifyCILintBatchSize)
+	}
+	if strings.TrimSpace(os.Getenv(lesserSecScanBatchSizeEnv)) == "" {
+		overrides[lesserSecScanBatchSizeEnv] = fmt.Sprintf("%d", defaultVerifyCISecScanBatchSize)
+	}
+	if strings.TrimSpace(os.Getenv(lesserVulnCheckBatchSizeEnv)) == "" {
+		overrides[lesserVulnCheckBatchSizeEnv] = fmt.Sprintf("%d", defaultVerifyCIVulnCheckBatchSize)
+	}
 	if strings.TrimSpace(os.Getenv(coverageBatchSizeEnvVar)) == "" {
 		overrides[coverageBatchSizeEnvVar] = fmt.Sprintf("%d", resolveVerifyCICoverageBatchSize())
 	}
@@ -201,8 +213,11 @@ func runVerifyCI(argv []string) error {
 	if len(overrides) == 0 {
 		return run()
 	}
-	fmt.Fprintf(os.Stderr, "info: verify ci resource profile enabled (jobs=%s, coverage-batch=%s, GOMEMLIMIT=%s, GOGC=%s)\n",
+	fmt.Fprintf(os.Stderr, "info: verify ci resource profile enabled (jobs=%s, lint-batch=%s, secscan-batch=%s, vuln-batch=%s, coverage-batch=%s, GOMEMLIMIT=%s, GOGC=%s)\n",
 		effectiveOverrideValue(overrides, lesserToolJobsEnvVar, os.Getenv(lesserToolJobsEnvVar)),
+		effectiveOverrideValue(overrides, lesserLintBatchSizeEnv, os.Getenv(lesserLintBatchSizeEnv)),
+		effectiveOverrideValue(overrides, lesserSecScanBatchSizeEnv, os.Getenv(lesserSecScanBatchSizeEnv)),
+		effectiveOverrideValue(overrides, lesserVulnCheckBatchSizeEnv, os.Getenv(lesserVulnCheckBatchSizeEnv)),
 		effectiveOverrideValue(overrides, coverageBatchSizeEnvVar, os.Getenv(coverageBatchSizeEnvVar)),
 		effectiveOverrideValue(overrides, goMemoryLimitEnvVar, os.Getenv(goMemoryLimitEnvVar)),
 		effectiveOverrideValue(overrides, goGCEnvVar, os.Getenv(goGCEnvVar)),

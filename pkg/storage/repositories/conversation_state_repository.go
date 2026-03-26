@@ -230,6 +230,15 @@ func (r *ConversationRepository) createOrUpdateUserConversationState(ctx context
 	}
 }
 
+func (r *ConversationRepository) createOrUpdateUserConversationStates(ctx context.Context, states []*models.UserConversationState) error {
+	for _, state := range states {
+		if err := r.createOrUpdateUserConversationState(ctx, state); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *ConversationRepository) initializeUserConversationStates(ctx context.Context, conversation *models.Conversation) error {
 	if conversation == nil {
 		return storage.ErrInvalidInput
