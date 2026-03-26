@@ -605,18 +605,6 @@ func (r *ConversationRepository) MarkConversationRead(ctx context.Context, conve
 		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
 	}
 
-	status := &models.ConversationStatus{
-		ConversationID: conversationID,
-		UserID:         username,
-		Unread:         false,
-		LastReadAt:     now,
-	}
-	if err := status.BeforeCreate(); err == nil {
-		if err := r.GetDB().Model(status).WithContext(ctx).Create(); err != nil {
-			log.Warn("failed to maintain legacy conversation status row on mark read", zap.Error(err))
-		}
-	}
-
 	return nil
 }
 

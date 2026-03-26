@@ -1343,6 +1343,8 @@ func (s *Service) MarkConversationRead(ctx context.Context, cmd *MarkConversatio
 		zap.String("conversation_id", cmd.ConversationID),
 		zap.String("user_id", cmd.UserID))
 
+	conversation.Unread = false
+
 	// Emit read event (only to the user who read it)
 	events := s.emitConversationReadEvents(ctx, conversation, cmd.UserID)
 
