@@ -1912,6 +1912,7 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 			return
 		}
 		t := now
+		record.Folder = models.UserConversationFolderHidden
 		record.DeletedAt = &t
 	}); err != nil {
 		if errors.Is(err, storage.ErrNotFound) || isNotFoundError(err) {
