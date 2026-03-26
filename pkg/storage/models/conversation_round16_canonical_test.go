@@ -24,6 +24,7 @@ func TestRound16_ConversationCanonicalHelpersAndKeys(t *testing.T) {
 
 	t.Run("participant record keys canonicalize usernames", func(t *testing.T) {
 		record := &ConversationParticipantRecord{
+			ConversationID: "conv-1",
 			Conversation: &Conversation{
 				ID:           "conv-1",
 				Participants: []string{"arch", "medic"},
@@ -36,6 +37,26 @@ func TestRound16_ConversationCanonicalHelpersAndKeys(t *testing.T) {
 		require.Equal(t, "USER_CONVERSATIONS#medic", record.GetPK())
 		require.Equal(t, "PARTICIPANT#medic", record.GSI1SK)
 		require.Equal(t, "2026-03-24T12:00:00Z#conv-1", record.GetSK())
+	})
+
+	t.Run("user conversation state keys canonicalize viewer identity", func(t *testing.T) {
+		state := &UserConversationState{
+			ViewerID:       "Medic",
+			ConversationID: "conv-1",
+			CounterpartID:  "Arch",
+			Folder:         UserConversationFolderInbox,
+			SortAt:         time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC),
+			Unread:         true,
+		}
+
+		require.NoError(t, state.BeforeCreate())
+		require.Equal(t, MainTableName, state.TableName())
+		require.Equal(t, "USER_CONVERSATION_STATE#medic", state.GetPK())
+		require.Equal(t, "CONVERSATION#conv-1", state.GetSK())
+		require.Equal(t, "USER_CONVERSATION_FOLDER#medic#INBOX", state.GSI1PK)
+		require.Equal(t, "USER_CONVERSATION_UNREAD#medic", state.GSI2PK)
+		require.Equal(t, "CONVERSATION#conv-1", state.GSI3PK)
+		require.Equal(t, "USER#medic", state.GSI3SK)
 	})
 
 	t.Run("participant lookup key helpers expose stored keys", func(t *testing.T) {
