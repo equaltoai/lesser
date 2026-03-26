@@ -13,26 +13,26 @@ import (
 type prefetchedConversationAccountsContextKey struct{}
 
 type conversationAPIPrefetch struct {
-	accountsByUsername map[string]*storage.Account
-	statusesByID       map[string]*storageModels.Status
+	accountsByKey map[string]*storage.Account
+	statusesByID  map[string]*storageModels.Status
 }
 
-func withPrefetchedConversationAccounts(ctx context.Context, accountsByUsername map[string]*storage.Account) context.Context {
-	if len(accountsByUsername) == 0 {
+func withPrefetchedConversationAccounts(ctx context.Context, accountsByKey map[string]*storage.Account) context.Context {
+	if len(accountsByKey) == 0 {
 		return ctx
 	}
-	return context.WithValue(ctx, prefetchedConversationAccountsContextKey{}, accountsByUsername)
+	return context.WithValue(ctx, prefetchedConversationAccountsContextKey{}, accountsByKey)
 }
 
 func prefetchedConversationAccount(ctx context.Context, username string) *storage.Account {
 	if ctx == nil || strings.TrimSpace(username) == "" {
 		return nil
 	}
-	accountsByUsername, _ := ctx.Value(prefetchedConversationAccountsContextKey{}).(map[string]*storage.Account)
-	if len(accountsByUsername) == 0 {
+	accountsByKey, _ := ctx.Value(prefetchedConversationAccountsContextKey{}).(map[string]*storage.Account)
+	if len(accountsByKey) == 0 {
 		return nil
 	}
-	return accountsByUsername[strings.ToLower(strings.TrimSpace(username))]
+	return accountsByKey[strings.ToLower(strings.TrimSpace(username))]
 }
 
 func conversationPreviewStatusID(conv *storageModels.Conversation) string {
@@ -74,19 +74,46 @@ func conversationParticipantUsernames(conv *storageModels.Conversation, viewerUs
 	return usernames
 }
 
-func buildConversationAPIAccountMap(accounts []*storage.Account) map[string]*storage.Account {
-	accountsByUsername := make(map[string]*storage.Account, len(accounts))
-	for _, account := range accounts {
-		if account == nil || account.User == nil {
-			continue
-		}
-		username := strings.ToLower(strings.TrimSpace(account.User.Username))
-		if username == "" {
-			continue
-		}
-		accountsByUsername[username] = account
+func conversationAPIAccountPrefetchKeys(account *storage.Account) []string {
+	if account == nil {
+		return nil
 	}
-	return accountsByUsername
+
+	keys := make([]string, 0, 5)
+	add := func(raw string) {
+		candidate := strings.ToLower(strings.TrimSpace(raw))
+		if candidate == "" {
+			return
+		}
+		for _, existing := range keys {
+			if existing == candidate {
+				return
+			}
+		}
+		keys = append(keys, candidate)
+	}
+
+	if account.User != nil {
+		add(account.User.Username)
+		add(account.User.ID)
+	}
+	if account.Actor != nil {
+		add(account.Actor.ID)
+		add(account.Actor.URL)
+		add(account.Actor.PreferredUsername)
+	}
+
+	return keys
+}
+
+func buildConversationAPIAccountMap(accounts []*storage.Account) map[string]*storage.Account {
+	accountsByKey := make(map[string]*storage.Account, len(accounts)*2)
+	for _, account := range accounts {
+		for _, key := range conversationAPIAccountPrefetchKeys(account) {
+			accountsByKey[key] = account
+		}
+	}
+	return accountsByKey
 }
 
 func buildConversationAPIStatusMap(statuses []*storageModels.Status) map[string]*storageModels.Status {
@@ -102,8 +129,8 @@ func buildConversationAPIStatusMap(statuses []*storageModels.Status) map[string]
 
 func (h *Handler) loadConversationAPIPrefetch(ctx context.Context, conversations []*storageModels.Conversation, viewerUsername string) *conversationAPIPrefetch {
 	prefetch := &conversationAPIPrefetch{
-		accountsByUsername: map[string]*storage.Account{},
-		statusesByID:       map[string]*storageModels.Status{},
+		accountsByKey: map[string]*storage.Account{},
+		statusesByID:  map[string]*storageModels.Status{},
 	}
 
 	if h == nil || len(conversations) == 0 || h.repos == nil {
@@ -132,7 +159,7 @@ func (h *Handler) loadConversationAPIPrefetch(ctx context.Context, conversations
 			participants = append(participants, participant)
 		}
 		if accounts, err := h.repos.Account().GetAccountsByUsernames(ctx, participants); err == nil {
-			prefetch.accountsByUsername = buildConversationAPIAccountMap(accounts)
+			prefetch.accountsByKey = buildConversationAPIAccountMap(accounts)
 		}
 	}
 
@@ -152,7 +179,15 @@ func (h *Handler) conversationAPIAccountForParticipant(ctx context.Context, part
 	}
 
 	if prefetch != nil {
-		if account := prefetch.accountsByUsername[participant]; account != nil {
+		if account := prefetch.accountsByKey[participant]; account != nil {
+			return account
+		}
+		if derivedUsername := strings.ToLower(strings.TrimSpace(extractUsernameFromActorID(participant))); derivedUsername != "" && derivedUsername != participant {
+			if account := prefetch.accountsByKey[derivedUsername]; account != nil {
+				return account
+			}
+		}
+		if account := prefetch.accountsByKey[strings.ToLower(strings.TrimSpace(participant))]; account != nil {
 			return account
 		}
 	}
@@ -206,7 +241,7 @@ func conversationAPIStatusContext(h *Handler, prefetch *conversationAPIPrefetch)
 
 	statusCtx := h.statusConversionContext()
 	if prefetch != nil {
-		statusCtx = withPrefetchedConversationAccounts(statusCtx, prefetch.accountsByUsername)
+		statusCtx = withPrefetchedConversationAccounts(statusCtx, prefetch.accountsByKey)
 	}
 	return statusCtx
 }
