@@ -132,6 +132,12 @@ func (r *ConversationRepository) createConversation(ctx context.Context, convers
 		tx.Create(lookupKey)
 		return nil
 	}); err != nil {
+		if errors.IsConditionFailed(err) {
+			log.Info("conversation create transaction lost a duplicate-create race",
+				zap.String("conversation_id", conversation.ID),
+				zap.String("participant_key", lookupKey.PK))
+			return storage.ErrAlreadyExists
+		}
 		log.Error("failed to create conversation transactionally", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}

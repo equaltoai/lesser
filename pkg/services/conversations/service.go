@@ -275,7 +275,20 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 			UpdatedAt:    time.Now(),
 		}
 		if err := s.conversationRepo.CreateConversation(ctx, conversation, participants); err != nil {
-			return nil, errors.Join(ErrCreateConversation, err)
+			if errors.Is(err, storage.ErrAlreadyExists) {
+				existingConversation, reloadErr := s.conversationRepo.GetConversationByParticipants(ctx, participants)
+				if reloadErr == nil && existingConversation != nil {
+					conversation = existingConversation
+					created = false
+				} else {
+					s.logger.Warn("conversation create lost a lookup race and canonical reload failed",
+						zap.Strings("participants", participants),
+						zap.Error(reloadErr))
+					return nil, errors.Join(ErrCreateConversation, err)
+				}
+			} else {
+				return nil, errors.Join(ErrCreateConversation, err)
+			}
 		}
 	}
 
