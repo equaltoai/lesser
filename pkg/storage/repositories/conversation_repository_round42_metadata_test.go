@@ -421,6 +421,57 @@ func TestRound42_ConversationRepository_MarkConversationRead_ErrorPaths(t *testi
 	})
 }
 
+func TestRound42_ConversationRepository_MarkConversationUnread_UpdatesCanonicalStateAndLegacyStatus(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	loadQuery := new(mocks.MockQuery)
+	updateQuery := new(mocks.MockQuery)
+	createQuery := new(mocks.MockQuery)
+	sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(loadQuery).Once()
+	loadQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(loadQuery).Once()
+	loadQuery.On("Where", "SK", "=", "CONVERSATION#conv-9").Return(loadQuery).Once()
+	loadQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*models.UserConversationState)
+		*dest = models.UserConversationState{
+			ViewerID:       "alice",
+			ConversationID: "conv-9",
+			CounterpartID:  "bob",
+			Folder:         models.UserConversationFolderInbox,
+			Unread:         false,
+			LastReadAt:     conversationTimePtr(sortAt.Add(-time.Minute)),
+			SortAt:         sortAt,
+			CreatedAt:      sortAt.Add(-time.Hour),
+			UpdatedAt:      sortAt.Add(-time.Minute),
+		}
+	}).Return(nil).Once()
+
+	mockDB.On("Model", mock.MatchedBy(func(state *models.UserConversationState) bool {
+		return state != nil &&
+			state.ViewerID == "alice" &&
+			state.ConversationID == "conv-9" &&
+			state.CounterpartID == "bob" &&
+			state.Unread &&
+			state.LastReadAt == nil
+	})).Return(updateQuery).Once()
+	updateQuery.On("Update", mock.Anything).Return(nil).Once()
+
+	mockDB.On("Model", mock.MatchedBy(func(status *models.ConversationStatus) bool {
+		return status != nil &&
+			status.ConversationID == "conv-9" &&
+			status.UserID == "alice" &&
+			status.Unread &&
+			status.LastReadAt.Equal(time.Unix(0, 0).UTC())
+	})).Return(createQuery).Once()
+	createQuery.On("WithContext", ctx).Return(createQuery).Once()
+	createQuery.On("Create").Return(nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.MarkConversationUnread(ctx, "conv-9", "Alice"))
+}
+
 func TestRound42_ConversationRepository_InitializeUserConversationStates_PreservesExistingStateAndBootstrapsMissingViewers(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)

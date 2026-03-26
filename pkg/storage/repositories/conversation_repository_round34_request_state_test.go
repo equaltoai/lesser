@@ -688,6 +688,25 @@ func TestRound34_ConversationRepository_GetUnreadConversations_WrapsConversation
 	require.Error(t, err)
 }
 
+func TestRound34_ConversationRepository_GetUnreadConversations_PropagatesUnreadStateQueryError(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	unreadQuery := new(mocks.MockQuery)
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Once()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(unreadQuery).Once()
+	unreadQuery.On("Index", "gsi2").Return(unreadQuery).Once()
+	unreadQuery.On("Where", "gsi2PK", "=", "USER_CONVERSATION_UNREAD#alice").Return(unreadQuery).Once()
+	unreadQuery.On("OrderBy", "gsi2SK", "DESC").Return(unreadQuery).Once()
+	unreadQuery.On("Limit", 2).Return(unreadQuery).Once()
+	unreadQuery.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(stdErrors.New("boom")).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	result, err := repo.GetUnreadConversations(ctx, "alice", interfaces.PaginationOptions{Limit: 1})
+	require.Nil(t, result)
+	require.Error(t, err)
+}
+
 func TestRound34_ConversationRepository_GetUnreadConversationCount_PaginatesUnreadStatePages(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
