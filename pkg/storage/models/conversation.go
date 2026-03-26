@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -40,65 +39,13 @@ type Conversation struct {
 	ID           string    `theorydb:"attr:id" json:"id"`
 	Participants []string  `theorydb:"attr:participants" json:"participants"` // Actor IDs/usernames
 	LastStatusID string    `theorydb:"attr:lastStatusID" json:"last_status_id,omitempty"`
-	Unread       bool      `theorydb:"attr:unread" json:"unread"` // Whether conversation has unread messages
+	Unread       bool      `theorydb:"-" json:"unread"` // Per-viewer projection only; not stored on the shared row
 	CreatedAt    time.Time `theorydb:"attr:createdAt" json:"created_at"`
 	UpdatedAt    time.Time `theorydb:"attr:updatedAt" json:"updated_at"`
 
 	// Message counting fields
 	TotalMessageCount int64     `theorydb:"attr:totalMessageCount" json:"total_message_count"`       // Total messages in conversation
 	LastMessageTime   time.Time `theorydb:"attr:lastMessageTime" json:"last_message_time,omitempty"` // Time of last message
-}
-
-// ConversationSnapshot stores the participant-facing conversation payload nested under
-// ConversationParticipantRecord. It intentionally avoids theorydb/json tags so the
-// nested map round-trips using stable exported field names.
-//
-// Legacy note: DM rewrite M1 removes embedded conversation snapshots from live DM state.
-type ConversationSnapshot struct {
-	ID                string
-	Participants      []string
-	LastStatusID      string
-	Unread            bool
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	TotalMessageCount int64
-	LastMessageTime   time.Time
-}
-
-// ToConversation converts the embedded snapshot back into the full conversation model used by callers.
-func (s *ConversationSnapshot) ToConversation() *Conversation {
-	if s == nil {
-		return nil
-	}
-
-	return &Conversation{
-		ID:                s.ID,
-		Participants:      slices.Clone(s.Participants),
-		LastStatusID:      s.LastStatusID,
-		Unread:            s.Unread,
-		CreatedAt:         s.CreatedAt,
-		UpdatedAt:         s.UpdatedAt,
-		TotalMessageCount: s.TotalMessageCount,
-		LastMessageTime:   s.LastMessageTime,
-	}
-}
-
-// ConversationSnapshotFromConversation converts a full conversation into the embedded participant snapshot shape.
-func ConversationSnapshotFromConversation(conversation *Conversation) *ConversationSnapshot {
-	if conversation == nil {
-		return nil
-	}
-
-	return &ConversationSnapshot{
-		ID:                conversation.ID,
-		Participants:      slices.Clone(conversation.Participants),
-		LastStatusID:      conversation.LastStatusID,
-		Unread:            conversation.Unread,
-		CreatedAt:         conversation.CreatedAt,
-		UpdatedAt:         conversation.UpdatedAt,
-		TotalMessageCount: conversation.TotalMessageCount,
-		LastMessageTime:   conversation.LastMessageTime,
-	}
 }
 
 // CanonicalConversationParticipantID normalizes local conversation participant identifiers
@@ -184,15 +131,13 @@ func (c *Conversation) GetSK() string {
 	return c.SK
 }
 
-// ConversationParticipantRecord represents a participant's view of a conversation.
-// This is used for querying conversations by user.
-//
-// Legacy note: DM rewrite M1 replaces snapshot-hydrated participant rows with canonical
-// UserConversationState rows.
+// ConversationParticipantRecord is a compatibility projection used by older DM call sites.
+// The canonical stored row is UserConversationState; this type intentionally does not own
+// any nested conversation snapshot.
 type ConversationParticipantRecord struct {
 	_ struct{} `theorydb:"naming:camelCase"`
 
-	// Primary keys for participant record
+	// Legacy key material preserved for compatibility with older tests and cursors.
 	PK string `theorydb:"pk,attr:PK" json:"PK"` // USER_CONVERSATIONS#username
 	SK string `theorydb:"sk,attr:SK" json:"SK"` // timestamp#conversationID (for sorting by recent)
 
@@ -200,17 +145,22 @@ type ConversationParticipantRecord struct {
 	GSI1PK string `theorydb:"index:gsi1,pk,attr:gsi1PK,omitempty" json:"gsi1PK"` // CONVERSATION#conversationID
 	GSI1SK string `theorydb:"index:gsi1,sk,attr:gsi1SK,omitempty" json:"gsi1SK"` // PARTICIPANT#username
 
-	// Per-participant DM metadata (folder/request lifecycle, deletion, unread).
-	RequestState DmRequestState `theorydb:"attr:requestState" json:"request_state,omitempty"`
-	RequestedAt  *time.Time     `theorydb:"attr:requestedAt" json:"requested_at,omitempty"`
-	AcceptedAt   *time.Time     `theorydb:"attr:acceptedAt" json:"accepted_at,omitempty"`
-	DeclinedAt   *time.Time     `theorydb:"attr:declinedAt" json:"declined_at,omitempty"`
-	DeletedAt    *time.Time     `theorydb:"attr:deletedAt" json:"deleted_at,omitempty"`
-	Unread       bool           `theorydb:"attr:unread" json:"unread"`
-	LastReadAt   *time.Time     `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
+	ViewerID       string                 `theorydb:"-" json:"viewer_id,omitempty"`
+	ConversationID string                 `theorydb:"-" json:"conversation_id,omitempty"`
+	CounterpartID  string                 `theorydb:"-" json:"counterpart_id,omitempty"`
+	Folder         UserConversationFolder `theorydb:"-" json:"folder,omitempty"`
 
-	// ConversationData is the durable embedded snapshot stored in DynamoDB.
-	ConversationData *ConversationSnapshot `theorydb:"attr:conversation" json:"-"`
+	// Per-participant DM metadata (folder/request lifecycle, deletion, unread).
+	RequestState             DmRequestState `theorydb:"attr:requestState" json:"request_state,omitempty"`
+	RequestedAt              *time.Time     `theorydb:"attr:requestedAt" json:"requested_at,omitempty"`
+	AcceptedAt               *time.Time     `theorydb:"attr:acceptedAt" json:"accepted_at,omitempty"`
+	DeclinedAt               *time.Time     `theorydb:"attr:declinedAt" json:"declined_at,omitempty"`
+	DeletedAt                *time.Time     `theorydb:"attr:deletedAt" json:"deleted_at,omitempty"`
+	Unread                   bool           `theorydb:"attr:unread" json:"unread"`
+	LastReadAt               *time.Time     `theorydb:"attr:lastReadAt" json:"last_read_at,omitempty"`
+	PreviewStatusID          string         `theorydb:"-" json:"preview_status_id,omitempty"`
+	PreviewStatusPublishedAt time.Time      `theorydb:"-" json:"preview_status_published_at,omitempty"`
+	SortAt                   time.Time      `theorydb:"-" json:"sort_at,omitempty"`
 
 	// Conversation is the hydrated runtime view used by repository callers.
 	Conversation *Conversation `theorydb:"-" json:"-"`
@@ -221,56 +171,42 @@ func (ConversationParticipantRecord) TableName() string {
 	return MainTableName
 }
 
-// HydrateConversation rebuilds the runtime conversation model from the durable snapshot.
-//
-// Legacy note: DM rewrite M1 removes runtime dependence on embedded participant snapshots.
-func (p *ConversationParticipantRecord) HydrateConversation() *Conversation {
-	if p == nil {
-		return nil
-	}
-
-	if p.Conversation == nil {
-		p.Conversation = p.ConversationData.ToConversation()
-	}
-	if p.Conversation != nil {
-		p.Conversation.Unread = p.Unread
-	}
-	return p.Conversation
-}
-
-// SyncConversationData refreshes the durable snapshot from the runtime conversation model.
-//
-// Legacy note: DM rewrite M1 removes runtime dependence on embedded participant snapshots.
-func (p *ConversationParticipantRecord) SyncConversationData() *Conversation {
-	if p == nil {
-		return nil
-	}
-
-	if p.Conversation == nil {
-		p.Conversation = p.ConversationData.ToConversation()
-	}
-	if p.Conversation == nil {
-		p.ConversationData = nil
-		return nil
-	}
-
-	p.Conversation.Unread = p.Unread
-	p.ConversationData = ConversationSnapshotFromConversation(p.Conversation)
-	return p.Conversation
-}
-
 // BeforeCreate sets up the keys for a participant record
 func (p *ConversationParticipantRecord) BeforeCreate(participantID string) error {
-	conversation := p.SyncConversationData()
-	if conversation == nil || conversation.ID == "" || len(conversation.Participants) == 0 {
+	if p == nil {
 		return ErrConversationDataRequired
 	}
 
+	conversationID := strings.TrimSpace(p.ConversationID)
+	var updatedAt time.Time
+	if p.Conversation != nil {
+		if conversationID == "" {
+			conversationID = p.Conversation.ID
+		}
+		if updatedAt.IsZero() {
+			updatedAt = p.Conversation.UpdatedAt
+		}
+	}
+	if conversationID == "" {
+		return ErrConversationDataRequired
+	}
+	if updatedAt.IsZero() {
+		if !p.SortAt.IsZero() {
+			updatedAt = p.SortAt
+		} else {
+			updatedAt = time.Now().UTC()
+		}
+	}
+	updatedAt = updatedAt.UTC()
+
 	participantID = CanonicalConversationParticipantID(participantID)
+	p.ViewerID = participantID
+	p.ConversationID = conversationID
 	p.PK = fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)
-	p.SK = fmt.Sprintf("%s#%s", conversation.UpdatedAt.Format(time.RFC3339), conversation.ID)
-	p.GSI1PK = fmt.Sprintf(KeyPatternConversation, conversation.ID)
+	p.SK = fmt.Sprintf("%s#%s", updatedAt.Format(time.RFC3339Nano), conversationID)
+	p.GSI1PK = fmt.Sprintf(KeyPatternConversation, conversationID)
 	p.GSI1SK = fmt.Sprintf("PARTICIPANT#%s", participantID)
+	p.SortAt = updatedAt
 
 	return nil
 }

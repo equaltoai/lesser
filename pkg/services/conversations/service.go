@@ -1641,7 +1641,7 @@ func (s *Service) updateParticipantRecord(ctx context.Context, conversationID, p
 		return storage.ErrNotFound
 	}
 	if participantRecordSnapshotCorrupt(record) {
-		s.logger.Warn("participant record snapshot missing canonical conversation identity",
+		s.logger.Warn("participant record missing canonical conversation identity",
 			zap.String("conversation_id", conversationID),
 			zap.String("participant_id", participantID))
 	}
@@ -1651,10 +1651,13 @@ func (s *Service) updateParticipantRecord(ctx context.Context, conversationID, p
 }
 
 func participantRecordSnapshotCorrupt(record *models.ConversationParticipantRecord) bool {
-	if record == nil || record.ConversationData == nil {
+	if record == nil {
 		return true
 	}
-	return strings.TrimSpace(record.ConversationData.ID) == "" || len(record.ConversationData.Participants) == 0
+	if strings.TrimSpace(record.ConversationID) != "" {
+		return false
+	}
+	return record.Conversation == nil || strings.TrimSpace(record.Conversation.ID) == ""
 }
 
 // DeleteConversation implements delete-for-me semantics for a DM conversation.
