@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -24,10 +23,6 @@ type ConversationRepository struct {
 	userConversations map[string][]string
 	// states stores canonical per-user DM state keyed by "viewerID:conversationID"
 	states map[string]*models.UserConversationState
-	// statuses stores conversation statuses keyed by "conversationID:statusID"
-	statuses map[string]*storage.ConversationStatus
-	// statusesByConv stores status keys keyed by conversation ID
-	statusesByConv map[string][]string
 	// readStatus stores read status keyed by "conversationID:username"
 	readStatus map[string]bool
 	// mutes stores mutes keyed by "username:conversationID"
@@ -41,8 +36,6 @@ func NewConversationRepository() *ConversationRepository {
 		participants:      make(map[string][]string),
 		userConversations: make(map[string][]string),
 		states:            make(map[string]*models.UserConversationState),
-		statuses:          make(map[string]*storage.ConversationStatus),
-		statusesByConv:    make(map[string][]string),
 		readStatus:        make(map[string]bool),
 		mutes:             make(map[string]*storage.ConversationMute),
 	}
@@ -509,89 +502,6 @@ func (r *ConversationRepository) GetUnreadConversationCount(_ context.Context, u
 	return count, nil
 }
 
-// AddStatusToConversation adds a status/message to a conversation
-func (r *ConversationRepository) AddStatusToConversation(_ context.Context, conversationID, statusID, senderUsername string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	key := conversationID + ":" + statusID
-	r.statuses[key] = &storage.ConversationStatus{
-		ConversationID: conversationID,
-		StatusID:       statusID,
-		UserID:         senderUsername,
-		CreatedAt:      time.Now(),
-	}
-	r.statusesByConv[conversationID] = append(r.statusesByConv[conversationID], key)
-	return nil
-}
-
-// GetConversationStatuses retrieves messages in a conversation with pagination
-func (r *ConversationRepository) GetConversationStatuses(_ context.Context, conversationID string, limit int, _ string) ([]*storage.ConversationStatus, string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	keys := r.statusesByConv[conversationID]
-	var results []*storage.ConversationStatus
-	for _, key := range keys {
-		if status, exists := r.statuses[key]; exists {
-			results = append(results, status)
-		}
-	}
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-	return results, "", nil
-}
-
-// RemoveStatusFromConversation removes a status from a conversation
-func (r *ConversationRepository) RemoveStatusFromConversation(_ context.Context, conversationID, statusID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	key := conversationID + ":" + statusID
-	delete(r.statuses, key)
-	return nil
-}
-
-// MarkStatusRead marks a specific status as read by a user
-func (r *ConversationRepository) MarkStatusRead(_ context.Context, conversationID, statusID, username string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	key := conversationID + ":" + statusID + ":" + username
-	r.readStatus[key] = true
-	return nil
-}
-
-// GetUnreadStatusCount gets the count of unread statuses in a conversation for a user
-func (r *ConversationRepository) GetUnreadStatusCount(_ context.Context, conversationID, username string) (int, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	count := 0
-	for _, key := range r.statusesByConv[conversationID] {
-		readKey := key + ":" + username
-		if !r.readStatus[readKey] {
-			count++
-		}
-	}
-	return count, nil
-}
-
-// UpdateConversationLastStatus updates the last status in a conversation
-func (r *ConversationRepository) UpdateConversationLastStatus(_ context.Context, id, lastStatusID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	conv, exists := r.conversations[id]
-	if !exists {
-		return storage.ErrNotFound
-	}
-	conv.LastStatusID = lastStatusID
-	conv.UpdatedAt = time.Now()
-	return nil
-}
-
 // GetConversationParticipants retrieves the list of participants in a conversation
 func (r *ConversationRepository) GetConversationParticipants(_ context.Context, conversationID string) ([]string, error) {
 	r.mu.RLock()
@@ -657,8 +567,6 @@ func (r *ConversationRepository) Clear() {
 	r.participants = make(map[string][]string)
 	r.userConversations = make(map[string][]string)
 	r.states = make(map[string]*models.UserConversationState)
-	r.statuses = make(map[string]*storage.ConversationStatus)
-	r.statusesByConv = make(map[string][]string)
 	r.readStatus = make(map[string]bool)
 	r.mutes = make(map[string]*storage.ConversationMute)
 }

@@ -23,7 +23,7 @@ func TestService_GetConversation_ReturnsErrGetConversationMessages_OnThreadError
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return((*models.ConversationParticipantRecord)(nil), errors.New("boom")).Once()
+	conversationRepo.On("GetUserConversationState", ctx, "alice", "conv123").Return((*interfaces.UserConversationStateContract)(nil), errors.New("boom")).Once()
 
 	noteRepo.On("GetConversationThread", ctx, "conv123", mock.Anything).Return((*interfaces.PaginatedResult[*models.Status])(nil), errors.New("boom")).Once()
 
@@ -46,7 +46,12 @@ func TestService_GetConversation_ReturnsErrGetConversationMessages_OnTombstoneEr
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(&models.ConversationParticipantRecord{Unread: true}, nil).Once()
+	conversationRepo.On("GetUserConversationState", ctx, "alice", "conv123").Return(
+		testConversationStateContract("alice", "conv123", func(state *interfaces.UserConversationStateContract) {
+			state.Unread = true
+		}),
+		nil,
+	).Once()
 
 	paginated := &interfaces.PaginatedResult[*models.Status]{
 		Items: []*models.Status{

@@ -263,8 +263,10 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Return(existing, nil).
 			Once()
 
-		creatorRecord := &models.ConversationParticipantRecord{}
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-race", "alice").Return(creatorRecord, nil).Once()
+		conversationRepo.On("GetUserConversationState", ctx, "alice", "conv-race").Return(
+			testConversationStateContract("alice", "conv-race", nil),
+			nil,
+		).Once()
 
 		result, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
 		require.NoError(t, err)
@@ -289,8 +291,12 @@ func TestService_CreateConversation_ErrorBranches(t *testing.T) {
 			Return(existing, nil).
 			Once()
 
-		creatorRecord := &models.ConversationParticipantRecord{Unread: true}
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(creatorRecord, nil).Once()
+		conversationRepo.On("GetUserConversationState", ctx, "alice", "conv123").Return(
+			testConversationStateContract("alice", "conv123", func(state *interfaces.UserConversationStateContract) {
+				state.Unread = true
+			}),
+			nil,
+		).Once()
 
 		result, err := service.CreateConversation(ctx, &CreateConversationCommand{CreatorID: "alice", ParticipantID: "bob"})
 		require.NoError(t, err)

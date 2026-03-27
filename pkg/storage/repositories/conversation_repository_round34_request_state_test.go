@@ -31,19 +31,6 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.Equal(t, models.UserConversationFolderInbox, folderFromRequestState(""))
 	})
 
-	t.Run("participantRecordFolder prefers explicit folder", func(t *testing.T) {
-		require.Equal(t, models.UserConversationFolderHidden, participantRecordFolder(nil))
-		require.Equal(t, models.UserConversationFolderRequests, participantRecordFolder(&models.ConversationParticipantRecord{
-			Folder: models.UserConversationFolderRequests,
-		}))
-		require.Equal(t, models.UserConversationFolderHidden, participantRecordFolder(&models.ConversationParticipantRecord{
-			DeletedAt: conversationTimePtr(time.Unix(1, 0).UTC()),
-		}))
-		require.Equal(t, models.UserConversationFolderDeclined, participantRecordFolder(&models.ConversationParticipantRecord{
-			RequestState: models.DmRequestStateDeclined,
-		}))
-	})
-
 	t.Run("projection helpers preserve canonical state and clone conversation payloads", func(t *testing.T) {
 		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 		conversationUpdatedAt := sortAt.Add(2 * time.Hour)
@@ -82,16 +69,6 @@ func TestRound34_ConversationRepository_RequestStateHelpers(t *testing.T) {
 		require.Equal(t, "status-1", cloned.ViewerState.PreviewStatusID)
 		cloned.Participants[0] = "mutated"
 		require.Equal(t, "alice", conversation.Participants[0])
-
-		require.Nil(t, stateRecordFromModel(nil, conversation))
-		record := stateRecordFromModel(state, conversation)
-		require.Equal(t, "USER_CONVERSATIONS#alice", record.PK)
-		require.Equal(t, "PARTICIPANT#alice", record.GSI1SK)
-		require.Equal(t, sortAt.Format(time.RFC3339Nano)+"#conv-1", record.SK)
-		require.Equal(t, sortAt, record.UpdatedAt)
-		require.NotNil(t, record.Conversation)
-		require.True(t, record.Conversation.Unread)
-		require.Equal(t, conversationUpdatedAt, record.Conversation.UpdatedAt)
 	})
 
 	t.Run("defaultUserConversationState initializes hidden rows without conversation metadata", func(t *testing.T) {
@@ -250,56 +227,6 @@ func TestRound34_ConversationRepository_UserConversationStateWrappers(t *testing
 		require.Equal(t, "alice", result.Items[0].ViewerID)
 		require.Equal(t, "conv-1", result.Items[0].ConversationID)
 		require.True(t, result.Items[0].Unread)
-	})
-
-	t.Run("GetConversationParticipantRecord projects canonical state into legacy record shape", func(t *testing.T) {
-		ctx := context.Background()
-		mockDB := new(mocks.MockDB)
-		stateQuery := new(mocks.MockQuery)
-		conversationQuery := new(mocks.MockQuery)
-		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
-
-		mockDB.On("WithContext", ctx).Return(mockDB).Twice()
-		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
-		stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(stateQuery).Once()
-		stateQuery.On("Where", "SK", "=", "CONVERSATION#conv-1").Return(stateQuery).Once()
-		stateQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*models.UserConversationState)
-			*dest = models.UserConversationState{
-				ViewerID:       "alice",
-				ConversationID: "conv-1",
-				CounterpartID:  "bob",
-				Folder:         models.UserConversationFolderInbox,
-				Unread:         true,
-				SortAt:         sortAt,
-				CreatedAt:      time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC),
-				UpdatedAt:      sortAt,
-			}
-		}).Return(nil).Once()
-
-		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
-		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(conversationQuery).Once()
-		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
-		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*models.Conversation)
-			*dest = models.Conversation{
-				ID:           "conv-1",
-				Participants: []string{"alice", "bob"},
-				UpdatedAt:    sortAt,
-			}
-		}).Return(nil).Once()
-
-		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-		record, err := repo.GetConversationParticipantRecord(ctx, "conv-1", "Alice")
-		require.NoError(t, err)
-		require.Equal(t, "USER_CONVERSATIONS#alice", record.PK)
-		require.Equal(t, sortAt.Format(time.RFC3339Nano)+"#conv-1", record.SK)
-		require.Equal(t, "PARTICIPANT#alice", record.GSI1SK)
-		require.Equal(t, "alice", record.ViewerID)
-		require.Equal(t, "conv-1", record.ConversationID)
-		require.Equal(t, "bob", record.CounterpartID)
-		require.NotNil(t, record.Conversation)
-		require.True(t, record.Conversation.Unread)
 	})
 
 	t.Run("createOrUpdateUserConversationState covers create and update branches", func(t *testing.T) {

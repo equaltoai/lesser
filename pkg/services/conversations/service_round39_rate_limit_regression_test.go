@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -63,12 +62,14 @@ func TestService_SendDirectMessage_FailedRequestDoesNotConsumeRateLimitBudget(t 
 	accountRepo.On("GetAccount", mock.Anything, "alice").Return(createTestAccount("alice", "alice"), nil).Once()
 	accountRepo.On("GetAccount", mock.Anything, "bob").Return(createTestAccount("bob", "bob"), nil).Once()
 	conversationRepo.On("GetConversationByParticipants", mock.Anything, []string{"alice", "bob"}).Return(conversation, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", mock.Anything, "conv123", "bob").Return(&models.ConversationParticipantRecord{
-		Conversation: conversation,
-	}, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", mock.Anything, "conv123", "alice").Return(&models.ConversationParticipantRecord{
-		Conversation: conversation,
-	}, nil).Once()
+	conversationRepo.On("GetUserConversationState", mock.Anything, "bob", "conv123").Return(
+		testConversationStateContract("bob", "conv123", nil),
+		nil,
+	).Once()
+	conversationRepo.On("GetUserConversationState", mock.Anything, "alice", "conv123").Return(
+		testConversationStateContract("alice", "conv123", nil),
+		nil,
+	).Once()
 	conversationRepo.On("ApplyDirectMessageSend", mock.Anything, mock.AnythingOfType("*models.DirectMessageSendTransition")).Return(errors.New("boom")).Once()
 
 	_, err := service.SendDirectMessage(ctx, &SendDirectMessageCommand{

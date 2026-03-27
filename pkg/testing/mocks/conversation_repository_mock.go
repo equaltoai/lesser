@@ -25,52 +25,6 @@ func (m *MockConversationRepository) hasExpectation(method string) bool {
 	return false
 }
 
-func stateContractFromRecord(record *models.ConversationParticipantRecord) *interfaces.UserConversationStateContract {
-	if record == nil {
-		return nil
-	}
-	return &interfaces.UserConversationStateContract{
-		ViewerID:                 record.ViewerID,
-		ConversationID:           record.ConversationID,
-		CounterpartID:            record.CounterpartID,
-		Folder:                   record.Folder,
-		RequestState:             record.RequestState,
-		PreviewStatusID:          record.PreviewStatusID,
-		PreviewStatusPublishedAt: record.PreviewStatusPublishedAt,
-		SortAt:                   record.SortAt,
-		Unread:                   record.Unread,
-		LastReadAt:               record.LastReadAt,
-		DeletedAt:                record.DeletedAt,
-		RequestedAt:              record.RequestedAt,
-		AcceptedAt:               record.AcceptedAt,
-		DeclinedAt:               record.DeclinedAt,
-		UpdatedAt:                record.UpdatedAt,
-	}
-}
-
-func recordFromState(state *models.UserConversationState) *models.ConversationParticipantRecord {
-	if state == nil {
-		return nil
-	}
-	return &models.ConversationParticipantRecord{
-		ViewerID:                 state.ViewerID,
-		ConversationID:           state.ConversationID,
-		CounterpartID:            state.CounterpartID,
-		Folder:                   state.Folder,
-		RequestState:             state.RequestState,
-		RequestedAt:              state.RequestedAt,
-		AcceptedAt:               state.AcceptedAt,
-		DeclinedAt:               state.DeclinedAt,
-		DeletedAt:                state.DeletedAt,
-		Unread:                   state.Unread,
-		LastReadAt:               state.LastReadAt,
-		PreviewStatusID:          state.PreviewStatusID,
-		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
-		SortAt:                   state.SortAt,
-		UpdatedAt:                state.UpdatedAt,
-	}
-}
-
 // NewMockConversationRepository creates a new mock conversation repository
 func NewMockConversationRepository() *MockConversationRepository {
 	return &MockConversationRepository{}
@@ -151,10 +105,6 @@ func (m *MockConversationRepository) GetConversationByParticipants(ctx context.C
 
 // GetUserConversationState mocks the GetUserConversationState method.
 func (m *MockConversationRepository) GetUserConversationState(ctx context.Context, viewerID, conversationID string) (*interfaces.UserConversationStateContract, error) {
-	if !m.hasExpectation("GetUserConversationState") && m.hasExpectation("GetConversationParticipantRecord") {
-		record, err := m.GetConversationParticipantRecord(ctx, conversationID, viewerID)
-		return stateContractFromRecord(record), err
-	}
 	args := m.Called(ctx, viewerID, conversationID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -227,47 +177,6 @@ func (m *MockConversationRepository) GetUnreadConversationCount(ctx context.Cont
 	return args.Int(0), args.Error(1)
 }
 
-// ===== Status/Message Operations =====
-
-// AddStatusToConversation mocks the AddStatusToConversation method
-func (m *MockConversationRepository) AddStatusToConversation(ctx context.Context, conversationID, statusID, senderUsername string) error {
-	args := m.Called(ctx, conversationID, statusID, senderUsername)
-	return args.Error(0)
-}
-
-// GetConversationStatuses mocks the GetConversationStatuses method
-func (m *MockConversationRepository) GetConversationStatuses(ctx context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error) {
-	args := m.Called(ctx, conversationID, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]*storage.ConversationStatus), args.String(1), args.Error(2)
-}
-
-// RemoveStatusFromConversation mocks the RemoveStatusFromConversation method
-func (m *MockConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
-	args := m.Called(ctx, conversationID, statusID)
-	return args.Error(0)
-}
-
-// MarkStatusRead mocks the MarkStatusRead method
-func (m *MockConversationRepository) MarkStatusRead(ctx context.Context, conversationID, statusID, username string) error {
-	args := m.Called(ctx, conversationID, statusID, username)
-	return args.Error(0)
-}
-
-// GetUnreadStatusCount mocks the GetUnreadStatusCount method
-func (m *MockConversationRepository) GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error) {
-	args := m.Called(ctx, conversationID, username)
-	return args.Int(0), args.Error(1)
-}
-
-// UpdateConversationLastStatus mocks the UpdateConversationLastStatus method
-func (m *MockConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	args := m.Called(ctx, id, lastStatusID)
-	return args.Error(0)
-}
-
 // ApplyDirectMessageSend mocks the ApplyDirectMessageSend method.
 func (m *MockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
 	args := m.Called(ctx, transition)
@@ -287,25 +196,7 @@ func (m *MockConversationRepository) GetConversationParticipants(ctx context.Con
 
 // PutUserConversationState mocks the PutUserConversationState method.
 func (m *MockConversationRepository) PutUserConversationState(ctx context.Context, state *models.UserConversationState) error {
-	if !m.hasExpectation("PutUserConversationState") && m.hasExpectation("UpdateConversationParticipantRecord") {
-		return m.UpdateConversationParticipantRecord(ctx, recordFromState(state))
-	}
 	args := m.Called(ctx, state)
-	return args.Error(0)
-}
-
-// GetConversationParticipantRecord mocks the GetConversationParticipantRecord method
-func (m *MockConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
-	args := m.Called(ctx, conversationID, participantID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.ConversationParticipantRecord), args.Error(1)
-}
-
-// UpdateConversationParticipantRecord mocks the UpdateConversationParticipantRecord method
-func (m *MockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
-	args := m.Called(ctx, record)
 	return args.Error(0)
 }
 

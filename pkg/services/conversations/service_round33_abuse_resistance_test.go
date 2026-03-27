@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/mock"
@@ -115,12 +116,6 @@ func TestService_SendDirectMessage_PendingRequest_BlocksAdditionalMessages(t *te
 	)
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
-	participantRecord := &models.ConversationParticipantRecord{
-		Conversation: conversation,
-		RequestState: models.DmRequestStatePending,
-		RequestedAt:  ptrTime(time.Now().UTC().Add(-time.Minute)),
-	}
-
 	accountRepo.On("GetAccount", mock.Anything, "alice").Return(createTestAccount("alice", "alice"), nil)
 	accountRepo.On("GetAccount", mock.Anything, "bob").Return(createTestAccount("bob", "bob"), nil)
 
@@ -128,8 +123,11 @@ func TestService_SendDirectMessage_PendingRequest_BlocksAdditionalMessages(t *te
 		On("GetConversationByParticipants", mock.Anything, []string{"alice", "bob"}).
 		Return(conversation, nil)
 	conversationRepo.
-		On("GetConversationParticipantRecord", mock.Anything, "conv123", "bob").
-		Return(participantRecord, nil)
+		On("GetUserConversationState", mock.Anything, "bob", "conv123").
+		Return(testConversationStateContract("bob", "conv123", func(state *interfaces.UserConversationStateContract) {
+			state.RequestState = models.DmRequestStatePending
+			state.RequestedAt = ptrTime(time.Now().UTC().Add(-time.Minute))
+		}), nil)
 
 	_, err := service.SendDirectMessage(context.Background(), &SendDirectMessageCommand{
 		SenderID:   "alice",
@@ -179,10 +177,6 @@ func TestService_SendDirectMessage_RequestDisallowsMedia(t *testing.T) {
 	)
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
-	participantRecord := &models.ConversationParticipantRecord{
-		Conversation: conversation,
-	}
-
 	accountRepo.On("GetAccount", mock.Anything, "alice").Return(createTestAccount("alice", "alice"), nil)
 	accountRepo.On("GetAccount", mock.Anything, "bob").Return(createTestAccount("bob", "bob"), nil)
 
@@ -190,8 +184,8 @@ func TestService_SendDirectMessage_RequestDisallowsMedia(t *testing.T) {
 		On("GetConversationByParticipants", mock.Anything, []string{"alice", "bob"}).
 		Return(conversation, nil)
 	conversationRepo.
-		On("GetConversationParticipantRecord", mock.Anything, "conv123", "bob").
-		Return(participantRecord, nil)
+		On("GetUserConversationState", mock.Anything, "bob", "conv123").
+		Return(testConversationStateContract("bob", "conv123", nil), nil)
 
 	_, err := service.SendDirectMessage(context.Background(), &SendDirectMessageCommand{
 		SenderID:   "alice",

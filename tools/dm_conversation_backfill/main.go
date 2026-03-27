@@ -583,32 +583,54 @@ func buildConversationRecord(conversationID string, participants []string, threa
 
 func (b *backfiller) syncNewConversationParticipantRecords(ctx context.Context, conversationID string, participants []string, lastSender string, latestPublishedAt, acceptedAt time.Time) error {
 	for _, participant := range participants {
-		record, err := b.conversationRepo.GetConversationParticipantRecord(ctx, conversationID, participant)
+		stateContract, err := b.conversationRepo.GetUserConversationState(ctx, participant, conversationID)
 		if err != nil {
-			return fmt.Errorf("load participant record %s/%s: %w", conversationID, participant, err)
+			return fmt.Errorf("load user conversation state %s/%s: %w", conversationID, participant, err)
 		}
 
-		record.RequestState = models.DmRequestStateAccepted
-		record.RequestedAt = nil
-		record.AcceptedAt = timePtr(acceptedAt)
-		record.DeclinedAt = nil
-		record.DeletedAt = nil
-		record.Unread = participant != lastSender
-		if record.Unread {
-			record.LastReadAt = nil
+		state := userConversationStateFromContract(stateContract)
+		state.RequestState = models.DmRequestStateAccepted
+		state.RequestedAt = nil
+		state.AcceptedAt = timePtr(acceptedAt)
+		state.DeclinedAt = nil
+		state.DeletedAt = nil
+		state.Unread = participant != lastSender
+		if state.Unread {
+			state.LastReadAt = nil
 		} else {
-			record.LastReadAt = timePtr(latestPublishedAt)
-		}
-		if record.Conversation != nil {
-			record.Conversation.Unread = record.Unread
+			state.LastReadAt = timePtr(latestPublishedAt)
 		}
 
-		if err := b.conversationRepo.UpdateConversationParticipantRecord(ctx, record); err != nil {
-			return fmt.Errorf("update participant record %s/%s: %w", conversationID, participant, err)
+		if err := b.conversationRepo.PutUserConversationState(ctx, state); err != nil {
+			return fmt.Errorf("update user conversation state %s/%s: %w", conversationID, participant, err)
 		}
 	}
 
 	return nil
+}
+
+func userConversationStateFromContract(state *interfaces.UserConversationStateContract) *models.UserConversationState {
+	if state == nil {
+		return nil
+	}
+	return &models.UserConversationState{
+		ViewerID:                 state.ViewerID,
+		ConversationID:           state.ConversationID,
+		CounterpartID:            state.CounterpartID,
+		Folder:                   state.Folder,
+		RequestState:             state.RequestState,
+		PreviewStatusID:          state.PreviewStatusID,
+		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+		SortAt:                   state.SortAt,
+		Unread:                   state.Unread,
+		LastReadAt:               state.LastReadAt,
+		DeletedAt:                state.DeletedAt,
+		RequestedAt:              state.RequestedAt,
+		AcceptedAt:               state.AcceptedAt,
+		DeclinedAt:               state.DeclinedAt,
+		CreatedAt:                state.CreatedAt,
+		UpdatedAt:                state.UpdatedAt,
+	}
 }
 
 func (b *backfiller) upsertConversationStatus(ctx context.Context, conversationID, participant string, unread bool, lastReadAt time.Time) error {

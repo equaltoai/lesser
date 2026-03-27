@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	stdErrors "errors"
 	"fmt"
 	"strings"
 	"time"
@@ -421,85 +420,6 @@ func clampListLimit(limit int, defaultLimit int, maxLimit int) int {
 		return maxLimit
 	}
 	return limit
-}
-
-// GetConversationParticipantRecord returns the most recent participant record for a given
-// (conversationID, participantID) pair.
-func (r *ConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
-	state, err := r.ensureUserConversationStateModel(ctx, participantID, conversationID)
-	if err != nil {
-		if stdErrors.Is(err, storage.ErrNotFound) {
-			return nil, storage.ErrNotFound
-		}
-		return nil, err
-	}
-
-	conversation, err := r.GetConversation(ctx, conversationID)
-	if err != nil && !stdErrors.Is(err, storage.ErrNotFound) {
-		return nil, err
-	}
-
-	return stateRecordFromModel(state, conversation), nil
-}
-
-// UpdateConversationParticipantRecord persists an updated participant record (metadata updates).
-func (r *ConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
-	if record == nil {
-		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "participant record nil")
-	}
-	if record.PK == "" || record.SK == "" {
-		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityConversation, "participant record keys missing")
-	}
-	if strings.TrimSpace(record.ViewerID) == "" {
-		record.ViewerID = strings.TrimPrefix(record.PK, "USER_CONVERSATIONS#")
-	}
-	if strings.TrimSpace(record.ConversationID) == "" {
-		record.ConversationID = strings.TrimPrefix(record.GSI1PK, "CONVERSATION#")
-		if record.ConversationID == record.GSI1PK {
-			parts := strings.Split(record.SK, "#")
-			if len(parts) > 1 {
-				record.ConversationID = parts[len(parts)-1]
-			}
-		}
-	}
-
-	state, err := r.ensureUserConversationStateModel(ctx, record.ViewerID, record.ConversationID)
-	if err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
-	}
-
-	state.CounterpartID = record.CounterpartID
-	if strings.TrimSpace(state.CounterpartID) == "" {
-		if conversation, convErr := r.GetConversation(ctx, record.ConversationID); convErr == nil && conversation != nil {
-			state.CounterpartID = counterpartForConversation(record.ViewerID, conversation.Participants)
-		}
-	}
-	state.Folder = participantRecordFolder(record)
-	state.RequestState = record.RequestState
-	state.RequestedAt = record.RequestedAt
-	state.AcceptedAt = record.AcceptedAt
-	state.DeclinedAt = record.DeclinedAt
-	state.DeletedAt = record.DeletedAt
-	state.Unread = record.Unread
-	state.LastReadAt = record.LastReadAt
-	if record.PreviewStatusID != "" {
-		state.PreviewStatusID = record.PreviewStatusID
-	}
-	if !record.PreviewStatusPublishedAt.IsZero() {
-		state.PreviewStatusPublishedAt = record.PreviewStatusPublishedAt
-	}
-	if !record.SortAt.IsZero() {
-		state.SortAt = record.SortAt
-	}
-	state.UpdatedAt = time.Now().UTC()
-
-	if err := state.BeforeUpdate(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
-	}
-	if err := r.GetDB().WithContext(ctx).Model(state).Update(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityConversation, record.PK)
-	}
-	return nil
 }
 
 // GetConversationByParticipants finds a conversation with exact participants (KEEP - Complex participant search logic)

@@ -85,12 +85,17 @@ func TestService_DeleteConversation_AllowsActorIDParticipant(t *testing.T) {
 	accountRepo.On("GetAccount", ctx, "user-1").Return(&storage.Account{
 		Actor: &activitypub.Actor{BaseObject: activitypub.BaseObject{ID: "ap://example.com/actors/alice"}},
 	}, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-1", "ap://example.com/actors/alice").Return(&models.ConversationParticipantRecord{}, nil).Once()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.MatchedBy(func(record *models.ConversationParticipantRecord) bool {
-		return record != nil &&
-			record.Folder == models.UserConversationFolderHidden &&
-			record.DeletedAt != nil &&
-			!record.DeletedAt.IsZero()
+	conversationRepo.On("GetUserConversationState", ctx, "ap://example.com/actors/alice", "conv-1").Return(
+		testConversationStateContract("ap://example.com/actors/alice", "conv-1", nil),
+		nil,
+	).Once()
+	conversationRepo.On("PutUserConversationState", ctx, mock.MatchedBy(func(state *models.UserConversationState) bool {
+		return state != nil &&
+			state.ViewerID == "ap://example.com/actors/alice" &&
+			state.ConversationID == "conv-1" &&
+			state.Folder == models.UserConversationFolderHidden &&
+			state.DeletedAt != nil &&
+			!state.DeletedAt.IsZero()
 	})).Return(nil).Once()
 
 	result, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-1", UserID: "user-1"})
@@ -118,12 +123,17 @@ func TestService_DeleteConversation_StillReturnsEventsWhenPublishFails(t *testin
 	}
 
 	conversationRepo.On("GetConversation", ctx, "conv-2").Return(conversation, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-2", "user-1").Return(&models.ConversationParticipantRecord{}, nil).Once()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.MatchedBy(func(record *models.ConversationParticipantRecord) bool {
-		return record != nil &&
-			record.Folder == models.UserConversationFolderHidden &&
-			record.DeletedAt != nil &&
-			!record.DeletedAt.IsZero()
+	conversationRepo.On("GetUserConversationState", ctx, "user-1", "conv-2").Return(
+		testConversationStateContract("user-1", "conv-2", nil),
+		nil,
+	).Once()
+	conversationRepo.On("PutUserConversationState", ctx, mock.MatchedBy(func(state *models.UserConversationState) bool {
+		return state != nil &&
+			state.ViewerID == "user-1" &&
+			state.ConversationID == "conv-2" &&
+			state.Folder == models.UserConversationFolderHidden &&
+			state.DeletedAt != nil &&
+			!state.DeletedAt.IsZero()
 	})).Return(nil).Once()
 
 	result, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-2", UserID: "user-1"})
@@ -171,12 +181,17 @@ func TestService_DeleteConversation_PermissionAndDeleteFailures(t *testing.T) {
 			Participants: []string{"user-1"},
 		}
 		conversationRepo.On("GetConversation", ctx, "conv-5").Return(conversation, nil).Once()
-		conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-5", "user-1").Return(&models.ConversationParticipantRecord{}, nil).Once()
-		conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.MatchedBy(func(record *models.ConversationParticipantRecord) bool {
-			return record != nil &&
-				record.Folder == models.UserConversationFolderHidden &&
-				record.DeletedAt != nil &&
-				!record.DeletedAt.IsZero()
+		conversationRepo.On("GetUserConversationState", ctx, "user-1", "conv-5").Return(
+			testConversationStateContract("user-1", "conv-5", nil),
+			nil,
+		).Once()
+		conversationRepo.On("PutUserConversationState", ctx, mock.MatchedBy(func(state *models.UserConversationState) bool {
+			return state != nil &&
+				state.ViewerID == "user-1" &&
+				state.ConversationID == "conv-5" &&
+				state.Folder == models.UserConversationFolderHidden &&
+				state.DeletedAt != nil &&
+				!state.DeletedAt.IsZero()
 		})).Return(errors.New("boom")).Once()
 
 		_, err := service.DeleteConversation(ctx, &DeleteConversationCommand{ConversationID: "conv-5", UserID: "user-1"})
