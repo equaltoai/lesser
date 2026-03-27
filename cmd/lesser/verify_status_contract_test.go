@@ -18,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/notecontract"
 	"github.com/stretchr/testify/require"
 	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
@@ -566,6 +567,20 @@ func TestStatusContractVerificationHelpers(t *testing.T) {
 		require.Equal(t, "statuschecksenderstatuscheck", defaultFixture.senderUsername)
 	})
 
+	t.Run("test verification statuses reuse shared note fixtures", func(t *testing.T) {
+		publicStatus := testVerificationStatus("public-1", models.VisibilityPublic, "public-1", "public content", nil)
+		require.NotNil(t, publicStatus.Note)
+		require.Len(t, publicStatus.Note.Attachment, 1)
+		require.Len(t, publicStatus.Note.Tag, 2)
+		require.NotNil(t, publicStatus.Note.QuoteContext)
+
+		directStatus := testVerificationStatus("dm-1", models.VisibilityDirect, "conv-1", "dm content", []string{"https://example.com/users/recipient"})
+		require.NotNil(t, directStatus.Note)
+		require.Nil(t, directStatus.Note.Attachment)
+		require.Len(t, directStatus.Note.Tag, 2)
+		require.Equal(t, []string{"https://example.com/users/recipient"}, directStatus.Note.To)
+	})
+
 	t.Run("validate deps catches missing fields", func(t *testing.T) {
 		require.ErrorContains(t, validateStatusContractVerifierDeps(statusContractVerifierDeps{}), "dependencies are incomplete")
 		require.ErrorContains(t, validateStatusContractVerifierDeps(statusContractVerifierDeps{
@@ -754,14 +769,17 @@ func TestStatusContractVerificationHelpers(t *testing.T) {
 }
 
 func testVerificationStatus(statusID string, visibility string, conversationID string, content string, toRecipients []string) *models.Status {
-	note := &activitypub.Note{
-		BaseObject: activitypub.BaseObject{
-			Context: activitypub.Context.Clone(),
-			ID:      "https://example.com/users/sender/statuses/" + statusID,
-			To:      append([]string(nil), toRecipients...),
-		},
-		Content: content,
+	var note *activitypub.Note
+	switch visibility {
+	case models.VisibilityDirect:
+		note = notecontract.DirectFixtureNote()
+		note.To = append([]string(nil), toRecipients...)
+		note.ConversationID = conversationID
+	default:
+		note = notecontract.PublicFixtureNote()
 	}
+	note.ID = "https://example.com/users/sender/statuses/" + statusID
+	note.Content = content
 
 	return &models.Status{
 		StatusID:       statusID,
