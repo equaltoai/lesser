@@ -22,6 +22,8 @@ type ConversationRepository struct {
 	participants map[string][]string
 	// userConversations stores conversation IDs keyed by user ID
 	userConversations map[string][]string
+	// states stores canonical per-user DM state keyed by "viewerID:conversationID"
+	states map[string]*models.UserConversationState
 	// statuses stores conversation statuses keyed by "conversationID:statusID"
 	statuses map[string]*storage.ConversationStatus
 	// statusesByConv stores status keys keyed by conversation ID
@@ -38,6 +40,7 @@ func NewConversationRepository() *ConversationRepository {
 		conversations:     make(map[string]*models.Conversation),
 		participants:      make(map[string][]string),
 		userConversations: make(map[string][]string),
+		states:            make(map[string]*models.UserConversationState),
 		statuses:          make(map[string]*storage.ConversationStatus),
 		statusesByConv:    make(map[string][]string),
 		readStatus:        make(map[string]bool),
@@ -57,14 +60,37 @@ func (r *ConversationRepository) CreateConversation(_ context.Context, conversat
 	r.participants[conversation.ID] = participants
 	for _, p := range participants {
 		r.userConversations[p] = append(r.userConversations[p], conversation.ID)
+		key := p + ":" + conversation.ID
+		r.states[key] = &models.UserConversationState{
+			ViewerID:       p,
+			ConversationID: conversation.ID,
+			CounterpartID:  counterpartIDForInMemoryState(p, participants),
+			Folder:         models.UserConversationFolderInbox,
+			SortAt:         conversation.UpdatedAt,
+			CreatedAt:      conversation.CreatedAt,
+			UpdatedAt:      conversation.UpdatedAt,
+		}
 	}
 	return nil
 }
 
 // CreateConversationWithParticipantStates creates a new conversation while ignoring the
 // explicit participant states in the in-memory test repository.
-func (r *ConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, _ []*models.UserConversationState) error {
-	return r.CreateConversation(ctx, conversation, participants)
+func (r *ConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error {
+	if err := r.CreateConversation(ctx, conversation, participants); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, state := range participantStates {
+		if state == nil {
+			continue
+		}
+		cloned := *state
+		r.states[state.ViewerID+":"+state.ConversationID] = &cloned
+	}
+	return nil
 }
 
 // GetConversation retrieves a conversation by ID
@@ -115,6 +141,14 @@ func (r *ConversationRepository) ApplyDirectMessageSend(_ context.Context, trans
 			return storage.ErrNotFound
 		}
 		r.conversations[conversation.ID] = conversation
+	}
+
+	for _, state := range transition.ParticipantStates {
+		if state == nil {
+			continue
+		}
+		cloned := *state
+		r.states[state.ViewerID+":"+state.ConversationID] = &cloned
 	}
 
 	senderID := transition.Status.AuthorID
@@ -228,16 +262,156 @@ func (r *ConversationRepository) GetConversationByParticipants(_ context.Context
 	return nil, storage.ErrNotFound
 }
 
-// GetConversationParticipantRecord retrieves the participant record for a conversation.
-// The in-memory repository does not persist participant records; return not found.
-func (r *ConversationRepository) GetConversationParticipantRecord(_ context.Context, _, _ string) (*models.ConversationParticipantRecord, error) {
-	return nil, storage.ErrNotFound
+func counterpartIDForInMemoryState(viewerID string, participants []string) string {
+	for _, participantID := range participants {
+		if participantID != viewerID {
+			return participantID
+		}
+	}
+	return ""
 }
 
-// UpdateConversationParticipantRecord persists an updated participant record.
-// The in-memory repository does not persist participant records; return not found.
-func (r *ConversationRepository) UpdateConversationParticipantRecord(_ context.Context, _ *models.ConversationParticipantRecord) error {
-	return storage.ErrNotFound
+// GetUserConversationState retrieves the canonical per-user DM state for a conversation.
+func (r *ConversationRepository) GetUserConversationState(_ context.Context, viewerID, conversationID string) (*interfaces.UserConversationStateContract, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	state, exists := r.states[viewerID+":"+conversationID]
+	if !exists {
+		return nil, storage.ErrNotFound
+	}
+
+	return &interfaces.UserConversationStateContract{
+		ViewerID:                 state.ViewerID,
+		ConversationID:           state.ConversationID,
+		CounterpartID:            state.CounterpartID,
+		Folder:                   state.Folder,
+		RequestState:             state.RequestState,
+		PreviewStatusID:          state.PreviewStatusID,
+		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+		SortAt:                   state.SortAt,
+		Unread:                   state.Unread,
+		LastReadAt:               state.LastReadAt,
+		DeletedAt:                state.DeletedAt,
+		RequestedAt:              state.RequestedAt,
+		AcceptedAt:               state.AcceptedAt,
+		DeclinedAt:               state.DeclinedAt,
+		CreatedAt:                state.CreatedAt,
+		UpdatedAt:                state.UpdatedAt,
+	}, nil
+}
+
+// PutUserConversationState persists a canonical per-user DM state row.
+func (r *ConversationRepository) PutUserConversationState(_ context.Context, state *models.UserConversationState) error {
+	if state == nil {
+		return storage.ErrInvalidInput
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cloned := *state
+	r.states[state.ViewerID+":"+state.ConversationID] = &cloned
+	return nil
+}
+
+// ListUserConversationStatesByFolder lists canonical per-user DM state rows by folder.
+func (r *ConversationRepository) ListUserConversationStatesByFolder(_ context.Context, viewerID string, folder interfaces.UserConversationFolder, _ interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]*interfaces.UserConversationStateContract, 0)
+	for key, state := range r.states {
+		if !strings.HasPrefix(key, viewerID+":") || state == nil || state.Folder != folder {
+			continue
+		}
+		items = append(items, &interfaces.UserConversationStateContract{
+			ViewerID:                 state.ViewerID,
+			ConversationID:           state.ConversationID,
+			CounterpartID:            state.CounterpartID,
+			Folder:                   state.Folder,
+			RequestState:             state.RequestState,
+			PreviewStatusID:          state.PreviewStatusID,
+			PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+			SortAt:                   state.SortAt,
+			Unread:                   state.Unread,
+			LastReadAt:               state.LastReadAt,
+			DeletedAt:                state.DeletedAt,
+			RequestedAt:              state.RequestedAt,
+			AcceptedAt:               state.AcceptedAt,
+			DeclinedAt:               state.DeclinedAt,
+			CreatedAt:                state.CreatedAt,
+			UpdatedAt:                state.UpdatedAt,
+		})
+	}
+
+	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{Items: items, Total: int64(len(items))}, nil
+}
+
+// ListUnreadUserConversationStates lists canonical unread per-user DM state rows.
+func (r *ConversationRepository) ListUnreadUserConversationStates(_ context.Context, viewerID string, _ interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]*interfaces.UserConversationStateContract, 0)
+	for key, state := range r.states {
+		if !strings.HasPrefix(key, viewerID+":") || state == nil || !state.Unread {
+			continue
+		}
+		items = append(items, &interfaces.UserConversationStateContract{
+			ViewerID:                 state.ViewerID,
+			ConversationID:           state.ConversationID,
+			CounterpartID:            state.CounterpartID,
+			Folder:                   state.Folder,
+			RequestState:             state.RequestState,
+			PreviewStatusID:          state.PreviewStatusID,
+			PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+			SortAt:                   state.SortAt,
+			Unread:                   state.Unread,
+			LastReadAt:               state.LastReadAt,
+			DeletedAt:                state.DeletedAt,
+			RequestedAt:              state.RequestedAt,
+			AcceptedAt:               state.AcceptedAt,
+			DeclinedAt:               state.DeclinedAt,
+			CreatedAt:                state.CreatedAt,
+			UpdatedAt:                state.UpdatedAt,
+		})
+	}
+
+	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{Items: items, Total: int64(len(items))}, nil
+}
+
+// ListConversationParticipantStates lists all canonical per-user DM state rows for a conversation.
+func (r *ConversationRepository) ListConversationParticipantStates(_ context.Context, conversationID string) ([]*interfaces.UserConversationStateContract, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]*interfaces.UserConversationStateContract, 0)
+	suffix := ":" + conversationID
+	for key, state := range r.states {
+		if !strings.HasSuffix(key, suffix) || state == nil {
+			continue
+		}
+		items = append(items, &interfaces.UserConversationStateContract{
+			ViewerID:                 state.ViewerID,
+			ConversationID:           state.ConversationID,
+			CounterpartID:            state.CounterpartID,
+			Folder:                   state.Folder,
+			RequestState:             state.RequestState,
+			PreviewStatusID:          state.PreviewStatusID,
+			PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+			SortAt:                   state.SortAt,
+			Unread:                   state.Unread,
+			LastReadAt:               state.LastReadAt,
+			DeletedAt:                state.DeletedAt,
+			RequestedAt:              state.RequestedAt,
+			AcceptedAt:               state.AcceptedAt,
+			DeclinedAt:               state.DeclinedAt,
+			CreatedAt:                state.CreatedAt,
+			UpdatedAt:                state.UpdatedAt,
+		})
+	}
+	return items, nil
 }
 
 // GetUnreadConversations retrieves unread conversations for a user
@@ -521,6 +695,7 @@ func (r *ConversationRepository) Clear() {
 	r.conversations = make(map[string]*models.Conversation)
 	r.participants = make(map[string][]string)
 	r.userConversations = make(map[string][]string)
+	r.states = make(map[string]*models.UserConversationState)
 	r.statuses = make(map[string]*storage.ConversationStatus)
 	r.statusesByConv = make(map[string][]string)
 	r.readStatus = make(map[string]bool)

@@ -15,6 +15,8 @@ import (
 // DirectMessageRepository in direct_message_contract.go, which replaces snapshot-hydrated
 // participant records and scan-shaped list queries with canonical per-user DM state reads.
 type ConversationRepository interface {
+	DirectMessageRepository
+
 	// ===== Core Conversation Operations =====
 
 	// CreateConversation creates a new conversation with participants
@@ -108,27 +110,11 @@ type ConversationRepository interface {
 
 	// ===== Participant Operations =====
 
-	// AddParticipant adds a participant to a conversation
-	AddParticipant(ctx context.Context, conversationID, participantID string) error
-
-	// RemoveParticipant removes a participant from a conversation
-	RemoveParticipant(ctx context.Context, conversationID, participantID string) error
-
 	// GetConversationParticipants retrieves the list of participants in a conversation
 	GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error)
 
-	// GetConversationParticipantRecord retrieves the most recent participant record for a given
-	// (conversationID, participantID) pair. Legacy note: DM rewrite M1 replaces snapshot-hydrated
-	// participant records with point-readable UserConversationState rows.
-	GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error)
-
-	// UpdateConversationParticipantRecord persists an updated participant record.
-	// Legacy note: DM rewrite M1 replaces snapshot-hydrated participant records with canonical
-	// per-user DM state writes.
-	UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error
-
-	// LeaveConversation removes a participant from a conversation
-	LeaveConversation(ctx context.Context, conversationID, username string) error
+	// PutUserConversationState persists a canonical per-user DM state row.
+	PutUserConversationState(ctx context.Context, state *models.UserConversationState) error
 
 	// ===== Mute Operations =====
 

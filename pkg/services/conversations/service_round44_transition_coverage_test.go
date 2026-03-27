@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -26,43 +27,41 @@ func TestDefaultSendConversationState_AllowsNilConversation(t *testing.T) {
 	require.False(t, state.UpdatedAt.IsZero())
 }
 
-func TestUserConversationStateFromParticipantRecord_PrefersParticipantUpdatedAt(t *testing.T) {
+func TestUserConversationStateFromContract_PrefersContractUpdatedAt(t *testing.T) {
 	conversation := createTestConversation("conv-existing", []string{"alice", "bob"})
 	conversation.CreatedAt = time.Date(2026, 3, 26, 15, 0, 0, 0, time.UTC)
 	conversation.UpdatedAt = time.Date(2026, 3, 26, 15, 30, 0, 0, time.UTC)
 	participantUpdatedAt := time.Date(2026, 3, 26, 15, 20, 0, 0, time.UTC)
 
-	state := userConversationStateFromParticipantRecord(conversation, "alice", "bob", &models.ConversationParticipantRecord{
-		UpdatedAt: participantUpdatedAt,
-		Conversation: &models.Conversation{
-			ID:        conversation.ID,
-			CreatedAt: conversation.CreatedAt,
-			UpdatedAt: conversation.UpdatedAt,
-		},
+	state := userConversationStateFromContract(conversation, "alice", "bob", &interfaces.UserConversationStateContract{
+		ViewerID:       "alice",
+		ConversationID: conversation.ID,
+		CounterpartID:  "bob",
+		UpdatedAt:      participantUpdatedAt,
+		CreatedAt:      conversation.CreatedAt,
 	})
 
 	require.Equal(t, conversation.CreatedAt.UTC(), state.CreatedAt)
 	require.Equal(t, participantUpdatedAt, state.UpdatedAt)
 }
 
-func TestUserConversationStateFromParticipantRecord_FallsBackToConversationUpdatedAt(t *testing.T) {
+func TestUserConversationStateFromContract_FallsBackToConversationUpdatedAt(t *testing.T) {
 	conversation := createTestConversation("conv-existing", []string{"alice", "bob"})
 	conversation.CreatedAt = time.Date(2026, 3, 26, 15, 0, 0, 0, time.UTC)
 	conversation.UpdatedAt = time.Date(2026, 3, 26, 15, 30, 0, 0, time.UTC)
 
-	state := userConversationStateFromParticipantRecord(conversation, "alice", "bob", &models.ConversationParticipantRecord{
-		Conversation: &models.Conversation{
-			ID:        conversation.ID,
-			CreatedAt: conversation.CreatedAt,
-			UpdatedAt: conversation.UpdatedAt,
-		},
+	state := userConversationStateFromContract(conversation, "alice", "bob", &interfaces.UserConversationStateContract{
+		ViewerID:       "alice",
+		ConversationID: conversation.ID,
+		CounterpartID:  "bob",
+		CreatedAt:      conversation.CreatedAt,
 	})
 
 	require.Equal(t, conversation.CreatedAt.UTC(), state.CreatedAt)
 	require.Equal(t, conversation.UpdatedAt.UTC(), state.UpdatedAt)
 }
 
-func TestService_getParticipantRecordForSend_HandlesMissingAndUnexpectedErrors(t *testing.T) {
+func TestService_getUserConversationStateForSend_HandlesMissingAndUnexpectedErrors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("not found returns nil record", func(t *testing.T) {
@@ -70,11 +69,11 @@ func TestService_getParticipantRecordForSend_HandlesMissingAndUnexpectedErrors(t
 		service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 		conversationRepo.
-			On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").
-			Return((*models.ConversationParticipantRecord)(nil), storage.ErrNotFound).
+			On("GetUserConversationState", ctx, "alice", "conv-existing").
+			Return((*interfaces.UserConversationStateContract)(nil), storage.ErrNotFound).
 			Once()
 
-		record, err := service.getParticipantRecordForSend(ctx, "conv-existing", "alice")
+		record, err := service.getUserConversationStateForSend(ctx, "conv-existing", "alice")
 		require.NoError(t, err)
 		require.Nil(t, record)
 		conversationRepo.AssertExpectations(t)
@@ -85,11 +84,11 @@ func TestService_getParticipantRecordForSend_HandlesMissingAndUnexpectedErrors(t
 		service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 		conversationRepo.
-			On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").
-			Return((*models.ConversationParticipantRecord)(nil), fmt.Errorf("boom")).
+			On("GetUserConversationState", ctx, "alice", "conv-existing").
+			Return((*interfaces.UserConversationStateContract)(nil), fmt.Errorf("boom")).
 			Once()
 
-		record, err := service.getParticipantRecordForSend(ctx, "conv-existing", "alice")
+		record, err := service.getUserConversationStateForSend(ctx, "conv-existing", "alice")
 		require.Error(t, err)
 		require.Nil(t, record)
 		conversationRepo.AssertExpectations(t)

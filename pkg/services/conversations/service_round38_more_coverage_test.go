@@ -108,25 +108,25 @@ func TestService_auditDMRequestEvent_UsesMediumSeverityOnFailure(t *testing.T) {
 	auditRepo.AssertExpectations(t)
 }
 
-func TestService_getParticipantRecordForSend_ReturnsNilOnErrorOrMissingRecord(t *testing.T) {
+func TestService_getUserConversationStateForSend_ReturnsNilOnErrorOrMissingState(t *testing.T) {
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
 	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return((*models.ConversationParticipantRecord)(nil), errors.New("boom")).
+		On("GetUserConversationState", ctx, "bob", "conv123").
+		Return((*interfaces.UserConversationStateContract)(nil), errors.New("boom")).
 		Once()
-	record, err := service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	record, err := service.getUserConversationStateForSend(ctx, "conv123", "bob")
 	require.Error(t, err)
 	require.Nil(t, record)
 
 	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return((*models.ConversationParticipantRecord)(nil), nil).
+		On("GetUserConversationState", ctx, "bob", "conv123").
+		Return((*interfaces.UserConversationStateContract)(nil), nil).
 		Once()
-	record, err = service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	record, err = service.getUserConversationStateForSend(ctx, "conv123", "bob")
 	require.NoError(t, err)
 	require.Nil(t, record)
 }

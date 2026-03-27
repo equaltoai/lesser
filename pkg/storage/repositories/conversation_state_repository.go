@@ -245,6 +245,11 @@ func (r *ConversationRepository) createOrUpdateUserConversationState(ctx context
 	}
 }
 
+// PutUserConversationState persists a canonical per-user DM state row.
+func (r *ConversationRepository) PutUserConversationState(ctx context.Context, state *models.UserConversationState) error {
+	return r.createOrUpdateUserConversationState(ctx, state)
+}
+
 func (r *ConversationRepository) createOrUpdateUserConversationStates(ctx context.Context, states []*models.UserConversationState) error {
 	for _, state := range states {
 		if err := r.createOrUpdateUserConversationState(ctx, state); err != nil {

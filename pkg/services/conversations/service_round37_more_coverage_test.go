@@ -76,18 +76,18 @@ func TestService_buildDirectMessageParticipantStatesForSend_CoversExistingConver
 			conversation := createTestConversation("conv123", []string{"alice", "bob"})
 			publishedAt := time.Date(2026, 3, 26, 14, 0, 0, 0, time.UTC)
 
-			senderRecord := &models.ConversationParticipantRecord{
+			senderState := &models.UserConversationState{
 				RequestState: models.DmRequestStatePending,
 				DeletedAt:    ptrTime(time.Now()),
 			}
 
-			recipientRecord := &models.ConversationParticipantRecord{
+			recipientState := &models.UserConversationState{
 				RequestState: tc.recipientState,
 				DeletedAt:    ptrTime(time.Now()),
 			}
 			if tc.recipientHasTime {
 				tm := time.Now().UTC().Add(-time.Minute)
-				recipientRecord.RequestedAt = &tm
+				recipientState.RequestedAt = &tm
 			}
 
 			states := buildDirectMessageParticipantStatesForSend(
@@ -95,28 +95,28 @@ func TestService_buildDirectMessageParticipantStatesForSend_CoversExistingConver
 				&models.Status{StatusID: "status-1", PublishedAt: publishedAt},
 				"alice",
 				"bob",
-				senderRecord,
-				recipientRecord,
+				senderState,
+				recipientState,
 				tc.deliversToInbox,
 			)
 
 			require.Len(t, states, 2)
 
-			senderState := states[0]
-			require.Equal(t, models.DmRequestStateAccepted, senderState.RequestState)
-			require.NotNil(t, senderState.AcceptedAt)
-			require.Nil(t, senderState.DeclinedAt)
-			require.False(t, senderState.Unread)
+			computedSenderState := states[0]
+			require.Equal(t, models.DmRequestStateAccepted, computedSenderState.RequestState)
+			require.NotNil(t, computedSenderState.AcceptedAt)
+			require.Nil(t, computedSenderState.DeclinedAt)
+			require.False(t, computedSenderState.Unread)
 
-			recipientState := states[1]
-			require.Equal(t, tc.wantState, recipientState.RequestState)
-			require.Equal(t, tc.wantFolder, recipientState.Folder)
-			require.True(t, recipientState.Unread)
+			computedRecipientState := states[1]
+			require.Equal(t, tc.wantState, computedRecipientState.RequestState)
+			require.Equal(t, tc.wantFolder, computedRecipientState.Folder)
+			require.True(t, computedRecipientState.Unread)
 			if tc.wantAcceptedAt {
-				require.NotNil(t, recipientState.AcceptedAt)
+				require.NotNil(t, computedRecipientState.AcceptedAt)
 			}
 			if tc.wantRequestedAt {
-				require.NotNil(t, recipientState.RequestedAt)
+				require.NotNil(t, computedRecipientState.RequestedAt)
 			}
 		})
 	}
@@ -401,18 +401,18 @@ func TestService_getDirectMessageAccounts_ReturnsErrors(t *testing.T) {
 	})
 }
 
-func TestService_getParticipantRecordForSend_ReturnsStateWhenPresent(t *testing.T) {
+func TestService_getUserConversationStateForSend_ReturnsStateWhenPresent(t *testing.T) {
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
 	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return(&models.ConversationParticipantRecord{RequestState: models.DmRequestStateAccepted}, nil).
+		On("GetUserConversationState", ctx, "bob", "conv123").
+		Return(&interfaces.UserConversationStateContract{RequestState: models.DmRequestStateAccepted}, nil).
 		Once()
 
-	record, err := service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	record, err := service.getUserConversationStateForSend(ctx, "conv123", "bob")
 	require.NoError(t, err)
 	require.NotNil(t, record)
 	require.Equal(t, models.DmRequestStateAccepted, record.RequestState)
@@ -753,12 +753,12 @@ func TestService_actorURLForUsername_HandlesBlankAndURLs(t *testing.T) {
 	require.Equal(t, "https://example.com/users/alice", service.actorURLForUsername("alice"))
 }
 
-func TestService_updateParticipantRecord_ErrorBranches(t *testing.T) {
+func TestService_updateUserConversationState_ErrorBranches(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("nil_mutator_is_noop", func(t *testing.T) {
 		service := NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
-		require.NoError(t, service.updateParticipantRecord(ctx, "conv123", "alice", nil))
+		require.NoError(t, service.updateUserConversationState(ctx, "conv123", "alice", nil))
 	})
 
 	t.Run("returns_error_from_repo", func(t *testing.T) {
@@ -766,11 +766,11 @@ func TestService_updateParticipantRecord_ErrorBranches(t *testing.T) {
 		service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 		conversationRepo.
-			On("GetConversationParticipantRecord", ctx, "conv123", "alice").
-			Return((*models.ConversationParticipantRecord)(nil), errors.New("boom")).
+			On("GetUserConversationState", ctx, "alice", "conv123").
+			Return((*interfaces.UserConversationStateContract)(nil), errors.New("boom")).
 			Once()
 
-		err := service.updateParticipantRecord(ctx, "conv123", "alice", func(*models.ConversationParticipantRecord) {})
+		err := service.updateUserConversationState(ctx, "conv123", "alice", func(*models.UserConversationState) {})
 		require.Error(t, err)
 	})
 
@@ -779,11 +779,11 @@ func TestService_updateParticipantRecord_ErrorBranches(t *testing.T) {
 		service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 		conversationRepo.
-			On("GetConversationParticipantRecord", ctx, "conv123", "alice").
-			Return((*models.ConversationParticipantRecord)(nil), nil).
+			On("GetUserConversationState", ctx, "alice", "conv123").
+			Return((*interfaces.UserConversationStateContract)(nil), nil).
 			Once()
 
-		err := service.updateParticipantRecord(ctx, "conv123", "alice", func(*models.ConversationParticipantRecord) {})
+		err := service.updateUserConversationState(ctx, "conv123", "alice", func(*models.UserConversationState) {})
 		require.ErrorIs(t, err, storage.ErrNotFound)
 	})
 }

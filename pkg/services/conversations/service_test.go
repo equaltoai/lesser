@@ -26,6 +26,61 @@ type mockConversationRepository struct {
 	directMessageWritesFrozenErr error
 }
 
+func (m *mockConversationRepository) hasExpectation(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
+func conversationStateContractFromRecord(record *models.ConversationParticipantRecord) *interfaces.UserConversationStateContract {
+	if record == nil {
+		return nil
+	}
+	return &interfaces.UserConversationStateContract{
+		ViewerID:                 record.ViewerID,
+		ConversationID:           record.ConversationID,
+		CounterpartID:            record.CounterpartID,
+		Folder:                   record.Folder,
+		RequestState:             record.RequestState,
+		PreviewStatusID:          record.PreviewStatusID,
+		PreviewStatusPublishedAt: record.PreviewStatusPublishedAt,
+		SortAt:                   record.SortAt,
+		Unread:                   record.Unread,
+		LastReadAt:               record.LastReadAt,
+		DeletedAt:                record.DeletedAt,
+		RequestedAt:              record.RequestedAt,
+		AcceptedAt:               record.AcceptedAt,
+		DeclinedAt:               record.DeclinedAt,
+		UpdatedAt:                record.UpdatedAt,
+	}
+}
+
+func conversationStateRecordFromState(state *models.UserConversationState) *models.ConversationParticipantRecord {
+	if state == nil {
+		return nil
+	}
+	return &models.ConversationParticipantRecord{
+		ViewerID:                 state.ViewerID,
+		ConversationID:           state.ConversationID,
+		CounterpartID:            state.CounterpartID,
+		Folder:                   state.Folder,
+		RequestState:             state.RequestState,
+		RequestedAt:              state.RequestedAt,
+		AcceptedAt:               state.AcceptedAt,
+		DeclinedAt:               state.DeclinedAt,
+		DeletedAt:                state.DeletedAt,
+		Unread:                   state.Unread,
+		LastReadAt:               state.LastReadAt,
+		PreviewStatusID:          state.PreviewStatusID,
+		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+		SortAt:                   state.SortAt,
+		UpdatedAt:                state.UpdatedAt,
+	}
+}
+
 func (m *mockConversationRepository) CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error {
 	args := m.Called(ctx, conversation, participants)
 	return args.Error(0)
@@ -86,6 +141,42 @@ func (m *mockConversationRepository) GetConversationByParticipants(ctx context.C
 	return args.Get(0).(*models.Conversation), args.Error(1)
 }
 
+func (m *mockConversationRepository) GetUserConversationState(ctx context.Context, viewerID, conversationID string) (*interfaces.UserConversationStateContract, error) {
+	if !m.hasExpectation("GetUserConversationState") && m.hasExpectation("GetConversationParticipantRecord") {
+		record, err := m.GetConversationParticipantRecord(ctx, conversationID, viewerID)
+		return conversationStateContractFromRecord(record), err
+	}
+	args := m.Called(ctx, viewerID, conversationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.UserConversationStateContract), args.Error(1)
+}
+
+func (m *mockConversationRepository) ListUserConversationStatesByFolder(ctx context.Context, viewerID string, folder interfaces.UserConversationFolder, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	args := m.Called(ctx, viewerID, folder, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*interfaces.UserConversationStateContract]), args.Error(1)
+}
+
+func (m *mockConversationRepository) ListUnreadUserConversationStates(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	args := m.Called(ctx, viewerID, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*interfaces.UserConversationStateContract]), args.Error(1)
+}
+
+func (m *mockConversationRepository) ListConversationParticipantStates(ctx context.Context, conversationID string) ([]*interfaces.UserConversationStateContract, error) {
+	args := m.Called(ctx, conversationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*interfaces.UserConversationStateContract), args.Error(1)
+}
+
 func (m *mockConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
 	args := m.Called(ctx, conversationID, participantID)
 	return args.Error(0)
@@ -110,6 +201,14 @@ func (m *mockConversationRepository) GetConversationParticipantRecord(ctx contex
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.ConversationParticipantRecord), args.Error(1)
+}
+
+func (m *mockConversationRepository) PutUserConversationState(ctx context.Context, state *models.UserConversationState) error {
+	if !m.hasExpectation("PutUserConversationState") && m.hasExpectation("UpdateConversationParticipantRecord") {
+		return m.UpdateConversationParticipantRecord(ctx, conversationStateRecordFromState(state))
+	}
+	args := m.Called(ctx, state)
+	return args.Error(0)
 }
 
 func (m *mockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {

@@ -324,18 +324,18 @@ func TestService_buildDirectMessageParticipantStatesForSend_CoversRecipientReque
 			conversation := createTestConversation("conv123", []string{"alice", "bob"})
 			publishedAt := time.Date(2026, 3, 26, 13, 15, 0, 0, time.UTC)
 
-			senderRecord := &models.ConversationParticipantRecord{
+			senderState := &models.UserConversationState{
 				RequestState: models.DmRequestStatePending,
 				DeletedAt:    ptrTime(time.Now()),
 			}
 
-			recipientRecord := &models.ConversationParticipantRecord{
+			recipientState := &models.UserConversationState{
 				RequestState: tc.recipientState,
 				DeletedAt:    ptrTime(time.Now()),
 			}
 			if tc.recipientHasTime {
 				tm := time.Now().UTC().Add(-time.Minute)
-				recipientRecord.RequestedAt = &tm
+				recipientState.RequestedAt = &tm
 			}
 
 			states := buildDirectMessageParticipantStatesForSend(
@@ -343,37 +343,37 @@ func TestService_buildDirectMessageParticipantStatesForSend_CoversRecipientReque
 				&models.Status{StatusID: "status-1", PublishedAt: publishedAt},
 				"alice",
 				"bob",
-				senderRecord,
-				recipientRecord,
+				senderState,
+				recipientState,
 				tc.deliversToInbox,
 			)
 
 			require.Len(t, states, 2)
 
-			senderState := states[0]
-			require.Equal(t, models.DmRequestStateAccepted, senderState.RequestState)
-			require.Equal(t, models.UserConversationFolderInbox, senderState.Folder)
-			require.Nil(t, senderState.DeletedAt)
-			require.NotNil(t, senderState.AcceptedAt)
-			require.Nil(t, senderState.DeclinedAt)
-			require.False(t, senderState.Unread)
-			require.NotNil(t, senderState.LastReadAt)
-			require.Equal(t, "status-1", senderState.PreviewStatusID)
-			require.Equal(t, publishedAt, senderState.SortAt)
+			computedSenderState := states[0]
+			require.Equal(t, models.DmRequestStateAccepted, computedSenderState.RequestState)
+			require.Equal(t, models.UserConversationFolderInbox, computedSenderState.Folder)
+			require.Nil(t, computedSenderState.DeletedAt)
+			require.NotNil(t, computedSenderState.AcceptedAt)
+			require.Nil(t, computedSenderState.DeclinedAt)
+			require.False(t, computedSenderState.Unread)
+			require.NotNil(t, computedSenderState.LastReadAt)
+			require.Equal(t, "status-1", computedSenderState.PreviewStatusID)
+			require.Equal(t, publishedAt, computedSenderState.SortAt)
 
-			recipientState := states[1]
-			require.Equal(t, tc.wantState, recipientState.RequestState)
-			require.Equal(t, tc.wantFolder, recipientState.Folder)
-			require.Nil(t, recipientState.DeletedAt)
-			require.True(t, recipientState.Unread)
-			require.Nil(t, recipientState.LastReadAt)
-			require.Equal(t, "status-1", recipientState.PreviewStatusID)
-			require.Equal(t, publishedAt, recipientState.SortAt)
+			computedRecipientState := states[1]
+			require.Equal(t, tc.wantState, computedRecipientState.RequestState)
+			require.Equal(t, tc.wantFolder, computedRecipientState.Folder)
+			require.Nil(t, computedRecipientState.DeletedAt)
+			require.True(t, computedRecipientState.Unread)
+			require.Nil(t, computedRecipientState.LastReadAt)
+			require.Equal(t, "status-1", computedRecipientState.PreviewStatusID)
+			require.Equal(t, publishedAt, computedRecipientState.SortAt)
 			if tc.wantAcceptedAt {
-				require.NotNil(t, recipientState.AcceptedAt)
+				require.NotNil(t, computedRecipientState.AcceptedAt)
 			}
 			if tc.wantRequestedAt {
-				require.NotNil(t, recipientState.RequestedAt)
+				require.NotNil(t, computedRecipientState.RequestedAt)
 			}
 		})
 	}
@@ -489,23 +489,21 @@ func TestService_applyDirectMessageSendTransition_UsesParticipantRecordVersionsF
 
 	senderUpdatedAt := time.Date(2026, 3, 26, 13, 5, 0, 0, time.UTC)
 	recipientUpdatedAt := time.Date(2026, 3, 26, 13, 10, 0, 0, time.UTC)
-	senderRecord := &models.ConversationParticipantRecord{
-		RequestState: models.DmRequestStateAccepted,
-		UpdatedAt:    senderUpdatedAt,
-		Conversation: &models.Conversation{
-			ID:        conversation.ID,
-			CreatedAt: conversation.CreatedAt,
-			UpdatedAt: conversation.UpdatedAt,
-		},
+	senderState := &models.UserConversationState{
+		RequestState:   models.DmRequestStateAccepted,
+		UpdatedAt:      senderUpdatedAt,
+		CreatedAt:      conversation.CreatedAt,
+		ConversationID: conversation.ID,
+		ViewerID:       "alice",
+		CounterpartID:  "bob",
 	}
-	recipientRecord := &models.ConversationParticipantRecord{
-		RequestState: models.DmRequestStateAccepted,
-		UpdatedAt:    recipientUpdatedAt,
-		Conversation: &models.Conversation{
-			ID:        conversation.ID,
-			CreatedAt: conversation.CreatedAt,
-			UpdatedAt: conversation.UpdatedAt,
-		},
+	recipientState := &models.UserConversationState{
+		RequestState:   models.DmRequestStateAccepted,
+		UpdatedAt:      recipientUpdatedAt,
+		CreatedAt:      conversation.CreatedAt,
+		ConversationID: conversation.ID,
+		ViewerID:       "bob",
+		CounterpartID:  "alice",
 	}
 
 	conversationRepo.
@@ -545,8 +543,8 @@ func TestService_applyDirectMessageSendTransition_UsesParticipantRecordVersionsF
 		false,
 		"alice",
 		"bob",
-		senderRecord,
-		recipientRecord,
+		senderState,
+		recipientState,
 		status,
 		true,
 	)

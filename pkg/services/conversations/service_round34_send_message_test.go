@@ -147,18 +147,26 @@ func TestService_MessageRequestDecisions_UpdateParticipantStateAndAudit(t *testi
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
 	deletedAt := time.Date(2026, 3, 26, 12, 0, 0, 0, time.UTC)
 	record := &models.ConversationParticipantRecord{
-		Conversation:  conversation,
-		RequestState:  models.DmRequestStatePending,
-		Folder:        models.UserConversationFolderRequests,
-		DeletedAt:     &deletedAt,
-		RequestedAt:   &deletedAt,
-		DeclinedAt:    &deletedAt,
-		AcceptedAt:    nil,
+		Conversation: conversation,
+		RequestState: models.DmRequestStatePending,
+		Folder:       models.UserConversationFolderRequests,
+		DeletedAt:    &deletedAt,
+		RequestedAt:  &deletedAt,
+		DeclinedAt:   &deletedAt,
+		AcceptedAt:   nil,
 	}
 
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil)
 	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(record, nil).Twice()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Once()
+	conversationRepo.On("PutUserConversationState", ctx, mock.MatchedBy(func(state *models.UserConversationState) bool {
+		return state != nil &&
+			state.RequestState == models.DmRequestStateAccepted &&
+			state.Folder == models.UserConversationFolderInbox &&
+			state.DeletedAt == nil &&
+			state.RequestedAt == nil &&
+			state.DeclinedAt == nil &&
+			state.AcceptedAt != nil
+	})).Return(nil).Once()
 
 	auditRepo.
 		On(
@@ -188,12 +196,6 @@ func TestService_MessageRequestDecisions_UpdateParticipantStateAndAudit(t *testi
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, models.DmRequestStateAccepted, record.RequestState)
-	require.Equal(t, models.UserConversationFolderInbox, record.Folder)
-	require.Nil(t, record.DeletedAt)
-	require.Nil(t, record.RequestedAt)
-	require.Nil(t, record.DeclinedAt)
-	require.NotNil(t, record.AcceptedAt)
 
 	conversationRepo.AssertExpectations(t)
 	auditRepo.AssertExpectations(t)
@@ -232,7 +234,15 @@ func TestService_DeclineMessageRequest_UpdatesParticipantStateAndAudit(t *testin
 
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil)
 	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(record, nil).Twice()
-	conversationRepo.On("UpdateConversationParticipantRecord", ctx, mock.AnythingOfType("*models.ConversationParticipantRecord")).Return(nil).Once()
+	conversationRepo.On("PutUserConversationState", ctx, mock.MatchedBy(func(state *models.UserConversationState) bool {
+		return state != nil &&
+			state.RequestState == models.DmRequestStateDeclined &&
+			state.Folder == models.UserConversationFolderDeclined &&
+			state.DeletedAt == nil &&
+			state.RequestedAt == nil &&
+			state.AcceptedAt == nil &&
+			state.DeclinedAt != nil
+	})).Return(nil).Once()
 
 	auditRepo.
 		On(
@@ -262,12 +272,6 @@ func TestService_DeclineMessageRequest_UpdatesParticipantStateAndAudit(t *testin
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, models.DmRequestStateDeclined, record.RequestState)
-	require.Equal(t, models.UserConversationFolderDeclined, record.Folder)
-	require.Nil(t, record.DeletedAt)
-	require.Nil(t, record.RequestedAt)
-	require.NotNil(t, record.DeclinedAt)
-	require.Nil(t, record.AcceptedAt)
 
 	conversationRepo.AssertExpectations(t)
 	auditRepo.AssertExpectations(t)
