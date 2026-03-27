@@ -81,6 +81,8 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "lookup_rows_upserted: 0")
 	require.Contains(t, output, "mention_repairs_planned: 0")
 	require.Contains(t, output, "mention_repairs_applied: 0")
+	require.Contains(t, output, "legacy_participant_rows_planned: 0")
+	require.Contains(t, output, "legacy_participant_rows_deleted: 0")
 	require.Contains(t, output, "sample_conversation_ids:")
 	require.Contains(t, output, "  conv-1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
@@ -134,6 +136,8 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 	require.Zero(t, summary.LookupRowsUpserted)
 	require.Zero(t, summary.MentionRepairsPlanned)
 	require.Zero(t, summary.MentionRepairsApplied)
+	require.Zero(t, summary.LegacyParticipantRowsPlanned)
+	require.Zero(t, summary.LegacyParticipantRowsDeleted)
 	require.Equal(t, []string{"conv-1"}, summary.SampleConversationIDs)
 	require.Len(t, client.queryInputs, 1)
 }
@@ -229,7 +233,10 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 	require.Equal(t, 1, summary.LookupRowsUpserted)
 	require.Zero(t, summary.MentionRepairsPlanned)
 	require.Zero(t, summary.MentionRepairsApplied)
+	require.Equal(t, 2, summary.LegacyParticipantRowsPlanned)
+	require.Equal(t, 2, summary.LegacyParticipantRowsDeleted)
 	require.Len(t, client.putInputs, 5)
+	require.Len(t, client.deleteInputs, 2)
 
 	archState := findPutItem(t, client.putInputs, "USER_CONVERSATION_STATE#arch", "CONVERSATION#conv-1")
 	require.Equal(t, "INBOX", strAttr(t, archState["folder"]))
