@@ -111,7 +111,7 @@ func (r *ConversationRepository) UpdateConversation(_ context.Context, conversat
 }
 
 // ApplyDirectMessageSend applies the canonical DM send transition in memory.
-func (r *ConversationRepository) ApplyDirectMessageSend(_ context.Context, transition *models.DirectMessageSendTransition) error {
+func (r *ConversationRepository) ApplyDirectMessageSend(_ context.Context, transition *models.DirectMessageSendTransition, _ interfaces.DirectMessageStatusStageFn) error {
 	if transition == nil || transition.Conversation == nil || transition.Status == nil {
 		return storage.ErrInvalidInput
 	}

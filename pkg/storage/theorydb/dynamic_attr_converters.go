@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 )
 
 var (
-	mapStringAnyType = reflect.TypeOf(map[string]any{})
-	sliceAnyType     = reflect.TypeOf([]any{})
+	mapStringAnyType            = reflect.TypeOf(map[string]any{})
+	sliceAnyType                = reflect.TypeOf([]any{})
+	activityPubContextValueType = reflect.TypeOf(activitypub.ContextValue{})
 )
 
 type mapStringAnyConverter struct{}
@@ -77,6 +79,8 @@ func (mapStringAnyConverter) FromAttributeValue(av types.AttributeValue, target 
 
 type sliceAnyConverter struct{}
 
+type activityPubContextValueConverter struct{}
+
 func (sliceAnyConverter) ToAttributeValue(value any) (types.AttributeValue, error) {
 	s, ok := value.([]any)
 	if !ok {
@@ -131,6 +135,30 @@ func (sliceAnyConverter) FromAttributeValue(av types.AttributeValue, target any)
 	default:
 		return fmt.Errorf("sliceAnyConverter: expected list attribute or JSON string, got %T", av)
 	}
+}
+
+func (activityPubContextValueConverter) ToAttributeValue(value any) (types.AttributeValue, error) {
+	contextValue, ok := value.(activitypub.ContextValue)
+	if !ok {
+		return nil, fmt.Errorf("activityPubContextValueConverter: expected activitypub.ContextValue, got %T", value)
+	}
+
+	return (sliceAnyConverter{}).ToAttributeValue([]any(contextValue))
+}
+
+func (activityPubContextValueConverter) FromAttributeValue(av types.AttributeValue, target any) error {
+	dest, ok := target.(*activitypub.ContextValue)
+	if !ok {
+		return fmt.Errorf("activityPubContextValueConverter: target must be *activitypub.ContextValue, got %T", target)
+	}
+
+	var out []any
+	if err := (sliceAnyConverter{}).FromAttributeValue(av, &out); err != nil {
+		return err
+	}
+
+	*dest = activitypub.ContextValue(out)
+	return nil
 }
 
 func toAttributeValueDynamic(value any) (types.AttributeValue, error) {

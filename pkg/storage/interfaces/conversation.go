@@ -79,8 +79,9 @@ type ConversationRepository interface {
 	GetUnreadConversationCount(ctx context.Context, username string) (int, error)
 
 	// ApplyDirectMessageSend atomically writes the canonical DM send transition:
-	// status row, shared conversation metadata, and both per-user state rows.
-	ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error
+	// shared conversation metadata, both per-user state rows, and a caller-supplied
+	// staged status write owned by the canonical StatusRepository contract.
+	ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition, stageStatusCreate DirectMessageStatusStageFn) error
 
 	// ===== Participant Operations =====
 

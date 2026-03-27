@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	lessertheorydb "github.com/equaltoai/lesser/pkg/storage/theorydb"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/session"
 	"go.uber.org/zap"
@@ -87,6 +88,9 @@ func runVerifyAccountHydration(argv []string) error {
 		return err
 	}
 	defer func() { _ = db.Close() }()
+	if err := lessertheorydb.RegisterDefaultTypeConverters(db); err != nil {
+		return err
+	}
 
 	prevTableName := models.MainTableName
 	models.MainTableName = resolvedTableName

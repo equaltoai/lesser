@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -100,4 +101,27 @@ func TestSliceAnyConverter_FromAttributeValue(t *testing.T) {
 	assert.Equal(t, "read", out[0])
 	assert.Equal(t, int64(2), out[1])
 	assert.Equal(t, false, out[2])
+}
+
+func TestActivityPubContextValueConverter_RoundTrip(t *testing.T) {
+	conv := activityPubContextValueConverter{}
+
+	in := activitypub.ContextValue{
+		"https://www.w3.org/ns/activitystreams",
+		map[string]any{
+			"lessersoul": "https://spec.lessersoul.ai/ns/agent-attribution/v1#",
+		},
+	}
+
+	av, err := conv.ToAttributeValue(in)
+	require.NoError(t, err)
+
+	var out activitypub.ContextValue
+	require.NoError(t, conv.FromAttributeValue(av, &out))
+	require.Len(t, out, 2)
+	assert.Equal(t, "https://www.w3.org/ns/activitystreams", out[0])
+
+	nested, ok := out[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "https://spec.lessersoul.ai/ns/agent-attribution/v1#", nested["lessersoul"])
 }

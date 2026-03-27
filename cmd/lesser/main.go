@@ -156,7 +156,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser build lambda <name>                     # build a single bin/<name>.zip")
 	_, _ = fmt.Fprintln(w, "  lesser generate openapi|graphql-coverage|inventory|schema")
 	_, _ = fmt.Fprintln(w, "  lesser schema [--out <path>] | lesser export-schema")
-	_, _ = fmt.Fprintln(w, "  lesser verify [all|ci|docs|ai-training|schema|audit|supply-chain|graphql-coverage|openapi|account-hydration|inventory|lambda-set|unit|smoke|cdk] [--smoke] [--cdk]")
+	_, _ = fmt.Fprintln(w, "  lesser verify [all|ci|docs|ai-training|schema|audit|supply-chain|graphql-coverage|openapi|account-hydration|status-contract|inventory|lambda-set|unit|smoke|cdk] [--smoke] [--cdk]")
 	_, _ = fmt.Fprintln(w, "  lesser test [all|unit|integration|race]")
 	_, _ = fmt.Fprintln(w, "  lesser test coverage [--scope all|pkg] [--exclude-generated=true|false] [--include-testing] [--include-tools]")
 	_, _ = fmt.Fprintln(w, "  lesser coverage scoreboard [--profile <path>] [--mode package|file] [--package <prefix>] [--top <n>] [--min-total <pct>] [--exclude-generated=true|false]")

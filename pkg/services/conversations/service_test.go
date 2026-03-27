@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/theory-cloud/tabletheory/pkg/core"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -187,8 +188,8 @@ func (m *mockConversationRepository) DirectMessageWritesFrozen(context.Context) 
 	return m.directMessageWritesFrozen, m.directMessageWritesFrozenErr
 }
 
-func (m *mockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
-	args := m.Called(ctx, transition)
+func (m *mockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition, stageStatusCreate interfaces.DirectMessageStatusStageFn) error {
+	args := m.Called(ctx, transition, stageStatusCreate)
 	return args.Error(0)
 }
 
@@ -209,6 +210,15 @@ type mockNoteRepository struct {
 	mock.Mock
 }
 
+func (m *mockNoteRepository) expects(method string) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
 type mockDirectMessageTombstoneRepository struct {
 	mock.Mock
 }
@@ -227,11 +237,33 @@ func (m *mockDirectMessageTombstoneRepository) TombstonesByStatusID(ctx context.
 }
 
 func (m *mockNoteRepository) CreateStatus(ctx context.Context, status *models.Status) error {
+	if !m.expects("CreateStatus") {
+		return nil
+	}
 	args := m.Called(ctx, status)
 	return args.Error(0)
 }
 
+func (m *mockNoteRepository) PrepareStatusCreate(status *models.Status) error {
+	if !m.expects("PrepareStatusCreate") {
+		return nil
+	}
+	args := m.Called(status)
+	return args.Error(0)
+}
+
+func (m *mockNoteRepository) StageStatusCreate(tx core.TransactionBuilder, status *models.Status) error {
+	if !m.expects("StageStatusCreate") {
+		return nil
+	}
+	args := m.Called(tx, status)
+	return args.Error(0)
+}
+
 func (m *mockNoteRepository) FinalizeCreatedStatus(ctx context.Context, status *models.Status) error {
+	if !m.expects("FinalizeCreatedStatus") {
+		return nil
+	}
 	args := m.Called(ctx, status)
 	return args.Error(0)
 }
@@ -265,6 +297,14 @@ func (m *mockNoteRepository) UpdateStatus(ctx context.Context, status *models.St
 func (m *mockNoteRepository) DeleteStatus(ctx context.Context, statusID string) error {
 	args := m.Called(ctx, statusID)
 	return args.Error(0)
+}
+
+func (m *mockNoteRepository) DeleteBoostStatus(ctx context.Context, boosterID, targetStatusID string) (*models.Status, error) {
+	args := m.Called(ctx, boosterID, targetStatusID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Status), args.Error(1)
 }
 
 func (m *mockNoteRepository) GetPublicTimeline(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
@@ -395,31 +435,27 @@ func (m *mockNoteRepository) GetStatusesByIDs(ctx context.Context, statusIDs []s
 	return args.Get(0).([]*models.Status), args.Error(1)
 }
 
-func (m *mockNoteRepository) GetStatusCounts(ctx context.Context, statusID string) (likes, reblogs, replies int, err error) {
+func (m *mockNoteRepository) GetStatusCounts(ctx context.Context, statusID string) (int, int, int, error) {
 	args := m.Called(ctx, statusID)
 	return args.Int(0), args.Int(1), args.Int(2), args.Error(3)
 }
 
-func (m *mockNoteRepository) GetStatusContext(ctx context.Context, statusID string) (ancestors, descendants []*models.Status, err error) {
+func (m *mockNoteRepository) GetStatusContext(ctx context.Context, statusID string) ([]*models.Status, []*models.Status, error) {
 	args := m.Called(ctx, statusID)
-	var anc, desc []*models.Status
+	var ancestors []*models.Status
 	if args.Get(0) != nil {
-		anc = args.Get(0).([]*models.Status)
+		ancestors = args.Get(0).([]*models.Status)
 	}
+	var descendants []*models.Status
 	if args.Get(1) != nil {
-		desc = args.Get(1).([]*models.Status)
+		descendants = args.Get(1).([]*models.Status)
 	}
-	return anc, desc, args.Error(2)
+	return ancestors, descendants, args.Error(2)
 }
 
-func (m *mockNoteRepository) GetStatusEngagement(ctx context.Context, statusID, userID string) (liked, reblogged, bookmarked bool, err error) {
+func (m *mockNoteRepository) GetStatusEngagement(ctx context.Context, statusID, userID string) (bool, bool, bool, error) {
 	args := m.Called(ctx, statusID, userID)
 	return args.Bool(0), args.Bool(1), args.Bool(2), args.Error(3)
-}
-
-func (m *mockNoteRepository) DeleteBoostStatus(context.Context, string, string) (*models.Status, error) {
-	// Direct message tests never create boost statuses; return nil to satisfy interface.
-	return nil, nil
 }
 
 func (m *mockNoteRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
@@ -434,10 +470,11 @@ func (m *mockNoteRepository) CountReplies(ctx context.Context, statusID string) 
 
 func (m *mockNoteRepository) ListStatusesForAdmin(ctx context.Context, filter *interfaces.StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
 	args := m.Called(ctx, filter, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
+	var statuses []*models.Status
+	if args.Get(0) != nil {
+		statuses = args.Get(0).([]*models.Status)
 	}
-	return args.Get(0).([]*models.Status), args.String(1), args.Error(2)
+	return statuses, args.String(1), args.Error(2)
 }
 
 type mockAccountRepository struct {
@@ -800,7 +837,7 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 			recipientState.Folder == models.UserConversationFolderRequests &&
 			recipientState.RequestState == models.DmRequestStatePending &&
 			recipientState.Unread
-	})).Return(nil).Once()
+	}), mock.Anything).Return(nil).Once()
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)
@@ -924,7 +961,7 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 			recipientState.Folder == models.UserConversationFolderRequests &&
 			recipientState.RequestState == models.DmRequestStatePending &&
 			recipientState.Unread
-	})).Return(nil).Once()
+	}), mock.Anything).Return(nil).Once()
 
 	// Execute
 	result, err := service.SendDirectMessage(ctx, cmd)

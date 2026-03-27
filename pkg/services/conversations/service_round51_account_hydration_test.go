@@ -45,7 +45,7 @@ func TestService_SendDirectMessage_LiveShapedCoreAccountsDoNotNeedMetadata(t *te
 			return false
 		}
 		return transition.Status.AuthorID == "medic" && transition.Status.Visibility == VisibilityDirect
-	})).Return(nil).Once()
+	}), mock.Anything).Return(nil).Once()
 
 	result, err := service.SendDirectMessage(ctx, &SendDirectMessageCommand{
 		SenderID:   "medic",

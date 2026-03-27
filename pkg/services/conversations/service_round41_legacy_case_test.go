@@ -40,7 +40,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseRecipientIdentity(
 			return false
 		}
 		return assert.Contains(t, transition.Status.ToRecipients, "https://example.com/users/Arch")
-	})).
+	}), mock.Anything).
 		Return(nil).
 		Once()
 
@@ -80,7 +80,7 @@ func TestService_SendDirectMessage_UsesResolvedLegacyMixedCaseSenderIdentity(t *
 			return false
 		}
 		return assert.Equal(t, "Medic", transition.Status.AuthorID)
-	})).
+	}), mock.Anything).
 		Return(nil).
 		Once()
 

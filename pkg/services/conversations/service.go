@@ -68,10 +68,6 @@ type directMessageSendCapability interface {
 	TransactionalDirectMessageSendEnabled() bool
 }
 
-type transactionalDirectMessageStatusFinalizer interface {
-	FinalizeCreatedStatus(ctx context.Context, status *models.Status) error
-}
-
 type directMessageWriteFreezeChecker interface {
 	DirectMessageWritesFrozen(ctx context.Context) (bool, error)
 }
@@ -150,7 +146,10 @@ const (
 	directMessageSendRetryLimit = 3
 )
 
-var errDirectMessageRemoteRecipientActorRequired = errors.New("remote recipient actor id required")
+var (
+	errDirectMessageRemoteRecipientActorRequired = errors.New("remote recipient actor id required")
+	errDirectMessageStatusContractRequired       = errors.New("canonical status create contract required for transactional direct message send")
+)
 
 type apiRateLimitInfoReader interface {
 	GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error)
@@ -880,29 +879,47 @@ func buildExpectedDirectMessageParticipantStates(
 	}
 }
 
+func (s *Service) prepareTransactionalDirectMessageStatusWrite(status *models.Status) (interfaces.DirectMessageStatusStageFn, error) {
+	if s.noteRepo == nil {
+		return nil, nil
+	}
+
+	capability, ok := s.conversationRepo.(directMessageSendCapability)
+	if !ok || !capability.TransactionalDirectMessageSendEnabled() {
+		return nil, nil
+	}
+
+	contract, ok := s.noteRepo.(interfaces.CanonicalStatusCreateRepository)
+	if !ok {
+		return nil, errors.Join(ErrCreateDirectMessage, errDirectMessageStatusContractRequired)
+	}
+
+	if err := contract.PrepareStatusCreate(status); err != nil {
+		return nil, errors.Join(ErrCreateDirectMessage, err)
+	}
+
+	return contract.StageStatusCreate, nil
+}
+
 func (s *Service) finalizeDirectMessageStatusWrite(ctx context.Context, status *models.Status) error {
 	if s.noteRepo == nil {
 		return nil
 	}
 
 	capability, ok := s.conversationRepo.(directMessageSendCapability)
-	if !ok {
-		return nil
-	}
-
-	if !capability.TransactionalDirectMessageSendEnabled() {
+	if !ok || !capability.TransactionalDirectMessageSendEnabled() {
 		if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
 			return errors.Join(ErrCreateDirectMessage, err)
 		}
 		return nil
 	}
 
-	finalizer, ok := s.noteRepo.(transactionalDirectMessageStatusFinalizer)
+	contract, ok := s.noteRepo.(interfaces.CanonicalStatusCreateRepository)
 	if !ok {
-		return nil
+		return errors.Join(ErrCreateDirectMessage, errDirectMessageStatusContractRequired)
 	}
 
-	if err := finalizer.FinalizeCreatedStatus(ctx, status); err != nil {
+	if err := contract.FinalizeCreatedStatus(ctx, status); err != nil {
 		return errors.Join(ErrCreateDirectMessage, err)
 	}
 
@@ -920,6 +937,11 @@ func (s *Service) applyDirectMessageSendTransition(
 	status *models.Status,
 	deliversToInbox bool,
 ) error {
+	stageStatusCreate, err := s.prepareTransactionalDirectMessageStatusWrite(status)
+	if err != nil {
+		return err
+	}
+
 	transition := &models.DirectMessageSendTransition{
 		Conversation:       conversation,
 		Status:             status,
@@ -930,7 +952,7 @@ func (s *Service) applyDirectMessageSendTransition(
 		transition.ExpectedParticipantStates = buildExpectedDirectMessageParticipantStates(conversation, senderID, recipientID, senderState, recipientState)
 	}
 
-	if err := s.conversationRepo.ApplyDirectMessageSend(ctx, transition); err != nil {
+	if err := s.conversationRepo.ApplyDirectMessageSend(ctx, transition, stageStatusCreate); err != nil {
 		return errors.Join(ErrCreateDirectMessage, err)
 	}
 	if err := s.finalizeDirectMessageStatusWrite(ctx, status); err != nil {

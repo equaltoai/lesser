@@ -55,6 +55,8 @@ func runVerify(argv []string) error {
 		return runVerifyOpenAPI(argv[1:])
 	case "account-hydration":
 		return runVerifyAccountHydration(argv[1:])
+	case "status-contract":
+		return runVerifyStatusContract(argv[1:])
 	case "inventory":
 		return runVerifyInventory(argv[1:])
 	case "lambda-set":

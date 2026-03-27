@@ -396,7 +396,7 @@ func TestService_applyDirectMessageSendTransition_MirrorsStatusForNonTransaction
 				return false
 			}
 			return transition.Status.StatusID == "status-1" && transition.Conversation.ID == "conv123" && !transition.CreateConversation
-		})).
+		}), mock.Anything).
 		Return(nil).
 		Once()
 	noteRepo.
@@ -446,7 +446,7 @@ func TestService_applyDirectMessageSendTransition_FinalizesStatusForTransactiona
 				transition.Conversation.ID == "conv123" &&
 				!transition.CreateConversation &&
 				len(transition.ExpectedParticipantStates) == 2
-		})).
+		}), mock.Anything).
 		Return(nil).
 		Once()
 	noteRepo.
@@ -527,7 +527,7 @@ func TestService_applyDirectMessageSendTransition_UsesParticipantRecordVersionsF
 				expectedByViewer["bob"] != nil &&
 				expectedByViewer["alice"].UpdatedAt.Equal(senderUpdatedAt) &&
 				expectedByViewer["bob"].UpdatedAt.Equal(recipientUpdatedAt)
-		})).
+		}), mock.Anything).
 		Return(nil).
 		Once()
 	noteRepo.
@@ -565,7 +565,7 @@ func TestService_applyDirectMessageSendTransition_ReturnsTransactionalFinalizerE
 	}
 
 	conversationRepo.
-		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
+		On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition"), mock.Anything).
 		Return(nil).
 		Once()
 	noteRepo.

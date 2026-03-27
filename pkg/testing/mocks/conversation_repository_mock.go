@@ -169,8 +169,8 @@ func (m *MockConversationRepository) GetUnreadConversationCount(ctx context.Cont
 }
 
 // ApplyDirectMessageSend mocks the ApplyDirectMessageSend method.
-func (m *MockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
-	args := m.Called(ctx, transition)
+func (m *MockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition, stageStatusCreate interfaces.DirectMessageStatusStageFn) error {
+	args := m.Called(ctx, transition, stageStatusCreate)
 	return args.Error(0)
 }
 
