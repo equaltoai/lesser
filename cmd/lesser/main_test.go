@@ -215,6 +215,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runMigrateConversationsFn = stub("migrate-conversations")
 	runMigrateConversationMetadataFn = stub("migrate-conversation-metadata")
 	runMigrateConversationParticipantSnapshotsFn = stub("migrate-conversation-participant-snapshots")
+	runMigrateDirectMessageStateFn = stub("migrate-direct-message-state")
 	runMigrateNumericIDsFn = stub("migrate-numeric-ids")
 
 	var buf bytes.Buffer
@@ -317,6 +318,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-conversation-participant-snapshots", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-conversation-participant-snapshots"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-direct-message-state", "--env", "dev"}, &buf))
+	require.Equal(t, []string{"--env", "dev"}, calls["migrate-direct-message-state"].argv)
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-numeric-ids", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-numeric-ids"].argv)
