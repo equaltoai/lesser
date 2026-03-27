@@ -167,7 +167,7 @@ func (r dynamoStatusContractPersistenceReader) VerifyStoredStatusContext(ctx con
 	}
 
 	if hasAttributeListValues(noteMap.Value["Context"]) {
-		return nil
+		return fmt.Errorf("persisted note context must be nested under BaseObject")
 	}
 
 	baseObjectAttr, ok := noteMap.Value["BaseObject"]
@@ -179,7 +179,7 @@ func (r dynamoStatusContractPersistenceReader) VerifyStoredStatusContext(ctx con
 		return fmt.Errorf("persisted note base object malformed: %T", baseObjectAttr)
 	}
 	if !hasAttributeListValues(baseObjectMap.Value["Context"]) {
-		return fmt.Errorf("note context missing after persistence")
+		return fmt.Errorf("note base object context missing after persistence")
 	}
 
 	return nil

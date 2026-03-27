@@ -505,11 +505,12 @@ func TestDynamoStatusContractPersistenceReader(t *testing.T) {
 		{
 			name:    "missing nested context",
 			body:    `{"Item":{"note":{"M":{"BaseObject":{"M":{}}}}}}`,
-			wantErr: "note context missing after persistence",
+			wantErr: "note base object context missing after persistence",
 		},
 		{
-			name: "accepts top level context",
-			body: `{"Item":{"note":{"M":{"Context":{"L":[{"S":"https://www.w3.org/ns/activitystreams"}]}}}}}`,
+			name:    "rejects top level context",
+			body:    `{"Item":{"note":{"M":{"Context":{"L":[{"S":"https://www.w3.org/ns/activitystreams"}]}}}}}`,
+			wantErr: "persisted note context must be nested under BaseObject",
 		},
 		{
 			name: "accepts nested context",
