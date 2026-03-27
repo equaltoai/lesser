@@ -29,7 +29,7 @@ func TestRound43_Service_SendDirectMessage_RetriesTransactionalCreateRace(t *tes
 		Once()
 	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
 		return transition != nil && transition.CreateConversation
-	})).
+	}), mock.Anything).
 		Return(storage.ErrAlreadyExists).
 		Once()
 
@@ -44,7 +44,7 @@ func TestRound43_Service_SendDirectMessage_RetriesTransactionalCreateRace(t *tes
 		Once()
 	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
 		return transition != nil && !transition.CreateConversation && transition.Conversation != nil && transition.Conversation.ID == "conv-existing"
-	})).
+	}), mock.Anything).
 		Return(nil).
 		Once()
 
@@ -99,7 +99,7 @@ func TestRound43_Service_SendMessage_RetriesTransactionalVersionConflict(t *test
 	).Twice()
 	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
 		return transition != nil && transition.Conversation != nil && transition.Conversation.ID == "conv-existing"
-	})).
+	}), mock.Anything).
 		Return(storage.ErrVersionConflict).
 		Once()
 
@@ -109,7 +109,7 @@ func TestRound43_Service_SendMessage_RetriesTransactionalVersionConflict(t *test
 			transition.Conversation != nil &&
 			transition.Conversation.ID == "conv-existing" &&
 			len(transition.ExpectedParticipantStates) == 2
-	})).
+	}), mock.Anything).
 		Return(nil).
 		Once()
 

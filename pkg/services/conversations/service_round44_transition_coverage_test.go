@@ -127,7 +127,7 @@ func TestService_executeDirectMessageSendAttempt_RetriesCreateRace(t *testing.T)
 	conversationRepo.
 		On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
 			return transition != nil && transition.CreateConversation
-		})).
+		}), mock.Anything).
 		Return(storage.ErrAlreadyExists).
 		Once()
 
