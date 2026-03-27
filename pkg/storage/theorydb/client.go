@@ -48,11 +48,21 @@ func registerDefaultTypeConverters(db core.DB) error {
 	if err := extended.RegisterTypeConverter(sliceAnyType, sliceAnyConverter{}); err != nil {
 		return fmt.Errorf("register []any converter: %w", err)
 	}
+	if err := extended.RegisterTypeConverter(activityPubContextValueType, activityPubContextValueConverter{}); err != nil {
+		return fmt.Errorf("register activitypub.ContextValue converter: %w", err)
+	}
 	if err := extended.RegisterTypeConverter(agentsCapabilitiesType, agentCapabilitiesConverter{}); err != nil {
 		return fmt.Errorf("register agents.Capabilities converter: %w", err)
 	}
 
 	return nil
+}
+
+// RegisterDefaultTypeConverters applies Lesser's custom TheoryDB converters to an
+// existing client. CLI tools that open ad hoc clients should call this so live
+// verification uses the same model encoding rules as production handlers.
+func RegisterDefaultTypeConverters(db core.DB) error {
+	return registerDefaultTypeConverters(db)
 }
 
 // GetClient returns a singleton DynamORM client instance
