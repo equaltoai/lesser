@@ -316,7 +316,7 @@ func (h *Handler) HandleSetupCreateAdminLift(ctx *apptheory.Context) (*apptheory
 		return h.respondInternalError(ctx, "failed to configure admin account")
 	}
 
-	if err := authService.LinkWallet(ctx.Context(), req.Username, adminWalletAddr, walletChainID, "ethereum"); err != nil {
+	if _, err := authService.LinkWallet(ctx.Context(), req.Username, adminWalletAddr, walletChainID, "ethereum"); err != nil {
 		h.logger.Error("failed to link admin wallet", zap.String("username", req.Username), zap.Error(err))
 		return h.respondInternalError(ctx, "failed to link wallet")
 	}

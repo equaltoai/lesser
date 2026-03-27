@@ -102,7 +102,8 @@ func TestWalletService_LinkAndUnlink_ErrorBranches(t *testing.T) {
 	svc := &WalletService{repo: repo, logger: zap.NewNop()}
 
 	repo.errGetUserWallets = errors.New("db down")
-	require.ErrorIs(t, svc.LinkWallet(context.Background(), "alice", "0xabc", 1, "ethereum"), ErrWalletCheck)
+	_, err := svc.LinkWallet(context.Background(), "alice", "0xabc", 1, "ethereum")
+	require.ErrorIs(t, err, ErrWalletCheck)
 
 	repo.errGetUserWallets = nil
 	repo.errDeleteWallet = errors.New("delete failed")
@@ -133,7 +134,8 @@ func TestWalletService_LinkWallet_StoreError_AndVerifySignatureHelpers(t *testin
 
 	// Store wallet credential error.
 	repo.errStoreWallet = errors.New("write failed")
-	require.ErrorIs(t, svc.LinkWallet(context.Background(), "alice", "0xabc", 1, "ethereum"), ErrWalletStorage)
+	_, err := svc.LinkWallet(context.Background(), "alice", "0xabc", 1, "ethereum")
+	require.ErrorIs(t, err, ErrWalletStorage)
 
 	// verifyEthereumSignature invalid signature format.
 	require.ErrorIs(t, svc.verifyEthereumSignature("0xabc", "msg", "bad"), ErrInvalidSignatureFormat)

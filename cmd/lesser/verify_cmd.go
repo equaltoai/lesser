@@ -53,6 +53,8 @@ func runVerify(argv []string) error {
 		return runVerifyGraphQLCoverage(argv[1:])
 	case "openapi":
 		return runVerifyOpenAPI(argv[1:])
+	case "account-hydration":
+		return runVerifyAccountHydration(argv[1:])
 	case "inventory":
 		return runVerifyInventory(argv[1:])
 	case "lambda-set":

@@ -475,14 +475,15 @@ func (r *AccountRepository) DeleteWalletCredentialByAddress(ctx context.Context,
 // StoreWalletChallenge stores a wallet-based authentication challenge
 func (r *AccountRepository) StoreWalletChallenge(ctx context.Context, challenge *storage.WalletChallenge) error {
 	model := &models.WalletChallenge{
-		ID:        challenge.ID,
-		Address:   challenge.Address,
-		ChainID:   challenge.ChainID,
-		Nonce:     challenge.Nonce,
-		Message:   challenge.Message,
-		IssuedAt:  challenge.IssuedAt,
-		ExpiresAt: challenge.ExpiresAt,
-		Username:  challenge.Username,
+		ID:                    challenge.ID,
+		Address:               challenge.Address,
+		ChainID:               challenge.ChainID,
+		Nonce:                 challenge.Nonce,
+		Message:               challenge.Message,
+		IssuedAt:              challenge.IssuedAt,
+		ExpiresAt:             challenge.ExpiresAt,
+		Username:              challenge.Username,
+		RegistrationCompleted: challenge.RegistrationCompleted,
 	}
 
 	// Update keys before creating (required for DynamoDB)
@@ -536,16 +537,17 @@ func (r *AccountRepository) GetWalletChallenge(ctx context.Context, challengeID 
 	}
 
 	return &storage.WalletChallenge{
-		ID:        model.ID,
-		Address:   model.Address,
-		ChainID:   model.ChainID,
-		Nonce:     model.Nonce,
-		Message:   model.Message,
-		IssuedAt:  model.IssuedAt,
-		ExpiresAt: model.ExpiresAt,
-		Username:  model.Username,
-		Used:      model.Used,
-		Spent:     model.Spent,
+		ID:                    model.ID,
+		Address:               model.Address,
+		ChainID:               model.ChainID,
+		Nonce:                 model.Nonce,
+		Message:               model.Message,
+		IssuedAt:              model.IssuedAt,
+		ExpiresAt:             model.ExpiresAt,
+		Username:              model.Username,
+		Used:                  model.Used,
+		Spent:                 model.Spent,
+		RegistrationCompleted: model.RegistrationCompleted,
 	}, nil
 }
 
@@ -595,8 +597,33 @@ func (r *AccountRepository) MarkWalletChallengeUsed(ctx context.Context, challen
 	return nil
 }
 
-// MarkWalletChallengeSpent marks a challenge as spent (second verification)
-func (r *AccountRepository) MarkWalletChallengeSpent(ctx context.Context, challengeID string) error {
+// MarkWalletChallengeRegistrationCompleted marks a verified challenge as bound to a completed account registration.
+func (r *AccountRepository) MarkWalletChallengeRegistrationCompleted(ctx context.Context, challengeID string) error {
+	var model models.WalletChallenge
+
+	err := r.db.WithContext(ctx).Model(&model).
+		Where("PK", "=", fmt.Sprintf("WALLET_CHALLENGE#%s", challengeID)).
+		Where("SK", "=", "CHALLENGE").
+		First(&model)
+
+	if err != nil {
+		return ErrorHandler.HandleGetError(err, EntityWalletChallenge, challengeID)
+	}
+
+	model.RegistrationCompleted = true
+
+	err = r.db.WithContext(ctx).Model(&model).Update()
+	if err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityWalletChallenge, challengeID)
+	}
+
+	r.logger.Debug("marked wallet challenge registration completed",
+		zap.String("challengeID", challengeID))
+
+	return nil
+}
+
+func (r *AccountRepository) setWalletChallengeSpent(ctx context.Context, challengeID string, spent bool) error {
 	var model models.WalletChallenge
 
 	// Get the challenge
@@ -609,16 +636,36 @@ func (r *AccountRepository) MarkWalletChallengeSpent(ctx context.Context, challe
 		return ErrorHandler.HandleGetError(err, EntityWalletChallenge, challengeID)
 	}
 
-	// Mark as spent
-	model.Spent = true
+	model.Spent = spent
 
-	// Update
 	err = r.db.WithContext(ctx).Model(&model).Update()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityWalletChallenge, challengeID)
 	}
 
+	return nil
+}
+
+// MarkWalletChallengeSpent marks a challenge as spent (second verification)
+func (r *AccountRepository) MarkWalletChallengeSpent(ctx context.Context, challengeID string) error {
+	if err := r.setWalletChallengeSpent(ctx, challengeID, true); err != nil {
+		return err
+	}
+
 	r.logger.Debug("marked wallet challenge as spent",
+		zap.String("challengeID", challengeID))
+
+	return nil
+}
+
+// ResetWalletChallengeSpent clears the spent flag so a completed registration
+// proof can be retried after downstream work is rolled back.
+func (r *AccountRepository) ResetWalletChallengeSpent(ctx context.Context, challengeID string) error {
+	if err := r.setWalletChallengeSpent(ctx, challengeID, false); err != nil {
+		return err
+	}
+
+	r.logger.Debug("reset wallet challenge spent flag",
 		zap.String("challengeID", challengeID))
 
 	return nil

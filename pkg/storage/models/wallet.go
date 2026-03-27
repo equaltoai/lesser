@@ -18,16 +18,17 @@ type WalletChallenge struct {
 	TTL int64 `theorydb:"ttl,attr:ttl" json:"-"`
 
 	// Business fields matching storage.WalletChallenge
-	ID        string    `theorydb:"attr:id" json:"id"`
-	Username  string    `theorydb:"attr:username" json:"username,omitempty"`
-	Address   string    `theorydb:"attr:address" json:"address"`
-	ChainID   int       `theorydb:"attr:chainID" json:"chain_id"`
-	Nonce     string    `theorydb:"attr:nonce" json:"nonce"`
-	Message   string    `theorydb:"attr:message" json:"message"`
-	IssuedAt  time.Time `theorydb:"attr:issuedAt" json:"issued_at"`
-	ExpiresAt time.Time `theorydb:"attr:expiresAt" json:"expires_at"`
-	Used      bool      `theorydb:"attr:used" json:"used"`   // Set after first verification (wallet/verify)
-	Spent     bool      `theorydb:"attr:spent" json:"spent"` // Set after second verification (wallet/link)
+	ID                    string    `theorydb:"attr:id" json:"id"`
+	Username              string    `theorydb:"attr:username" json:"username,omitempty"`
+	Address               string    `theorydb:"attr:address" json:"address"`
+	ChainID               int       `theorydb:"attr:chainID" json:"chain_id"`
+	Nonce                 string    `theorydb:"attr:nonce" json:"nonce"`
+	Message               string    `theorydb:"attr:message" json:"message"`
+	IssuedAt              time.Time `theorydb:"attr:issuedAt" json:"issued_at"`
+	ExpiresAt             time.Time `theorydb:"attr:expiresAt" json:"expires_at"`
+	Used                  bool      `theorydb:"attr:used" json:"used"`                                              // Set after first verification (wallet/verify)
+	Spent                 bool      `theorydb:"attr:spent" json:"spent"`                                            // Set after second verification (wallet/link)
+	RegistrationCompleted bool      `theorydb:"attr:registrationCompleted" json:"registration_completed,omitempty"` // Set after account registration succeeds.
 }
 
 // TableName returns the DynamoDB table name

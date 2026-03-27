@@ -226,6 +226,24 @@ func populateRound08StructForCoverage(target any, idx int, baseTime time.Time) {
 		model.PasswordHash = "$2a$10$9Ay8tAONpS50qIdW.6P7Q.0i1o5nYVnDWAlC4AgdnbIXpNUv25B1q" // "password"
 		model.Suspended = false
 
+	case *userCoreProjection:
+		model.Table = "test-table"
+		model.PK = "USER#user-1"
+		model.SK = models.SKMetadata
+		model.Username = "user-1"
+		model.PasswordHash = "$2a$10$9Ay8tAONpS50qIdW.6P7Q.0i1o5nYVnDWAlC4AgdnbIXpNUv25B1q" // "password"
+		model.CreatedAt = now
+		model.UpdatedAt = now
+		model.Approved = true
+		model.Role = "user"
+		model.Version = 1
+
+	case *userMetadataProjection:
+		model.Table = "test-table"
+		model.PK = "USER#user-1"
+		model.SK = models.SKMetadata
+		model.Metadata = map[string]interface{}{"theme": "dark"}
+
 	case *models.UserLogin:
 		model.Username = "user-1"
 		model.Timestamp = now
@@ -529,6 +547,7 @@ func populateRound08StructForCoverage(target any, idx int, baseTime time.Time) {
 		model.Message = "message"
 		model.IssuedAt = now
 		model.ExpiresAt = now.Add(5 * time.Minute)
+		model.RegistrationCompleted = true
 		_ = model.UpdateKeys()
 
 	case *models.WalletIndex:

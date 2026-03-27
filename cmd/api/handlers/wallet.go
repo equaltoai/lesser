@@ -214,7 +214,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	// Enforce that unauthenticated wallet linking is only allowed immediately after registration.
-	// The registration handler stores the verified challenge ID in user metadata; unauth flows must match it.
+	// The registration handler marks the verified challenge on the typed wallet challenge row.
 	accountRepo := h.repos.Account()
 	if accountRepo == nil {
 		return h.respondWithError(ctx, http.StatusInternalServerError, "internal server error")
@@ -224,16 +224,8 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		return h.respondBadRequest(ctx, "user not found")
 	}
 
-	if !isAuthenticated {
-		expectedChallengeID := ""
-		if user.Metadata != nil {
-			if v, ok := user.Metadata["registration_challenge_id"].(string); ok {
-				expectedChallengeID = strings.TrimSpace(v)
-			}
-		}
-		if expectedChallengeID == "" || expectedChallengeID != strings.TrimSpace(req.ChallengeID) {
-			return h.respondWithError(ctx, http.StatusUnauthorized, "registration challenge mismatch")
-		}
+	if !isAuthenticated && !challenge.RegistrationCompleted {
+		return h.respondWithError(ctx, http.StatusUnauthorized, "registration challenge mismatch")
 	}
 
 	// Verify the signature directly (single verification).
@@ -245,14 +237,27 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		return h.respondWithError(ctx, http.StatusUnauthorized, "signature verification failed")
 	}
 
-	// Mark challenge as spent (second and final use).
+	// Mark challenge as spent (second and final use) before linking the wallet.
+	// If this write fails, fail closed so a completed registration proof cannot
+	// be replayed into a fresh session/JWT.
 	if err := authService.MarkWalletChallengeSpent(ctx.Context(), req.ChallengeID); err != nil {
-		h.logger.Warn("failed to mark challenge as spent", zap.Error(err))
-		// Non-fatal - continue
+		h.logger.Error("failed to mark challenge as spent",
+			zap.String("challengeId", req.ChallengeID),
+			zap.String("username", username),
+			zap.Error(err))
+		return h.respondWithError(ctx, http.StatusInternalServerError, "failed to finalize wallet challenge")
 	}
 
 	// Link the wallet
-	if err := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType); err != nil {
+	walletLinkCreated, err := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType)
+	if err != nil {
+		if resetErr := authService.ResetWalletChallengeSpent(ctx.Context(), req.ChallengeID); resetErr != nil {
+			h.logger.Error("failed to restore wallet challenge after wallet-link failure",
+				zap.String("challengeId", req.ChallengeID),
+				zap.String("username", username),
+				zap.String("address", req.Address),
+				zap.Error(resetErr))
+		}
 		h.logger.Error("failed to link wallet",
 			zap.String("username", username),
 			zap.String("address", req.Address),
@@ -275,6 +280,28 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 		// This session will be used by /oauth/authorize to generate authorization code
 		authResponse, err := authService.LoginWithWalletAfterLinking(ctx.Context(), username, deviceName, userAgent, ipAddress)
 		if err != nil {
+			if walletLinkCreated {
+				if unlinkErr := authService.UnlinkWallet(ctx.Context(), username, req.Address); unlinkErr != nil {
+					h.logger.Error("failed to rollback wallet link after session creation failure",
+						zap.String("username", username),
+						zap.String("address", req.Address),
+						zap.String("challengeId", req.ChallengeID),
+						zap.Error(unlinkErr))
+				} else if resetErr := authService.ResetWalletChallengeSpent(ctx.Context(), req.ChallengeID); resetErr != nil {
+					h.logger.Error("failed to restore wallet challenge after session creation failure",
+						zap.String("username", username),
+						zap.String("address", req.Address),
+						zap.String("challengeId", req.ChallengeID),
+						zap.Error(resetErr))
+					if _, relinkErr := authService.LinkWallet(ctx.Context(), username, req.Address, req.ChainID, req.WalletType); relinkErr != nil {
+						h.logger.Error("failed to restore wallet link after challenge reset failure",
+							zap.String("username", username),
+							zap.String("address", req.Address),
+							zap.String("challengeId", req.ChallengeID),
+							zap.Error(relinkErr))
+					}
+				}
+			}
 			h.logger.Error("failed to create session after wallet linking",
 				zap.String("username", username),
 				zap.String("address", req.Address),
@@ -282,22 +309,8 @@ func (h *Handler) HandleLinkWalletLift(ctx *apptheory.Context) (*apptheory.Respo
 			return h.respondWithError(ctx, http.StatusInternalServerError, "failed to create session")
 		}
 
-		// Return success with JWT for stateless OAuth flow
-		// Client will use this JWT to authenticate with /oauth/authorize
-		// Clear registration-only metadata so unauth linking can't be reused.
-		if user != nil && user.Metadata != nil {
-			updatedMetadata := map[string]interface{}{}
-			for k, v := range user.Metadata {
-				if k == "registration_challenge_id" {
-					continue
-				}
-				updatedMetadata[k] = v
-			}
-			if err := accountRepo.UpdateUser(ctx.Context(), username, map[string]interface{}{"metadata": updatedMetadata}); err != nil {
-				h.logger.Warn("failed to clear registration challenge metadata", zap.Error(err))
-			}
-		}
-
+		// Return success with JWT for stateless OAuth flow.
+		// Client will use this JWT to authenticate with /oauth/authorize.
 		return okJSON(apimodels.WalletLinkResponse{
 			Success:     true,
 			Message:     "wallet linked successfully",

@@ -318,7 +318,7 @@ type RegisterAccountCommand struct {
 	DefaultPostingVisibility string `json:"default_posting_visibility"`
 
 	// RegistrationChallengeID is a registration-time proof reference (e.g. wallet challenge ID).
-	// It is stored temporarily in user metadata to allow completion of passwordless registration flows.
+	// Successful registration binds that proof to the typed wallet challenge row.
 	RegistrationChallengeID string `json:"registration_challenge_id,omitempty"`
 }
 
@@ -1850,13 +1850,6 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 		CreatedAt:    time.Now(),
 	}
 
-	if strings.TrimSpace(cmd.RegistrationChallengeID) != "" {
-		if user.Metadata == nil {
-			user.Metadata = map[string]interface{}{}
-		}
-		user.Metadata["registration_challenge_id"] = strings.TrimSpace(cmd.RegistrationChallengeID)
-	}
-
 	// Hash password if provided
 	if cmd.Password != "" {
 		passwordHash, err := s.hashPassword(cmd.Password)
@@ -1915,6 +1908,14 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	if err := s.persistDefaultPostingVisibility(ctx, accountRepo, cmd.Username, initialVisibility); err != nil {
 		s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
 		return nil, err
+	}
+
+	registrationChallengeID := strings.TrimSpace(cmd.RegistrationChallengeID)
+	if registrationChallengeID != "" {
+		if err := accountRepo.MarkWalletChallengeRegistrationCompleted(ctx, registrationChallengeID); err != nil {
+			s.rollbackAccountCreation(ctx, accountRepo, cmd.Username, err)
+			return nil, fmt.Errorf("failed to finalize wallet registration challenge: %w", err)
+		}
 	}
 
 	s.logger.Info("account created successfully, recording activity",

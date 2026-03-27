@@ -228,7 +228,10 @@ func TestAccountRepository_GetUser_NotFoundAndError(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("First", mock.Anything).Return(dynamormErrors.ErrItemNotFound).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userCoreProjection)
+			return ok
+		})).Return(dynamormErrors.ErrItemNotFound).Twice()
 		setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))
@@ -240,7 +243,10 @@ func TestAccountRepository_GetUser_NotFoundAndError(t *testing.T) {
 	t.Run("query_error", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("First", mock.Anything).Return(fmt.Errorf("boom")).Once()
+		mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+			_, ok := dest.(*userCoreProjection)
+			return ok
+		})).Return(fmt.Errorf("boom")).Once()
 		setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, baseTime)
 
 		repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))

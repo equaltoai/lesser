@@ -24,8 +24,11 @@ func TestRound08_AccountRepositoryAuth_ValidatePassword(t *testing.T) {
 	t.Run("suspended account", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
-			user := args.Get(0).(*models.User)
+		mockQuery.On("First", mock.MatchedBy(func(v any) bool {
+			_, ok := v.(*userCoreProjection)
+			return ok
+		})).Run(func(args mock.Arguments) {
+			user := args.Get(0).(*userCoreProjection)
 			user.Username = "user-1"
 			user.Suspended = true
 		}).Return(nil).Once()
@@ -42,8 +45,11 @@ func TestRound08_AccountRepositoryAuth_ValidatePassword(t *testing.T) {
 		hash, err := bcrypt.GenerateFromPassword([]byte("correct"), bcrypt.MinCost)
 		require.NoError(t, err)
 
-		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
-			user := args.Get(0).(*models.User)
+		mockQuery.On("First", mock.MatchedBy(func(v any) bool {
+			_, ok := v.(*userCoreProjection)
+			return ok
+		})).Run(func(args mock.Arguments) {
+			user := args.Get(0).(*userCoreProjection)
 			user.Username = "user-1"
 			user.Suspended = false
 			user.PasswordHash = string(hash)
@@ -61,8 +67,11 @@ func TestRound08_AccountRepositoryAuth_ValidatePassword(t *testing.T) {
 		hash, err := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.MinCost)
 		require.NoError(t, err)
 
-		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
-			user := args.Get(0).(*models.User)
+		mockQuery.On("First", mock.MatchedBy(func(v any) bool {
+			_, ok := v.(*userCoreProjection)
+			return ok
+		})).Run(func(args mock.Arguments) {
+			user := args.Get(0).(*userCoreProjection)
 			user.Username = "user-1"
 			user.Suspended = false
 			user.PasswordHash = string(hash)
@@ -83,8 +92,11 @@ func TestRound08_AccountRepositoryAuth_PasswordResetFlow(t *testing.T) {
 	t.Run("CreatePasswordResetToken email mismatch", func(t *testing.T) {
 		mockDB := new(mocks.MockDB)
 		mockQuery := new(mocks.MockQuery)
-		mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
-			user := args.Get(0).(*models.User)
+		mockQuery.On("First", mock.MatchedBy(func(v any) bool {
+			_, ok := v.(*userCoreProjection)
+			return ok
+		})).Run(func(args mock.Arguments) {
+			user := args.Get(0).(*userCoreProjection)
 			user.Username = "user-1"
 			user.Email = "user-1@example.com"
 		}).Return(nil).Once()

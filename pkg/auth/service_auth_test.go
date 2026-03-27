@@ -94,6 +94,10 @@ func (r *inMemoryAuthAccountRepo) MarkWalletChallengeSpent(_ context.Context, _ 
 	return nil
 }
 
+func (r *inMemoryAuthAccountRepo) ResetWalletChallengeSpent(_ context.Context, _ string) error {
+	return nil
+}
+
 func (r *inMemoryAuthAccountRepo) GetWalletChallenge(_ context.Context, _ string) (*storage.WalletChallenge, error) {
 	return nil, errors.New("not implemented")
 }

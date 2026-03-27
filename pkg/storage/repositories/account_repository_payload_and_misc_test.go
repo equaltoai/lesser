@@ -215,21 +215,25 @@ func TestAccountRepository_GetAccountsByUsernames_SkipsNotFound(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
-		_, ok := dest.(*models.User)
+		_, ok := dest.(*userCoreProjection)
 		return ok
 	})).Run(func(args mock.Arguments) {
-		user := args.Get(0).(*models.User)
+		user := args.Get(0).(*userCoreProjection)
+		user.Table = "test-table"
+		user.PK = "USER#alice"
+		user.SK = models.SKMetadata
 		user.Username = "alice"
 		user.CreatedAt = now
 		user.UpdatedAt = now
 		user.Role = "user"
-		_ = user.UpdateKeys()
+		user.Approved = true
+		user.Version = 1
 	}).Return(nil).Once()
 
 	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
-		_, ok := dest.(*models.User)
+		_, ok := dest.(*userCoreProjection)
 		return ok
-	})).Return(dynamormErrors.ErrItemNotFound).Once()
+	})).Return(dynamormErrors.ErrItemNotFound).Twice()
 
 	setupPermissiveAccountRepositoryMocks(mockDB, mockQuery, nil, now)
 	repo := NewAccountRepository(mockDB, "test-table", "example.com", zaptest.NewLogger(t))

@@ -173,6 +173,10 @@ func setupRound12PermissiveDynamormMocks(t *testing.T) (*dynamormmocks.MockDB, *
 }
 
 func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
+	if round12PopulateAccountProjection(dest, state) {
+		return
+	}
+
 	switch v := dest.(type) {
 	case *models.User:
 		username := strings.TrimPrefix(state.lastPK, "USER#")
@@ -562,6 +566,92 @@ func round12PopulateStruct(dest any, state *round12PermissiveQueryState) {
 		if rv.Elem().Kind() != reflect.Struct {
 			return
 		}
+	}
+}
+
+func round12PopulateAccountProjection(dest any, state *round12PermissiveQueryState) bool {
+	typeName := reflect.TypeOf(dest).String()
+	if typeName != "*repositories.userCoreProjection" && typeName != "*repositories.userMetadataProjection" {
+		return false
+	}
+
+	username := strings.TrimPrefix(state.lastPK, "USER#")
+	if strings.TrimSpace(username) == "" {
+		username = "admin"
+	}
+	role := adminRoleUser
+	if strings.EqualFold(username, "admin") {
+		role = adminRoleAdmin
+	}
+	now := time.Now()
+	user := models.User{
+		Username:  username,
+		Role:      role,
+		Approved:  true,
+		Version:   1,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now,
+	}
+
+	value := reflect.ValueOf(dest).Elem()
+	round12SetField(value, "Table", "test-table")
+	round12SetField(value, "PK", "USER#"+user.Username)
+	round12SetField(value, "SK", models.SKMetadata)
+
+	if typeName == "*repositories.userMetadataProjection" {
+		round12SetField(value, "Metadata", user.Metadata)
+		return true
+	}
+
+	round12SetField(value, "Username", user.Username)
+	round12SetField(value, "Email", user.Email)
+	round12SetField(value, "PasswordHash", user.PasswordHash)
+	round12SetField(value, "DisplayName", user.DisplayName)
+	round12SetField(value, "Note", user.Note)
+	round12SetField(value, "Avatar", user.Avatar)
+	round12SetField(value, "Header", user.Header)
+	round12SetField(value, "URL", user.URL)
+	round12SetField(value, "Locked", user.Locked)
+	round12SetField(value, "Discoverable", user.Discoverable)
+	round12SetField(value, "Fields", user.Fields)
+	round12SetField(value, "CreatedAt", user.CreatedAt)
+	round12SetField(value, "UpdatedAt", user.UpdatedAt)
+	round12SetField(value, "Approved", user.Approved)
+	round12SetField(value, "Suspended", user.Suspended)
+	round12SetField(value, "Silenced", user.Silenced)
+	round12SetField(value, "Role", user.Role)
+	round12SetField(value, "Locale", user.Locale)
+	round12SetField(value, "RecoveryMethods", user.RecoveryMethods)
+	round12SetField(value, "AllowNSFW", user.AllowNSFW)
+	round12SetField(value, "RequireNSFWWarning", user.RequireNSFWWarning)
+	round12SetField(value, "IsAgent", user.IsAgent)
+	round12SetField(value, "AgentType", user.AgentType)
+	round12SetField(value, "AgentCapabilities", user.AgentCapabilities)
+	round12SetField(value, "AgentVersion", user.AgentVersion)
+	round12SetField(value, "AgentOwner", user.AgentOwner)
+	round12SetField(value, "AgentCreatedBy", user.AgentCreatedBy)
+	round12SetField(value, "AgentPublicKey", user.AgentPublicKey)
+	round12SetField(value, "AgentKeyType", user.AgentKeyType)
+	round12SetField(value, "Version", user.Version)
+	return true
+}
+
+func round12SetField(target reflect.Value, name string, value any) {
+	field := target.FieldByName(name)
+	if !field.IsValid() || !field.CanSet() {
+		return
+	}
+	if value == nil {
+		field.Set(reflect.Zero(field.Type()))
+		return
+	}
+	incoming := reflect.ValueOf(value)
+	if incoming.Type().AssignableTo(field.Type()) {
+		field.Set(incoming)
+		return
+	}
+	if incoming.Type().ConvertibleTo(field.Type()) {
+		field.Set(incoming.Convert(field.Type()))
 	}
 }
 

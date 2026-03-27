@@ -241,13 +241,40 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
 	})
 
+	t.Run("link_wallet_unauthed_requires_typed_registration_completion", func(t *testing.T) {
+		key, address := round11GenerateWalletKey(t)
+		message := "hello"
+		signature := round11SignWalletMessage(t, key, message)
+
+		state := &round10QueryState{
+			walletChallengesByID: map[string]storagemodels.WalletChallenge{
+				"c1": {ID: "c1", Username: "alice", Address: address, ChainID: 1, Nonce: "n", Message: message, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)},
+			},
+			usersByUsername: map[string]storagemodels.User{
+				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour)},
+			},
+		}
+		handler, _, _ := round11NewHandler(t, cfg, state)
+
+		ctx, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{
+			Address:     address,
+			Username:    "alice",
+			WalletType:  "ethereum",
+			ChallengeID: "c1",
+			Signature:   signature,
+			Message:     message,
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
+	})
+
 	t.Run("link_wallet_signature_verification_failed_returns_401", func(t *testing.T) {
 		state := &round10QueryState{
 			walletChallengesByID: map[string]storagemodels.WalletChallenge{
-				"c1": {ID: "c1", Username: "alice", Address: "0xabc", ChainID: 1, Nonce: "n", Message: "msg", IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)},
+				"c1": {ID: "c1", Username: "alice", Address: "0xabc", ChainID: 1, Nonce: "n", Message: "msg", IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute), RegistrationCompleted: true},
 			},
 			usersByUsername: map[string]storagemodels.User{
-				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour), Metadata: map[string]interface{}{"registration_challenge_id": "c1"}},
+				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour)},
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
@@ -264,7 +291,7 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		requireStatus(t, http.StatusUnauthorized)(handler.HandleLinkWalletLift(ctx))
 	})
 
-	t.Run("link_wallet_mark_challenge_spent_failure_is_non_fatal", func(t *testing.T) {
+	t.Run("link_wallet_mark_challenge_spent_failure_returns_500", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 		message := "hello"
 		signature := round11SignWalletMessage(t, key, message)
@@ -272,10 +299,10 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		state := &round10QueryState{
 			updateErrorOnce: errors.New("update failed"),
 			usersByUsername: map[string]storagemodels.User{
-				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour), Metadata: map[string]interface{}{"registration_challenge_id": "c1"}},
+				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour)},
 			},
 			walletChallengesByID: map[string]storagemodels.WalletChallenge{
-				"c1": {ID: "c1", Username: "alice", Address: address, ChainID: 1, Nonce: "n", Message: message, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)},
+				"c1": {ID: "c1", Username: "alice", Address: address, ChainID: 1, Nonce: "n", Message: message, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute), RegistrationCompleted: true},
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
@@ -289,10 +316,10 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 			Message:     message,
 		})
 		require.NoError(t, err)
-		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctx))
+		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
 	})
 
-	t.Run("link_wallet_link_wallet_error_returns_500", func(t *testing.T) {
+	t.Run("link_wallet_link_wallet_error_restores_challenge_for_retry", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 		message := "hello"
 		signature := round11SignWalletMessage(t, key, message)
@@ -300,10 +327,10 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		state := &round10QueryState{
 			createErrorOnce: errors.New("create failed"),
 			usersByUsername: map[string]storagemodels.User{
-				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour), Metadata: map[string]interface{}{"registration_challenge_id": "c1"}},
+				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: true, Version: 1, CreatedAt: now.Add(-24 * time.Hour)},
 			},
 			walletChallengesByID: map[string]storagemodels.WalletChallenge{
-				"c1": {ID: "c1", Username: "alice", Address: address, ChainID: 1, Nonce: "n", Message: message, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)},
+				"c1": {ID: "c1", Username: "alice", Address: address, ChainID: 1, Nonce: "n", Message: message, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute), RegistrationCompleted: true},
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
@@ -318,19 +345,35 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
+
+		challenge := state.walletChallengesByID["c1"]
+		require.False(t, challenge.Spent)
+		require.Empty(t, state.walletCredentialsByAddress)
+
+		ctxRetry, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{
+			Address:     address,
+			Username:    "alice",
+			WalletType:  "ethereum",
+			ChallengeID: "c1",
+			Signature:   signature,
+			Message:     message,
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxRetry))
+		require.True(t, state.walletChallengesByID["c1"].Spent)
 	})
 
-	t.Run("link_wallet_session_creation_error_returns_500", func(t *testing.T) {
+	t.Run("link_wallet_session_creation_error_restores_retry_for_new_link", func(t *testing.T) {
 		key, address := round11GenerateWalletKey(t)
 		message := "hello"
 		signature := round11SignWalletMessage(t, key, message)
 
 		state := &round10QueryState{
 			usersByUsername: map[string]storagemodels.User{
-				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: false, Version: 1, CreatedAt: now.Add(-24 * time.Hour), Metadata: map[string]interface{}{"registration_challenge_id": "c1"}},
+				"alice": {PK: "USER#alice", SK: storagemodels.SKMetadata, Username: "alice", Approved: false, Version: 1, CreatedAt: now.Add(-24 * time.Hour)},
 			},
 			walletChallengesByID: map[string]storagemodels.WalletChallenge{
-				"c1": {ID: "c1", Username: "alice", Address: address, ChainID: 1, Nonce: "n", Message: message, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)},
+				"c1": {ID: "c1", Username: "alice", Address: address, ChainID: 1, Nonce: "n", Message: message, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute), RegistrationCompleted: true},
 			},
 		}
 		handler, _, _ := round11NewHandler(t, cfg, state)
@@ -345,6 +388,26 @@ func TestWalletHandlers_Round12_Coverage(t *testing.T) {
 		})
 		require.NoError(t, err)
 		requireStatus(t, http.StatusInternalServerError)(handler.HandleLinkWalletLift(ctx))
+
+		challenge := state.walletChallengesByID["c1"]
+		require.False(t, challenge.Spent)
+		require.Empty(t, state.walletCredentialsByAddress)
+
+		user := state.usersByUsername["alice"]
+		user.Approved = true
+		state.usersByUsername["alice"] = user
+
+		ctxRetry, err := round10NewLiftContext(http.MethodPost, "/auth/wallet/link", nil, nil, apimodels.WalletLinkRequest{
+			Address:     address,
+			Username:    "alice",
+			WalletType:  "ethereum",
+			ChallengeID: "c1",
+			Signature:   signature,
+			Message:     message,
+		})
+		require.NoError(t, err)
+		requireStatus(t, http.StatusOK)(handler.HandleLinkWalletLift(ctxRetry))
+		require.True(t, state.walletChallengesByID["c1"].Spent)
 	})
 
 	t.Run("unlink_wallet_unauthorized_returns_401", func(t *testing.T) {
