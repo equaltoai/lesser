@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,19 +23,24 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 	createdAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
 	lastStatusTime := createdAt.Add(2 * time.Minute)
 	client := &fakeUserKeyMigrationClient{
-		scanOutputs: []*dynamodb.ScanOutput{{
-			Items: []map[string]types.AttributeValue{
-				conversationMetadataItem(
-					"conv-1",
-					[]string{"arch", "scout"},
-					createdAt,
-					createdAt,
-					1,
-					"status-1",
-					lastStatusTime,
-				),
+		scanOutputs: []*dynamodb.ScanOutput{
+			{},
+			{},
+			{},
+			{
+				Items: []map[string]types.AttributeValue{
+					conversationMetadataItem(
+						"conv-1",
+						[]string{"arch", "scout"},
+						createdAt,
+						createdAt,
+						1,
+						"status-1",
+						lastStatusTime,
+					),
+				},
 			},
-		}},
+		},
 		queryOutputs: []*dynamodb.QueryOutput{{
 			Items: []map[string]types.AttributeValue{
 				conversationMetadataStatusItem("conv-1", "status-1", lastStatusTime),
@@ -67,10 +73,12 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "active_conversations: 1")
 	require.Contains(t, output, "status_backed_conversations: 1")
 	require.Contains(t, output, "thread_statuses_scanned: 1")
+	require.Contains(t, output, "canonical_state_rows_planned: 2")
+	require.Contains(t, output, "canonical_state_rows_upserted: 0")
 	require.Contains(t, output, "sample_conversation_ids:")
 	require.Contains(t, output, "  conv-1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
-	require.Len(t, client.scanInputs, 1)
+	require.Len(t, client.scanInputs, 4)
 	require.Len(t, client.queryInputs, 1)
 	require.Equal(
 		t,
@@ -85,12 +93,17 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 	secondStatusTime := createdAt.Add(2 * time.Minute)
 
 	client := &fakeUserKeyMigrationClient{
-		scanOutputs: []*dynamodb.ScanOutput{{
-			Items: []map[string]types.AttributeValue{
-				conversationMetadataItem("conv-1", []string{"arch", "scout"}, createdAt, createdAt, 0, "", time.Time{}),
-				conversationMetadataItem("conv-2", []string{"arch", "medic"}, createdAt, createdAt, 0, "", time.Time{}),
+		scanOutputs: []*dynamodb.ScanOutput{
+			{},
+			{},
+			{},
+			{
+				Items: []map[string]types.AttributeValue{
+					conversationMetadataItem("conv-1", []string{"arch", "scout"}, createdAt, createdAt, 0, "", time.Time{}),
+					conversationMetadataItem("conv-2", []string{"arch", "medic"}, createdAt, createdAt, 0, "", time.Time{}),
+				},
 			},
-		}},
+		},
 		queryOutputs: []*dynamodb.QueryOutput{
 			{
 				Items: []map[string]types.AttributeValue{
@@ -107,6 +120,8 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 	require.Equal(t, 1, summary.ActiveConversations)
 	require.Equal(t, 1, summary.StatusBackedConversations)
 	require.Equal(t, 2, summary.ThreadStatusesScanned)
+	require.Equal(t, 2, summary.CanonicalStateRowsPlanned)
+	require.Zero(t, summary.CanonicalStateRowsUpserted)
 	require.Equal(t, []string{"conv-1"}, summary.SampleConversationIDs)
 	require.Len(t, client.queryInputs, 1)
 }
@@ -121,18 +136,94 @@ func TestExecuteDirectMessageStateMigration_ValidatesInputsAndQueryErrors(t *tes
 	_, err = executeDirectMessageStateMigration(context.Background(), &fakeUserKeyMigrationClient{
 		scanErr: context.DeadlineExceeded,
 	}, "simulacrum-dev-main-table", false, 0)
-	require.ErrorContains(t, err, "scan conversation metadata rows")
+	require.ErrorContains(t, err, "scan legacy participant rows")
 
 	createdAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
 	_, err = executeDirectMessageStateMigration(context.Background(), &fakeUserKeyMigrationClient{
-		scanOutputs: []*dynamodb.ScanOutput{{
-			Items: []map[string]types.AttributeValue{
-				conversationMetadataItem("conv-1", []string{"arch", "scout"}, createdAt, createdAt, 0, "", time.Time{}),
+		scanOutputs: []*dynamodb.ScanOutput{
+			{},
+			{},
+			{},
+			{
+				Items: []map[string]types.AttributeValue{
+					conversationMetadataItem("conv-1", []string{"arch", "scout"}, createdAt, createdAt, 0, "", time.Time{}),
+				},
 			},
-		}},
+		},
 		queryErr: context.DeadlineExceeded,
 	}, "simulacrum-dev-main-table", false, 0)
 	require.ErrorContains(t, err, "load thread statuses for \"conv-1\"")
+}
+
+func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *testing.T) {
+	createdAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
+	lastStatusTime := createdAt.Add(2 * time.Minute)
+	archReadAt := createdAt.Add(3 * time.Minute)
+
+	scoutRow := conversationParticipantRow("scout", "conv-1", createdAt, true, buildConversationSnapshot(
+		"conv-1",
+		[]string{"arch", "scout"},
+		createdAt,
+		createdAt,
+		"status-1",
+		1,
+		lastStatusTime,
+		true,
+	))
+	scoutRow["requestState"] = sAttr(string(models.DmRequestStatePending))
+	scoutRow["requestedAt"] = sAttr(createdAt.Add(time.Minute).Format(time.RFC3339Nano))
+
+	archRow := conversationParticipantRow("arch", "conv-1", createdAt, false, buildConversationSnapshot(
+		"conv-1",
+		[]string{"arch", "scout"},
+		createdAt,
+		createdAt,
+		"status-1",
+		1,
+		lastStatusTime,
+		false,
+	))
+	archRow["requestState"] = sAttr(string(models.DmRequestStateAccepted))
+	archRow["acceptedAt"] = sAttr(createdAt.Format(time.RFC3339Nano))
+
+	client := &fakeUserKeyMigrationClient{
+		scanOutputs: []*dynamodb.ScanOutput{
+			{Items: []map[string]types.AttributeValue{archRow, scoutRow}},
+			{Items: []map[string]types.AttributeValue{
+				conversationStatusRow("conv-1", "arch", false, archReadAt),
+				conversationStatusRow("conv-1", "scout", true, time.Unix(0, 0).UTC()),
+			}},
+			{},
+			{Items: []map[string]types.AttributeValue{
+				conversationMetadataItem("conv-1", []string{"arch", "scout"}, createdAt, createdAt, 1, "status-1", lastStatusTime),
+			}},
+		},
+		queryOutputs: []*dynamodb.QueryOutput{{
+			Items: []map[string]types.AttributeValue{
+				conversationMetadataStatusItem("conv-1", "status-1", lastStatusTime),
+			},
+		}},
+	}
+
+	summary, err := executeDirectMessageStateMigration(context.Background(), client, "simulacrum-dev-main-table", true, 0)
+	require.NoError(t, err)
+	require.Equal(t, 2, summary.CanonicalStateRowsPlanned)
+	require.Equal(t, 2, summary.CanonicalStateRowsUpserted)
+	require.Len(t, client.putInputs, 4)
+
+	archState := findPutItem(t, client.putInputs, "USER_CONVERSATION_STATE#arch", "CONVERSATION#conv-1")
+	require.Equal(t, "INBOX", strAttr(t, archState["folder"]))
+	require.Equal(t, "ACCEPTED", strAttr(t, archState["requestState"]))
+	require.Equal(t, "status-1", strAttr(t, archState["previewStatusID"]))
+	require.Equal(t, archReadAt.Format(time.RFC3339Nano), strAttr(t, archState["lastReadAt"]))
+
+	scoutState := findPutItem(t, client.putInputs, "USER_CONVERSATION_STATE#scout", "CONVERSATION#conv-1")
+	require.Equal(t, "REQUESTS", strAttr(t, scoutState["folder"]))
+	require.Equal(t, "PENDING", strAttr(t, scoutState["requestState"]))
+	require.Equal(t, "status-1", strAttr(t, scoutState["previewStatusID"]))
+	require.Equal(t, "USER_CONVERSATION_UNREAD#scout", strAttr(t, scoutState["gsi2PK"]))
+	_, hasLastReadAt := scoutState["lastReadAt"]
+	require.False(t, hasLastReadAt)
 }
 
 func TestBuildDirectMessageMigrationConversation_SkipsInvalidRows(t *testing.T) {
