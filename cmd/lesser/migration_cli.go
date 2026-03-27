@@ -95,12 +95,16 @@ func selectedMigrationMode(apply bool) string {
 }
 
 func printConversationMigrationSamples(samples []string) {
+	printMigrationSamples("sample_conversation_ids", samples)
+}
+
+func printMigrationSamples(label string, samples []string) {
 	if len(samples) == 0 {
 		return
 	}
 
-	fmt.Println("sample_conversation_ids:")
-	for _, conversationID := range samples {
-		fmt.Printf("  %s\n", conversationID)
+	fmt.Printf("%s:\n", label)
+	for _, sample := range samples {
+		fmt.Printf("  %s\n", sample)
 	}
 }
