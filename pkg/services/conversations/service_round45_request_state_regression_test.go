@@ -15,8 +15,8 @@ func TestBuildDirectMessageParticipantStatesForSend_ReopensDeclinedRecipientAsPe
 		&models.Status{StatusID: "status-request", PublishedAt: publishedAt},
 		"alice",
 		"bob",
-		&models.ConversationParticipantRecord{RequestState: models.DmRequestStateAccepted},
-		&models.ConversationParticipantRecord{RequestState: models.DmRequestStateDeclined},
+		&models.UserConversationState{RequestState: models.DmRequestStateAccepted},
+		&models.UserConversationState{RequestState: models.DmRequestStateDeclined},
 		false,
 	)
 
@@ -36,8 +36,8 @@ func TestBuildDirectMessageParticipantStatesForSend_KeepsAcceptedRecipientInInbo
 		&models.Status{StatusID: "status-inbox", PublishedAt: publishedAt},
 		"alice",
 		"bob",
-		&models.ConversationParticipantRecord{RequestState: models.DmRequestStateAccepted},
-		&models.ConversationParticipantRecord{RequestState: models.DmRequestStateAccepted},
+		&models.UserConversationState{RequestState: models.DmRequestStateAccepted},
+		&models.UserConversationState{RequestState: models.DmRequestStateAccepted},
 		false,
 	)
 

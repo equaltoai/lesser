@@ -566,17 +566,17 @@ func (r *Resolver) conversationViewerMetadata(ctx context.Context, conversationI
 		return viewerMetadata
 	}
 
-	record, err := storage.Conversation().GetConversationParticipantRecord(ctx, conversationID, viewerUsername)
-	if err != nil || record == nil {
+	state, err := storage.Conversation().GetUserConversationState(ctx, viewerUsername, conversationID)
+	if err != nil || state == nil {
 		return viewerMetadata
 	}
 
-	if record.RequestState != "" {
-		viewerMetadata.RequestState = model.DmRequestState(record.RequestState)
+	if state.RequestState != "" {
+		viewerMetadata.RequestState = model.DmRequestState(state.RequestState)
 	}
-	viewerMetadata.RequestedAt = modelTimePtr(record.RequestedAt)
-	viewerMetadata.AcceptedAt = modelTimePtr(record.AcceptedAt)
-	viewerMetadata.DeclinedAt = modelTimePtr(record.DeclinedAt)
+	viewerMetadata.RequestedAt = modelTimePtr(state.RequestedAt)
+	viewerMetadata.AcceptedAt = modelTimePtr(state.AcceptedAt)
+	viewerMetadata.DeclinedAt = modelTimePtr(state.DeclinedAt)
 	return viewerMetadata
 }
 

@@ -337,8 +337,8 @@ func (s *Service) CreateConversation(ctx context.Context, cmd *CreateConversatio
 	}
 
 	// Populate per-viewer unread state.
-	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, creatorID); err == nil && record != nil {
-		conversation.Unread = record.Unread
+	if state, err := s.conversationRepo.GetUserConversationState(ctx, creatorID, conversation.ID); err == nil && state != nil {
+		conversation.Unread = state.Unread
 	}
 
 	return &ConversationResult{
@@ -634,11 +634,13 @@ func (s *Service) resolveDirectMessageConversationForSend(ctx context.Context, s
 	}, true, nil
 }
 
-func (s *Service) getParticipantRecordForSend(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
-	record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversationID, participantID)
+func (s *Service) getUserConversationStateForSend(ctx context.Context, conversationID, participantID string) (*models.UserConversationState, error) {
+	stateContract, err := s.conversationRepo.GetUserConversationState(ctx, participantID, conversationID)
 	switch {
+	case err == nil && stateContract == nil:
+		return nil, nil
 	case err == nil:
-		return record, nil
+		return userConversationStateFromContract(nil, participantID, "", stateContract), nil
 	case errors.Is(err, storage.ErrNotFound), isNotFoundError(err):
 		return nil, nil
 	default:
@@ -677,48 +679,77 @@ func defaultSendConversationState(conversation *models.Conversation, viewerID, c
 	return state
 }
 
-func userConversationStateFromParticipantRecord(conversation *models.Conversation, viewerID, counterpartID string, record *models.ConversationParticipantRecord) *models.UserConversationState {
+func userConversationStateFromContract(conversation *models.Conversation, viewerID, counterpartID string, stateContract *interfaces.UserConversationStateContract) *models.UserConversationState {
 	state := defaultSendConversationState(conversation, viewerID, counterpartID)
-	if record == nil {
+	if stateContract == nil {
 		return state
 	}
 
-	if record.CounterpartID != "" {
-		state.CounterpartID = record.CounterpartID
+	if stateContract.ViewerID != "" {
+		state.ViewerID = stateContract.ViewerID
 	}
-	if record.Folder != "" {
-		state.Folder = record.Folder
+	if stateContract.ConversationID != "" {
+		state.ConversationID = stateContract.ConversationID
 	}
-	if record.RequestState != "" {
-		state.RequestState = record.RequestState
+	if stateContract.CounterpartID != "" {
+		state.CounterpartID = stateContract.CounterpartID
 	}
-	state.RequestedAt = record.RequestedAt
-	state.AcceptedAt = record.AcceptedAt
-	state.DeclinedAt = record.DeclinedAt
-	state.DeletedAt = record.DeletedAt
-	state.Unread = record.Unread
-	state.LastReadAt = record.LastReadAt
-	if record.PreviewStatusID != "" {
-		state.PreviewStatusID = record.PreviewStatusID
+	if stateContract.Folder != "" {
+		state.Folder = stateContract.Folder
 	}
-	if !record.PreviewStatusPublishedAt.IsZero() {
-		state.PreviewStatusPublishedAt = record.PreviewStatusPublishedAt.UTC()
+	if stateContract.RequestState != "" {
+		state.RequestState = stateContract.RequestState
 	}
-	if !record.SortAt.IsZero() {
-		state.SortAt = record.SortAt.UTC()
+	state.RequestedAt = stateContract.RequestedAt
+	state.AcceptedAt = stateContract.AcceptedAt
+	state.DeclinedAt = stateContract.DeclinedAt
+	state.DeletedAt = stateContract.DeletedAt
+	state.Unread = stateContract.Unread
+	state.LastReadAt = stateContract.LastReadAt
+	if stateContract.PreviewStatusID != "" {
+		state.PreviewStatusID = stateContract.PreviewStatusID
 	}
-	if !record.UpdatedAt.IsZero() {
-		state.UpdatedAt = record.UpdatedAt.UTC()
+	if !stateContract.PreviewStatusPublishedAt.IsZero() {
+		state.PreviewStatusPublishedAt = stateContract.PreviewStatusPublishedAt.UTC()
 	}
-	if record.Conversation != nil {
-		if !record.Conversation.CreatedAt.IsZero() {
-			state.CreatedAt = record.Conversation.CreatedAt.UTC()
-		}
-		if record.UpdatedAt.IsZero() && !record.Conversation.UpdatedAt.IsZero() {
-			state.UpdatedAt = record.Conversation.UpdatedAt.UTC()
-		}
+	if !stateContract.SortAt.IsZero() {
+		state.SortAt = stateContract.SortAt.UTC()
+	}
+	if !stateContract.CreatedAt.IsZero() {
+		state.CreatedAt = stateContract.CreatedAt.UTC()
+	}
+	if !stateContract.UpdatedAt.IsZero() {
+		state.UpdatedAt = stateContract.UpdatedAt.UTC()
 	}
 	return state
+}
+
+func userConversationStateContractFromModel(state *models.UserConversationState) *interfaces.UserConversationStateContract {
+	if state == nil {
+		return nil
+	}
+	return &interfaces.UserConversationStateContract{
+		ViewerID:                 state.ViewerID,
+		ConversationID:           state.ConversationID,
+		CounterpartID:            state.CounterpartID,
+		Folder:                   state.Folder,
+		RequestState:             state.RequestState,
+		PreviewStatusID:          state.PreviewStatusID,
+		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+		SortAt:                   state.SortAt,
+		Unread:                   state.Unread,
+		LastReadAt:               state.LastReadAt,
+		DeletedAt:                state.DeletedAt,
+		RequestedAt:              state.RequestedAt,
+		AcceptedAt:               state.AcceptedAt,
+		DeclinedAt:               state.DeclinedAt,
+		CreatedAt:                state.CreatedAt,
+		UpdatedAt:                state.UpdatedAt,
+	}
+}
+
+func userConversationStateForSend(conversation *models.Conversation, viewerID, counterpartID string, state *models.UserConversationState) *models.UserConversationState {
+	return userConversationStateFromContract(conversation, viewerID, counterpartID, userConversationStateContractFromModel(state))
 }
 
 func (s *Service) evaluateDirectMessageRequestPolicyForState(ctx context.Context, cmd *SendDirectMessageCommand, conversationID, recipientID string, recipientRequestState models.DmRequestState) (willBeRequest bool, deliversToInbox bool, _ error) {
@@ -756,8 +787,8 @@ func buildDirectMessageParticipantStatesForSend(
 	status *models.Status,
 	senderID string,
 	recipientID string,
-	senderRecord *models.ConversationParticipantRecord,
-	recipientRecord *models.ConversationParticipantRecord,
+	senderState *models.UserConversationState,
+	recipientState *models.UserConversationState,
 	deliversToInbox bool,
 ) []*models.UserConversationState {
 	now := time.Now().UTC()
@@ -765,7 +796,7 @@ func buildDirectMessageParticipantStatesForSend(
 		now = status.PublishedAt.UTC()
 	}
 
-	senderState := userConversationStateFromParticipantRecord(conversation, senderID, recipientID, senderRecord)
+	senderState = userConversationStateForSend(conversation, senderID, recipientID, senderState)
 	senderState.CounterpartID = recipientID
 	senderState.Folder = models.UserConversationFolderInbox
 	senderState.RequestState = models.DmRequestStateAccepted
@@ -779,7 +810,7 @@ func buildDirectMessageParticipantStatesForSend(
 		senderState.AcceptedAt = &t
 	}
 
-	recipientState := userConversationStateFromParticipantRecord(conversation, recipientID, senderID, recipientRecord)
+	recipientState = userConversationStateForSend(conversation, recipientID, senderID, recipientState)
 	recipientState.CounterpartID = senderID
 	recipientState.DeletedAt = nil
 	recipientState.Unread = true
@@ -840,12 +871,12 @@ func buildExpectedDirectMessageParticipantStates(
 	conversation *models.Conversation,
 	senderID string,
 	recipientID string,
-	senderRecord *models.ConversationParticipantRecord,
-	recipientRecord *models.ConversationParticipantRecord,
+	senderState *models.UserConversationState,
+	recipientState *models.UserConversationState,
 ) []*models.UserConversationState {
 	return []*models.UserConversationState{
-		userConversationStateFromParticipantRecord(conversation, senderID, recipientID, senderRecord),
-		userConversationStateFromParticipantRecord(conversation, recipientID, senderID, recipientRecord),
+		userConversationStateForSend(conversation, senderID, recipientID, senderState),
+		userConversationStateForSend(conversation, recipientID, senderID, recipientState),
 	}
 }
 
@@ -884,19 +915,19 @@ func (s *Service) applyDirectMessageSendTransition(
 	createConversation bool,
 	senderID string,
 	recipientID string,
-	senderRecord *models.ConversationParticipantRecord,
-	recipientRecord *models.ConversationParticipantRecord,
+	senderState *models.UserConversationState,
+	recipientState *models.UserConversationState,
 	status *models.Status,
 	deliversToInbox bool,
 ) error {
 	transition := &models.DirectMessageSendTransition{
 		Conversation:       conversation,
 		Status:             status,
-		ParticipantStates:  buildDirectMessageParticipantStatesForSend(conversation, status, senderID, recipientID, senderRecord, recipientRecord, deliversToInbox),
+		ParticipantStates:  buildDirectMessageParticipantStatesForSend(conversation, status, senderID, recipientID, senderState, recipientState, deliversToInbox),
 		CreateConversation: createConversation,
 	}
 	if !createConversation {
-		transition.ExpectedParticipantStates = buildExpectedDirectMessageParticipantStates(conversation, senderID, recipientID, senderRecord, recipientRecord)
+		transition.ExpectedParticipantStates = buildExpectedDirectMessageParticipantStates(conversation, senderID, recipientID, senderState, recipientState)
 	}
 
 	if err := s.conversationRepo.ApplyDirectMessageSend(ctx, transition); err != nil {
@@ -933,14 +964,14 @@ func (s *Service) executeDirectMessageSendAttempt(
 	}
 
 	var recipientRequestState models.DmRequestState
-	var recipientRecord *models.ConversationParticipantRecord
+	var recipientState *models.UserConversationState
 	if !createConversation {
-		recipientRecord, err = s.getParticipantRecordForSend(ctx, conversation.ID, recipientID)
+		recipientState, err = s.getUserConversationStateForSend(ctx, conversation.ID, recipientID)
 		if err != nil {
 			return nil, false, errors.Join(ErrCreateDirectMessage, err)
 		}
-		if recipientRecord != nil {
-			recipientRequestState = recipientRecord.RequestState
+		if recipientState != nil {
+			recipientRequestState = recipientState.RequestState
 		}
 	}
 
@@ -959,15 +990,15 @@ func (s *Service) executeDirectMessageSendAttempt(
 		return nil, false, err
 	}
 
-	var senderRecord *models.ConversationParticipantRecord
+	var senderState *models.UserConversationState
 	if !createConversation {
-		senderRecord, err = s.getParticipantRecordForSend(ctx, conversation.ID, cmd.SenderID)
+		senderState, err = s.getUserConversationStateForSend(ctx, conversation.ID, cmd.SenderID)
 		if err != nil {
 			return nil, false, errors.Join(ErrCreateDirectMessage, err)
 		}
 	}
 
-	if err := s.applyDirectMessageSendTransition(ctx, conversation, createConversation, cmd.SenderID, recipientID, senderRecord, recipientRecord, status, deliversToInbox); err != nil {
+	if err := s.applyDirectMessageSendTransition(ctx, conversation, createConversation, cmd.SenderID, recipientID, senderState, recipientState, status, deliversToInbox); err != nil {
 		if createConversation && errors.Is(err, storage.ErrAlreadyExists) {
 			return nil, true, storage.ErrAlreadyExists
 		}
@@ -1206,12 +1237,12 @@ func (s *Service) executeSendMessageAttempt(ctx context.Context, cmd *SendMessag
 	}
 
 	recipientRequestState := models.DmRequestState("")
-	record, err := s.getParticipantRecordForSend(ctx, conversation.ID, recipientID)
+	recipientState, err := s.getUserConversationStateForSend(ctx, conversation.ID, recipientID)
 	if err != nil {
 		return nil, false, errors.Join(ErrCreateDirectMessage, err)
 	}
-	if record != nil {
-		recipientRequestState = record.RequestState
+	if recipientState != nil {
+		recipientRequestState = recipientState.RequestState
 	}
 
 	willBeRequest, deliversToInbox, err := s.evaluateDirectMessageRequestPolicyForState(ctx, sendCmd, conversation.ID, recipientID, recipientRequestState)
@@ -1228,12 +1259,12 @@ func (s *Service) executeSendMessageAttempt(ctx context.Context, cmd *SendMessag
 	if err != nil {
 		return nil, false, err
 	}
-	senderRecord, err := s.getParticipantRecordForSend(ctx, conversation.ID, cmd.SenderID)
+	senderState, err := s.getUserConversationStateForSend(ctx, conversation.ID, cmd.SenderID)
 	if err != nil {
 		return nil, false, errors.Join(ErrCreateDirectMessage, err)
 	}
 
-	if err := s.applyDirectMessageSendTransition(ctx, conversation, false, cmd.SenderID, recipientID, senderRecord, record, status, deliversToInbox); err != nil {
+	if err := s.applyDirectMessageSendTransition(ctx, conversation, false, cmd.SenderID, recipientID, senderState, recipientState, status, deliversToInbox); err != nil {
 		if errors.Is(err, storage.ErrVersionConflict) {
 			return nil, true, storage.ErrVersionConflict
 		}
@@ -1311,7 +1342,7 @@ func (s *Service) DeclineMessageRequest(ctx context.Context, cmd *DeclineMessage
 	return s.applyMessageRequestDecision(ctx, cmd.ConversationID, cmd.UserID, models.DmRequestStateDeclined, "dm.request.decline")
 }
 
-func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationID, userID string, state models.DmRequestState, auditEvent string) (*ConversationResult, error) {
+func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationID, userID string, decision models.DmRequestState, auditEvent string) (*ConversationResult, error) {
 	conversation, err := s.conversationRepo.GetConversation(ctx, conversationID)
 	if err != nil {
 		return nil, errors.Join(ErrGetConversation, err)
@@ -1322,35 +1353,35 @@ func (s *Service) applyMessageRequestDecision(ctx context.Context, conversationI
 	}
 
 	now := time.Now().UTC()
-	if err := s.updateParticipantRecord(ctx, conversation.ID, userID, func(record *models.ConversationParticipantRecord) {
-		if record == nil {
+	if err := s.updateUserConversationState(ctx, conversation.ID, userID, func(participantState *models.UserConversationState) {
+		if participantState == nil {
 			return
 		}
 
-		switch state {
+		switch decision {
 		case models.DmRequestStateAccepted:
-			record.Folder = models.UserConversationFolderInbox
-			record.RequestState = models.DmRequestStateAccepted
-			record.DeletedAt = nil
-			record.RequestedAt = nil
-			record.DeclinedAt = nil
+			participantState.Folder = models.UserConversationFolderInbox
+			participantState.RequestState = models.DmRequestStateAccepted
+			participantState.DeletedAt = nil
+			participantState.RequestedAt = nil
+			participantState.DeclinedAt = nil
 			t := now
-			record.AcceptedAt = &t
+			participantState.AcceptedAt = &t
 		case models.DmRequestStateDeclined:
-			record.Folder = models.UserConversationFolderDeclined
-			record.RequestState = models.DmRequestStateDeclined
-			record.DeletedAt = nil
-			record.RequestedAt = nil
-			record.AcceptedAt = nil
+			participantState.Folder = models.UserConversationFolderDeclined
+			participantState.RequestState = models.DmRequestStateDeclined
+			participantState.DeletedAt = nil
+			participantState.RequestedAt = nil
+			participantState.AcceptedAt = nil
 			t := now
-			record.DeclinedAt = &t
+			participantState.DeclinedAt = &t
 		}
 	}); err != nil {
 		return nil, errors.Join(ErrMarkConversationRead, err)
 	}
 
-	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversation.ID, userID); err == nil && record != nil {
-		conversation.Unread = record.Unread
+	if state, err := s.conversationRepo.GetUserConversationState(ctx, userID, conversation.ID); err == nil && state != nil {
+		conversation.Unread = state.Unread
 	}
 
 	s.auditDMRequestEvent(ctx, auditEvent, userID, conversation.ID, true, "", map[string]any{
@@ -1463,12 +1494,12 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 	}
 
 	// Populate per-viewer unread state if available.
-	if record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, query.ConversationID, query.ViewerID); err == nil && record != nil {
-		if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
+	if state, err := s.conversationRepo.GetUserConversationState(ctx, query.ViewerID, query.ConversationID); err == nil && state != nil {
+		if state.DeletedAt != nil && !state.DeletedAt.IsZero() {
 			return nil, ErrConversationNotFound
 		}
 
-		conversation.Unread = record.Unread
+		conversation.Unread = state.Unread
 	}
 
 	// Get conversation messages (these are statuses with this conversation ID).
@@ -2025,36 +2056,22 @@ func isNotFoundError(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NotFound"))
 }
 
-func (s *Service) updateParticipantRecord(ctx context.Context, conversationID, participantID string, mutator func(record *models.ConversationParticipantRecord)) error {
+func (s *Service) updateUserConversationState(ctx context.Context, conversationID, participantID string, mutator func(state *models.UserConversationState)) error {
 	if mutator == nil {
 		return nil
 	}
 
-	record, err := s.conversationRepo.GetConversationParticipantRecord(ctx, conversationID, participantID)
+	stateContract, err := s.conversationRepo.GetUserConversationState(ctx, participantID, conversationID)
 	if err != nil {
 		return err
 	}
-	if record == nil {
+	if stateContract == nil {
 		return storage.ErrNotFound
 	}
-	if participantRecordSnapshotCorrupt(record) {
-		s.logger.Warn("participant record missing canonical conversation identity",
-			zap.String("conversation_id", conversationID),
-			zap.String("participant_id", participantID))
-	}
 
-	mutator(record)
-	return s.conversationRepo.UpdateConversationParticipantRecord(ctx, record)
-}
-
-func participantRecordSnapshotCorrupt(record *models.ConversationParticipantRecord) bool {
-	if record == nil {
-		return true
-	}
-	if strings.TrimSpace(record.ConversationID) != "" {
-		return false
-	}
-	return record.Conversation == nil || strings.TrimSpace(record.Conversation.ID) == ""
+	state := userConversationStateFromContract(nil, participantID, "", stateContract)
+	mutator(state)
+	return s.conversationRepo.PutUserConversationState(ctx, state)
 }
 
 // DeleteConversation implements delete-for-me semantics for a DM conversation.
@@ -2109,13 +2126,13 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 	}
 
 	now := time.Now().UTC()
-	if err := s.updateParticipantRecord(ctx, conversationID, participantIDForRecord, func(record *models.ConversationParticipantRecord) {
-		if record == nil {
+	if err := s.updateUserConversationState(ctx, conversationID, participantIDForRecord, func(state *models.UserConversationState) {
+		if state == nil {
 			return
 		}
 		t := now
-		record.Folder = models.UserConversationFolderHidden
-		record.DeletedAt = &t
+		state.Folder = models.UserConversationFolderHidden
+		state.DeletedAt = &t
 	}); err != nil {
 		if errors.Is(err, storage.ErrNotFound) || isNotFoundError(err) {
 			// If the participant record doesn't exist, the conversation is already effectively hidden

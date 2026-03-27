@@ -23,7 +23,7 @@ func TestService_GetConversation_ReturnsErrGetConversationMessages_OnThreadError
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return((*models.ConversationParticipantRecord)(nil), errors.New("boom")).Once()
+	conversationRepo.On("GetUserConversationState", ctx, "alice", "conv123").Return((*interfaces.UserConversationStateContract)(nil), errors.New("boom")).Once()
 
 	noteRepo.On("GetConversationThread", ctx, "conv123", mock.Anything).Return((*interfaces.PaginatedResult[*models.Status])(nil), errors.New("boom")).Once()
 
@@ -46,7 +46,12 @@ func TestService_GetConversation_ReturnsErrGetConversationMessages_OnTombstoneEr
 
 	conversation := createTestConversation("conv123", []string{"alice", "bob"})
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "alice").Return(&models.ConversationParticipantRecord{Unread: true}, nil).Once()
+	conversationRepo.On("GetUserConversationState", ctx, "alice", "conv123").Return(
+		testConversationStateContract("alice", "conv123", func(state *interfaces.UserConversationStateContract) {
+			state.Unread = true
+		}),
+		nil,
+	).Once()
 
 	paginated := &interfaces.PaginatedResult[*models.Status]{
 		Items: []*models.Status{
@@ -108,25 +113,25 @@ func TestService_auditDMRequestEvent_UsesMediumSeverityOnFailure(t *testing.T) {
 	auditRepo.AssertExpectations(t)
 }
 
-func TestService_getParticipantRecordForSend_ReturnsNilOnErrorOrMissingRecord(t *testing.T) {
+func TestService_getUserConversationStateForSend_ReturnsNilOnErrorOrMissingState(t *testing.T) {
 	ctx := context.Background()
 
 	conversationRepo := &mockConversationRepository{}
 	service := NewService(conversationRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, zaptest.NewLogger(t), "example.com")
 
 	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return((*models.ConversationParticipantRecord)(nil), errors.New("boom")).
+		On("GetUserConversationState", ctx, "bob", "conv123").
+		Return((*interfaces.UserConversationStateContract)(nil), errors.New("boom")).
 		Once()
-	record, err := service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	record, err := service.getUserConversationStateForSend(ctx, "conv123", "bob")
 	require.Error(t, err)
 	require.Nil(t, record)
 
 	conversationRepo.
-		On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return((*models.ConversationParticipantRecord)(nil), nil).
+		On("GetUserConversationState", ctx, "bob", "conv123").
+		Return((*interfaces.UserConversationStateContract)(nil), nil).
 		Once()
-	record, err = service.getParticipantRecordForSend(ctx, "conv123", "bob")
+	record, err = service.getUserConversationStateForSend(ctx, "conv123", "bob")
 	require.NoError(t, err)
 	require.Nil(t, record)
 }

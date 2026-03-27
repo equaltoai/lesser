@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -35,11 +36,11 @@ func TestRound43_Service_SendDirectMessage_RetriesTransactionalCreateRace(t *tes
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).
 		Return(existingConversation, nil).
 		Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "bob").
-		Return(&models.ConversationParticipantRecord{Conversation: existingConversation}, nil).
+	conversationRepo.On("GetUserConversationState", ctx, "bob", "conv-existing").
+		Return(testConversationStateContract("bob", "conv-existing", nil), nil).
 		Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").
-		Return(&models.ConversationParticipantRecord{Conversation: existingConversation}, nil).
+	conversationRepo.On("GetUserConversationState", ctx, "alice", "conv-existing").
+		Return(testConversationStateContract("alice", "conv-existing", nil), nil).
 		Once()
 	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
 		return transition != nil && !transition.CreateConversation && transition.Conversation != nil && transition.Conversation.ID == "conv-existing"
@@ -75,19 +76,27 @@ func TestRound43_Service_SendMessage_RetriesTransactionalVersionConflict(t *test
 
 	senderAccount := createTestAccount("alice", "alice")
 	recipientAccount := createTestAccount("bob", "bob")
-	record := &models.ConversationParticipantRecord{
-		RequestState:             models.DmRequestStateAccepted,
-		PreviewStatusID:          "status-winner",
-		PreviewStatusPublishedAt: reloadedConversation.UpdatedAt,
-		SortAt:                   reloadedConversation.UpdatedAt,
-		Conversation:             reloadedConversation,
-	}
-
 	conversationRepo.On("GetConversation", ctx, "conv-existing").Return(initialConversation, nil).Once()
 	accountRepo.On("GetAccount", ctx, "alice").Return(senderAccount, nil).Twice()
 	accountRepo.On("GetAccount", ctx, "bob").Return(recipientAccount, nil).Twice()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "bob").Return(record, nil).Twice()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv-existing", "alice").Return(record, nil).Twice()
+	conversationRepo.On("GetUserConversationState", ctx, "bob", "conv-existing").Return(
+		testConversationStateContract("bob", "conv-existing", func(state *interfaces.UserConversationStateContract) {
+			state.RequestState = models.DmRequestStateAccepted
+			state.PreviewStatusID = "status-winner"
+			state.PreviewStatusPublishedAt = reloadedConversation.UpdatedAt
+			state.SortAt = reloadedConversation.UpdatedAt
+		}),
+		nil,
+	).Twice()
+	conversationRepo.On("GetUserConversationState", ctx, "alice", "conv-existing").Return(
+		testConversationStateContract("alice", "conv-existing", func(state *interfaces.UserConversationStateContract) {
+			state.RequestState = models.DmRequestStateAccepted
+			state.PreviewStatusID = "status-winner"
+			state.PreviewStatusPublishedAt = reloadedConversation.UpdatedAt
+			state.SortAt = reloadedConversation.UpdatedAt
+		}),
+		nil,
+	).Twice()
 	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
 		return transition != nil && transition.Conversation != nil && transition.Conversation.ID == "conv-existing"
 	})).

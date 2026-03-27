@@ -517,8 +517,8 @@ func (h *StreamRouterHandler) processRecord(ctx context.Context, requestID strin
 		return h.processNotificationEvent(ctx, requestID, record)
 	case "USER", "ACTOR":
 		return h.processAccountEvent(ctx, requestID, record)
-	case "USER_CONVERSATIONS":
-		return h.processConversationParticipantEvent(ctx, requestID, record)
+	case "USER_CONVERSATION_STATE":
+		return h.processUserConversationStateEvent(ctx, requestID, record)
 	case "TOMBSTONE":
 		return h.processTombstoneEvent(ctx, requestID, record)
 	default:
@@ -527,20 +527,20 @@ func (h *StreamRouterHandler) processRecord(ctx context.Context, requestID strin
 	}
 }
 
-func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
+func (h *StreamRouterHandler) processUserConversationStateEvent(ctx context.Context, requestID string, record events.DynamoDBEventRecord) error {
 	if h == nil || h.gqlSubRepo == nil || h.graphqlClient == nil {
 		return nil
 	}
 
-	var participant models.ConversationParticipantRecord
-	if err := stream.UnmarshalItem(record, &participant); err != nil {
-		h.logger.Debug("failed to unmarshal conversation participant record",
+	var state models.UserConversationState
+	if err := stream.UnmarshalItem(record, &state); err != nil {
+		h.logger.Debug("failed to unmarshal user conversation state",
 			zap.String("request_id", requestID),
 			zap.Error(err))
 		return nil
 	}
 
-	parts := common.SplitKey(participant.PK)
+	parts := common.SplitKey(state.PK)
 	if len(parts) < 2 {
 		return nil
 	}
@@ -549,12 +549,12 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 		return nil
 	}
 
-	conversationID := conversationIDFromParticipant(participant)
+	conversationID := conversationIDFromState(state)
 	if conversationID == "" {
 		return nil
 	}
 
-	requestState := strings.ToUpper(strings.TrimSpace(string(participant.RequestState)))
+	requestState := strings.ToUpper(strings.TrimSpace(string(state.RequestState)))
 	streamName := streaming.DMInboxStreamName(username)
 	switch requestState {
 	case string(models.DmRequestStatePending), string(models.DmRequestStateDeclined):
@@ -608,18 +608,18 @@ func (h *StreamRouterHandler) processConversationParticipantEvent(ctx context.Co
 	return nil
 }
 
-func conversationIDFromParticipant(participant models.ConversationParticipantRecord) string {
-	conversationID := strings.TrimSpace(participant.ConversationID)
+func conversationIDFromState(state models.UserConversationState) string {
+	conversationID := strings.TrimSpace(state.ConversationID)
 	if conversationID != "" {
 		return conversationID
 	}
 
-	conversationID = strings.TrimSpace(strings.TrimPrefix(participant.GSI1PK, "CONVERSATION#"))
+	conversationID = strings.TrimSpace(strings.TrimPrefix(state.GSI3PK, "CONVERSATION#"))
 	if conversationID != "" {
 		return conversationID
 	}
 
-	if _, tail, ok := strings.Cut(participant.SK, "#"); ok {
+	if _, tail, ok := strings.Cut(state.SK, "#"); ok {
 		return strings.TrimSpace(tail)
 	}
 

@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -22,10 +21,8 @@ type ConversationRepository struct {
 	participants map[string][]string
 	// userConversations stores conversation IDs keyed by user ID
 	userConversations map[string][]string
-	// statuses stores conversation statuses keyed by "conversationID:statusID"
-	statuses map[string]*storage.ConversationStatus
-	// statusesByConv stores status keys keyed by conversation ID
-	statusesByConv map[string][]string
+	// states stores canonical per-user DM state keyed by "viewerID:conversationID"
+	states map[string]*models.UserConversationState
 	// readStatus stores read status keyed by "conversationID:username"
 	readStatus map[string]bool
 	// mutes stores mutes keyed by "username:conversationID"
@@ -38,8 +35,7 @@ func NewConversationRepository() *ConversationRepository {
 		conversations:     make(map[string]*models.Conversation),
 		participants:      make(map[string][]string),
 		userConversations: make(map[string][]string),
-		statuses:          make(map[string]*storage.ConversationStatus),
-		statusesByConv:    make(map[string][]string),
+		states:            make(map[string]*models.UserConversationState),
 		readStatus:        make(map[string]bool),
 		mutes:             make(map[string]*storage.ConversationMute),
 	}
@@ -57,14 +53,37 @@ func (r *ConversationRepository) CreateConversation(_ context.Context, conversat
 	r.participants[conversation.ID] = participants
 	for _, p := range participants {
 		r.userConversations[p] = append(r.userConversations[p], conversation.ID)
+		key := p + ":" + conversation.ID
+		r.states[key] = &models.UserConversationState{
+			ViewerID:       p,
+			ConversationID: conversation.ID,
+			CounterpartID:  counterpartIDForInMemoryState(p, participants),
+			Folder:         models.UserConversationFolderInbox,
+			SortAt:         conversation.UpdatedAt,
+			CreatedAt:      conversation.CreatedAt,
+			UpdatedAt:      conversation.UpdatedAt,
+		}
 	}
 	return nil
 }
 
 // CreateConversationWithParticipantStates creates a new conversation while ignoring the
 // explicit participant states in the in-memory test repository.
-func (r *ConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, _ []*models.UserConversationState) error {
-	return r.CreateConversation(ctx, conversation, participants)
+func (r *ConversationRepository) CreateConversationWithParticipantStates(ctx context.Context, conversation *models.Conversation, participants []string, participantStates []*models.UserConversationState) error {
+	if err := r.CreateConversation(ctx, conversation, participants); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, state := range participantStates {
+		if state == nil {
+			continue
+		}
+		cloned := *state
+		r.states[state.ViewerID+":"+state.ConversationID] = &cloned
+	}
+	return nil
 }
 
 // GetConversation retrieves a conversation by ID
@@ -115,6 +134,14 @@ func (r *ConversationRepository) ApplyDirectMessageSend(_ context.Context, trans
 			return storage.ErrNotFound
 		}
 		r.conversations[conversation.ID] = conversation
+	}
+
+	for _, state := range transition.ParticipantStates {
+		if state == nil {
+			continue
+		}
+		cloned := *state
+		r.states[state.ViewerID+":"+state.ConversationID] = &cloned
 	}
 
 	senderID := transition.Status.AuthorID
@@ -228,16 +255,156 @@ func (r *ConversationRepository) GetConversationByParticipants(_ context.Context
 	return nil, storage.ErrNotFound
 }
 
-// GetConversationParticipantRecord retrieves the participant record for a conversation.
-// The in-memory repository does not persist participant records; return not found.
-func (r *ConversationRepository) GetConversationParticipantRecord(_ context.Context, _, _ string) (*models.ConversationParticipantRecord, error) {
-	return nil, storage.ErrNotFound
+func counterpartIDForInMemoryState(viewerID string, participants []string) string {
+	for _, participantID := range participants {
+		if participantID != viewerID {
+			return participantID
+		}
+	}
+	return ""
 }
 
-// UpdateConversationParticipantRecord persists an updated participant record.
-// The in-memory repository does not persist participant records; return not found.
-func (r *ConversationRepository) UpdateConversationParticipantRecord(_ context.Context, _ *models.ConversationParticipantRecord) error {
-	return storage.ErrNotFound
+// GetUserConversationState retrieves the canonical per-user DM state for a conversation.
+func (r *ConversationRepository) GetUserConversationState(_ context.Context, viewerID, conversationID string) (*interfaces.UserConversationStateContract, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	state, exists := r.states[viewerID+":"+conversationID]
+	if !exists {
+		return nil, storage.ErrNotFound
+	}
+
+	return &interfaces.UserConversationStateContract{
+		ViewerID:                 state.ViewerID,
+		ConversationID:           state.ConversationID,
+		CounterpartID:            state.CounterpartID,
+		Folder:                   state.Folder,
+		RequestState:             state.RequestState,
+		PreviewStatusID:          state.PreviewStatusID,
+		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+		SortAt:                   state.SortAt,
+		Unread:                   state.Unread,
+		LastReadAt:               state.LastReadAt,
+		DeletedAt:                state.DeletedAt,
+		RequestedAt:              state.RequestedAt,
+		AcceptedAt:               state.AcceptedAt,
+		DeclinedAt:               state.DeclinedAt,
+		CreatedAt:                state.CreatedAt,
+		UpdatedAt:                state.UpdatedAt,
+	}, nil
+}
+
+// PutUserConversationState persists a canonical per-user DM state row.
+func (r *ConversationRepository) PutUserConversationState(_ context.Context, state *models.UserConversationState) error {
+	if state == nil {
+		return storage.ErrInvalidInput
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cloned := *state
+	r.states[state.ViewerID+":"+state.ConversationID] = &cloned
+	return nil
+}
+
+// ListUserConversationStatesByFolder lists canonical per-user DM state rows by folder.
+func (r *ConversationRepository) ListUserConversationStatesByFolder(_ context.Context, viewerID string, folder interfaces.UserConversationFolder, _ interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]*interfaces.UserConversationStateContract, 0)
+	for key, state := range r.states {
+		if !strings.HasPrefix(key, viewerID+":") || state == nil || state.Folder != folder {
+			continue
+		}
+		items = append(items, &interfaces.UserConversationStateContract{
+			ViewerID:                 state.ViewerID,
+			ConversationID:           state.ConversationID,
+			CounterpartID:            state.CounterpartID,
+			Folder:                   state.Folder,
+			RequestState:             state.RequestState,
+			PreviewStatusID:          state.PreviewStatusID,
+			PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+			SortAt:                   state.SortAt,
+			Unread:                   state.Unread,
+			LastReadAt:               state.LastReadAt,
+			DeletedAt:                state.DeletedAt,
+			RequestedAt:              state.RequestedAt,
+			AcceptedAt:               state.AcceptedAt,
+			DeclinedAt:               state.DeclinedAt,
+			CreatedAt:                state.CreatedAt,
+			UpdatedAt:                state.UpdatedAt,
+		})
+	}
+
+	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{Items: items, Total: int64(len(items))}, nil
+}
+
+// ListUnreadUserConversationStates lists canonical unread per-user DM state rows.
+func (r *ConversationRepository) ListUnreadUserConversationStates(_ context.Context, viewerID string, _ interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]*interfaces.UserConversationStateContract, 0)
+	for key, state := range r.states {
+		if !strings.HasPrefix(key, viewerID+":") || state == nil || !state.Unread {
+			continue
+		}
+		items = append(items, &interfaces.UserConversationStateContract{
+			ViewerID:                 state.ViewerID,
+			ConversationID:           state.ConversationID,
+			CounterpartID:            state.CounterpartID,
+			Folder:                   state.Folder,
+			RequestState:             state.RequestState,
+			PreviewStatusID:          state.PreviewStatusID,
+			PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+			SortAt:                   state.SortAt,
+			Unread:                   state.Unread,
+			LastReadAt:               state.LastReadAt,
+			DeletedAt:                state.DeletedAt,
+			RequestedAt:              state.RequestedAt,
+			AcceptedAt:               state.AcceptedAt,
+			DeclinedAt:               state.DeclinedAt,
+			CreatedAt:                state.CreatedAt,
+			UpdatedAt:                state.UpdatedAt,
+		})
+	}
+
+	return &interfaces.PaginatedResult[*interfaces.UserConversationStateContract]{Items: items, Total: int64(len(items))}, nil
+}
+
+// ListConversationParticipantStates lists all canonical per-user DM state rows for a conversation.
+func (r *ConversationRepository) ListConversationParticipantStates(_ context.Context, conversationID string) ([]*interfaces.UserConversationStateContract, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]*interfaces.UserConversationStateContract, 0)
+	suffix := ":" + conversationID
+	for key, state := range r.states {
+		if !strings.HasSuffix(key, suffix) || state == nil {
+			continue
+		}
+		items = append(items, &interfaces.UserConversationStateContract{
+			ViewerID:                 state.ViewerID,
+			ConversationID:           state.ConversationID,
+			CounterpartID:            state.CounterpartID,
+			Folder:                   state.Folder,
+			RequestState:             state.RequestState,
+			PreviewStatusID:          state.PreviewStatusID,
+			PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
+			SortAt:                   state.SortAt,
+			Unread:                   state.Unread,
+			LastReadAt:               state.LastReadAt,
+			DeletedAt:                state.DeletedAt,
+			RequestedAt:              state.RequestedAt,
+			AcceptedAt:               state.AcceptedAt,
+			DeclinedAt:               state.DeclinedAt,
+			CreatedAt:                state.CreatedAt,
+			UpdatedAt:                state.UpdatedAt,
+		})
+	}
+	return items, nil
 }
 
 // GetUnreadConversations retrieves unread conversations for a user
@@ -335,123 +502,6 @@ func (r *ConversationRepository) GetUnreadConversationCount(_ context.Context, u
 	return count, nil
 }
 
-// AddStatusToConversation adds a status/message to a conversation
-func (r *ConversationRepository) AddStatusToConversation(_ context.Context, conversationID, statusID, senderUsername string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	key := conversationID + ":" + statusID
-	r.statuses[key] = &storage.ConversationStatus{
-		ConversationID: conversationID,
-		StatusID:       statusID,
-		UserID:         senderUsername,
-		CreatedAt:      time.Now(),
-	}
-	r.statusesByConv[conversationID] = append(r.statusesByConv[conversationID], key)
-	return nil
-}
-
-// GetConversationStatuses retrieves messages in a conversation with pagination
-func (r *ConversationRepository) GetConversationStatuses(_ context.Context, conversationID string, limit int, _ string) ([]*storage.ConversationStatus, string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	keys := r.statusesByConv[conversationID]
-	var results []*storage.ConversationStatus
-	for _, key := range keys {
-		if status, exists := r.statuses[key]; exists {
-			results = append(results, status)
-		}
-	}
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-	return results, "", nil
-}
-
-// RemoveStatusFromConversation removes a status from a conversation
-func (r *ConversationRepository) RemoveStatusFromConversation(_ context.Context, conversationID, statusID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	key := conversationID + ":" + statusID
-	delete(r.statuses, key)
-	return nil
-}
-
-// MarkStatusRead marks a specific status as read by a user
-func (r *ConversationRepository) MarkStatusRead(_ context.Context, conversationID, statusID, username string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	key := conversationID + ":" + statusID + ":" + username
-	r.readStatus[key] = true
-	return nil
-}
-
-// GetUnreadStatusCount gets the count of unread statuses in a conversation for a user
-func (r *ConversationRepository) GetUnreadStatusCount(_ context.Context, conversationID, username string) (int, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	count := 0
-	for _, key := range r.statusesByConv[conversationID] {
-		readKey := key + ":" + username
-		if !r.readStatus[readKey] {
-			count++
-		}
-	}
-	return count, nil
-}
-
-// UpdateConversationLastStatus updates the last status in a conversation
-func (r *ConversationRepository) UpdateConversationLastStatus(_ context.Context, id, lastStatusID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	conv, exists := r.conversations[id]
-	if !exists {
-		return storage.ErrNotFound
-	}
-	conv.LastStatusID = lastStatusID
-	conv.UpdatedAt = time.Now()
-	return nil
-}
-
-// AddParticipant adds a participant to a conversation
-func (r *ConversationRepository) AddParticipant(_ context.Context, conversationID, participantID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.participants[conversationID] = append(r.participants[conversationID], participantID)
-	r.userConversations[participantID] = append(r.userConversations[participantID], conversationID)
-	return nil
-}
-
-// RemoveParticipant removes a participant from a conversation
-func (r *ConversationRepository) RemoveParticipant(_ context.Context, conversationID, participantID string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Remove from participants
-	parts := r.participants[conversationID]
-	for i, p := range parts {
-		if p == participantID {
-			r.participants[conversationID] = append(parts[:i], parts[i+1:]...)
-			break
-		}
-	}
-	// Remove from user conversations
-	convs := r.userConversations[participantID]
-	for i, c := range convs {
-		if c == conversationID {
-			r.userConversations[participantID] = append(convs[:i], convs[i+1:]...)
-			break
-		}
-	}
-	return nil
-}
-
 // GetConversationParticipants retrieves the list of participants in a conversation
 func (r *ConversationRepository) GetConversationParticipants(_ context.Context, conversationID string) ([]string, error) {
 	r.mu.RLock()
@@ -462,11 +512,6 @@ func (r *ConversationRepository) GetConversationParticipants(_ context.Context, 
 		return nil, storage.ErrNotFound
 	}
 	return parts, nil
-}
-
-// LeaveConversation removes a participant from a conversation
-func (r *ConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	return r.RemoveParticipant(ctx, conversationID, username)
 }
 
 // CreateConversationMute creates a new conversation mute
@@ -521,8 +566,7 @@ func (r *ConversationRepository) Clear() {
 	r.conversations = make(map[string]*models.Conversation)
 	r.participants = make(map[string][]string)
 	r.userConversations = make(map[string][]string)
-	r.statuses = make(map[string]*storage.ConversationStatus)
-	r.statusesByConv = make(map[string][]string)
+	r.states = make(map[string]*models.UserConversationState)
 	r.readStatus = make(map[string]bool)
 	r.mutes = make(map[string]*storage.ConversationMute)
 }

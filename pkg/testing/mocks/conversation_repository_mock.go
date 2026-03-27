@@ -94,6 +94,42 @@ func (m *MockConversationRepository) GetConversationByParticipants(ctx context.C
 	return args.Get(0).(*models.Conversation), args.Error(1)
 }
 
+// GetUserConversationState mocks the GetUserConversationState method.
+func (m *MockConversationRepository) GetUserConversationState(ctx context.Context, viewerID, conversationID string) (*interfaces.UserConversationStateContract, error) {
+	args := m.Called(ctx, viewerID, conversationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.UserConversationStateContract), args.Error(1)
+}
+
+// ListUserConversationStatesByFolder mocks the ListUserConversationStatesByFolder method.
+func (m *MockConversationRepository) ListUserConversationStatesByFolder(ctx context.Context, viewerID string, folder interfaces.UserConversationFolder, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	args := m.Called(ctx, viewerID, folder, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*interfaces.UserConversationStateContract]), args.Error(1)
+}
+
+// ListUnreadUserConversationStates mocks the ListUnreadUserConversationStates method.
+func (m *MockConversationRepository) ListUnreadUserConversationStates(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	args := m.Called(ctx, viewerID, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*interfaces.UserConversationStateContract]), args.Error(1)
+}
+
+// ListConversationParticipantStates mocks the ListConversationParticipantStates method.
+func (m *MockConversationRepository) ListConversationParticipantStates(ctx context.Context, conversationID string) ([]*interfaces.UserConversationStateContract, error) {
+	args := m.Called(ctx, conversationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*interfaces.UserConversationStateContract), args.Error(1)
+}
+
 // GetUnreadConversations mocks the GetUnreadConversations method
 func (m *MockConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	args := m.Called(ctx, userID, opts)
@@ -132,47 +168,6 @@ func (m *MockConversationRepository) GetUnreadConversationCount(ctx context.Cont
 	return args.Int(0), args.Error(1)
 }
 
-// ===== Status/Message Operations =====
-
-// AddStatusToConversation mocks the AddStatusToConversation method
-func (m *MockConversationRepository) AddStatusToConversation(ctx context.Context, conversationID, statusID, senderUsername string) error {
-	args := m.Called(ctx, conversationID, statusID, senderUsername)
-	return args.Error(0)
-}
-
-// GetConversationStatuses mocks the GetConversationStatuses method
-func (m *MockConversationRepository) GetConversationStatuses(ctx context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error) {
-	args := m.Called(ctx, conversationID, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]*storage.ConversationStatus), args.String(1), args.Error(2)
-}
-
-// RemoveStatusFromConversation mocks the RemoveStatusFromConversation method
-func (m *MockConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
-	args := m.Called(ctx, conversationID, statusID)
-	return args.Error(0)
-}
-
-// MarkStatusRead mocks the MarkStatusRead method
-func (m *MockConversationRepository) MarkStatusRead(ctx context.Context, conversationID, statusID, username string) error {
-	args := m.Called(ctx, conversationID, statusID, username)
-	return args.Error(0)
-}
-
-// GetUnreadStatusCount mocks the GetUnreadStatusCount method
-func (m *MockConversationRepository) GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error) {
-	args := m.Called(ctx, conversationID, username)
-	return args.Int(0), args.Error(1)
-}
-
-// UpdateConversationLastStatus mocks the UpdateConversationLastStatus method
-func (m *MockConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	args := m.Called(ctx, id, lastStatusID)
-	return args.Error(0)
-}
-
 // ApplyDirectMessageSend mocks the ApplyDirectMessageSend method.
 func (m *MockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
 	args := m.Called(ctx, transition)
@@ -180,18 +175,6 @@ func (m *MockConversationRepository) ApplyDirectMessageSend(ctx context.Context,
 }
 
 // ===== Participant Operations =====
-
-// AddParticipant mocks the AddParticipant method
-func (m *MockConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
-}
-
-// RemoveParticipant mocks the RemoveParticipant method
-func (m *MockConversationRepository) RemoveParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
-}
 
 // GetConversationParticipants mocks the GetConversationParticipants method
 func (m *MockConversationRepository) GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error) {
@@ -202,24 +185,9 @@ func (m *MockConversationRepository) GetConversationParticipants(ctx context.Con
 	return args.Get(0).([]string), args.Error(1)
 }
 
-// GetConversationParticipantRecord mocks the GetConversationParticipantRecord method
-func (m *MockConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
-	args := m.Called(ctx, conversationID, participantID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.ConversationParticipantRecord), args.Error(1)
-}
-
-// UpdateConversationParticipantRecord mocks the UpdateConversationParticipantRecord method
-func (m *MockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
-	args := m.Called(ctx, record)
-	return args.Error(0)
-}
-
-// LeaveConversation mocks the LeaveConversation method
-func (m *MockConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	args := m.Called(ctx, conversationID, username)
+// PutUserConversationState mocks the PutUserConversationState method.
+func (m *MockConversationRepository) PutUserConversationState(ctx context.Context, state *models.UserConversationState) error {
+	args := m.Called(ctx, state)
 	return args.Error(0)
 }
 

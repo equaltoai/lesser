@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	testmocks "github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/assert"
@@ -244,8 +245,10 @@ func TestService_SendDirectMessage_RateLimitsPendingRequestPreview(t *testing.T)
 	accountRepo.On("GetAccount", ctx, "alice").Return(senderAccount, nil).Once()
 	accountRepo.On("GetAccount", ctx, "bob").Return(recipientAccount, nil).Once()
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).Return(conversation, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "bob").
-		Return(&models.ConversationParticipantRecord{RequestState: models.DmRequestStateDeclined}, nil).
+	conversationRepo.On("GetUserConversationState", ctx, "bob", "conv123").
+		Return(testConversationStateContract("bob", "conv123", func(state *interfaces.UserConversationStateContract) {
+			state.RequestState = models.DmRequestStateDeclined
+		}), nil).
 		Once()
 
 	rateLimitRepo.

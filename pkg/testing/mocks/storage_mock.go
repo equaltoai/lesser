@@ -1970,12 +1970,6 @@ func (m *MockStorage) GetConversationByParticipants(ctx context.Context, partici
 	return args.Get(0).(*storage.Conversation), args.Error(1)
 }
 
-// UpdateConversationLastStatus mocks the UpdateConversationLastStatus method
-func (m *MockStorage) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	args := m.Called(ctx, id, lastStatusID)
-	return args.Error(0)
-}
-
 // MarkConversationRead mocks the MarkConversationRead method
 func (m *MockStorage) MarkConversationRead(ctx context.Context, id, username string) error {
 	args := m.Called(ctx, id, username)

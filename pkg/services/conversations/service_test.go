@@ -26,6 +26,17 @@ type mockConversationRepository struct {
 	directMessageWritesFrozenErr error
 }
 
+func testConversationStateContract(viewerID, conversationID string, apply func(*interfaces.UserConversationStateContract)) *interfaces.UserConversationStateContract {
+	state := &interfaces.UserConversationStateContract{
+		ViewerID:       viewerID,
+		ConversationID: conversationID,
+	}
+	if apply != nil {
+		apply(state)
+	}
+	return state
+}
+
 func (m *mockConversationRepository) CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error {
 	args := m.Called(ctx, conversation, participants)
 	return args.Error(0)
@@ -86,14 +97,36 @@ func (m *mockConversationRepository) GetConversationByParticipants(ctx context.C
 	return args.Get(0).(*models.Conversation), args.Error(1)
 }
 
-func (m *mockConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
+func (m *mockConversationRepository) GetUserConversationState(ctx context.Context, viewerID, conversationID string) (*interfaces.UserConversationStateContract, error) {
+	args := m.Called(ctx, viewerID, conversationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.UserConversationStateContract), args.Error(1)
 }
 
-func (m *mockConversationRepository) RemoveParticipant(ctx context.Context, conversationID, participantID string) error {
-	args := m.Called(ctx, conversationID, participantID)
-	return args.Error(0)
+func (m *mockConversationRepository) ListUserConversationStatesByFolder(ctx context.Context, viewerID string, folder interfaces.UserConversationFolder, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	args := m.Called(ctx, viewerID, folder, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*interfaces.UserConversationStateContract]), args.Error(1)
+}
+
+func (m *mockConversationRepository) ListUnreadUserConversationStates(ctx context.Context, viewerID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*interfaces.UserConversationStateContract], error) {
+	args := m.Called(ctx, viewerID, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*interfaces.UserConversationStateContract]), args.Error(1)
+}
+
+func (m *mockConversationRepository) ListConversationParticipantStates(ctx context.Context, conversationID string) ([]*interfaces.UserConversationStateContract, error) {
+	args := m.Called(ctx, conversationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*interfaces.UserConversationStateContract), args.Error(1)
 }
 
 func (m *mockConversationRepository) GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error) {
@@ -104,16 +137,8 @@ func (m *mockConversationRepository) GetConversationParticipants(ctx context.Con
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *mockConversationRepository) GetConversationParticipantRecord(ctx context.Context, conversationID, participantID string) (*models.ConversationParticipantRecord, error) {
-	args := m.Called(ctx, conversationID, participantID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.ConversationParticipantRecord), args.Error(1)
-}
-
-func (m *mockConversationRepository) UpdateConversationParticipantRecord(ctx context.Context, record *models.ConversationParticipantRecord) error {
-	args := m.Called(ctx, record)
+func (m *mockConversationRepository) PutUserConversationState(ctx context.Context, state *models.UserConversationState) error {
+	args := m.Called(ctx, state)
 	return args.Error(0)
 }
 
@@ -158,50 +183,12 @@ func (m *mockConversationRepository) GetUnreadConversationCount(ctx context.Cont
 	return args.Int(0), args.Error(1)
 }
 
-func (m *mockConversationRepository) AddStatusToConversation(ctx context.Context, conversationID, statusID, senderUsername string) error {
-	args := m.Called(ctx, conversationID, statusID, senderUsername)
-	return args.Error(0)
-}
-
-func (m *mockConversationRepository) GetConversationStatuses(ctx context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error) {
-	args := m.Called(ctx, conversationID, limit, cursor)
-	if args.Get(0) == nil {
-		return nil, args.String(1), args.Error(2)
-	}
-	return args.Get(0).([]*storage.ConversationStatus), args.String(1), args.Error(2)
-}
-
-func (m *mockConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
-	args := m.Called(ctx, conversationID, statusID)
-	return args.Error(0)
-}
-
 func (m *mockConversationRepository) DirectMessageWritesFrozen(context.Context) (bool, error) {
 	return m.directMessageWritesFrozen, m.directMessageWritesFrozenErr
 }
 
-func (m *mockConversationRepository) MarkStatusRead(ctx context.Context, conversationID, statusID, username string) error {
-	args := m.Called(ctx, conversationID, statusID, username)
-	return args.Error(0)
-}
-
-func (m *mockConversationRepository) GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error) {
-	args := m.Called(ctx, conversationID, username)
-	return args.Int(0), args.Error(1)
-}
-
-func (m *mockConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
-	args := m.Called(ctx, id, lastStatusID)
-	return args.Error(0)
-}
-
 func (m *mockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error {
 	args := m.Called(ctx, transition)
-	return args.Error(0)
-}
-
-func (m *mockConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	args := m.Called(ctx, conversationID, username)
 	return args.Error(0)
 }
 
@@ -906,8 +893,14 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 	// Existing conversation found
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"recipient456", "sender123"}).Return(existingConversation, nil)
 
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "recipient456").Return(&models.ConversationParticipantRecord{}, nil).Once()
-	conversationRepo.On("GetConversationParticipantRecord", ctx, mock.Anything, "sender123").Return(&models.ConversationParticipantRecord{}, nil).Once()
+	conversationRepo.On("GetUserConversationState", ctx, "recipient456", mock.Anything).Return(
+		testConversationStateContract("recipient456", "", nil),
+		nil,
+	).Once()
+	conversationRepo.On("GetUserConversationState", ctx, "sender123", mock.Anything).Return(
+		testConversationStateContract("sender123", "", nil),
+		nil,
+	).Once()
 	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.MatchedBy(func(transition *models.DirectMessageSendTransition) bool {
 		if transition == nil || transition.Status == nil || len(transition.ParticipantStates) != 2 {
 			return false
@@ -1154,7 +1147,12 @@ func TestService_GetConversation_Success(t *testing.T) {
 
 	// Mock expectations
 	conversationRepo.On("GetConversation", ctx, "conv123").Return(conversation, nil)
-	conversationRepo.On("GetConversationParticipantRecord", ctx, "conv123", "user123").Return(&models.ConversationParticipantRecord{Unread: false}, nil)
+	conversationRepo.On("GetUserConversationState", ctx, "user123", "conv123").Return(
+		testConversationStateContract("user123", "conv123", func(state *interfaces.UserConversationStateContract) {
+			state.Unread = false
+		}),
+		nil,
+	)
 	noteRepo.On("GetConversationThread", ctx, "conv123", query.Pagination).Return(paginatedMessages, nil)
 
 	// Execute
@@ -1309,19 +1307,17 @@ func TestService_DeleteConversation_DeleteForMe(t *testing.T) {
 		UpdatedAt:    now.Add(-time.Minute),
 	}
 
-	participantRecord := &models.ConversationParticipantRecord{
-		Conversation: conversation,
-		Unread:       false,
-		DeletedAt:    nil,
-	}
-
 	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
 	conversationRepo.
-		On("GetConversationParticipantRecord", mock.Anything, "conv123", "sender123").
-		Return(participantRecord, nil)
+		On("GetUserConversationState", mock.Anything, "sender123", "conv123").
+		Return(testConversationStateContract("sender123", "conv123", nil), nil)
 	conversationRepo.
-		On("UpdateConversationParticipantRecord", mock.Anything, mock.MatchedBy(func(r *models.ConversationParticipantRecord) bool {
-			return r != nil && r.DeletedAt != nil && !r.DeletedAt.IsZero()
+		On("PutUserConversationState", mock.Anything, mock.MatchedBy(func(state *models.UserConversationState) bool {
+			return state != nil &&
+				state.ViewerID == "sender123" &&
+				state.ConversationID == "conv123" &&
+				state.DeletedAt != nil &&
+				!state.DeletedAt.IsZero()
 		})).
 		Return(nil)
 
@@ -1346,16 +1342,12 @@ func TestService_GetConversation_HidesDeletedConversation(t *testing.T) {
 		UpdatedAt:    now.Add(-time.Minute),
 	}
 	deletedAt := now.Add(-time.Second)
-	participantRecord := &models.ConversationParticipantRecord{
-		Conversation: conversation,
-		Unread:       false,
-		DeletedAt:    &deletedAt,
-	}
-
 	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
 	conversationRepo.
-		On("GetConversationParticipantRecord", mock.Anything, "conv123", "sender123").
-		Return(participantRecord, nil)
+		On("GetUserConversationState", mock.Anything, "sender123", "conv123").
+		Return(testConversationStateContract("sender123", "conv123", func(state *interfaces.UserConversationStateContract) {
+			state.DeletedAt = &deletedAt
+		}), nil)
 
 	_, err := service.GetConversation(context.Background(), &GetConversationQuery{
 		ConversationID: "conv123",
@@ -1446,11 +1438,6 @@ func TestService_GetConversation_FiltersTombstonedMessages(t *testing.T) {
 		CreatedAt:    now.Add(-time.Hour),
 		UpdatedAt:    now.Add(-time.Minute),
 	}
-	participantRecord := &models.ConversationParticipantRecord{
-		Conversation: conversation,
-		Unread:       false,
-		DeletedAt:    nil,
-	}
 
 	m1 := &models.Status{
 		StatusID:       "m1",
@@ -1471,8 +1458,8 @@ func TestService_GetConversation_FiltersTombstonedMessages(t *testing.T) {
 
 	conversationRepo.On("GetConversation", mock.Anything, "conv123").Return(conversation, nil)
 	conversationRepo.
-		On("GetConversationParticipantRecord", mock.Anything, "conv123", "sender123").
-		Return(participantRecord, nil)
+		On("GetUserConversationState", mock.Anything, "sender123", "conv123").
+		Return(testConversationStateContract("sender123", "conv123", nil), nil)
 	noteRepo.
 		On("GetConversationThread", mock.Anything, "conv123", mock.Anything).
 		Return(&interfaces.PaginatedResult[*models.Status]{Items: []*models.Status{m1, m2}, HasMore: false}, nil)

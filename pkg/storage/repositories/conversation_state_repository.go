@@ -30,14 +30,6 @@ func userConversationUnreadIndexPK(viewerID string) string {
 	return fmt.Sprintf("USER_CONVERSATION_UNREAD#%s", models.CanonicalConversationParticipantID(viewerID))
 }
 
-func userConversationLegacyPK(viewerID string) string {
-	return fmt.Sprintf("USER_CONVERSATIONS#%s", models.CanonicalConversationParticipantID(viewerID))
-}
-
-func userConversationLegacyGSI1SK(viewerID string) string {
-	return fmt.Sprintf("PARTICIPANT#%s", models.CanonicalConversationParticipantID(viewerID))
-}
-
 func counterpartForConversation(viewerID string, participants []string) string {
 	canonicalViewerID := models.CanonicalConversationParticipantID(viewerID)
 	for _, participantID := range participants {
@@ -154,36 +146,6 @@ func stateContractFromModel(state *models.UserConversationState) *interfaces.Use
 	}
 }
 
-func stateRecordFromModel(state *models.UserConversationState, conversation *models.Conversation) *models.ConversationParticipantRecord {
-	if state == nil {
-		return nil
-	}
-
-	record := &models.ConversationParticipantRecord{
-		PK:                       userConversationLegacyPK(state.ViewerID),
-		SK:                       state.LegacyListCursor(),
-		GSI1PK:                   fmt.Sprintf(models.KeyPatternConversation, state.ConversationID),
-		GSI1SK:                   userConversationLegacyGSI1SK(state.ViewerID),
-		ViewerID:                 state.ViewerID,
-		ConversationID:           state.ConversationID,
-		CounterpartID:            state.CounterpartID,
-		Folder:                   state.Folder,
-		RequestState:             state.RequestState,
-		RequestedAt:              state.RequestedAt,
-		AcceptedAt:               state.AcceptedAt,
-		DeclinedAt:               state.DeclinedAt,
-		DeletedAt:                state.DeletedAt,
-		Unread:                   state.Unread,
-		LastReadAt:               state.LastReadAt,
-		PreviewStatusID:          state.PreviewStatusID,
-		PreviewStatusPublishedAt: state.PreviewStatusPublishedAt,
-		SortAt:                   state.SortAt,
-		UpdatedAt:                state.UpdatedAt,
-		Conversation:             cloneConversationForViewer(conversation, state),
-	}
-	return record
-}
-
 func (r *ConversationRepository) getUserConversationStateModel(ctx context.Context, viewerID, conversationID string) (*models.UserConversationState, error) {
 	var state models.UserConversationState
 	err := r.GetDB().WithContext(ctx).Model(&models.UserConversationState{}).
@@ -243,6 +205,11 @@ func (r *ConversationRepository) createOrUpdateUserConversationState(ctx context
 	default:
 		return nil
 	}
+}
+
+// PutUserConversationState persists a canonical per-user DM state row.
+func (r *ConversationRepository) PutUserConversationState(ctx context.Context, state *models.UserConversationState) error {
+	return r.createOrUpdateUserConversationState(ctx, state)
 }
 
 func (r *ConversationRepository) createOrUpdateUserConversationStates(ctx context.Context, states []*models.UserConversationState) error {
@@ -353,19 +320,6 @@ func folderFromRequestState(requestState models.DmRequestState) models.UserConve
 	default:
 		return models.UserConversationFolderInbox
 	}
-}
-
-func participantRecordFolder(record *models.ConversationParticipantRecord) models.UserConversationFolder {
-	if record == nil {
-		return models.UserConversationFolderHidden
-	}
-	if record.Folder != "" {
-		return record.Folder
-	}
-	if record.DeletedAt != nil && !record.DeletedAt.IsZero() {
-		return models.UserConversationFolderHidden
-	}
-	return folderFromRequestState(record.RequestState)
 }
 
 // GetUserConversationState point-reads the viewer's canonical DM state for a conversation.

@@ -40,7 +40,6 @@ goDynamoDBQueryScan:
   pkg/storage/repositories/ai_cost_repository.go: 3
   pkg/storage/repositories/analytics_repository.go: 2
   pkg/storage/repositories/auth_repository.go: 1
-  pkg/storage/repositories/conversation_repository.go: 6
   pkg/storage/repositories/federation_repository.go: 22
   pkg/storage/repositories/hashtag_repository.go: 1
   pkg/storage/repositories/hashtag_trending_calculator.go: 1

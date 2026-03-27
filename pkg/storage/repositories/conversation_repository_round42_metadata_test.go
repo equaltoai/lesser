@@ -15,120 +15,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestRound42_ConversationRepository_UpdateConversationParticipantRecord_UpdatesCanonicalState(t *testing.T) {
-	ctx := context.Background()
-	mockDB := new(mocks.MockDB)
-	loadQuery := new(mocks.MockQuery)
-	updateQuery := new(mocks.MockQuery)
-
-	recordedAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
-	record := &models.ConversationParticipantRecord{
-		PK:             "USER_CONVERSATIONS#arch",
-		SK:             "2026-03-25T12:00:00Z#conv-1",
-		ViewerID:       "arch",
-		ConversationID: "conv-1",
-		CounterpartID:  "medic",
-		Folder:         models.UserConversationFolderInbox,
-		RequestState:   models.DmRequestStateAccepted,
-		AcceptedAt:     &recordedAt,
-		Unread:         true,
-	}
-
-	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(loadQuery).Once()
-	loadQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#arch").Return(loadQuery).Once()
-	loadQuery.On("Where", "SK", "=", "CONVERSATION#conv-1").Return(loadQuery).Once()
-	loadQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
-		state := args.Get(0).(*models.UserConversationState)
-		*state = models.UserConversationState{
-			ViewerID:       "arch",
-			ConversationID: "conv-1",
-			CounterpartID:  "medic",
-			Folder:         models.UserConversationFolderHidden,
-			SortAt:         recordedAt,
-			CreatedAt:      recordedAt,
-			UpdatedAt:      recordedAt,
-		}
-	}).Return(nil).Once()
-
-	mockDB.On("Model", mockDBMatchedUserConversationState("arch", "conv-1")).Return(updateQuery).Once()
-	updateQuery.On("Update", mock.Anything).Return(nil).Once()
-
-	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	err := repo.UpdateConversationParticipantRecord(ctx, record)
-	require.NoError(t, err)
-
-	mockDB.AssertExpectations(t)
-	loadQuery.AssertExpectations(t)
-	updateQuery.AssertExpectations(t)
-}
-
-func TestRound42_ConversationRepository_UpdateConversationParticipantRecord_DerivesLegacyFieldsAndFallbackCounterpart(t *testing.T) {
-	ctx := context.Background()
-	mockDB := new(mocks.MockDB)
-	loadQuery := new(mocks.MockQuery)
-	conversationQuery := new(mocks.MockQuery)
-	updateQuery := new(mocks.MockQuery)
-
-	recordedAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
-	record := &models.ConversationParticipantRecord{
-		PK:                       "USER_CONVERSATIONS#arch",
-		SK:                       "2026-03-25T12:00:00Z#conv-2",
-		RequestState:             models.DmRequestStatePending,
-		PreviewStatusID:          "status-2",
-		PreviewStatusPublishedAt: recordedAt,
-		SortAt:                   recordedAt,
-		Unread:                   true,
-	}
-
-	mockDB.On("WithContext", ctx).Return(mockDB).Times(3)
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(loadQuery).Once()
-	loadQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#arch").Return(loadQuery).Once()
-	loadQuery.On("Where", "SK", "=", "CONVERSATION#conv-2").Return(loadQuery).Once()
-	loadQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
-		state := args.Get(0).(*models.UserConversationState)
-		*state = models.UserConversationState{
-			ViewerID:       "arch",
-			ConversationID: "conv-2",
-			Folder:         models.UserConversationFolderHidden,
-			SortAt:         recordedAt.Add(-time.Hour),
-			CreatedAt:      recordedAt.Add(-2 * time.Hour),
-			UpdatedAt:      recordedAt.Add(-time.Hour),
-		}
-	}).Return(nil).Once()
-
-	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
-	conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-2").Return(conversationQuery).Once()
-	conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
-	conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
-		conversation := args.Get(0).(*models.Conversation)
-		*conversation = models.Conversation{
-			ID:           "conv-2",
-			Participants: []string{"arch", "medic"},
-			UpdatedAt:    recordedAt,
-		}
-	}).Return(nil).Once()
-
-	mockDB.On("Model", mock.MatchedBy(func(state *models.UserConversationState) bool {
-		return state != nil &&
-			state.ViewerID == "arch" &&
-			state.ConversationID == "conv-2" &&
-			state.CounterpartID == "medic" &&
-			state.PreviewStatusID == "status-2" &&
-			state.PreviewStatusPublishedAt.Equal(recordedAt) &&
-			state.SortAt.Equal(recordedAt)
-	})).Return(updateQuery).Once()
-	updateQuery.On("Update", mock.Anything).Return(nil).Once()
-
-	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	require.NoError(t, repo.UpdateConversationParticipantRecord(ctx, record))
-
-	mockDB.AssertExpectations(t)
-	loadQuery.AssertExpectations(t)
-	conversationQuery.AssertExpectations(t)
-	updateQuery.AssertExpectations(t)
-}
-
 func TestRound42_ConversationRepository_EnsureUserConversationStateModel_BootstrapsMissingState(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
@@ -237,121 +123,160 @@ func TestRound42_ConversationRepository_EnsureUserConversationStateModel_Propaga
 	require.EqualError(t, err, "boom")
 }
 
-func TestRound42_ConversationRepository_GetConversationParticipantRecord_MissingBranches(t *testing.T) {
-	t.Run("returns unexpected canonical state lookup errors", func(t *testing.T) {
+func TestRound42_ConversationRepository_DirectMessageWritesFrozen_Branches(t *testing.T) {
+	t.Run("missing migration state returns false", func(t *testing.T) {
 		ctx := context.Background()
 		mockDB := new(mocks.MockDB)
-		stateQuery := new(mocks.MockQuery)
+		query := new(mocks.MockQuery)
 
 		mockDB.On("WithContext", ctx).Return(mockDB).Once()
-		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
-		stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(stateQuery).Once()
-		stateQuery.On("Where", "SK", "=", "CONVERSATION#conv-error").Return(stateQuery).Once()
-		stateQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Return(stdErrors.New("boom")).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.DirectMessageMigrationState")).Return(query).Once()
+		query.On("Where", "PK", "=", models.DirectMessageMigrationStatePK).Return(query).Once()
+		query.On("Where", "SK", "=", models.DirectMessageMigrationStateSK).Return(query).Once()
+		query.On("First", mock.AnythingOfType("*models.DirectMessageMigrationState")).Return(dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-		record, err := repo.GetConversationParticipantRecord(ctx, "conv-error", "alice")
-		require.Nil(t, record)
+		frozen, err := repo.DirectMessageWritesFrozen(ctx)
+		require.NoError(t, err)
+		require.False(t, frozen)
+	})
+
+	t.Run("existing migration state returns stored freeze flag", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		query := new(mocks.MockQuery)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.DirectMessageMigrationState")).Return(query).Once()
+		query.On("Where", "PK", "=", models.DirectMessageMigrationStatePK).Return(query).Once()
+		query.On("Where", "SK", "=", models.DirectMessageMigrationStateSK).Return(query).Once()
+		query.On("First", mock.AnythingOfType("*models.DirectMessageMigrationState")).Run(func(args mock.Arguments) {
+			state := args.Get(0).(*models.DirectMessageMigrationState)
+			state.WritesFrozen = true
+		}).Return(nil).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		frozen, err := repo.DirectMessageWritesFrozen(ctx)
+		require.NoError(t, err)
+		require.True(t, frozen)
+	})
+
+	t.Run("unexpected lookup errors surface", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		query := new(mocks.MockQuery)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.DirectMessageMigrationState")).Return(query).Once()
+		query.On("Where", "PK", "=", models.DirectMessageMigrationStatePK).Return(query).Once()
+		query.On("Where", "SK", "=", models.DirectMessageMigrationStateSK).Return(query).Once()
+		query.On("First", mock.AnythingOfType("*models.DirectMessageMigrationState")).Return(stdErrors.New("boom")).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		frozen, err := repo.DirectMessageWritesFrozen(ctx)
+		require.False(t, frozen)
 		require.EqualError(t, err, "boom")
 	})
+}
 
-	t.Run("returns storage not found when canonical state is missing", func(t *testing.T) {
+func TestRound42_ConversationRepository_PutUserConversationState_CreatesCanonicalRow(t *testing.T) {
+	ctx := context.Background()
+	mockDB := new(mocks.MockDB)
+	loadQuery := new(mocks.MockQuery)
+	createQuery := new(mocks.MockQuery)
+	sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+
+	state := &models.UserConversationState{
+		ViewerID:       "arch",
+		ConversationID: "conv-put",
+		CounterpartID:  "medic",
+		Folder:         models.UserConversationFolderInbox,
+		SortAt:         sortAt,
+		CreatedAt:      sortAt,
+		UpdatedAt:      sortAt,
+	}
+
+	mockDB.On("WithContext", ctx).Return(mockDB).Twice()
+	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(loadQuery).Once()
+	loadQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#arch").Return(loadQuery).Once()
+	loadQuery.On("Where", "SK", "=", "CONVERSATION#conv-put").Return(loadQuery).Once()
+	loadQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Return(dynamormerrors.ErrItemNotFound).Once()
+
+	mockDB.On("Model", mock.MatchedBy(func(candidate *models.UserConversationState) bool {
+		return candidate != nil &&
+			candidate.ViewerID == "arch" &&
+			candidate.ConversationID == "conv-put" &&
+			candidate.CounterpartID == "medic"
+	})).Return(createQuery).Once()
+	createQuery.On("Create").Return(nil).Once()
+
+	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+	require.NoError(t, repo.PutUserConversationState(ctx, state))
+}
+
+func TestRound42_ConversationRepository_ListConversationParticipantStates_Branches(t *testing.T) {
+	t.Run("success returns projected state contracts", func(t *testing.T) {
 		ctx := context.Background()
 		mockDB := new(mocks.MockDB)
-		stateQuery := new(mocks.MockQuery)
-		conversationQuery := new(mocks.MockQuery)
-
-		mockDB.On("WithContext", ctx).Return(mockDB).Twice()
-		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
-		stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(stateQuery).Once()
-		stateQuery.On("Where", "SK", "=", "CONVERSATION#missing").Return(stateQuery).Once()
-		stateQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Return(dynamormerrors.ErrItemNotFound).Once()
-
-		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
-		conversationQuery.On("Where", "PK", "=", "CONVERSATION#missing").Return(conversationQuery).Once()
-		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
-		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Return(dynamormerrors.ErrItemNotFound).Once()
-
-		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-		record, err := repo.GetConversationParticipantRecord(ctx, "missing", "alice")
-		require.Nil(t, record)
-		require.ErrorIs(t, err, storage.ErrNotFound)
-	})
-
-	t.Run("returns legacy projection even when conversation metadata is gone", func(t *testing.T) {
-		ctx := context.Background()
-		mockDB := new(mocks.MockDB)
-		stateQuery := new(mocks.MockQuery)
-		conversationQuery := new(mocks.MockQuery)
+		query := new(mocks.MockQuery)
 		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
 
-		mockDB.On("WithContext", ctx).Return(mockDB).Twice()
-		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
-		stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(stateQuery).Once()
-		stateQuery.On("Where", "SK", "=", "CONVERSATION#conv-4").Return(stateQuery).Once()
-		stateQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*models.UserConversationState)
-			*dest = models.UserConversationState{
-				ViewerID:       "alice",
-				ConversationID: "conv-4",
-				CounterpartID:  "bob",
-				Folder:         models.UserConversationFolderInbox,
-				Unread:         true,
-				SortAt:         sortAt,
-				CreatedAt:      sortAt.Add(-time.Hour),
-				UpdatedAt:      sortAt,
+		mockDB.On("WithContext", ctx).Return(mockDB).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(query).Once()
+		query.On("Index", "gsi3").Return(query).Once()
+		query.On("Where", "gsi3PK", "=", "CONVERSATION#conv-list").Return(query).Once()
+		query.On("OrderBy", "gsi3SK", "ASC").Return(query).Once()
+		query.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Run(func(args mock.Arguments) {
+			dest := args.Get(0).(*[]*models.UserConversationState)
+			*dest = []*models.UserConversationState{
+				{ViewerID: "arch", ConversationID: "conv-list", CounterpartID: "medic", Folder: models.UserConversationFolderInbox, SortAt: sortAt, CreatedAt: sortAt, UpdatedAt: sortAt},
+				{ViewerID: "medic", ConversationID: "conv-list", CounterpartID: "arch", Folder: models.UserConversationFolderInbox, SortAt: sortAt, CreatedAt: sortAt, UpdatedAt: sortAt},
 			}
 		}).Return(nil).Once()
 
-		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
-		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-4").Return(conversationQuery).Once()
-		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
-		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Return(dynamormerrors.ErrItemNotFound).Once()
-
 		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-		record, err := repo.GetConversationParticipantRecord(ctx, "conv-4", "alice")
+		items, err := repo.ListConversationParticipantStates(ctx, "conv-list")
 		require.NoError(t, err)
-		require.NotNil(t, record)
-		require.Equal(t, "USER_CONVERSATIONS#alice", record.PK)
-		require.Equal(t, sortAt.Format(time.RFC3339Nano)+"#conv-4", record.SK)
-		require.Nil(t, record.Conversation)
+		require.Len(t, items, 2)
+		require.Equal(t, "arch", items[0].ViewerID)
+		require.Equal(t, "medic", items[1].ViewerID)
 	})
 
-	t.Run("returns conversation metadata lookup errors", func(t *testing.T) {
+	t.Run("missing rows return an empty slice", func(t *testing.T) {
 		ctx := context.Background()
 		mockDB := new(mocks.MockDB)
-		stateQuery := new(mocks.MockQuery)
-		conversationQuery := new(mocks.MockQuery)
-		sortAt := time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)
+		query := new(mocks.MockQuery)
 
-		mockDB.On("WithContext", ctx).Return(mockDB).Twice()
-		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
-		stateQuery.On("Where", "PK", "=", "USER_CONVERSATION_STATE#alice").Return(stateQuery).Once()
-		stateQuery.On("Where", "SK", "=", "CONVERSATION#conv-lookup-error").Return(stateQuery).Once()
-		stateQuery.On("First", mock.AnythingOfType("*models.UserConversationState")).Run(func(args mock.Arguments) {
-			dest := args.Get(0).(*models.UserConversationState)
-			*dest = models.UserConversationState{
-				ViewerID:       "alice",
-				ConversationID: "conv-lookup-error",
-				CounterpartID:  "bob",
-				Folder:         models.UserConversationFolderInbox,
-				Unread:         true,
-				SortAt:         sortAt,
-				CreatedAt:      sortAt.Add(-time.Hour),
-				UpdatedAt:      sortAt,
-			}
-		}).Return(nil).Once()
-
-		mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
-		conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-lookup-error").Return(conversationQuery).Once()
-		conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
-		conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Return(stdErrors.New("boom")).Once()
+		mockDB.On("WithContext", ctx).Return(mockDB).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(query).Once()
+		query.On("Index", "gsi3").Return(query).Once()
+		query.On("Where", "gsi3PK", "=", "CONVERSATION#conv-empty").Return(query).Once()
+		query.On("OrderBy", "gsi3SK", "ASC").Return(query).Once()
+		query.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(dynamormerrors.ErrItemNotFound).Once()
 
 		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-		record, err := repo.GetConversationParticipantRecord(ctx, "conv-lookup-error", "alice")
-		require.Nil(t, record)
+		items, err := repo.ListConversationParticipantStates(ctx, "conv-empty")
+		require.NoError(t, err)
+		require.Empty(t, items)
+	})
+
+	t.Run("unexpected query errors are wrapped", func(t *testing.T) {
+		ctx := context.Background()
+		mockDB := new(mocks.MockDB)
+		query := new(mocks.MockQuery)
+
+		mockDB.On("WithContext", ctx).Return(mockDB).Once()
+		mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(query).Once()
+		query.On("Index", "gsi3").Return(query).Once()
+		query.On("Where", "gsi3PK", "=", "CONVERSATION#conv-error").Return(query).Once()
+		query.On("OrderBy", "gsi3SK", "ASC").Return(query).Once()
+		query.On("All", mock.AnythingOfType("*[]*models.UserConversationState")).Return(stdErrors.New("boom")).Once()
+
+		repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
+		items, err := repo.ListConversationParticipantStates(ctx, "conv-error")
+		require.Nil(t, items)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "Failed to retrieve conversation")
+		require.Contains(t, err.Error(), "conversation participant states")
 	})
 }
 

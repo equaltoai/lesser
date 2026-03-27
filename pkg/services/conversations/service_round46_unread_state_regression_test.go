@@ -15,8 +15,8 @@ func TestBuildDirectMessageParticipantStatesForSend_SetsSenderReadStateImmediate
 		&models.Status{StatusID: "status-read", PublishedAt: publishedAt},
 		"alice",
 		"bob",
-		&models.ConversationParticipantRecord{},
-		&models.ConversationParticipantRecord{},
+		&models.UserConversationState{},
+		&models.UserConversationState{},
 		false,
 	)
 
@@ -34,8 +34,8 @@ func TestBuildDirectMessageParticipantStatesForSend_SetsRecipientUnreadStateImme
 		&models.Status{StatusID: "status-unread", PublishedAt: publishedAt},
 		"alice",
 		"bob",
-		&models.ConversationParticipantRecord{},
-		&models.ConversationParticipantRecord{},
+		&models.UserConversationState{},
+		&models.UserConversationState{},
 		false,
 	)
 
