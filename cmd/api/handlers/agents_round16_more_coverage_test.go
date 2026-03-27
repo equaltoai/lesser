@@ -205,13 +205,12 @@ func TestAgentsRound16_DelegationAndOwnershipHelpers(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, resp.Status)
 	})
 
-	t.Run("applyAgentQuarantineExit initializes metadata and stamps approvals", func(t *testing.T) {
+	t.Run("applyAgentQuarantineExit initializes governance and stamps approvals", func(t *testing.T) {
 		now := time.Now().UTC()
-		user := &storage.User{}
-		applyAgentQuarantineExit(user, &auth.Claims{Username: "admin"}, true, now)
+		governance := applyAgentQuarantineExit(nil, &auth.Claims{Username: "admin"}, true, now)
 
-		require.NotNil(t, user.Metadata)
-		require.Equal(t, "approved", user.Metadata["agent_quarantine_status"])
-		require.Equal(t, "admin", user.Metadata["agent_quarantine_approved_by"])
+		require.NotNil(t, governance)
+		require.Equal(t, storage.AgentQuarantineStatusApproved, governance.QuarantineStatus)
+		require.Equal(t, "admin", governance.QuarantineApprovedBy)
 	})
 }

@@ -41,6 +41,7 @@ var (
 	runMigrateConversationsFn                    = runMigrateConversations
 	runMigrateConversationMetadataFn             = runMigrateConversationMetadata
 	runMigrateConversationParticipantSnapshotsFn = runMigrateConversationParticipantSnapshots
+	runMigrateAgentGovernanceStateFn             = runMigrateAgentGovernanceState
 	runMigrateDirectMessageStateFn               = runMigrateDirectMessageState
 	runMigrateNumericIDsFn                       = runMigrateNumericIDs
 )
@@ -110,8 +111,9 @@ func commandRunner(cmd string) (func([]string) error, bool) {
 		"migrate-conversation-participant-snapshots": func(argv []string) error {
 			return runMigrateConversationParticipantSnapshotsFn(argv)
 		},
-		"migrate-direct-message-state": func(argv []string) error { return runMigrateDirectMessageStateFn(argv) },
-		"migrate-numeric-ids":          func(argv []string) error { return runMigrateNumericIDsFn(argv) },
+		"migrate-agent-governance-state": func(argv []string) error { return runMigrateAgentGovernanceStateFn(argv) },
+		"migrate-direct-message-state":   func(argv []string) error { return runMigrateDirectMessageStateFn(argv) },
+		"migrate-numeric-ids":            func(argv []string) error { return runMigrateNumericIDsFn(argv) },
 	}
 
 	runner, ok := runners[cmd]
@@ -171,6 +173,7 @@ func printUsageTo(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  lesser migrate-conversations [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-conversation-metadata [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-conversation-participant-snapshots [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
+	_, _ = fmt.Fprintln(w, "  lesser migrate-agent-governance-state [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-direct-message-state [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 	_, _ = fmt.Fprintln(w, "  lesser migrate-numeric-ids [--app <slug>] [--env dev|staging|live] [--aws-profile <profile>] [--table <name>] [--limit <n>] [--apply]")
 }

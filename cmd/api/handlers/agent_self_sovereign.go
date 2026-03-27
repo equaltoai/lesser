@@ -89,7 +89,7 @@ func (h *Handler) HandleAgentRegisterLift(ctx *apptheory.Context) (*apptheory.Re
 		return resp, err
 	}
 
-	account, resp, err := h.createSelfSovereignAgentAccount(ctx, user, req.Username, req.DisplayName, req.Bio, now)
+	account, resp, err := h.createSelfSovereignAgentAccount(ctx, user, req.Username, req.DisplayName, req.Bio, requestedScopes, now)
 	if resp != nil || err != nil {
 		return resp, err
 	}
@@ -208,13 +208,9 @@ func (h *Handler) buildSelfSovereignAgentUser(ctx *apptheory.Context, req *apimo
 		agentVersion = agentVersionUnknown
 	}
 
-	quarantineDays := 7
 	maxPostsPerHourAllowed := agentDefaultMaxPostsPerHour
 	if h.repos != nil && h.repos.Instance() != nil {
 		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil {
-			if policy.DefaultQuarantineDays > 0 {
-				quarantineDays = policy.DefaultQuarantineDays
-			}
 			if policy.AgentMaxPostsPerHour > 0 {
 				maxPostsPerHourAllowed = policy.AgentMaxPostsPerHour
 			}
@@ -231,7 +227,6 @@ func (h *Handler) buildSelfSovereignAgentUser(ctx *apptheory.Context, req *apimo
 		capabilities.MaxPostsPerHour = maxPostsPerHourAllowed
 	}
 
-	quarantineEnd := now.AddDate(0, 0, quarantineDays)
 	user := &storage.User{
 		Username:          req.Username,
 		Email:             "",
@@ -254,19 +249,12 @@ func (h *Handler) buildSelfSovereignAgentUser(ctx *apptheory.Context, req *apimo
 		AgentCapabilities: capabilities,
 		AgentPublicKey:    req.PublicKey,
 		AgentKeyType:      strings.ToLower(strings.TrimSpace(req.KeyType)),
-		Metadata: map[string]interface{}{
-			"agent_quarantine_status": "quarantined",
-			"agent_quarantine_start":  now.Format(time.RFC3339),
-			"agent_quarantine_end":    quarantineEnd.Format(time.RFC3339),
-			"agent_self_scopes":       requestedScopes,
-			"agent_self_sovereign":    true,
-		},
 	}
 
 	return user, requestedScopes, nil, nil
 }
 
-func (h *Handler) createSelfSovereignAgentAccount(ctx *apptheory.Context, user *storage.User, username, displayName, bio string, now time.Time) (*storage.Account, *apptheory.Response, error) {
+func (h *Handler) createSelfSovereignAgentAccount(ctx *apptheory.Context, user *storage.User, username, displayName, bio string, requestedScopes []string, now time.Time) (*storage.Account, *apptheory.Response, error) {
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
 	if err != nil {
 		resp, respErr := common.RespondInternalServerError(ctx)
@@ -307,6 +295,28 @@ func (h *Handler) createSelfSovereignAgentAccount(ctx *apptheory.Context, user *
 			resp, respErr := common.RespondConflict(ctx, "username already taken")
 			return nil, resp, respErr
 		}
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
+	}
+	quarantineDays := 7
+	if h.repos != nil && h.repos.Instance() != nil {
+		if policy, err := h.repos.Instance().GetAgentInstanceConfig(ctx.Context()); err == nil && policy != nil && policy.DefaultQuarantineDays > 0 {
+			quarantineDays = policy.DefaultQuarantineDays
+		}
+	}
+	quarantineEnd := now.AddDate(0, 0, quarantineDays)
+	governance := &storage.AgentGovernanceState{
+		Username:         username,
+		QuarantineStatus: storage.AgentQuarantineStatusQuarantined,
+		QuarantineStart:  cloneAgentGovernanceHandlerTime(&now),
+		QuarantineEnd:    cloneAgentGovernanceHandlerTime(&quarantineEnd),
+		SelfScopes:       normalizeSelfSovereignScopes(requestedScopes),
+		SelfSovereign:    true,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
+		_ = h.repos.Account().DeleteAccount(ctx.Context(), username)
 		resp, respErr := common.RespondInternalServerError(ctx)
 		return nil, resp, respErr
 	}
@@ -430,7 +440,11 @@ func (h *Handler) HandleAgentAuthTokenLift(ctx *apptheory.Context) (*apptheory.R
 		return common.RespondInternalServerError(ctx)
 	}
 
-	scopes := agentSelfSovereignScopes(agentUser)
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, req.Username)
+	if err != nil {
+		return respondAgentGovernanceUnavailable(ctx)
+	}
+	scopes := agentSelfSovereignScopes(governance)
 	userAgent, _ := h.getDeviceInfo(ctx)
 	tokenBundle, err := auth.IssueAgentRuntimeTokens(ctx.Context(), h.cfg, h.repos, auth.AgentRuntimeTokenIssueParams{
 		Username:    req.Username,
@@ -575,10 +589,12 @@ func (h *Handler) HandleAgentRotateKeyLift(ctx *apptheory.Context) (*apptheory.R
 	account.User.AgentPublicKey = req.PublicKey
 	account.User.AgentKeyType = strings.ToLower(strings.TrimSpace(req.KeyType))
 	account.User.UpdatedAt = now
-	if account.User.Metadata == nil {
-		account.User.Metadata = map[string]interface{}{}
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, account.User.Username)
+	if err != nil {
+		return respondAgentGovernanceUnavailable(ctx)
 	}
-	account.User.Metadata["agent_key_rotated_at"] = now.Format(time.RFC3339)
+	governance.KeyRotatedAt = cloneAgentGovernanceHandlerTime(&now)
+	governance.UpdatedAt = now
 
 	if account.Actor != nil {
 		account.Actor.Updated = &now
@@ -587,12 +603,15 @@ func (h *Handler) HandleAgentRotateKeyLift(ctx *apptheory.Context) (*apptheory.R
 	if err := h.repos.Account().UpdateAccount(ctx.Context(), account); err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
+	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
+		return respondAgentGovernanceWriteError(ctx, err)
+	}
 
 	h.recordAgentAuditEvent(ctx, claims, "agent.key_rotated", "", map[string]any{
 		"key_type": account.User.AgentKeyType,
 	})
 
-	return okJSON(agentFromStorageUser(account.User))
+	return okJSON(agentFromStorageUser(account.User, governance))
 }
 
 func (h *Handler) createAgentKeyChallenge(ctx *apptheory.Context, username string, action string, ttl time.Duration) (*storageModels.AgentKeyChallenge, error) {
@@ -770,28 +789,4 @@ func normalizeSelfSovereignScopes(scopes []string) []string {
 		return []string{auth.ScopeRead, auth.ScopeWrite, "follow"}
 	}
 	return out
-}
-
-func agentSelfSovereignScopes(user *storage.User) []string {
-	if user == nil || user.Metadata == nil {
-		return []string{auth.ScopeRead, auth.ScopeWrite, "follow"}
-	}
-
-	raw := user.Metadata["agent_self_scopes"]
-	switch v := raw.(type) {
-	case []string:
-		return normalizeSelfSovereignScopes(v)
-	case []any:
-		scopes := make([]string, 0, len(v))
-		for _, entry := range v {
-			if s, ok := entry.(string); ok {
-				scopes = append(scopes, s)
-			}
-		}
-		return normalizeSelfSovereignScopes(scopes)
-	case string:
-		return normalizeSelfSovereignScopes(strings.Fields(v))
-	default:
-		return []string{auth.ScopeRead, auth.ScopeWrite, "follow"}
-	}
 }

@@ -139,6 +139,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	prevMigrateConversations := runMigrateConversationsFn
 	prevMigrateConversationMetadata := runMigrateConversationMetadataFn
 	prevMigrateConversationParticipantSnapshots := runMigrateConversationParticipantSnapshotsFn
+	prevMigrateAgentGovernanceState := runMigrateAgentGovernanceStateFn
 	prevMigrateNumericIDs := runMigrateNumericIDsFn
 	t.Cleanup(func() {
 		runUpFn = prevUp
@@ -171,6 +172,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 		runMigrateConversationsFn = prevMigrateConversations
 		runMigrateConversationMetadataFn = prevMigrateConversationMetadata
 		runMigrateConversationParticipantSnapshotsFn = prevMigrateConversationParticipantSnapshots
+		runMigrateAgentGovernanceStateFn = prevMigrateAgentGovernanceState
 		runMigrateNumericIDsFn = prevMigrateNumericIDs
 	})
 
@@ -215,6 +217,7 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 	runMigrateConversationsFn = stub("migrate-conversations")
 	runMigrateConversationMetadataFn = stub("migrate-conversation-metadata")
 	runMigrateConversationParticipantSnapshotsFn = stub("migrate-conversation-participant-snapshots")
+	runMigrateAgentGovernanceStateFn = stub("migrate-agent-governance-state")
 	runMigrateDirectMessageStateFn = stub("migrate-direct-message-state")
 	runMigrateNumericIDsFn = stub("migrate-numeric-ids")
 
@@ -318,6 +321,9 @@ func TestRunCLI_DispatchesAllCommands(t *testing.T) {
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-conversation-participant-snapshots", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-conversation-participant-snapshots"].argv)
+
+	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-agent-governance-state", "--env", "dev"}, &buf))
+	require.Equal(t, []string{"--env", "dev"}, calls["migrate-agent-governance-state"].argv)
 
 	require.Equal(t, 0, runCLI([]string{"lesser", "migrate-direct-message-state", "--env", "dev"}, &buf))
 	require.Equal(t, []string{"--env", "dev"}, calls["migrate-direct-message-state"].argv)

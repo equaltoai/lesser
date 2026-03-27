@@ -178,6 +178,33 @@ func TestAgentGovernanceRound19_AdminVerifyAndUnverify_ErrorBranches(t *testing.
 
 		requireStatus(t, http.StatusForbidden)(h.HandleAdminUnverifyAgentLift(unverifyCtx))
 	})
+
+	t.Run("missing governance returns 503", func(t *testing.T) {
+		state := &round10QueryState{
+			usersByUsername: map[string]storagemodels.User{
+				"agent": {
+					PK:       "USER#agent",
+					SK:       storagemodels.SKMetadata,
+					Username: "agent",
+					Role:     "user",
+					Approved: true,
+					Version:  1,
+					IsAgent:  true,
+				},
+			},
+		}
+		h, _, _ := round11NewHandler(t, cfg, state)
+
+		verifyCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/agent/verify", headers, nil, apimodels.AdminVerifyAgentRequest{})
+		require.NoError(t, err)
+		verifyCtx.Params["username"] = "agent"
+		requireStatus(t, http.StatusServiceUnavailable)(h.HandleAdminVerifyAgentLift(verifyCtx))
+
+		unverifyCtx, err := round10NewLiftContext(http.MethodPost, "/api/v1/admin/agents/agent/unverify", headers, nil, apimodels.AdminVerifyAgentRequest{})
+		require.NoError(t, err)
+		unverifyCtx.Params["username"] = "agent"
+		requireStatus(t, http.StatusServiceUnavailable)(h.HandleAdminUnverifyAgentLift(unverifyCtx))
+	})
 }
 
 func TestAgentGovernanceRound19_AdminUnlockAgent_SuccessAndErrors(t *testing.T) {

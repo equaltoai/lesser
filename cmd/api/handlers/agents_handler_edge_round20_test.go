@@ -52,6 +52,16 @@ func TestAgentHandlersRound20_GuardBranches(t *testing.T) {
 					AgentVersion: "v1",
 				},
 			},
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent1": {
+					PK:        "USER#agent1",
+					SK:        storagemodels.SKAgentGovernance,
+					Username:  "agent1",
+					CreatedAt: now.Add(-24 * time.Hour),
+					UpdatedAt: now.Add(-time.Hour),
+					Version:   1,
+				},
+			},
 			auditLogsByUser: map[string][]*storagemodels.AuthAuditLog{
 				"agent1": {
 					{EventType: "agent.status.create", Timestamp: now.Add(-time.Minute)},
@@ -195,14 +205,14 @@ func TestAgentHelpersRound20_AdditionalGuardBranches(t *testing.T) {
 
 	var nilHandler *Handler
 	nilHandler.ensureAgentActor("agent1", nil)
-	nilHandler.applyAgentCapabilitiesUpdate(&apptheory.Context{}, nil, &apimodels.AgentCapabilities{})
-	nilHandler.applyAgentCapabilitiesUpdate(&apptheory.Context{}, &storage.User{}, nil)
+	nilHandler.applyAgentCapabilitiesUpdate(&apptheory.Context{}, nil, nil, &apimodels.AgentCapabilities{})
+	nilHandler.applyAgentCapabilitiesUpdate(&apptheory.Context{}, &storage.User{}, nil, nil)
 
-	scopes, ok := agentDelegationEnvelope(&storage.User{Metadata: map[string]any{"other": true}})
+	scopes, ok := agentDelegationEnvelope(&storage.AgentGovernanceState{})
 	require.False(t, ok)
 	require.Nil(t, scopes)
 
-	require.NoError(t, validateDelegationAgainstAgentEnvelope(&storage.User{Metadata: map[string]any{"other": true}}, []string{"read"}))
+	require.NoError(t, validateDelegationAgainstAgentEnvelope(&storage.AgentGovernanceState{}, []string{"read"}))
 
 	_, resp, err := nilHandler.resolveDelegatedAgentAccount(&apptheory.Context{}, &auth.Claims{Username: "owner"}, "agent1", []string{"read"})
 	require.NoError(t, err)

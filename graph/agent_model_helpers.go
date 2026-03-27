@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 
 const agentVersionUnknown = "unknown"
 
-func (r *Resolver) convertStorageUserToAgent(_ context.Context, user *storage.User) *model.Agent {
+func (r *Resolver) convertStorageUserToAgent(user *storage.User, governance *storage.AgentGovernanceState) *model.Agent {
 	if user == nil {
 		return nil
 	}
@@ -45,19 +44,13 @@ func (r *Resolver) convertStorageUserToAgent(_ context.Context, user *storage.Us
 	}
 
 	capabilities := activitypubAgentCapabilitiesFromStorage(user.AgentCapabilities)
-	delegatedScopes := agentDelegatedScopes(user)
+	delegatedScopes := graphAgentDelegatedScopes(governance)
 	if delegatedScopes == nil {
 		delegatedScopes = []string{}
 	}
 
-	verified := agentMetadataBool(user, "agent_verified")
-	var verifiedAt *model.Time
-	if raw, ok := agentMetadataString(user, "agent_verified_at"); ok {
-		if parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(raw)); err == nil {
-			t := model.Time(parsed)
-			verifiedAt = &t
-		}
-	}
+	verified := graphAgentVerifiedState(governance)
+	verifiedAt := graphAgentVerifiedAt(governance)
 
 	var agentOwner *string
 	if v := strings.TrimSpace(user.AgentOwner); v != "" {
@@ -125,69 +118,21 @@ func activitypubAgentCapabilitiesFromStorage(caps *agents.Capabilities) *activit
 	}
 }
 
-func agentMetadataBool(user *storage.User, key string) bool {
-	if user == nil || user.Metadata == nil {
-		return false
-	}
-	raw, ok := user.Metadata[key]
-	if !ok || raw == nil {
-		return false
-	}
-
-	switch v := raw.(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(strings.TrimSpace(v), "true")
-	default:
-		return false
-	}
+func graphAgentVerifiedState(governance *storage.AgentGovernanceState) bool {
+	return governance != nil && governance.Verified
 }
 
-func agentMetadataString(user *storage.User, key string) (string, bool) {
-	if user == nil || user.Metadata == nil {
-		return "", false
+func graphAgentVerifiedAt(governance *storage.AgentGovernanceState) *model.Time {
+	if governance == nil || !governance.Verified || governance.VerifiedAt == nil || governance.VerifiedAt.IsZero() {
+		return nil
 	}
-	raw, ok := user.Metadata[key]
-	if !ok || raw == nil {
-		return "", false
-	}
-	if v, ok := raw.(string); ok {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return "", false
-		}
-		return v, true
-	}
-	return "", false
+	timestamp := model.Time(governance.VerifiedAt.UTC())
+	return &timestamp
 }
 
-func agentDelegatedScopes(user *storage.User) []string {
-	if user == nil || user.Metadata == nil {
+func graphAgentDelegatedScopes(governance *storage.AgentGovernanceState) []string {
+	if governance == nil {
 		return nil
 	}
-
-	raw, ok := user.Metadata["agent_delegated_scopes"]
-	if !ok || raw == nil {
-		return nil
-	}
-
-	switch v := raw.(type) {
-	case []string:
-		return append([]string(nil), v...)
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			s, ok := item.(string)
-			if !ok {
-				continue
-			}
-			if s := strings.TrimSpace(s); s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
+	return governance.DelegatedScopesCopy()
 }

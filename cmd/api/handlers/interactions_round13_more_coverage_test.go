@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -28,6 +29,16 @@ func TestInteractionsRound13_AgentFollowRailsAndStatusInteractions(t *testing.T)
 				Version:   1,
 				IsAgent:   true,
 				Suspended: false,
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent": {
+				PK:        "USER#agent",
+				SK:        storagemodels.SKAgentGovernance,
+				Username:  "agent",
+				CreatedAt: time.Now().Add(-24 * time.Hour),
+				UpdatedAt: time.Now().Add(-time.Hour),
+				Version:   1,
 			},
 		},
 	}

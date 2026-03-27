@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/config"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/require"
@@ -43,9 +44,16 @@ func TestAgentAccessLeasesRound20_InternalHelpers(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
-				Metadata: map[string]any{
-					"agent_delegated_scopes": []any{"read", "write"},
-				},
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent1": {
+				PK:              "USER#agent1",
+				SK:              storagemodels.SKAgentGovernance,
+				Username:        "agent1",
+				DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite},
+				CreatedAt:       now.Add(-24 * time.Hour),
+				UpdatedAt:       now.Add(-time.Hour),
 			},
 		},
 		walletCredentialsByUser: map[string][]storagemodels.WalletCredential{

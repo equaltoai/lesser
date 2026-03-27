@@ -58,9 +58,6 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 			AgentOwner:   "@owner",
 			AgentType:    agentTypeCustom,
 			AgentVersion: "v1",
-			Metadata: map[string]any{
-				"agent_delegated_scopes": []any{"read", "write", "follow"},
-			},
 		},
 	}
 
@@ -68,6 +65,16 @@ func TestAgentAccessLeasesRound20_FlowAndRenewal(t *testing.T) {
 		return &round10QueryState{
 			agentInstanceConfig: policy,
 			usersByUsername:     cloneRound20Users(baseUsers),
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"agent1": {
+					PK:              "USER#agent1",
+					SK:              storagemodels.SKAgentGovernance,
+					Username:        "agent1",
+					DelegatedScopes: []string{auth.ScopeRead, auth.ScopeWrite, "follow"},
+					CreatedAt:       now.Add(-24 * time.Hour),
+					UpdatedAt:       now.Add(-time.Hour),
+				},
+			},
 			walletCredentialsByUser: map[string][]storagemodels.WalletCredential{
 				"owner": {{
 					Username: "owner",

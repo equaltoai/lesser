@@ -196,7 +196,12 @@ func (h *Handler) resolveDelegatedAgentAccount(
 		resp, respErr := common.RespondForbidden(ctx, "not authorized to delegate to agent")
 		return nil, resp, respErr
 	}
-	if err := validateDelegationAgainstAgentEnvelope(account.User, requestedScopes); err != nil {
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, agentUsername)
+	if err != nil {
+		resp, respErr := respondAgentGovernanceUnavailable(ctx)
+		return nil, resp, respErr
+	}
+	if err := validateDelegationAgainstAgentEnvelope(governance, requestedScopes); err != nil {
 		resp, respErr := common.RespondForbidden(ctx, err.Error())
 		return nil, resp, respErr
 	}
@@ -205,8 +210,8 @@ func (h *Handler) resolveDelegatedAgentAccount(
 	return account, nil, nil
 }
 
-func validateDelegationAgainstAgentEnvelope(user *storage.User, requestedScopes []string) error {
-	allowedScopes, hasStoredEnvelope := agentDelegationEnvelope(user)
+func validateDelegationAgainstAgentEnvelope(governance *storage.AgentGovernanceState, requestedScopes []string) error {
+	allowedScopes, hasStoredEnvelope := agentDelegationEnvelope(governance)
 	if !hasStoredEnvelope {
 		return nil
 	}
@@ -216,14 +221,11 @@ func validateDelegationAgainstAgentEnvelope(user *storage.User, requestedScopes 
 	return nil
 }
 
-func agentDelegationEnvelope(user *storage.User) ([]string, bool) {
-	if user == nil || user.Metadata == nil {
+func agentDelegationEnvelope(governance *storage.AgentGovernanceState) ([]string, bool) {
+	if governance == nil || len(governance.DelegatedScopes) == 0 {
 		return nil, false
 	}
-	if _, ok := user.Metadata["agent_delegated_scopes"]; !ok {
-		return nil, false
-	}
-	return agentDelegatedScopes(user), true
+	return governance.DelegatedScopesCopy(), true
 }
 
 //nolint:unused // Retained for follow-up delegated-agent creation work.
@@ -327,12 +329,15 @@ func (h *Handler) createDelegatedAgentAccount(
 		AgentOwner:        ownerIdentifier,
 		AgentCreatedBy:    ownerClaims.Username,
 		AgentCapabilities: info.Capabilities,
-		Metadata: map[string]interface{}{
-			"agent_quarantine_status": "quarantined",
-			"agent_quarantine_start":  now.Format(time.RFC3339),
-			"agent_quarantine_end":    quarantineEnd.Format(time.RFC3339),
-			"agent_delegated_scopes":  requestedScopes,
-		},
+	}
+	governance := &storage.AgentGovernanceState{
+		Username:         req.AgentUsername,
+		QuarantineStatus: storage.AgentQuarantineStatusQuarantined,
+		QuarantineStart:  cloneAgentGovernanceHandlerTime(&now),
+		QuarantineEnd:    cloneAgentGovernanceHandlerTime(&quarantineEnd),
+		DelegatedScopes:  append([]string(nil), requestedScopes...),
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
@@ -375,6 +380,11 @@ func (h *Handler) createDelegatedAgentAccount(
 			resp, respErr := common.RespondConflict(ctx, "username already taken")
 			return nil, resp, respErr
 		}
+		resp, respErr := common.RespondInternalServerError(ctx)
+		return nil, resp, respErr
+	}
+	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
+		_ = h.repos.Account().DeleteAccount(ctx.Context(), req.AgentUsername)
 		resp, respErr := common.RespondInternalServerError(ctx)
 		return nil, resp, respErr
 	}
@@ -424,6 +434,10 @@ func (h *Handler) HandleListAgentsLift(ctx *apptheory.Context) (*apptheory.Respo
 	}
 
 	agentsOut := make([]apimodels.Agent, 0, len(users))
+	governanceStates, err := loadAgentGovernanceStates(ctx.Context(), h.repos, collectAgentUsernames(users))
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
 	for _, user := range users {
 		if user == nil || !user.IsAgent {
 			continue
@@ -431,7 +445,7 @@ func (h *Handler) HandleListAgentsLift(ctx *apptheory.Context) (*apptheory.Respo
 		if user.Suspended {
 			continue
 		}
-		agentsOut = append(agentsOut, agentFromStorageUser(user))
+		agentsOut = append(agentsOut, agentFromStorageUser(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))]))
 	}
 
 	return okJSON(agentsOut)
@@ -454,8 +468,12 @@ func (h *Handler) HandleGetAgentLift(ctx *apptheory.Context) (*apptheory.Respons
 	if err != nil || user == nil || !user.IsAgent || user.Suspended {
 		return common.RespondNotFound(ctx, "agent")
 	}
+	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
 
-	return okJSON(agentFromStorageUser(user))
+	return okJSON(agentFromStorageUser(user, governance))
 }
 
 // HandleUpdateAgentLift handles PATCH /api/v1/agents/:username.
@@ -480,7 +498,6 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
-
 	if !h.isAgentOwnerOrAdmin(claims, account.User) {
 		return common.RespondForbidden(ctx, "not authorized to modify agent")
 	}
@@ -494,14 +511,22 @@ func (h *Handler) HandleUpdateAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 		return resp, err
 	}
 
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return respondAgentGovernanceUnavailable(ctx)
+	}
+
 	now := time.Now().UTC()
-	h.applyAgentUpdateRequest(ctx, account, username, claims, req, now)
+	governance = h.applyAgentUpdateRequest(ctx, account, governance, username, claims, req, now)
 
 	if err := h.repos.Account().UpdateAccount(ctx.Context(), account); err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
+	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
+		return respondAgentGovernanceWriteError(ctx, err)
+	}
 
-	return okJSON(agentFromStorageUser(account.User))
+	return okJSON(agentFromStorageUser(account.User, governance))
 }
 
 func parseUpdateAgentRequest(ctx *apptheory.Context) (*apimodels.UpdateAgentRequest, *apptheory.Response, error) {
@@ -533,21 +558,25 @@ func (h *Handler) validateUpdateAgentRequest(ctx *apptheory.Context, req *apimod
 func (h *Handler) applyAgentUpdateRequest(
 	ctx *apptheory.Context,
 	account *storage.Account,
+	governance *storage.AgentGovernanceState,
 	username string,
 	claims *auth.Claims,
 	req *apimodels.UpdateAgentRequest,
 	now time.Time,
-) {
+) *storage.AgentGovernanceState {
 	applyAgentProfileUpdates(account, req)
 	applyAgentInfoUpdates(account.User, req)
-	h.applyAgentCapabilitiesUpdate(ctx, account.User, req.AgentCapabilities)
-	applyAgentQuarantineExit(account.User, claims, req.ExitQuarantine, now)
+	h.applyAgentCapabilitiesUpdate(ctx, account.User, governance, req.AgentCapabilities)
+	governance = applyAgentQuarantineExit(governance, claims, req.ExitQuarantine, now)
+	governance.Username = username
+	governance.UpdatedAt = now
 
 	h.ensureAgentActor(username, account)
 	account.User.UpdatedAt = now
 	if account.Actor != nil {
 		account.Actor.Updated = &now
 	}
+	return governance
 }
 
 func applyAgentProfileUpdates(account *storage.Account, req *apimodels.UpdateAgentRequest) {
@@ -581,38 +610,19 @@ func applyAgentInfoUpdates(user *storage.User, req *apimodels.UpdateAgentRequest
 	}
 }
 
-func applyAgentQuarantineExit(user *storage.User, claims *auth.Claims, exitQuarantine bool, now time.Time) {
-	if !exitQuarantine || user == nil {
-		return
-	}
-	if user.Metadata == nil {
-		user.Metadata = map[string]interface{}{}
-	}
-
-	approvedBy := ""
-	if claims != nil {
-		approvedBy = claims.Username
-	}
-
-	user.Metadata["agent_quarantine_status"] = "approved"
-	user.Metadata["agent_quarantine_end"] = now.Format(time.RFC3339)
-	user.Metadata["agent_quarantine_approved_by"] = approvedBy
-	user.Metadata["agent_quarantine_approved_at"] = now.Format(time.RFC3339)
-}
-
-func (h *Handler) applyAgentCapabilitiesUpdate(ctx *apptheory.Context, user *storage.User, apiCaps *apimodels.AgentCapabilities) {
+func (h *Handler) applyAgentCapabilitiesUpdate(ctx *apptheory.Context, user *storage.User, governance *storage.AgentGovernanceState, apiCaps *apimodels.AgentCapabilities) {
 	if user == nil || apiCaps == nil {
 		return
 	}
 
 	user.AgentCapabilities = storageAgentCapabilitiesFromAPI(*apiCaps)
-	maxAllowed := h.maxPostsPerHourAllowedForUpdate(ctx, user)
+	maxAllowed := h.maxPostsPerHourAllowedForUpdate(ctx, governance)
 	if user.AgentCapabilities != nil && user.AgentCapabilities.MaxPostsPerHour > maxAllowed {
 		user.AgentCapabilities.MaxPostsPerHour = maxAllowed
 	}
 }
 
-func (h *Handler) maxPostsPerHourAllowedForUpdate(ctx *apptheory.Context, user *storage.User) int {
+func (h *Handler) maxPostsPerHourAllowedForUpdate(ctx *apptheory.Context, governance *storage.AgentGovernanceState) int {
 	allowed := agentDefaultMaxPostsPerHour
 	verifiedAllowed := agentVerifiedDefaultMaxPostsPerHour
 
@@ -628,7 +638,7 @@ func (h *Handler) maxPostsPerHourAllowedForUpdate(ctx *apptheory.Context, user *
 	}
 
 	maxAllowed := allowed
-	if agentMetadataBool(user, "agent_verified") {
+	if agentVerifiedState(governance) {
 		maxAllowed = verifiedAllowed
 	}
 	return maxAllowed
@@ -669,6 +679,10 @@ func (h *Handler) HandleDeleteAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
+	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
 
 	if !h.isAgentOwnerOrAdmin(claims, account.User) {
 		return common.RespondForbidden(ctx, "not authorized to delete agent")
@@ -686,7 +700,7 @@ func (h *Handler) HandleDeleteAgentLift(ctx *apptheory.Context) (*apptheory.Resp
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(agentFromStorageUser(account.User))
+	return okJSON(agentFromStorageUser(account.User, governance))
 }
 
 // HandleGetAgentActivityLift handles GET /api/v1/agents/:username/activity.
@@ -714,7 +728,6 @@ func (h *Handler) HandleGetAgentActivityLift(ctx *apptheory.Context) (*apptheory
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
-
 	// Owner/admin can view. Allow the agent itself to view its log as well.
 	if !h.isAgentOwnerOrAdmin(claims, account.User) && !strings.EqualFold(claims.Username, username) {
 		return common.RespondForbidden(ctx, "not authorized to view agent activity")
@@ -797,6 +810,10 @@ func (h *Handler) HandleSuspendAgentLift(ctx *apptheory.Context) (*apptheory.Res
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
+	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
 
 	account.User.Suspended = true
 	account.User.UpdatedAt = time.Now().UTC()
@@ -809,7 +826,7 @@ func (h *Handler) HandleSuspendAgentLift(ctx *apptheory.Context) (*apptheory.Res
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return okJSON(agentFromStorageUser(account.User))
+	return okJSON(agentFromStorageUser(account.User, governance))
 }
 
 func (h *Handler) authenticateAgentOwner(ctx *apptheory.Context) (*auth.Claims, *apptheory.Response, error) {
@@ -964,7 +981,7 @@ func validateAgentAccessTokenTTLWithConfig(ctx *apptheory.Context, cfg *config.C
 	return time.Duration(expiresIn) * time.Second, nil, nil
 }
 
-func agentFromStorageUser(user *storage.User) apimodels.Agent {
+func agentFromStorageUser(user *storage.User, governance *storage.AgentGovernanceState) apimodels.Agent {
 	out := apimodels.Agent{
 		Username:     user.Username,
 		DisplayName:  user.DisplayName,
@@ -979,14 +996,13 @@ func agentFromStorageUser(user *storage.User) apimodels.Agent {
 		out.CreatedAt = &created
 	}
 
-	out.Verified = agentMetadataBool(user, "agent_verified")
-	if verifiedAt, ok := agentMetadataString(user, "agent_verified_at"); ok {
-		if parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(verifiedAt)); err == nil {
-			out.VerifiedAt = &parsed
-		}
+	out.Verified = agentVerifiedState(governance)
+	if out.Verified && governance != nil && governance.VerifiedAt != nil && !governance.VerifiedAt.IsZero() {
+		verifiedAt := governance.VerifiedAt.UTC()
+		out.VerifiedAt = &verifiedAt
 	}
 
-	out.DelegatedScopes = agentDelegatedScopes(user)
+	out.DelegatedScopes = agentDelegatedScopes(governance)
 	out.AgentCapabilities = apiAgentCapabilitiesFromStorage(user.AgentCapabilities)
 	if strings.TrimSpace(out.AgentType) == "" {
 		out.AgentType = agentTypeCustom
@@ -998,48 +1014,17 @@ func agentFromStorageUser(user *storage.User) apimodels.Agent {
 	return out
 }
 
-func agentMetadataBool(user *storage.User, key string) bool {
-	if user == nil || user.Metadata == nil {
-		return false
-	}
-	raw, ok := user.Metadata[key]
-	if !ok || raw == nil {
-		return false
-	}
-	switch v := raw.(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(strings.TrimSpace(v), "true")
-	default:
-		return false
-	}
-}
-
-func agentDelegatedScopes(user *storage.User) []string {
-	if user == nil || user.Metadata == nil {
-		return nil
-	}
-
-	raw, ok := user.Metadata["agent_delegated_scopes"]
-	if !ok || raw == nil {
-		return nil
-	}
-
-	switch v := raw.(type) {
-	case []string:
-		return append([]string(nil), v...)
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
-				out = append(out, strings.TrimSpace(s))
-			}
+func collectAgentUsernames(users []*storage.User) []string {
+	out := make([]string, 0, len(users))
+	for _, user := range users {
+		if user == nil {
+			continue
 		}
-		return out
-	default:
-		return nil
+		if username := strings.TrimSpace(user.Username); username != "" {
+			out = append(out, username)
+		}
 	}
+	return out
 }
 
 func apiAgentCapabilitiesFromStorage(caps *agents.Capabilities) apimodels.AgentCapabilities {

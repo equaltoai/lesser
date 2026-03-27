@@ -52,6 +52,12 @@ func TestAgentSafetyRound13_EnforceRails_AndLockout(t *testing.T) {
 		requireStatus(t, http.StatusForbidden)(h.enforceAgentStatusCreateRails(ctx, claims, req))
 	})
 
+	t.Run("missing governance fails closed", func(t *testing.T) {
+		req := &apimodels.CreateStatusRequest{Status: "hello"}
+		claims := &auth.Claims{Username: "agent", IsAgent: true}
+		requireStatus(t, http.StatusServiceUnavailable)(h.enforceAgentStatusCreateRails(ctx, claims, req))
+	})
+
 	t.Run("imposeAgentLockout calls repository when available", func(t *testing.T) {
 		h.imposeAgentLockout(ctx.Context(), "agent", "rapid_fire")
 		h.imposeAgentLockout(ctx.Context(), "", "noop")

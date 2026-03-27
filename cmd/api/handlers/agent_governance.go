@@ -139,24 +139,27 @@ func (h *Handler) HandleAdminVerifyAgentLift(ctx *apptheory.Context) (*apptheory
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return respondAgentGovernanceUnavailable(ctx)
+	}
 
 	now := time.Now().UTC()
-	if account.User.Metadata == nil {
-		account.User.Metadata = map[string]interface{}{}
-	}
-	account.User.Metadata["agent_verified"] = true
-	account.User.Metadata["agent_verified_at"] = now.Format(time.RFC3339)
-	account.User.Metadata["agent_verified_by"] = claims.Username
+	governance.Verified = true
+	governance.VerifiedAt = cloneAgentGovernanceHandlerTime(&now)
+	governance.VerifiedBy = claims.Username
+	governance.VerifiedReason = ""
+	governance.UnverifiedAt = nil
+	governance.UnverifiedBy = ""
+	governance.UnverifiedReason = ""
 	if strings.TrimSpace(req.Reason) != "" {
-		account.User.Metadata["agent_verified_reason"] = strings.TrimSpace(req.Reason)
+		governance.VerifiedReason = strings.TrimSpace(req.Reason)
 	}
 
 	if req.ExitQuarantine {
-		account.User.Metadata["agent_quarantine_status"] = "approved"
-		account.User.Metadata["agent_quarantine_end"] = now.Format(time.RFC3339)
-		account.User.Metadata["agent_quarantine_approved_by"] = claims.Username
-		account.User.Metadata["agent_quarantine_approved_at"] = now.Format(time.RFC3339)
+		governance = applyAgentQuarantineExit(governance, claims, true, now)
 	}
+	governance.UpdatedAt = now
 
 	account.User.UpdatedAt = now
 	if account.Actor != nil {
@@ -166,13 +169,16 @@ func (h *Handler) HandleAdminVerifyAgentLift(ctx *apptheory.Context) (*apptheory
 	if err := h.repos.Account().UpdateAccount(ctx.Context(), account); err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
+	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
+		return respondAgentGovernanceWriteError(ctx, err)
+	}
 
 	h.recordAgentGovernanceEvent(ctx, username, "agent.verified", map[string]any{
 		"verified_by": claims.Username,
 		"reason":      strings.TrimSpace(req.Reason),
 	})
 
-	return okJSON(agentFromStorageUser(account.User))
+	return okJSON(agentFromStorageUser(account.User, governance))
 }
 
 // HandleAdminUnverifyAgentLift handles POST /api/v1/admin/agents/:username/unverify.
@@ -197,17 +203,23 @@ func (h *Handler) HandleAdminUnverifyAgentLift(ctx *apptheory.Context) (*apptheo
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return common.RespondNotFound(ctx, "agent")
 	}
+	governance, err := requireAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return respondAgentGovernanceUnavailable(ctx)
+	}
 
 	now := time.Now().UTC()
-	if account.User.Metadata == nil {
-		account.User.Metadata = map[string]interface{}{}
-	}
-	account.User.Metadata["agent_verified"] = false
-	account.User.Metadata["agent_unverified_at"] = now.Format(time.RFC3339)
-	account.User.Metadata["agent_unverified_by"] = claims.Username
+	governance.Verified = false
+	governance.VerifiedAt = nil
+	governance.VerifiedBy = ""
+	governance.VerifiedReason = ""
+	governance.UnverifiedAt = cloneAgentGovernanceHandlerTime(&now)
+	governance.UnverifiedBy = claims.Username
+	governance.UnverifiedReason = ""
 	if strings.TrimSpace(req.Reason) != "" {
-		account.User.Metadata["agent_unverified_reason"] = strings.TrimSpace(req.Reason)
+		governance.UnverifiedReason = strings.TrimSpace(req.Reason)
 	}
+	governance.UpdatedAt = now
 
 	account.User.UpdatedAt = now
 	if account.Actor != nil {
@@ -217,13 +229,16 @@ func (h *Handler) HandleAdminUnverifyAgentLift(ctx *apptheory.Context) (*apptheo
 	if err := h.repos.Account().UpdateAccount(ctx.Context(), account); err != nil {
 		return common.RespondInternalServerError(ctx)
 	}
+	if err := h.repos.Account().PutAgentGovernanceState(ctx.Context(), governance); err != nil {
+		return respondAgentGovernanceWriteError(ctx, err)
+	}
 
 	h.recordAgentGovernanceEvent(ctx, username, "agent.unverified", map[string]any{
 		"unverified_by": claims.Username,
 		"reason":        strings.TrimSpace(req.Reason),
 	})
 
-	return okJSON(agentFromStorageUser(account.User))
+	return okJSON(agentFromStorageUser(account.User, governance))
 }
 
 // HandleAdminUnlockAgentLift handles POST /api/v1/admin/agents/:username/unlock.

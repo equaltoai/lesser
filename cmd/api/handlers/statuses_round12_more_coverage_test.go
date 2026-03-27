@@ -39,6 +39,17 @@ func TestStatusesRound12_CreateStatusAsAgent(t *testing.T) {
 				},
 			},
 		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent": {
+				PK:               "USER#agent",
+				SK:               storagemodels.SKAgentGovernance,
+				Username:         "agent",
+				QuarantineStatus: storage.AgentQuarantineStatusApproved,
+				CreatedAt:        now.Add(-24 * time.Hour),
+				UpdatedAt:        now.Add(-time.Hour),
+				Version:          1,
+			},
+		},
 		statusByID: map[string]storagemodels.Status{
 			"orig1": {
 				StatusID:       "orig1",

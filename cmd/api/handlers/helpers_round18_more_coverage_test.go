@@ -113,10 +113,17 @@ func TestHelpersRound18_NormalizeDelegatedByActorURI(t *testing.T) {
 
 func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 	cfg := round11TestConfig()
-	h := &Handler{cfg: cfg}
+	h, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"bot": {
+				Username:        "bot",
+				DelegatedScopes: []string{"read", "write:statuses"},
+			},
+		},
+	})
 
 	t.Run("non agent returns nil", func(t *testing.T) {
-		out := h.buildStatusAgentAttribution(&storage.Account{User: &storage.User{Username: "alice"}}, nil)
+		out := h.buildStatusAgentAttribution(context.Background(), &storage.Account{User: &storage.User{Username: "alice"}}, nil)
 		require.Nil(t, out)
 	})
 
@@ -140,7 +147,7 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 			User: &storage.User{IsAgent: true},
 		}
 
-		out := h.buildStatusAgentAttribution(account, status)
+		out := h.buildStatusAgentAttribution(context.Background(), account, status)
 		require.NotNil(t, out)
 		require.Equal(t, "mention", out.TriggerType)
 		require.Equal(t, "test", out.TriggerDetails)
@@ -159,9 +166,6 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 				IsAgent:      true,
 				AgentOwner:   "",
 				AgentVersion: "",
-				Metadata: map[string]any{
-					"agent_delegated_scopes": []any{"read", "write:statuses"},
-				},
 				AgentCapabilities: &agents.Capabilities{
 					MaxPostsPerHour:   5,
 					RequiresApproval:  true,
@@ -178,7 +182,7 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 			},
 		}
 
-		out := h.buildStatusAgentAttribution(account, &storagemodels.Status{Note: &activitypub.Note{}})
+		out := h.buildStatusAgentAttribution(context.Background(), account, &storagemodels.Status{Note: &activitypub.Note{}})
 		require.NotNil(t, out)
 		require.Equal(t, cfg.ActorURL("manifest-owner"), out.DelegatedBy)
 		require.Equal(t, []string{"read", "write:statuses"}, out.Scopes)
@@ -196,9 +200,6 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 				IsAgent:      true,
 				AgentOwner:   "https://remote.example/users/owner",
 				AgentVersion: "user-v2",
-				Metadata: map[string]any{
-					"agent_delegated_scopes": []any{"read"},
-				},
 			},
 		}
 
@@ -210,7 +211,16 @@ func TestHelpersRound18_BuildStatusAgentAttribution(t *testing.T) {
 			},
 		}
 
-		out := h.buildStatusAgentAttribution(account, status)
+		hRemote, _, _ := round11NewHandler(t, cfg, &round10QueryState{
+			agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+				"bot": {
+					Username:        "bot",
+					DelegatedScopes: []string{"read"},
+				},
+			},
+		})
+
+		out := hRemote.buildStatusAgentAttribution(context.Background(), account, status)
 		require.NotNil(t, out)
 		require.Equal(t, "https://remote.example/users/owner", out.DelegatedBy)
 		require.Equal(t, "did:key:z6Mkexample", out.DelegatedByDID)

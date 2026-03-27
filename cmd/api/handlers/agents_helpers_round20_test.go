@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -37,9 +38,6 @@ func TestAgentHelpersRound20(t *testing.T) {
 				AgentOwner:   "@owner",
 				AgentType:    agentTypeCustom,
 				AgentVersion: "v1",
-				Metadata: map[string]any{
-					"agent_delegated_scopes": []any{"read", "write:statuses"},
-				},
 			},
 			"human": {
 				PK:        "USER#human",
@@ -49,6 +47,16 @@ func TestAgentHelpersRound20(t *testing.T) {
 				Version:   1,
 				CreatedAt: now.Add(-24 * time.Hour),
 				IsAgent:   false,
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent1": {
+				PK:              "USER#agent1",
+				SK:              storagemodels.SKAgentGovernance,
+				Username:        "agent1",
+				DelegatedScopes: []string{auth.ScopeRead, "write:statuses"},
+				CreatedAt:       now.Add(-24 * time.Hour),
+				UpdatedAt:       now.Add(-time.Hour),
 			},
 		},
 	}
@@ -89,22 +97,20 @@ func TestAgentHelpersRound20(t *testing.T) {
 	})
 
 	t.Run("agent envelope helpers", func(t *testing.T) {
-		user := &storage.User{
-			Metadata: map[string]any{
-				"agent_delegated_scopes": []any{"read", "write"},
-			},
+		governance := &storage.AgentGovernanceState{
+			DelegatedScopes: []string{"read", "write:statuses"},
 		}
-		scopes, ok := agentDelegationEnvelope(user)
+		scopes, ok := agentDelegationEnvelope(governance)
 		require.True(t, ok)
-		require.Equal(t, []string{"read", "write"}, scopes)
+		require.Equal(t, []string{"read", "write:statuses"}, scopes)
 
-		scopes, ok = agentDelegationEnvelope(&storage.User{})
+		scopes, ok = agentDelegationEnvelope(&storage.AgentGovernanceState{})
 		require.False(t, ok)
 		require.Nil(t, scopes)
 
-		require.NoError(t, validateDelegationAgainstAgentEnvelope(user, []string{"read"}))
-		require.NoError(t, validateDelegationAgainstAgentEnvelope(user, []string{"follow"}))
-		require.Error(t, validateDelegationAgainstAgentEnvelope(user, []string{"push"}))
+		require.NoError(t, validateDelegationAgainstAgentEnvelope(governance, []string{"read"}))
+		require.Error(t, validateDelegationAgainstAgentEnvelope(governance, []string{"follow"}))
+		require.Error(t, validateDelegationAgainstAgentEnvelope(governance, []string{"push"}))
 	})
 
 	t.Run("deriveAgentCapabilitiesFromScopes", func(t *testing.T) {
@@ -114,5 +120,86 @@ func TestAgentHelpersRound20(t *testing.T) {
 		require.True(t, caps.CanBoost)
 		require.True(t, caps.CanDM)
 		require.True(t, caps.CanFollow)
+	})
+
+	t.Run("agentFromStorageUser only exposes verifiedAt for verified agents", func(t *testing.T) {
+		createdAt := now.Add(-2 * time.Hour)
+		verifiedAt := now.Add(-30 * time.Minute)
+		user := &storage.User{
+			Username:     "agent1",
+			DisplayName:  "Agent One",
+			Note:         "bio",
+			CreatedAt:    createdAt,
+			AgentOwner:   "@owner",
+			IsAgent:      true,
+			AgentVersion: "",
+			AgentType:    "",
+		}
+
+		unverified := agentFromStorageUser(user, &storage.AgentGovernanceState{
+			Username:        "agent1",
+			Verified:        false,
+			VerifiedAt:      &verifiedAt,
+			DelegatedScopes: []string{"read"},
+		})
+		require.False(t, unverified.Verified)
+		require.Nil(t, unverified.VerifiedAt)
+		require.Equal(t, agentTypeCustom, unverified.AgentType)
+		require.Equal(t, agentVersionUnknown, unverified.AgentVersion)
+		require.Equal(t, []string{"read"}, unverified.DelegatedScopes)
+		require.NotNil(t, unverified.CreatedAt)
+		require.Equal(t, createdAt, *unverified.CreatedAt)
+
+		verified := agentFromStorageUser(user, &storage.AgentGovernanceState{
+			Username:   "agent1",
+			Verified:   true,
+			VerifiedAt: &verifiedAt,
+		})
+		require.True(t, verified.Verified)
+		require.NotNil(t, verified.VerifiedAt)
+		require.Equal(t, verifiedAt.UTC(), *verified.VerifiedAt)
+	})
+
+	t.Run("agent governance state helpers handle nil found and missing rows", func(t *testing.T) {
+		single, err := loadAgentGovernanceState(context.Background(), nil, "agent1")
+		require.NoError(t, err)
+		require.Nil(t, single)
+
+		batch, err := loadAgentGovernanceStates(context.Background(), nil, []string{"agent1"})
+		require.NoError(t, err)
+		require.Empty(t, batch)
+
+		h, _, _ := round11NewHandler(t, cfg, baseState)
+
+		single, err = loadAgentGovernanceState(context.Background(), h.repos, "agent1")
+		require.NoError(t, err)
+		require.NotNil(t, single)
+		require.Equal(t, "agent1", single.Username)
+		require.Equal(t, []string{auth.ScopeRead, "write:statuses"}, single.DelegatedScopes)
+
+		batch, err = loadAgentGovernanceStates(context.Background(), h.repos, []string{"agent1", "missing"})
+		require.NoError(t, err)
+		require.Contains(t, batch, "agent1")
+		require.NotContains(t, batch, "missing")
+
+		missingHandler, _, _ := round11NewHandler(t, cfg, &round10QueryState{})
+
+		single, err = loadAgentGovernanceState(context.Background(), missingHandler.repos, "missing")
+		require.NoError(t, err)
+		require.Nil(t, single)
+
+		required, err := requireAgentGovernanceState(context.Background(), missingHandler.repos, "missing")
+		require.Nil(t, required)
+		require.ErrorIs(t, err, errAgentGovernanceUnavailable)
+
+		batch, err = loadAgentGovernanceStates(context.Background(), missingHandler.repos, []string{"missing"})
+		require.NoError(t, err)
+		require.Empty(t, batch)
+	})
+
+	t.Run("agent governance write errors map version conflicts to 409", func(t *testing.T) {
+		ctx, err := round10NewLiftContext(http.MethodPost, "/api/v1/agents/agent1", nil, nil, nil)
+		require.NoError(t, err)
+		requireStatus(t, http.StatusConflict)(respondAgentGovernanceWriteError(ctx, storage.ErrVersionConflict))
 	})
 }
