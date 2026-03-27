@@ -265,7 +265,6 @@ func runVerifyStatusContract(argv []string) error {
 		summary.ResolvedApp = naming.DefaultAppName
 	}
 	summary.ResolvedEnv = strings.TrimSpace(env)
-	summary.ResolvedStage = string(naming.StageForEnvironment(env))
 
 	fmt.Println("verify status-contract complete")
 	fmt.Println("table:", summary.TableName)
