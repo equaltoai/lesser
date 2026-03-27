@@ -195,20 +195,26 @@ func newNotificationInsertRecord(username string) events.DynamoDBEventRecord {
 	}
 }
 
-func newConversationParticipantRecord(username, conversationID, requestState string) events.DynamoDBEventRecord {
+func newUserConversationStateRecord(username, conversationID, requestState string) events.DynamoDBEventRecord {
 	return events.DynamoDBEventRecord{
-		EventID:   "evt-conversation-participant-1",
+		EventID:   "evt-user-conversation-state-1",
 		EventName: eventNameInsert,
 		Change: events.DynamoDBStreamRecord{
 			NewImage: map[string]events.DynamoDBAttributeValue{
-				"PK":           events.NewStringAttribute("USER_CONVERSATIONS#" + username),
-				"SK":           events.NewStringAttribute("2026-02-19T00:00:00Z#" + conversationID),
-				"gsi1PK":       events.NewStringAttribute("CONVERSATION#" + conversationID),
-				"gsi1SK":       events.NewStringAttribute("PARTICIPANT#" + username),
-				"requestState": events.NewStringAttribute(requestState),
-				"conversation": events.NewMapAttribute(map[string]events.DynamoDBAttributeValue{
-					"ID": events.NewStringAttribute(conversationID),
-				}),
+				"PK":             events.NewStringAttribute("USER_CONVERSATION_STATE#" + username),
+				"SK":             events.NewStringAttribute("CONVERSATION#" + conversationID),
+				"gsi1PK":         events.NewStringAttribute("CONVERSATION#" + conversationID),
+				"gsi1SK":         events.NewStringAttribute("2026-02-19T00:00:00Z#" + conversationID),
+				"gsi3PK":         events.NewStringAttribute("CONVERSATION#" + conversationID),
+				"gsi3SK":         events.NewStringAttribute("USER#" + username),
+				"viewerID":       events.NewStringAttribute(username),
+				"conversationID": events.NewStringAttribute(conversationID),
+				"counterpartID":  events.NewStringAttribute("bob"),
+				"folder":         events.NewStringAttribute("INBOX"),
+				"requestState":   events.NewStringAttribute(requestState),
+				"sortAt":         events.NewStringAttribute("2026-02-19T00:00:00Z"),
+				"createdAt":      events.NewStringAttribute("2026-02-19T00:00:00Z"),
+				"updatedAt":      events.NewStringAttribute("2026-02-19T00:00:00Z"),
 			},
 		},
 	}
@@ -1044,8 +1050,8 @@ func TestStreamRouterHandler_ProcessConversationParticipantEvent_BroadcastsGraph
 				gqlSubRepo:    subRepo,
 			}
 
-			record := newConversationParticipantRecord("alice", "conv-1", tc.requestState)
-			require.NoError(t, h.processConversationParticipantEvent(context.Background(), "req-1", record))
+			record := newUserConversationStateRecord("alice", "conv-1", tc.requestState)
+			require.NoError(t, h.processUserConversationStateEvent(context.Background(), "req-1", record))
 
 			require.Equal(t, []string{"conn-1"}, client.postCalls)
 
