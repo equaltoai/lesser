@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -28,15 +27,16 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 			MaxPostsPerHour:  0,
 			RequiresApproval: true,
 		},
-		Metadata: map[string]any{
-			"agent_verified":         true,
-			"agent_verified_at":      "2026-02-13T13:56:01Z",
-			"agent_delegated_scopes": []any{"read"},
-		},
 		CreatedAt: createdAt,
 	}
+	governance := &storage.AgentGovernanceState{
+		Username:        "lowkey",
+		Verified:        true,
+		VerifiedAt:      ptrGraphTime(time.Date(2026, 2, 13, 13, 56, 1, 0, time.UTC)),
+		DelegatedScopes: []string{"read"},
+	}
 
-	agent := resolver.convertStorageUserToAgent(context.Background(), user)
+	agent := resolver.convertStorageUserToAgent(user, governance)
 	require.NotNil(t, agent)
 	require.Equal(t, "lowkey", agent.Username)
 	require.True(t, agent.Verified)
@@ -46,4 +46,9 @@ func TestConvertStorageUserToAgent_HydratesMetadataAndCapabilities(t *testing.T)
 	require.True(t, agent.AgentCapabilities.CanDM)
 	require.Equal(t, 0, agent.AgentCapabilities.MaxPostsPerHour)
 	require.True(t, agent.AgentCapabilities.RequiresApproval)
+}
+
+func ptrGraphTime(value time.Time) *time.Time {
+	timestamp := value.UTC()
+	return &timestamp
 }

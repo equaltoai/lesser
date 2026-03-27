@@ -436,7 +436,7 @@ func (h *Handler) convertStorageStatusToAPIWithContext(ctx context.Context, stor
 		URL:                statusURL,
 	}
 
-	apiStatus.AgentAttribution = h.buildStatusAgentAttribution(authorAccount, storageStatus)
+	apiStatus.AgentAttribution = h.buildStatusAgentAttribution(ctx, authorAccount, storageStatus)
 
 	// Poll support is implemented in polls.go handler
 	// Status.Poll field would be populated here if the status has an associated poll
@@ -823,7 +823,7 @@ func (h *Handler) transformStatusBase(ctx context.Context, storageStatus *storag
 	}
 }
 
-func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, status *storageModels.Status) *models.AgentPostAttribution {
+func (h *Handler) buildStatusAgentAttribution(ctx context.Context, authorAccount *storage.Account, status *storageModels.Status) *models.AgentPostAttribution {
 	if authorAccount == nil || authorAccount.User == nil || !authorAccount.User.IsAgent {
 		return nil
 	}
@@ -862,7 +862,10 @@ func (h *Handler) buildStatusAgentAttribution(authorAccount *storage.Account, st
 	}
 
 	if len(out.Scopes) == 0 {
-		out.Scopes = agentDelegatedScopes(authorAccount.User)
+		governance, err := loadAgentGovernanceState(ctx, h.repos, authorAccount.User.Username)
+		if err == nil {
+			out.Scopes = agentDelegatedScopes(governance)
+		}
 	}
 
 	if len(out.Constraints) == 0 {

@@ -51,6 +51,7 @@ func (passthroughEncryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 type delegationGraphState struct {
 	users              map[string]*storageModels.User
 	actors             map[string]*storageModels.Actor
+	governance         map[string]*storageModels.AgentGovernanceState
 	refreshTokens      map[string]*storageModels.RefreshToken
 	createConflictOnce bool
 }
@@ -64,11 +65,8 @@ func newDelegationGraphState(username string, storedScopes []string) *delegation
 		AgentType:    "CUSTOM",
 		AgentVersion: "v1",
 		AgentOwner:   "@owner",
-		Metadata: map[string]any{
-			"agent_delegated_scopes": append([]string(nil), storedScopes...),
-		},
-		CreatedAt: now.Add(-time.Hour),
-		UpdatedAt: now,
+		CreatedAt:    now.Add(-time.Hour),
+		UpdatedAt:    now,
 	}
 	_ = user.UpdateKeys()
 
@@ -87,9 +85,18 @@ func newDelegationGraphState(username string, storedScopes []string) *delegation
 	}
 	_ = actor.UpdateKeys()
 
+	governance := &storageModels.AgentGovernanceState{
+		Username:        username,
+		DelegatedScopes: append([]string(nil), storedScopes...),
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now,
+	}
+	_ = governance.BeforeCreate()
+
 	return &delegationGraphState{
-		users:  map[string]*storageModels.User{username: user},
-		actors: map[string]*storageModels.Actor{username: actor},
+		users:      map[string]*storageModels.User{username: user},
+		actors:     map[string]*storageModels.Actor{username: actor},
+		governance: map[string]*storageModels.AgentGovernanceState{username: governance},
 	}
 }
 
@@ -105,6 +112,13 @@ func (s *delegationGraphState) actor(username string) *storageModels.Actor {
 		return nil
 	}
 	return s.actors[username]
+}
+
+func (s *delegationGraphState) governanceState(username string) *storageModels.AgentGovernanceState {
+	if s == nil || s.governance == nil {
+		return nil
+	}
+	return s.governance[username]
 }
 
 func (s *delegationGraphState) refreshTokensForUserClient(username, clientID string) []storageModels.RefreshToken {
@@ -149,6 +163,12 @@ func (s *delegationGraphState) storeCreate(model any) {
 		}
 		copyActor := *v
 		s.actors[v.Username] = &copyActor
+	case *storageModels.AgentGovernanceState:
+		if s.governance == nil {
+			s.governance = map[string]*storageModels.AgentGovernanceState{}
+		}
+		copyGovernance := *v
+		s.governance[v.Username] = &copyGovernance
 	case *storageModels.RefreshToken:
 		if s.refreshTokens == nil {
 			s.refreshTokens = map[string]*storageModels.RefreshToken{}
@@ -199,6 +219,7 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 	mockQuery.On("OrderBy", mock.Anything, mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("Limit", mock.Anything).Return(mockQuery).Maybe()
 	mockQuery.On("ConsistentRead").Return(mockQuery).Maybe()
+	mockQuery.On("IfNotExists").Return(mockQuery).Maybe()
 	mockQuery.On("UpdateBuilder").Return(mockUpdate).Maybe()
 	mockUpdate.On("SetIfNotExists", mock.Anything, mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
 	mockUpdate.On("Set", mock.Anything, mock.Anything).Return(mockUpdate).Maybe()
@@ -265,6 +286,19 @@ func newDelegationResolver(t *testing.T, state *delegationGraphState, allowAgent
 	})).Run(func(args mock.Arguments) {
 		dest := args.Get(0).(*storageModels.Actor)
 		*dest = *state.actor(strings.TrimPrefix(lastPK, "ACTOR#"))
+	}).Return(nil).Maybe()
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*storageModels.AgentGovernanceState)
+		username := strings.TrimPrefix(lastPK, "USER#")
+		return ok && state.governanceState(username) == nil
+	})).Return(dynamormerrors.ErrItemNotFound).Maybe()
+	mockQuery.On("First", mock.MatchedBy(func(dest any) bool {
+		_, ok := dest.(*storageModels.AgentGovernanceState)
+		username := strings.TrimPrefix(lastPK, "USER#")
+		return ok && state.governanceState(username) != nil
+	})).Run(func(args mock.Arguments) {
+		dest := args.Get(0).(*storageModels.AgentGovernanceState)
+		*dest = *state.governanceState(strings.TrimPrefix(lastPK, "USER#"))
 	}).Return(nil).Maybe()
 	mockQuery.On("First", mock.Anything).Return(nil).Maybe()
 
@@ -362,11 +396,8 @@ func TestDelegateToAgent_CreateConflictFallsBackToExistingAgent(t *testing.T) {
 				AgentType:    "RESEARCHER",
 				AgentVersion: "1.0.0",
 				AgentOwner:   "@owner",
-				Metadata: map[string]any{
-					"agent_delegated_scopes": []string{"read", "write"},
-				},
-				CreatedAt: time.Now().Add(-time.Hour),
-				UpdatedAt: time.Now(),
+				CreatedAt:    time.Now().Add(-time.Hour),
+				UpdatedAt:    time.Now(),
 			},
 		},
 		actors: map[string]*storageModels.Actor{
@@ -382,6 +413,16 @@ func TestDelegateToAgent_CreateConflictFallsBackToExistingAgent(t *testing.T) {
 					},
 					PreferredUsername: "scout",
 				},
+			},
+		},
+		governance: map[string]*storageModels.AgentGovernanceState{
+			"scout": {
+				PK:              "USER#scout",
+				SK:              storageModels.SKAgentGovernance,
+				Username:        "scout",
+				DelegatedScopes: []string{"read", "write"},
+				CreatedAt:       time.Now().Add(-time.Hour),
+				UpdatedAt:       time.Now(),
 			},
 		},
 	}

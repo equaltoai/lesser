@@ -297,9 +297,16 @@ func TestInteractionsRound19_agentFollowRails_AllowsFollowWhenUnderLimit(t *test
 				IsAgent:   true,
 				Version:   1,
 				CreatedAt: now.Add(-time.Hour),
-				Metadata: map[string]interface{}{
-					"agent_verified": true,
-				},
+			},
+		},
+		agentGovernanceByUsername: map[string]storagemodels.AgentGovernanceState{
+			"agent": {
+				PK:        "USER#agent",
+				SK:        storagemodels.SKAgentGovernance,
+				Username:  "agent",
+				Verified:  true,
+				CreatedAt: now.Add(-time.Hour),
+				UpdatedAt: now,
 			},
 		},
 	}

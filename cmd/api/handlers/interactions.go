@@ -206,6 +206,10 @@ func (h *Handler) enforceAgentFollowRails(ctx *apptheory.Context, username strin
 	if agentUser == nil || !agentUser.IsAgent {
 		return nil, nil
 	}
+	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
 
 	limit := agentDefaultMaxFollowsPerHour
 	verifiedLimit := agentVerifiedDefaultMaxFollowsPerHour
@@ -221,7 +225,7 @@ func (h *Handler) enforceAgentFollowRails(ctx *apptheory.Context, username strin
 	}
 
 	allowed := limit
-	if agentMetadataBool(agentUser, "agent_verified") {
+	if agentVerifiedState(governance) {
 		allowed = verifiedLimit
 	}
 

@@ -460,7 +460,7 @@ func (r *mutationResolver) createGraphAgentAccessLeaseChallenge(ctx context.Cont
 	if err := common.ValidateUsernameParamID(username); err != nil {
 		return nil, err
 	}
-	claims, account, err := r.requireOwnedAgentLeaseAccount(ctx, username)
+	claims, _, err := r.requireOwnedAgentLeaseAccount(ctx, username)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +471,11 @@ func (r *mutationResolver) createGraphAgentAccessLeaseChallenge(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	if err := validateDelegationAgainstAgentEnvelope(account.User, requestedScopes); err != nil {
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
+	if err := validateDelegationAgainstAgentEnvelope(governance, requestedScopes); err != nil {
 		return nil, err
 	}
 	sessionPublicKey := ""

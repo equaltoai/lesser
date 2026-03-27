@@ -54,7 +54,12 @@ func (r *queryResolver) Agent(ctx context.Context, username string) (*model.Agen
 		return nil, nil
 	}
 
-	return r.convertStorageUserToAgent(ctx, user), nil
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
+
+	return r.convertStorageUserToAgent(user, governance), nil
 }
 
 type agentListFilters struct {
@@ -97,7 +102,7 @@ func agentListCursor(after *model.Cursor) string {
 	return strings.TrimSpace(string(*after))
 }
 
-func agentUserMatchesListFilters(user *storage.User, filters agentListFilters) bool {
+func agentUserMatchesListFilters(user *storage.User, governance *storage.AgentGovernanceState, filters agentListFilters) bool {
 	if user == nil || !user.IsAgent || user.Suspended {
 		return false
 	}
@@ -106,7 +111,7 @@ func agentUserMatchesListFilters(user *storage.User, filters agentListFilters) b
 		return false
 	}
 
-	if filters.verified != nil && agentMetadataBool(user, "agent_verified") != *filters.verified {
+	if filters.verified != nil && graphAgentVerifiedState(governance) != *filters.verified {
 		return false
 	}
 
@@ -127,6 +132,31 @@ func agentUserMatchesListFilters(user *storage.User, filters agentListFilters) b
 	}
 
 	return true
+}
+
+func collectGraphAgentUsernames(users []*storage.User) []string {
+	if len(users) == 0 {
+		return nil
+	}
+
+	usernames := make([]string, 0, len(users))
+	seen := make(map[string]struct{}, len(users))
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		username := strings.ToLower(strings.TrimSpace(user.Username))
+		if username == "" {
+			continue
+		}
+		if _, ok := seen[username]; ok {
+			continue
+		}
+		seen[username] = struct{}{}
+		usernames = append(usernames, username)
+	}
+
+	return usernames
 }
 
 // Agents is the resolver for the agents field.
@@ -150,6 +180,10 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 	if len(users) > limit {
 		users = users[:limit]
 	}
+	governanceStates, err := r.loadAgentGovernanceStates(ctx, collectGraphAgentUsernames(users))
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance states")
+	}
 
 	filters := agentListFilters{
 		typeArg:     typeArg,
@@ -160,11 +194,12 @@ func (r *queryResolver) Agents(ctx context.Context, first *int, after *model.Cur
 
 	edges := make([]*model.AgentEdge, 0, len(users))
 	for _, user := range users {
-		if !agentUserMatchesListFilters(user, filters) {
+		governance := governanceStates[strings.ToLower(strings.TrimSpace(user.Username))]
+		if !agentUserMatchesListFilters(user, governance, filters) {
 			continue
 		}
 
-		agent := r.convertStorageUserToAgent(ctx, user)
+		agent := r.convertStorageUserToAgent(user, governance)
 		if agent == nil {
 			continue
 		}
@@ -225,6 +260,10 @@ func (r *queryResolver) MyAgents(ctx context.Context) ([]*model.Agent, error) {
 		if err != nil {
 			return nil, apperrors.InternalWithCause(err, "failed to list agents")
 		}
+		governanceStates, err := r.loadAgentGovernanceStates(ctx, collectGraphAgentUsernames(users))
+		if err != nil {
+			return nil, apperrors.InternalWithCause(err, "failed to load agent governance states")
+		}
 
 		for _, user := range users {
 			if user == nil || !user.IsAgent || user.Suspended {
@@ -233,7 +272,7 @@ func (r *queryResolver) MyAgents(ctx context.Context) ([]*model.Agent, error) {
 			if !strings.EqualFold(strings.TrimSpace(user.AgentOwner), ownerHandle) {
 				continue
 			}
-			agent := r.convertStorageUserToAgent(ctx, user)
+			agent := r.convertStorageUserToAgent(user, governanceStates[strings.ToLower(strings.TrimSpace(user.Username))])
 			if agent != nil {
 				out = append(out, agent)
 			}
@@ -501,14 +540,43 @@ func (r *mutationResolver) UpdateAgent(ctx context.Context, username string, inp
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
 
 	if !isAgentOwnerOrAdmin(claims, account.User) {
 		return nil, apperrors.Forbidden("not authorized to modify agent")
 	}
 
+	now := time.Now().UTC()
+	governance, err = r.applyGraphAgentUpdateInput(ctx, claims, account, governance, input, now)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.persistGraphAgentUpdate(ctx, username, account, governance, now); err != nil {
+		return nil, err
+	}
+
+	return r.convertStorageUserToAgent(account.User, governance), nil
+}
+
+func (r *mutationResolver) applyGraphAgentUpdateInput(
+	ctx context.Context,
+	claims *auth.Claims,
+	account *storage.Account,
+	governance *storage.AgentGovernanceState,
+	input model.UpdateAgentInput,
+	now time.Time,
+) (*storage.AgentGovernanceState, error) {
+	if account == nil || account.User == nil {
+		return governance, apperrors.Internal("agent account is required")
+	}
+
 	if v := strings.TrimSpace(derefString(input.DisplayName)); v != "" {
 		if err := common.ValidateDisplayName(v); err != nil {
-			return nil, err
+			return governance, err
 		}
 		account.User.DisplayName = v
 		if account.Actor != nil {
@@ -518,7 +586,7 @@ func (r *mutationResolver) UpdateAgent(ctx context.Context, username string, inp
 
 	if v := strings.TrimSpace(derefString(input.Bio)); v != "" {
 		if err := common.ValidateAccountBio(v); err != nil {
-			return nil, err
+			return governance, err
 		}
 		account.User.Note = v
 		if account.Actor != nil {
@@ -536,15 +604,24 @@ func (r *mutationResolver) UpdateAgent(ctx context.Context, username string, inp
 		account.User.AgentVersion = v
 	}
 
-	now := time.Now().UTC()
 	if input.ExitQuarantine != nil && *input.ExitQuarantine {
-		applyAgentQuarantineExit(account.User, claims, true, now)
+		governance = applyAgentQuarantineExit(governance, claims, true, now)
 	}
 
 	if input.AgentCapabilities != nil {
-		applyAgentCapabilitiesInput(ctx, r, account.User, input.AgentCapabilities)
+		applyAgentCapabilitiesInput(ctx, r, account.User, governance, input.AgentCapabilities)
 	}
 
+	return governance, nil
+}
+
+func (r *mutationResolver) persistGraphAgentUpdate(
+	ctx context.Context,
+	username string,
+	account *storage.Account,
+	governance *storage.AgentGovernanceState,
+	now time.Time,
+) error {
 	r.ensureAgentActor(username, account)
 	account.User.UpdatedAt = now
 	if account.Actor != nil {
@@ -552,10 +629,24 @@ func (r *mutationResolver) UpdateAgent(ctx context.Context, username string, inp
 	}
 
 	if err := r.Storage.Account().UpdateAccount(ctx, account); err != nil {
-		return nil, apperrors.InternalWithCause(err, "failed to update agent")
+		return apperrors.InternalWithCause(err, "failed to update agent")
+	}
+	if governance == nil {
+		return nil
 	}
 
-	return r.convertStorageUserToAgent(ctx, account.User), nil
+	if governance.Username == "" {
+		governance.Username = username
+	}
+	if governance.CreatedAt.IsZero() {
+		governance.CreatedAt = now
+	}
+	governance.UpdatedAt = now
+	if err := r.Storage.Account().PutAgentGovernanceState(ctx, governance); err != nil {
+		return apperrors.InternalWithCause(err, "failed to update agent governance state")
+	}
+
+	return nil
 }
 
 // DeleteAgent is the resolver for the deleteAgent field.
@@ -585,6 +676,10 @@ func (r *mutationResolver) DeleteAgent(ctx context.Context, username string) (*m
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
 
 	if !isAgentOwnerOrAdmin(claims, account.User) {
 		return nil, apperrors.Forbidden("not authorized to delete agent")
@@ -602,7 +697,7 @@ func (r *mutationResolver) DeleteAgent(ctx context.Context, username string) (*m
 		return nil, apperrors.InternalWithCause(err, "failed to delete agent")
 	}
 
-	return r.convertStorageUserToAgent(ctx, account.User), nil
+	return r.convertStorageUserToAgent(account.User, governance), nil
 }
 
 // DelegateToAgent is the resolver for the delegateToAgent field.
@@ -657,9 +752,13 @@ func (r *mutationResolver) DelegateToAgent(ctx context.Context, input model.Dele
 	if err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to mint delegated agent tokens")
 	}
+	governance, err := r.loadAgentGovernanceState(ctx, agentUsername)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
 
 	return &model.DelegationPayload{
-		Agent:        r.convertStorageUserToAgent(ctx, account.User),
+		Agent:        r.convertStorageUserToAgent(account.User, governance),
 		AccessToken:  bundle.AccessToken,
 		RefreshToken: bundle.RefreshToken,
 		TokenType:    "Bearer",
@@ -705,7 +804,11 @@ func (r *mutationResolver) resolveDelegatedAgentAccount(ctx context.Context, cla
 	if !isAgentOwnerOrAdmin(claims, account.User) {
 		return nil, apperrors.Forbidden("not authorized to delegate to agent")
 	}
-	if err := validateDelegationAgainstAgentEnvelope(account.User, requestedScopes); err != nil {
+	governance, err := r.loadAgentGovernanceState(ctx, agentUsername)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
+	if err := validateDelegationAgainstAgentEnvelope(governance, requestedScopes); err != nil {
 		return nil, err
 	}
 
@@ -775,12 +878,6 @@ func (r *mutationResolver) createDelegatedAgentAccount(
 		AgentOwner:        ownerIdentifier,
 		AgentCreatedBy:    strings.TrimSpace(claims.Username),
 		AgentCapabilities: &capabilities,
-		Metadata: map[string]any{
-			"agent_quarantine_status": "quarantined",
-			"agent_quarantine_start":  now.Format(time.RFC3339),
-			"agent_quarantine_end":    quarantineEnd.Format(time.RFC3339),
-			"agent_delegated_scopes":  append([]string(nil), requestedScopes...),
-		},
 	}
 
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
@@ -820,6 +917,19 @@ func (r *mutationResolver) createDelegatedAgentAccount(
 			return r.resolveDelegatedAgentAccount(ctx, claims, agentUsername, requestedScopes)
 		}
 		return nil, apperrors.InternalWithCause(err, "failed to create agent account")
+	}
+	governance := &storage.AgentGovernanceState{
+		Username:         agentUsername,
+		QuarantineStatus: "quarantined",
+		QuarantineStart:  cloneGraphAgentTime(&now),
+		QuarantineEnd:    cloneGraphAgentTime(&quarantineEnd),
+		DelegatedScopes:  append([]string(nil), requestedScopes...),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := r.Storage.Account().PutAgentGovernanceState(ctx, governance); err != nil {
+		_ = r.Storage.Account().DeleteAccount(ctx, agentUsername)
+		return nil, apperrors.InternalWithCause(err, "failed to create agent governance state")
 	}
 
 	return account, nil
@@ -961,21 +1071,32 @@ func (r *mutationResolver) AdminVerifyAgent(ctx context.Context, username string
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
 
 	now := time.Now().UTC()
-	if account.User.Metadata == nil {
-		account.User.Metadata = map[string]any{}
+	if governance == nil {
+		governance = &storage.AgentGovernanceState{
+			Username:  username,
+			CreatedAt: now,
+		}
 	}
-	account.User.Metadata["agent_verified"] = true
-	account.User.Metadata["agent_verified_at"] = now.Format(time.RFC3339)
-	account.User.Metadata["agent_verified_by"] = claims.Username
+	governance.Verified = true
+	governance.VerifiedAt = cloneGraphAgentTime(&now)
+	governance.VerifiedBy = claims.Username
+	governance.UnverifiedAt = nil
+	governance.UnverifiedBy = ""
+	governance.UnverifiedReason = ""
 	if input != nil && strings.TrimSpace(derefString(input.Reason)) != "" {
-		account.User.Metadata["agent_verified_reason"] = strings.TrimSpace(derefString(input.Reason))
+		governance.VerifiedReason = strings.TrimSpace(derefString(input.Reason))
 	}
 
 	if input != nil && input.ExitQuarantine != nil && *input.ExitQuarantine {
-		applyAgentQuarantineExit(account.User, claims, true, now)
+		governance = applyAgentQuarantineExit(governance, claims, true, now)
 	}
+	governance.UpdatedAt = now
 
 	account.User.UpdatedAt = now
 	if account.Actor != nil {
@@ -984,8 +1105,11 @@ func (r *mutationResolver) AdminVerifyAgent(ctx context.Context, username string
 	if err := r.Storage.Account().UpdateAccount(ctx, account); err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to verify agent")
 	}
+	if err := r.Storage.Account().PutAgentGovernanceState(ctx, governance); err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to verify agent governance state")
+	}
 
-	return r.convertStorageUserToAgent(ctx, account.User), nil
+	return r.convertStorageUserToAgent(account.User, governance), nil
 }
 
 // AdminUnverifyAgent is the resolver for the adminUnverifyAgent field.
@@ -1011,17 +1135,25 @@ func (r *mutationResolver) AdminUnverifyAgent(ctx context.Context, username stri
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
 
 	now := time.Now().UTC()
-	if account.User.Metadata == nil {
-		account.User.Metadata = map[string]any{}
+	if governance == nil {
+		governance = &storage.AgentGovernanceState{
+			Username:  username,
+			CreatedAt: now,
+		}
 	}
-	account.User.Metadata["agent_verified"] = false
-	account.User.Metadata["agent_unverified_at"] = now.Format(time.RFC3339)
-	account.User.Metadata["agent_unverified_by"] = claims.Username
+	governance.Verified = false
+	governance.UnverifiedAt = cloneGraphAgentTime(&now)
+	governance.UnverifiedBy = claims.Username
 	if input != nil && strings.TrimSpace(derefString(input.Reason)) != "" {
-		account.User.Metadata["agent_unverified_reason"] = strings.TrimSpace(derefString(input.Reason))
+		governance.UnverifiedReason = strings.TrimSpace(derefString(input.Reason))
 	}
+	governance.UpdatedAt = now
 
 	account.User.UpdatedAt = now
 	if account.Actor != nil {
@@ -1030,8 +1162,11 @@ func (r *mutationResolver) AdminUnverifyAgent(ctx context.Context, username stri
 	if err := r.Storage.Account().UpdateAccount(ctx, account); err != nil {
 		return nil, apperrors.InternalWithCause(err, "failed to unverify agent")
 	}
+	if err := r.Storage.Account().PutAgentGovernanceState(ctx, governance); err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to unverify agent governance state")
+	}
 
-	return r.convertStorageUserToAgent(ctx, account.User), nil
+	return r.convertStorageUserToAgent(account.User, governance), nil
 }
 
 // AdminSuspendAgent is the resolver for the adminSuspendAgent field.
@@ -1057,6 +1192,10 @@ func (r *mutationResolver) AdminSuspendAgent(ctx context.Context, username strin
 	if err != nil || account == nil || account.User == nil || !account.User.IsAgent {
 		return nil, apperrors.NewAppError(apperrors.CodeNotFound, apperrors.CategoryBusiness, "agent not found")
 	}
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, apperrors.InternalWithCause(err, "failed to load agent governance state")
+	}
 
 	account.User.Suspended = true
 	now := time.Now().UTC()
@@ -1068,7 +1207,7 @@ func (r *mutationResolver) AdminSuspendAgent(ctx context.Context, username strin
 		return nil, apperrors.InternalWithCause(err, "failed to suspend agent")
 	}
 
-	return r.convertStorageUserToAgent(ctx, account.User), nil
+	return r.convertStorageUserToAgent(account.User, governance), nil
 }
 
 func (r *Resolver) requireAuthClaims(ctx context.Context) (*auth.Claims, error) {
@@ -1152,8 +1291,8 @@ func validateDelegationScopes(ownerScopes []string, requested []string) ([]strin
 	return clean, nil
 }
 
-func validateDelegationAgainstAgentEnvelope(user *storage.User, requestedScopes []string) error {
-	allowedScopes, hasStoredEnvelope := agentDelegationEnvelope(user)
+func validateDelegationAgainstAgentEnvelope(governance *storage.AgentGovernanceState, requestedScopes []string) error {
+	allowedScopes, hasStoredEnvelope := agentDelegationEnvelope(governance)
 	if !hasStoredEnvelope {
 		return nil
 	}
@@ -1163,14 +1302,11 @@ func validateDelegationAgainstAgentEnvelope(user *storage.User, requestedScopes 
 	return nil
 }
 
-func agentDelegationEnvelope(user *storage.User) ([]string, bool) {
-	if user == nil || user.Metadata == nil {
+func agentDelegationEnvelope(governance *storage.AgentGovernanceState) ([]string, bool) {
+	if governance == nil || len(governance.DelegatedScopes) == 0 {
 		return nil, false
 	}
-	if _, ok := user.Metadata["agent_delegated_scopes"]; !ok {
-		return nil, false
-	}
-	return agentDelegatedScopes(user), true
+	return governance.DelegatedScopesCopy(), true
 }
 
 func validateAccessTokenTTL(cfg *config.Config, expiresIn *int) (time.Duration, error) {
@@ -1277,7 +1413,7 @@ func (r *Resolver) agentRegistrationLimits(ctx context.Context) (quarantineDays 
 	return quarantineDays, maxPostsPerHourAllowed
 }
 
-func applyAgentCapabilitiesInput(ctx context.Context, r *mutationResolver, user *storage.User, input *model.AgentCapabilitiesInput) {
+func applyAgentCapabilitiesInput(ctx context.Context, r *mutationResolver, user *storage.User, governance *storage.AgentGovernanceState, input *model.AgentCapabilitiesInput) {
 	if user == nil || input == nil {
 		return
 	}
@@ -1312,7 +1448,7 @@ func applyAgentCapabilitiesInput(ctx context.Context, r *mutationResolver, user 
 		caps.RestrictedDomains = append([]string(nil), input.RestrictedDomains...)
 	}
 
-	maxAllowed := r.maxPostsPerHourAllowedForUpdate(ctx, user)
+	maxAllowed := r.maxPostsPerHourAllowedForUpdate(ctx, governance)
 	if caps.MaxPostsPerHour > maxAllowed {
 		caps.MaxPostsPerHour = maxAllowed
 	}
@@ -1320,7 +1456,7 @@ func applyAgentCapabilitiesInput(ctx context.Context, r *mutationResolver, user 
 	user.AgentCapabilities = caps
 }
 
-func (r *mutationResolver) maxPostsPerHourAllowedForUpdate(ctx context.Context, user *storage.User) int {
+func (r *mutationResolver) maxPostsPerHourAllowedForUpdate(ctx context.Context, governance *storage.AgentGovernanceState) int {
 	allowed := 50
 	verifiedAllowed := 200
 
@@ -1336,18 +1472,18 @@ func (r *mutationResolver) maxPostsPerHourAllowedForUpdate(ctx context.Context, 
 	}
 
 	maxAllowed := allowed
-	if agentMetadataBool(user, "agent_verified") {
+	if graphAgentVerifiedState(governance) {
 		maxAllowed = verifiedAllowed
 	}
 	return maxAllowed
 }
 
-func applyAgentQuarantineExit(user *storage.User, claims *auth.Claims, exitQuarantine bool, now time.Time) {
-	if !exitQuarantine || user == nil {
-		return
+func applyAgentQuarantineExit(governance *storage.AgentGovernanceState, claims *auth.Claims, exitQuarantine bool, now time.Time) *storage.AgentGovernanceState {
+	if !exitQuarantine {
+		return governance
 	}
-	if user.Metadata == nil {
-		user.Metadata = map[string]any{}
+	if governance == nil {
+		governance = &storage.AgentGovernanceState{}
 	}
 
 	approvedBy := ""
@@ -1355,10 +1491,19 @@ func applyAgentQuarantineExit(user *storage.User, claims *auth.Claims, exitQuara
 		approvedBy = strings.TrimSpace(claims.Username)
 	}
 
-	user.Metadata["agent_quarantine_status"] = agentQuarantineStatusApproved
-	user.Metadata["agent_quarantine_end"] = now.Format(time.RFC3339)
-	user.Metadata["agent_quarantine_approved_by"] = approvedBy
-	user.Metadata["agent_quarantine_approved_at"] = now.Format(time.RFC3339)
+	governance.QuarantineStatus = agentQuarantineStatusApproved
+	governance.QuarantineEnd = cloneGraphAgentTime(&now)
+	governance.QuarantineApprovedBy = approvedBy
+	governance.QuarantineApprovedAt = cloneGraphAgentTime(&now)
+	return governance
+}
+
+func cloneGraphAgentTime(value *time.Time) *time.Time {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	cloned := value.UTC()
+	return &cloned
 }
 
 func (r *Resolver) ensureAgentActor(username string, account *storage.Account) {

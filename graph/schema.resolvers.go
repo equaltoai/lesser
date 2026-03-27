@@ -3185,7 +3185,12 @@ func (r *actorResolver) AgentInfo(ctx context.Context, obj *activitypub.Actor) (
 		return nil, nil
 	}
 
-	return r.convertStorageUserToAgent(ctx, user), nil
+	governance, err := r.loadAgentGovernanceState(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.convertStorageUserToAgent(user, governance), nil
 }
 
 // TrustScore implements ActorResolver

@@ -665,7 +665,7 @@ func (h *Handler) handleCreateAgentAccessLeaseChallenge(ctx *apptheory.Context, 
 		return common.RespondValidationError(ctx, err)
 	}
 
-	claims, account, resp, err := h.requireOwnedAgentAccount(ctx, username)
+	claims, _, resp, err := h.requireOwnedAgentAccount(ctx, username)
 	if resp != nil || err != nil {
 		return resp, err
 	}
@@ -679,7 +679,11 @@ func (h *Handler) handleCreateAgentAccessLeaseChallenge(ctx *apptheory.Context, 
 	if resp != nil || err != nil {
 		return resp, err
 	}
-	if err := validateDelegationAgainstAgentEnvelope(account.User, requestedScopes); err != nil {
+	governance, err := loadAgentGovernanceState(ctx.Context(), h.repos, username)
+	if err != nil {
+		return common.RespondInternalServerError(ctx)
+	}
+	if err := validateDelegationAgainstAgentEnvelope(governance, requestedScopes); err != nil {
 		return common.RespondForbidden(ctx, err.Error())
 	}
 
