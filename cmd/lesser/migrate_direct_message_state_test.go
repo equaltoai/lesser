@@ -85,10 +85,12 @@ func TestRunMigrateDirectMessageState_PrintsDryRunSummary(t *testing.T) {
 	require.Contains(t, output, "legacy_participant_rows_deleted: 0")
 	require.Contains(t, output, "legacy_read_state_rows_planned: 0")
 	require.Contains(t, output, "legacy_read_state_rows_deleted: 0")
+	require.Contains(t, output, "legacy_message_rows_planned: 0")
+	require.Contains(t, output, "legacy_message_rows_deleted: 0")
 	require.Contains(t, output, "sample_conversation_ids:")
 	require.Contains(t, output, "  conv-1")
 	require.Contains(t, output, "no writes performed; re-run with --apply")
-	require.Len(t, client.scanInputs, 6)
+	require.Len(t, client.scanInputs, 7)
 	require.Len(t, client.queryInputs, 1)
 	require.Equal(
 		t,
@@ -142,6 +144,8 @@ func TestExecuteDirectMessageStateMigration_EnumeratesThreadRealityAndLimit(t *t
 	require.Zero(t, summary.LegacyParticipantRowsDeleted)
 	require.Zero(t, summary.LegacyReadStateRowsPlanned)
 	require.Zero(t, summary.LegacyReadStateRowsDeleted)
+	require.Zero(t, summary.LegacyMessageRowsPlanned)
+	require.Zero(t, summary.LegacyMessageRowsDeleted)
 	require.Equal(t, []string{"conv-1"}, summary.SampleConversationIDs)
 	require.Len(t, client.queryInputs, 1)
 }
@@ -241,6 +245,8 @@ func TestExecuteDirectMessageStateMigration_ApplyBackfillsCanonicalStateRows(t *
 	require.Equal(t, 2, summary.LegacyParticipantRowsDeleted)
 	require.Equal(t, 2, summary.LegacyReadStateRowsPlanned)
 	require.Equal(t, 2, summary.LegacyReadStateRowsDeleted)
+	require.Zero(t, summary.LegacyMessageRowsPlanned)
+	require.Zero(t, summary.LegacyMessageRowsDeleted)
 	require.Len(t, client.putInputs, 5)
 	require.Len(t, client.deleteInputs, 4)
 
@@ -403,6 +409,29 @@ func TestExecuteDirectMessageStateMigration_ApplyRepairsDirectStatusMentions(t *
 	mentions, ok := attributeStringSlice(repaired["mentions"])
 	require.True(t, ok)
 	require.Equal(t, []string{"https://dev.simulacrum.greater.website/users/medic"}, mentions)
+}
+
+func TestExecuteDirectMessageStateMigration_ApplyDeletesLegacyConversationMessageRows(t *testing.T) {
+	publishedAt := time.Date(2026, 3, 25, 10, 39, 0, 0, time.UTC)
+	client := &fakeUserKeyMigrationClient{
+		scanOutputs: []*dynamodb.ScanOutput{
+			{},
+			{},
+			{},
+			{},
+			{},
+			{},
+			{Items: []map[string]types.AttributeValue{
+				conversationMessageRow("conv-1", "status-1", publishedAt),
+			}},
+		},
+	}
+
+	summary, err := executeDirectMessageStateMigration(context.Background(), client, "simulacrum-dev-main-table", true, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, summary.LegacyMessageRowsPlanned)
+	require.Equal(t, 1, summary.LegacyMessageRowsDeleted)
+	require.Len(t, client.deleteInputs, 1)
 }
 
 func directMessageStatusRepairCandidateItem(

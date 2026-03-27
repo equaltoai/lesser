@@ -39,6 +39,8 @@ type directMessageStateMigrationSummary struct {
 	LegacyParticipantRowsDeleted int
 	LegacyReadStateRowsPlanned   int
 	LegacyReadStateRowsDeleted   int
+	LegacyMessageRowsPlanned     int
+	LegacyMessageRowsDeleted     int
 	SampleConversationIDs        []string
 }
 
@@ -139,6 +141,8 @@ func printDirectMessageStateMigrationSummary(
 	fmt.Printf("legacy_participant_rows_deleted: %d\n", summary.LegacyParticipantRowsDeleted)
 	fmt.Printf("legacy_read_state_rows_planned: %d\n", summary.LegacyReadStateRowsPlanned)
 	fmt.Printf("legacy_read_state_rows_deleted: %d\n", summary.LegacyReadStateRowsDeleted)
+	fmt.Printf("legacy_message_rows_planned: %d\n", summary.LegacyMessageRowsPlanned)
+	fmt.Printf("legacy_message_rows_deleted: %d\n", summary.LegacyMessageRowsDeleted)
 	printConversationMigrationSamples(summary.SampleConversationIDs)
 
 	if !apply {
@@ -330,6 +334,26 @@ func executeDirectMessageStateMigration(
 			return summary, fmt.Errorf("put repaired direct-message status %q: %w", statusID, err)
 		}
 		summary.MentionRepairsApplied++
+	}
+
+	legacyMessageRows, err := loadDirectMessageLegacyMessageRows(ctx, client, tableName)
+	if err != nil {
+		return summary, err
+	}
+	for _, messageRow := range legacyMessageRows {
+		summary.LegacyMessageRowsPlanned++
+		if !apply {
+			continue
+		}
+		if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+			TableName: aws.String(tableName),
+			Key:       attributeMapKeyAttributes(messageRow),
+		}); err != nil {
+			pk, _ := attributeString(messageRow["PK"])
+			sk, _ := attributeString(messageRow["SK"])
+			return summary, fmt.Errorf("delete legacy conversation message row %s/%s: %w", pk, sk, err)
+		}
+		summary.LegacyMessageRowsDeleted++
 	}
 
 	for _, participantRowsByViewer := range legacyParticipantRows {
@@ -616,6 +640,38 @@ func loadDirectMessageStatusesForRepair(
 		out, err := client.Scan(ctx, scanInput)
 		if err != nil {
 			return nil, fmt.Errorf("scan direct statuses for mention repair: %w", err)
+		}
+
+		for _, item := range out.Items {
+			items = append(items, cloneAttributeMap(item))
+		}
+
+		if len(out.LastEvaluatedKey) == 0 {
+			return items, nil
+		}
+		scanInput.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+}
+
+func loadDirectMessageLegacyMessageRows(
+	ctx context.Context,
+	client directMessageStateMigrationClient,
+	tableName string,
+) ([]map[string]types.AttributeValue, error) {
+	items := make([]map[string]types.AttributeValue, 0)
+	scanInput := &dynamodb.ScanInput{
+		TableName:        aws.String(tableName),
+		FilterExpression: aws.String("begins_with(PK, :pkPrefix) AND begins_with(SK, :skPrefix)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pkPrefix": &types.AttributeValueMemberS{Value: conversationMetadataPartitionPrefix},
+			":skPrefix": &types.AttributeValueMemberS{Value: conversationMessageSortKeyPrefix},
+		},
+	}
+
+	for {
+		out, err := client.Scan(ctx, scanInput)
+		if err != nil {
+			return nil, fmt.Errorf("scan legacy conversation message rows: %w", err)
 		}
 
 		for _, item := range out.Items {
