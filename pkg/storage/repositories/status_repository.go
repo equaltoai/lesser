@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/notecontract"
 	"github.com/theory-cloud/tabletheory/pkg/core"
 	"github.com/theory-cloud/tabletheory/pkg/errors"
 	"go.uber.org/zap"
@@ -86,6 +87,13 @@ func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Stat
 func (r *StatusRepository) PrepareStatusCreate(status *models.Status) error {
 	if status == nil {
 		return fmt.Errorf("status is required")
+	}
+	if status.Note != nil {
+		normalized, err := notecontract.Normalize(status.Note)
+		if err != nil {
+			return fmt.Errorf("normalize status note for persistence: %w", err)
+		}
+		status.Note = normalized
 	}
 
 	return status.BeforeCreate()

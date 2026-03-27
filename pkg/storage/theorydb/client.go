@@ -48,6 +48,9 @@ func registerDefaultTypeConverters(db core.DB) error {
 	if err := extended.RegisterTypeConverter(sliceAnyType, sliceAnyConverter{}); err != nil {
 		return fmt.Errorf("register []any converter: %w", err)
 	}
+	if err := extended.RegisterTypeConverter(activityPubNoteType, activityPubNoteConverter{}); err != nil {
+		return fmt.Errorf("register activitypub.Note converter: %w", err)
+	}
 	if err := extended.RegisterTypeConverter(activityPubContextValueType, activityPubContextValueConverter{}); err != nil {
 		return fmt.Errorf("register activitypub.ContextValue converter: %w", err)
 	}
