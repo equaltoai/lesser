@@ -88,7 +88,7 @@ func TestService_SendMessage_Success(t *testing.T) {
 				recipientState.Folder == models.UserConversationFolderRequests &&
 				recipientState.RequestState == models.DmRequestStatePending &&
 				recipientState.Unread
-		})).
+		}), mock.Anything).
 		Return(nil).
 		Once()
 

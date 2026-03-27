@@ -28,7 +28,7 @@ func TestService_SendMessage_DoesNotCallAddStatusToConversation(t *testing.T) {
 			state.RequestState = models.DmRequestStateAccepted
 		}), nil).
 		Once()
-	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition"), mock.Anything).
 		Return(nil).
 		Once()
 

@@ -23,7 +23,7 @@ func TestService_SendDirectMessage_DoesNotRunLegacyFollowUpSyncs(t *testing.T) {
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"alice", "bob"}).
 		Return((*models.Conversation)(nil), fmt.Errorf("not found")).
 		Once()
-	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition")).
+	conversationRepo.On("ApplyDirectMessageSend", ctx, mock.AnythingOfType("*models.DirectMessageSendTransition"), mock.Anything).
 		Return(nil).
 		Once()
 
