@@ -101,7 +101,11 @@ var (
 	newStatusContractRunIDFn = func() string {
 		return strings.ToLower(strings.ReplaceAll(uuid.NewString(), "-", "")[:8])
 	}
-	newStatusContractVerifierDepsFn = func(db core.DB, tableName string, domain string) statusContractVerifierDeps {
+	statusContractDirectReadAttempts           = 5
+	statusContractDirectReadWait               = 200 * time.Millisecond
+	statusContractEventuallyConsistentAttempts = 12
+	statusContractEventuallyConsistentReadWait = 500 * time.Millisecond
+	newStatusContractVerifierDepsFn            = func(db core.DB, tableName string, domain string) statusContractVerifierDeps {
 		logger := zap.NewNop()
 		statusRepo := repositories.NewStatusRepository(db, tableName, logger, nil)
 		accountRepo := repositories.NewAccountRepository(db, tableName, domain, logger)
@@ -202,7 +206,7 @@ func runVerifyStatusContract(argv []string) error {
 	var baseDomain string
 
 	fs.StringVar(&app, "app", envOrDefault("LESSER_APP", ""), "app slug (default: lesser)")
-	fs.StringVar(&env, "env", valueDev, "deployment stage (dev|staging|live)")
+	fs.StringVar(&env, "env", valueDev, "deployment stage (dev|staging; live is blocked because this verifier writes synthetic data)")
 	fs.StringVar(&awsProfile, "aws-profile", os.Getenv("AWS_PROFILE"), "AWS profile name (env: AWS_PROFILE)")
 	fs.StringVar(&tableName, "table", "", "explicit DynamoDB table name override")
 	fs.StringVar(&baseDomain, "base-domain", envOrDefault("LESSER_BASE_DOMAIN", ""), "base domain used to normalize local actor urls")
@@ -212,6 +216,9 @@ func runVerifyStatusContract(argv []string) error {
 	}
 	if strings.TrimSpace(baseDomain) == "" {
 		return fmt.Errorf("--base-domain is required (or set LESSER_BASE_DOMAIN)")
+	}
+	if err := validateStatusContractVerificationEnvironment(env); err != nil {
+		return err
 	}
 
 	ctx := context.Background()
@@ -328,6 +335,13 @@ func executeStatusContractVerification(
 	}
 
 	return summary, nil
+}
+
+func validateStatusContractVerificationEnvironment(env string) error {
+	if naming.IsLiveEnvironment(env) {
+		return fmt.Errorf("verify status-contract writes synthetic data and must not run against live")
+	}
+	return nil
 }
 
 func validateStatusContractVerifierDeps(deps statusContractVerifierDeps) error {
@@ -488,7 +502,7 @@ func newStatusContractVerificationAccount(username string) *storage.Account {
 
 func loadVerifiedStatus(ctx context.Context, reader statusContractStatusReader, statusID string) (*models.Status, error) {
 	var status *models.Status
-	err := retryStatusContractRead(ctx, 5, 200*time.Millisecond, func() error {
+	err := retryStatusContractRead(ctx, statusContractDirectReadAttempts, statusContractDirectReadWait, func() error {
 		loaded, err := reader.GetStatus(ctx, statusID)
 		if err != nil {
 			return err
@@ -525,7 +539,7 @@ func verifyStoredStatusMetadata(status *models.Status, visibility string, conver
 }
 
 func verifyHashtagIndex(ctx context.Context, reader statusContractStatusReader, hashtag string, statusID string) error {
-	return retryStatusContractRead(ctx, 5, 200*time.Millisecond, func() error {
+	return retryEventuallyConsistentStatusContractRead(ctx, func() error {
 		result, err := reader.GetStatusesByHashtag(ctx, hashtag, interfaces.PaginationOptions{Limit: 10})
 		if err != nil {
 			return err
@@ -538,7 +552,7 @@ func verifyHashtagIndex(ctx context.Context, reader statusContractStatusReader, 
 }
 
 func verifyConversationThread(ctx context.Context, reader statusContractStatusReader, conversationID string, firstStatusID string, secondStatusID string) error {
-	return retryStatusContractRead(ctx, 5, 200*time.Millisecond, func() error {
+	return retryEventuallyConsistentStatusContractRead(ctx, func() error {
 		thread, err := reader.GetConversationThread(ctx, conversationID, interfaces.PaginationOptions{Limit: 10})
 		if err != nil {
 			return err
@@ -551,7 +565,7 @@ func verifyConversationThread(ctx context.Context, reader statusContractStatusRe
 }
 
 func verifyConversationStates(ctx context.Context, reader statusContractConversationStateReader, senderUsername string, recipientUsername string, conversationID string, latestStatusID string) error {
-	return retryStatusContractRead(ctx, 5, 200*time.Millisecond, func() error {
+	return retryEventuallyConsistentStatusContractRead(ctx, func() error {
 		senderState, err := reader.GetUserConversationState(ctx, senderUsername, conversationID)
 		if err != nil {
 			return err
@@ -574,6 +588,10 @@ func verifyConversationStates(ctx context.Context, reader statusContractConversa
 		}
 		return nil
 	})
+}
+
+func retryEventuallyConsistentStatusContractRead(ctx context.Context, fn func() error) error {
+	return retryStatusContractRead(ctx, statusContractEventuallyConsistentAttempts, statusContractEventuallyConsistentReadWait, fn)
 }
 
 func retryStatusContractRead(ctx context.Context, attempts int, wait time.Duration, fn func() error) error {

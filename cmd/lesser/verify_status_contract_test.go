@@ -326,6 +326,15 @@ func TestRunVerifyStatusContract_RequiresBaseDomain(t *testing.T) {
 	require.ErrorContains(t, err, "--base-domain is required")
 }
 
+func TestRunVerifyStatusContract_RejectsLiveEnvironment(t *testing.T) {
+	require.ErrorContains(t, runVerifyStatusContract([]string{
+		"--base-domain", "example.com",
+		"--env", "live",
+	}), "must not run against live")
+	require.ErrorContains(t, validateStatusContractVerificationEnvironment("production"), "must not run against live")
+	require.NoError(t, validateStatusContractVerificationEnvironment("staging"))
+}
+
 func TestRunVerifyStatusContract_Success(t *testing.T) {
 	previousLoadAWS := loadAWSConfigForCLIFn
 	previousNewDB := tabletheoryNewFn
@@ -527,6 +536,15 @@ func TestDynamoStatusContractPersistenceReader(t *testing.T) {
 }
 
 func TestStatusContractVerificationHelpers(t *testing.T) {
+	previousDirectWait := statusContractDirectReadWait
+	previousEventualWait := statusContractEventuallyConsistentReadWait
+	statusContractDirectReadWait = 0
+	statusContractEventuallyConsistentReadWait = 0
+	t.Cleanup(func() {
+		statusContractDirectReadWait = previousDirectWait
+		statusContractEventuallyConsistentReadWait = previousEventualWait
+	})
+
 	t.Run("hasAttributeListValues handles supported attribute types", func(t *testing.T) {
 		require.True(t, hasAttributeListValues(&ddbtypes.AttributeValueMemberL{Value: []ddbtypes.AttributeValue{&ddbtypes.AttributeValueMemberS{Value: "ctx"}}}))
 		require.False(t, hasAttributeListValues(&ddbtypes.AttributeValueMemberL{}))
