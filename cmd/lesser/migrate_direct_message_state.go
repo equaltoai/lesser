@@ -37,6 +37,8 @@ type directMessageStateMigrationSummary struct {
 	MentionRepairsApplied        int
 	LegacyParticipantRowsPlanned int
 	LegacyParticipantRowsDeleted int
+	LegacyReadStateRowsPlanned   int
+	LegacyReadStateRowsDeleted   int
 	SampleConversationIDs        []string
 }
 
@@ -135,6 +137,8 @@ func printDirectMessageStateMigrationSummary(
 	fmt.Printf("mention_repairs_applied: %d\n", summary.MentionRepairsApplied)
 	fmt.Printf("legacy_participant_rows_planned: %d\n", summary.LegacyParticipantRowsPlanned)
 	fmt.Printf("legacy_participant_rows_deleted: %d\n", summary.LegacyParticipantRowsDeleted)
+	fmt.Printf("legacy_read_state_rows_planned: %d\n", summary.LegacyReadStateRowsPlanned)
+	fmt.Printf("legacy_read_state_rows_deleted: %d\n", summary.LegacyReadStateRowsDeleted)
 	printConversationMigrationSamples(summary.SampleConversationIDs)
 
 	if !apply {
@@ -344,6 +348,25 @@ func executeDirectMessageStateMigration(
 				return summary, fmt.Errorf("delete legacy participant row %s/%s: %w", participantRow.ViewerID, participantRow.ConversationID, err)
 			}
 			summary.LegacyParticipantRowsDeleted++
+		}
+	}
+
+	for _, readStatesByViewer := range legacyReadStates {
+		for _, readState := range readStatesByViewer {
+			if readState == nil {
+				continue
+			}
+			summary.LegacyReadStateRowsPlanned++
+			if !apply {
+				continue
+			}
+			if _, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+				TableName: aws.String(tableName),
+				Key:       attributeMapKeyAttributes(readState.Item),
+			}); err != nil {
+				return summary, fmt.Errorf("delete legacy read-state row %s/%s: %w", readState.ViewerID, readState.ConversationID, err)
+			}
+			summary.LegacyReadStateRowsDeleted++
 		}
 	}
 
