@@ -271,6 +271,12 @@ func (s *Status) extractTagsFromNote() {
 	}
 }
 
+// SyncTagFieldsFromNote refreshes extracted hashtags and mentions from Note tags
+// without touching timestamps, keys, or other persisted bookkeeping fields.
+func (s *Status) SyncTagFieldsFromNote() {
+	s.extractTagsFromNote()
+}
+
 // setupGSIKeys configures all GSI partition and sort keys
 func (s *Status) setupGSIKeys() {
 	statusID := s.StatusID

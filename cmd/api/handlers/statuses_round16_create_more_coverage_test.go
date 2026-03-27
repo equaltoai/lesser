@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -144,6 +145,7 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 							Sensitive:      cmd.Sensitive,
 							Language:       cmd.Language,
 							InReplyToID:    cmd.InReplyToID,
+							Mentions:       []string{"https://example.com/users/bob"},
 							PublishedAt:    now,
 							CreatedAt:      now,
 							UpdatedAt:      now,
@@ -156,6 +158,7 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 								},
 								Content:          cmd.Content,
 								AttributedTo:     cfg.BaseURL() + "/users/" + cmd.SenderID,
+								Tag:              []activitypub.Tag{{Type: "Mention", Href: "https://example.com/users/bob", Name: "@bob@example.com"}},
 								AgentAttribution: cmd.AgentAttribution,
 							},
 						},
@@ -187,6 +190,17 @@ func TestStatusesRound16_HandleCreateStatusLift(t *testing.T) {
 
 		resp := requireStatus(t, http.StatusCreated)(h.HandleCreateStatusLift(ctx))
 		require.NotEmpty(t, resp.Body)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(resp.Body, &body))
+		mentions, ok := body["mentions"].([]any)
+		require.True(t, ok)
+		require.Len(t, mentions, 1)
+		mention, ok := mentions[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "https://example.com/users/bob", mention["id"])
+		require.Equal(t, "bob", mention["username"])
+		require.Equal(t, "bob", mention["acct"])
+		require.Equal(t, "https://example.com/users/bob", mention["url"])
 
 		require.NotNil(t, gotCmd)
 		require.Equal(t, "alice", gotCmd.SenderID)

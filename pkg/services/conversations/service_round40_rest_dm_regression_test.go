@@ -54,4 +54,47 @@ func TestService_BuildActivityPubNote_IncludesSpoilerAndAgentAttribution(t *test
 
 	require.Equal(t, "cw", note.Summary)
 	require.Same(t, attr, note.AgentAttribution)
+	require.Equal(t, []string{"https://example.com/users/bob"}, note.To)
+	require.Len(t, note.Tag, 1)
+	require.Equal(t, activitypub.Tag{
+		Type: "Mention",
+		Href: "https://example.com/users/bob",
+		Name: "@bob",
+	}, note.Tag[0])
+}
+
+func TestService_BuildActivityPubNote_UsesRemoteActorIDsForMentionAudience(t *testing.T) {
+	t.Parallel()
+
+	service, _, _, _, _, _ := createTestService()
+
+	cmd := &SendDirectMessageCommand{
+		SenderID:   "sender123",
+		Recipients: []string{"https://remote.example/users/bob"},
+		Content:    "secret hello",
+	}
+	senderAccount := createTestAccount("sender123", "alice")
+	recipientAccounts := map[string]*storage.Account{
+		"https://remote.example/users/bob": {
+			User: &storage.User{
+				Username: "bob@remote.example",
+			},
+			Actor: &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID: "https://remote.example/users/bob",
+				},
+				PreferredUsername: "bob",
+			},
+		},
+	}
+
+	note := service.buildActivityPubNote(cmd, "message123", senderAccount, "conv123", recipientAccounts)
+
+	require.Equal(t, []string{"https://remote.example/users/bob"}, note.To)
+	require.Len(t, note.Tag, 1)
+	require.Equal(t, activitypub.Tag{
+		Type: "Mention",
+		Href: "https://remote.example/users/bob",
+		Name: "@bob@remote.example",
+	}, note.Tag[0])
 }

@@ -19,6 +19,7 @@ func TestRound40DirectMessageMutationsSupportExtendedFields(t *testing.T) {
 	sensitive := true
 	spoilerText := "cw"
 	language := "en"
+	expectedMentionURL := resolver.Registry.GetConfig().BaseURL + "/users/bob"
 
 	first, err := resolver.Mutation().SendDirectMessage(
 		ctx,
@@ -39,9 +40,14 @@ func TestRound40DirectMessageMutationsSupportExtendedFields(t *testing.T) {
 	require.True(t, first.Message.Sensitive)
 	require.NotNil(t, first.Message.SpoilerText)
 	require.Equal(t, "cw", *first.Message.SpoilerText)
+	require.Len(t, first.Message.Mentions, 1)
+	require.Equal(t, expectedMentionURL, first.Message.Mentions[0].ID)
+	require.Equal(t, "bob", first.Message.Mentions[0].Username)
+	require.Nil(t, first.Message.Mentions[0].Domain)
 	firstStored, err := storage.Status().GetStatus(ctx, first.Message.ID)
 	require.NoError(t, err)
 	require.Equal(t, "en", firstStored.Language)
+	require.Equal(t, []string{expectedMentionURL}, firstStored.Mentions)
 
 	replySpoiler := "reply cw"
 	reply, err := resolver.Mutation().SendMessage(
@@ -62,9 +68,12 @@ func TestRound40DirectMessageMutationsSupportExtendedFields(t *testing.T) {
 	require.Equal(t, first.Message.ID, reply.Message.InReplyTo.ID)
 	require.NotNil(t, reply.Message.SpoilerText)
 	require.Equal(t, "reply cw", *reply.Message.SpoilerText)
+	require.Len(t, reply.Message.Mentions, 1)
+	require.Equal(t, expectedMentionURL, reply.Message.Mentions[0].ID)
 	replyStored, err := storage.Status().GetStatus(ctx, reply.Message.ID)
 	require.NoError(t, err)
 	require.Equal(t, "en", replyStored.Language)
+	require.Equal(t, []string{expectedMentionURL}, replyStored.Mentions)
 }
 
 func TestRound40DirectMessageMutationsValidateEmptyInputs(t *testing.T) {

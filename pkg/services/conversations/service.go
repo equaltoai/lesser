@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -573,14 +574,9 @@ func (s *Service) createDirectMessageStatus(_ context.Context, cmd *SendDirectMe
 		UpdatedAt:      now,
 	}
 
-	recipientURLs := make([]string, 0, len(cmd.Recipients))
-	for _, recipientID := range cmd.Recipients {
-		recipient := recipientAccounts[recipientID]
-		recipientURLs = append(recipientURLs, fmt.Sprintf("https://%s/users/%s", s.domainName, recipient.User.Username))
-	}
-	status.ToRecipients = recipientURLs
-
 	status.Note = s.buildActivityPubNote(cmd, messageID, sender, conversationID, recipientAccounts)
+	status.ToRecipients = append([]string(nil), status.Note.To...)
+	status.SyncTagFieldsFromNote()
 
 	return status, messageID, nil
 }
@@ -1140,11 +1136,11 @@ func (s *Service) createSendMessageStatus(_ context.Context, cmd *SendMessageCom
 		UpdatedAt:      now,
 	}
 
-	recipientURL := fmt.Sprintf("https://%s/users/%s", s.domainName, recipient.User.Username)
-	status.ToRecipients = []string{recipientURL}
 	status.Note = s.buildActivityPubNote(sendCmd, messageID, sender, conversationID, map[string]*storage.Account{
 		recipientID: recipient,
 	})
+	status.ToRecipients = append([]string(nil), status.Note.To...)
+	status.SyncTagFieldsFromNote()
 
 	return status, messageID, nil
 }
@@ -1657,7 +1653,8 @@ func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *Send
 }
 
 func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID string, sender *storage.Account, conversationID string, recipientAccounts map[string]*storage.Account) *activitypub.Note {
-	now := time.Now()
+	now := time.Now().UTC()
+	recipients, mentionTags := s.buildDirectMessageRecipientAudience(cmd.Recipients, recipientAccounts)
 
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
@@ -1665,23 +1662,16 @@ func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID 
 			Type:      "Note",
 			ID:        fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, sender.User.Username, messageID),
 			Published: &now,
-			To:        make([]string, 0, len(cmd.Recipients)),
+			To:        recipients,
 			Sensitive: cmd.Sensitive,
 			Summary:   cmd.SpoilerText,
 		},
 		Content:          cmd.Content,
 		AttributedTo:     fmt.Sprintf("https://%s/users/%s", s.domainName, sender.User.Username),
+		Tag:              mentionTags,
 		Visibility:       VisibilityDirect,
 		ConversationID:   conversationID,
 		AgentAttribution: cmd.AgentAttribution,
-	}
-
-	// Add recipients to To field - use cached accounts
-	for _, recipientID := range cmd.Recipients {
-		recipient := recipientAccounts[recipientID]
-		if recipient != nil {
-			note.To = append(note.To, fmt.Sprintf("https://%s/users/%s", s.domainName, recipient.User.Username))
-		}
 	}
 
 	// Set in reply to
@@ -1690,6 +1680,152 @@ func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID 
 	}
 
 	return note
+}
+
+func (s *Service) buildDirectMessageRecipientAudience(recipientIDs []string, recipientAccounts map[string]*storage.Account) ([]string, []activitypub.Tag) {
+	localDomain := strings.TrimSpace(s.domainName)
+	recipients := make([]string, 0, len(recipientIDs))
+	mentionTags := make([]activitypub.Tag, 0, len(recipientIDs))
+	seenActors := make(map[string]struct{}, len(recipientIDs))
+
+	for _, recipientID := range recipientIDs {
+		recipient := recipientAccounts[recipientID]
+		actorID, ok := directMessageRecipientActorID(recipientID, recipient, localDomain)
+		if !ok {
+			continue
+		}
+
+		actorKey := strings.ToLower(strings.TrimSpace(actorID))
+		if actorKey == "" {
+			continue
+		}
+		if _, exists := seenActors[actorKey]; exists {
+			continue
+		}
+		seenActors[actorKey] = struct{}{}
+
+		username, domain := normalizeDirectMessageMentionAccount(recipientID, recipient, localDomain)
+		recipients = append(recipients, actorID)
+		mentionTags = append(mentionTags, activitypub.Tag{
+			Type: "Mention",
+			Href: actorID,
+			Name: formatDirectMessageMentionTagName(username, domain, localDomain),
+		})
+	}
+
+	return recipients, mentionTags
+}
+
+func directMessageRecipientActorID(recipientID string, account *storage.Account, localDomain string) (string, bool) {
+	if account != nil && account.Actor != nil {
+		actorID := strings.TrimSpace(account.Actor.ID)
+		if actorID != "" {
+			return actorID, true
+		}
+	}
+
+	trimmedRecipientID := strings.TrimSpace(recipientID)
+	if strings.HasPrefix(trimmedRecipientID, "http://") || strings.HasPrefix(trimmedRecipientID, "https://") {
+		return trimmedRecipientID, true
+	}
+
+	username, _ := normalizeDirectMessageMentionAccount(trimmedRecipientID, account, localDomain)
+	if username == "" || strings.TrimSpace(localDomain) == "" {
+		return "", false
+	}
+
+	return fmt.Sprintf("https://%s/users/%s", localDomain, username), true
+}
+
+func normalizeDirectMessageMentionAccount(recipientID string, account *storage.Account, localDomain string) (string, string) {
+	resolvedUsername, resolvedDomain := directMessageMentionHandleParts(recipientID)
+	normalizedLocalDomain := normalizeDirectMessageMentionDomain(localDomain)
+
+	if account != nil && account.User != nil {
+		storedUsername := strings.TrimSpace(account.User.Username)
+		if storedUsername != "" {
+			if parsedUsername, parsedDomain := directMessageMentionHandleParts(storedUsername); parsedDomain != "" {
+				resolvedUsername = parsedUsername
+				resolvedDomain = parsedDomain
+			} else {
+				resolvedUsername = storedUsername
+			}
+		}
+	}
+
+	if account != nil && account.Actor != nil {
+		if preferred := strings.TrimSpace(account.Actor.PreferredUsername); preferred != "" {
+			resolvedUsername = preferred
+		}
+		if actorDomain := directMessageMentionActorDomain(account.Actor.ID); actorDomain != "" && actorDomain != normalizedLocalDomain {
+			resolvedDomain = actorDomain
+		}
+	}
+
+	if normalizeDirectMessageMentionDomain(resolvedDomain) == normalizedLocalDomain {
+		resolvedDomain = ""
+	}
+
+	return strings.TrimSpace(resolvedUsername), strings.TrimSpace(resolvedDomain)
+}
+
+func directMessageMentionHandleParts(recipientID string) (string, string) {
+	trimmed := strings.TrimSpace(recipientID)
+	if trimmed == "" {
+		return "", ""
+	}
+
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		parsed, err := url.Parse(trimmed)
+		if err != nil {
+			return "", ""
+		}
+
+		path := strings.Trim(parsed.Path, "/")
+		if path == "" {
+			return "", directMessageMentionActorDomain(trimmed)
+		}
+
+		segments := strings.Split(path, "/")
+		username := strings.TrimPrefix(segments[len(segments)-1], "@")
+		return strings.TrimSpace(username), directMessageMentionActorDomain(trimmed)
+	}
+
+	username, domain, found := strings.Cut(trimmed, "@")
+	if !found {
+		return strings.TrimSpace(username), ""
+	}
+
+	return strings.TrimSpace(username), strings.TrimSpace(domain)
+}
+
+func directMessageMentionActorDomain(actorID string) string {
+	parsed, err := url.Parse(strings.TrimSpace(actorID))
+	if err != nil {
+		return ""
+	}
+
+	return normalizeDirectMessageMentionDomain(parsed.Host)
+}
+
+func normalizeDirectMessageMentionDomain(domain string) string {
+	normalized := strings.ToLower(strings.TrimSpace(domain))
+	normalized = strings.TrimPrefix(normalized, "https://")
+	normalized = strings.TrimPrefix(normalized, "http://")
+	normalized = strings.TrimSuffix(normalized, "/")
+	return normalized
+}
+
+func formatDirectMessageMentionTagName(username, domain, localDomain string) string {
+	username = strings.TrimSpace(username)
+	domain = strings.TrimSpace(domain)
+	if username == "" {
+		return ""
+	}
+	if domain == "" || strings.EqualFold(domain, strings.TrimSpace(localDomain)) {
+		return "@" + username
+	}
+	return "@" + username + "@" + domain
 }
 
 var dmMentionHandleRegex = regexp.MustCompile(`(?:^|[^a-zA-Z0-9_])@([a-zA-Z0-9_]+(?:@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?)?)`)

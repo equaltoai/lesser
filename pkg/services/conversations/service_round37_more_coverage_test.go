@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -434,6 +435,14 @@ func TestService_createDirectMessageStatus_BuildsStatusWithoutPersistence(t *tes
 	require.NotNil(t, status)
 	require.Equal(t, "conv123", status.ConversationID)
 	require.Equal(t, []string{"https://example.com/users/bob"}, status.ToRecipients)
+	require.Equal(t, status.ToRecipients, status.Note.To)
+	require.Equal(t, []string{"https://example.com/users/bob"}, status.Mentions)
+	require.Len(t, status.Note.Tag, 1)
+	require.Equal(t, activitypub.Tag{
+		Type: "Mention",
+		Href: "https://example.com/users/bob",
+		Name: "@bob",
+	}, status.Note.Tag[0])
 }
 
 func TestService_createDirectMessageStatus_SetsAllCreationTimestamps(t *testing.T) {
@@ -569,6 +578,10 @@ func TestService_createSendMessageStatus_SetsAllCreationTimestamps(t *testing.T)
 	require.Equal(t, status.PublishedAt, status.CreatedAt)
 	require.Equal(t, status.PublishedAt, status.ModifiedAt)
 	require.Equal(t, status.PublishedAt, status.UpdatedAt)
+	require.Equal(t, []string{"https://example.com/users/bob"}, status.ToRecipients)
+	require.Equal(t, []string{"https://example.com/users/bob"}, status.Mentions)
+	require.Equal(t, status.ToRecipients, status.Note.To)
+	require.Len(t, status.Note.Tag, 1)
 }
 
 func TestService_AcceptAndDeclineMessageRequest_NilCommand(t *testing.T) {
