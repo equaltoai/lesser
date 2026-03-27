@@ -23,8 +23,9 @@ import (
 
 type mockConversationRepository struct {
 	mock.Mock
-	directMessageWritesFrozen    bool
-	directMessageWritesFrozenErr error
+	directMessageWritesFrozen          bool
+	directMessageWritesFrozenErr       error
+	transactionalDirectMessageSendMode bool
 }
 
 func testConversationStateContract(viewerID, conversationID string, apply func(*interfaces.UserConversationStateContract)) *interfaces.UserConversationStateContract {
@@ -186,6 +187,10 @@ func (m *mockConversationRepository) GetUnreadConversationCount(ctx context.Cont
 
 func (m *mockConversationRepository) DirectMessageWritesFrozen(context.Context) (bool, error) {
 	return m.directMessageWritesFrozen, m.directMessageWritesFrozenErr
+}
+
+func (m *mockConversationRepository) TransactionalDirectMessageSendEnabled() bool {
+	return m.transactionalDirectMessageSendMode
 }
 
 func (m *mockConversationRepository) ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition, stageStatusCreate interfaces.DirectMessageStatusStageFn) error {

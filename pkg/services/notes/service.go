@@ -367,7 +367,13 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Store the status
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-		return nil, errors.Join(ErrCreateStatus, err)
+		requestErr := errors.Join(ErrCreateStatus, err)
+		s.logger.Error("failed to persist created status",
+			zap.String("status_id", statusID),
+			zap.String("conversation_id", status.ConversationID),
+			zap.Strings("root_causes", common.ErrorLeafMessages(err)),
+			zap.Error(requestErr))
+		return nil, requestErr
 	}
 
 	// Mark media attachments as used after successful persistence

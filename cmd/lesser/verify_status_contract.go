@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/deploy/naming"
 	conversationsvc "github.com/equaltoai/lesser/pkg/services/conversations"
 	notessvc "github.com/equaltoai/lesser/pkg/services/notes"
@@ -391,7 +392,7 @@ func createAndVerifyPublicStatus(ctx context.Context, deps statusContractVerifie
 		Visibility: models.VisibilityPublic,
 	})
 	if err != nil {
-		return "", fmt.Errorf("create public note: %w", err)
+		return "", common.WrapErrorWithLeafCauses("create public note", err)
 	}
 	if publicResult == nil || publicResult.Note == nil {
 		return "", fmt.Errorf("create public note: nil note result")
@@ -406,7 +407,7 @@ func createAndVerifyPublicStatus(ctx context.Context, deps statusContractVerifie
 		return "", fmt.Errorf("verify stored public note %s: %w", statusID, err)
 	}
 	if err := deps.persistenceReader.VerifyStoredStatusContext(ctx, statusID); err != nil {
-		return "", fmt.Errorf("verify persisted public note %s: %w", statusID, err)
+		return "", common.WrapErrorWithLeafCauses(fmt.Sprintf("verify persisted public note %s", statusID), err)
 	}
 	if err := verifyHashtagIndex(ctx, deps.statusReader, fixture.publicTag, statusID); err != nil {
 		return "", fmt.Errorf("verify hashtag side effect %s: %w", fixture.publicTag, err)
@@ -422,7 +423,7 @@ func createAndVerifyFirstDirectMessage(ctx context.Context, deps statusContractV
 		Content:    fixture.firstDMContent,
 	})
 	if err != nil {
-		return verifiedStatusContractSend{}, fmt.Errorf("send first direct message: %w", err)
+		return verifiedStatusContractSend{}, common.WrapErrorWithLeafCauses("send first direct message", err)
 	}
 	return verifyDirectMessageResult(ctx, deps, result, fixture.firstDMContent, "send first direct message", "load stored first direct message", "verify stored first direct message", "verify persisted first direct message")
 }
@@ -439,7 +440,7 @@ func createAndVerifyFollowupDirectMessage(
 		Content:        fixture.secondDMContent,
 	})
 	if err != nil {
-		return verifiedStatusContractSend{}, fmt.Errorf("send follow-up direct message: %w", err)
+		return verifiedStatusContractSend{}, common.WrapErrorWithLeafCauses("send follow-up direct message", err)
 	}
 	return verifyDirectMessageResult(ctx, deps, result, fixture.secondDMContent, "send follow-up direct message", "load stored follow-up direct message", "verify stored follow-up direct message", "verify persisted follow-up direct message")
 }
@@ -473,7 +474,7 @@ func verifyDirectMessageResult(
 		return verifiedStatusContractSend{}, fmt.Errorf("%s %s: %w", verifyStoredLabel, statusID, err)
 	}
 	if err := deps.persistenceReader.VerifyStoredStatusContext(ctx, statusID); err != nil {
-		return verifiedStatusContractSend{}, fmt.Errorf("%s %s: %w", verifyPersistedLabel, statusID, err)
+		return verifiedStatusContractSend{}, common.WrapErrorWithLeafCauses(fmt.Sprintf("%s %s", verifyPersistedLabel, statusID), err)
 	}
 
 	return verifiedStatusContractSend{

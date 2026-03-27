@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	conversationsvc "github.com/equaltoai/lesser/pkg/services/conversations"
 	notessvc "github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -269,7 +270,7 @@ func TestExecuteStatusContractVerification_PreservesDirectMessageFailure(t *test
 			result: &notessvc.NoteResult{Note: testVerificationStatus("public-1", models.VisibilityPublic, "public-1", fixture.publicContent, nil)},
 		},
 		conversationSender: &fakeStatusContractConversationSender{
-			firstErr: errors.New("inner boom"),
+			firstErr: apperrors.FailedToCreate("status", errors.New("dynamo conditional check failed")),
 		},
 		statusReader: &fakeStatusContractStatusReader{
 			byID: map[string]*models.Status{
@@ -283,7 +284,7 @@ func TestExecuteStatusContractVerification_PreservesDirectMessageFailure(t *test
 		persistenceReader:       &fakeStatusContractPersistenceReader{},
 	}, fixture)
 	require.ErrorContains(t, err, "send first direct message")
-	require.ErrorContains(t, err, "inner boom")
+	require.ErrorContains(t, err, "root causes: dynamo conditional check failed")
 }
 
 func TestExecuteStatusContractVerification_PreservesPersistenceFailure(t *testing.T) {
@@ -320,6 +321,7 @@ func TestExecuteStatusContractVerification_PreservesPersistenceFailure(t *testin
 	}, fixture)
 	require.ErrorContains(t, err, "verify persisted public note public-1")
 	require.ErrorContains(t, err, "raw item missing context")
+	require.ErrorContains(t, err, "root causes: raw item missing context")
 }
 
 func TestRunVerifyStatusContract_RequiresBaseDomain(t *testing.T) {

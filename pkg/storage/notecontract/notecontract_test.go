@@ -70,3 +70,60 @@ func TestUnmarshal_AcceptsActivityPubJSONKeyAliases(t *testing.T) {
 	require.NotNil(t, note.AgentAttribution)
 	require.Equal(t, "gpt-5.4", note.AgentAttribution.ModelID)
 }
+
+func TestMarshalUnmarshalNormalize_NilNote(t *testing.T) {
+	raw, err := Marshal(nil)
+	require.NoError(t, err)
+	require.Nil(t, raw)
+
+	note, err := Unmarshal(nil)
+	require.NoError(t, err)
+	require.Nil(t, note)
+
+	normalized, err := Normalize(nil)
+	require.NoError(t, err)
+	require.Nil(t, normalized)
+}
+
+func TestUnmarshal_NormalizesAttachmentAndQuoteAliases(t *testing.T) {
+	note, err := Unmarshal(map[string]any{
+		"@context": []any{"https://www.w3.org/ns/activitystreams"},
+		"id":       "https://example.com/users/alice/statuses/2",
+		"type":     "Note",
+		"content":  "hello with aliases",
+		"attachment": []any{
+			map[string]any{
+				"type":      "Document",
+				"mediaType": "image/png",
+				"url":       "https://cdn.example.com/alias.png",
+				"name":      "alias-image",
+				"value":     "preview",
+				"width":     640,
+				"height":    480,
+			},
+		},
+		"quoteContext": map[string]any{
+			"originalNoteId":         "https://example.com/users/bob/statuses/3",
+			"originalAuthor":         "https://example.com/users/bob",
+			"originalAuthorUsername": "bob",
+			"quoteCount":             4,
+			"allowWithdrawal":        true,
+			"quoteAllowed":           true,
+			"withdrawn":              false,
+		},
+		"agentAttribution": map[string]any{
+			"trigger_type":  "assistant",
+			"model_version": "gpt-5.4-fallback",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, note)
+	require.Len(t, note.Attachment, 1)
+	require.Equal(t, "image/png", note.Attachment[0].MediaType)
+	require.Equal(t, 640, note.Attachment[0].Width)
+	require.NotNil(t, note.QuoteContext)
+	require.Equal(t, "bob", note.QuoteContext.OriginalAuthorUsername)
+	require.True(t, note.QuoteContext.AllowWithdrawal)
+	require.NotNil(t, note.AgentAttribution)
+	require.Equal(t, "gpt-5.4-fallback", note.AgentAttribution.ModelID)
+}

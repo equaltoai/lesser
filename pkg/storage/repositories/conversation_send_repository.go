@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	stdErrors "errors"
+	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -74,7 +75,10 @@ func (r *ConversationRepository) ApplyDirectMessageSend(ctx context.Context, tra
 			}
 		}
 
-		return stageStatusCreate(tx, prepared.status)
+		if err := stageStatusCreate(tx, prepared.status); err != nil {
+			return fmt.Errorf("stage direct message status create %s: %w", prepared.status.StatusID, err)
+		}
+		return nil
 	})
 	if err != nil {
 		if errors.IsConditionFailed(err) {

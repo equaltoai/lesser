@@ -72,6 +72,25 @@ type directMessageWriteFreezeChecker interface {
 	DirectMessageWritesFrozen(ctx context.Context) (bool, error)
 }
 
+func (s *Service) logDirectMessageFailure(message, phase string, status *models.Status, err error, requestErr error) {
+	if s == nil || s.logger == nil || requestErr == nil {
+		return
+	}
+
+	fields := []zap.Field{
+		zap.String("phase", phase),
+		zap.Strings("root_causes", common.ErrorLeafMessages(err)),
+		zap.Error(requestErr),
+	}
+	if status != nil {
+		fields = append(fields,
+			zap.String("status_id", status.StatusID),
+			zap.String("conversation_id", status.ConversationID))
+	}
+
+	s.logger.Error(message, fields...)
+}
+
 type directMessageSendAttempt struct {
 	conversation  *models.Conversation
 	status        *models.Status
@@ -895,7 +914,9 @@ func (s *Service) prepareTransactionalDirectMessageStatusWrite(status *models.St
 	}
 
 	if err := contract.PrepareStatusCreate(status); err != nil {
-		return nil, errors.Join(ErrCreateDirectMessage, err)
+		requestErr := errors.Join(ErrCreateDirectMessage, err)
+		s.logDirectMessageFailure("failed to prepare direct message status for persistence", "prepare_status", status, err, requestErr)
+		return nil, requestErr
 	}
 
 	return contract.StageStatusCreate, nil
@@ -909,7 +930,9 @@ func (s *Service) finalizeDirectMessageStatusWrite(ctx context.Context, status *
 	capability, ok := s.conversationRepo.(directMessageSendCapability)
 	if !ok || !capability.TransactionalDirectMessageSendEnabled() {
 		if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-			return errors.Join(ErrCreateDirectMessage, err)
+			requestErr := errors.Join(ErrCreateDirectMessage, err)
+			s.logDirectMessageFailure("failed to persist direct message status", "create_status", status, err, requestErr)
+			return requestErr
 		}
 		return nil
 	}
@@ -920,7 +943,9 @@ func (s *Service) finalizeDirectMessageStatusWrite(ctx context.Context, status *
 	}
 
 	if err := contract.FinalizeCreatedStatus(ctx, status); err != nil {
-		return errors.Join(ErrCreateDirectMessage, err)
+		requestErr := errors.Join(ErrCreateDirectMessage, err)
+		s.logDirectMessageFailure("failed to finalize direct message status persistence", "finalize_status", status, err, requestErr)
+		return requestErr
 	}
 
 	return nil
@@ -953,7 +978,9 @@ func (s *Service) applyDirectMessageSendTransition(
 	}
 
 	if err := s.conversationRepo.ApplyDirectMessageSend(ctx, transition, stageStatusCreate); err != nil {
-		return errors.Join(ErrCreateDirectMessage, err)
+		requestErr := errors.Join(ErrCreateDirectMessage, err)
+		s.logDirectMessageFailure("failed to apply direct message send transition", "apply_transition", status, err, requestErr)
+		return requestErr
 	}
 	if err := s.finalizeDirectMessageStatusWrite(ctx, status); err != nil {
 		return err

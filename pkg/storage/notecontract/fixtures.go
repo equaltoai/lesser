@@ -1,3 +1,4 @@
+// Package notecontract provides shared persisted-note fixtures for contract verification.
 package notecontract
 
 import (
