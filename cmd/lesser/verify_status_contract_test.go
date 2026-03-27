@@ -13,11 +13,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	apperrors "github.com/equaltoai/lesser/pkg/errors"
 	conversationsvc "github.com/equaltoai/lesser/pkg/services/conversations"
 	notessvc "github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/notecontract"
 	"github.com/stretchr/testify/require"
 	theorydb "github.com/theory-cloud/tabletheory/pkg/core"
 	dynamormmocks "github.com/theory-cloud/tabletheory/pkg/mocks"
@@ -268,7 +270,7 @@ func TestExecuteStatusContractVerification_PreservesDirectMessageFailure(t *test
 			result: &notessvc.NoteResult{Note: testVerificationStatus("public-1", models.VisibilityPublic, "public-1", fixture.publicContent, nil)},
 		},
 		conversationSender: &fakeStatusContractConversationSender{
-			firstErr: errors.New("inner boom"),
+			firstErr: apperrors.FailedToCreate("status", errors.New("dynamo conditional check failed")),
 		},
 		statusReader: &fakeStatusContractStatusReader{
 			byID: map[string]*models.Status{
@@ -282,7 +284,7 @@ func TestExecuteStatusContractVerification_PreservesDirectMessageFailure(t *test
 		persistenceReader:       &fakeStatusContractPersistenceReader{},
 	}, fixture)
 	require.ErrorContains(t, err, "send first direct message")
-	require.ErrorContains(t, err, "inner boom")
+	require.ErrorContains(t, err, "root causes: dynamo conditional check failed")
 }
 
 func TestExecuteStatusContractVerification_PreservesPersistenceFailure(t *testing.T) {
@@ -319,6 +321,7 @@ func TestExecuteStatusContractVerification_PreservesPersistenceFailure(t *testin
 	}, fixture)
 	require.ErrorContains(t, err, "verify persisted public note public-1")
 	require.ErrorContains(t, err, "raw item missing context")
+	require.ErrorContains(t, err, "root causes: raw item missing context")
 }
 
 func TestRunVerifyStatusContract_RequiresBaseDomain(t *testing.T) {
@@ -502,11 +505,12 @@ func TestDynamoStatusContractPersistenceReader(t *testing.T) {
 		{
 			name:    "missing nested context",
 			body:    `{"Item":{"note":{"M":{"BaseObject":{"M":{}}}}}}`,
-			wantErr: "note context missing after persistence",
+			wantErr: "note base object context missing after persistence",
 		},
 		{
-			name: "accepts top level context",
-			body: `{"Item":{"note":{"M":{"Context":{"L":[{"S":"https://www.w3.org/ns/activitystreams"}]}}}}}`,
+			name:    "rejects top level context",
+			body:    `{"Item":{"note":{"M":{"Context":{"L":[{"S":"https://www.w3.org/ns/activitystreams"}]}}}}}`,
+			wantErr: "persisted note context must be nested under BaseObject",
 		},
 		{
 			name: "accepts nested context",
@@ -564,6 +568,20 @@ func TestStatusContractVerificationHelpers(t *testing.T) {
 
 		defaultFixture := newStatusContractVerificationFixture("")
 		require.Equal(t, "statuschecksenderstatuscheck", defaultFixture.senderUsername)
+	})
+
+	t.Run("test verification statuses reuse shared note fixtures", func(t *testing.T) {
+		publicStatus := testVerificationStatus("public-1", models.VisibilityPublic, "public-1", "public content", nil)
+		require.NotNil(t, publicStatus.Note)
+		require.Len(t, publicStatus.Note.Attachment, 1)
+		require.Len(t, publicStatus.Note.Tag, 2)
+		require.NotNil(t, publicStatus.Note.QuoteContext)
+
+		directStatus := testVerificationStatus("dm-1", models.VisibilityDirect, "conv-1", "dm content", []string{"https://example.com/users/recipient"})
+		require.NotNil(t, directStatus.Note)
+		require.Nil(t, directStatus.Note.Attachment)
+		require.Len(t, directStatus.Note.Tag, 2)
+		require.Equal(t, []string{"https://example.com/users/recipient"}, directStatus.Note.To)
 	})
 
 	t.Run("validate deps catches missing fields", func(t *testing.T) {
@@ -754,14 +772,17 @@ func TestStatusContractVerificationHelpers(t *testing.T) {
 }
 
 func testVerificationStatus(statusID string, visibility string, conversationID string, content string, toRecipients []string) *models.Status {
-	note := &activitypub.Note{
-		BaseObject: activitypub.BaseObject{
-			Context: activitypub.Context.Clone(),
-			ID:      "https://example.com/users/sender/statuses/" + statusID,
-			To:      append([]string(nil), toRecipients...),
-		},
-		Content: content,
+	var note *activitypub.Note
+	switch visibility {
+	case models.VisibilityDirect:
+		note = notecontract.DirectFixtureNote()
+		note.To = append([]string(nil), toRecipients...)
+		note.ConversationID = conversationID
+	default:
+		note = notecontract.PublicFixtureNote()
 	}
+	note.ID = "https://example.com/users/sender/statuses/" + statusID
+	note.Content = content
 
 	return &models.Status{
 		StatusID:       statusID,

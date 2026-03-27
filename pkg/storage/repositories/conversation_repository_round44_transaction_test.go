@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -731,4 +732,43 @@ func TestRound44_ConversationRepository_ApplyDirectMessageSend_MapsCreateRaceToA
 		CreateConversation: true,
 	}, recordStatusStageWithPut)
 	require.True(t, errors.Is(err, storage.ErrAlreadyExists))
+}
+
+func TestRound44_ConversationRepository_ApplyDirectMessageSend_PreservesStageRootCause(t *testing.T) {
+	ctx := context.Background()
+	repo := NewConversationRepository(new(mocks.MockDB), "test-table", zap.NewNop(), nil)
+	builder := &recordingConversationTransactionBuilder{}
+
+	repo.transactWriteFn = func(txCtx context.Context, fn func(core.TransactionBuilder) error) error {
+		require.Equal(t, ctx, txCtx)
+		return fn(builder)
+	}
+
+	publishedAt := time.Now().UTC()
+	rawStageErr := errors.New("dynamo attribute type mismatch")
+	err := repo.ApplyDirectMessageSend(ctx, &models.DirectMessageSendTransition{
+		Conversation: &models.Conversation{
+			ID:              "conv-stage",
+			Participants:    []string{"alice", "bob"},
+			CreatedAt:       publishedAt,
+			UpdatedAt:       publishedAt,
+			LastMessageTime: publishedAt,
+		},
+		Status: &models.Status{
+			StatusID:    "status-stage",
+			PublishedAt: publishedAt,
+		},
+		ParticipantStates: []*models.UserConversationState{
+			{ViewerID: "alice", ConversationID: "conv-stage", CounterpartID: "bob", Folder: models.UserConversationFolderInbox},
+			{ViewerID: "bob", ConversationID: "conv-stage", CounterpartID: "alice", Folder: models.UserConversationFolderInbox},
+		},
+		CreateConversation: true,
+	}, func(tx core.TransactionBuilder, status *models.Status) error {
+		require.NotNil(t, tx)
+		require.Equal(t, "status-stage", status.StatusID)
+		return fmt.Errorf("stage direct message status create %s: %w", status.StatusID, rawStageErr)
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "Failed to create conversation")
+	require.ErrorIs(t, err, rawStageErr)
 }

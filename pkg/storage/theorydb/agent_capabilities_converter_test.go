@@ -275,6 +275,7 @@ func TestRegisterDefaultTypeConverters_RegistersCapabilitiesConverter(t *testing
 	require.NoError(t, registerDefaultTypeConverters(db))
 	assert.Contains(t, db.registered, mapStringAnyType)
 	assert.Contains(t, db.registered, sliceAnyType)
+	assert.Contains(t, db.registered, activityPubNoteType)
 	assert.Contains(t, db.registered, activityPubContextValueType)
 	assert.Contains(t, db.registered, agentsCapabilitiesType)
 }
