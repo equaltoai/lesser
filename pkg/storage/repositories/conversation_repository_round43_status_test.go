@@ -8,51 +8,29 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	ddbErrors "github.com/theory-cloud/tabletheory/pkg/errors"
 	"github.com/theory-cloud/tabletheory/pkg/mocks"
 	"go.uber.org/zap"
 )
 
-func TestRound43_ConversationRepository_UpdateConversationLastStatus_UsesCanonicalStatusMetadata(t *testing.T) {
+func TestRound43_ConversationRepository_GetConversationParticipants_LoadsMetadataParticipants(t *testing.T) {
 	ctx := context.Background()
 	mockDB := new(mocks.MockDB)
-	statusQuery := new(mocks.MockQuery)
 	conversationQuery := new(mocks.MockQuery)
-	stateQuery := new(mocks.MockQuery)
-	updateBuilder := new(mocks.MockUpdateBuilder)
-
-	publishedAt := time.Date(2026, 3, 25, 10, 39, 9, 829133328, time.UTC)
 
 	mockDB.On("WithContext", ctx).Return(mockDB).Maybe()
-	mockDB.On("Model", mock.AnythingOfType("*models.Status")).Return(statusQuery).Once()
 	mockDB.On("Model", mock.AnythingOfType("*models.Conversation")).Return(conversationQuery).Once()
-	mockDB.On("Model", mock.AnythingOfType("*models.UserConversationState")).Return(stateQuery).Once()
-
-	statusQuery.On("Where", "PK", "=", "status#status-1").Return(statusQuery).Once()
-	statusQuery.On("Where", "SK", "=", "status#status-1").Return(statusQuery).Once()
-	statusQuery.On("First", mock.AnythingOfType("*models.Status")).Run(func(args mock.Arguments) {
-		status := args.Get(0).(*models.Status)
-		status.StatusID = "status-1"
-		status.ConversationID = "conv-1"
-		status.PublishedAt = publishedAt
-	}).Return(nil).Once()
 
 	conversationQuery.On("Where", "PK", "=", "CONVERSATION#conv-1").Return(conversationQuery).Once()
 	conversationQuery.On("Where", "SK", "=", "METADATA").Return(conversationQuery).Once()
-	conversationQuery.On("UpdateBuilder").Return(updateBuilder).Once()
-
-	updateBuilder.On("SetIfNotExists", "TotalMessageCount", nil, int64(0)).Return(updateBuilder).Once()
-	updateBuilder.On("Add", "TotalMessageCount", 1).Return(updateBuilder).Once()
-	updateBuilder.On("Set", "LastStatusID", "status-1").Return(updateBuilder).Once()
-	updateBuilder.On("Set", "LastMessageTime", publishedAt.UTC()).Return(updateBuilder).Once()
-	updateBuilder.On("Set", "UpdatedAt", mock.AnythingOfType("time.Time")).Return(updateBuilder).Once()
-	updateBuilder.On("Execute").Return(nil).Once()
-
-	stateQuery.On("Index", "gsi3").Return(stateQuery).Once()
-	stateQuery.On("Where", "gsi3PK", "=", "CONVERSATION#conv-1").Return(stateQuery).Once()
-	stateQuery.On("OrderBy", "gsi3SK", "ASC").Return(stateQuery).Once()
-	stateQuery.On("All", mock.Anything).Return(ddbErrors.ErrItemNotFound).Once()
+	conversationQuery.On("First", mock.AnythingOfType("*models.Conversation")).Run(func(args mock.Arguments) {
+		conv := args.Get(0).(*models.Conversation)
+		conv.ID = "conv-1"
+		conv.Participants = []string{"alice", "bob"}
+		conv.UpdatedAt = time.Date(2026, 3, 25, 10, 39, 9, 829133328, time.UTC)
+	}).Return(nil).Once()
 
 	repo := NewConversationRepository(mockDB, "test-table", zap.NewNop(), nil)
-	require.NoError(t, repo.UpdateConversationLastStatus(ctx, "conv-1", "status-1"))
+	participants, err := repo.GetConversationParticipants(ctx, "conv-1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"alice", "bob"}, participants)
 }

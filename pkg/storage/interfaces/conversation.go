@@ -78,32 +78,6 @@ type ConversationRepository interface {
 	// Legacy note: DM rewrite M4/M5 replaces fan-out unread counting with keyed unread-state queries.
 	GetUnreadConversationCount(ctx context.Context, username string) (int, error)
 
-	// ===== Status/Message Operations =====
-
-	// AddStatusToConversation adds a status/message to a conversation.
-	// Legacy note: DM rewrite M3/M8 removes ConversationMessage as a canonical DM write path.
-	AddStatusToConversation(ctx context.Context, conversationID, statusID, senderUsername string) error
-
-	// GetConversationStatuses retrieves messages in a conversation with pagination.
-	// Legacy note: DM rewrite M5 keeps thread reads on StatusRepository.GetConversationThread
-	// instead of conversation-local message rows.
-	GetConversationStatuses(ctx context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error)
-
-	// RemoveStatusFromConversation removes a status from a conversation.
-	// Legacy note: DM rewrite M3/M8 removes ConversationMessage as a canonical DM write path.
-	RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error
-
-	// MarkStatusRead marks a specific status as read by a user.
-	// Legacy note: DM rewrite M4 removes message-level read truth from the conversation repository.
-	MarkStatusRead(ctx context.Context, conversationID, statusID, username string) error
-
-	// GetUnreadStatusCount gets the count of unread statuses in a conversation for a user.
-	// Legacy note: DM rewrite M4 removes unread truth from ConversationStatus compatibility rows.
-	GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error)
-
-	// UpdateConversationLastStatus updates the last status in a conversation
-	UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error
-
 	// ApplyDirectMessageSend atomically writes the canonical DM send transition:
 	// status row, shared conversation metadata, and both per-user state rows.
 	ApplyDirectMessageSend(ctx context.Context, transition *models.DirectMessageSendTransition) error
