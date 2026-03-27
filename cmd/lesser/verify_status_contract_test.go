@@ -331,8 +331,11 @@ func TestRunVerifyStatusContract_RejectsLiveEnvironment(t *testing.T) {
 		"--base-domain", "example.com",
 		"--env", "live",
 	}), "must not run against live")
-	require.ErrorContains(t, validateStatusContractVerificationEnvironment("production"), "must not run against live")
-	require.NoError(t, validateStatusContractVerificationEnvironment("staging"))
+	require.ErrorContains(t, validateStatusContractVerificationTarget("production", ""), "must not run against live")
+	require.ErrorContains(t, validateStatusContractVerificationTarget("dev", "simulacrum-live-main-table"), "must not target live table")
+	require.NoError(t, validateStatusContractVerificationTarget("staging", "simulacrum-staging-main-table"))
+	require.False(t, statusContractTargetsLiveTable("olive-dev-main-table"))
+	require.True(t, statusContractTargetsLiveTable("simulacrum-live-main-table"))
 }
 
 func TestRunVerifyStatusContract_Success(t *testing.T) {

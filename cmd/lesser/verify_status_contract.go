@@ -217,7 +217,7 @@ func runVerifyStatusContract(argv []string) error {
 	if strings.TrimSpace(baseDomain) == "" {
 		return fmt.Errorf("--base-domain is required (or set LESSER_BASE_DOMAIN)")
 	}
-	if err := validateStatusContractVerificationEnvironment(env); err != nil {
+	if err := validateStatusContractVerificationTarget(env, tableName); err != nil {
 		return err
 	}
 
@@ -229,6 +229,9 @@ func runVerifyStatusContract(argv []string) error {
 		TableName:  tableName,
 	})
 	if err != nil {
+		return err
+	}
+	if err := validateStatusContractVerificationTarget(env, resolvedTableName); err != nil {
 		return err
 	}
 
@@ -337,11 +340,22 @@ func executeStatusContractVerification(
 	return summary, nil
 }
 
-func validateStatusContractVerificationEnvironment(env string) error {
+func validateStatusContractVerificationTarget(env string, tableName string) error {
 	if naming.IsLiveEnvironment(env) {
 		return fmt.Errorf("verify status-contract writes synthetic data and must not run against live")
 	}
+	if statusContractTargetsLiveTable(tableName) {
+		return fmt.Errorf("verify status-contract writes synthetic data and must not target live table %q", strings.TrimSpace(tableName))
+	}
 	return nil
+}
+
+func statusContractTargetsLiveTable(tableName string) bool {
+	tableName = strings.ToLower(strings.TrimSpace(tableName))
+	if tableName == "" {
+		return false
+	}
+	return strings.HasSuffix(tableName, "-live-main-table")
 }
 
 func validateStatusContractVerifierDeps(deps statusContractVerifierDeps) error {
